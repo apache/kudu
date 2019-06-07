@@ -124,7 +124,23 @@ Status HmsCatalog::Start(HmsClientVerifyKuduSyncConfig verify_service_config) {
   options.retry_count = FLAGS_hive_metastore_retry_count;
   options.verify_service_config = verify_service_config == VERIFY;
 
-  return ha_client_.Start(std::move(addresses), std::move(options));
+  RETURN_NOT_OK(ha_client_.Start(std::move(addresses), std::move(options)));
+
+  // Fetch the UUID of the HMS DB, if available.
+  string uuid;
+  Status uuid_status = ha_client_.Execute([&] (HmsClient* client) {
+    return client->GetUuid(&uuid);
+  });
+  if (uuid_status.ok()) {
+    VLOG(1) << "Connected to HMS with uuid " << uuid;
+    uuid_ = std::move(uuid);
+  } else if (uuid_status.IsNotSupported()) {
+    VLOG(1) << "Unable to fetch UUID for HMS: " << uuid_status.ToString();
+  } else {
+    // If we couldn't connect to the HMS at all, fail.
+    return uuid_status;
+  }
+  return Status::OK();
 }
 
 void HmsCatalog::Stop() {
@@ -286,6 +302,14 @@ Status HmsCatalog::GetNotificationEvents(int64_t last_event_id, int max_events,
   return ha_client_.Execute([&] (HmsClient* client) {
     return client->GetNotificationEvents(last_event_id, max_events, events);
   });
+}
+
+Status HmsCatalog::GetUuid(string* uuid) {
+  if (!uuid_) {
+    return Status::NotSupported("No HMS UUID available");
+  }
+  *uuid = uuid_.value();
+  return Status::OK();
 }
 
 namespace {

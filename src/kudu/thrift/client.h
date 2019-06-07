@@ -30,9 +30,11 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/thrift/ha_client_metrics.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"

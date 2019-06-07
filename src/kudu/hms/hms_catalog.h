@@ -132,6 +132,14 @@ class HmsCatalog {
   Status GetNotificationEvents(int64_t last_event_id, int max_events,
                                std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
 
+  // Get the UUID associated with the remote HMS instance. This is an identifier
+  // stored in the HMS's backing database which does not change even if the
+  // HMS itself changes hostnames, etc.
+  //
+  // NOTE: this is not implemented in Hive 2.x but may be backported into some
+  // vendor releases (eg CDH6). This function may return Status::NotSupported().
+  Status GetUuid(std::string* uuid) WARN_UNUSED_RESULT;
+
   // Validates the hive_metastore_uris gflag.
   static bool ValidateUris(const char* flag_name, const std::string& metastore_uris);
 
@@ -188,6 +196,8 @@ class HmsCatalog {
   const std::string master_addresses_;
 
   thrift::HaClient<hms::HmsClient> ha_client_;
+
+  boost::optional<std::string> uuid_;
 };
 
 } // namespace hms

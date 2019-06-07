@@ -22,6 +22,7 @@
 # https://raw.githubusercontent.com/apache/hive/rel/release-2.3.0/metastore/if/hive_metastore.thrift
 # With backports:
 #   - HIVE-16993
+#   - Backport get_metastore_db_uuid() API from HIVE-16555
 #
 # With edits:
 #   - Change cpp namespace to 'hive' to match the Kudu codebase style.
@@ -1497,6 +1498,9 @@ service ThriftHiveMetastore extends fb303.FacebookService
   PutFileMetadataResult put_file_metadata(1:PutFileMetadataRequest req)
   ClearFileMetadataResult clear_file_metadata(1:ClearFileMetadataRequest req)
   CacheFileMetadataResult cache_file_metadata(1:CacheFileMetadataRequest req)
+
+  // Metastore DB properties
+  string get_metastore_db_uuid() throws (1:MetaException o1)
 
 }
 

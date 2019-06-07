@@ -93,6 +93,7 @@ bool IsFatalError(const Status& error) {
         || error.IsNotFound()
         || error.IsInvalidArgument()
         || error.IsIllegalState()
+        || error.IsNotSupported()
         || error.IsRemoteError());
 }
 } // namespace thrift

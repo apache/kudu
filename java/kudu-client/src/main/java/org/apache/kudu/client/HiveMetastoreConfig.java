@@ -20,6 +20,8 @@ package org.apache.kudu.client;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
+import javax.annotation.CheckForNull;
+
 /**
  * The Hive Metastore configuration of a Kudu cluster.
  */
@@ -46,6 +48,7 @@ public class HiveMetastoreConfig {
     return hiveMetastoreSaslEnabled;
   }
 
+  @CheckForNull
   public String getHiveMetastoreUuid() {
     return hiveMetastoreUuid;
   }

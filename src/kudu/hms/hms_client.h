@@ -172,6 +172,9 @@ class HmsClient {
                                int32_t max_events,
                                std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
 
+  // Get the HMS's UUID (see HmsCatalog::GetUuid).
+  Status GetUuid(std::string* uuid) WARN_UNUSED_RESULT;
+
   // Adds partitions to an HMS table.
   Status AddPartitions(const std::string& database_name,
                        const std::string& table_name,

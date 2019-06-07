@@ -557,7 +557,10 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     auto* metastore_config = resp->mutable_hms_config();
     metastore_config->set_hms_uris(FLAGS_hive_metastore_uris);
     metastore_config->set_hms_sasl_enabled(FLAGS_hive_metastore_sasl_enabled);
-    // TODO(dan): set the hms_uuid field.
+    string uuid;
+    if (server_->catalog_manager()->HmsCatalog()->GetUuid(&uuid).ok()) {
+      metastore_config->set_hms_uuid(std::move(uuid));
+    }
   }
 
   // Assign a location to the client if needed.

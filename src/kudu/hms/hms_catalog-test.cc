@@ -452,5 +452,15 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, "a"));
 }
 
+TEST_F(HmsCatalogTest, TestMetastoreUuid) {
+  string uuid;
+  Status s = hms_catalog_->GetUuid(&uuid);
+  if (s.ok()) {
+    ASSERT_EQ(36, uuid.size());
+  } else {
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  }
+}
+
 } // namespace hms
 } // namespace kudu

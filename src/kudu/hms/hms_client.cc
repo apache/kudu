@@ -26,6 +26,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <glog/logging.h>
+#include <thrift/TApplicationException.h>
 #include <thrift/Thrift.h>
 #include <thrift/protocol/TJSONProtocol.h>
 #include <thrift/protocol/TProtocol.h>
@@ -44,6 +45,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
+using apache::thrift::TApplicationException;
 using apache::thrift::TException;
 using apache::thrift::protocol::TJSONProtocol;
 using apache::thrift::transport::TMemoryBuffer;
@@ -81,6 +83,12 @@ namespace hms {
     return Status::RemoteError((msg), e.what()); \
   } catch (const SaslException& e) { \
     return e.status().CloneAndPrepend((msg)); \
+  } catch (const TApplicationException& e) { \
+    switch (e.getType()) { \
+      case TApplicationException::UNKNOWN_METHOD: \
+        return Status::NotSupported((msg), e.what()); \
+      default: return Status::RemoteError((msg), e.what()); \
+    } \
   } catch (const TTransportException& e) { \
     switch (e.getType()) { \
       case TTransportException::TIMED_OUT: return Status::TimedOut((msg), e.what()); \
@@ -343,6 +351,15 @@ Status HmsClient::GetNotificationEvents(int64_t last_event_id,
   HMS_RET_NOT_OK(client_.get_next_notification(response, request),
                  "failed to get Hive Metastore next notification");
   events->swap(response.events);
+  return Status::OK();
+}
+
+Status HmsClient::GetUuid(string* uuid) {
+  DCHECK(uuid);
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
+                            "get HMS database UUID");
+  HMS_RET_NOT_OK(client_.get_metastore_db_uuid(*uuid),
+                 "failed to get HMS DB UUID");
   return Status::OK();
 }
 
