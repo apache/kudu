@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.client.KuduScanner;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
@@ -29,15 +30,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.countScanTokenRows;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createDefaultTable;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
-import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -272,6 +274,70 @@ public class TestScanToken {
         new AlterTableOptions().renameTable(testTableName + "-renamed"));
 
     assertEquals(0, countRowsInScan(token.intoScanner(client)));
+  }
+
+  /**
+   * Tests scan token creation and execution on a table with interleaved range partition drops.
+   */
+  @Test
+  public void testScanTokensInterleavedRangePartitionDrops() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.addHashPartitions(ImmutableList.of("key"), 2);
+
+    final int numRows = 30;
+    PartialRow lower0 = schema.newPartialRow();
+    PartialRow upper0 = schema.newPartialRow();
+    lower0.addInt("key", 0);
+    upper0.addInt("key", numRows / 3);
+    createOptions.addRangePartition(lower0, upper0);
+
+    PartialRow lower1 = schema.newPartialRow();
+    PartialRow upper1 = schema.newPartialRow();
+    lower1.addInt("key", numRows / 3);
+    upper1.addInt("key", 2 * numRows / 3);
+    createOptions.addRangePartition(lower1, upper1);
+
+    PartialRow lower2 = schema.newPartialRow();
+    PartialRow upper2 = schema.newPartialRow();
+    lower2.addInt("key", 2 * numRows / 3);
+    upper2.addInt("key", numRows);
+    createOptions.addRangePartition(lower2, upper2);
+
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+    KuduSession session = client.newSession();
+    for (int i = 0; i < numRows; i++) {
+      session.apply(createBasicSchemaInsert(table, i));
+    }
+
+    // Build the scan tokens.
+    List<KuduScanToken> tokens = client.newScanTokenBuilder(table).build();
+    assertEquals(6, tokens.size());
+
+    // Drop the range partition [10, 20).
+    AlterTableOptions dropMiddleOptions = new AlterTableOptions();
+    dropMiddleOptions.dropRangePartition(lower1, upper1);
+    client.alterTable(table.getName(), dropMiddleOptions);
+
+    // Rehydrate the tokens.
+    List<KuduScanner> scanners = new ArrayList<>();
+    for (KuduScanToken token : tokens) {
+      scanners.add(token.intoScanner(client));
+    }
+
+    // Drop the range partition [20, 30).
+    AlterTableOptions dropEndOptions = new AlterTableOptions();
+    dropEndOptions.dropRangePartition(lower2, upper2);
+    client.alterTable(table.getName(), dropEndOptions);
+
+    // Check the scanners work. The scanners for the tablets in the range [10, 20) definitely won't
+    // see any rows. The scanners for the tablets in the range [20, 30) might see rows.
+    int scannedRows = 0;
+    for (KuduScanner scanner : scanners) {
+      scannedRows += countRowsInScan(scanner);
+    }
+    assertTrue(String.format("%d >= %d / 3?", scannedRows, numRows), scannedRows >= numRows / 3);
+    assertTrue(String.format("%d <= 2 * %d / 3?", scannedRows, numRows), scannedRows <= 2 * numRows / 3);
   }
 
   /** Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class. */
