@@ -274,6 +274,12 @@ public final class AsyncKuduScanner {
       checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
           "HybridClock timestamp, the read mode needs to be set to READ_AT_SNAPSHOT");
     }
+    if (startTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+      checkArgument(htTimestamp >= 0, "Must have both start and end timestamps " +
+                    "for a diff scan");
+      checkArgument(startTimestamp <= htTimestamp, "Start timestamp must be less " +
+                    "than or equal to end timestamp");
+    }
 
     this.isFaultTolerant = isFaultTolerant;
     if (this.isFaultTolerant) {
@@ -442,7 +448,7 @@ public final class AsyncKuduScanner {
     return keepAlivePeriodMs;
   }
 
-  long getStartSnaphshotTimestamp() {
+  long getStartSnapshotTimestamp() {
     return this.startTimestamp;
   }
 
@@ -1037,8 +1043,8 @@ public final class AsyncKuduScanner {
             if (AsyncKuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
               newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
             }
-            if (AsyncKuduScanner.this.getStartSnaphshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
-              newBuilder.setSnapStartTimestamp(AsyncKuduScanner.this.getStartSnaphshotTimestamp());
+            if (AsyncKuduScanner.this.getStartSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+              newBuilder.setSnapStartTimestamp(AsyncKuduScanner.this.getStartSnapshotTimestamp());
             }
           }
 
