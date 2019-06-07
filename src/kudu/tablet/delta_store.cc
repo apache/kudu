@@ -66,7 +66,6 @@ string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool p
 template<class Traits>
 DeltaPreparer<Traits>::DeltaPreparer(RowIteratorOptions opts)
     : opts_(std::move(opts)),
-      projection_vc_is_deleted_idx_(opts_.projection->find_first_is_deleted_virtual_column()),
       cur_prepared_idx_(0),
       prev_prepared_idx_(0),
       prepared_flags_(DeltaIterator::PREPARE_NONE),
@@ -236,7 +235,7 @@ Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst
 
   // Special handling for the IS_DELETED virtual column: convert 'deleted_' and
   // 'reinserted_' into true and false cell values.
-  if (col_to_apply == projection_vc_is_deleted_idx_) {
+  if (col_to_apply == opts_.projection->first_is_deleted_virtual_column_idx()) {
     // See ApplyDeletes() to understand why we adjust the virtual column's value
     // for both deleted and reinserted rows.
     for (const auto& row_id : deleted_) {

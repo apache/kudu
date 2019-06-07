@@ -351,10 +351,6 @@ class DeltaPreparer : public PreparedDeltas {
   // Options with which the DeltaPreparer's iterator was constructed.
   const RowIteratorOptions opts_;
 
-  // The index of the first IS_DELETED virtual column in the projection schema,
-  // or kColumnNotFound if one doesn't exist.
-  const int projection_vc_is_deleted_idx_;
-
   // The row index at which the most recent batch preparation ended.
   rowid_t cur_prepared_idx_;
 

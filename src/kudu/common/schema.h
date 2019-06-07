@@ -446,6 +446,7 @@ class Schema {
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)),
+      first_is_deleted_virtual_column_idx_(kColumnNotFound),
       has_nullables_(false) {
   }
 
@@ -919,23 +920,8 @@ class Schema {
 
   // Returns the column index for the first IS_DELETED virtual column in the
   // schema, or kColumnNotFound if one cannot be found.
-  //
-  // The virtual column must not be nullable and must have a read default value.
-  // The process will crash if these constraints are not met.
-  int find_first_is_deleted_virtual_column() const {
-    for (int idx = 0; idx < num_columns(); idx++) {
-      const auto& col = column(idx);
-      if (col.type_info()->type() == IS_DELETED) {
-        // Enforce some properties on the virtual column that simplify our
-        // implementation.
-        // TODO(KUDU-2692): Consider removing these requirements.
-        DCHECK(!col.is_nullable());
-        DCHECK(col.has_read_default());
-
-        return idx;
-      }
-    }
-    return kColumnNotFound;
+  int first_is_deleted_virtual_column_idx() const {
+    return first_is_deleted_virtual_column_idx_;
   }
 
  private:
@@ -983,6 +969,10 @@ class Schema {
   NameToIndexMap name_to_index_;
 
   IdMapping id_to_index_;
+
+  // Cached index of the first IS_DELETED virtual column, or kColumnNotFound if
+  // no such virtual column exists in the schema.
+  int first_is_deleted_virtual_column_idx_;
 
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;

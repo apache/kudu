@@ -396,7 +396,7 @@ MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet>& mrs,
       projector_(
           GenerateAppropriateProjector(&mrs->schema_nonvirtual(), opts_.projection)),
       delta_projector_(&mrs->schema_nonvirtual(), opts_.projection),
-      projection_vc_is_deleted_idx_(opts_.projection->find_first_is_deleted_virtual_column()),
+      projection_vc_is_deleted_idx_(opts_.projection->first_is_deleted_virtual_column_idx()),
       state_(kUninitialized) {
   // TODO(todd): various code assumes that a newly constructed iterator
   // is pointed at the beginning of the dataset. This causes a redundant

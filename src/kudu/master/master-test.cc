@@ -824,6 +824,8 @@ TEST_F(MasterTest, TestVirtualColumns) {
   col = req.mutable_schema()->add_columns();
   col->set_name("bar");
   col->set_type(IS_DELETED);
+  bool read_default = true;
+  col->set_read_default_value(&read_default, sizeof(read_default));
 
   ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
   SCOPED_TRACE(SecureDebugString(resp));

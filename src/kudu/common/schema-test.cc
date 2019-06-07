@@ -475,21 +475,21 @@ TEST_F(TestSchema, TestGetMappedReadProjection) {
 
   // Ensure that virtual columns that are nullable or that do not have read
   // defaults are rejected.
-  Schema nullable_projection({ ColumnSchema("key", STRING),
-                               ColumnSchema("deleted", IS_DELETED,
-                                            /*is_nullable=*/true,
-                                            /*read_default=*/&kReadDefault) },
-                          1);
-  Status s = tablet_schema.GetMappedReadProjection(nullable_projection, &mapped);
+  Schema nullable_projection;
+  Status s = nullable_projection.Reset({ ColumnSchema("key", STRING),
+                                         ColumnSchema("deleted", IS_DELETED,
+                                                      /*is_nullable=*/true,
+                                                      /*read_default=*/&kReadDefault) },
+                                       1);
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "must not be nullable");
 
-  Schema no_default_projection({ ColumnSchema("key", STRING),
-                                 ColumnSchema("deleted", IS_DELETED,
-                                              /*is_nullable=*/false,
-                                              /*read_default=*/nullptr) },
-                               1);
-  s = tablet_schema.GetMappedReadProjection(no_default_projection, &mapped);
+  Schema no_default_projection;
+  s = no_default_projection.Reset({ ColumnSchema("key", STRING),
+                                    ColumnSchema("deleted", IS_DELETED,
+                                                 /*is_nullable=*/false,
+                                                 /*read_default=*/nullptr) },
+                                  1);
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "must have a default value for read");
 }

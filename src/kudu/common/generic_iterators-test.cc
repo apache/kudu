@@ -399,8 +399,6 @@ void TestMerge(const Schema& schema,
 
   VLOG(1) << "Predicate expects " << expected.size() << " results: " << expected;
 
-  const int kIsDeletedIndex = schema.find_first_is_deleted_virtual_column();
-
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
     vector<IterWithBounds> to_merge;
     for (const auto& list : all_ints) {
@@ -454,8 +452,10 @@ void TestMerge(const Schema& schema,
           EXPECT_EQ(expected_key, row_key) << "Yielded out of order at idx " << total_idx;
           bool is_deleted = false;
           if (include_deleted_rows) {
-            CHECK_NE(Schema::kColumnNotFound, kIsDeletedIndex);
-            is_deleted = *schema.ExtractColumnFromRow<IS_DELETED>(dst.row(i), kIsDeletedIndex);
+            CHECK_NE(Schema::kColumnNotFound,
+                     schema.first_is_deleted_virtual_column_idx());
+            is_deleted = *schema.ExtractColumnFromRow<IS_DELETED>(
+                dst.row(i), schema.first_is_deleted_virtual_column_idx());
             EXPECT_EQ(expected_is_deleted, is_deleted)
                 << "Row " << row_key << " has unexpected IS_DELETED value at index " << total_idx;
           }

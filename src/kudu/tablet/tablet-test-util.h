@@ -902,8 +902,6 @@ void RunDeltaFuzzTest(const DeltaStore& store,
     Schema projection = GetRandomProjection(*mirror->schema(), prng, kMaxColsToProject,
                                             lower_ts ? AllowIsDeleted::YES :
                                                        AllowIsDeleted::NO);
-    size_t projection_vc_is_deleted_idx =
-        projection.find_first_is_deleted_virtual_column();
     SCOPED_TRACE(Substitute("Projection $0", projection.ToString()));
     RowIteratorOptions opts;
     opts.projection = &projection;
@@ -979,7 +977,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
           actual_scb[k] = 0;
         }
         const SelectionVector& filter = lower_ts ? actual_selected : actual_deleted;
-        if (j == projection_vc_is_deleted_idx) {
+        if (j == opts.projection->first_is_deleted_virtual_column_idx()) {
           // Reconstruct the expected IS_DELETED state using 'actual_selected'
           // and 'actual_deleted', which we've already verified above.
           DCHECK(lower_ts);

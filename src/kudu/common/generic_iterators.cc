@@ -507,10 +507,6 @@ class MergeIterator : public RowwiseIterator {
 
   bool initted_;
 
-  // Index of the IS_DELETED column, or Schema::kColumnNotFound if no such
-  // column exists in the schema.
-  int is_deleted_col_index_;
-
   // Holds the sub-iterators until Init is called, at which point this is
   // cleared. This is required because we can't create a MergeIterState of an
   // uninitialized sub-iterator.
@@ -629,8 +625,8 @@ Status MergeIterator::Init(ScanSpec *spec) {
   }
 #endif
 
-  is_deleted_col_index_ = schema_->find_first_is_deleted_virtual_column();
-  if (opts_.include_deleted_rows && is_deleted_col_index_ == Schema::kColumnNotFound) {
+  if (opts_.include_deleted_rows &&
+      schema_->first_is_deleted_virtual_column_idx() == Schema::kColumnNotFound) {
     return Status::InvalidArgument("Merge iterator cannot deduplicate deleted "
                                    "rows without an IS_DELETED column");
   }
@@ -865,7 +861,8 @@ Status MergeIterator::MaterializeOneRow(RowBlock* dst, size_t* dst_row_idx) {
     int live_rows_found = 0;
     for (const auto& s : smallest) {
       bool is_deleted =
-          *schema_->ExtractColumnFromRow<IS_DELETED>(s->next_row(), is_deleted_col_index_);
+          *schema_->ExtractColumnFromRow<IS_DELETED>(
+              s->next_row(), schema_->first_is_deleted_virtual_column_idx());
       if (!is_deleted) {
         // We found the single live instance of the row.
         row_to_return_iter = s;
@@ -882,8 +879,8 @@ Status MergeIterator::MaterializeOneRow(RowBlock* dst, size_t* dst_row_idx) {
     // deleted instance.
     if (row_to_return_iter == nullptr) {
       row_to_return_iter = smallest[0];
-      DCHECK(*schema_->ExtractColumnFromRow<IS_DELETED>(row_to_return_iter->next_row(),
-                                                        is_deleted_col_index_))
+      DCHECK(*schema_->ExtractColumnFromRow<IS_DELETED>(
+          row_to_return_iter->next_row(), schema_->first_is_deleted_virtual_column_idx()))
           << "expected deleted row";
     }
   }

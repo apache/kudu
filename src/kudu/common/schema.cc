@@ -50,6 +50,36 @@ static const ColumnId kFirstColumnId(0);
 static const ColumnId  kFirstColumnId(10);
 #endif
 
+namespace {
+
+Status FindFirstIsDeletedVirtualColumnIdx(
+    const vector<ColumnSchema>& cols, int* idx) {
+  for (int i = 0; i < cols.size(); i++) {
+    const auto& col = cols[i];
+    if (col.type_info()->type() == IS_DELETED) {
+      // Enforce some properties on the virtual column that simplify our
+      // implementation.
+      // TODO(KUDU-2692): Consider removing these requirements.
+      if (col.is_nullable()) {
+        return Status::InvalidArgument(Substitute(
+            "Virtual column $0 $1 must not be nullable",
+            col.name(), col.TypeToString()));
+      }
+      if (!col.has_read_default()) {
+        return Status::InvalidArgument(Substitute(
+            "Virtual column $0 $1 must have a default value for read",
+            col.name(), col.TypeToString()));
+      }
+      *idx = i;
+      return Status::OK();
+    }
+  }
+  *idx = Schema::kColumnNotFound;
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 bool ColumnTypeAttributes::EqualsForType(ColumnTypeAttributes other,
                                          DataType type) const {
   switch (type) {
@@ -189,6 +219,7 @@ void Schema::CopyFrom(const Schema& other) {
     name_to_index_[col.name()] = i++;
   }
 
+  first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
   has_nullables_ = other.has_nullables_;
 }
 
@@ -204,6 +235,7 @@ Schema::Schema(Schema&& other) noexcept
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)),
       id_to_index_(std::move(other.id_to_index_)),
+      first_is_deleted_virtual_column_idx_(other.first_is_deleted_virtual_column_idx_),
       has_nullables_(other.has_nullables_) {
   // 'name_to_index_' uses a customer allocator which holds a pointer to
   // 'name_to_index_bytes_'. swap() will swap the contents but not the
@@ -226,6 +258,7 @@ Schema& Schema::operator=(Schema&& other) noexcept {
     max_col_id_ = other.max_col_id_;
     col_offsets_ = std::move(other.col_offsets_);
     id_to_index_ = std::move(other.id_to_index_);
+    first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
     has_nullables_ = other.has_nullables_;
 
     // See the comment in the move constructor implementation for why we swap.
@@ -294,6 +327,9 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
     }
     id_to_index_.set(ids[i], i);
   }
+
+  RETURN_NOT_OK(FindFirstIsDeletedVirtualColumnIdx(
+      cols_, &first_is_deleted_virtual_column_idx_));
 
   // Determine whether any column is nullable
   has_nullables_ = false;
@@ -406,15 +442,8 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
     int index = find_column(col.name());
     if (col.type_info()->is_virtual()) {
       DCHECK_EQ(kColumnNotFound, index) << "virtual column not expected in tablet schema";
-      if (col.is_nullable()) {
-        return Status::InvalidArgument(Substitute("Virtual column $0 $1 must not be nullable",
-                                                  col.name(), col.TypeToString()));
-      }
-      if (!col.has_read_default()) {
-        return Status::InvalidArgument(Substitute("Virtual column $0 $1 must "
-                                                  "have a default value for read",
-                                                  col.name(), col.TypeToString()));
-      }
+      DCHECK(!col.is_nullable()); // enforced by Schema constructor
+      DCHECK(col.has_read_default()); // enforced by Schema constructor
       mapped_cols.push_back(col);
       // Generate a "fake" column id for virtual columns.
       mapped_ids.emplace_back(++proj_max_col_id);
