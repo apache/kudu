@@ -17,19 +17,23 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/table_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sentry_privileges_fetcher.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/sentry/sentry_action.h"
 #include "kudu/sentry/sentry_authorizable_scope.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
 DECLARE_string(sentry_service_rpc_addresses);
@@ -39,7 +43,9 @@ using kudu::security::TablePrivilegePB;
 using kudu::sentry::SentryAction;
 using kudu::sentry::SentryAuthorizableScope;
 using std::string;
+using std::unordered_map;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -194,11 +200,43 @@ Status SentryAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
 Status SentryAuthzProvider::AuthorizeListTables(const string& user,
                                                 unordered_set<string>* table_names,
                                                 bool* checked_table_names) {
+  if (IsTrustedUser(user)) {
+    *checked_table_names = false;
+    return Status::OK();
+  }
   unordered_set<string> authorized_tables;
+  unordered_map<string, vector<string>> tables_by_db;
   for (auto table_name : *table_names) {
-    Status s = AuthorizeGetTableMetadata(table_name, user);
+    Slice db_slice;
+    Slice unused_table_slice;
+    Status s = ParseHiveTableIdentifier(table_name, &db_slice, &unused_table_slice);
+    if (!s.ok()) {
+      continue;
+    }
+    LookupOrInsert(&tables_by_db, db_slice.ToString(), {}).emplace_back(std::move(table_name));
+  }
+  for (auto db_and_tables : tables_by_db) {
+    auto tables_in_db = db_and_tables.second;
+    DCHECK(!tables_in_db.empty());
+    // Authorize database-level privileges first in case the user has
+    // database-level privileges. This would allow us to avoid authorizing each
+    // indiviudual table.
+    // Note: the exact table isn't particularly important, as long as we pass
+    // in a table within the database we're interested in.
+    const string& first_table_name_in_db = tables_in_db[0];
+    Status s = Authorize(SentryAuthorizableScope::Scope::DATABASE, SentryAction::METADATA,
+                         first_table_name_in_db, user);
     if (s.ok()) {
-      EmplaceOrDie(&authorized_tables, std::move(table_name));
+      for (auto table_name : tables_in_db) {
+        EmplaceOrDie(&authorized_tables, std::move(table_name));
+      }
+    } else {
+      for (auto table_name : tables_in_db) {
+        s = AuthorizeGetTableMetadata(table_name, user);
+        if (s.ok()) {
+          EmplaceOrDie(&authorized_tables, std::move(table_name));
+        }
+      }
     }
   }
   *table_names = authorized_tables;

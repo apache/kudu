@@ -71,6 +71,18 @@ DEFINE_int32(num_table_privileges, 100,
     "Number of table privileges to use in testing");
 TAG_FLAG(num_table_privileges, hidden);
 
+DEFINE_int32(num_databases, 10,
+    "Number of databases to use in testing");
+TAG_FLAG(num_databases, hidden);
+
+DEFINE_int32(num_tables_per_db, 10,
+    "Number of tables to use per database to use in testing");
+TAG_FLAG(num_tables_per_db, hidden);
+
+DEFINE_bool(has_db_privileges, true,
+    "Whether the user should have db-level privileges in testing");
+TAG_FLAG(has_db_privileges, hidden);
+
 DECLARE_int32(sentry_service_recv_timeout_seconds);
 DECLARE_int32(sentry_service_send_timeout_seconds);
 DECLARE_uint32(sentry_privileges_cache_capacity_mb);
@@ -193,6 +205,7 @@ TEST(SentryPrivilegesFetcherStaticTest, TestPrivilegesWellFormed) {
 class SentryAuthzProviderTest : public SentryTestBase {
  public:
   static const char* const kTestUser;
+  static const char* const kTrustedUser;
   static const char* const kUserGroup;
   static const char* const kRoleName;
 
@@ -205,6 +218,7 @@ class SentryAuthzProviderTest : public SentryTestBase {
     // Configure the SentryAuthzProvider flags.
     FLAGS_sentry_privileges_cache_capacity_mb = CachingEnabled() ? 1 : 0;
     FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
+    FLAGS_trusted_user_acl = kTrustedUser;
     sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
     ASSERT_OK(sentry_authz_provider_->Start());
   }
@@ -292,6 +306,7 @@ class SentryAuthzProviderTest : public SentryTestBase {
 };
 
 const char* const SentryAuthzProviderTest::kTestUser = "test-user";
+const char* const SentryAuthzProviderTest::kTrustedUser = "trusted-user";
 const char* const SentryAuthzProviderTest::kUserGroup = "user";
 const char* const SentryAuthzProviderTest::kRoleName = "developer";
 
@@ -370,6 +385,74 @@ TEST_F(SentryAuthzProviderTest, BroadAuthzScopeBenchmark) {
         Substitute("$0.$1_$2", kLongDb, kLongTable, 0) , kTestUser, kTestUser);
   }
   ASSERT_TRUE(s.IsNotAuthorized());
+}
+
+// Benchmark to test the time it takes to evaluate privileges when listing
+// tables.
+TEST_F(SentryAuthzProviderTest, ListTablesBenchmark) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  unordered_set<string> tables;
+  for (int d = 0; d < FLAGS_num_databases; d++) {
+    const string db_name = Substitute("$0_$1", kDb, d);
+    // Regardless of whether the user has database-level privileges on the
+    // database, make sure there's at least one privilege for a database to
+    // keep the benchmark consistent when toggling this flag.
+    const string dummy_name = Substitute("$0_$1", "foo", d);
+    ASSERT_OK(AlterRoleGrantPrivilege(
+        GetDatabasePrivilege(FLAGS_has_db_privileges ? db_name : dummy_name, "METADATA")));
+    for (int t = 0; t < FLAGS_num_tables_per_db; t++) {
+      const string table_name = Substitute("$0_$1", kTable, t);
+      const string table_ident = Substitute("$0.$1", db_name, table_name);
+
+      KLOG_EVERY_N_SECS(INFO, 3) << "Granted privilege on table: " << table_ident;
+      ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege(db_name, table_name, "METADATA")));
+      EmplaceOrDie(&tables, table_ident);
+    }
+  }
+  bool checked_table_names = false;
+  LOG_TIMING(INFO, "Listing tables") {
+    ASSERT_OK(sentry_authz_provider_->AuthorizeListTables(
+        kTestUser, &tables, &checked_table_names));
+  }
+  ASSERT_TRUE(checked_table_names);
+  ASSERT_EQ(FLAGS_num_databases * FLAGS_num_tables_per_db, tables.size());
+}
+
+TEST_F(SentryAuthzProviderTest, TestListTables) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  const int kNumDbs = 2;
+  const int kNumTablesPerDb = 5;
+  const int kNumNonHiveTables = 3;
+  unordered_set<string> tables;
+  for (int d = 0; d < kNumDbs; d++) {
+    const string db_name = Substitute("$0_$1", kDb, d);
+    for (int t = 0; t < kNumTablesPerDb; t++) {
+      const string table_name = Substitute("$0_$1", kTable, t);
+      // To test the absence of privileges, only grant privileges on one table
+      // per database.
+      if (t == 0) {
+        ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege(db_name, table_name, "METADATA")));
+      }
+      EmplaceOrDie(&tables, Substitute("$0.$1", db_name, table_name));
+    }
+  }
+  // Add some tables that don't conform to Hive's naming convention.
+  for (int i = 0; i < kNumNonHiveTables; i++) {
+    EmplaceOrDie(&tables, Substitute("badname_$0!", i));
+  }
+  bool checked_table_names = false;
+  // List tables as a trusted user. All tables, including non-Hive-conformant
+  // ones, should be visible.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeListTables(
+      kTrustedUser, &tables, &checked_table_names));
+  ASSERT_FALSE(checked_table_names);
+  ASSERT_EQ(kNumDbs * kNumTablesPerDb + kNumNonHiveTables, tables.size());
+
+  // Now try as a regular user. Only the tables with Hive-conformant names that
+  // the user has privileges on should be visible.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeListTables(kTestUser, &tables, &checked_table_names));
+  ASSERT_TRUE(checked_table_names);
+  ASSERT_EQ(kNumDbs, tables.size());
 }
 
 class SentryAuthzProviderFilterPrivilegesTest : public SentryAuthzProviderTest {
