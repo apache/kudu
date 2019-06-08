@@ -14,52 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
-# More about kubernetes statefulset https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
-# build kudu docker image from ../docker folder: ../docker/docker-build.sh
-# create statefulset kudu kubernetes cluster : kubectl create -f kudu-statefulset.yaml
-# get kudu master url: minikube service kudu-master-ui --url
-# scale kudu tserver cluster : kubectl scale statefulset kudu-tserver --replicas=5
-# destroy kudu kubernetes cluster: kubectl delete -f kudu-statefulset.yaml
 
-apiVersion: v1
-kind: Service
-metadata:
-  name: kudu-masters
-  labels:
-    app: kudu-master
-spec:
-  clusterIP: None
-  ports:
-    - name: ui
-      port: 8051
-    - name: rpc-port
-      port: 8050
-  selector:
-    app: kudu-master
----
-# headless service for masters
-apiVersion: v1
-kind: Service
-metadata:
-  name: kudu-master-ui
-  labels:
-    app: kudu-master
-spec:
-  clusterIP:
-  ports:
-    - name: ui
-      port: 8051
-  selector:
-    app: kudu-master
-  type: NodePort
-  target-port:
-  externalTrafficPolicy: Local
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: kudu-master
+  namespace: apache-kudu
   labels:
     app: kudu-master
 spec:
@@ -90,7 +50,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: KUDU_MASTERS
-              value: "kudu-master-0.kudu-masters.default.svc.cluster.local,kudu-master-1.kudu-masters.default.svc.cluster.local,kudu-master-2.kudu-masters.default.svc.cluster.local"
+              value: "kudu-master-0.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-1.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-2.kudu-masters.apache-kudu.svc.cluster.local"
           args: ["master"]
           ports:
             - containerPort: 8050
@@ -123,30 +83,12 @@ spec:
           requests:
             storage: 10Gi
         storageClassName: standard
-
----
-# headless service for tservers
-apiVersion: v1
-kind: Service
-metadata:
-  name: kudu-tservers
-  namespace: default
-  labels:
-    app: kudu-tserver
-spec:
-  clusterIP: None
-  ports:
-    - name: ui
-      port: 7050
-    - name: rpc-port
-      port: 7051
-  selector:
-    app: kudu-tserver
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: kudu-tserver
+  namespace: apache-kudu
   labels:
     app: kudu-tserver
 spec:
@@ -177,7 +119,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: KUDU_MASTERS
-              value: "kudu-master-0.kudu-masters.default.svc.cluster.local,kudu-master-1.kudu-masters.default.svc.cluster.local,kudu-master-2.kudu-masters.default.svc.cluster.local"
+              value: "kudu-master-0.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-1.kudu-masters.apache-kudu.svc.cluster.local,kudu-master-2.kudu-masters.apache-kudu.svc.cluster.local"
           args: ["tserver"]
           ports:
             - containerPort: 7050
@@ -201,6 +143,9 @@ spec:
                 topologyKey: kubernetes.io/hostname
   updateStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      # partition option will be useful for staging update scenario,
+      partition: 0
   volumeClaimTemplates:
     - metadata:
         name: datadir

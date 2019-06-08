@@ -77,7 +77,7 @@ function wait_for_master_hosts() {
     ATTEMPTS=0
     until `ping -c1 "$HOST" &>/dev/null;` || [[ "$ATTEMPTS" -eq "$MAX_ATTEMPTS" ]]; do
       ATTEMPTS=$((ATTEMPTS + 1))
-      sleep 1;
+      sleep 2;
     done
   done
   unset IFS

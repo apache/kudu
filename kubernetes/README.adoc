@@ -1,0 +1,105 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Building Kubernetes StatefulSet Kudu Cluster
+
+NOTE: All of this work is experimental and subject to change or removal.
+
+== Getting Started
+
+Kubernetes — container-orchestration system for automating application deployment, scaling, and management.
+
+NOTE: Read more about Kubernetes here https://kubernetes.io/docs/tutorials/kubernetes-basics/
+
+==== System Requirements
+
+    kubectl
+    minikube or kubeadm
+    docker
+
+==== Build Kudu Docker Image
+
+    ../../docker/docker-build.sh
+
+==== Creating Namespace
+
+    kubectl create -f ../namespace.yaml
+
+=== Create Services for Kudu Masters and Kudu TServers
+
+    kubectl create -f kudu-services.yaml
+
+Check status of kudu services:
+
+    kubectl get services -n apache-kudu
+
+You should see below output on stdout
+
+```
+NAME             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+kudu-master-ui   NodePort    10.110.150.101   <none>        8051:30082/TCP      8m2s
+kudu-masters     ClusterIP   None             <none>        8051/TCP,8050/TCP   8m2s
+kudu-tservers    ClusterIP   None             <none>        7050/TCP,7051/TCP   8m2s
+tiller-deploy    ClusterIP   10.96.104.11     <none>        44134/TCP           47h
+```
+
+=== Create StatefulSet for Kudu Masters and Kudu TServers
+
+    kubectl create -f kudu-statefulset.yaml
+
+Check status of kudu statefulset:
+
+    kubectl get statefulset -n apache-kudu
+
+    kubectl get pods -n apache-kudu
+
+You should see below output on stdout
+
+```
+NAME           READY   AGE
+kudu-master    2/3     16s
+kudu-tserver   3/3     16s
+
+
+NAME                             READY   STATUS    RESTARTS   AGE
+kudu-master-0                    1/1     Running   0          9m9s
+kudu-master-1                    1/1     Running   0          9m9s
+kudu-master-2                    1/1     Running   0          9m9s
+kudu-tserver-0                   1/1     Running   0          9m19s
+kudu-tserver-1                   1/1     Running   0          9m5s
+kudu-tserver-2                   1/1     Running   0          9m5s
+```
+
+==== Port Forward The Kudu Master UI
+
+    kubectl port-forward kudu-master-0 8051 -n apache-kudu
+    OR
+    minikube service kudu-master-ui --url -n apache-kudu
+
+==== Destroy The Kudu Cluster
+
+Destroy Services:
+
+    kubectl delete -f kudu-services.yaml
+
+Destroy StatefulSets:
+
+    kubectl delete -f kudu-statefulset.yaml
+
+==== Display Kudu Master Logs:
+
+    kubectl logs kudu-master-0 --namespace apache-kudu

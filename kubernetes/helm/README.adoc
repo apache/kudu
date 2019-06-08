@@ -1,0 +1,111 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Building Kubernetes Kudu Cluster Using Helm Chart
+
+NOTE: All of this work is experimental and subject to change or removal.
+
+== Getting Started
+
+Helm — The package manager for Kubernetes. Helps to define, install, and upgrade Kubernetes applications
+
+NOTE: Read more about Helm here https://helm.sh/docs/using_helm/#quickstart
+
+==== System Requirements
+
+    kubectl
+    minikube or kubeadm
+    docker
+    helm
+
+==== Build Kudu Docker Image
+
+    ../../docker/docker-build.sh
+
+==== Creating Namespace
+
+    kubectl create -f ../namespace.yaml
+
+==== Creating ServiceAccount And Role Binding (RBAC)
+
+    kubectl create -f kudu-rbac.yaml
+
+==== Initializing Helm Tiller
+
+    helm init --service-account kudu-helm --tiller-namespace apache-kudu --upgrade --wait
+
+Check if tiller is initialized and you should not see any authorization errors.
+
+    helm ls --namespace apache-kudu --tiller-namespace apache-kudu
+
+==== Helm Launch Kudu cluster
+
+    helm install kudu --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
+
+    helm install kudu -f kudu-expose-all.yaml --namespace apache-kudu --name apache-kudu --tiller-namespace apache-kudu --wait
+
+You should see below output on stdout
+
+```
+NAME:   apache-kudu
+LAST DEPLOYED: Fri Jun  7 12:03:47 2019
+NAMESPACE: apache-kudu
+STATUS: DEPLOYED
+
+RESOURCES:
+==> v1/Pod(related)
+NAME            READY  STATUS   RESTARTS  AGE
+kudu-master-0   1/1    Running  0         12s
+kudu-master-1   1/1    Running  0         12s
+kudu-master-2   1/1    Running  0         12s
+kudu-tserver-0  1/1    Running  0         12s
+kudu-tserver-1  1/1    Running  0         12s
+
+==> v1/Service
+NAME                  TYPE       CLUSTER-IP     EXTERNAL-IP  PORT(S)                        AGE
+kudu-master-service   NodePort   10.100.28.117  <none>       8051:31198/TCP,8050:31182/TCP  12s
+kudu-masters          ClusterIP  None           <none>       8051/TCP,8050/TCP              12s
+kudu-tserver-service  NodePort   10.103.171.31  <none>       7051:30967/TCP,7050:32543/TCP  12s
+kudu-tservers         ClusterIP  None           <none>       7051/TCP,7050/TCP              12s
+
+==> v1/StatefulSet
+NAME          READY  AGE
+kudu-master   3/3    12s
+kudu-tserver  2/2    12s
+
+==> v1beta1/PodDisruptionBudget
+NAME              MIN AVAILABLE  MAX UNAVAILABLE  ALLOWED DISRUPTIONS  AGE
+kudu-tserver-pdb  N/A            1                1                    12s
+```
+
+==== Port Forward The Kudu Master UI
+
+    kubectl port-forward kudu-master-0 8051 -n apache-kudu
+    OR
+    minikube service kudu-master-service --url -n apache-kudu
+
+==== Destroy The Kudu Cluster
+
+    helm del --purge apache-kudu --tiller-namespace apache-kudu
+
+==== Display Kudu Master Logs:
+
+    kubectl logs kudu-master-0 --namespace apache-kudu
+
+==== Running Helm Test for Kudu HealthCheck
+
+    helm test apache-kudu --tiller-namespace apache-kudu

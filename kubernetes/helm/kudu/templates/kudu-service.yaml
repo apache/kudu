@@ -1,0 +1,232 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+{{- $head := . -}}
+---
+{{- range .Values.Services }}
+{{- $service := . -}}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .name }}"
+  namespace: "{{ $head.Release.Namespace }}"
+  labels:
+    app: "{{ .label }}"
+    heritage: {{ $head.Release.Service | quote }}
+    release: {{ $head.Release.Name | quote }}
+    chart: "{{ $head.Chart.Name }}-{{ $head.Chart.Version }}"
+    component: "{{ $head.Values.Component }}"
+spec:
+  clusterIP: None
+  ports:
+    {{- range $label, $port := .ports }}
+    - name: {{ $label | quote }}
+      port: {{ $port }}
+    {{- end}}
+  selector:
+    app: "{{ .label }}"
+
+{{ if $head.Values.enableNodePort }}
+{{- range $endpoint :=  $head.Values.serviceEndpoints }}
+{{- if eq $service.label $endpoint.app }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ $endpoint.name }}"
+  namespace: "{{ $head.Release.Namespace }}"
+  annotations:
+{{ toYaml $endpoint.annotations | indent 4 }}
+  labels:
+    app: "{{ $endpoint.app }}"
+    heritage: {{ $head.Release.Service | quote }}
+    release: {{ $head.Release.Name | quote }}
+    chart: "{{ $head.Chart.Name }}-{{ $head.Chart.Version }}"
+    component: "{{ $head.Values.Component }}"
+spec:
+  clusterIP:
+  ports:
+    {{- range $label, $port := $endpoint.ports }}
+    - name: {{ $label | quote }}
+      port: {{ $port }}
+    {{- end}}
+  selector:
+    app: "{{ $endpoint.app }}"
+  type: {{ $endpoint.type }}
+{{- end}}
+{{- end}}
+{{ end }}
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: "{{ .label }}"
+  namespace: "{{ $head.Release.Namespace }}"
+  labels:
+    app: "{{ .label }}"
+    heritage: {{ $head.Release.Service | quote }}
+    release: {{ $head.Release.Name | quote }}
+    chart: "{{ $head.Chart.Name }}-{{ $head.Chart.Version }}"
+    component: "{{ $head.Values.Component }}"
+spec:
+  serviceName: "{{ .name }}"
+  podManagementPolicy: {{ $head.Values.PodManagementPolicy }}
+  {{ if eq .name "kudu-masters" }}
+  replicas: {{ $head.Values.replicas.master }}
+  {{ else }}
+  replicas: {{ $head.Values.replicas.tserver  }}
+  {{ end }}
+  volumeClaimTemplates:
+    {{- $storageInfo := (eq .name "kudu-masters") | ternary $head.Values.storage.master $head.Values.storage.tserver -}}
+    {{- range $i := until (int ($storageInfo.count )) }}
+    - metadata:
+        name: datadir{{ $i }}
+        annotations:
+          volume.beta.kubernetes.io/storage-class: {{ $storageInfo.storageClass }}
+        labels:
+          heritage: {{ $head.Release.Service | quote }}
+          release: {{ $head.Release.Name | quote }}
+          chart: "{{ $head.Chart.Name }}-{{ $head.Chart.Version }}"
+          component: "{{ $head.Values.Component }}"
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        {{- if $storageInfo.storageClass }}
+        storageClassName: {{ $storageInfo.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $storageInfo.size }}
+    {{- end }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      {{ if eq .name "kudu-masters" }}
+      partition: {{ $head.Values.partition.master }}
+      {{ else }}
+      partition: {{ $head.Values.partition.tserver }}
+      {{ end }}
+  selector:
+    matchLabels:
+      app: "{{ .label }}"
+  template:
+    metadata:
+      {{ if $head.Values.networkAnnotation }}
+      annotations:
+{{ toYaml $head.Values.networkAnnotation | indent 8}}
+      {{ end }}
+      labels:
+        app: "{{ .label }}"
+        heritage: {{ $head.Release.Service | quote }}
+        release: {{ $head.Release.Name | quote }}
+        chart: "{{ $head.Chart.Name }}-{{ $head.Chart.Version }}"
+        component: "{{ $head.Values.Component }}"
+    spec:
+      {{- if $head.Values.Image.pullSecretName }}
+      imagePullSecrets:
+      - name: {{ $head.Values.Image.pullSecretName }}
+      {{ end }}
+      {{- if $head.Values.nodeSelector }}
+      nodeSelector:
+      {{ toYaml $head.Values.nodeSelector | indent 8 }}
+      {{- end }}
+      containers:
+      - name: "{{ .label }}"
+        image: "{{ $head.Values.Image.repository }}:{{ $head.Values.Image.tag }}"
+        imagePullPolicy: {{ $head.Values.Image.pullPolicy }}
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: KUDU_MASTERS
+          value: "{{ include "kudu.gen_kudu_masters" $head | trim }}"
+        resources:
+        {{ if eq .name "kudu-masters" }}
+{{ toYaml $head.Values.resource.master | indent 10 }}
+        {{ else }}
+{{ toYaml $head.Values.resource.tserver | indent 10 }}
+        {{ end }}
+        args:
+        {{ if eq .name "kudu-masters" }}
+          - "master"
+        {{ else }}
+          - "tserver"
+        {{ end }}
+        ports:
+          {{- range $label, $port := .ports }}
+          - containerPort: {{ $port }}
+            name: {{ $label | quote }}
+          {{- end}}
+        volumeMounts:
+          {{- range $i := until (int ($storageInfo.count)) }}
+          - name: datadir{{ $i }}
+            mountPath: /mnt/disk{{ $i }}
+          {{- end }}
+      volumes:
+        {{- range $i := until (int ($storageInfo.count)) }}
+        - name: datadir{{ $i }}
+          hostPath:
+            path: /mnt/disks/ssd{{ $i }}
+        {{- end }}
+      affinity:
+        {{ if $head.Values.AZ }}
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: failure-domain.beta.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - {{ $head.Values.AZ }}
+        {{ end }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - "{{ .label }}"
+                topologyKey: kubernetes.io/hostname
+# POD Disruption Budgets for high availability
+{{- if eq $head.Values.isMultiAz false }}
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .label }}-pdb
+spec:
+  maxUnavailable: {{ include "kudu.max_failovers" $head }}
+  selector:
+    matchLabels:
+      app: {{ .label }}
+{{- end }}
+{{- end }}
