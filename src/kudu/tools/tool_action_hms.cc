@@ -131,7 +131,10 @@ Status Init(const RunnerContext& context,
     string hive_metastore_uris = (*kudu_client)->GetHiveMetastoreUris();
     if (hive_metastore_uris.empty()) {
       return Status::ConfigurationError(
-          "the Kudu leader master is not configured with the Hive Metastore integration");
+          "Could not fetch the Hive Metastore locations from the Kudu master "
+          "since it is not configured with the Hive Metastore integration. "
+          "Run the tool with --hive_metastore_uris and pass in the location(s) "
+          "of the Hive Metastore.");
     }
     bool hive_metastore_sasl_enabled = (*kudu_client)->GetHiveMetastoreSaslEnabled();
 

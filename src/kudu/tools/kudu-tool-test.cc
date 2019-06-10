@@ -4020,8 +4020,10 @@ TEST_F(ToolTest, TestHmsList) {
   string err;
   RunActionStderrString(Substitute("hms list $0", master_addr), &err);
   ASSERT_STR_CONTAINS(err,
-      "Configuration error: the Kudu leader master is not configured with "
-      "the Hive Metastore integration");
+      "Configuration error: Could not fetch the Hive Metastore locations from "
+      "the Kudu master since it is not configured with the Hive Metastore "
+      "integration. Run the tool with --hive_metastore_uris and pass in the "
+      "location(s) of the Hive Metastore.");
 
   // Enable the HMS integration.
   cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
