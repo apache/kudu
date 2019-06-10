@@ -656,6 +656,16 @@ build_curl() {
   mkdir -p $CURL_BDIR
   pushd $CURL_BDIR
 
+  # curl's configure script expects krb5-config to be in /usr/bin. If that's not
+  # the case (looking at you, SLES12's /usr/lib/mit/bin/krb5-config), we need to
+  # pass the right location via the KRB5CONFIG environment variable.
+  #
+  # TODO(adar): there's gotta be a way to do this without using export/unset.
+  KRB5CONFIG_LOCATION=$(which krb5-config)
+  if [ "$KRB5CONFIG_LOCATION" != "/usr/bin/krb5-config" ]; then
+    export KRB5CONFIG=$KRB5CONFIG_LOCATION
+  fi
+
   # Note: curl shows a message asking for CPPFLAGS to be used for include
   # directories, not CFLAGS.
   CFLAGS="$EXTRA_CFLAGS" \
@@ -681,6 +691,7 @@ build_curl() {
     --without-librtmp \
     --without-libssh2 \
     --with-gssapi
+  unset KRB5CONFIG
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
