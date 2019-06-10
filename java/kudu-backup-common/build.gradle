@@ -33,6 +33,8 @@ dependencies {
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile libs.junit
+  testCompile libs.log4j
+  testCompile libs.log4jSlf4jImpl
   testCompile libs.scalatest
 }
 
