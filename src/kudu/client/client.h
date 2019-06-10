@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -873,6 +874,15 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& num_replicas(int n_replicas);
 
+  /// Sets the table's extra configuration properties.
+  ///
+  /// If the value of the kv pair is empty, the property will be ignored.
+  ///
+  /// @param [in] extra_configs
+  ///   The table's extra configuration properties.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& extra_configs(const std::map<std::string, std::string>& extra_configs);
+
   /// Set the timeout for the table creation operation.
   ///
   /// This includes any waiting after the create has been submitted
@@ -1067,6 +1077,9 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// @return The partition schema for the table.
   const PartitionSchema& partition_schema() const;
 
+  /// @return The table's extra configuration properties.
+  const std::map<std::string, std::string>& extra_configs() const;
+
   /// @cond PRIVATE_API
 
   /// List the partitions of this table in 'partitions'. This operation may
@@ -1093,7 +1106,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
             const std::string& id,
             int num_replicas,
             const KuduSchema& schema,
-            const PartitionSchema& partition_schema);
+            const PartitionSchema& partition_schema,
+            const std::map<std::string, std::string>& extra_configs);
 
   // Owned.
   Data* data_;
@@ -1222,6 +1236,17 @@ class KUDU_EXPORT KuduTableAlterer {
       KuduPartialRow* upper_bound,
       KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND,
       KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND);
+
+  /// Change the table's extra configuration properties.
+  ///
+  /// @note These configuration properties will be merged into existing configuration properties.
+  ///
+  /// @note If the value of the kv pair is empty, the property will be unset.
+  ///
+  /// @param [in] extra_configs
+  ///   The table's extra configuration properties.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* AlterExtraConfig(const std::map<std::string, std::string>& extra_configs);
 
   /// Set a timeout for the alteration operation.
   ///

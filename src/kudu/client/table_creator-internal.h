@@ -17,6 +17,7 @@
 #ifndef KUDU_CLIENT_TABLE_CREATOR_INTERNAL_H
 #define KUDU_CLIENT_TABLE_CREATOR_INTERNAL_H
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -60,6 +61,8 @@ class KuduTableCreator::Data {
   PartitionSchemaPB partition_schema_;
 
   boost::optional<int> num_replicas_;
+
+  boost::optional<std::map<std::string, std::string>> extra_configs_;
 
   MonoDelta timeout_;
 

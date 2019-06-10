@@ -71,15 +71,18 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::client::KuduClient;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
 using kudu::client::sp::shared_ptr;
 using kudu::clock::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;
+using std::map;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -122,19 +125,36 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   TestWorkload workload(cluster_.get());
   workload.Setup();
 
+  auto open_scanner_func = [](KuduClient* client) -> Status {
+    shared_ptr<KuduTable> table;
+    RETURN_NOT_OK(client->OpenTable(TestWorkload::kDefaultTableName, &table));
+    KuduScanner scanner(table.get());
+    RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+    return scanner.Open();
+  };
+
   // When the tablet history max age is set to 0, it's not possible to do a
   // snapshot scan without a timestamp because it's illegal to open a snapshot
   // prior to the AHM. When a snapshot timestamp is not specified, we decide on
   // the timestamp of the snapshot before checking that it's lower than the
   // current AHM. This test verifies that scans prior to the AHM are rejected.
-  shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
-  KuduScanner scanner(table.get());
-  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-  Status s = scanner.Open();
-  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(),
-                      "snapshot scan end timestamp is earlier than the ancient history mark");
+  {
+    Status s = open_scanner_func(client_.get());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "snapshot scan end timestamp is earlier than the ancient history mark");
+  }
+
+  // Alter the table's history max age to 3600. We can scan it.
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "3600";
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(TestWorkload::kDefaultTableName));
+    table_alterer->AlterExtraConfig(extra_configs);
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_OK(open_scanner_func(client_.get()));
+  }
 }
 
 // Check that the maintenance manager op to delete undo deltas actually deletes them.

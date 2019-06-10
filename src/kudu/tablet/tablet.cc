@@ -1078,14 +1078,19 @@ Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
 }
 
 bool Tablet::GetTabletAncientHistoryMark(Timestamp* ancient_history_mark) const {
+  int32_t tablet_history_max_age_sec = FLAGS_tablet_history_max_age_sec;
+  if (metadata_->extra_config() && metadata_->extra_config()->has_history_max_age_sec()) {
+    // Override the global configuration with the configuration of the table
+    tablet_history_max_age_sec = metadata_->extra_config()->history_max_age_sec();
+  }
   // We currently only support history GC through a fully-instantiated tablet
   // when using the HybridClock, since we can calculate the age of a mutation.
-  if (!clock_->HasPhysicalComponent() || FLAGS_tablet_history_max_age_sec < 0) {
+  if (!clock_->HasPhysicalComponent() || tablet_history_max_age_sec < 0) {
     return false;
   }
   Timestamp now = clock_->Now();
   uint64_t now_micros = HybridClock::GetPhysicalValueMicros(now);
-  uint64_t max_age_micros = FLAGS_tablet_history_max_age_sec * 1000000ULL;
+  uint64_t max_age_micros = tablet_history_max_age_sec * 1000000ULL;
   // Ensure that the AHM calculation doesn't underflow when
   // '--tablet_history_max_age_sec' is set to a very high value.
   if (max_age_micros <= now_micros) {

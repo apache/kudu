@@ -17,9 +17,11 @@
 
 #include "kudu/client/table-internal.h"
 
+#include <map>
 #include <string>
 #include <utility>
 
+using std::map;
 using std::string;
 
 namespace kudu {
@@ -32,13 +34,15 @@ KuduTable::Data::Data(shared_ptr<KuduClient> client,
                       string id,
                       int num_replicas,
                       const KuduSchema& schema,
-                      PartitionSchema partition_schema)
+                      PartitionSchema partition_schema,
+                      map<string, string> extra_configs)
     : client_(std::move(client)),
       name_(std::move(name)),
       id_(std::move(id)),
       num_replicas_(num_replicas),
       schema_(schema),
-      partition_schema_(std::move(partition_schema)) {
+      partition_schema_(std::move(partition_schema)),
+      extra_configs_(std::move(extra_configs)) {
 }
 
 KuduTable::Data::~Data() {

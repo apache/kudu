@@ -18,6 +18,7 @@
 #include "kudu/client/client.h"
 
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -124,6 +125,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using kudu::tserver::ScanResponsePB;
+using std::map;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -436,7 +438,8 @@ Status KuduClient::GetTableSchema(const string& table_name,
                                nullptr, // partition schema
                                nullptr, // table id
                                nullptr, // table name
-                               nullptr); // number of replicas
+                               nullptr, // number of replicas
+                               nullptr); // extra configs
 }
 
 Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) {
@@ -721,6 +724,11 @@ KuduTableCreator& KuduTableCreator::num_replicas(int num_replicas) {
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::extra_configs(const map<string, string>& extra_configs) {
+  data_->extra_configs_ = extra_configs;
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::timeout(const MonoDelta& timeout) {
   data_->timeout_ = timeout;
   return *this;
@@ -751,6 +759,10 @@ Status KuduTableCreator::Create() {
   req.set_name(data_->table_name_);
   if (data_->num_replicas_ != boost::none) {
     req.set_num_replicas(data_->num_replicas_.get());
+  }
+  if (data_->extra_configs_) {
+    req.mutable_extra_configs()->insert(data_->extra_configs_->begin(),
+                                        data_->extra_configs_->end());
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema(),
                                    SCHEMA_PB_WITHOUT_WRITE_DEFAULT),
@@ -821,9 +833,10 @@ KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& id,
                      int num_replicas,
                      const KuduSchema& schema,
-                     const PartitionSchema& partition_schema)
+                     const PartitionSchema& partition_schema,
+                     const map<string, string>& extra_configs)
   : data_(new KuduTable::Data(client, name, id, num_replicas,
-                              schema, partition_schema)) {
+                              schema, partition_schema, extra_configs)) {
 }
 
 KuduTable::~KuduTable() {
@@ -868,6 +881,10 @@ KuduClient* KuduTable::client() const {
 
 const PartitionSchema& KuduTable::partition_schema() const {
   return data_->partition_schema_;
+}
+
+const map<string, string>& KuduTable::extra_configs() const {
+  return data_->extra_configs_;
 }
 
 KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
@@ -1170,6 +1187,11 @@ KuduTableAlterer* KuduTableAlterer::DropRangePartition(
                  upper_bound_type };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::AlterExtraConfig(const map<string, string>& extra_configs) {
+  data_->new_extra_configs_ = extra_configs;
   return this;
 }
 

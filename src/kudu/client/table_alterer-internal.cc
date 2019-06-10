@@ -56,15 +56,19 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
     return status_;
   }
 
-  if (!rename_to_.is_initialized() && steps_.empty()) {
+  if (!rename_to_ && !new_extra_configs_ && steps_.empty()) {
     return Status::InvalidArgument("No alter steps provided");
   }
 
   req->Clear();
   req->set_modify_external_catalogs(modify_external_catalogs_);
   req->mutable_table()->set_table_name(table_name_);
-  if (rename_to_.is_initialized()) {
+  if (rename_to_) {
     req->set_new_table_name(rename_to_.get());
+  }
+  if (new_extra_configs_) {
+    req->mutable_new_extra_configs()->insert(new_extra_configs_->begin(),
+                                             new_extra_configs_->end());
   }
 
   if (schema_ != nullptr) {

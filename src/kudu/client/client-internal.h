@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -144,9 +145,14 @@ class KuduClient::Data {
                    const master::TableIdentifierPB& table_identifier,
                    client::sp::shared_ptr<KuduTable>* table);
 
-  // Retrieve table information about the table identified by 'table_id_or_name'.
-  // 'table_id_or_name' should contain a table id or name as 'identifier_type'
-  // is ID or NAME, respectively.
+  // Get the table information identified by 'table_identifier'.
+  // The table information (they can be null):
+  //   'schema'           The schema for the table.
+  //   'partition_schema' The partition schema for the table.
+  //   'table_id'         The table unique id.
+  //   'table_name'       The table unique name.
+  //   'num_replicas'     The table replication factor.
+  //   'extra_configs'    The table's extra configuration properties.
   Status GetTableSchema(KuduClient* client,
                         const MonoTime& deadline,
                         const master::TableIdentifierPB& table,
@@ -154,7 +160,8 @@ class KuduClient::Data {
                         PartitionSchema* partition_schema,
                         std::string* table_id,
                         std::string* table_name,
-                        int* num_replicas);
+                        int* num_replicas,
+                        std::map<std::string, std::string>* extra_configs);
 
   Status InitLocalHostNames();
 

@@ -17,6 +17,7 @@
 #ifndef KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 #define KUDU_CLIENT_TABLE_ALTERER_INTERNAL_H
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -70,6 +71,8 @@ class KuduTableAlterer::Data {
   bool wait_;
 
   boost::optional<std::string> rename_to_;
+
+  boost::optional<std::map<std::string, std::string>> new_extra_configs_;
 
   // Set to true if there are alter partition steps.
   bool has_alter_partitioning_steps = false;

@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -72,6 +73,7 @@ DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
 
+using std::map;
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -461,6 +463,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   string table_name;
   int num_replicas;
   PartitionSchema partition_schema;
+  map<string, string> extra_configs;
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout_;
   RETURN_NOT_OK(GetTableSchema(client,
                                deadline,
@@ -469,7 +472,8 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
                                &partition_schema,
                                &table_id,
                                &table_name,
-                               &num_replicas));
+                               &num_replicas,
+                               &extra_configs));
 
   // When the table name is specified, use the caller-provided table name.
   // This reduces surprises, e.g., when the HMS integration is on and table
@@ -482,7 +486,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   //                   map to reuse KuduTable instances.
   table->reset(new KuduTable(client->shared_from_this(),
                              effective_table_name, table_id, num_replicas,
-                             schema, partition_schema));
+                             schema, partition_schema, extra_configs));
 
   // When opening a table, clear the existing cached non-covered range entries.
   // This avoids surprises where a new table instance won't be able to see the
@@ -499,7 +503,8 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         PartitionSchema* partition_schema,
                                         std::string* table_id,
                                         std::string* table_name,
-                                        int* num_replicas) {
+                                        int* num_replicas,
+                                        map<string, string>* extra_configs) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
 
@@ -538,6 +543,10 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   }
   if (num_replicas) {
     *num_replicas = resp.num_replicas();
+  }
+  if (extra_configs) {
+    map<string, string> result(resp.extra_configs().begin(), resp.extra_configs().end());
+    *extra_configs = std::move(result);
   }
   // Cache the authz token if the response came with one. It might not have one
   // if running against an older master that does not support authz tokens.

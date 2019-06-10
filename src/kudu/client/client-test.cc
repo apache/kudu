@@ -1282,7 +1282,6 @@ TEST_F(ClientTest, TestInvalidPredicates) {
             "32-bit signed integer column 'int_val'", s.ToString());
 }
 
-
 // Check that the tserver proxy is reset on close, even for empty tables.
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
@@ -1900,7 +1899,6 @@ TEST_F(ClientTest, TestSwappedRangeBounds) {
                       "Error creating table TestSwappedRangeBounds on the master: "
                           "range partition lower bound must be less than the upper bound");
 }
-
 
 TEST_F(ClientTest, TestEqualRangeBounds) {
   KuduSchemaBuilder builder;
@@ -3605,7 +3603,6 @@ TEST_F(ClientTest, TestUpsert) {
   }
 }
 
-
 TEST_F(ClientTest, TestWriteWithBadColumn) {
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
@@ -3895,6 +3892,43 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(16 * 1024 * 1024, col_schema.attributes().cfile_block_size);
   }
 
+  // Test altering extra configuration properties.
+  // 1. Alter history max age second to 3600.
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "3600";
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterExtraConfig(extra_configs);
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(9, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
+    ASSERT_EQ(3600, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
+  }
+  // 2. Alter history max age second to 7200.
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "7200";
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterExtraConfig(extra_configs);
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(10, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_TRUE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
+    ASSERT_EQ(7200, tablet_replica->tablet()->metadata()->extra_config()->history_max_age_sec());
+  }
+  // 3. Reset history max age second to default.
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "";
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterExtraConfig(extra_configs);
+    ASSERT_OK(table_alterer->Alter());
+    ASSERT_EQ(11, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_NE(boost::none, tablet_replica->tablet()->metadata()->extra_config());
+    ASSERT_FALSE(tablet_replica->tablet()->metadata()->extra_config()->has_history_max_age_sec());
+  }
+
   // Test changing a table name.
   {
     const char *kRenamedTableName = "RenamedTable";
@@ -3902,7 +3936,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_OK(table_alterer
               ->RenameTo(kRenamedTableName)
               ->Alter());
-    ASSERT_EQ(9, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_EQ(12, tablet_replica->tablet()->metadata()->schema_version());
     ASSERT_EQ(kRenamedTableName, tablet_replica->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
@@ -4583,6 +4617,30 @@ TEST_F(ClientTest, TestCreateTableWithTooLongColumnName) {
   ASSERT_STR_MATCHES(s.ToString(),
                      "invalid column name: identifier 'xxx*' "
                      "longer than maximum permitted length 256");
+}
+
+TEST_F(ClientTest, TestCreateTableWithExtraConfigs) {
+  string table_name = "extra_configs";
+  {
+    map<string, string> extra_configs;
+    extra_configs["kudu.table.history_max_age_sec"] = "7200";
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    Status s = table_creator->table_name(table_name)
+        .set_range_partition_columns({"key"})
+        .schema(&schema_)
+        .num_replicas(1)
+        .extra_configs(extra_configs)
+        .Create();
+    ASSERT_TRUE(s.ok());
+  }
+
+  {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    map<string, string> extra_configs = table->extra_configs();
+    ASSERT_TRUE(ContainsKey(extra_configs, "kudu.table.history_max_age_sec"));
+    ASSERT_EQ("7200", extra_configs["kudu.table.history_max_age_sec"]);
+  }
 }
 
 // Test trying to insert a row with an encoded key that is too large.

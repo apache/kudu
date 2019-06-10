@@ -17,6 +17,7 @@
 #ifndef KUDU_CLIENT_TABLE_INTERNAL_H
 #define KUDU_CLIENT_TABLE_INTERNAL_H
 
+#include <map>
 #include <string>
 
 #include "kudu/client/client.h"
@@ -42,7 +43,8 @@ class KuduTable::Data {
        std::string id,
        int num_replicas,
        const KuduSchema& schema,
-       PartitionSchema partition_schema);
+       PartitionSchema partition_schema,
+       std::map<std::string, std::string> extra_configs);
   ~Data();
 
   template<class PredicateMakerFunc>
@@ -72,6 +74,8 @@ class KuduTable::Data {
   // a new KuduTable instance (which would simplify the object lifecycle a little?)
   const KuduSchema schema_;
   const PartitionSchema partition_schema_;
+
+  const std::map<std::string, std::string> extra_configs_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);
