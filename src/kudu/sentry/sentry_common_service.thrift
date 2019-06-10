@@ -19,7 +19,7 @@
  */
 
 # DO NOT MODIFY! Copied from
-# https://raw.githubusercontent.com/apache/sentry/505b42e81a9d85c4ebe8db3f48ad7a6e824a5db5/sentry-service/sentry-service-api/src/main/resources/sentry_common_service.thrift
+# https://raw.githubusercontent.com/apache/sentry/b71a78ed960702536b35e1f048dc40dfc79992d4/sentry-service/sentry-service-api/src/main/resources/sentry_common_service.thrift
 #
 # With edits:
 #   - Change cpp namespace to 'sentry' to match the Kudu codebase style.

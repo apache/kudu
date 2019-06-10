@@ -19,7 +19,7 @@
  */
 
 # DO NOT MODIFY! Copied from
-# https://raw.githubusercontent.com/apache/sentry/505b42e81a9d85c4ebe8db3f48ad7a6e824a5db5/sentry-service/sentry-service-api/src/main/resources/sentry_policy_service.thrift
+# https://raw.githubusercontent.com/apache/sentry/b71a78ed960702536b35e1f048dc40dfc79992d4/sentry-service/sentry-service-api/src/main/resources/sentry_policy_service.thrift
 #
 # With edits:
 #   - Change cpp namespace to 'sentry' to match the Kudu codebase style.
@@ -291,6 +291,19 @@ struct TListSentryPrivilegesByAuthResponse {
 3: optional map<TSentryAuthorizable, TSentryPrivilegeMap> privilegesMapByAuthForUsers
 }
 
+struct TListSentryPrivilegesByAuthUserRequest {
+1: required i32 protocol_version = sentry_common_service.TSENTRY_SERVICE_V2,
+2: required string requestorUserName, # user on whose behalf the request is issued
+3: required set<TSentryAuthorizable> authorizableSet,
+4: required string user
+}
+
+struct TListSentryPrivilegesByAuthUserResponse {
+1: required sentry_common_service.TSentryResponseStatus status,
+# Authorizable to set of privileges map
+2: optional map<TSentryAuthorizable, set<TSentryPrivilege>> privilegesMapByAuth,
+}
+
 # Obtain a config value from the Sentry service
 struct TSentryConfigValueRequest {
 1: required i32 protocol_version = sentry_common_service.TSENTRY_SERVICE_V2,
@@ -445,7 +458,13 @@ service SentryPolicyService
 
   TRenamePrivilegesResponse rename_sentry_privilege(1:TRenamePrivilegesRequest request);
 
+  # List sentry privileges filterted based on a set of authorizables, that
+  # granted to the given user and the given role if present.
   TListSentryPrivilegesByAuthResponse list_sentry_privileges_by_authorizable(1:TListSentryPrivilegesByAuthRequest request);
+
+  # List sentry privileges filterted based on a set of authorizables, that
+  # granted to the given user and the groups the user associated with.
+  TListSentryPrivilegesByAuthUserResponse list_sentry_privileges_by_authorizable_and_user(1:TListSentryPrivilegesByAuthUserRequest request);
 
   TSentryConfigValueResponse get_sentry_config_value(1:TSentryConfigValueRequest request);
 
