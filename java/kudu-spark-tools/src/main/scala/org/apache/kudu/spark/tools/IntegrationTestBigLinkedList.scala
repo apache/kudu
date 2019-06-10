@@ -83,7 +83,7 @@ object IntegrationTestBigLinkedList {
   }
 
   def fail(msg: String): Nothing = {
-    System.err.println(msg)
+    System.err.println(s"FAILURE: $msg")
     sys.exit(1)
   }
 
