@@ -170,6 +170,12 @@ class HdrHistogram {
 
   // Dump a formatted, multiline string describing this histogram to 'out'.
   void DumpHumanReadable(std::ostream* out) const;
+
+  // Merges 'other' into this HdrHistogram. Values in each 'counts_' array
+  // bucket will be added up, and the related 'min_value_', 'max_value_',
+  // 'total_count_' and 'total_sum_' will be updated if needed.
+  void MergeFrom(const HdrHistogram& other);
+
  private:
   friend class AbstractHistogramIterator;
 
@@ -179,6 +185,7 @@ class HdrHistogram {
 
   void Init();
   int CountsArrayIndex(int bucket_index, int sub_bucket_index) const;
+  void UpdateMinMax(int64_t min, int64_t max);
 
   uint64_t highest_trackable_value_;
   int num_significant_digits_;

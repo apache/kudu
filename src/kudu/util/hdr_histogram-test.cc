@@ -113,4 +113,32 @@ TEST_F(HdrHistogramTest, PercentileAndCopyTest) {
   ASSERT_EQ(hist.TotalSum(), copy.TotalSum());
 }
 
+void PopulateHistogram(HdrHistogram* histogram, uint64_t low, uint64_t high) {
+  for (uint64_t i = low; i <= high; i++) {
+    histogram->Increment(i);
+  }
+}
+
+TEST_F(HdrHistogramTest, MergeTest) {
+  uint64_t highest_val = 10000LU;
+
+  HdrHistogram hist(highest_val, kSigDigits);
+  HdrHistogram other(highest_val, kSigDigits);
+
+  PopulateHistogram(&hist, 1, 100);
+  PopulateHistogram(&other, 101, 250);
+  HdrHistogram old(hist);
+  hist.MergeFrom(other);
+
+  ASSERT_EQ(hist.TotalCount(), old.TotalCount() + other.TotalCount());
+  ASSERT_EQ(hist.TotalSum(), old.TotalSum() + other.TotalSum());
+  ASSERT_EQ(hist.MinValue(), 1);
+  ASSERT_EQ(hist.MaxValue(), 250);
+  ASSERT_NEAR(hist.MeanValue(), (1 + 250) / 2.0, 1e3);
+  ASSERT_EQ(hist.ValueAtPercentile(100.0), 250);
+  ASSERT_NEAR(hist.ValueAtPercentile(99.0), 250 * 99.0 / 100, 1e3);
+  ASSERT_NEAR(hist.ValueAtPercentile(95.0), 250 * 95.0 / 100, 1e3);
+  ASSERT_NEAR(hist.ValueAtPercentile(50.0), 250 * 50.0 / 100, 1e3);
+}
+
 } // namespace kudu

@@ -223,6 +223,8 @@
 //
 /////////////////////////////////////////////////////
 
+#include <cstring>
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -230,6 +232,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -329,27 +333,21 @@ namespace kudu {
 
 class Counter;
 class CounterPrototype;
-
-template<typename T>
-class AtomicGauge;
+class Histogram;
+class HistogramPrototype;
+class HistogramSnapshotPB;
+class Metric;
+class MetricEntity;
+class MetricEntityPrototype;
+class MetricRegistry;
 template <typename Sig>
 class Callback;
+template<typename T>
+class AtomicGauge;
 template<typename T>
 class FunctionGauge;
 template<typename T>
 class GaugePrototype;
-
-class Metric;
-class MetricEntityPrototype;
-class MetricPrototype;
-class MetricRegistry;
-
-class Histogram;
-class HistogramPrototype;
-class HistogramSnapshotPB;
-
-class MetricEntity;
-
 } // namespace kudu
 
 // Forward-declare the generic 'server' entity type.
@@ -406,6 +404,36 @@ class MetricType {
   static const char* const kHistogramType;
 };
 
+struct MetricFilters {
+  // A set of substrings to filter entity against, where empty matches all.
+  //
+  // entity type.
+  std::vector<std::string> entity_types;
+  // entity id.
+  std::vector<std::string> entity_ids;
+  // entity attributes.
+  //
+  // Note that the use of attribute filters is a little bit different. The
+  // number of entries should always be even because each pair represents a
+  // key and a value. For example: attributes=k1,v1,k1,v2,k2,v3, that means
+  // the attribute object is matched when one of these filters is satisfied.
+  std::vector<std::string> entity_attrs;
+  // entity metrics.
+  std::vector<std::string> entity_metrics;
+};
+
+struct MergeAttributes {
+  MergeAttributes(std::string to, std::string by)
+    : merge_to(std::move(to)), attribute_to_merge_by(std::move(by)) {
+  }
+  // New merged entity has the prototype name of 'merge_to'.
+  std::string merge_to;
+  // Entities with the same 'attribute_to_merge_by' attribute will be merged.
+  std::string attribute_to_merge_by;
+};
+
+// Entity prototype name -> MergeAttributes.
+typedef std::unordered_map<std::string, MergeAttributes> MetricMergeRules;
 struct MetricJsonOptions {
   MetricJsonOptions() :
     include_raw_histograms(false),
@@ -442,21 +470,15 @@ struct MetricJsonOptions {
   // Whether to include the attributes of each entity.
   bool include_entity_attributes;
 
-  // A set of substrings to filter entity against, where empty matches all.
-  //
-  // entity type.
-  std::vector<std::string> entity_types;
-  // entity id.
-  std::vector<std::string> entity_ids;
-  // entity attributes.
-  //
-  // Note that the use of attribute filters is a little bit different. The
-  // number of entries should always be even because each pair represents a
-  // key and a value. For example: attributes=k1,v1,k1,v2,k2,v3, that means
-  // the attribute object is matched when one of these filters is satisfied.
-  std::vector<std::string> entity_attrs;
-  // entity metrics.
-  std::vector<std::string> entity_metrics;
+  // Metrics will be filtered by 'filters', see MetricFilters for more details.
+  MetricFilters filters;
+
+  // Entities whose prototype name is in merge_rules's key set will be merged
+  // to a new entity. See struct MergeAttributes for more merge details.
+  // NOTE: Entities which have been merged will not be output.
+  // NOTE: Entities whose prototype name is NOT in merge_rules's key set will
+  // not be merged.
+  MetricMergeRules merge_rules;
 };
 
 class MetricEntityPrototype {
@@ -486,6 +508,99 @@ class MetricEntityPrototype {
   DISALLOW_COPY_AND_ASSIGN(MetricEntityPrototype);
 };
 
+class MetricPrototype {
+ public:
+  // Simple struct to aggregate the arguments common to all prototypes.
+  // This makes constructor chaining a little less tedious.
+  struct CtorArgs {
+    CtorArgs(const char* entity_type,
+             const char* name,
+             const char* label,
+             MetricUnit::Type unit,
+             const char* description,
+             uint32_t flags = 0)
+      : entity_type_(entity_type),
+        name_(name),
+        label_(label),
+        unit_(unit),
+        description_(description),
+        flags_(flags) {
+    }
+
+    const char* const entity_type_;
+    const char* const name_;
+    const char* const label_;
+    const MetricUnit::Type unit_;
+    const char* const description_;
+    const uint32_t flags_;
+  };
+
+  const char* entity_type() const { return args_.entity_type_; }
+  const char* name() const { return args_.name_; }
+  const char* label() const { return args_.label_; }
+  MetricUnit::Type unit() const { return args_.unit_; }
+  const char* description() const { return args_.description_; }
+  virtual MetricType::Type type() const = 0;
+
+  // Writes the fields of this prototype to the given JSON writer.
+  void WriteFields(JsonWriter* writer,
+                   const MetricJsonOptions& opts) const;
+
+ protected:
+  explicit MetricPrototype(CtorArgs args);
+  virtual ~MetricPrototype() {
+  }
+
+  const CtorArgs args_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MetricPrototype);
+};
+
+struct MetricPrototypeHash {
+  size_t operator()(const MetricPrototype* metric_prototype) const {
+    return std::hash<const char*>()(metric_prototype->name());
+  }
+};
+
+struct MetricPrototypeEqualTo {
+  bool operator()(const MetricPrototype* first, const MetricPrototype* second) const {
+    return strcmp(first->name(), second->name()) == 0;
+  }
+};
+
+// A struct to indicate a merged metric entity.
+struct MergedEntity {
+  MergedEntity(std::string type, std::string id)
+    : type_(std::move(type)), id_(std::move(id)) {}
+  // An upper layer concept than type of MetricEntity.
+  std::string type_;
+  // ID to distinguish the same type of objects.
+  std::string id_;
+};
+
+struct MergedEntityHash {
+  size_t operator()(const MergedEntity& entity) const {
+    return std::hash<std::string>()(entity.type_ + entity.id_);
+  }
+};
+
+struct MergedEntityEqual {
+  bool operator()(const MergedEntity& first, const MergedEntity& second) const {
+    return first.type_ == second.type_ && first.id_ == second.id_;
+  }
+};
+
+typedef std::unordered_map<const MetricPrototype*,
+                           scoped_refptr<Metric>,
+                           MetricPrototypeHash,
+                           MetricPrototypeEqualTo> MergedMetrics;
+
+typedef std::unordered_map<MergedEntity,
+                           MergedMetrics,
+                           MergedEntityHash,
+                           MergedEntityEqual> MergedEntityMetrics;
+
 class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
  public:
   typedef std::unordered_map<const MetricPrototype*, scoped_refptr<Metric> > MetricMap;
@@ -510,6 +625,12 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
 
   // See MetricRegistry::WriteAsJson()
   Status WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const;
+
+  // Collect metrics of this entity to 'collections'. Metrics will be filtered by 'filters',
+  // and will be merged under the rule of 'merge_rules'.
+  Status CollectTo(MergedEntityMetrics* collections,
+                   const MetricFilters& filters,
+                   const MetricMergeRules& merge_rules) const;
 
   const MetricMap& UnsafeMetricsMapForTests() const { return metric_map_; }
 
@@ -562,6 +683,13 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // type defined within the metric prototype.
   void CheckInstantiation(const MetricPrototype* proto) const;
 
+  // Get a snapshot of the entity's metrics as well as the entity's attributes,
+  // maybe filtered by 'filters', see MetricFilters structure for details.
+  // Return Status::NotFound when it has been filtered, or Status::OK when succeed.
+  Status GetMetricsAndAttrs(const MetricFilters& filters,
+                            MetricMap* metrics,
+                            AttributeMap* attrs) const;
+
   const MetricEntityPrototype* const prototype_;
   const std::string id_;
 
@@ -584,6 +712,8 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
 // See documentation at the top of this file for information on metrics ownership.
 class Metric : public RefCountedThreadSafe<Metric> {
  public:
+  // Take a snapshot to a new metric with the same attributes and metric value.
+  virtual scoped_refptr<Metric> snapshot() const = 0;
   // All metrics must be able to render themselves as JSON.
   virtual Status WriteAsJson(JsonWriter* writer,
                              const MetricJsonOptions& opts) const = 0;
@@ -610,6 +740,11 @@ class Metric : public RefCountedThreadSafe<Metric> {
   // of hot metric updaters, so should only be done rarely (eg before dumping
   // metrics).
   static void IncrementEpoch();
+
+  // Merges 'other' into this Metric object.
+  // Return false if any error occurs, otherwise return true.
+  // NOTE: If merge with self, do nothing and return true directly.
+  virtual bool MergeFrom(const scoped_refptr<Metric>& other) = 0;
 
  protected:
   explicit Metric(const MetricPrototype* prototype);
@@ -734,55 +869,6 @@ enum PrototypeFlags {
   EXPOSE_AS_COUNTER = 1 << 0
 };
 
-class MetricPrototype {
- public:
-  // Simple struct to aggregate the arguments common to all prototypes.
-  // This makes constructor chaining a little less tedious.
-  struct CtorArgs {
-    CtorArgs(const char* entity_type,
-             const char* name,
-             const char* label,
-             MetricUnit::Type unit,
-             const char* description,
-             uint32_t flags = 0)
-      : entity_type_(entity_type),
-        name_(name),
-        label_(label),
-        unit_(unit),
-        description_(description),
-        flags_(flags) {
-    }
-
-    const char* const entity_type_;
-    const char* const name_;
-    const char* const label_;
-    const MetricUnit::Type unit_;
-    const char* const description_;
-    const uint32_t flags_;
-  };
-
-  const char* entity_type() const { return args_.entity_type_; }
-  const char* name() const { return args_.name_; }
-  const char* label() const { return args_.label_; }
-  MetricUnit::Type unit() const { return args_.unit_; }
-  const char* description() const { return args_.description_; }
-  virtual MetricType::Type type() const = 0;
-
-  // Writes the fields of this prototype to the given JSON writer.
-  void WriteFields(JsonWriter* writer,
-                   const MetricJsonOptions& opts) const;
-
- protected:
-  explicit MetricPrototype(CtorArgs args);
-  virtual ~MetricPrototype() {
-  }
-
-  const CtorArgs args_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MetricPrototype);
-};
-
 // A description of a Gauge.
 template<typename T>
 class GaugePrototype : public MetricPrototype {
@@ -837,18 +923,26 @@ class Gauge : public Metric {
 class StringGauge : public Gauge {
  public:
   StringGauge(const GaugePrototype<std::string>* proto,
-              std::string initial_value);
+              std::string initial_value,
+              std::unordered_set<std::string> initial_unique_values
+                  = std::unordered_set<std::string>());
+  scoped_refptr<Metric> snapshot() const OVERRIDE;
   std::string value() const;
   void set_value(const std::string& value);
   virtual bool IsUntouched() const override {
     return false;
   }
+  bool MergeFrom(const scoped_refptr<Metric>& other) OVERRIDE;
 
  protected:
+  FRIEND_TEST(MetricsTest, SimpleStringGaugeForMergeTest);
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE;
+  void FillUniqueValuesUnlocked();
+  std::unordered_set<std::string> unique_values();
  private:
   std::string value_;
-  mutable simple_spinlock lock_;  // Guards value_
+  std::unordered_set<std::string> unique_values_;
+  mutable simple_spinlock lock_;  // Guards value_ and unique_values_
   DISALLOW_COPY_AND_ASSIGN(StringGauge);
 };
 
@@ -859,6 +953,11 @@ class AtomicGauge : public Gauge {
   AtomicGauge(const GaugePrototype<T>* proto, T initial_value)
     : Gauge(proto),
       value_(initial_value) {
+  }
+  scoped_refptr<Metric> snapshot() const override {
+    scoped_refptr<Metric> m = new AtomicGauge(down_cast<const GaugePrototype<T>*>(prototype_),
+                                              value());
+    return m;
   }
   T value() const {
     return static_cast<T>(value_.Load(kMemOrderRelease));
@@ -882,6 +981,12 @@ class AtomicGauge : public Gauge {
   }
   virtual bool IsUntouched() const override {
     return false;
+  }
+  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+    if (PREDICT_TRUE(this != other.get())) {
+      IncrementBy(down_cast<AtomicGauge<T>*>(other.get())->value());
+    }
+    return true;
   }
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
@@ -953,6 +1058,16 @@ class FunctionGaugeDetacher {
 template <typename T>
 class FunctionGauge : public Gauge {
  public:
+  scoped_refptr<Metric> snapshot() const override {
+    scoped_refptr<Metric> m = new FunctionGauge(down_cast<const GaugePrototype<T>*>(prototype_),
+                                                Callback<T()>(function_));
+    // The bounded function is associated with another MetricEntity instance, here we don't know
+    // when it release, it's not safe to keep the function as a member, so it's needed to
+    // call DetachToCurrentValue() to make it safe.
+    down_cast<FunctionGauge<T>*>(m.get())->DetachToCurrentValue();
+    return m;
+  }
+
   T value() const {
     std::lock_guard<simple_spinlock> l(lock_);
     return function_.Run();
@@ -1002,6 +1117,14 @@ class FunctionGauge : public Gauge {
     return false;
   }
 
+  // value() will be constant after MergeFrom()
+  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+    if (PREDICT_TRUE(this != other.get())) {
+      DetachToConstant(value() + down_cast<FunctionGauge<T>*>(other.get())->value());
+    }
+    return true;
+  }
+
  private:
   friend class MetricEntity;
 
@@ -1043,6 +1166,11 @@ class CounterPrototype : public MetricPrototype {
 // across multiple servers, etc, which aren't appropriate in the case of gauges.
 class Counter : public Metric {
  public:
+  scoped_refptr<Metric> snapshot() const override {
+    scoped_refptr<Metric> m = new Counter(down_cast<const CounterPrototype*>(prototype_));
+    down_cast<Counter*>(m.get())->IncrementBy(value());
+    return m;
+  }
   int64_t value() const;
   void Increment();
   void IncrementBy(int64_t amount);
@@ -1053,8 +1181,16 @@ class Counter : public Metric {
     return value() == 0;
   }
 
+  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+    if (PREDICT_TRUE(this != other.get())) {
+      IncrementBy(down_cast<Counter*>(other.get())->value());
+    }
+    return true;
+  }
+
  private:
   FRIEND_TEST(MetricsTest, SimpleCounterTest);
+  FRIEND_TEST(MetricsTest, SimpleCounterMergeTest);
   FRIEND_TEST(MultiThreadedMetricsTest, CounterIncrementTest);
   friend class MetricEntity;
 
@@ -1082,6 +1218,12 @@ class HistogramPrototype : public MetricPrototype {
 
 class Histogram : public Metric {
  public:
+  scoped_refptr<Metric> snapshot() const override {
+    scoped_refptr<Metric> m = new Histogram(down_cast<const HistogramPrototype*>(prototype_),
+                                              *histogram_);
+    return m;
+  }
+
   // Increment the histogram for the given value.
   // 'value' must be non-negative.
   void Increment(int64_t value);
@@ -1114,10 +1256,17 @@ class Histogram : public Metric {
     return TotalCount() == 0;
   }
 
+  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+    if (PREDICT_TRUE(this != other.get())) {
+      histogram_->MergeFrom(*(down_cast<Histogram*>(other.get())->histogram()));
+    }
+    return true;
+  }
+
  private:
-  FRIEND_TEST(MetricsTest, SimpleHistogramTest);
   friend class MetricEntity;
   explicit Histogram(const HistogramPrototype* proto);
+  Histogram(const HistogramPrototype* proto, const HdrHistogram& hdr_hist);
 
   const gscoped_ptr<HdrHistogram> histogram_;
   DISALLOW_COPY_AND_ASSIGN(Histogram);

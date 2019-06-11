@@ -343,17 +343,30 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
   MetricJsonOptions opts;
   opts.include_raw_histograms = ParseBool(req.parsed_args, "include_raw_histograms");
   opts.include_schema_info = ParseBool(req.parsed_args, "include_schema");
-  opts.entity_types = ParseArray(req.parsed_args, "types");
-  opts.entity_ids =  ParseArray(req.parsed_args, "ids");
-  opts.entity_attrs = ParseArray(req.parsed_args, "attributes");
-  opts.entity_metrics = ParseArray(req.parsed_args, "metrics");
+
+  MetricFilters& filters = opts.filters;
+  filters.entity_types = ParseArray(req.parsed_args, "types");
+  filters.entity_ids =  ParseArray(req.parsed_args, "ids");
+  filters.entity_attrs = ParseArray(req.parsed_args, "attributes");
+  filters.entity_metrics = ParseArray(req.parsed_args, "metrics");
+  vector<string> merge_rules = ParseArray(req.parsed_args, "merge_rules");
+  for (const auto& merge_rule : merge_rules) {
+    vector<string> values;
+    SplitStringUsing(merge_rule, "|", &values);
+    if (values.size() == 3) {
+      // Index 0: entity type needed to be merged.
+      // Index 1: 'merge_to' field of MergeAttributes.
+      // Index 2: 'attribute_to_merge_by' field of MergeAttributes.
+      EmplaceIfNotPresent(&opts.merge_rules, values[0], MergeAttributes(values[1], values[2]));
+    }
+  }
 
   JsonWriter::Mode json_mode = ParseBool(req.parsed_args, "compact") ?
       JsonWriter::COMPACT : JsonWriter::PRETTY;
 
   // The number of entity_attrs should always be even because
   // each pair represents a key and a value.
-  if (opts.entity_attrs.size() % 2 != 0) {
+  if (filters.entity_attrs.size() % 2 != 0) {
     resp->status_code = HttpStatusCode::BadRequest;
     WARN_NOT_OK(Status::InvalidArgument(""), "The parameter of 'attributes' is wrong");
   } else {
