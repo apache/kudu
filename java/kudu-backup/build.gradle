@@ -23,6 +23,8 @@ dependencies {
   compile(project(path: ":kudu-backup-common")) {
     // Ensure we use the hadoop-client provided by Spark to avoid any compatibility issues.
     exclude group: "org.apache.hadoop", module: "hadoop-common"
+    // Ensure we use the scala-library provided by Spark to avoid any compatibility issues.
+    exclude group: "org.scala-lang", module: "scala-library"
   }
   compile project(path: ":kudu-client", configuration: "shadow")
   compile project(path: ":kudu-spark", configuration: "shadow")

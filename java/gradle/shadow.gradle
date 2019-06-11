@@ -45,10 +45,19 @@ configurations.archives.artifacts.removeAll {
 // location across all modules.
 shadowJar {
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
+  relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
   relocate "com.google.protobuf", "org.apache.kudu.shaded.com.google.protobuf"
   relocate "com.google.thirdparty", "org.apache.kudu.shaded.com.google.thirdparty"
   relocate "com.sangupta", "org.apache.kudu.shaded.com.sangupta"
+  // Pulled in via osdetector.
+  relocate "kr.motd.maven", "org.apache.kudu.shaded.kr.motd.maven"
+  relocate "org.apache.http", "org.apache.kudu.shaded.org.apache.http"
+  relocate "org.apache.commons", "org.apache.kudu.shaded.org.apache.commons"
+  // Pulled in via Guava.
+  relocate "org.checkerframework", "org.apache.kudu.shaded.org.checkerframework"
+  relocate "org.hamcrest", "org.apache.kudu.shaded.org.hamcrest"
+  relocate "org.HdrHistogram", "org.apache.kudu.shaded.org.HdrHistogram"
   relocate "org.jboss.netty", "org.apache.kudu.shaded.org.jboss.netty"
   relocate "scopt", "org.apache.kudu.shaded.scopt"
 }

@@ -36,8 +36,6 @@ dependencies {
   optional libs.yetusAnnotations
 
   testCompile project(":kudu-test-utils")
-  testCompile libs.hamcrestCore
-  testCompile libs.hamcrestLib
   testCompile libs.hiveMetastore
   // The HMS client relies on the MR client-core artifact for JobConf, but only
   // specifies it as an optional dependency. Gradle doesn't pull in optional

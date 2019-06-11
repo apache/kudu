@@ -25,7 +25,11 @@ dependencies {
   compile libs.httpMime
   compile libs.osdetector
 
-  compileUnshaded libs.junit
+  compileUnshaded libs.hamcrest
+  compileUnshaded(libs.junit) {
+    // Use the Kudu specified hamcrest.
+    exclude group: "org.hamcrest"
+  }
   compileUnshaded libs.slf4jApi
 
   // Support using any kudu-binary jar for tests via `-PuseBinJar=<version>`.

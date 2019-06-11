@@ -29,13 +29,19 @@ my $pat_kudu_shaded_prefix = qr{^org/apache/kudu/shaded/};
 # Allowed filenames of non-Java files in JARs.
 my $pat_allow_non_java =
     qr{(?:\.(?:txt|xml|properties|proto|MF)|
-          LICENSE|NOTICE|DEPENDENCIES)$}x;
+          LICENSE|NOTICE|DEPENDENCIES|
+          # The kudu-spark DataSourceRegister file.
+          DataSourceRegister)$}x;
 
 # Allowed filenames of shaded dependencies in JARs.
 my $pat_allow_kudu_shaded =
     qr{^org/apache/kudu/shaded/
-        (?:com/google/(?:common|gson|protobuf|thirdparty/publicsuffix)|
+        (?:com/google/(?:common|gson|gradle/osdetector|protobuf|thirdparty/publicsuffix)|
            com/sangupta/murmur|
+           kr/motd/maven|
+           org/apache/(?:commons|http)|
+           org/checkerframework|
+           org/HdrHistogram|
            org/jboss/netty|
            scopt)
       }x;
@@ -67,7 +73,12 @@ chomp(my @jars = `find . -type f -name \*.jar |
                          grep -v sources\.jar |
                          grep -v javadoc\.jar |
                          grep -v unshaded\.jar |
-                         grep -v gradle-wrapper.jar`);
+                         grep -v buildSrc.jar |
+                         grep -v gradle-wrapper.jar |
+                         # Ignored because it's test only and unpublished.
+                         grep -v kudu-jepsen.*\.jar |
+                         # Ignored because it's a tool jar that shades everything.
+                         grep -v kudu-backup-tools.*\.jar`);
 
 my $num_errors = 0;
 
