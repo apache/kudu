@@ -43,9 +43,9 @@ import org.apache.kudu.client.PartialRow;
 public class BigLinkedListCommon {
 
   public static final String TABLE_NAME_KEY = "IntegrationTestBigLinkedList.table";
-  public static final String DEFAULT_TABLE_NAME = "IntegrationTestBigLinkedList";
+  public static final String DEFAULT_TABLE_NAME = "default.IntegrationTestBigLinkedList";
   public static final String HEADS_TABLE_NAME_KEY = "IntegrationTestBigLinkedList.heads_table";
-  public static final String DEFAULT_HEADS_TABLE_NAME = "IntegrationTestBigLinkedListHeads";
+  public static final String DEFAULT_HEADS_TABLE_NAME = "default.IntegrationTestBigLinkedListHeads";
 
   /** Row key, two times 8 bytes. */
   public static final String COLUMN_KEY_ONE = "key1";
