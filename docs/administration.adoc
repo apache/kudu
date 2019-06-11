@@ -1441,3 +1441,39 @@ WARNING: Do not shut down multiple tablet servers at once. To remove multiple
 tablet servers from the cluster, follow the above instructions for each tablet
 server, ensuring that the previous tablet server is removed from the cluster and
 `ksck` is healthy before shutting down the next.
+
+[[using_cluster_names_in_kudu_tool]]
+=== Using cluster names in the `kudu` command line tool
+
+When using the `kudu` command line tool, it can be difficult to remember the
+precise list of Kudu master RPC addresses needed to communicate with a cluster,
+especially when managing multiple clusters. As an alternative, the command line
+tool can identify clusters by name. To use this functionality:
+
+. Create a new directory to store the Kudu configuration file.
+. Export the path to this directory in the `KUDU_CONFIG` environment variable.
+. Create a file called `kudurc` in the new directory.
+. Populate `kudurc` as follows, substituting your own cluster names and RPC
+  addresses:
++
+----
+clusters_info:
+  cluster_name1:
+    master_addresses: ip1:port1,ip2:port2,ip3:port3
+  cluster_name2:
+    master_addresses: ip4:port4
+----
++
+. When using the `kudu` command line tool, replace the list of Kudu master RPC
+  addresses with the cluster name, prepended with the character `@`.
+
+  Example::
++
+----
+$ sudo -u kudu kudu ksck @cluster_name1
+----
++
+
+
+NOTE: Cluster names may be used as input in any invocation of the `kudu` command
+line tool that expects a list of Kudu master RPC addresses.
