@@ -513,9 +513,7 @@ Status ServerBase::Init() {
 #endif
 
   result_tracker_->StartGCThread();
-#ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK(StartExcessLogFileDeleterThread());
-#endif
 
   return Status::OK();
 }
@@ -667,8 +665,6 @@ Status ServerBase::StartMetricsLogging() {
   return Status::OK();
 }
 
-#ifdef FB_DO_NOT_REMOVE
-
 Status ServerBase::StartExcessLogFileDeleterThread() {
   // Try synchronously deleting excess log files once at startup to make sure it
   // works, then start a background thread to continue deleting them in the
@@ -677,8 +673,10 @@ Status ServerBase::StartExcessLogFileDeleterThread() {
     RETURN_NOT_OK_PREPEND(DeleteExcessLogFiles(options_.env),
                           "Unable to delete excess log files");
   }
+  #ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK_PREPEND(minidump_handler_->DeleteExcessMinidumpFiles(options_.env),
                         "Unable to delete excess minidump files");
+  #endif
   return Thread::Create("server", "excess-log-deleter", &ServerBase::ExcessLogFileDeleterThread,
                         this, &excess_log_deleter_thread_);
 }
@@ -688,10 +686,14 @@ void ServerBase::ExcessLogFileDeleterThread() {
   const MonoDelta kWait = MonoDelta::FromSeconds(60);
   while (!stop_background_threads_latch_.WaitUntil(MonoTime::Now() + kWait)) {
     WARN_NOT_OK(DeleteExcessLogFiles(options_.env), "Unable to delete excess log files");
+    #ifdef FB_DO_NOT_REMOVE
     WARN_NOT_OK(minidump_handler_->DeleteExcessMinidumpFiles(options_.env),
                 "Unable to delete excess minidump files");
+    #endif
   }
 }
+
+#ifdef FB_DO_NOT_REMOVE
 
 std::string ServerBase::FooterHtml() const {
   return Substitute("<pre>$0\nserver uuid $1</pre>",
@@ -753,11 +755,9 @@ void ServerBase::Shutdown() {
     diag_log_->Stop();
   }
 
-#ifdef FB_DO_NOT_REMOVE
   if (excess_log_deleter_thread_) {
     excess_log_deleter_thread_->Join();
   }
-#endif
 }
 
 void ServerBase::UnregisterAllServices() {

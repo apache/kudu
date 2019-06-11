@@ -97,15 +97,15 @@ using strings::Substitute;
 namespace kudu {
 namespace consensus {
 
-METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
+METRIC_DEFINE_gauge_int64(server, majority_done_ops, "Leader Operations Acked by Majority",
                           MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a majority but "
                           "not all peers. This metric is always zero for followers.");
-METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Operations in Progress",
+METRIC_DEFINE_gauge_int64(server, in_progress_ops, "Operations in Progress",
                           MetricUnit::kOperations,
                           "Number of operations in the peer's queue ack'd by a minority of "
                           "peers.");
-METRIC_DEFINE_gauge_int64(tablet, ops_behind_leader, "Operations Behind Leader",
+METRIC_DEFINE_gauge_int64(server, ops_behind_leader, "Operations Behind Leader",
                           MetricUnit::kOperations,
                           "Number of operations this server believes it is behind the leader.");
 

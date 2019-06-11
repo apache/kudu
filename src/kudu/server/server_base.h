@@ -217,18 +217,14 @@ class ServerBase {
   // Callback from the RPC system when a service queue has overflowed.
   void ServiceQueueOverflowed(rpc::ServicePool* service);
 
-#ifdef FB_DO_NOT_REMOVE
   // Start thread to remove excess glog and minidump files.
   Status StartExcessLogFileDeleterThread();
   void ExcessLogFileDeleterThread();
-#endif
 
   ServerBaseOptions options_;
 
   std::unique_ptr<DiagnosticsLog> diag_log_;
-#ifdef FB_DO_NOT_REMOVE
   scoped_refptr<Thread> excess_log_deleter_thread_;
-#endif
   CountDownLatch stop_background_threads_latch_;
 
 #ifdef FB_DO_NOT_REMOVE
