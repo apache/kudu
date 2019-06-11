@@ -19,23 +19,31 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <string>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;
@@ -1495,5 +1503,80 @@ TEST_F(TestColumnPredicateDeathTest, TestMergeRequiresNameAndType) {
               PredicateType::None);
   }, "COMPARE_NAME_AND_TYPE");
 }
+
+template<typename TypeParam>
+class ColumnPredicateBenchmark : public KuduTest {
+  protected:
+   static constexpr auto kColType = TypeParam::physical_type;
+   static constexpr int kNumRows = 1024;
+
+   ColumnPredicateBenchmark() {
+   }
+
+   void DoTest(const std::function<ColumnPredicate(const ColumnSchema&)>& pred_factory) {
+     const int num_iters = AllowSlowTests() ? 1000000 : 100;
+     const int num_evals = num_iters * kNumRows;
+
+     for (bool nullable : {false, true}) {
+       ColumnSchema cs("c", kColType, nullable);
+       auto pred = pred_factory(cs);
+       ScopedColumnBlock<kColType> b(kNumRows);
+       for (int i = 0; i < kNumRows; i++) {
+         b[i] = rand() % 3;
+         if (nullable) {
+           b.SetCellIsNull(i, rand() % 10 == 1);
+         }
+       }
+
+       SelectionVector selvec(kNumRows);
+       int64_t tot_cycles = 0;
+       Stopwatch sw;
+       sw.start();
+       for (int i = 0; i < num_iters; i++) {
+         selvec.SetAllTrue();
+         int64_t cycles_start = CycleClock::Now();
+         pred.Evaluate(b, &selvec);
+         tot_cycles += CycleClock::Now() - cycles_start;
+       }
+       sw.stop();
+       LOG(INFO) << StringPrintf(
+             "%-6s %-10s (%s) %.1fM evals/sec\t%.2f cycles/eval",
+             TypeParam::name(), nullable ? "NULL" : "NOT NULL",
+             pred.ToString().c_str(),
+             num_evals / sw.elapsed().user_cpu_seconds() / 1000000,
+             static_cast<double>(tot_cycles) / num_evals);
+     }
+   }
+};
+
+using test_types = ::testing::Types<
+  DataTypeTraits<INT8>,
+  DataTypeTraits<INT16>,
+  DataTypeTraits<INT32>,
+  DataTypeTraits<INT64>,
+  DataTypeTraits<FLOAT>,
+  DataTypeTraits<DOUBLE>>;
+
+TYPED_TEST_CASE(ColumnPredicateBenchmark, test_types);
+
+TYPED_TEST(ColumnPredicateBenchmark, TestEquals) {
+  const typename TypeParam::cpp_type ref_val = 0;
+  ColumnPredicateBenchmark<TypeParam>::DoTest(
+      [&](const ColumnSchema& cs) { return ColumnPredicate::Equality(cs, &ref_val); });
+}
+
+TYPED_TEST(ColumnPredicateBenchmark, TestLessThan) {
+  const typename TypeParam::cpp_type upper = 0;
+  ColumnPredicateBenchmark<TypeParam>::DoTest(
+      [&](const ColumnSchema& cs) { return ColumnPredicate::Range(cs, nullptr, &upper); });
+}
+
+TYPED_TEST(ColumnPredicateBenchmark, TestRange) {
+  const typename TypeParam::cpp_type lower = 0;
+  const typename TypeParam::cpp_type upper = 2;
+  ColumnPredicateBenchmark<TypeParam>::DoTest(
+      [&](const ColumnSchema& cs) { return ColumnPredicate::Range(cs, &lower, &upper); });
+}
+
 
 } // namespace kudu

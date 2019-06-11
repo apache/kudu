@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <type_traits>
 
 #include <boost/optional/optional.hpp>
 
@@ -29,6 +30,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
@@ -646,20 +648,69 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate &other) {
 }
 
 namespace {
-template <typename P>
-void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
+
+// Optimized predicate evaluation for primitive types.
+//
+// For primitives, it's safe to evaluate a predicate even if the cell is
+// null or deselected -- it might be junk data, which means we'd get
+// a junk comparison result, but that's OK, because we can just bitwise-AND
+// the result against the null bitmap and the preexisting selection vector.
+//
+// This ends up removing most of the branches from the inner loop of comparisons
+// and enables compilers to do SIMD optimizations.
+//
+// This technique can't safely be applied to cells like BINARY since these
+// consist of pointers, and following a junk pointer might crash the process.
+//
+// Returns the number of elements of 'cb' that were processed. This function
+// only processes multiples of 8, so if cb.nrows() is not a multiple of 8, the
+// last few elements may need to be processed by the caller.
+template <DataType PhysicalType, typename P>
+ATTRIBUTE_NOINLINE
+int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_bitmap, P p) {
+  using cpp_type = typename DataTypeTraits<PhysicalType>::cpp_type;
+  const cpp_type* data = reinterpret_cast<const cpp_type*>(block.data());
+  const int n_chunks = block.nrows() / 8;
+  for (int i = 0; i < n_chunks; i++) {
+    uint8_t res_8 = 0;;
+    for (int j = 0; j < 8; j++) {
+      res_8 |= p(data++) << j;
+    }
+    sel_bitmap[i] &= res_8;
+  }
   if (block.is_nullable()) {
-    for (size_t i = 0; i < block.nrows(); i++) {
+    for (int i = 0; i < n_chunks; i++) {
+      sel_bitmap[i] &= block.null_bitmap()[i];
+    }
+  }
+  return n_chunks * 8;
+}
+
+
+template <DataType PhysicalType, typename P>
+void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
+  using cpp_type = typename DataTypeTraits<PhysicalType>::cpp_type;
+  int start_idx = 0;
+  if (std::is_fundamental<cpp_type>::value) {
+    start_idx = ApplyPredicatePrimitive<PhysicalType>(block, sel->mutable_bitmap(), p);
+    if (PREDICT_TRUE(start_idx == block.nrows())) return;
+    // If we couldn't process the whole block unrolled by 8, fall through to the
+    // remainder.
+  }
+
+  const cpp_type* data = reinterpret_cast<const cpp_type*>(block.data());
+  if (block.is_nullable()) {
+    for (size_t i = start_idx; i < block.nrows(); i++) {
       if (!sel->IsRowSelected(i)) continue;
-      const void* cell = block.nullable_cell_ptr(i);
+      const cpp_type* cell = block.is_null(i) ? nullptr : &data[i];
       if (cell == nullptr || !p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
       }
     }
   } else {
-    for (size_t i = 0; i < block.nrows(); i++) {
+    for (size_t i = start_idx; i < block.nrows(); i++) {
       if (!sel->IsRowSelected(i)) continue;
-      const void* cell = block.cell_ptr(i);
+      const cpp_type* cell = &data[i];
       if (!p(cell)) {
         BitmapClear(sel->mutable_bitmap(), i);
       }
@@ -674,15 +725,15 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
   switch (predicate_type()) {
     case PredicateType::Range: {
       if (lower_ == nullptr) {
-        ApplyPredicate(block, sel, [this] (const void* cell) {
+        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
           return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
         });
       } else if (upper_ == nullptr) {
-        ApplyPredicate(block, sel, [this] (const void* cell) {
+        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
           return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
         });
       } else {
-        ApplyPredicate(block, sel, [this] (const void* cell) {
+        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
           return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
                  DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
         });
@@ -690,7 +741,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       return;
     };
     case PredicateType::Equality: {
-      ApplyPredicate(block, sel, [this] (const void* cell) {
+      ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
         return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) == 0;
       });
       return;
@@ -721,7 +772,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       return;
     }
     case PredicateType::InList: {
-      ApplyPredicate(block, sel, [this] (const void* cell) {
+      ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
         return std::binary_search(values_.begin(), values_.end(), cell,
                                   [] (const void* lhs, const void* rhs) {
                                     return DataTypeTraits<PhysicalType>::Compare(lhs, rhs) < 0;
@@ -731,7 +782,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
     };
     case PredicateType::None: LOG(FATAL) << "NONE predicate evaluation";
     case PredicateType::InBloomFilter: {
-      ApplyPredicate(block, sel, [this] (const void* cell) {
+      ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
           return EvaluateCell<PhysicalType>(cell);
       });
       return;

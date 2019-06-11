@@ -81,7 +81,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
 
 SET_KUDU_TEST_LINK_LIBS(kudu_common)
 ADD_KUDU_TEST(columnblock-test)
-ADD_KUDU_TEST(column_predicate-test)
+ADD_KUDU_TEST(column_predicate-test NUM_SHARDS 4)
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)
 ADD_KUDU_TEST(id_mapping-test)
