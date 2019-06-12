@@ -112,7 +112,6 @@ const char* const HmsClient::kKuduMasterEventKey = "kudu.master_event";
 const char* const HmsClient::kKuduCheckIdKey = "kudu.check_id";
 const char* const HmsClient::kKuduStorageHandler =
     "org.apache.hadoop.hive.kudu.KuduStorageHandler";
-const char* const HmsClient::kOldKuduStorageHandler = "org.apache.kudu.hive.KuduStorageHandler";
 
 const char* const HmsClient::kTransactionalEventListeners =
   "hive.metastore.transactional.event.listeners";
@@ -403,11 +402,7 @@ bool HmsClient::IsKuduTable(const hive::Table& table) {
   if (!storage_handler) {
     return false;
   }
-
-  // TODO(ghenke): Remove special kOldKuduStorageHandler handling after Impala integration
-  //  of the adjusted kKuduStorageHandler.
-  return *storage_handler == hms::HmsClient::kKuduStorageHandler ||
-         *storage_handler == hms::HmsClient::kOldKuduStorageHandler;
+  return *storage_handler == hms::HmsClient::kKuduStorageHandler;
 }
 
 } // namespace hms

@@ -66,9 +66,6 @@ import org.apache.hadoop.hive.metastore.events.ListenerEvent;
  */
 public class KuduMetastorePlugin extends MetaStoreEventListener {
 
-  // TODO(ghenke): Remove this after Impala integration of the adjusted KUDU_STORAGE_HANDLER.
-  @VisibleForTesting
-  static final String TEMP_KUDU_STORAGE_HANDLER = "org.apache.kudu.hive.KuduStorageHandler";
   @VisibleForTesting
   static final String KUDU_STORAGE_HANDLER = "org.apache.hadoop.hive.kudu.KuduStorageHandler";
   @VisibleForTesting
@@ -241,8 +238,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    */
   private boolean isKuduTable(Table table) {
     String storageHandler = table.getParameters().get(hive_metastoreConstants.META_TABLE_STORAGE);
-    return KUDU_STORAGE_HANDLER.equals(storageHandler) ||
-        TEMP_KUDU_STORAGE_HANDLER.equals(storageHandler);
+    return KUDU_STORAGE_HANDLER.equals(storageHandler);
   }
 
   /**
