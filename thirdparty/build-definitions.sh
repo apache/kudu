@@ -661,8 +661,8 @@ build_curl() {
   # pass the right location via the KRB5CONFIG environment variable.
   #
   # TODO(adar): there's gotta be a way to do this without using export/unset.
-  KRB5CONFIG_LOCATION=$(which krb5-config)
-  if [ "$KRB5CONFIG_LOCATION" != "/usr/bin/krb5-config" ]; then
+  KRB5CONFIG_LOCATION=$(which krb5-config 2>/dev/null || :)
+  if [ -n "$KRB5CONFIG_LOCATION" -a "$KRB5CONFIG_LOCATION" != "/usr/bin/krb5-config" ]; then
     export KRB5CONFIG=$KRB5CONFIG_LOCATION
   fi
 
