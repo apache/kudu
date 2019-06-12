@@ -20,6 +20,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -45,8 +46,8 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/thread.h"
 
-using boost::none;
 using boost::optional;
 using std::move;
 using std::string;
@@ -103,7 +104,8 @@ namespace kudu {
 namespace hms {
 
 HmsCatalog::HmsCatalog(string master_addresses)
-    : master_addresses_(std::move(master_addresses)) {
+    : master_addresses_(std::move(master_addresses)),
+      running_(1) {
 }
 
 HmsCatalog::~HmsCatalog() {
@@ -111,6 +113,7 @@ HmsCatalog::~HmsCatalog() {
 }
 
 Status HmsCatalog::Start(HmsClientVerifyKuduSyncConfig verify_service_config) {
+  running_.Reset(1);
   vector<HostPort> addresses;
   RETURN_NOT_OK(ParseUris(FLAGS_hive_metastore_uris, &addresses));
 
@@ -126,25 +129,18 @@ Status HmsCatalog::Start(HmsClientVerifyKuduSyncConfig verify_service_config) {
 
   RETURN_NOT_OK(ha_client_.Start(std::move(addresses), std::move(options)));
 
-  // Fetch the UUID of the HMS DB, if available.
-  string uuid;
-  Status uuid_status = ha_client_.Execute([&] (HmsClient* client) {
-    return client->GetUuid(&uuid);
-  });
-  if (uuid_status.ok()) {
-    VLOG(1) << "Connected to HMS with uuid " << uuid;
-    uuid_ = std::move(uuid);
-  } else if (uuid_status.IsNotSupported()) {
-    VLOG(1) << "Unable to fetch UUID for HMS: " << uuid_status.ToString();
-  } else {
-    // If we couldn't connect to the HMS at all, fail.
-    return uuid_status;
-  }
+  RETURN_NOT_OK(Thread::Create("hms_catalog", "fetch_uuid",
+                               &HmsCatalog::LoopInitializeUuid, this,
+                               &uuid_initializing_thread_));
   return Status::OK();
 }
 
 void HmsCatalog::Stop() {
+  running_.CountDown();
   ha_client_.Stop();
+  if (uuid_initializing_thread_) {
+    uuid_initializing_thread_->Join();
+  }
 }
 
 Status HmsCatalog::CreateTable(const string& id,
@@ -305,6 +301,7 @@ Status HmsCatalog::GetNotificationEvents(int64_t last_event_id, int max_events,
 }
 
 Status HmsCatalog::GetUuid(string* uuid) {
+  std::lock_guard<simple_spinlock> l(uuid_lock_);
   if (!uuid_) {
     return Status::NotSupported("No HMS UUID available");
   }
@@ -449,6 +446,26 @@ bool HmsCatalog::ValidateUris(const char* flag_name, const string& metastore_uri
     LOG(ERROR) << "invalid flag " << flag_name << ": " << s.ToString();
   }
   return s.ok();
+}
+
+void HmsCatalog::LoopInitializeUuid() {
+  do {
+    // Fetch the UUID of the HMS DB, if available.
+    string uuid;
+    Status s = ha_client_.Execute([&] (HmsClient* client) {
+        return client->GetUuid(&uuid);
+      });
+    if (s.ok()) {
+      VLOG(1) << "Connected to HMS with uuid " << uuid;
+      std::lock_guard<simple_spinlock> l(uuid_lock_);
+      uuid_ = std::move(uuid);
+    } else if (s.IsNotSupported()) {
+      VLOG(1) << "Unable to fetch UUID for HMS: " << s.ToString();
+      return;
+    }
+    // If we couldn't connect to the HMS at all, sleep and try again.
+    VLOG(1) << "Couldn't connect to HMS: " << s.ToString();
+  } while (!running_.WaitFor(MonoDelta::FromSeconds(1)));
 }
 
 bool HmsCatalog::IsEnabled() {

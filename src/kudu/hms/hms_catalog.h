@@ -25,15 +25,19 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/thrift/client.h"
+#include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class HostPort;
 class Schema;
+class Thread;
 
 namespace hms {
 
@@ -137,7 +141,9 @@ class HmsCatalog {
   // HMS itself changes hostnames, etc.
   //
   // NOTE: this is not implemented in Hive 2.x but may be backported into some
-  // vendor releases (eg CDH6). This function may return Status::NotSupported().
+  // vendor releases (eg CDH6). This function may return Status::NotSupported()
+  // in such cases, or if the HmsCatalog has been unable to connect to the HMS
+  // (i.e. the HMS has been down for the entirety of the HmsCatalog's lifespan).
   Status GetUuid(std::string* uuid) WARN_UNUSED_RESULT;
 
   // Validates the hive_metastore_uris gflag.
@@ -186,6 +192,14 @@ class HmsCatalog {
   Status DropTable(const std::string& name,
                    const hive::EnvironmentContext& env_ctx) WARN_UNUSED_RESULT;
 
+  // Repeatedly tries to fetch the HMS' DB UUID, sleeping in between attempts.
+  //
+  // The loop terminates when one of the following conditions are met:
+  // 1. The UUID is fetched successfully.
+  // 2. running_ counts down to 0.
+  // 3. The HMS responds with NotSupported.
+  void LoopInitializeUuid();
+
   // Parses a Hive Metastore URI string into a sequence of HostPorts.
   static Status ParseUris(const std::string& metastore_uris, std::vector<HostPort>* hostports);
 
@@ -195,8 +209,20 @@ class HmsCatalog {
   // Kudu master addresses.
   const std::string master_addresses_;
 
+  // HmsClient instance used for remote HMS requests.
   thrift::HaClient<hms::HmsClient> ha_client_;
 
+  // Background thread that tries to initialize 'uuid_'.
+  scoped_refptr<Thread> uuid_initializing_thread_;
+
+  // Set to 0 when the HmsCatalog instance has been stopped.
+  CountDownLatch running_;
+
+  // Protects 'uuid_'.
+  simple_spinlock uuid_lock_;
+
+  // The UUID of the remote HMS instance. Will be boost::none if the HMS is
+  // down, or if the HMS does not support UUIDs.
   boost::optional<std::string> uuid_;
 };
 

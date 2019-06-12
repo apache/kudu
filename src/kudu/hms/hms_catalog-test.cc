@@ -453,6 +453,7 @@ TEST_F(HmsCatalogTest, TestReconnect) {
 }
 
 TEST_F(HmsCatalogTest, TestMetastoreUuid) {
+  // Test that if the HMS has a DB UUID, we can retrieve it.
   string uuid;
   Status s = hms_catalog_->GetUuid(&uuid);
   if (s.ok()) {
@@ -460,6 +461,29 @@ TEST_F(HmsCatalogTest, TestMetastoreUuid) {
   } else {
     ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
   }
+
+  // After stopping the HMS:
+  // 1. We should still be able to initialize the catalog.
+  // 2. Attempts to fetch the DB UUID will fail.
+  ASSERT_OK(hms_->Stop());
+  hms_catalog_.reset(new HmsCatalog(kMasterAddrs));
+  ASSERT_OK(hms_catalog_->Start());
+  ASSERT_TRUE(hms_catalog_->GetUuid(nullptr).IsNotSupported());
+
+  // But if we start the HMS back up, we should be able to eventually get the
+  // DB UUID, though we need to account for the possibility that this HMS may
+  // not support it.
+  ASSERT_OK(hms_->Start());
+  string uuid2;
+  ASSERT_EVENTUALLY([&] {
+      Status s2 = hms_catalog_->GetUuid(&uuid2);
+      if (s.ok()) {
+        ASSERT_OK(s2);
+      } else {
+        ASSERT_TRUE(s2.IsNotSupported());
+      }
+    });
+  ASSERT_EQ(uuid, uuid2);
 }
 
 } // namespace hms
