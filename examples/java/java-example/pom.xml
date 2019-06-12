@@ -28,7 +28,7 @@
   <name>Kudu Java Client Examples</name>
 
   <properties>
-    <kudu-version>1.9.0</kudu-version>
+    <kudu-version>1.10.0</kudu-version>
   </properties>
 
   <build>
