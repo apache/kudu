@@ -46,6 +46,10 @@ DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "selected when assigning replicas during table creation or re-replication.");
 TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
+DEFINE_double(tserver_last_replica_creations_halflife_ms, 60 * 1000,
+              "The half-life of last replica creations time. Only for testing!");
+TAG_FLAG(tserver_last_replica_creations_halflife_ms, hidden);
+
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::shared_ptr;
@@ -172,7 +176,7 @@ void TSDescriptor::DecayRecentReplicaCreationsUnlocked() {
   // we don't need to bother calling the clock, etc.
   if (recent_replica_creations_ == 0) return;
 
-  const double kHalflifeSecs = 60;
+  const double kHalflifeSecs = FLAGS_tserver_last_replica_creations_halflife_ms / 1000;
   MonoTime now = MonoTime::Now();
   double secs_since_last_decay = (now - last_replica_creations_decay_).ToSeconds();
   recent_replica_creations_ *= pow(0.5, secs_since_last_decay / kHalflifeSecs);

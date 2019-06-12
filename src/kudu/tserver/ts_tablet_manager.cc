@@ -407,6 +407,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
                                         boost::optional<TableExtraConfigPB> extra_config,
+                                        boost::optional<string> dimension_label,
                                         scoped_refptr<TabletReplica>* replica) {
   CHECK_EQ(state(), MANAGER_RUNNING);
   CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
@@ -446,6 +447,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               boost::none,
                               /*supports_live_row_count=*/ true,
                               std::move(extra_config),
+                              std::move(dimension_label),
                               &meta),
     "Couldn't create tablet metadata");
 
@@ -1239,6 +1241,22 @@ int TSTabletManager::GetNumLiveTablets() const {
     }
   }
   return count;
+}
+
+TabletNumByDimensionMap TSTabletManager::GetNumLiveTabletsByDimension() const {
+  TabletNumByDimensionMap result;
+  shared_lock<RWMutex> l(lock_);
+  for (const auto& entry : tablet_map_) {
+    tablet::TabletStatePB state = entry.second->state();
+    if (state == tablet::BOOTSTRAPPING ||
+        state == tablet::RUNNING) {
+      boost::optional<string> dimension_label = entry.second->tablet_metadata()->dimension_label();
+      if (dimension_label) {
+        result[*dimension_label]++;
+      }
+    }
+  }
+  return result;
 }
 
 void TSTabletManager::InitLocalRaftPeerPB() {

@@ -861,7 +861,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Leaves the tablet "write locked" with the new info in the
   // "dirty" state field.
   scoped_refptr<TabletInfo> CreateTabletInfo(const scoped_refptr<TableInfo>& table,
-                                             const PartitionPB& partition);
+                                             const PartitionPB& partition,
+                                             const boost::optional<std::string>& dimension_label);
 
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo

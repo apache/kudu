@@ -152,6 +152,10 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
 
         encoder.Add(lower_bound_type, *s.lower_bound);
         encoder.Add(upper_bound_type, *s.upper_bound);
+
+        if (s.dimension_label) {
+          pb_step->mutable_add_range_partition()->set_dimension_label(s.dimension_label.get());
+        }
         break;
       }
       case AlterTableRequestPB::DROP_RANGE_PARTITION:

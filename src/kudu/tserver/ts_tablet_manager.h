@@ -82,6 +82,9 @@ class TabletServer;
 // Map of tablet id -> transition reason string.
 typedef std::unordered_map<std::string, std::string> TransitionInProgressMap;
 
+// Map of dimension -> tablets number.
+typedef std::unordered_map<std::string, int32_t> TabletNumByDimensionMap;
+
 class TransitionInProgressDeleter;
 
 // Keeps track of the tablets hosted on the tablet server side.
@@ -125,6 +128,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
                          boost::optional<TableExtraConfigPB> extra_config,
+                         boost::optional<std::string> dimension_label,
                          scoped_refptr<tablet::TabletReplica>* replica);
 
   // Delete the specified tablet asynchronously with callback 'cb'.
@@ -196,6 +200,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Return the number of tablets in RUNNING or BOOTSTRAPPING state.
   int GetNumLiveTablets() const;
+
+  // Get the number of tablets in RUNNING or BOOTSTRAPPING state in each dimension.
+  TabletNumByDimensionMap GetNumLiveTabletsByDimension() const;
 
   Status RunAllLogGC();
 

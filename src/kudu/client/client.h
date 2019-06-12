@@ -874,6 +874,19 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& num_replicas(int n_replicas);
 
+  /// Set the dimension label for all tablets created at table creation time.
+  ///
+  /// @note By default, the master will try to place newly created tablet replicas on tablet
+  /// servers with a small number of tablet replicas. If the dimension label is provided,
+  /// newly created replicas will be evenly distributed in the cluster based on the dimension
+  /// label. In other words, the master will try to place newly created tablet replicas on
+  /// tablet servers with a small number of tablet replicas belonging to this dimension label.
+  ///
+  /// @param [in] dimension_label
+  ///   The dimension label for the tablet to be created.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& dimension_label(const std::string& dimension_label);
+
   /// Sets the table's extra configuration properties.
   ///
   /// If the value of the kv pair is empty, the property will be ignored.
@@ -1201,6 +1214,47 @@ class KUDU_EXPORT KuduTableAlterer {
   KuduTableAlterer* AddRangePartition(
       KuduPartialRow* lower_bound,
       KuduPartialRow* upper_bound,
+      KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND,
+      KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND);
+
+  /// Add a range partition to the table with dimension label.
+  ///
+  /// @note The table alterer takes ownership of the rows.
+  ///
+  /// @note Multiple range partitions may be added as part of a single alter
+  ///   table transaction by calling this method multiple times on the table
+  ///   alterer.
+  ///
+  /// @note This client may immediately write and scan the new tablets when
+  ///   Alter() returns success, however other existing clients may have to wait
+  ///   for a timeout period to elapse before the tablets become visible. This
+  ///   period is configured by the master's 'table_locations_ttl_ms' flag, and
+  ///   defaults to 5 minutes.
+  ///
+  /// @note See KuduTableCreator::dimension_label() for details on dimension label.
+  ///
+  /// @param [in] lower_bound
+  ///   The lower bound of the range partition to add. If the row is empty, then
+  ///   the lower bound is unbounded. If any of the columns are unset, the
+  ///   logical minimum value for the column's type will be used by default.
+  /// @param [in] upper_bound
+  ///   The upper bound of the range partition to add. If the row is empty, then
+  ///   the upper bound is unbounded. If any of the individual columns are
+  ///   unset, the logical minimum value for the column' type will be used by
+  ///   default.
+  /// @param [in] dimension_label
+  ///   The dimension label for the tablet to be created.
+  /// @param [in] lower_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   inclusive.
+  /// @param [in] upper_bound_type
+  ///   The type of the lower bound, either inclusive or exclusive. Defaults to
+  ///   exclusive.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* AddRangePartitionWithDimension(
+      KuduPartialRow* lower_bound,
+      KuduPartialRow* upper_bound,
+      const std::string& dimension_label,
       KuduTableCreator::RangePartitionBound lower_bound_type = KuduTableCreator::INCLUSIVE_BOUND,
       KuduTableCreator::RangePartitionBound upper_bound_type = KuduTableCreator::EXCLUSIVE_BOUND);
 

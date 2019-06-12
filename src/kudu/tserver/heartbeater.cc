@@ -460,7 +460,11 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
                           master_address_.ToString());
     GenerateIncrementalTabletReport(req.mutable_tablet_report());
   }
+
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
+  auto num_live_tablets_by_dimension = server_->tablet_manager()->GetNumLiveTabletsByDimension();
+  req.mutable_num_live_tablets_by_dimension()->insert(num_live_tablets_by_dimension.begin(),
+                                                      num_live_tablets_by_dimension.end());
 
   VLOG(2) << "Sending heartbeat:\n" << SecureDebugString(req);
   master::TSHeartbeatResponsePB resp;

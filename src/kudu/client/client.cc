@@ -724,6 +724,11 @@ KuduTableCreator& KuduTableCreator::num_replicas(int num_replicas) {
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::dimension_label(const std::string& dimension_label) {
+  data_->dimension_label_ = dimension_label;
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::extra_configs(const map<string, string>& extra_configs) {
   data_->extra_configs_ = extra_configs;
   return *this;
@@ -759,6 +764,9 @@ Status KuduTableCreator::Create() {
   req.set_name(data_->table_name_);
   if (data_->num_replicas_ != boost::none) {
     req.set_num_replicas(data_->num_replicas_.get());
+  }
+  if (data_->dimension_label_) {
+    req.set_dimension_label(data_->dimension_label_.get());
   }
   if (data_->extra_configs_) {
     req.mutable_extra_configs()->insert(data_->extra_configs_->begin(),
@@ -1132,6 +1140,16 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(
     KuduPartialRow* upper_bound,
     KuduTableCreator::RangePartitionBound lower_bound_type,
     KuduTableCreator::RangePartitionBound upper_bound_type) {
+  return AddRangePartitionWithDimension(
+      lower_bound, upper_bound, "", lower_bound_type, upper_bound_type);
+}
+
+KuduTableAlterer* KuduTableAlterer::AddRangePartitionWithDimension(
+    KuduPartialRow* lower_bound,
+    KuduPartialRow* upper_bound,
+    const std::string& dimension_label,
+    KuduTableCreator::RangePartitionBound lower_bound_type,
+    KuduTableCreator::RangePartitionBound upper_bound_type) {
 
   if (lower_bound == nullptr || upper_bound == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
@@ -1153,7 +1171,8 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(
                  unique_ptr<KuduPartialRow>(lower_bound),
                  unique_ptr<KuduPartialRow>(upper_bound),
                  lower_bound_type,
-                 upper_bound_type };
+                 upper_bound_type,
+                 dimension_label.empty() ? boost::none : boost::make_optional(dimension_label) };
   data_->steps_.emplace_back(std::move(s));
   data_->has_alter_partitioning_steps = true;
   return this;

@@ -100,6 +100,7 @@ class TsTabletManagerTest : public KuduTest {
   Status CreateNewTablet(const std::string& tablet_id,
                          const Schema& schema,
                          boost::optional<TableExtraConfigPB> extra_config,
+                         boost::optional<std::string> dimension_label,
                          scoped_refptr<tablet::TabletReplica>* out_tablet_replica) {
     Schema full_schema = SchemaBuilder(schema).Build();
     std::pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(full_schema);
@@ -110,6 +111,7 @@ class TsTabletManagerTest : public KuduTest {
                                                    full_schema, partition.first,
                                                    config_,
                                                    std::move(extra_config),
+                                                   std::move(dimension_label),
                                                    &tablet_replica));
     if (out_tablet_replica) {
       (*out_tablet_replica) = tablet_replica;
@@ -156,9 +158,9 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   extra_config.set_history_max_age_sec(7200);
 
   // Create a new tablet.
-  ASSERT_OK(CreateNewTablet(tablet1, schema_, boost::none, &replica1));
+  ASSERT_OK(CreateNewTablet(tablet1, schema_, boost::none, boost::none, &replica1));
   // Create a new tablet with extra config.
-  ASSERT_OK(CreateNewTablet(tablet2, schema_, extra_config, &replica2));
+  ASSERT_OK(CreateNewTablet(tablet2, schema_, extra_config, boost::none, &replica2));
   ASSERT_EQ(tablet1, replica1->tablet()->tablet_id());
   ASSERT_EQ(tablet2, replica2->tablet()->tablet_id());
   ASSERT_EQ(boost::none, replica1->tablet()->metadata()->extra_config());
@@ -238,7 +240,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, boost::none, nullptr));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     GenerateIncrementalTabletReport(&report);
@@ -266,7 +268,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, boost::none, nullptr));
 
   // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletReplica does not mark tablets dirty until after it commits the

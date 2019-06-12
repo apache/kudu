@@ -142,6 +142,10 @@ message TabletSuperBlockPB {
 
   // The table's extra-config.
   optional TableExtraConfigPB extra_config = 17;
+
+  // The dimension label for tablet. Used by the master to determine load when
+  // creating new tablet replicas based on dimension.
+  optional string dimension_label = 18;
 }
 
 // Tablet states represent stages of a TabletReplica's object lifecycle and are

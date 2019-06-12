@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/master/ts_descriptor.h"
@@ -69,15 +70,29 @@ class PlacementPolicy {
   size_t ts_num() const { return ts_num_; }
 
   // Select tablet servers to host the given number of replicas for a tablet.
-  // The 'nreplicas' parameter specifies the desired replication factor,
-  // the result set of tablet server descriptors is output into the 'ts_descs'
-  // placeholder (must not be null).
-  Status PlaceTabletReplicas(int nreplicas, TSDescriptorVector* ts_descs) const;
+  //
+  // Parameters:
+  //   'nreplicas'  The 'nreplicas' parameter specifies the desired replication factor.
+  //   'dimension'  The 'dimension' parameter specifies the dimension information of the tablet.
+  //                If not none, place tablet replicas based on the number of tablets in a
+  //                dimension. Otherwise, based on the number of tablets at a tablet server.
+  //   'ts_descs'   The result set of tablet server descriptors is output into the 'ts_descs'
+  //                placeholder (must not be null).
+  Status PlaceTabletReplicas(int nreplicas,
+                             const boost::optional<std::string>& dimension,
+                             TSDescriptorVector* ts_descs) const;
 
-  // Select tablet server to host an additional tablet replica. The 'existing'
-  // parameter lists current members of the tablet's Raft configuration,
-  // the new member is output into 'ts_desc' placeholer (must not be null).
+  // Select tablet server to host an additional tablet replica.
+  //
+  // Parameters:
+  //   'existing'  The 'existing' parameter lists current members of the tablet's
+  //               Raft configuration.
+  //   'dimension' The 'dimension' parameter specifies the dimension information of the tablet.
+  //               If not none, place tablet replicas based on the number of tablets in a
+  //               dimension. Otherwise, based on the number of tablets at a tablet server.
+  //   'ts_desc'   The new member is output into 'ts_desc' placeholer (must not be null).
   Status PlaceExtraTabletReplica(TSDescriptorVector existing,
+                                 const boost::optional<std::string>& dimension,
                                  std::shared_ptr<TSDescriptor>* ts_desc) const;
 
  private:
@@ -122,15 +137,17 @@ class PlacementPolicy {
 
   // Select the given number ('nreplicas') from the set of specified tablet
   // servers to place tablet replicas.
-  Status SelectReplicas(const TSDescriptorVector& source_ts_desc,
+  Status SelectReplicas(const TSDescriptorVector& source_ts_descs,
                         int nreplicas,
-                        TSDescriptorVector* result_ts_desc) const;
+                        const boost::optional<std::string>& dimension,
+                        TSDescriptorVector* result_ts_descs) const;
 
   // Given the tablet servers in 'ts_descs', pick a tablet server to host
   // a tablet replica, excluding tablet servers in 'excluded'. If there are no
   // servers in 'ts_descs' that are not in 'existing', return nullptr.
   std::shared_ptr<TSDescriptor> SelectReplica(
       const TSDescriptorVector& ts_descs,
+      const boost::optional<std::string>& dimension,
       const std::set<std::shared_ptr<TSDescriptor>>& excluded) const;
 
   // Select location for next replica of a tablet with the specified replication

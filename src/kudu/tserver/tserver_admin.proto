@@ -72,6 +72,10 @@ message CreateTabletRequestPB {
 
   // The table's extra-config.
   optional TableExtraConfigPB extra_config = 11;
+
+  // The dimension label for tablet. Used by the master to determine load when
+  // creating new tablet replicas based on dimension.
+  optional string dimension_label = 12;
 }
 
 message CreateTabletResponsePB {

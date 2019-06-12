@@ -142,6 +142,10 @@ message SysTabletsEntryPB {
 
   // The table id for the tablet.
   required bytes table_id = 6;
+
+  // The dimension label for the tablet. Used for dimension-specific
+  // placement of the tablet's replicas.
+  optional string dimension_label = 8;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) for
@@ -311,6 +315,11 @@ message TSHeartbeatRequestPB {
   // Replica management parameters that the tablet server is running with.
   // This field is set only if the registration field is present.
   optional consensus.ReplicaManagementInfoPB replica_management_info = 7;
+
+  // The number of tablets that are BOOTSTRAPPING or RUNNING in each dimension.
+  // Used by the master to determine load when creating new tablet replicas
+  // based on dimension.
+  map<string, int32> num_live_tablets_by_dimension = 8;
 }
 
 message TSHeartbeatResponsePB {
@@ -457,6 +466,11 @@ message CreateTableRequestPB {
 
   // The table's extra configuration properties.
   map<string, string> extra_configs = 9;
+
+  // The dimension label for tablets that were created during table creation. Used for
+  // dimension-specific placement of tablet replicas corresponding to the partitions of
+  // the newly created table.
+  optional string dimension_label = 10;
 }
 
 message CreateTableResponsePB {
@@ -586,6 +600,10 @@ message AlterTableRequestPB {
     // A set of row operations containing the lower and upper range bound for
     // the range partition to add or drop.
     optional RowOperationsPB range_bounds = 1;
+
+    // The dimension label for the tablet. Used for dimension-specific placement
+    // of the tablet's replicas.
+    optional string dimension_label = 2;
   }
   message DropRangePartition {
     // A set of row operations containing the lower and upper range bound for

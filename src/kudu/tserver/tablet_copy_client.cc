@@ -363,6 +363,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             superblock_->tombstone_last_logged_opid(),
                                             remote_superblock_->supports_live_row_count(),
                                             superblock_->extra_config(),
+                                            superblock_->dimension_label(),
                                             &meta_));
     TRACE("Wrote new tablet metadata");
 

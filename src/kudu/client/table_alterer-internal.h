@@ -63,6 +63,9 @@ class KuduTableAlterer::Data {
     std::unique_ptr<KuduPartialRow> upper_bound;
     KuduTableCreator::RangePartitionBound lower_bound_type;
     KuduTableCreator::RangePartitionBound upper_bound_type;
+
+    // The dimension label for tablet. Only set when the StepType is ADD_RANGE_PARTITION.
+    boost::optional<std::string> dimension_label;
   };
   std::vector<Step> steps_;
 

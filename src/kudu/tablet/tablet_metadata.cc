@@ -93,6 +93,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  boost::optional<OpId> tombstone_last_logged_opid,
                                  bool supports_live_row_count,
                                  boost::optional<TableExtraConfigPB> extra_config,
+                                 boost::optional<string> dimension_label,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -115,7 +116,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        initial_tablet_data_state,
                                                        std::move(tombstone_last_logged_opid),
                                                        supports_live_row_count,
-                                                       std::move(extra_config)));
+                                                       std::move(extra_config),
+                                                       std::move(dimension_label)));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -142,6 +144,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const TabletDataState& initial_tablet_data_state,
                                     boost::optional<OpId> tombstone_last_logged_opid,
                                     boost::optional<TableExtraConfigPB> extra_config,
+                                    boost::optional<string> dimension_label,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -158,6 +161,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                      std::move(tombstone_last_logged_opid),
                      /*supports_live_row_count=*/ true,
                      std::move(extra_config),
+                     std::move(dimension_label),
                      metadata);
   }
   return s;
@@ -277,7 +281,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                const TabletDataState& tablet_data_state,
                                boost::optional<OpId> tombstone_last_logged_opid,
                                bool supports_live_row_count,
-                               boost::optional<TableExtraConfigPB> extra_config)
+                               boost::optional<TableExtraConfigPB> extra_config,
+                               boost::optional<string> dimension_label)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -292,6 +297,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       tablet_data_state_(tablet_data_state),
       tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
       extra_config_(std::move(extra_config)),
+      dimension_label_(std::move(dimension_label)),
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
@@ -463,6 +469,12 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       extra_config_ = superblock.extra_config();
     } else {
       extra_config_ = boost::none;
+    }
+
+    if (superblock.has_dimension_label()) {
+      dimension_label_ = superblock.dimension_label();
+    } else {
+      dimension_label_ = boost::none;
     }
   }
 
@@ -706,6 +718,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     *pb.mutable_extra_config() = *extra_config_;
   }
 
+  if (dimension_label_) {
+    pb.set_dimension_label(*dimension_label_);
+  }
+
   super_block->Swap(&pb);
   return Status::OK();
 }
@@ -799,6 +815,11 @@ void TabletMetadata::SetExtraConfig(TableExtraConfigPB extra_config) {
 boost::optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
   std::lock_guard<LockType> l(data_lock_);
   return extra_config_;
+}
+
+boost::optional<string> TabletMetadata::dimension_label() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return dimension_label_;
 }
 
 } // namespace tablet

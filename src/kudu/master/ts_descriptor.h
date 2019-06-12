@@ -21,6 +21,8 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -28,8 +30,10 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
@@ -53,6 +57,9 @@ class TabletServerAdminServiceProxy;
 }
 
 namespace master {
+
+// Map of dimension -> tablets number.
+typedef std::unordered_map<std::string, int32_t> TabletNumByDimensionMap;
 
 // Master-side view of a single tablet server.
 //
@@ -119,9 +126,24 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
     num_live_replicas_ = n;
   }
 
+  // Set the number of live replicas in each dimension.
+  void set_num_live_replicas_by_dimension(TabletNumByDimensionMap num_live_tablets_by_dimension) {
+    std::lock_guard<rw_spinlock> l(lock_);
+    num_live_tablets_by_dimension_ = std::move(num_live_tablets_by_dimension);
+  }
+
   // Return the number of live replicas (i.e running or bootstrapping).
-  int num_live_replicas() const {
+  // If dimension is none, return the total number of replicas in the tablet server.
+  // Otherwise, return the number of replicas in the dimension.
+  int num_live_replicas(const boost::optional<std::string>& dimension = boost::none) const {
     shared_lock<rw_spinlock> l(lock_);
+    if (dimension) {
+      int32_t num_live_tablets = 0;
+      if (num_live_tablets_by_dimension_) {
+        ignore_result(FindCopy(*num_live_tablets_by_dimension_, *dimension, &num_live_tablets));
+      }
+      return num_live_tablets;
+    }
     return num_live_replicas_;
   }
 
@@ -166,6 +188,9 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   // The number of live replicas on this host, from the last heartbeat.
   int num_live_replicas_;
+
+  // The number of live replicas in each dimension, from the last heartbeat.
+  boost::optional<TabletNumByDimensionMap> num_live_tablets_by_dimension_;
 
   // The tablet server's location, as determined by the master at registration.
   boost::optional<std::string> location_;

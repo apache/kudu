@@ -33,6 +33,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -58,6 +59,7 @@
 using std::multimap;
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 METRIC_DECLARE_entity(server);
@@ -65,6 +67,7 @@ METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_C
 
 namespace kudu {
 
+using client::KuduClient;
 using client::KuduSchema;
 using cluster::ClusterNodes;
 
@@ -215,7 +218,146 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   ASSERT_GE(avg_num_peers, kNumServers / 2);
 }
 
-static void LookUpRandomKeysLoop(std::shared_ptr<master::MasterServiceProxy> master,
+// Regression test for KUDU-2823. Ensure that, after we add some new tablet servers
+// to the cluster, the new tablets are evenly distributed in the cluster based on
+// dimensions.
+TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
+  const int kNumServers = 10;
+  const int kNumTablets = 20;
+  vector<int32_t> num_new_replicas(kNumServers, 0);
+  vector<string> master_flags = {
+      "--tserver_last_replica_creations_halflife_ms=10",
+  };
+  // We have five tablet servers.
+  NO_FATALS(StartCluster({}, master_flags, kNumServers / 2));
+
+  Schema schema = Schema({ ColumnSchema("key1", INT32),
+                           ColumnSchema("key2", INT32),
+                           ColumnSchema("int_val", INT32),
+                           ColumnSchema("string_val", STRING, true) }, 2);
+  auto client_schema = KuduSchema::FromSchema(schema);
+
+  auto create_table_func = [](KuduClient* client,
+                              KuduSchema* client_schema,
+                              const string& table_name,
+                              int32_t range_lower_bound,
+                              int32_t range_upper_bound,
+                              const string& dimension_label) -> Status {
+    gscoped_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
+    unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
+    RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));
+    unique_ptr<KuduPartialRow> upper_bound(client_schema->NewRow());
+    RETURN_NOT_OK(upper_bound->SetInt32("key2", range_upper_bound));
+    return table_creator->table_name(table_name)
+        .schema(client_schema)
+        .add_hash_partitions({ "key1" }, kNumTablets)
+        .set_range_partition_columns({ "key2" })
+        .add_range_partition(lower_bound.release(), upper_bound.release())
+        .num_replicas(3)
+        .dimension_label(dimension_label)
+        .Create();
+  };
+
+  auto alter_table_func = [](KuduClient* client,
+                             KuduSchema* client_schema,
+                             const string& table_name,
+                             int32_t range_lower_bound,
+                             int32_t range_upper_bound,
+                             const string& dimension_label) -> Status {
+    gscoped_ptr<client::KuduTableAlterer> table_alterer(client->NewTableAlterer(table_name));
+    unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
+    RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));
+    unique_ptr<KuduPartialRow> upper_bound(client_schema->NewRow());
+    RETURN_NOT_OK(upper_bound->SetInt32("key2", range_upper_bound));
+    return table_alterer->AddRangePartitionWithDimension(lower_bound.release(),
+                                                         upper_bound.release(),
+                                                         dimension_label)
+                        ->Alter();
+  };
+
+  auto calc_stddev_func = [](const vector<int32_t>& num_replicas,
+                             double mean_per_ts,
+                             int32_t ts_idx_start,
+                             int32_t ts_idx_end) {
+    double sum_squared_deviation = 0;
+    for (int ts_idx = ts_idx_start; ts_idx < ts_idx_end; ts_idx++) {
+      int num_ts = num_replicas[ts_idx];
+      LOG(INFO) << "TS " << ts_idx << " has " << num_ts << " tablets";
+      double deviation = static_cast<double>(num_ts) - mean_per_ts;
+      sum_squared_deviation += deviation * deviation;
+    }
+    return sqrt(sum_squared_deviation / (mean_per_ts - 1));
+  };
+
+  {
+    for (int ts_idx = 0; ts_idx < kNumServers / 2; ts_idx++) {
+      num_new_replicas[ts_idx] = inspect_->ListTabletsOnTS(ts_idx).size();
+    }
+    // create the 'test-table1' table with 'label1'.
+    ASSERT_OK(create_table_func(client_.get(), &client_schema, "test-table1", 0, 100, "label1"));
+    for (int ts_idx = 0; ts_idx < kNumServers / 2; ts_idx++) {
+      int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
+      num_new_replicas[ts_idx] = num_replicas - num_new_replicas[ts_idx];
+    }
+    // Check that the replicas are fairly well spread by computing the standard
+    // deviation of the number of replicas per alive server.
+    const double kMeanPerServer = kNumTablets * 3.0 / kNumServers * 2;
+    double stddev = calc_stddev_func(
+        num_new_replicas, kMeanPerServer, 0, kNumServers / 2);
+    LOG(INFO) << "stddev = " << stddev;
+    ASSERT_LE(stddev, 3.0);
+  }
+
+  // Waiting for the recent creation replicas to decay to 0.
+  SleepFor(MonoDelta::FromMilliseconds(1000));
+
+  // Add five new tablet servers to cluster.
+  for (int ts_idx = kNumServers / 2; ts_idx < kNumServers; ts_idx++) {
+    ASSERT_OK(cluster_->AddTabletServer());
+  }
+  ASSERT_OK(cluster_->WaitForTabletServerCount(kNumServers, MonoDelta::FromSeconds(60)));
+
+  {
+    for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+      num_new_replicas[ts_idx] = inspect_->ListTabletsOnTS(ts_idx).size();
+    }
+    // create the 'test-table2' table with 'label2'.
+    ASSERT_OK(create_table_func(client_.get(), &client_schema, "test-table2", 0, 100, "label2"));
+    for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+      int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
+      num_new_replicas[ts_idx] = num_replicas - num_new_replicas[ts_idx];
+    }
+    // Check that the replicas are fairly well spread by computing the standard
+    // deviation of the number of replicas per server.
+    const double kMeanPerServer = kNumTablets * 3.0 / kNumServers;
+    double stddev = calc_stddev_func(num_new_replicas, kMeanPerServer, 0, kNumServers);
+    LOG(INFO) << "stddev = " << stddev;
+    ASSERT_LE(stddev, 3.0);
+  }
+
+  // Waiting for the recent creation replicas to decay to 0.
+  SleepFor(MonoDelta::FromMilliseconds(1000));
+
+  {
+    for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+      num_new_replicas[ts_idx] = inspect_->ListTabletsOnTS(ts_idx).size();
+    }
+    // Add partition with 'label3' to 'test-table2'
+    ASSERT_OK(alter_table_func(client_.get(), &client_schema, "test-table1", 100, 200, "label3"));
+    for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
+      int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
+      num_new_replicas[ts_idx] = num_replicas - num_new_replicas[ts_idx];
+    }
+    // Check that the replicas are fairly well spread by computing the standard
+    // deviation of the number of replicas per server.
+    const double kMeanPerServer = kNumTablets * 3.0 / kNumServers;
+    double stddev = calc_stddev_func(num_new_replicas, kMeanPerServer, 0, kNumServers);
+    LOG(INFO) << "stddev = " << stddev;
+    ASSERT_LE(stddev, 3.0);
+  }
+}
+
+static void LookUpRandomKeysLoop(const std::shared_ptr<master::MasterServiceProxy>& master,
                                  const char* table_name,
                                  AtomicBool* quit) {
   Schema schema(GetSimpleTestSchema());

@@ -148,7 +148,7 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
 
   return server_->tablet_manager()->CreateNewTablet(
       table_id, tablet_id, partition.second, table_id,
-      schema_with_ids, partition.first, config, boost::none, nullptr);
+      schema_with_ids, partition.first, config, boost::none, boost::none, nullptr);
 }
 
 vector<string> MiniTabletServer::ListTablets() const {

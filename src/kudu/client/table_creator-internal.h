@@ -62,6 +62,8 @@ class KuduTableCreator::Data {
 
   boost::optional<int> num_replicas_;
 
+  boost::optional<std::string> dimension_label_;
+
   boost::optional<std::map<std::string, std::string>> extra_configs_;
 
   MonoDelta timeout_;

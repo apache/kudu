@@ -52,14 +52,17 @@ namespace master {
 
 namespace {
 
-double GetTSLoad(TSDescriptor* desc) {
-  return desc->RecentReplicaCreations() + desc->num_live_replicas();
+double GetTSLoad(const boost::optional<string>& dimension, TSDescriptor* desc) {
+  // TODO (oclarms): get the number of times this tablet server has recently been
+  //  selected to create a tablet replica by dimension.
+  return desc->RecentReplicaCreations() + desc->num_live_replicas(dimension);
 }
 
 // Given exactly two choices in 'two_choices', pick the better tablet server on
 // which to place a tablet replica. Ties are broken using 'rng'.
 shared_ptr<TSDescriptor> PickBetterReplica(
     const TSDescriptorVector& two_choices,
+    const boost::optional<std::string>& dimension,
     ThreadSafeRandom* rng) {
   CHECK_EQ(2, two_choices.size());
 
@@ -67,7 +70,8 @@ shared_ptr<TSDescriptor> PickBetterReplica(
   const auto& b = two_choices[1];
 
   // When creating replicas, we consider two aspects of load:
-  //   (1) how many tablet replicas are already on the server, and
+  //   (1) how many tablet replicas are already on the server (if dimension is not none, only
+  //       return the number of tablet replicas in the dimension), and
   //   (2) how often we've chosen this server recently.
   //
   // The first factor will attempt to put more replicas on servers that
@@ -82,8 +86,8 @@ shared_ptr<TSDescriptor> PickBetterReplica(
   //
   // TODO(wdberkeley): in the future we may want to factor in other items such
   // as available disk space, actual request load, etc.
-  double load_a = GetTSLoad(a.get());
-  double load_b = GetTSLoad(b.get());
+  double load_a = GetTSLoad(dimension, a.get());
+  double load_b = GetTSLoad(dimension, b.get());
   if (load_a < load_b) {
     return a;
   }
@@ -110,6 +114,7 @@ PlacementPolicy::PlacementPolicy(TSDescriptorVector descs,
 }
 
 Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
+                                            const boost::optional<std::string>& dimension,
                                             TSDescriptorVector* ts_descs) const {
   DCHECK(ts_descs);
 
@@ -122,13 +127,14 @@ Status PlacementPolicy::PlaceTabletReplicas(int nreplicas,
     const auto& loc = elem.first;
     const auto loc_nreplicas = elem.second;
     const auto& ts_descriptors = FindOrDie(ltd_, loc);
-    RETURN_NOT_OK(SelectReplicas(ts_descriptors, loc_nreplicas, ts_descs));
+    RETURN_NOT_OK(SelectReplicas(ts_descriptors, loc_nreplicas, dimension, ts_descs));
   }
   return Status::OK();
 }
 
 Status PlacementPolicy::PlaceExtraTabletReplica(
     TSDescriptorVector existing,
+    const boost::optional<std::string>& dimension,
     shared_ptr<TSDescriptor>* ts_desc) const {
   DCHECK(ts_desc);
 
@@ -166,7 +172,7 @@ Status PlacementPolicy::PlaceExtraTabletReplica(
     return Status::IllegalState(
         Substitute("'$0': no info on tablet servers at location", location));
   }
-  auto replica = SelectReplica(*location_ts_descs_ptr, existing_set);
+  auto replica = SelectReplica(*location_ts_descs_ptr, dimension, existing_set);
   if (!replica) {
     return Status::NotFound("could not find tablet server for extra replica");
   }
@@ -226,6 +232,7 @@ Status PlacementPolicy::SelectReplicaLocations(
 
 Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs,
                                        int nreplicas,
+                                       const boost::optional<string>& dimension,
                                        TSDescriptorVector* result_ts_descs) const {
   if (nreplicas > source_ts_descs.size()) {
     return Status::InvalidArgument(
@@ -237,7 +244,7 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
   // put two replicas on the same host.
   set<shared_ptr<TSDescriptor>> already_selected;
   for (auto i = 0; i < nreplicas; ++i) {
-    auto ts = SelectReplica(source_ts_descs, already_selected);
+    auto ts = SelectReplica(source_ts_descs, dimension, already_selected);
     CHECK(ts);
 
     // Increment the number of pending replicas so that we take this selection
@@ -276,6 +283,7 @@ Status PlacementPolicy::SelectReplicas(const TSDescriptorVector& source_ts_descs
 //
 shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
     const TSDescriptorVector& ts_descs,
+    const boost::optional<string>& dimension,
     const set<shared_ptr<TSDescriptor>>& excluded) const {
   // Pick two random servers, excluding those we've already picked.
   // If we've only got one server left, 'two_choices' will actually
@@ -286,7 +294,7 @@ shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
 
   if (two_choices.size() == 2) {
     // Pick the better of the two.
-    return PickBetterReplica(two_choices, rng_);
+    return PickBetterReplica(two_choices, dimension, rng_);
   }
   if (two_choices.size() == 1) {
     return two_choices.front();

@@ -1635,10 +1635,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       e->mutable_metadata()->AbortMutation();
     }
   });
+  optional<string> dimension_label =
+      req.has_dimension_label() ? make_optional<string>(req.dimension_label()) : none;
   for (const Partition& partition : partitions) {
     PartitionPB partition_pb;
     partition.ToPB(&partition_pb);
-    tablets.emplace_back(CreateTabletInfo(table, partition_pb));
+    tablets.emplace_back(CreateTabletInfo(table, partition_pb, dimension_label));
   }
   TRACE("Created new table and tablet info");
 
@@ -1779,14 +1781,19 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   return table;
 }
 
-scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(const scoped_refptr<TableInfo>& table,
-                                                           const PartitionPB& partition) {
+scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(
+    const scoped_refptr<TableInfo>& table,
+    const PartitionPB& partition,
+    const optional<string>& dimension_label) {
   scoped_refptr<TabletInfo> tablet(new TabletInfo(table, GenerateId()));
   tablet->mutable_metadata()->StartMutation();
-  SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
+  SysTabletsEntryPB* metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTabletsEntryPB::PREPARING);
   metadata->mutable_partition()->CopyFrom(partition);
   metadata->set_table_id(table->id());
+  if (dimension_label) {
+    metadata->set_dimension_label(*dimension_label);
+  }
   return tablet;
 }
 
@@ -2259,7 +2266,10 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
           PartitionPB partition_pb;
           partition.ToPB(&partition_pb);
-          new_tablets.emplace(lower_bound, CreateTabletInfo(table, partition_pb));
+          optional<string> dimension_label = step.add_range_partition().has_dimension_label() ?
+              make_optional<string>(step.add_range_partition().dimension_label()) : none;
+          new_tablets.emplace(lower_bound,
+                              CreateTabletInfo(table, partition_pb, dimension_label));
         }
         break;
       }
@@ -3328,6 +3338,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
         tablet_lock.data().pb.consensus_state().committed_config());
     req_.mutable_extra_config()->CopyFrom(
         table_lock.data().pb.extra_config());
+    req_.set_dimension_label(tablet_lock.data().pb.dimension_label());
   }
 
   string type_name() const override { return "Create Tablet"; }
@@ -3693,6 +3704,15 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     TSDescriptorVector ts_descs;
     master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
 
+    // Get the dimension of the tablet. Otherwise, it will be none.
+    optional<string> dimension = none;
+    {
+      TabletMetadataLock l(tablet_.get(), LockMode::READ);
+      if (tablet_->metadata().state().pb.has_dimension_label()) {
+        dimension = tablet_->metadata().state().pb.dimension_label();
+      }
+    }
+
     // Some of the tablet servers hosting the current members of the config
     // (see the 'existing' populated above) might be presumably dead.
     // Inclusion of a presumably dead tablet server into 'existing' is OK:
@@ -3702,7 +3722,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     // to host the extra replica is 'ts_descs' after blacklisting all elements
     // common with 'existing'.
     PlacementPolicy policy(std::move(ts_descs), rng_);
-    s = policy.PlaceExtraTabletReplica(std::move(existing), &extra_replica);
+    s = policy.PlaceExtraTabletReplica(std::move(existing), dimension, &extra_replica);
   }
   if (PREDICT_FALSE(!s.ok())) {
     auto msg = Substitute("no extra replica candidate found for tablet $0: $1",
@@ -4425,10 +4445,13 @@ void CatalogManager::HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>&
 
   const PersistentTabletInfo& old_info = tablet->metadata().state();
 
+  optional<string> dimension_label = old_info.pb.has_dimension_label() ?
+      make_optional<string>(old_info.pb.dimension_label()) : none;
   // The "tablet creation" was already sent, but we didn't receive an answer
   // within the timeout. So the tablet will be replaced by a new one.
   scoped_refptr<TabletInfo> replacement = CreateTabletInfo(tablet->table(),
-                                                           old_info.pb.partition());
+                                                           old_info.pb.partition(),
+                                                           dimension_label);
   LOG_WITH_PREFIX(WARNING) << Substitute("Tablet $0 was not created within the "
       "allowed timeout. Replacing with a new tablet $1",
       tablet->ToString(), replacement->id());
@@ -4636,9 +4659,15 @@ Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
   config->set_obsolete_local(nreplicas == 1);
   config->set_opid_index(consensus::kInvalidOpIdIndex);
 
+  // Get the dimension of the tablet. Otherwise, it will be none.
+  optional<string> dimension = none;
+  if (tablet->metadata().state().pb.has_dimension_label()) {
+    dimension = tablet->metadata().state().pb.dimension_label();
+  }
+
   // Select the set of replicas for the tablet.
   TSDescriptorVector descriptors;
-  RETURN_NOT_OK_PREPEND(policy.PlaceTabletReplicas(nreplicas, &descriptors),
+  RETURN_NOT_OK_PREPEND(policy.PlaceTabletReplicas(nreplicas, dimension, &descriptors),
                         Substitute("failed to place replicas for tablet $0 "
                                    "(table '$1')",
                                    tablet->id(), table_guard.data().name()));
@@ -4824,6 +4853,9 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
   new_metadata->set_state(SysTabletsEntryPB::PREPARING);
   new_metadata->mutable_partition()->CopyFrom(replaced_pb.partition());
   new_metadata->set_table_id(table->id());
+  if (replaced_pb.has_dimension_label()) {
+    new_metadata->set_dimension_label(replaced_pb.dimension_label());
+  }
 
   const string replace_msg = Substitute("replaced by tablet $0", new_tablet->id());
   old_tablet->mutable_metadata()->mutable_dirty()->set_state(SysTabletsEntryPB::DELETED,
