@@ -27,7 +27,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.protobuf.ByteString;
 import org.junit.Rule;
 import org.junit.Test;
 

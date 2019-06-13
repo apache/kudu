@@ -23,7 +23,6 @@ import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.BitSet;
 
-import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -32,6 +31,7 @@ import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.Slice;
+import org.apache.kudu.util.TimestampUtil;
 
 /**
  * RowResult represents one row from a scanner.

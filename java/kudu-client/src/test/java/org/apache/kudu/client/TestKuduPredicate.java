@@ -36,8 +36,8 @@ import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
-import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestKuduPredicate {
 

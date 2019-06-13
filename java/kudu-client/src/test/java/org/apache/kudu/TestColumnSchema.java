@@ -18,14 +18,13 @@ package org.apache.kudu;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.fail;
 
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
-import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestColumnSchema {
 

@@ -16,11 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInTable;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -30,13 +30,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.stumbleupon.async.Deferred;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.WireProtocol.AppStatusPB;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 
 public class TestAsyncKuduSession {

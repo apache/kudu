@@ -17,7 +17,19 @@
 
 package org.apache.kudu.util;
 
+import static org.apache.kudu.util.DataGenerator.randomBinary;
+import static org.apache.kudu.util.DataGenerator.randomDecimal;
+import static org.apache.kudu.util.DataGenerator.randomString;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
+
 import com.google.common.base.Preconditions;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
 import org.apache.kudu.ColumnSchema.CompressionAlgorithm;
@@ -27,17 +39,6 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.PartialRow;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
-
-import static org.apache.kudu.util.DataGenerator.randomBinary;
-import static org.apache.kudu.util.DataGenerator.randomDecimal;
-import static org.apache.kudu.util.DataGenerator.randomString;
 
 /**
  * A utility class to generate random schemas and schema components.

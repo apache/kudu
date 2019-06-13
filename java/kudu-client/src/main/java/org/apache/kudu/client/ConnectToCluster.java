@@ -31,9 +31,9 @@ import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;

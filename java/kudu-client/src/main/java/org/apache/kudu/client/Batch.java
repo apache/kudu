@@ -27,13 +27,13 @@ import com.google.common.base.MoreObjects;
 import com.google.common.collect.Iterables;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
-import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
-import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
+import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
 import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
 import org.apache.kudu.util.Pair;

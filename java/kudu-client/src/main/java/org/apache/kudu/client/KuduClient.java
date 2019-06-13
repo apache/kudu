@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.concurrent.Executor;
 
 import com.google.common.base.Preconditions;
-import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;

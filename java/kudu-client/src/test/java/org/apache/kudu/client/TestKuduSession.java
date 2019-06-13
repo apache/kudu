@@ -32,12 +32,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.ClientTestUtil;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestKuduSession {
   private static final String tableName = "TestKuduSession";

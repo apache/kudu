@@ -17,8 +17,8 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.Type.STRING;
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
@@ -29,16 +29,15 @@ import java.util.ArrayList;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
-
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.client.Client.ScanTokenPB;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
+import org.apache.kudu.client.Client.ScanTokenPB;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestScannerMultiTablet {
   // Generate a unique table name

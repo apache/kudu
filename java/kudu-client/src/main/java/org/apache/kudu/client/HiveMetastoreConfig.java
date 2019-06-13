@@ -17,10 +17,10 @@
 
 package org.apache.kudu.client;
 
+import javax.annotation.CheckForNull;
+
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-
-import javax.annotation.CheckForNull;
 
 /**
  * The Hive Metastore configuration of a Kudu cluster.

@@ -17,11 +17,14 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.cluster.MiniKuduCluster;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import static org.apache.kudu.client.SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND;
+import static org.apache.kudu.client.SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInTable;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaUpsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,10 +34,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static org.apache.kudu.client.SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND;
-import static org.apache.kudu.client.SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC;
-import static org.apache.kudu.test.ClientTestUtil.*;
-import static org.junit.Assert.assertEquals;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
 
 public class TestMultiMasterAuthzTokens {
   private static final MiniKuduCluster.MiniKuduClusterBuilder clusterBuilder =

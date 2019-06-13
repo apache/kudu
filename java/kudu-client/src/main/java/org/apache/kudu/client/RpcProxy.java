@@ -32,7 +32,6 @@ import javax.annotation.Nonnull;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
-import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;

@@ -21,15 +21,15 @@ import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 
-import org.apache.kudu.test.KuduTestHarness;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.client.Statistics.Statistic;
-
-import java.util.ArrayList;
-import java.util.List;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestStatistics {
 

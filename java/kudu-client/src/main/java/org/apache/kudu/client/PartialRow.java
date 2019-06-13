@@ -28,7 +28,6 @@ import java.util.ListIterator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.CharsetUtil;
@@ -39,6 +38,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.StringUtil;
+import org.apache.kudu.util.TimestampUtil;
 
 /**
  * Class used to represent parts of a row along with its schema.<p>

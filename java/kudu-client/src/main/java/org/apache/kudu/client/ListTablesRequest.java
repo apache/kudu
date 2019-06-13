@@ -21,10 +21,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.protobuf.Message;
-import org.apache.kudu.client.ListTablesResponse.TableInfo;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
+import org.apache.kudu.client.ListTablesResponse.TableInfo;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
 
