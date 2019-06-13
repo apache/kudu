@@ -31,22 +31,22 @@ namespace sentry {
 
 // Returns true if lhs < rhs, false if lhs > rhs, and passes through if the two
 // are equal.
-#define RETURN_IF_DIFFERENT_LT(lhs, rhs) { \
+#define RETURN_IF_DIFFERENT_LT(lhs, rhs) do { \
   if ((lhs) != (rhs)) { \
     return (lhs) < (rhs); \
   } \
-}
+} while (false)
 
 // Returns true if the optional field in 'this' is less than the optional field
 // in 'other', and false if greater than. Passes through if the two are equal.
 // Unset fields compare less than set fields.
-#define OPTIONAL_FIELD_RETURN_IF_DIFFERENT_LT(field) { \
+#define OPTIONAL_FIELD_RETURN_IF_DIFFERENT_LT(field) do { \
   if (this->__isset.field && other.__isset.field) { \
     RETURN_IF_DIFFERENT_LT(this->field, other.field); \
   } else if (this->__isset.field || other.__isset.field) { \
     return other.__isset.field; \
   } \
-}
+} while (false)
 
 bool TSentryRole::operator<(const TSentryRole& other) const {
   RETURN_IF_DIFFERENT_LT(this->roleName, other.roleName);
