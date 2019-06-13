@@ -20,7 +20,7 @@ apiVersion: v1
 description: Apache Kudu, A new addition to the open source Apache Hadoop ecosystem, Apache Kudu completes Hadoop's
              storage layer to enable fast analytics on fast data.
 name: kudu
-version:  latest
+version:  1.0
 keywords: [apache, kudu, apache-kudu]
 sources: [https://github.com/apache/kudu]
 home: https://kudu.apache.org/
