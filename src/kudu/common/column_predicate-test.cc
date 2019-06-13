@@ -1510,9 +1510,6 @@ class ColumnPredicateBenchmark : public KuduTest {
    static constexpr auto kColType = TypeParam::physical_type;
    static constexpr int kNumRows = 1024;
 
-   ColumnPredicateBenchmark() {
-   }
-
    void DoTest(const std::function<ColumnPredicate(const ColumnSchema&)>& pred_factory) {
      const int num_iters = AllowSlowTests() ? 1000000 : 100;
      const int num_evals = num_iters * kNumRows;
@@ -1520,6 +1517,12 @@ class ColumnPredicateBenchmark : public KuduTest {
      for (bool nullable : {false, true}) {
        ColumnSchema cs("c", kColType, nullable);
        auto pred = pred_factory(cs);
+       if (pred.predicate_type() == PredicateType::None) {
+         // The predicate factory might return None in the case of
+         // NULL on a NOT NULL column.
+         continue;
+       }
+
        ScopedColumnBlock<kColType> b(kNumRows);
        for (int i = 0; i < kNumRows; i++) {
          b[i] = rand() % 3;
@@ -1549,6 +1552,9 @@ class ColumnPredicateBenchmark : public KuduTest {
    }
 };
 
+template<class T>
+class RangePredicateBenchmark : public ColumnPredicateBenchmark<T> {};
+
 using test_types = ::testing::Types<
   DataTypeTraits<INT8>,
   DataTypeTraits<INT16>,
@@ -1557,25 +1563,38 @@ using test_types = ::testing::Types<
   DataTypeTraits<FLOAT>,
   DataTypeTraits<DOUBLE>>;
 
-TYPED_TEST_CASE(ColumnPredicateBenchmark, test_types);
+TYPED_TEST_CASE(RangePredicateBenchmark, test_types);
 
-TYPED_TEST(ColumnPredicateBenchmark, TestEquals) {
+TYPED_TEST(RangePredicateBenchmark, TestEquals) {
   const typename TypeParam::cpp_type ref_val = 0;
-  ColumnPredicateBenchmark<TypeParam>::DoTest(
+  RangePredicateBenchmark<TypeParam>::DoTest(
       [&](const ColumnSchema& cs) { return ColumnPredicate::Equality(cs, &ref_val); });
 }
 
-TYPED_TEST(ColumnPredicateBenchmark, TestLessThan) {
+TYPED_TEST(RangePredicateBenchmark, TestLessThan) {
   const typename TypeParam::cpp_type upper = 0;
-  ColumnPredicateBenchmark<TypeParam>::DoTest(
+  RangePredicateBenchmark<TypeParam>::DoTest(
       [&](const ColumnSchema& cs) { return ColumnPredicate::Range(cs, nullptr, &upper); });
 }
 
-TYPED_TEST(ColumnPredicateBenchmark, TestRange) {
+TYPED_TEST(RangePredicateBenchmark, TestRange) {
   const typename TypeParam::cpp_type lower = 0;
   const typename TypeParam::cpp_type upper = 2;
-  ColumnPredicateBenchmark<TypeParam>::DoTest(
+  RangePredicateBenchmark<TypeParam>::DoTest(
       [&](const ColumnSchema& cs) { return ColumnPredicate::Range(cs, &lower, &upper); });
+}
+
+// IS NULL and IS NOT NULL predicates don't look at the data itself, so no need
+// to type-parameterize them.
+class NullPredicateBenchmark : public ColumnPredicateBenchmark<DataTypeTraits<INT32>> {};
+
+TEST_F(NullPredicateBenchmark, TestIsNull) {
+  NullPredicateBenchmark::DoTest(
+      [&](const ColumnSchema& cs) { return ColumnPredicate::IsNull(cs); });
+}
+TEST_F(NullPredicateBenchmark, TestIsNotNull) {
+  NullPredicateBenchmark::DoTest(
+      [&](const ColumnSchema& cs) { return ColumnPredicate::IsNotNull(cs); });
 }
 
 
