@@ -16,6 +16,8 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -23,14 +25,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import com.google.common.collect.Lists;
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.ClientTestUtil;
 import org.junit.Rule;
 import org.junit.Test;
 
-import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 /**
  * Tests which provoke RPC queue overflow errors on the server side

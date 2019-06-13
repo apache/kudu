@@ -17,13 +17,13 @@
 
 package org.apache.kudu.util;
 
-import org.apache.yetus.audience.InterfaceAudience;
-
 import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.TimeZone;
+
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class TimestampUtil {

@@ -17,22 +17,6 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.client.KuduScanner;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.test.KuduTestHarness;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.countScanTokenRows;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
@@ -43,6 +27,22 @@ import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.google.common.collect.ImmutableList;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestScanToken {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);

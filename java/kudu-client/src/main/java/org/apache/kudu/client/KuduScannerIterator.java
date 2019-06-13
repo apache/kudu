@@ -17,10 +17,10 @@
 
 package org.apache.kudu.client;
 
+import java.util.Iterator;
+
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-
-import java.util.Iterator;
 
 /**
  * An iterator for the RowResults of a KuduScanner.

@@ -24,10 +24,10 @@ import java.util.Map;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.Common.DataType;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
+import org.apache.kudu.Common.DataType;
 import org.apache.kudu.client.Bytes;
 import org.apache.kudu.client.PartialRow;
 

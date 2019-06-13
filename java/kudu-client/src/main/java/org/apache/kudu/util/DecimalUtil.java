@@ -17,16 +17,16 @@
 
 package org.apache.kudu.util;
 
+import static org.apache.kudu.Common.DataType;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
 
 import com.google.common.base.Strings;
-
-import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.yetus.audience.InterfaceAudience;
 
-import static org.apache.kudu.Common.DataType;
+import org.apache.kudu.ColumnTypeAttributes;
 
 @InterfaceAudience.Private
 public class DecimalUtil {

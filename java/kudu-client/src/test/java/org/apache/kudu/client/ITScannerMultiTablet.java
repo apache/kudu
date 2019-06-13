@@ -23,11 +23,11 @@ import static org.junit.Assert.assertTrue;
 import java.util.Random;
 
 import com.google.common.collect.Lists;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 
 import org.apache.kudu.Schema;
-import org.junit.Rule;
+import org.apache.kudu.test.KuduTestHarness;
 
 /**
  * Integration test that inserts enough data to trigger flushes and getting multiple data

@@ -16,20 +16,21 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestRowErrors {
 

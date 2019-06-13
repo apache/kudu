@@ -43,10 +43,6 @@ import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import org.apache.kudu.security.Token;
-import org.apache.kudu.Type;
-import org.apache.kudu.tserver.Tserver.ScannerKeepAliveRequestPB;
-import org.apache.kudu.tserver.Tserver.ScannerKeepAliveResponsePB;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -55,7 +51,11 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.tserver.Tserver.ScannerKeepAliveRequestPB;
+import org.apache.kudu.tserver.Tserver.ScannerKeepAliveResponsePB;
 import org.apache.kudu.util.Pair;
 
 /**

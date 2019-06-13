@@ -26,11 +26,11 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.kudu.client.RpcTraceFrame.Action;
-import org.apache.kudu.client.RpcTraceFrame.RpcTraceFrameBuilder;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.client.RpcTraceFrame.Action;
+import org.apache.kudu.client.RpcTraceFrame.RpcTraceFrameBuilder;
 import org.apache.kudu.test.junit.RetryRule;
 
 public class TestRpcTraces {

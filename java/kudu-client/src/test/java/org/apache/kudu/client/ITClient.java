@@ -16,6 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -23,9 +28,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.RandomUtils;
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -33,10 +35,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
-import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.RandomUtils;
 
 /**
  * Integration test for the client. RPCs are sent to Kudu from multiple threads while processes

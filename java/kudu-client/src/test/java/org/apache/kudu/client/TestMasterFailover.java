@@ -21,9 +21,10 @@ import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.test.KuduTestHarness;
 
 /**
  * Tests {@link AsyncKuduClient} with multiple masters.

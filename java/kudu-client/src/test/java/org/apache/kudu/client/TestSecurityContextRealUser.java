@@ -17,19 +17,20 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
-import org.apache.kudu.test.KuduTestHarness;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-
-import java.util.ArrayList;
-
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import java.util.ArrayList;
+
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 /**
  * Tests that the 'real user' field of the security context is used for

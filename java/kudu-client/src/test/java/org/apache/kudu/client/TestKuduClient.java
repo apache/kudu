@@ -46,9 +46,9 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -57,24 +57,23 @@ import java.util.concurrent.Future;
 
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
-
-import org.apache.kudu.test.ClientTestUtil;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.KuduTestHarness.LocationConfig;
-import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
-import org.apache.kudu.test.RandomUtils;
-import org.apache.kudu.util.TimestampUtil;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.LocationConfig;
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
+import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.util.DecimalUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.kudu.util.TimestampUtil;
 
 public class TestKuduClient {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);

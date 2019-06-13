@@ -17,9 +17,9 @@
 
 package org.apache.kudu.util;
 
-import javax.annotation.concurrent.NotThreadSafe;
 import java.nio.charset.StandardCharsets;
 import java.util.BitSet;
+import javax.annotation.concurrent.NotThreadSafe;
 
 import com.google.common.base.Preconditions;
 import com.sangupta.murmur.Murmur2;

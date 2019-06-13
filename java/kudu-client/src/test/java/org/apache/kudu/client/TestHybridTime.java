@@ -32,8 +32,6 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Ordering;
-import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -42,6 +40,8 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 /**
  * Tests client propagated timestamps. All the work for commit wait is done and tested on the

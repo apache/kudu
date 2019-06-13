@@ -16,11 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
@@ -28,15 +28,16 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
-import org.apache.kudu.test.CapturingLogAppender;
-import org.apache.kudu.test.ClientTestUtil;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
 
 public class TestClientFailoverSupport {
 

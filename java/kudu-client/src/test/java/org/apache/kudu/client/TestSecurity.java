@@ -13,10 +13,10 @@
  */
 package org.apache.kudu.client;
 
-import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.Closeable;
@@ -26,8 +26,17 @@ import java.security.PrivilegedExceptionAction;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-
 import javax.security.auth.Subject;
+
+import com.google.common.base.Stopwatch;
+import com.google.common.collect.ImmutableSet;
+import com.stumbleupon.async.Deferred;
+import org.hamcrest.CoreMatchers;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
 
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
@@ -36,19 +45,9 @@ import org.apache.kudu.test.cluster.FakeDNS;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.junit.AssertHelpers;
-import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.util.SecurityUtil;
-import org.hamcrest.CoreMatchers;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.ImmutableSet;
-import com.stumbleupon.async.Deferred;
 
 public class TestSecurity {
   private static final String TABLE_NAME = "TestSecurity-table";

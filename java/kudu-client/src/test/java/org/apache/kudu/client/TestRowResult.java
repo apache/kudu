@@ -28,13 +28,13 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestRowResult {
 

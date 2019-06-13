@@ -24,8 +24,8 @@ import java.util.Random;
 import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.util.BloomFilter;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.BloomFilter;
 
 public class TestBloomFilter {
 

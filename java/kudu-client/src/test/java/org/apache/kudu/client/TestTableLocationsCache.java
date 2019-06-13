@@ -16,7 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
 
 import java.util.List;
 

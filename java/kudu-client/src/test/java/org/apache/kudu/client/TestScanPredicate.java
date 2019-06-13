@@ -25,7 +25,6 @@ import java.util.TreeSet;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -35,6 +34,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestScanPredicate {

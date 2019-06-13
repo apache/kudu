@@ -17,16 +17,16 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.base.Preconditions;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.common.base.Preconditions;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * A KuduPartitioner allows clients to determine the target partition of a

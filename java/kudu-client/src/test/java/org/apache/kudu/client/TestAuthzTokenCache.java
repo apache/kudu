@@ -17,15 +17,12 @@
 
 package org.apache.kudu.client;
 
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.security.Token;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.cluster.MiniKuduCluster;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,12 +31,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import com.stumbleupon.async.Deferred;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.security.Token;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
 
 public class TestAuthzTokenCache {
   private static final Logger LOG = LoggerFactory.getLogger(TestAuthzTokenCache.class);

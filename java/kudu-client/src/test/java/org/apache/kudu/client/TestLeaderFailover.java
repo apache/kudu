@@ -23,10 +23,11 @@ import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.test.KuduTestHarness;
 
 public class TestLeaderFailover {
 

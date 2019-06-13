@@ -22,11 +22,9 @@ import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,7 +36,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
-import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestKeyEncoding {

@@ -17,12 +17,12 @@
 
 package org.apache.kudu.client;
 
-import java.util.EnumSet;
-import java.util.Map;
-
 import static org.apache.kudu.ColumnSchema.CompressionAlgorithm;
 import static org.apache.kudu.ColumnSchema.Encoding;
 import static org.apache.kudu.master.Master.AlterTableRequestPB;
+
+import java.util.EnumSet;
+import java.util.Map;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;

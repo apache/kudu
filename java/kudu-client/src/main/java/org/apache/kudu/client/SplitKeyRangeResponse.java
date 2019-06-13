@@ -19,8 +19,9 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
-import org.apache.kudu.Common.KeyRangePB;
 import org.apache.yetus.audience.InterfaceAudience;
+
+import org.apache.kudu.Common.KeyRangePB;
 
 /**
  * Response type for SplitKeyRangeRequest.

@@ -22,13 +22,14 @@ import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
+import java.util.List;
+
 import org.junit.Rule;
 import org.junit.Test;
 
-import java.util.List;
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 
 public class TestSplitKeyRange {
   // Generate a unique table name

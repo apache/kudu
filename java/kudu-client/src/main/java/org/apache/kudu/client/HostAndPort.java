@@ -16,10 +16,10 @@
 // under the License.
 package org.apache.kudu.client;
 
+import java.net.InetSocketAddress;
+
 import com.google.common.base.Objects;
 import org.apache.yetus.audience.InterfaceAudience;
-
-import java.net.InetSocketAddress;
 
 /**
  * A simple wrapper around InetSocketAddress to prevent

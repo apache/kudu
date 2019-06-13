@@ -24,12 +24,12 @@ import java.math.BigInteger;
 import java.math.MathContext;
 import java.math.RoundingMode;
 
-import org.junit.Rule;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestBytes {
 

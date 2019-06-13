@@ -17,12 +17,12 @@
 
 package org.apache.kudu.client;
 
+import java.util.Map;
+
 import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.Schema;
-
-import java.util.Map;
+import org.apache.kudu.security.Token.SignedTokenPB;
 
 @InterfaceAudience.Private
 public class GetTableSchemaResponse extends KuduRpcResponse {

@@ -16,21 +16,15 @@
 // under the License.
 package org.apache.kudu.client;
 
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Common.DataType;
-import org.apache.kudu.Schema;
-import org.apache.kudu.Type;
-import org.apache.kudu.client.Operation.ChangeType;
-import org.apache.kudu.test.CapturingLogAppender;
-import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.test.RandomUtils;
-import org.apache.kudu.util.DataGenerator;
-import org.apache.kudu.util.Pair;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.Closeable;
 import java.util.ArrayList;
@@ -43,15 +37,22 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
-import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
-import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
-import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common.DataType;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
+import org.apache.kudu.client.Operation.ChangeType;
+import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.RandomUtils;
+import org.apache.kudu.util.DataGenerator;
+import org.apache.kudu.util.Pair;
 
 
 public class TestKuduScanner {
