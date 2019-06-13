@@ -33,6 +33,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/alignment.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
@@ -717,6 +718,16 @@ void ApplyPredicate(const ColumnBlock& block, SelectionVector* sel, P p) {
     }
   }
 }
+
+template<bool IS_NOT_NULL>
+void ApplyNullPredicate(const ColumnBlock& block, uint8_t* __restrict__ sel_vec) {
+  int n_bytes = KUDU_ALIGN_UP(block.nrows(), 8) / 8;
+  for (int i = 0; i < n_bytes; i++) {
+    uint8_t null_byte = block.null_bitmap()[i];
+    if (!IS_NOT_NULL) null_byte = ~null_byte;
+    sel_vec[i] &= null_byte;
+  }
+}
 } // anonymous namespace
 
 template <DataType PhysicalType>
@@ -748,13 +759,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
     };
     case PredicateType::IsNotNull: {
       if (!block.is_nullable()) return;
-      // TODO: make this more efficient by using bitwise operations on the
-      // null and selection vectors.
-      for (size_t i = 0; i < block.nrows(); i++) {
-        if (sel->IsRowSelected(i) && block.is_null(i)) {
-          BitmapClear(sel->mutable_bitmap(), i);
-        }
-      }
+      ApplyNullPredicate<true>(block, sel->mutable_bitmap());
       return;
     };
     case PredicateType::IsNull: {
@@ -762,13 +767,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
         BitmapChangeBits(sel->mutable_bitmap(), 0, block.nrows(), false);
         return;
       }
-      // TODO(wdberkeley): make this more efficient by using bitwise operations on the
-      // null and selection vectors.
-      for (size_t i = 0; i < block.nrows(); i++) {
-        if (sel->IsRowSelected(i) && !block.is_null(i)) {
-          BitmapClear(sel->mutable_bitmap(), i);
-        }
-      }
+      ApplyNullPredicate<false>(block, sel->mutable_bitmap());
       return;
     }
     case PredicateType::InList: {
