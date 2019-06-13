@@ -75,7 +75,7 @@ class CountDownLatch {
     }
   }
 
-  // Waits for the count on the latch to reach zero, or until 'until' time is reached.
+  // Waits for the count on the latch to reach zero, or until 'when' time is reached.
   // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) const {
     ThreadRestrictions::AssertWaitAllowed();

@@ -45,18 +45,6 @@ METRIC_DECLARE_gauge_uint64(data_dirs_full);
 namespace kudu {
 
 using cluster::ExternalMiniClusterOptions;
-using cluster::ExternalTabletServer;
-
-namespace {
-Status GetTsCounterValue(ExternalTabletServer* ets, MetricPrototype* metric, int64_t* value) {
-  return itest::GetInt64Metric(ets->bound_http_hostport(),
-                               &METRIC_ENTITY_server,
-                               "kudu.tabletserver",
-                               metric,
-                               "value",
-                               value);
-}
-} // namespace
 
 class DiskReservationITest : public ExternalMiniClusterITestBase {
 };
@@ -109,9 +97,9 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   // Wait until we have one full data dir.
   while (true) {
     int64_t num_full_data_dirs;
-    ASSERT_OK(GetTsCounterValue(cluster_->tablet_server(0),
-                                &METRIC_data_dirs_full,
-                                &num_full_data_dirs));
+    ASSERT_OK(itest::GetTsCounterValue(cluster_->tablet_server(0),
+                                       &METRIC_data_dirs_full,
+                                       &num_full_data_dirs));
     if (num_full_data_dirs >= 1) break;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }

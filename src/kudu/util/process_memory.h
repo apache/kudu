@@ -56,6 +56,9 @@ int64_t MemoryPressureThreshold();
 // This should be equal to CurrentConsumption(), but is made available so that tests
 // can verify the correctness of CurrentConsumption().
 int64_t GetTCMallocCurrentAllocatedBytes();
+
+// Try to release free memory back to the operating system for reuse.
+void GcTcmalloc();
 #endif
 
 } // namespace process_memory

@@ -78,6 +78,9 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#ifdef TCMALLOC_ENABLED
+#include "kudu/util/process_memory.h"
+#endif
 #include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
@@ -204,6 +207,11 @@ DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "will disconnect the client. Setting this to any negative value keeps connections "
              "always alive.");
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
+
+DEFINE_uint64(gc_tcmalloc_memory_interval_seconds, 30,
+             "Interval seconds to GC tcmalloc memory, 0 means disabled.");
+TAG_FLAG(gc_tcmalloc_memory_interval_seconds, advanced);
+TAG_FLAG(gc_tcmalloc_memory_interval_seconds, runtime);
 
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
@@ -491,6 +499,9 @@ Status ServerBase::Init() {
 
   result_tracker_->StartGCThread();
   RETURN_NOT_OK(StartExcessLogFileDeleterThread());
+#ifdef TCMALLOC_ENABLED
+  RETURN_NOT_OK(StartTcmallocMemoryGcThread());
+#endif
 
   return Status::OK();
 }
@@ -635,7 +646,6 @@ Status ServerBase::StartMetricsLogging() {
   return Status::OK();
 }
 
-
 Status ServerBase::StartExcessLogFileDeleterThread() {
   // Try synchronously deleting excess log files once at startup to make sure it
   // works, then start a background thread to continue deleting them in the
@@ -659,6 +669,25 @@ void ServerBase::ExcessLogFileDeleterThread() {
                 "Unable to delete excess minidump files");
   }
 }
+
+#ifdef TCMALLOC_ENABLED
+Status ServerBase::StartTcmallocMemoryGcThread() {
+  return Thread::Create("server", "tcmalloc-memory-gc", &ServerBase::TcmallocMemoryGcThread,
+                        this, &tcmalloc_memory_gc_thread_);
+}
+
+void ServerBase::TcmallocMemoryGcThread() {
+  MonoDelta check_interval;
+  do {
+    // If GC is disabled, wake up every 60 seconds anyway to recheck the value of the flag.
+    check_interval = MonoDelta::FromSeconds(FLAGS_gc_tcmalloc_memory_interval_seconds > 0
+      ? FLAGS_gc_tcmalloc_memory_interval_seconds : 60);
+    if (FLAGS_gc_tcmalloc_memory_interval_seconds > 0) {
+      kudu::process_memory::GcTcmalloc();
+    }
+  } while (!stop_background_threads_latch_.WaitFor(check_interval));
+}
+#endif
 
 std::string ServerBase::FooterHtml() const {
   return Substitute("<pre>$0\nserver uuid $1</pre>",
@@ -714,6 +743,11 @@ void ServerBase::Shutdown() {
   if (excess_log_deleter_thread_) {
     excess_log_deleter_thread_->Join();
   }
+#ifdef TCMALLOC_ENABLED
+  if (tcmalloc_memory_gc_thread_) {
+    tcmalloc_memory_gc_thread_->Join();
+  }
+#endif
 }
 
 void ServerBase::UnregisterAllServices() {

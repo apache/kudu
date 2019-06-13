@@ -43,6 +43,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -72,6 +73,7 @@ using ::sentry::TSentryPrivilege;
 using boost::optional;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::BulkChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigResponsePB;
@@ -1234,6 +1236,17 @@ Status GetInt64Metric(const HostPort& http_hp,
                      entity_proto->name(), metric_proto->name());
   }
   return Status::NotFound(msg);
+}
+
+Status GetTsCounterValue(ExternalTabletServer* ets,
+                         MetricPrototype* metric,
+                         int64_t* value) {
+  return GetInt64Metric(ets->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.tabletserver",
+                        metric,
+                        "value",
+                        value);
 }
 
 Status SetupAdministratorPrivileges(MiniKdc* kdc,
