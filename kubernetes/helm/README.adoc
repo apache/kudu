@@ -106,6 +106,17 @@ kudu-tserver-pdb  N/A            1                1                    12s
 
     kubectl logs kudu-master-0 --namespace apache-kudu
 
-==== Running Helm Test for Kudu HealthCheck
+=== Testing Helm Charts
 
+    # helm-template : it will render chart templates locally and display the output.
+    helm template kudu
+
+    # To render just one template in a chart
+    helm template kudu -x templates/kudu-service.yaml
+
+    # helm lint: examines a chart for possible issues, useful to validate chart dependencies.
+    helm lint kudu --namespace apache-kudu --tiller-namespace apache-kudu
+
+    # The argument this command takes is the name of a deployed release.
+    # The tests to be run are defined in the chart that was installed.
     helm test apache-kudu --tiller-namespace apache-kudu
