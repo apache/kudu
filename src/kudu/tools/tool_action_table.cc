@@ -18,9 +18,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -62,6 +65,7 @@ using kudu::client::internal::ReplicaController;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -81,6 +85,9 @@ DEFINE_bool(list_tablets, false,
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
+DEFINE_string(config_names, "",
+              "Comma-separated list of configurations to display. "
+              "An empty value displays all configs.");
 DECLARE_bool(show_values);
 DECLARE_string(tables);
 
@@ -138,6 +145,8 @@ const char* const kNewTableNameArg = "new_table_name";
 const char* const kColumnNameArg = "column_name";
 const char* const kNewColumnNameArg = "new_column_name";
 const char* const kKeyArg = "primary_key";
+const char* const kConfigNameArg = "config_name";
+const char* const kConfigValueArg = "config_value";
 
 Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
@@ -418,6 +427,43 @@ Status CopyTable(const RunnerContext& context) {
   return scanner.StartCopy();
 }
 
+Status SetExtraConfig(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& config_name = FindOrDie(context.required_args, kConfigNameArg);
+  const string& config_value = FindOrDie(context.required_args, kConfigValueArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterExtraConfig({ { config_name, config_value} });
+  return alterer->Alter();
+}
+
+Status GetExtraConfigs(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  set<string> config_names = strings::Split(FLAGS_config_names, ",", strings::SkipEmpty());
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  client::sp::shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+
+  DataTable data_table({ "Configuration", "Value" });
+  if (config_names.empty()) {
+    for (const auto& extra_config : table->extra_configs()) {
+      data_table.AddRow({ extra_config.first, extra_config.second });
+    }
+  } else {
+    for (const auto& config_name : config_names) {
+      const string* config_value = FindOrNull(table->extra_configs(), config_name);
+      if (config_value) {
+        data_table.AddRow({ config_name, *config_value });
+      }
+    }
+  }
+  return data_table.PrintTo(cout);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTableMode() {
@@ -513,6 +559,24 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("write_type")
       .Build();
 
+  unique_ptr<Action> set_extra_config =
+      ActionBuilder("set_extra_config", &SetExtraConfig)
+      .Description("Change a extra configuration value on a table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kConfigNameArg, "Name of the configuration" })
+      .AddRequiredParameter({ kConfigValueArg, "New value for the configuration" })
+      .Build();
+
+  unique_ptr<Action> get_extra_configs =
+      ActionBuilder("get_extra_configs", &GetExtraConfigs)
+      .Description("Get the extra configuration properties for a table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg,
+                              "Name of the table for which to get extra configurations" })
+      .AddOptionalParameter("config_names")
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
@@ -523,6 +587,8 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(rename_table))
       .AddAction(std::move(scan_table))
       .AddAction(std::move(copy_table))
+      .AddAction(std::move(set_extra_config))
+      .AddAction(std::move(get_extra_configs))
       .Build();
 }
 

@@ -2251,5 +2251,95 @@ TEST_F(AdminCliTest, TestAuthzResetCacheNotImplemented) {
       "Not implemented: provider does not have privileges cache");
 }
 
+TEST_F(AdminCliTest, TestExtraConfig) {
+  NO_FATALS(BuildAndStart());
+
+  string master_address = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Gets extra-configs when no extra config set.
+  {
+    string stdout, stderr;
+    Status s = RunKuduTool({
+      "table",
+      "get_extra_configs",
+      master_address,
+      kTableId
+    }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_EQ(stdout, " Configuration | Value\n"
+                      "---------------+-------\n");
+  }
+
+  // Sets "kudu.table.history_max_age_sec" to 3600.
+  {
+    ASSERT_TOOL_OK(
+      "table",
+      "set_extra_config",
+      master_address,
+      kTableId,
+      "kudu.table.history_max_age_sec",
+      "3600"
+    );
+  }
+
+  // Gets all extra-configs.
+  {
+    string stdout, stderr;
+    Status s = RunKuduTool({
+      "table",
+      "get_extra_configs",
+      master_address,
+      kTableId,
+    }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_STR_CONTAINS(stdout, "kudu.table.history_max_age_sec | 3600");
+  }
+
+  // Gets the specified extra-config, the configuration exists.
+  {
+    string stdout, stderr;
+    Status s = RunKuduTool({
+      "table",
+      "get_extra_configs",
+      master_address,
+      kTableId,
+      "-config_names=kudu.table.history_max_age_sec"
+    }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_STR_CONTAINS(stdout, "kudu.table.history_max_age_sec | 3600");
+  }
+
+  // Gets the duplicate extra-configs, the configuration exists.
+  {
+    string stdout, stderr;
+    Status s = RunKuduTool({
+      "table",
+      "get_extra_configs",
+      master_address,
+      kTableId,
+      "-config_names=kudu.table.history_max_age_sec,kudu.table.history_max_age_sec"
+      }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_EQ(stdout, "         Configuration          | Value\n"
+                      "--------------------------------+-------\n"
+                      " kudu.table.history_max_age_sec | 3600\n");
+  }
+
+  // Gets the specified extra-config, the configuration doesn't exists.
+  {
+    string stdout, stderr;
+    Status s = RunKuduTool({
+      "table",
+      "get_extra_configs",
+      master_address,
+      kTableId,
+      "-config_names=foobar"
+      }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_EQ(stdout, " Configuration | Value\n"
+                      "---------------+-------\n");
+  }
+}
+
 } // namespace tools
 } // namespace kudu
