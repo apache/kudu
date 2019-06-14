@@ -22,19 +22,28 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/table_util.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sentry_privileges_fetcher.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/sentry/sentry_action.h"
 #include "kudu/sentry/sentry_authorizable_scope.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
+
+DEFINE_bool(sentry_require_db_privileges_for_list_tables, false,
+            "Whether Kudu will require database-level privileges to authorize "
+            "ListTables requests. When set to false, table-level privileges are "
+            "required for each table.");
+TAG_FLAG(sentry_require_db_privileges_for_list_tables, advanced);
 
 DECLARE_string(sentry_service_rpc_addresses);
 
@@ -230,7 +239,7 @@ Status SentryAuthzProvider::AuthorizeListTables(const string& user,
       for (auto table_name : tables_in_db) {
         EmplaceOrDie(&authorized_tables, std::move(table_name));
       }
-    } else {
+    } else if (!FLAGS_sentry_require_db_privileges_for_list_tables) {
       for (auto table_name : tables_in_db) {
         s = AuthorizeGetTableMetadata(table_name, user);
         if (s.ok()) {
