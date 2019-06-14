@@ -83,6 +83,7 @@ DEFINE_bool(has_db_privileges, true,
     "Whether the user should have db-level privileges in testing");
 TAG_FLAG(has_db_privileges, hidden);
 
+DECLARE_bool(sentry_require_db_privileges_for_list_tables);
 DECLARE_int32(sentry_service_recv_timeout_seconds);
 DECLARE_int32(sentry_service_send_timeout_seconds);
 DECLARE_uint32(sentry_privileges_cache_capacity_mb);
@@ -453,6 +454,13 @@ TEST_F(SentryAuthzProviderTest, TestListTables) {
   ASSERT_OK(sentry_authz_provider_->AuthorizeListTables(kTestUser, &tables, &checked_table_names));
   ASSERT_TRUE(checked_table_names);
   ASSERT_EQ(kNumDbs, tables.size());
+
+  // When requires database level privileges for list tables, user shouldn't see
+  // any tables with only table level privileges.
+  FLAGS_sentry_require_db_privileges_for_list_tables = true;
+  ASSERT_OK(sentry_authz_provider_->AuthorizeListTables(kTestUser, &tables, &checked_table_names));
+  ASSERT_TRUE(checked_table_names);
+  ASSERT_EQ(0, tables.size());
 }
 
 class SentryAuthzProviderFilterPrivilegesTest : public SentryAuthzProviderTest {
