@@ -169,7 +169,6 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   // deviation of the number of replicas per server.
   const double kMeanPerServer = kNumTablets * 3.0 / kNumServers;
   double sum_squared_deviation = 0;
-  vector<int> tablet_counts;
   for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
     int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
     LOG(INFO) << "TS " << ts_idx << " has " << num_replicas << " tablets";
