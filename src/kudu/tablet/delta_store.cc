@@ -178,7 +178,8 @@ DeltaPreparer<Traits>::DeltaPreparer(RowIteratorOptions opts)
       prev_prepared_idx_(0),
       prepared_flags_(DeltaIterator::PREPARE_NONE),
       deletion_state_(UNKNOWN),
-      deltas_selected_(0) {
+      deltas_selected_(0),
+      may_have_deltas_(false) {
 }
 
 template<class Traits>
@@ -200,13 +201,26 @@ void DeltaPreparer<Traits>::Start(size_t nrows, int prepare_flags) {
   if (updates_by_col_.empty()) {
     updates_by_col_.resize(opts_.projection->num_columns());
   }
-  for (UpdatesForColumn& ufc : updates_by_col_) {
-    ufc.clear();
+
+  // Lazy initialization.
+  if (may_have_deltas_) {
+    for (UpdatesForColumn &ufc : updates_by_col_) {
+      ufc.clear();
+    }
+    deleted_.clear();
+    reinserted_.clear();
+  } else {
+#ifndef NDEBUG
+    CHECK(deleted_.empty());
+    CHECK(reinserted_.empty());
+    for (const UpdatesForColumn& ufc : updates_by_col_) {
+      CHECK(ufc.empty());
+    }
+#endif
   }
-  deleted_.clear();
-  reinserted_.clear();
   prepared_deltas_.clear();
   deletion_state_ = UNKNOWN;
+  may_have_deltas_ = false;
 
   if (VLOG_IS_ON(3)) {
     string snap_to_exclude = opts_.snap_to_exclude ?
@@ -319,6 +333,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
           // This is safe because deques never invalidate pointers to their elements.
           cu.new_val_ptr = cu.new_val_buf;
         }
+        may_have_deltas_ = true;
       }
     }
   }
@@ -476,18 +491,7 @@ Status DeltaPreparer<Traits>::FilterColumnIdsAndCollectDeltas(
 template<class Traits>
 bool DeltaPreparer<Traits>::MayHaveDeltas() const {
   DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
-  if (!deleted_.empty()) {
-    return true;
-  }
-  if (!reinserted_.empty()) {
-    return true;
-  }
-  for (const auto& col : updates_by_col_) {
-    if (!col.empty()) {
-      return true;
-    }
-  }
-  return false;
+  return may_have_deltas_;
 }
 
 template<class Traits>
@@ -516,10 +520,12 @@ void DeltaPreparer<Traits>::MaybeProcessPreviousRowChange(boost::optional<rowid_
       case DELETED:
         deleted_.emplace_back(*last_added_idx_);
         deletion_state_ = UNKNOWN;
+        may_have_deltas_ = true;
         break;
       case REINSERTED:
         reinserted_.emplace_back(*last_added_idx_);
         deletion_state_ = UNKNOWN;
+        may_have_deltas_ = true;
         break;
       default:
         break;

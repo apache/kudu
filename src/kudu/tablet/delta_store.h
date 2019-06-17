@@ -525,6 +525,12 @@ class DeltaPreparer : public PreparedDeltas {
   // disambiguators (see SelectedDeltas::Delta). Never reset.
   int64_t deltas_selected_;
 
+  // Used for PREPARED_FOR_APPLY mode.
+  //
+  // Set to true in all of the spots where deleted, reinserted_, and updates_by_col_
+  // are modified.
+  bool may_have_deltas_;
+
   DISALLOW_COPY_AND_ASSIGN(DeltaPreparer);
 };
 
