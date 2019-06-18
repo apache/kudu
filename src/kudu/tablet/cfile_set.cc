@@ -378,6 +378,7 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
   }
 
   col_iters_.swap(ret_iters);
+  prepared_iters_.reserve(col_iters_.size());
   return Status::OK();
 }
 
@@ -467,29 +468,24 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
 void CFileSet::Iterator::Unprepare() {
   prepared_count_ = 0;
-  cols_prepared_.assign(col_iters_.size(), false);
+  prepared_iters_.clear();
 }
 
-Status CFileSet::Iterator::PrepareBatch(size_t *n) {
+Status CFileSet::Iterator::PrepareBatch(size_t *nrows) {
   DCHECK_EQ(prepared_count_, 0) << "Already prepared";
 
   size_t remaining = upper_bound_idx_ - cur_idx_;
-  if (*n > remaining) {
-    *n = remaining;
+  if (*nrows > remaining) {
+    *nrows = remaining;
   }
 
-  prepared_count_ = *n;
+  prepared_count_ = *nrows;
 
   // Lazily prepare the first column when it is materialized.
   return Status::OK();
 }
 
 Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
-  if (cols_prepared_[ctx->col_idx()]) {
-    // Already prepared in this batch.
-    return Status::OK();
-  }
-
   ColumnIterator* col_iter = col_iters_[ctx->col_idx()].get();
   size_t n = prepared_count_;
 
@@ -516,7 +512,7 @@ Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
                          cur_idx_, prepared_count_, n));
   }
 
-  cols_prepared_[ctx->col_idx()] = true;
+  prepared_iters_.emplace_back(col_iter);
 
   return Status::OK();
 }
@@ -539,16 +535,10 @@ Status CFileSet::Iterator::MaterializeColumn(ColumnMaterializationContext *ctx) 
 }
 
 Status CFileSet::Iterator::FinishBatch() {
-  CHECK_GT(prepared_count_, 0);
+  DCHECK_GT(prepared_count_, 0);
 
-  for (size_t i = 0; i < col_iters_.size(); i++) {
-    if (cols_prepared_[i]) {
-      Status s = col_iters_[i]->FinishBatch();
-      if (!s.ok()) {
-        LOG(WARNING) << "Unable to FinishBatch() on column " << i;
-        return s;
-      }
-    }
+  for (ColumnIterator* col_iter : prepared_iters_) {
+    RETURN_NOT_OK(col_iter->FinishBatch());
   }
 
   cur_idx_ += prepared_count_;

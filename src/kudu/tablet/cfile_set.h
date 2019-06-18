@@ -239,7 +239,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   void Unprepare();
 
-  // Prepare the given column if not already prepared.
+  // Prepare the given column. The column must not have been prepared yet.
   Status PrepareColumn(ColumnMaterializationContext *ctx);
 
   const std::shared_ptr<CFileSet const> base_data_;
@@ -268,7 +268,11 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   // The underlying columns are prepared lazily, so that if a column is never
   // materialized, it doesn't need to be read off disk.
-  std::vector<bool> cols_prepared_;
+  //
+  // The list of columns which have been prepared (and thus must be 'finished'
+  // at the end of the current batch). These are pointers into the same iterators
+  // stored in 'col_iters_'.
+  std::vector<cfile::ColumnIterator*> prepared_iters_;
 
 };
 
