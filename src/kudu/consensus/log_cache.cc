@@ -68,10 +68,10 @@ using strings::Substitute;
 namespace kudu {
 namespace consensus {
 
-METRIC_DEFINE_gauge_int64(tablet, log_cache_num_ops, "Log Cache Operation Count",
+METRIC_DEFINE_gauge_int64(server, log_cache_num_ops, "Log Cache Operation Count",
                           MetricUnit::kOperations,
                           "Number of operations in the log cache.");
-METRIC_DEFINE_gauge_int64(tablet, log_cache_size, "Log Cache Memory Usage",
+METRIC_DEFINE_gauge_int64(server, log_cache_size, "Log Cache Memory Usage",
                           MetricUnit::kBytes,
                           "Amount of memory in use for caching the local log.");
 

@@ -93,6 +93,7 @@ using consensus::OpId;
 using consensus::OpIdToString;
 using consensus::RECEIVED_OPID;
 using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using consensus::RaftConsensus;
 using consensus::kMinimumTerm;
 using fs::DataDirManager;
@@ -124,6 +125,18 @@ Status TSTabletManager::Init() {
   LOG(INFO) << LogPrefix(kSysCatalogTabletId) << "Bootstrapping tablet";
   TRACE("Bootstrapping tablet");
 
+  // Raft config is necessary for initializing the master tablet.
+  // In order to get around the peers' count restriction, I have created a dummy
+  // peer which is a NON_VOTER so it shouldn't harm us.
+  RaftConfigPB config;
+  config.set_opid_index(consensus::kInvalidOpIdIndex);
+  RaftPeerPB* peer = config.add_peers();
+  peer->set_permanent_uuid("dummy_peer");
+  peer->set_member_type(RaftPeerPB::NON_VOTER);
+  RETURN_NOT_OK_PREPEND(
+    cmeta_manager_->Create(kSysCatalogTabletId, config, kMinimumTerm),
+    "Unable to create new ConsensusMetadata for tablet " + kSysCatalogTabletId);
+
   ConsensusOptions options;
   options.tablet_id = kSysCatalogTabletId;
   shared_ptr<RaftConsensus> consensus;
@@ -133,6 +146,7 @@ Status TSTabletManager::Init() {
                                       server_->raft_pool(),
                                       &consensus));
   consensus_ = std::move(consensus);
+
   // set_state(INITIALIZED);
   // SetStatusMessage("Initialized. Waiting to start...");
 
@@ -146,7 +160,6 @@ Status TSTabletManager::Init() {
   VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
 
   scoped_refptr<Log> log;
-  scoped_refptr<MetricEntity> metric_entity;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
   scoped_refptr<TimeManager> time_manager;
 
@@ -163,7 +176,7 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(consensus_->Start(
         bootstrap_info, std::move(peer_proxy_factory),
         log, std::move(time_manager),
-        this, metric_entity, mark_dirty_clbk_));
+        this, server_->metric_entity(), mark_dirty_clbk_));
   set_state(MANAGER_RUNNING);
 
   return Status::OK();
