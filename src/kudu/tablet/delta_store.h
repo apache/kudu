@@ -493,10 +493,10 @@ class DeltaPreparer : public PreparedDeltas {
 
   // A row whose last relevant mutation was DELETE (or REINSERT).
   //
-  // These deques are disjoint; a row that was both deleted and reinserted will
+  // These lists are disjoint; a row that was both deleted and reinserted will
   // not be in either.
-  std::deque<rowid_t> deleted_;
-  std::deque<rowid_t> reinserted_;
+  std::vector<rowid_t> deleted_;
+  std::vector<rowid_t> reinserted_;
 
   // The deletion state of the row last processed by AddDelta().
   //
@@ -515,7 +515,7 @@ class DeltaPreparer : public PreparedDeltas {
     DeltaKey key;
     Slice val;
   };
-  std::deque<PreparedDelta> prepared_deltas_;
+  std::vector<PreparedDelta> prepared_deltas_;
 
   // State when prepared_for_ & PREPARED_FOR_SELECT
   // ------------------------------------------------------------
