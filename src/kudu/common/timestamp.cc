@@ -21,7 +21,6 @@
 
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/memcmpable_varint.h"
 
 namespace kudu {
 
@@ -29,10 +28,6 @@ const Timestamp Timestamp::kMin(MathLimits<Timestamp::val_type>::kMin);
 const Timestamp Timestamp::kMax(MathLimits<Timestamp::val_type>::kMax);
 const Timestamp Timestamp::kInitialTimestamp(MathLimits<Timestamp::val_type>::kMin + 1);
 const Timestamp Timestamp::kInvalidTimestamp(MathLimits<Timestamp::val_type>::kMax - 1);
-
-bool Timestamp::DecodeFrom(Slice* input) {
-  return GetMemcmpableVarint64(input, &v);
-}
 
 void Timestamp::EncodeTo(faststring* dst) const {
   PutMemcmpableVarint64(dst, v);
