@@ -146,7 +146,7 @@ class TabletCopyClientTest : public TabletCopyTest {
   Status CompareFileContents(const string& path1, const string& path2);
 
   // Injection of 'supports_live_row_count' modifiers through polymorphic characteristic.
-  virtual void GenerateTestData() {
+  void GenerateTestData() override {
     Random rand(SeedRandom());
     NO_FATALS(tablet_replica_->tablet_metadata()->
         set_supports_live_row_count_for_tests(rand.Next() % 2));
