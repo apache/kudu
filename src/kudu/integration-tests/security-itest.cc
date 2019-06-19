@@ -34,10 +34,11 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -50,7 +51,9 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
@@ -82,6 +85,10 @@ using strings::Substitute;
 
 namespace kudu {
 
+static const char* kTableName = "test-table";
+static const Schema kTestSchema = CreateKeyValueTestSchema();
+static const KuduSchema kTestKuduSchema = client::KuduSchema::FromSchema(kTestSchema);
+
 class SecurityITest : public KuduTest {
  public:
   SecurityITest() {
@@ -111,6 +118,15 @@ class SecurityITest : public KuduTest {
     return proxy.SetFlag(req, &resp, &controller);
   }
 
+  Status CreateTestTable(const client::sp::shared_ptr<KuduClient>& client) {
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    return table_creator->table_name(kTableName)
+        .set_range_partition_columns({ "key" })
+        .schema(&kTestKuduSchema)
+        .num_replicas(3)
+        .Create();
+  }
+
   // Create a table, insert a row, scan it back, and delete the table.
   void SmokeTestCluster();
 
@@ -129,7 +145,7 @@ class SecurityITest : public KuduTest {
     return proxy.TSHeartbeat(req, &resp, &rpc);
   }
 
-  Status TryListTablets() {
+  Status TryListTablets(vector<string>* tablet_ids = nullptr) {
     auto messenger = NewMessengerOrDie();
     const auto& addr = cluster_->tablet_server(0)->bound_rpc_addr();
     tserver::TabletServerServiceProxy proxy(messenger, addr, addr.host());
@@ -137,7 +153,28 @@ class SecurityITest : public KuduTest {
     rpc::RpcController rpc;
     tserver::ListTabletsRequestPB req;
     tserver::ListTabletsResponsePB resp;
-    return proxy.ListTablets(req, &resp, &rpc);
+    RETURN_NOT_OK(proxy.ListTablets(req, &resp, &rpc));
+    if (tablet_ids) {
+      for (int i = 0; i < resp.status_and_schema_size(); i++) {
+        tablet_ids->emplace_back(resp.status_and_schema(i).tablet_status().tablet_id());
+      }
+    }
+    return Status::OK();
+  }
+
+  // Sends a request to checksum the given tablet without an authz token.
+  Status TryChecksumWithoutAuthzToken(const string& tablet_id) {
+    auto messenger = NewMessengerOrDie();
+    const auto& addr = cluster_->tablet_server(0)->bound_rpc_addr();
+    tserver::TabletServerServiceProxy proxy(messenger, addr, addr.host());
+
+    rpc::RpcController rpc;
+    tserver::ChecksumRequestPB req;
+    tserver::NewScanRequestPB* scan = req.mutable_new_request();
+    scan->set_tablet_id(tablet_id);
+    RETURN_NOT_OK(SchemaToColumnPBs(kTestSchema, scan->mutable_projected_columns()));
+    tserver::ChecksumResponsePB resp;
+    return proxy.Checksum(req, &resp, &rpc);
   }
 
  private:
@@ -156,18 +193,11 @@ class SecurityITest : public KuduTest {
 };
 
 void SecurityITest::SmokeTestCluster() {
-  const char* kTableName = "test-table";
   client::sp::shared_ptr<KuduClient> client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
 
   // Create a table.
-  KuduSchema schema = client::KuduSchema::FromSchema(CreateKeyValueTestSchema());
-  gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-  ASSERT_OK(table_creator->table_name(kTableName)
-            .set_range_partition_columns({ "key" })
-            .schema(&schema)
-            .num_replicas(3)
-            .Create());
+  ASSERT_OK(CreateTestTable(client));
 
   // Insert a row.
   client::sp::shared_ptr<KuduTable> table;
@@ -199,6 +229,30 @@ TEST_F(SecurityITest, TestAuthorizationOnListTablets) {
             s.ToString());
   ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
   ASSERT_OK(TryListTablets());
+}
+
+TEST_F(SecurityITest, TestAuthorizationOnChecksum) {
+  cluster_opts_.extra_tserver_flags.emplace_back("--tserver_enforce_access_control");
+  ASSERT_OK(StartCluster());
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  ASSERT_OK(CreateTestTable(client));
+  vector<string> tablet_ids;
+  ASSERT_OK(TryListTablets(&tablet_ids));
+
+  // As a regular user, we shouldn't be authorized if we didn't send an authz
+  // token.
+  ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
+  for (const auto& tablet_id : tablet_ids) {
+    Status s = TryChecksumWithoutAuthzToken(tablet_id);
+    ASSERT_STR_CONTAINS(s.ToString(), "Not authorized: no authorization token presented");
+  }
+  // As a super-user (e.g. if running the CLI as an admin), this should be
+  // allowed.
+  ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
+  for (const auto& tablet_id : tablet_ids) {
+    ASSERT_OK(TryChecksumWithoutAuthzToken(tablet_id));
+  }
 }
 
 // Test creating a table, writing some data, reading data, and dropping
