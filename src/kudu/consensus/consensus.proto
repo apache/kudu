@@ -142,6 +142,7 @@ enum OperationType {
   // WRITE_OP = 3;
   // ALTER_SCHEMA_OP = 4;
   CHANGE_CONFIG_OP = 5;
+  WRITE_OP_EXT = 6;
 }
 
 /*
@@ -243,6 +244,11 @@ message ChangeConfigResponsePB {
   optional fixed64 timestamp = 3;
 }
 
+// Payload for replicate message (for write requests)
+message WritePayloadPB {
+  optional bytes payload = 1;
+}
+
 // A Replicate message, sent to replicas by leader to indicate this operation must
 // be stored in the WAL/SM log, as part of the first phase of the two phase
 // commit.
@@ -261,6 +267,9 @@ message ReplicateMsg {
 
   // The client's request id for this message, if it is set.
   optional rpc.RequestIdPB request_id = 8;
+
+  // The payload for a write request (present if op_type=WRITE_OP_EXT)
+  optional WritePayloadPB write_payload = 9;
 
   optional NoOpRequestPB noop_request = 999;
 }
