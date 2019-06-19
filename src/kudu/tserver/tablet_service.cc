@@ -1933,7 +1933,12 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   ScanResultChecksummer collector;
   bool has_more = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
-  if (FLAGS_tserver_enforce_access_control && req->has_new_request()) {
+  // TODO(KUDU-2870): the CLI tool doesn't currently fetch authz tokens when
+  // checksumming. Until it does, allow the super-user to avoid fine-grained
+  // privilege checking.
+  if (FLAGS_tserver_enforce_access_control &&
+      !server_->IsFromSuperUser(context) &&
+      req->has_new_request()) {
     const NewScanRequestPB& new_req = req->new_request();
     TokenPB token;
     if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), req->new_request(),

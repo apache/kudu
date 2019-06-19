@@ -4995,5 +4995,35 @@ TEST_P(Is343ReplicaUtilTest, Is343Cluster) {
   }
 }
 
+class AuthzTServerChecksumTest : public ToolTest {
+ public:
+  void SetUp() override {
+    ExternalMiniClusterOptions opts;
+    opts.extra_tserver_flags.emplace_back("--tserver_enforce_access_control=true");
+    NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  }
+};
+
+// Test the authorization of Checksum scans via the CLI.
+TEST_F(AuthzTServerChecksumTest, TestAuthorizeChecksum) {
+  // First, let's create a table.
+  const vector<string> loadgen_args = {
+    "perf", "loadgen",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--keep_auto_table",
+    "--num_rows_per_thread=0",
+  };
+  ASSERT_OK(RunKuduTool(loadgen_args));
+
+  // Running a checksum scan should succeed since the tool is run as the OS
+  // user, which is the default super-user.
+  const vector<string> checksum_args = {
+    "cluster", "ksck",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--checksum_scan"
+  };
+  ASSERT_OK(RunKuduTool(checksum_args));
+}
+
 } // namespace tools
 } // namespace kudu
