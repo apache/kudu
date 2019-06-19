@@ -1192,10 +1192,9 @@ using enable_if_numeric = std::enable_if<
 //   int32_t x = UnalignedLoad<int32_t>(void_ptr);
 //
 template<typename T,
-         typename port_internal::enable_if_numeric<T>::type* = nullptr,
-         bool USE_REINTERPRET = port_internal::LoadByReinterpretCast<T>()>
+         typename port_internal::enable_if_numeric<T>::type* = nullptr>
 inline T UnalignedLoad(const void* src) {
-  if (USE_REINTERPRET) {
+  if (port_internal::LoadByReinterpretCast<T>()) {
     return *reinterpret_cast<const T*>(src);
   }
   T ret;
@@ -1213,10 +1212,9 @@ inline T UnalignedLoad(const void* src) {
 // NOTE: this reverses the usual style-guide-suggested order of arguments
 // to match the more natural "*p = v;" ordering of a normal store.
 template<typename T,
-         typename port_internal::enable_if_numeric<T>::type* = nullptr,
-         bool USE_REINTERPRET = port_internal::LoadByReinterpretCast<T>()>
+         typename port_internal::enable_if_numeric<T>::type* = nullptr>
 inline void UnalignedStore(void* dst, const T& src) {
-  if (USE_REINTERPRET) {
+  if (port_internal::LoadByReinterpretCast<T>()) {
     *reinterpret_cast<T*>(dst) = src;
   } else {
     memcpy(dst, &src, sizeof(T));
