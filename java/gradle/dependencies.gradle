@@ -85,6 +85,7 @@ libs += [
     guava                : "com.google.guava:guava:$versions.guava",
     hadoopClient         : "org.apache.hadoop:hadoop-client:$versions.hadoop",
     hadoopCommon         : "org.apache.hadoop:hadoop-common:$versions.hadoop",
+    hadoopMiniCluster    : "org.apache.hadoop:hadoop-minicluster:$versions.hadoop",
     hadoopMRClientCommon : "org.apache.hadoop:hadoop-mapreduce-client-common:$versions.hadoop",
     hadoopMRClientCore   : "org.apache.hadoop:hadoop-mapreduce-client-core:$versions.hadoop",
     hamcrest             : "org.hamcrest:hamcrest:$versions.hamcrest",

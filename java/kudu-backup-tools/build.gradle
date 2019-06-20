@@ -18,37 +18,22 @@
 apply plugin: "scala"
 apply from: "$rootDir/gradle/shadow.gradle"
 
-// Mark this as a tool jar so shadow doesn't exclude any dependencies when shading.
-shadow {
-  isToolJar = true
-}
-
-
-// Add the main class to the manifest so the jar can be run via `java -jar`
-jar {
-  manifest {
-    attributes 'Main-Class': 'org.apache.kudu.backup.KuduBackupCLI'
-  }
-}
-
 dependencies {
   compile project(path: ":kudu-backup-common")
   compile project(path: ":kudu-client", configuration: "shadow")
-  compile libs.hadoopCommon
   compile (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
   compile libs.scalaLibrary
-
-  // Include the logging implementation given this is a standalone command line tool.
   compile libs.slf4jApi
-  compile libs.log4j
-  compile libs.log4jSlf4jImpl
+
+  provided libs.hadoopClient
 
   optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
+  testCompile libs.hadoopMiniCluster
   testCompile libs.junit
   testCompile libs.scalatest
 }
