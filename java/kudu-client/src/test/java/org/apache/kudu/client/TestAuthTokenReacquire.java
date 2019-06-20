@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -190,6 +191,11 @@ public class TestAuthTokenReacquire {
     assertEquals(0, session.countPendingErrors());
   }
 
+  private List<KeyRange> splitKeyRange(KuduTable table) throws Exception {
+    // Note: the nulls are for key bounds; we don't really care about them.
+    return table.getAsyncClient().getTableKeyRanges(table, null, null, null, null,
+        AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP, 1, DEFAULT_SLEEP).join();
+  }
 
   @Test
   public void testBasicWorkflow() throws Exception {
@@ -227,6 +233,13 @@ public class TestAuthTokenReacquire {
     originalToken = asyncClient.getAuthzToken(tableId);
     expireTokens();
     assertEquals(key, countRowsInTable(scanTable));
+    assertFalse(asyncClient.getAuthzToken(tableId).equals(originalToken));
+
+    // Now wait for the authz token to expire and send a request to split the
+    // key range. It should succeed and get a new authz token.
+    originalToken = asyncClient.getAuthzToken(tableId);
+    expireTokens();
+    assertFalse(splitKeyRange(scanTable).isEmpty());
     assertFalse(asyncClient.getAuthzToken(tableId).equals(originalToken));
 
     // Force the client to get a new authn token and delete the table.
