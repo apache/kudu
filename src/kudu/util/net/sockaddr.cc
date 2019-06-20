@@ -27,6 +27,7 @@
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/hash/builtin_type_hash.h"
+#include "kudu/gutil/hash/hash128to64.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
@@ -42,27 +43,27 @@ namespace kudu {
 ///
 Sockaddr::Sockaddr() {
   memset(&addr_, 0, sizeof(addr_));
-  addr_.sin_family = AF_INET;
-  addr_.sin_addr.s_addr = INADDR_ANY;
+  addr_.sin6_family = AF_INET6;
+  addr_.sin6_addr = in6addr_any;
 }
 
-Sockaddr::Sockaddr(const struct sockaddr_in& addr) {
-  memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
+Sockaddr::Sockaddr(const struct sockaddr_in6& addr) {
+  memcpy(&addr_, &addr, sizeof(struct sockaddr_in6));
 }
 
 Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(s, default_port));
 
-  if (inet_pton(AF_INET, hp.host().c_str(), &addr_.sin_addr) != 1) {
+  if (inet_pton(AF_INET6, hp.host().c_str(), &addr_.sin6_addr) != 1) {
     return Status::InvalidArgument("Invalid IP address", hp.host());
   }
   set_port(hp.port());
   return Status::OK();
 }
 
-Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
-  memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
+Sockaddr& Sockaddr::operator=(const struct sockaddr_in6 &addr) {
+  memcpy(&addr_, &addr, sizeof(struct sockaddr_in6));
   return *this;
 }
 
@@ -71,30 +72,33 @@ bool Sockaddr::operator==(const Sockaddr& other) const {
 }
 
 bool Sockaddr::operator<(const Sockaddr &rhs) const {
-  return addr_.sin_addr.s_addr < rhs.addr_.sin_addr.s_addr;
+  return NetworkByteOrder::Load128(addr_.sin6_addr.s6_addr) <
+      NetworkByteOrder::Load128(rhs.addr_.sin6_addr.s6_addr);
 }
 
-uint32_t Sockaddr::HashCode() const {
-  uint32_t hash = Hash32NumWithSeed(addr_.sin_addr.s_addr, 0);
-  hash = Hash32NumWithSeed(addr_.sin_port, hash);
+uint64 Sockaddr::HashCode() const {
+  // Note: IPv6 addresses are 128 bits.
+  uint64 hash = Hash128to64(
+      NetworkByteOrder::Load128(addr_.sin6_addr.s6_addr));
+  hash = Hash64NumWithSeed(addr_.sin6_port, hash);
   return hash;
 }
 
 void Sockaddr::set_port(int port) {
-  addr_.sin_port = htons(port);
+  addr_.sin6_port = htons(port);
 }
 
 int Sockaddr::port() const {
-  return ntohs(addr_.sin_port);
+  return ntohs(addr_.sin6_port);
 }
 
 std::string Sockaddr::host() const {
-  char str[INET_ADDRSTRLEN];
-  ::inet_ntop(AF_INET, &addr_.sin_addr, str, INET_ADDRSTRLEN);
+  char str[INET6_ADDRSTRLEN];
+  ::inet_ntop(AF_INET6, &addr_.sin6_addr, str, INET6_ADDRSTRLEN);
   return str;
 }
 
-const struct sockaddr_in& Sockaddr::addr() const {
+const struct sockaddr_in6& Sockaddr::addr() const {
   return addr_;
 }
 
@@ -103,11 +107,11 @@ std::string Sockaddr::ToString() const {
 }
 
 bool Sockaddr::IsWildcard() const {
-  return addr_.sin_addr.s_addr == 0;
+  return addr_.sin6_addr.s6_addr == 0;
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
-  return (NetworkByteOrder::FromHost32(addr_.sin_addr.s_addr) >> 24) == 127;
+  return (NetworkByteOrder::Load128(addr_.sin6_addr.s6_addr) == 1);
 }
 
 Status Sockaddr::LookupHostname(string* hostname) const {
@@ -117,7 +121,7 @@ Status Sockaddr::LookupHostname(string* hostname) const {
   int rc;
   LOG_SLOW_EXECUTION(WARNING, 200,
                      Substitute("DNS reverse-lookup for $0", ToString())) {
-    rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
+    rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in6),
                      host, NI_MAXHOST,
                      nullptr, 0, flags);
   }

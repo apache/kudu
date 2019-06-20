@@ -126,22 +126,41 @@ size_t HostPort::HashCode() const {
 }
 
 Status HostPort::ParseString(const string& str, uint16_t default_port) {
-  std::pair<string, string> p = strings::Split(str, strings::delimiter::Limit(":", 1));
+  /*
+    The `str` param is supposed to take the following combinations:
+    a) Host:Port
+    b) Host
+
+    Host could be a hostname (sub0.d0.xyz.com) or an IPv6 address.
+    If it is an IPv6 address, it should be wrapped around square brackets.
+
+    According to RFC 3986, [2001:db8:1f70::999:de8:7648:6e8]:100
+    is the format used for specifying IPv6 addresses with host-port.
+  */
+
+  bool ipv6_addr = strcount(str, ':') > 1;
+
+  const string delim = ipv6_addr ? "]:" : ":";
+  std::pair<string, string> p =
+      strings::Split(str, strings::delimiter::Limit(delim, 1));
 
   // Strip any whitespace from the host.
   StripWhiteSpace(&p.first);
 
+  // Stripping of `[` should be inconsquential in case of IPv4.
+  string host = StripPrefixString(p.first, "[");
+  string port_str = p.second;
+
   // Parse the port.
   uint32_t port;
-  if (p.second.empty() && strcount(str, ':') == 0) {
+  if (port_str.empty()) {
     // No port specified.
     port = default_port;
-  } else if (!SimpleAtoi(p.second, &port) ||
-             port > 65535) {
+  } else if (!SimpleAtoi(port_str, &port) || port > 65535) {
     return Status::InvalidArgument("Invalid port", str);
   }
 
-  host_.swap(p.first);
+  host_.swap(host);
   port_ = port;
   return Status::OK();
 }
@@ -152,17 +171,25 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_INET6;
   hints.ai_socktype = SOCK_STREAM;
+
+  // IPv4 addresses are returned, only if the local system has at least one IPv4
+  // address configured and IPv6 addresses are returned only if the local system
+  // has at least one IPv6 address configured. The loopback address is not
+  // considered for this case as valid as a configured address.
+  // Ref: http://man7.org/linux/man-pages/man3/getaddrinfo.3.html
+  hints.ai_flags = AI_ADDRCONFIG;
+
   AddrInfo result;
   const string op_description = Substitute("resolve address for $0", host_);
   LOG_SLOW_EXECUTION(WARNING, 200, op_description) {
     RETURN_NOT_OK(GetAddrInfo(host_, hints, op_description, &result));
   }
   for (const addrinfo* ai = result.get(); ai != nullptr; ai = ai->ai_next) {
-    CHECK_EQ(ai->ai_family, AF_INET);
-    struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(ai->ai_addr);
-    addr->sin_port = htons(port_);
+    CHECK_EQ(ai->ai_family, AF_INET6);
+    struct sockaddr_in6* addr = reinterpret_cast<struct sockaddr_in6*>(ai->ai_addr);
+    addr->sin6_port = htons(port_);
     Sockaddr sockaddr(*addr);
     if (addresses) {
       addresses->push_back(sockaddr);
@@ -205,12 +232,12 @@ Network::Network()
     netmask_(0) {
 }
 
-Network::Network(uint32_t addr, uint32_t netmask)
+Network::Network(uint128 addr, uint128 netmask)
   : addr_(addr), netmask_(netmask) {}
 
 bool Network::WithinNetwork(const Sockaddr& addr) const {
-  return ((addr.addr().sin_addr.s_addr & netmask_) ==
-          (addr_ & netmask_));
+  return (NetworkByteOrder::Load128(addr.addr().sin6_addr.s6_addr) & netmask_) ==
+          (addr_ & netmask_);
 }
 
 Status Network::ParseCIDRString(const string& addr) {
@@ -222,13 +249,16 @@ Status Network::ParseCIDRString(const string& addr) {
   uint32_t bits;
   bool success = SimpleAtoi(p.second, &bits);
 
-  if (!s.ok() || !success || bits > 32) {
+  if (!s.ok() || !success || bits > 128) {
     return Status::NetworkError("Unable to parse CIDR address", addr);
   }
 
   // Netmask in network byte order
-  uint32_t netmask = NetworkByteOrder::FromHost32(~(0xffffffff >> bits));
-  addr_ = sockaddr.addr().sin_addr.s_addr;
+  uint128 netmask(0xffffffffffffffff, 0xffffffffffffffff);
+  netmask >>= bits;
+  netmask = ~netmask;
+
+  addr_ = NetworkByteOrder::Load128(sockaddr.addr().sin6_addr.s6_addr);
   netmask_ = netmask;
   return Status::OK();
 }
@@ -304,10 +334,12 @@ Status GetLocalNetworks(std::vector<Network>* net) {
   for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
     if (ifa->ifa_addr == nullptr || ifa->ifa_netmask == nullptr) continue;
 
-    if (ifa->ifa_addr->sa_family == AF_INET) {
-      Sockaddr addr(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr));
-      Sockaddr netmask(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask));
-      Network network(addr.addr().sin_addr.s_addr, netmask.addr().sin_addr.s_addr);
+    if (ifa->ifa_addr->sa_family == AF_INET6) {
+      Sockaddr addr(*reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr));
+      Sockaddr netmask(*reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_netmask));
+      Network network(
+          NetworkByteOrder::Load128(addr.addr().sin6_addr.s6_addr),
+          NetworkByteOrder::Load128(netmask.addr().sin6_addr.s6_addr));
       net->push_back(network);
     }
   }

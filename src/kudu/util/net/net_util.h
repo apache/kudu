@@ -99,11 +99,11 @@ struct HostPortEqualityPredicate {
 class Network {
  public:
   Network();
-  Network(uint32_t addr, uint32_t netmask);
+  Network(uint128 addr, uint128 netmask);
 
-  uint32_t addr() const { return addr_; }
+  uint128 addr() const { return addr_; }
 
-  uint32_t netmask() const { return netmask_; }
+  uint128 netmask() const { return netmask_; }
 
   // Returns true if the address is within network.
   bool WithinNetwork(const Sockaddr& addr) const;
@@ -116,8 +116,8 @@ class Network {
   static Status ParseCIDRStrings(
       const std::string& comma_sep_addrs, std::vector<Network>* res);
  private:
-  uint32_t addr_;
-  uint32_t netmask_;
+  uint128 addr_;
+  uint128 netmask_;
 };
 
 // Parse and resolve the given comma-separated list of addresses.

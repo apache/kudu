@@ -132,7 +132,7 @@ bool Socket::IsTemporarySocketError(int err) {
 
 Status Socket::Init(int flags) {
   int nonblocking_flag = (flags & FLAG_NONBLOCKING) ? SOCK_NONBLOCK : 0;
-  Reset(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | nonblocking_flag, 0));
+  Reset(::socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC | nonblocking_flag, 0));
   if (fd_ < 0) {
     int err = errno;
     return Status::NetworkError("error opening socket", ErrnoToString(err), err);
@@ -144,7 +144,7 @@ Status Socket::Init(int flags) {
 #else
 
 Status Socket::Init(int flags) {
-  Reset(::socket(AF_INET, SOCK_STREAM, 0));
+  Reset(::socket(AF_INET6, SOCK_STREAM, 0));
   if (fd_ < 0) {
     int err = errno;
     return Status::NetworkError("error opening socket", ErrnoToString(err), err);
@@ -272,7 +272,7 @@ Status Socket::Listen(int listen_queue_size) {
 }
 
 Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
-  struct sockaddr_in sin;
+  struct sockaddr_in6 sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
   if (::getsockname(fd_, reinterpret_cast<struct sockaddr*>(&sin), &len) == -1) {
@@ -284,7 +284,7 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
 }
 
 Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
-  struct sockaddr_in sin;
+  struct sockaddr_in6 sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
   if (::getpeername(fd_, reinterpret_cast<struct sockaddr*>(&sin), &len) == -1) {
@@ -307,7 +307,7 @@ bool Socket::IsLoopbackConnection() const {
 }
 
 Status Socket::Bind(const Sockaddr& bind_addr) {
-  struct sockaddr_in addr = bind_addr.addr();
+  struct sockaddr_in6 addr = bind_addr.addr();
 
   DCHECK_GE(fd_, 0);
   if (PREDICT_FALSE(::bind(fd_, (struct sockaddr*) &addr, sizeof(addr)))) {
@@ -328,7 +328,7 @@ Status Socket::Bind(const Sockaddr& bind_addr) {
 
 Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
   TRACE_EVENT0("net", "Socket::Accept");
-  struct sockaddr_in addr;
+  struct sockaddr_in6 addr;
   socklen_t olen = sizeof(addr);
   DCHECK_GE(fd_, 0);
 #if defined(__linux__)
@@ -381,8 +381,8 @@ Status Socket::Connect(const Sockaddr &remote) {
     RETURN_NOT_OK(BindForOutgoingConnection());
   }
 
-  struct sockaddr_in addr;
-  memcpy(&addr, &remote.addr(), sizeof(sockaddr_in));
+  struct sockaddr_in6 addr;
+  memcpy(&addr, &remote.addr(), sizeof(sockaddr_in6));
   DCHECK_GE(fd_, 0);
   int ret;
   RETRY_ON_EINTR(ret, ::connect(

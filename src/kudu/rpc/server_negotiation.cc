@@ -74,13 +74,14 @@ TAG_FLAG(rpc_inject_invalid_authn_token_ratio, unsafe);
 
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
+// Trusting everything for now.
 DEFINE_string(trusted_subnets,
-              "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16",
+              "::/0",
               "A trusted subnet whitelist. If set explicitly, all unauthenticated "
               "or unencrypted connections are prohibited except the ones from the "
-              "specified address blocks. Otherwise, private network (127.0.0.0/8, etc.) "
+              "specified address blocks. Otherwise, private network (::1/128, etc.) "
               "and local subnets of all local network interfaces will be used. Set it "
-              "to '0.0.0.0/0' to allow unauthenticated/unencrypted connections from all "
+              "to '::/0' to allow unauthenticated/unencrypted connections from all "
               "remote IP addresses. However, if network access is not otherwise restricted "
               "by a firewall, malicious users may be able to gain unauthorized access.");
 TAG_FLAG(trusted_subnets, advanced);

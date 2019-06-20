@@ -30,14 +30,12 @@ namespace kudu {
 ///
 /// Represents a sockaddr.
 ///
-/// Currently only IPv4 is implemented.  When IPv6 and UNIX domain are
-/// implemented, this should become an abstract base class and those should be
-/// multiple implementations.
+/// Currently only IPv6 is implemented.
 ///
 class Sockaddr {
  public:
   Sockaddr();
-  explicit Sockaddr(const struct sockaddr_in &addr);
+  explicit Sockaddr(const struct sockaddr_in6 &addr);
 
   // Parse a string IP address of the form "A.B.C.D:port", storing the result
   // in this Sockaddr object. If no ':port' is specified, uses 'default_port'.
@@ -46,7 +44,7 @@ class Sockaddr {
   // Returns a bad Status if the input is malformed.
   Status ParseString(const std::string& s, uint16_t default_port);
 
-  Sockaddr& operator=(const struct sockaddr_in &addr);
+  Sockaddr& operator=(const struct sockaddr_in6 &addr);
 
   bool operator==(const Sockaddr& other) const;
 
@@ -54,14 +52,14 @@ class Sockaddr {
   // The port number is ignored in this comparison.
   bool operator<(const Sockaddr &rhs) const;
 
-  uint32_t HashCode() const;
+  uint64 HashCode() const;
 
   // Returns the dotted-decimal string '1.2.3.4' of the host component of this address.
   std::string host() const;
 
   void set_port(int port);
   int port() const;
-  const struct sockaddr_in& addr() const;
+  const struct sockaddr_in6& addr() const;
 
   // Returns the stringified address in '1.2.3.4:<port>' format.
   std::string ToString() const;
@@ -77,7 +75,7 @@ class Sockaddr {
 
   // the default auto-generated copy constructor is fine here
  private:
-  struct sockaddr_in addr_;
+  struct sockaddr_in6 addr_;
 };
 
 } // namespace kudu
