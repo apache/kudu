@@ -481,7 +481,9 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
     return Status::NotAuthorized("expected TLS_HANDSHAKE step",
                                  NegotiatePB::NegotiateStep_Name(response.step()));
   }
-  TRACE("Received TLS_HANDSHAKE response from server");
+  if (!response.tls_handshake().empty()) {
+    TRACE("Received TLS_HANDSHAKE response from server");
+  }
 
   if (PREDICT_FALSE(!response.has_tls_handshake())) {
     return Status::NotAuthorized("No TLS handshake token in TLS_HANDSHAKE response from server");
