@@ -25,9 +25,10 @@ dependencies {
     // Make sure wrong Guava version is not pulled in.
     exclude group: "com.google.guava", module: "guava"
   }
-  compile libs.hadoopCommon
-  compile libs.scalaLibrary
   compile libs.slf4jApi
+
+  provided libs.hadoopCommon
+  provided libs.scalaLibrary
 
   optional libs.yetusAnnotations
 

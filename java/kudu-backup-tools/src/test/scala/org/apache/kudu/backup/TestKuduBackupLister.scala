@@ -17,13 +17,15 @@
 package org.apache.kudu.backup
 
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.PrintStream
 import java.nio.file.Files
-import java.nio.file.Path
 import java.text.SimpleDateFormat
 
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileUtil
+import org.apache.hadoop.hdfs.MiniDFSCluster
 import org.junit.Assert._
 import org.junit.After
 import org.junit.Before
@@ -31,20 +33,10 @@ import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-class TestKuduBackupLister {
+abstract class BaseTestKuduBackupLister {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  var rootPath: Path = _
-
-  @Before
-  def setUp(): Unit = {
-    rootPath = Files.createTempDirectory("backupcli")
-  }
-
-  @After
-  def tearDown(): Unit = {
-    FileUtils.deleteDirectory(rootPath.toFile)
-  }
+  var rootPath: String = _
 
   // Helper to write a standard collection of backup metadata useful for a few tests.
   private def createStandardTableMetadata(io: BackupIO): Unit = {
@@ -71,7 +63,7 @@ class TestKuduBackupLister {
 
   @Test
   def testListAllBackups(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     createStandardTableMetadata(io)
 
     val options = createOptions(rootPath, ListType.ALL)
@@ -97,7 +89,7 @@ class TestKuduBackupLister {
 
   @Test
   def testListLatestBackups(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     createStandardTableMetadata(io)
 
     val options = createOptions(rootPath, ListType.LATEST)
@@ -117,7 +109,7 @@ class TestKuduBackupLister {
 
   @Test
   def testListRestorePath(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     createStandardTableMetadata(io)
 
     val options = createOptions(rootPath, ListType.RESTORE_SEQUENCE)
@@ -142,7 +134,7 @@ class TestKuduBackupLister {
 
   @Test
   def testTableFilter(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     createStandardTableMetadata(io)
 
     val options = createOptions(rootPath, ListType.ALL, Seq("taco"))
@@ -163,7 +155,7 @@ class TestKuduBackupLister {
 
   @Test
   def testMissingTable(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     createStandardTableMetadata(io)
 
     val options = createOptions(rootPath, ListType.ALL, Seq("pizza", "nope"))
@@ -188,15 +180,46 @@ class TestKuduBackupLister {
   }
 
   def createOptions(
-      rootPath: Path,
+      rootPath: String,
       listType: ListType.Value,
       tables: Seq[String] = Seq(),
       format: Format.Value = Format.CSV): BackupCLIOptions = {
-    new BackupCLIOptions(
-      rootPath.toUri.toString,
-      Mode.LIST,
-      tables = tables,
-      listType = listType,
-      format = format)
+    new BackupCLIOptions(rootPath, Mode.LIST, tables = tables, listType = listType, format = format)
+  }
+}
+
+class LocalTestKuduBackupLister extends BaseTestKuduBackupLister {
+
+  @Before
+  def setUp(): Unit = {
+    rootPath = Files.createTempDirectory("local-test").toAbsolutePath.toString
+  }
+
+  @After
+  def tearDown(): Unit = {
+    FileUtils.deleteDirectory(new File(rootPath))
+  }
+}
+
+class HDFSTestKuduBackupLister extends BaseTestKuduBackupLister {
+
+  var baseDir: File = _
+
+  @Before
+  def setUp(): Unit = {
+    baseDir = Files.createTempDirectory("hdfs-test").toFile.getAbsoluteFile
+
+    // Create an HDFS mini-cluster.
+    val conf = new Configuration()
+    conf.set(MiniDFSCluster.HDFS_MINIDFS_BASEDIR, baseDir.getAbsolutePath)
+    val hdfsCluster = new MiniDFSCluster.Builder(conf).build()
+
+    // Set the root path to use the HDFS URI.
+    rootPath = "hdfs://localhost:" + hdfsCluster.getNameNodePort + "/"
+  }
+
+  @After
+  def tearDown(): Unit = {
+    FileUtil.fullyDelete(baseDir)
   }
 }

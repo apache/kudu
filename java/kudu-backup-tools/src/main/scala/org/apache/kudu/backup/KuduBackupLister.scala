@@ -34,7 +34,7 @@ object KuduBackupLister {
   // Run the backup CLI tool with the given options. Like a command, returns 0 if successful, or
   // a nonzero error code.
   def run(options: BackupCLIOptions): Int = {
-    Preconditions.checkArgument(options.mode == Mode.LIST);
+    Preconditions.checkArgument(options.mode == Mode.LIST)
 
     // Sort by table name for a consistent ordering (at least if there's no duplicate names).
     val sortedTables = options.tables.sorted

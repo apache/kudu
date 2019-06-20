@@ -16,15 +16,17 @@
 // under the License.
 package org.apache.kudu.backup
 
+import java.io.File
 import java.nio.file.Files
-import java.nio.file.Path
 import java.time.temporal.ChronoUnit
 import java.time.Duration
 import java.time.Instant
 
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileUtil
 import org.apache.hadoop.fs.{Path => HPath}
+import org.apache.hadoop.hdfs.MiniDFSCluster
 import org.junit.After
 import org.junit.Assert._
 import org.junit.Before
@@ -32,20 +34,10 @@ import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-class TestKuduBackupCleaner {
+abstract class BaseTestKuduBackupCleaner {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  var rootPath: Path = _
-
-  @Before
-  def setUp(): Unit = {
-    rootPath = Files.createTempDirectory("backupcli")
-  }
-
-  @After
-  def tearDown(): Unit = {
-    FileUtils.deleteDirectory(rootPath.toFile)
-  }
+  var rootPath: String = _
 
   // Return the epoch time in milliseconds that is 'secsBefore' seconds before 'current'.
   private def epochMillisBefore(current: Instant, secsBefore: Long): Long = {
@@ -54,7 +46,7 @@ class TestKuduBackupCleaner {
 
   @Test
   def testBackupCleaner(): Unit = {
-    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath)
     val expirationAge = Duration.of(15, ChronoUnit.SECONDS)
     val now = Instant.now
     val tableName = "taco"
@@ -123,17 +115,52 @@ class TestKuduBackupCleaner {
   }
 
   def createOptions(
-      rootPath: Path,
+      rootPath: String,
       expirationAge: Duration,
       tables: Seq[String] = Seq(),
       dryRun: Boolean = false,
       verbose: Boolean = false): BackupCLIOptions = {
     new BackupCLIOptions(
-      rootPath.toUri.toString,
+      rootPath,
       Mode.CLEAN,
       tables = tables,
       expirationAge = expirationAge,
       dryRun = dryRun,
       verbose = verbose)
+  }
+}
+
+class LocalTestKuduBackupCleaner extends BaseTestKuduBackupCleaner {
+
+  @Before
+  def setUp(): Unit = {
+    rootPath = Files.createTempDirectory("backupcli").toAbsolutePath.toString
+  }
+
+  @After
+  def tearDown(): Unit = {
+    FileUtils.deleteDirectory(new File(rootPath))
+  }
+}
+
+class HDFSTestKuduBackupCleaner extends BaseTestKuduBackupCleaner {
+  var baseDir: File = _
+
+  @Before
+  def setUp(): Unit = {
+    baseDir = Files.createTempDirectory("hdfs-test").toFile.getAbsoluteFile
+
+    // Create an HDFS mini-cluster.
+    val conf = new Configuration()
+    conf.set(MiniDFSCluster.HDFS_MINIDFS_BASEDIR, baseDir.getAbsolutePath)
+    val hdfsCluster = new MiniDFSCluster.Builder(conf).build()
+
+    // Set the root path to use the HDFS URI.
+    rootPath = "hdfs://localhost:" + hdfsCluster.getNameNodePort + "/"
+  }
+
+  @After
+  def tearDown(): Unit = {
+    FileUtil.fullyDelete(baseDir)
   }
 }
