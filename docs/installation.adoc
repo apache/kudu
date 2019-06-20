@@ -44,8 +44,8 @@ only tolerate a single failure; two-master deployments cannot tolerate any failu
 
 .Operating System Requirements
 Linux::
-    - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (Trusty), Ubuntu 16.04 (Xenial), Debian 8
-    (Jessie), or SLES 12.
+    - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (trusty), Ubuntu 16.04 (xenial),
+      Ubuntu 18.04 (bionic), Debian 8 (Jessie), or SLES 12.
     - A kernel and filesystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
