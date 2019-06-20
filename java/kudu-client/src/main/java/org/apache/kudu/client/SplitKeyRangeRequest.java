@@ -26,6 +26,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Common.KeyRangePB;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
 
@@ -39,6 +40,9 @@ class SplitKeyRangeRequest extends KuduRpc<SplitKeyRangeResponse> {
   private final byte[] endPrimaryKey;
   private final byte[] partitionKey;
   private final long splitSizeBytes;
+
+  /** The token with which to authorize this RPC. */
+  private Token.SignedTokenPB authzToken;
 
   /**
    * Create a new RPC request
@@ -81,8 +85,21 @@ class SplitKeyRangeRequest extends KuduRpc<SplitKeyRangeResponse> {
       builder.setStopPrimaryKey(UnsafeByteOperations.unsafeWrap(endPrimaryKey));
     }
     builder.setTargetChunkSizeBytes(splitSizeBytes);
+    if (authzToken != null) {
+      builder.setAuthzToken(authzToken);
+    }
 
     return builder.build();
+  }
+
+  @Override
+  boolean needsAuthzToken() {
+    return true;
+  }
+
+  @Override
+  void bindAuthzToken(Token.SignedTokenPB token) {
+    authzToken = token;
   }
 
   @Override
