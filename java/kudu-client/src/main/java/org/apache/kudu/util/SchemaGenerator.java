@@ -235,11 +235,11 @@ public class SchemaGenerator {
     final List<ColumnSchema> keyColumns = schema.getPrimaryKeyColumns();
 
     // Add hash partitioning (Max out at 3 levels to avoid being excessive).
-    int hashPartitionLevels = random.nextInt(Math.min(keyColumns.size(), 3)) + 1;
+    int hashPartitionLevels = random.nextInt(Math.min(keyColumns.size(), 2)) + 1;
     for (int i = 0; i < hashPartitionLevels; i++) {
       final ColumnSchema hashColumn = keyColumns.get(i);
       // TODO(ghenke): Make buckets configurable.
-      final int hashBuckets = random.nextInt(8) + MIN_HASH_BUCKETS;
+      final int hashBuckets = random.nextInt(2) + MIN_HASH_BUCKETS;
       final int hashSeed = random.nextInt();
       options.addHashPartitions(Arrays.asList(hashColumn.getName()), hashBuckets, hashSeed);
     }
