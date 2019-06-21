@@ -217,6 +217,14 @@ Status Connection::SetNonBlocking(bool enabled) {
   return socket_->SetNonBlocking(enabled);
 }
 
+Status Connection::SetTcpKeepAlive(int idle_time_s, int retry_time_s, int num_retries) {
+  DCHECK_GT(idle_time_s, 0);
+  DCHECK_GE(retry_time_s, 0);
+  DCHECK_GE(num_retries, 0);
+  return socket_->SetTcpKeepAlive(std::max(1, idle_time_s), std::max(0, retry_time_s),
+      std::max(0, num_retries));
+}
+
 void Connection::EpollRegister(ev::loop_ref& loop) {
   DCHECK(reactor_thread_->IsCurrentThread());
   DVLOG(4) << "Registering connection for epoll: " << ToString();

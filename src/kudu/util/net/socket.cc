@@ -585,6 +585,24 @@ Status Socket::SetTimeout(int opt, const char* optname, const MonoDelta& timeout
   return Status::OK();
 }
 
+Status Socket::SetTcpKeepAlive(int idle_time_s, int retry_time_s, int num_retries) {
+#if defined(__linux__)
+  static const char* const err_string = "failed to set socket option $0 to $1";
+  DCHECK_GT(idle_time_s, 0);
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_TCP, TCP_KEEPIDLE, idle_time_s),
+      Substitute(err_string, "TCP_KEEPIDLE", idle_time_s));
+  DCHECK_GT(retry_time_s, 0);
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_TCP, TCP_KEEPINTVL, retry_time_s),
+      Substitute(err_string, "TCP_KEEPINTVL", retry_time_s));
+  DCHECK_GT(num_retries, 0);
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_TCP, TCP_KEEPCNT, num_retries),
+      Substitute(err_string, "TCP_KEEPCNT", num_retries));
+  RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_KEEPALIVE, 1),
+      "failed to enable TCP KeepAlive socket option");
+#endif
+  return Status::OK();
+}
+
 template<typename T>
 Status Socket::SetSockOpt(int level, int option, const T& value) {
   if (::setsockopt(fd_, level, option, &value, sizeof(T)) == -1) {

@@ -72,6 +72,9 @@ METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
+DECLARE_int32(tcp_keepalive_probe_period_s);
+DECLARE_int32(tcp_keepalive_retry_period_s);
+DECLARE_int32(tcp_keepalive_retry_count);
 
 using std::shared_ptr;
 using std::string;
@@ -781,6 +784,34 @@ TEST_P(TestRpc, TestCallLongerThanKeepalive) {
                                  req, &resp, &controller));
 }
 
+// Test a call which leaves the TCP connection idle for extended period of time
+// and verifies that the call succeeds (i.e. the connection is not closed).
+TEST_P(TestRpc, TestTCPKeepalive) {
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl));
+
+  // Set up client.
+  FLAGS_tcp_keepalive_probe_period_s = 1;
+  FLAGS_tcp_keepalive_retry_period_s = 1;
+  FLAGS_tcp_keepalive_retry_count = 1;
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+      GenericCalculatorService::static_service_name());
+
+  // Make a call which sleeps for longer than TCP keepalive probe period,
+  // triggering TCP keepalive probes.
+  RpcController controller;
+  SleepRequestPB req;
+  req.set_sleep_micros(8 * 1000 * 1000); // 8 seconds.
+  req.set_deferred(true);
+  SleepResponsePB resp;
+  ASSERT_OK(p.SyncRequest(GenericCalculatorService::kSleepMethodName,
+      req, &resp, &controller));
+}
+
 // Test that the RpcSidecar transfers the expected messages.
 TEST_P(TestRpc, TestRpcSidecar) {
   // Set up server.
@@ -1067,11 +1098,15 @@ TEST_F(TestRpc, TestServerShutsDown) {
     // EINVAL is possible if the controller socket had already disconnected by
     // the time it trys to set the SO_SNDTIMEO socket option as part of the
     // normal blocking SASL handshake.
+    //
+    // ENOTCONN is possible simply because the server closes the connection
+    // after the connection is established.
     ASSERT_TRUE(s.posix_code() == EPIPE ||
                 s.posix_code() == ECONNRESET ||
                 s.posix_code() == ESHUTDOWN ||
                 s.posix_code() == ECONNREFUSED ||
-                s.posix_code() == EINVAL)
+                s.posix_code() == EINVAL ||
+                s.posix_code() == ENOTCONN)
       << "Unexpected status: " << s.ToString();
   }
 }

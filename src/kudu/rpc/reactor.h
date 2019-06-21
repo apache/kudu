@@ -37,6 +37,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -326,6 +327,9 @@ class ReactorThread {
   // The total number of cycles spent in epoll_wait() since this thread
   // started.
   int64_t total_poll_cycles_ = 0;
+
+  // Random number generator for randomizing the TCP keepalive interval.
+  Random rng_;
 
   // Accounting for determining load average in each cycle of TimerHandler.
   struct {

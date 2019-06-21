@@ -153,6 +153,13 @@ class Socket {
   // See also readn() from Stevens (2004) or Kerrisk (2010)
   Status BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoTime& deadline);
 
+  // Enable TCP keepalive for the underlying socket. A TCP keepalive probe will be sent
+  // to the remote end after the connection has been idle for 'idle_time_s' seconds.
+  // It will retry sending probes up to 'num_retries' number of times until an ACK is
+  // heard from peer. 'retry_time_s' is the sleep time in seconds between successive
+  // keepalive probes.
+  Status SetTcpKeepAlive(int idle_time_s, int retry_time_s, int num_retries);
+
  private:
   // Called internally from SetSend/RecvTimeout().
   Status SetTimeout(int opt, const char* optname, const MonoDelta& timeout);

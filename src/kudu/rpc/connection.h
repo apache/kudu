@@ -99,6 +99,13 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Set underlying socket to non-blocking (or blocking) mode.
   Status SetNonBlocking(bool enabled);
 
+  // Enable TCP keepalive for the underlying socket. A TCP keepalive probe will be sent
+  // to the remote end after the connection has been idle for 'idle_time_s' seconds.
+  // It will retry sending probes up to 'num_retries' number of times until an ACK is
+  // heard from peer. 'retry_time_s' is the sleep time in seconds between successive
+  // keepalive probes.
+  Status SetTcpKeepAlive(int idle_time_s, int retry_time_s, int num_retries);
+
   // Register our socket with an epoll loop.  We will only ever be registered in
   // one epoll loop at a time.
   void EpollRegister(ev::loop_ref& loop);
