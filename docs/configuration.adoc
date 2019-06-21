@@ -139,6 +139,17 @@ do not read this flag.
 For the full list of flags for tablet servers, see the
 link:configuration_reference.html#kudu-tserver_supported[Kudu Tablet Server Configuration Reference].
 
+== Configure Kudu Tables
+Kudu allows certain configurations to be set per table. To configure the behavior of a Kudu table,
+you can set these configurations at table creation, or alter them via the Kudu API or Kudu command
+line tool.
+
+.Supported Configurable Properties for Kudu Tables
+|===
+| Configuration      | Valid Options     | Default     | Description
+
+| kudu.table.history_max_age_sec | integer | | Number of seconds to retain history for tablets in this table.
+|===
 
 == Next Steps
 - link:developing.html[Developing Applications With Kudu]
