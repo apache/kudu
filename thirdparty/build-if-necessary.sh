@@ -85,7 +85,10 @@ else
   for GROUP in $DEPENDENCY_GROUPS; do
     STAMP_FILE=.build-stamp.$GROUP
     if [ -f $STAMP_FILE ]; then
-      CHANGED_FILE_COUNT=$(find . -cnewer $STAMP_FILE | wc -l)
+      CHANGED_FILE_COUNT=$(find . -cnewer $STAMP_FILE |
+        grep -v '^\./\.build-stamp' |
+        grep -v '^\.$' |
+        wc -l)
       echo "$CHANGED_FILE_COUNT file(s) been modified since thirdparty dependency group '$GROUP' was last built."
       if [ $CHANGED_FILE_COUNT -gt 0 ]; then
         echo "Rebuilding."
