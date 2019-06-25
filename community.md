@@ -48,6 +48,10 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
 * **<a class="icon gerrit" href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Gerrit Code Review</a>**
 * **<a class="icon jira" href="https://issues.apache.org/jira/browse/KUDU">JIRA Issue Tracker</a>**
 
+**Social Media**
+* **<a class="icon twitter" href="https://twitter.com/ApacheKudu">Twitter</a>**
+* **<a href="https://www.reddit.com/r/kudu/">Reddit</a>**
+
 **Project information**
 
 * [**Apache Kudu Committers list**](/committers.html)
