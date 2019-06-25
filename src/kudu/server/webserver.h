@@ -23,16 +23,14 @@
 #include <utility>
 #include <vector>
 
+#include <squeasel.h>
+
 #include "kudu/gutil/port.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
-
-struct sq_connection; // IWYU pragma: keep
-struct sq_request_info; // IWYU pragma: keep
-struct sq_context; // IWYU pragma: keep
 
 namespace kudu {
 
@@ -138,13 +136,15 @@ class Webserver : public WebCallbackRegistry {
 
   // Dispatch point for all incoming requests.
   // Static so that it can act as a function pointer, and then call the next method
-  static int BeginRequestCallbackStatic(struct sq_connection* connection);
-  int BeginRequestCallback(struct sq_connection* connection,
-                           struct sq_request_info* request_info);
+  static sq_callback_result_t BeginRequestCallbackStatic(struct sq_connection* connection);
+  sq_callback_result_t BeginRequestCallback(
+      struct sq_connection* connection,
+      struct sq_request_info* request_info);
 
-  int RunPathHandler(const PathHandler& handler,
-                     struct sq_connection* connection,
-                     struct sq_request_info* request_info);
+  sq_callback_result_t RunPathHandler(
+      const PathHandler& handler,
+      struct sq_connection* connection,
+      struct sq_request_info* request_info);
 
   // Callback to funnel mongoose logs through glog.
   static int LogMessageCallbackStatic(const struct sq_connection* connection,

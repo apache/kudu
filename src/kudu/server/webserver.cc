@@ -438,14 +438,16 @@ int Webserver::LogMessageCallbackStatic(const struct sq_connection* /*connection
   return 0;
 }
 
-int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
+sq_callback_result_t Webserver::BeginRequestCallbackStatic(
+    struct sq_connection* connection) {
   struct sq_request_info* request_info = sq_get_request_info(connection);
   Webserver* instance = reinterpret_cast<Webserver*>(request_info->user_data);
   return instance->BeginRequestCallback(connection, request_info);
 }
 
-int Webserver::BeginRequestCallback(struct sq_connection* connection,
-                                    struct sq_request_info* request_info) {
+sq_callback_result_t Webserver::BeginRequestCallback(
+    struct sq_connection* connection,
+    struct sq_request_info* request_info) {
   if (opts_.require_spnego) {
     const char* authz_header = sq_get_header(connection, "Authorization");
     string resp_header, authn_princ;
@@ -454,7 +456,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
       SendPlainResponse(connection, "401 Authentication Required",
                          "Must authenticate with SPNEGO.",
                          { resp_header });
-      return 1;
+      return SQ_HANDLED_OK;
     }
     if (s.ok() && authn_princ.empty()) {
       s = Status::RuntimeError("SPNEGO indicated complete, but got empty principal");
@@ -473,7 +475,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
           "500 Internal Server Error";
 
       SendPlainResponse(connection, http_status, s.ToString(), {});
-      return 1;
+      return SQ_HANDLED_OK;
     }
 
     if (opts_.spnego_post_authn_callback) {
@@ -537,13 +539,13 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
       // to the default handler which will serve files.
       if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
         VLOG(2) << "HTTP File access: " << request_info->uri;
-        return 0;
+        return SQ_CONTINUE_HANDLING;
       }
       sq_printf(connection,
                 "HTTP/1.1 %s\r\nContent-Type: text/plain\r\n\r\n",
                 HttpStatusCodeToString(HttpStatusCode::NotFound).c_str());
       sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
-      return 1;
+      return SQ_HANDLED_OK;
     }
     handler = it->second;
   }
@@ -551,9 +553,10 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
   return RunPathHandler(*handler, connection, request_info);
 }
 
-int Webserver::RunPathHandler(const PathHandler& handler,
-                              struct sq_connection* connection,
-                              struct sq_request_info* request_info) {
+sq_callback_result_t Webserver::RunPathHandler(
+    const PathHandler& handler,
+    struct sq_connection* connection,
+    struct sq_request_info* request_info) {
   // Should we render with css styles?
   bool use_style = true;
 
@@ -571,7 +574,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
       sq_printf(connection,
                 "HTTP/1.1 %s\r\n",
                 HttpStatusCodeToString(HttpStatusCode::LengthRequired).c_str());
-      return 1;
+      return SQ_HANDLED_CLOSE_CONNECTION;
     }
     if (content_len > FLAGS_webserver_max_post_length_bytes) {
       // TODO(wdb): for this and other HTTP requests, we should log the
@@ -580,7 +583,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
       sq_printf(connection,
                 "HTTP/1.1 %s\r\n",
                 HttpStatusCodeToString(HttpStatusCode::RequestEntityTooLarge).c_str());
-      return 1;
+      return SQ_HANDLED_CLOSE_CONNECTION;
     }
 
     char buf[8192];
@@ -594,7 +597,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
         sq_printf(connection,
                   "HTTP/1.1 %s\r\n",
                   HttpStatusCodeToString(HttpStatusCode::InternalServerError).c_str());
-        return 1;
+        return SQ_HANDLED_CLOSE_CONNECTION;
       }
 
       req.post_data.append(buf, n);
@@ -666,7 +669,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   // Make sure to use sq_write for printing the body; sq_printf truncates at 8KB.
   sq_write(connection, headers.c_str(), headers.length());
   sq_write(connection, full_content.c_str(), full_content.length());
-  return 1;
+  return SQ_HANDLED_OK;
 }
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
