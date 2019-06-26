@@ -678,45 +678,50 @@ Status TestLoadGenerator(const RunnerContext& context) {
   cout << "Using " << (is_auto_table ? "auto-created " : "")
        << "table '" << table_name << "'" << endl;
 
-  uint64_t total_row_count = 0;
-  uint64_t total_err_count = 0;
+  uint64_t num_rows_generated = 0;
+  uint64_t num_rows_write_error = 0;
   Stopwatch sw(Stopwatch::ALL_THREADS);
   sw.start();
   Status status = GenerateInsertRows(client, table_name,
-                                     &total_row_count, &total_err_count);
+                                     &num_rows_generated,
+                                     &num_rows_write_error);
   sw.stop();
-  const double total = sw.elapsed().wall_millis();
+  const double time_total_ms = sw.elapsed().wall_millis();
   cout << endl << "Generator report" << endl
-       << "  time total  : " << total << " ms" << endl;
-  if (total_row_count != 0) {
-    cout << "  time per row: " << total / total_row_count << " ms" << endl;
+       << "  time total  : " << time_total_ms << " ms" << endl;
+  if (num_rows_generated != 0 && num_rows_write_error == 0) {
+    // Report per-row timings only if there were no write errors, otherwise the
+    // readings do not make much sense.
+    cout << "  time per row: " << time_total_ms / num_rows_generated << " ms"
+         << endl;
   }
-  if (!status.ok() || total_err_count != 0) {
+  if (!status.ok() || num_rows_write_error != 0) {
     string err_str;
     if (!status.ok()) {
       SubstituteAndAppend(&err_str, status.ToString());
     }
-    if (total_err_count != 0) {
+    if (num_rows_write_error != 0) {
       if (!status.ok()) {
         SubstituteAndAppend(&err_str,  "; ");
       }
       SubstituteAndAppend(&err_str, "Encountered $0 write operation errors",
-                          total_err_count);
+                          num_rows_write_error);
     }
     return Status::RuntimeError(err_str);
   }
 
   if (FLAGS_run_scan) {
-    // Run a table scan to count inserted rows.
+    // In case if no write errors encountered, run a table scan to make sure
+    // the number of inserted rows matches the results of the scan.
     uint64_t count = 0;
     RETURN_NOT_OK(CountTableRows(client, table_name, &count));
     cout << endl << "Scanner report" << endl
-         << "  expected rows: " << total_row_count << endl
+         << "  expected rows: " << num_rows_generated << endl
          << "  actual rows  : " << count << endl;
-    if (count != total_row_count) {
+    if (count != num_rows_generated) {
       return Status::RuntimeError(
             Substitute("Row count mismatch: expected $0, actual $1",
-                       total_row_count, count));
+                       num_rows_generated, count));
     }
   }
 
