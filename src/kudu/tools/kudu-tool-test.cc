@@ -5025,6 +5025,61 @@ TEST_F(AuthzTServerChecksumTest, TestAuthorizeChecksum) {
     "--checksum_scan"
   };
   ASSERT_OK(RunKuduTool(checksum_args));
+
+}
+
+// Regression test for KUDU-2851.
+TEST_F(ToolTest, TestFailedTableScan) {
+  // Create a table using the loadgen tool.
+  const string kTableName = "db.table";
+  NO_FATALS(RunLoadgen(/*num_tservers*/1, /*tool_args*/{},kTableName));
+
+  // Now shut down the tablet servers so the scans cannot proceed.
+  // Upon running the scan tool, we should get a TimedOut status.
+  NO_FATALS(cluster_->ShutdownNodes(cluster::ClusterNodes::TS_ONLY));
+
+  // Getting an error when running the scan tool should spit out errors
+  // instead of crashing.
+  string stdout;
+  string stderr;
+  Status s = RunTool(Substitute("perf table_scan $0 $1 -num_threads=2",
+                                cluster_->master()->bound_rpc_addr().ToString(),
+                                kTableName),
+                     &stdout, &stderr, nullptr, nullptr);
+
+  ASSERT_TRUE(s.IsRuntimeError());
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "Timed out");
+
+}
+
+TEST_F(ToolTest, TestFailedTableCopy) {
+  // Create a table using the loadgen tool.
+  const string kTableName = "db.table";
+  NO_FATALS(RunLoadgen(/*num_tservers*/1, /*tool_args*/{},kTableName));
+
+  // Create a destination table.
+  const string kDstTableName = "kudu.table.copy.to";
+
+  // Now shut down the tablet servers so the scans cannot proceed.
+  // Upon running the scan tool, we should get a TimedOut status.
+  NO_FATALS(cluster_->ShutdownNodes(cluster::ClusterNodes::TS_ONLY));
+
+  // Getting an error when running the copy tool should spit out errors
+  // instead of crashing.
+  string stdout;
+  string stderr;
+  Status s = RunTool(Substitute("table copy $0 $1 $2 -dst_table=$3",
+                                cluster_->master()->bound_rpc_addr().ToString(),
+                                kTableName,
+                                cluster_->master()->bound_rpc_addr().ToString(),
+                                kDstTableName),
+                     &stdout, &stderr, nullptr, nullptr);
+
+  ASSERT_TRUE(s.IsRuntimeError());
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "Timed out");
+
 }
 
 } // namespace tools

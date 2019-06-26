@@ -463,21 +463,23 @@ Status TableScanner::AddRow(const client::sp::shared_ptr<KuduTable>& table,
   return session->Apply(write_op.release());
 }
 
-void TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
-                            const std::function<void(const KuduScanBatch& batch)>& cb) {
+Status TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
+                              const std::function<void(const KuduScanBatch& batch)>& cb) {
+
   for (auto token : tokens) {
     Stopwatch sw(Stopwatch::THIS_THREAD);
     sw.start();
 
     KuduScanner* scanner_ptr;
-    CHECK_OK(token->IntoKuduScanner(&scanner_ptr));
+    RETURN_NOT_OK(token->IntoKuduScanner(&scanner_ptr));
+
     unique_ptr<KuduScanner> scanner(scanner_ptr);
-    CHECK_OK(scanner->Open());
+    RETURN_NOT_OK(scanner->Open());
 
     uint64_t count = 0;
     while (scanner->HasMoreRows()) {
       KuduScanBatch batch;
-      CHECK_OK(scanner->NextBatch(&batch));
+      RETURN_NOT_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
       cb(batch);
@@ -490,10 +492,13 @@ void TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tok
            << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
     }
   }
+
+  return Status::OK();
+
 }
 
-void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens) {
-  ScanData(tokens, [&](const KuduScanBatch& batch) {
+void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* thread_status) {
+  *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
     if (out_ && FLAGS_show_values) {
       MutexLock l(output_lock_);
       for (const auto& row : batch) {
@@ -503,7 +508,7 @@ void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens) {
   });
 }
 
-void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens) {
+void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread_status) {
   client::sp::shared_ptr<KuduTable> dst_table;
   CHECK_OK(dst_client_.get()->OpenTable(*dst_table_name_, &dst_table));
   const KuduSchema& dst_table_schema = dst_table->schema();
@@ -514,7 +519,7 @@ void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens) {
   CHECK_OK(session->SetErrorBufferSpace(1024));
   session->SetTimeoutMillis(30000);
 
-  ScanData(tokens, [&](const KuduScanBatch& batch) {
+  *thread_status = ScanData(tokens, [&](const KuduScanBatch& batch) {
     for (const auto& row : batch) {
       CHECK_OK(AddRow(dst_table, dst_table_schema, row, session));
     }
@@ -591,21 +596,25 @@ Status TableScanner::StartWork(WorkType type) {
     }
   }
 
+  // Initialize statuses for each thread.
+  vector<Status> thread_statuses(FLAGS_num_threads);
+
   RETURN_NOT_OK(ThreadPoolBuilder("table_scan_pool")
                   .set_max_threads(FLAGS_num_threads + 1)  // add extra 1 thread for MonitorTask
                   .set_idle_timeout(MonoDelta::FromMilliseconds(1))
                   .Build(&thread_pool_));
 
+  Status end_status = Status::OK();
   Stopwatch sw(Stopwatch::THIS_THREAD);
   sw.start();
   for (i = 0; i < FLAGS_num_threads; ++i) {
     if (type == WorkType::kScan) {
       RETURN_NOT_OK(thread_pool_->SubmitFunc(
-        boost::bind(&TableScanner::ScanTask, this, thread_tokens[i])));
+        boost::bind(&TableScanner::ScanTask, this, thread_tokens[i], &thread_statuses[i])));
     } else {
       CHECK(type == WorkType::kCopy);
       RETURN_NOT_OK(thread_pool_->SubmitFunc(
-        boost::bind(&TableScanner::CopyTask, this, thread_tokens[i])));
+        boost::bind(&TableScanner::CopyTask, this, thread_tokens[i], &thread_statuses[i])));
     }
   }
   RETURN_NOT_OK(thread_pool_->SubmitFunc(boost::bind(&TableScanner::MonitorTask, this)));
@@ -618,7 +627,14 @@ Status TableScanner::StartWork(WorkType type) {
         << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
   }
 
-  return Status::OK();
+  for (i = 0; i < FLAGS_num_threads; ++i) {
+    if (!thread_statuses[i].ok()) {
+      if (out_) *out_ << "Scanning failed " << thread_statuses[i].ToString() << endl;
+      if (end_status.ok()) end_status = thread_statuses[i];
+    }
+  }
+
+  return end_status;
 }
 
 Status TableScanner::StartScan() {
