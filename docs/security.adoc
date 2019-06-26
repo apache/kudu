@@ -112,7 +112,7 @@ $ kinit admin@EXAMPLE-REALM.COM
 Once authenticated, you use the same client code to read from and write to Kudu
 servers with and without Kerberos configuration.
 
-== Scalability
+=== Scalability
 
 Kudu authentication is designed to scale to thousands of nodes, which requires
 avoiding unnecessary coordination with a central authentication authority (such
@@ -120,24 +120,6 @@ as the Kerberos KDC). Instead, Kudu servers and clients will use Kerberos to
 establish initial trust with the Kudu master, and then use alternate credentials
 for subsequent connections. In particular, the master will issue internal
 X.509 certificates to servers, and temporary authentication tokens to clients.
-
-== Encryption
-
-Kudu allows all communications among servers and between clients and servers
-to be encrypted with TLS.
-
-Encryption can be configured on Kudu servers using the `--rpc_encryption` flag,
-which can be set to `required`, `optional`, or `disabled`. By default, the flag
-is set to `optional`. When `required`, Kudu will reject unencrypted connections.
-When `optional`, Kudu will attempt to use encryption. Same as authentication,
-when `disabled` or encryption fails for `optional`, Kudu will only allow
-unencrypted connections from trusted subnets and reject any unencrypted connections
-from publicly routable IPs. To secure a cluster, use `--rpc_encryption=required`.
-
-NOTE: Kudu will automatically turn off encryption on local loopback connections,
-since traffic from these connections is never exposed externally. This allows
-locality-aware compute frameworks like Spark and Impala to avoid encryption
-overhead, while still ensuring data confidentiality.
 
 == Coarse-Grained Authorization
 
@@ -168,6 +150,24 @@ to the cluster. However, if authentication is enabled, this still restricts acce
 to only those users who are able to successfully authenticate via Kerberos.
 Unauthenticated users on the same network as the Kudu servers will be unable
 to access the cluster.
+
+== Encryption
+
+Kudu allows all communications among servers and between clients and servers
+to be encrypted with TLS.
+
+Encryption can be configured on Kudu servers using the `--rpc_encryption` flag,
+which can be set to `required`, `optional`, or `disabled`. By default, the flag
+is set to `optional`. When `required`, Kudu will reject unencrypted connections.
+When `optional`, Kudu will attempt to use encryption. Same as authentication,
+when `disabled` or encryption fails for `optional`, Kudu will only allow
+unencrypted connections from trusted subnets and reject any unencrypted connections
+from publicly routable IPs. To secure a cluster, use `--rpc_encryption=required`.
+
+NOTE: Kudu will automatically turn off encryption on local loopback connections,
+since traffic from these connections is never exposed externally. This allows
+locality-aware compute frameworks like Spark and Impala to avoid encryption
+overhead, while still ensuring data confidentiality.
 
 [[web-ui]]
 == Web UI Encryption
