@@ -1923,6 +1923,9 @@ Status Tablet::CountLiveRows(int64_t* count) const {
 
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
+  if (!comps) {
+    return Status::RuntimeError("The tablet has been shut down");
+  }
 
   int64_t ret = 0;
   int64_t tmp = 0;
