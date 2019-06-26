@@ -901,6 +901,24 @@ TYPED_TEST(TestTablet, TestCompaction) {
   }
 }
 
+TYPED_TEST(TestTablet, TestCountLiveRowsAfterShutdown) {
+  // Insert 1000 rows into memrowset
+  uint64_t max_rows = this->ClampRowCount(FLAGS_testflush_num_inserts);
+  this->InsertTestRows(0, max_rows, 0);
+  ASSERT_OK(this->tablet()->Flush());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
+
+  // Save the tablet's reference.
+  std::shared_ptr<Tablet> tablet = this->tablet();
+
+  // Shutdown the tablet.
+  NO_FATALS(this->tablet()->Shutdown());
+
+  // Call the CountLiveRows().
+  int64_t count = 0;
+  ASSERT_TRUE(tablet->CountLiveRows(&count).IsRuntimeError());
+}
+
 enum MutationType {
   MRS_MUTATION,
   DELTA_MUTATION,
