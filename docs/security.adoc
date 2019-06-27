@@ -151,6 +151,224 @@ to only those users who are able to successfully authenticate via Kerberos.
 Unauthenticated users on the same network as the Kudu servers will be unable
 to access the cluster.
 
+== Fine-Grained Authorization
+
+As of Kudu 1.10.0, Kudu can be configured to enforce fine-grained authorization
+across servers. This ensures that users can see only the data they are
+explicitly authorized to see. Kudu currently supports this by leveraging
+policies defined in Apache Sentry 2.2 and later.
+
+WARNING: Fine-grained authorization policies are not enforced when accessing
+the web UI. User data may appear on various pages of the web UI (e.g. in logs,
+metrics, scans, etc.). As such, it is recommended to either limit access to the
+web UI ports, or redact or disable the web UI entirely, as desired. See the
+<<web-ui,instructions for securing the web UI>> for more details.
+
+=== Apache Sentry
+
+Apache Sentry models tabular objects in the following hierarchy:
+
+* *Server* - indicated by the Kudu configuration flag `--server_name`.
+Everything stored in a Kudu cluster falls within the given "server".
+
+* *Database* - indicated as a prefix of table names with the format
+`<database>.<table>`.
+
+* *Table* - a single Kudu table.
+
+* *Column* - a column within a Kudu table.
+
+Each level of this hierarchy defines a "scope" on which privileges can be
+granted. Privileges granted on a higher scope imply privileges on a lower
+scope. For example, if a user has `SELECT` privilege on a database, that user
+implicitly has `SELECT` privileges on every table belonging to that database.
+
+Privileges are also associated with specific actions. Access to Kudu tables may
+rely on privileges on the following actions:
+
+* `ALTER`
+* `CREATE`
+* `DELETE`
+* `DROP`
+* `INSERT`
+* `UPDATE`
+* `SELECT`
+
+Additionally, there are three special actions recognized by Kudu: `ALL`,
+`OWNER`, and `METADATA`. If a user has the `ALL` or `OWNER` privileges on a
+given table, that user has all of the above privileges on the table.
+`METADATA` privilege is not an actual privilege per se, rather, it is a
+conceptual privilege with which Kudu models any privilege. If a user has any
+privilege on a given table, that user has `METADATA` privileges on the table,
+i.e. a privilege granted on any action on a table implies that the user has
+the `METADATA` privilege on that table.
+
+For more details about Sentry privileges, see the Apache Sentry
+link:https://cwiki.apache.org/confluence/display/SENTRY/Sentry+Privileges[documentation].
+
+NOTE: Depending on the value of the `sentry.db.explicit.grants.permitted`
+configuration in Sentry, certain privileges may not be grantable in Sentry. For
+example, in Sentry deployments that don't support `UPDATE` privileges, to
+perform an operation that requires `UPDATE` privileges, a user must instead
+have `ALL` privileges.
+
+When a Kudu master receives a request, it consults Sentry to determine what
+privileges a user has. If the user is not authorized to perform the requested
+action, the request is rejected. Kudu leverages the authenticated identity of a
+user to decide whether to perform or reject a request.
+
+=== Authorization Tokens
+
+Rather than having every tablet server communicate directly with Sentry,
+privileges are propagated and checked via *authorization tokens*. These tokens
+encapsulate what privileges a user has on a given table. Tokens are generated
+by the master and returned to Kudu clients upon opening a Kudu table. Kudu
+clients automatically attach authorization tokens when sending requests to
+tablet servers.
+
+NOTE: Authorization tokens are a means to limiting the number of nodes directly
+accessing Sentry to retrieve privileges. As such, since the expected number of
+tablet servers in a cluster is much higher than the number of Kudu masters,
+they are only used to authorize requests sent to tablet servers. Kudu masters
+fetch privileges directly from Sentry or cache. See <<privilege-caching>> for
+more details of Kudu's privilege cache.
+
+Similar to the validity interval for authentication tokens, to limit the
+window of potential unwanted access if a token becomes compromised,
+authorization tokens are valid for five minutes by default. The acquisition and
+renewal of a token is hidden from the user, as Kudu clients automatically
+retrieve new tokens when existing tokens expire.
+
+When a tablet server that has been configured to enforce fine-grained access
+control receives a request, it checks the privileges in the attached token,
+rejecting it if the privileges are not sufficient to perform the requested
+operation, or if it is invalid (e.g. expired).
+
+=== Trusted Users
+
+It may be desirable to allow certain users to view and modify any data stored
+in Kudu. Such users can be specified via the `--trusted_user_acl` master
+configuration. Trusted users can perform any operation that would otherwise
+require fine-grained privileges, without Kudu consulting Sentry.
+
+Additionally, some services that interact with Kudu may authorize requests on
+behalf of their end users. For example, Apache Impala authorizes queries on
+behalf of its users, and sends requests to Kudu as the Impala service user,
+commonly "impala". Since Impala authorizes requests on its own, to avoid
+extraneous communication between Sentry and Kudu, the Impala service user
+should be listed as a trusted user.
+
+NOTE: When accessing Kudu through Impala, Impala enforces its own fine-grained
+authorization policy. This policy is similar to Kudu's and can be found in
+Impala's
+link:https://impala.apache.org/docs/build/html/topics/impala_authorization.html#authorization[authorization
+documentation].
+
+[[sentry-configuration]]
+=== Configuring the Integration with Apache Sentry
+
+NOTE: Sentry is often configured with Kerberos authentication. See
+<<configuration>> for how to configure Kudu to authenticate via Kerberos.
+
+NOTE: In order to enable integration with Sentry, a cluster must first be
+integrated with the Apache Hive Metastore. See the
+<<hive_metastore.adoc#enabling-the-hive-metastore-integration,documentation>>
+for how to configure Kudu to synchronize its internal catalog with the Hive
+Metastore.
+
+The following configurations must be set on the master:
+
+```
+--sentry_service_rpc_addresses=<Sentry RPC address>
+--server_name=<value of HiveServer2's hive.sentry.server configuration>
+--kudu_service_name=kudu
+--sentry_service_kerberos_principal=sentry
+--sentry_service_security_mode=kerberos
+
+# This example ACL setup allows the 'impala' user to access all data stored in
+# Kudu, assuming Impala will authorize requests on its own. The 'hadoopadmin'
+# user is also granted access to all Kudu data, which may facilitate testing
+# and debugging.
+--trusted_user_acl=impala,hadoopadmin
+```
+
+The following configurations must be set on the tablet servers:
+
+```
+--tserver_enforce_access_control=true
+```
+
+[[privilege-caching]]
+=== Caching
+
+To avoid overwhelming Sentry with requests to fetch user privileges, the Kudu
+master can be configured to cache user privileges. A by-product of this caching
+is that when privileges are changed in Sentry, they may not be reflected in
+Kudu for a configurable amount of time, defined by the following Kudu master
+configurations:
+
+`--sentry_privileges_cache_ttl_factor * --authz_token_validity_interval_secs`
+
+The default value is fifty minutes. If privilege updates need to be reflected
+in Kudu sooner than this, the Kudu CLI tool can be used to invalidate the
+cached privileges to force Kudu to fetch new ones from Sentry:
+
+[source,bash]
+----
+kudu master authz_cache reset <master-addresses>
+----
+
+=== Policy for Kudu Masters
+
+The following authorization policy is enforced by Kudu masters.
+
+.Authorization Policy for Masters
+[options="header"]
+|===
+| Operation | Required Privilege
+| `CreateTable` | `CREATE ON DATABASE`
+| `CreateTable` with a different owner specified than the requesting user | `ALL ON DATABASE` with the Sentry `GRANT OPTION` (see link:https://cwiki.apache.org/confluence/display/SENTRY/Support+Delegated+GRANT+and+REVOKE+in+Hive+and+Impala[here])
+| `DeleteTable` | `DROP ON TABLE`
+| `AlterTable` (with no rename) | `ALTER ON TABLE`
+| `AlterTable` (with rename) | `ALL ON TABLE <old-table>` and `CREATE ON DATABASE <new-database>`
+| `IsCreateTableDone` | `METADATA ON TABLE`
+| `IsAlterTableDone` | `METADATA ON TABLE`
+| `ListTables` | `METADATA ON TABLE`
+| `GetTableLocations` | `METADATA ON TABLE`
+| `GetTableSchema` | `METADATA ON TABLE`
+| `GetTabletLocations` | `METADATA ON TABLE`
+|===
+
+=== Policy for Kudu Tablet Servers
+
+The following authorization policy is enforced by Kudu tablet servers.
+
+.Authorization Policy for Tablet Servers
+[options="header"]
+|===
+| Operation | Required Privilege
+| `Scan` | `SELECT ON TABLE`, or
+
+`METADATA ON TABLE` and `SELECT ON COLUMN` for each projected column and each predicate column
+| `Scan` (no projected columns, equivalent to `COUNT(*)`) | `SELECT ON TABLE`, or
+
+`SELECT ON COLUMN` for each column in the table
+| `Scan` (with virtual columns) | `SELECT ON TABLE`, or
+
+`SELECT ON COLUMN` for each column in the table
+| `Scan` (in `ORDERED` mode) | `<privileges required for a Scan>` and `SELECT ON COLUMN` for each primary key column
+| `Insert` | `INSERT ON TABLE`
+| `Update` | `UPDATE ON TABLE`
+| `Upsert` | `INSERT ON TABLE` and `UPDATE ON TABLE`
+| `Delete` | `DELETE ON TABLE`
+| `SplitKeyRange` | `SELECT ON COLUMN` for each primary key column and `SELECT ON COLUMN` for each projected column
+| `Checksum` | User must be configured in `--superuser_acl`
+| `ListTablets` | User must be configured in `--superuser_acl`
+|===
+
+NOTE: Unlike Impala, Kudu only supports all-or-nothing access to a table's
+schema, rather than showing only authorized columns.
+
 == Encryption
 
 Kudu allows all communications among servers and between clients and servers
@@ -231,6 +449,9 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 --superuser_acl=hadoopadmin
 ```
 
+See <<sentry-configuration>> to see an example of how to enable fine-grained
+authorization via Apache Sentry.
+
 Further information about these flags can be found in the configuration
 flag reference.
 // TODO(todd) add a link
@@ -249,15 +470,6 @@ principal for Kudu processes. The principal must be 'kudu'.
 External PKI:: Kudu does not support externally-issued certificates for internal
 wire encryption (server to server and client to server).
 
-Fine-grained Authorization:: Kudu does not have the ability to restrict access
-based on operation type or target (table, column, etc). ACLs currently do not
-support authorization based on membership in a group.
-
 On-disk Encryption:: Kudu does not have built-in on-disk encryption. However,
 Kudu can be used with whole-disk encryption tools such as dm-crypt.
 
-Web UI Authentication:: The Kudu web UI lacks Kerberos-based authentication
-(SPNEGO), so access cannot be restricted based on Kerberos principals.
-
-Flume Integration:: Flume integration is not supported with secure Kudu clusters
-which require authentication or encryption.
