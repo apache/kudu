@@ -125,6 +125,7 @@ documentation.
 For full installation details, see link:installation.html[Kudu Installation].
 
 == Next Steps
+- link:quickstart.html[Kudu Quickstart]
 - link:installation.html[Installing Kudu]
 - link:configuration.html[Configuring Kudu]
 

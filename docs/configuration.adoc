@@ -152,4 +152,5 @@ line tool.
 |===
 
 == Next Steps
+- link:quickstart.html[Get Started With Kudu]
 - link:developing.html[Developing Applications With Kudu]

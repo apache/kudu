@@ -1,0 +1,190 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+[[quickstart]]
+= Apache Kudu Quickstart
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 2
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+Follow these instructions to set up and run a local Kudu Cluster using Docker,
+and get started using Apache Kudu in minutes.
+
+Note: This is intended for demonstration purposes only and shouldn't
+be used for production or performance/scale testing.
+
+[[quickstart_vm]]
+
+== Install Docker
+
+Follow the Docker link:https://docs.docker.com/install/[install documentation]
+to install docker in your Linux, Mac, or Windows environment.
+
+You may also want to read through the Docker getting started guide, but that isn't a requirement.
+
+== Clone the Repository
+
+Clone the Apache Kudu repository using Git and change to the `kudu` directory:
+
+[source,bash]
+----
+$ git clone https://github.com/apache/kudu
+$ cd kudu
+----
+
+== Start the Quickstart Cluster
+
+=== Set KUDU_QUICKSTART_IP
+
+Set the `KUDU_QUICKSTART_IP` environment variable to your ip address:
+
+[source,bash]
+----
+$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 | cut -d" " -f2 | tail -1)
+----
+
+=== Bring up the Cluster
+
+Then use `docker-compose` to start a cluster with 3 master servers and 5 tablet servers.
+When inside the docker network/containers the master addresses will be
+`kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251` and when on the host machine
+you can specify the master addresses with `localhost:7051,localhost:7151,localhost:7251`.
+
+[source,bash]
+----
+docker-compose -f docker/quickstart.yml up
+----
+
+Note: You can include the `-d` flag to run the cluster in the background.
+
+=== View the Web-UI
+
+Once the cluster is started you can view the master web-ui by visiting link:localhost:8050[localhost:8050].
+
+=== Check the cluster health
+
+Use the command below to get a bash shell in the `kudu-master-1` container:
+
+[source,bash]
+----
+docker exec -it $(docker ps -aqf "name=kudu-master-1") /bin/bash
+----
+
+You can now run the Kudu `ksck` tool to verify the cluster is healthy:
+
+[source,bash]
+----
+kudu cluster ksck kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251
+----
+
+Alternatively, if you have a kudu binary available on your host machine,
+you can run `ksck` there via:
+
+[source,bash]
+----
+export KUDU_USER_NAME=kudu
+kudu cluster ksck localhost:7051,localhost:7151,localhost:7251
+----
+
+Note: Setting `KUDU_USER_NAME=kudu` simplifies using Kudu from various user
+accounts in a non-secure environment.
+
+== Running an Example
+
+Now that a kudu cluster is up and running, examples and integrations can be
+run against the cluster. The commands below run the `java-example` against
+the quickstart cluster:
+
+[source,bash]
+----
+export KUDU_USER_NAME=kudu
+cd examples/java/java-example
+mvn package
+java -DkuduMasters=localhost:7051,localhost:7151,localhost:7251 -jar target/kudu-java-example-1.0-SNAPSHOT.jar
+----
+
+== Destroying the Cluster
+
+Once you are done with the quickstart cluster you can shutdown in a couple of ways.
+If you ran `docker-compose` without the `-d` flag, you can use `ctrl + c` to
+stop the cluster.
+
+If you ran `docker-compose` with the `-d` flag, you can use the following to
+gracefully shutdown the cluster:
+
+[source,bash]
+----
+docker-compose -f docker/quickstart.yml down
+----
+
+Another alternative is to stop all of the Kudu containers via:
+
+[source,bash]
+----
+docker stop $(docker ps -aqf "name=kudu")
+----
+
+If you want to remove the cluster state you can also remove the docker
+containers and volumes via:
+
+[source,bash]
+----
+docker rm $(docker ps -aqf "name=kudu")
+docker volume rm $(docker volume ls --filter name=kudu -q)
+----
+
+== Troubleshooting
+
+=== Viewing the logs
+
+To view the logs you can use the `docker logs` command. Below is an example
+that will show the logs one of the tablet servers:
+
+[source,bash]
+----
+docker logs $(docker ps -aqf "name=kudu-tserver-1")
+----
+
+=== Changing the Kudu version
+
+To change the version of Kudu Docker images used you can override the default value
+of `latest` by setting the `KUDU_QUICKSTART_VERSION` environment variable.
+
+[source,bash]
+----
+export KUDU_QUICKSTART_VERSION="1.9.0"
+----
+
+=== Changing the Kudu configuration
+
+To change the configuration flags passed to the master and tablet servers you
+can edit the `docker/quickstart.yml` file before starting the cluster.
+
+=== Killing a Kudu master
+
+Due to link:https://issues.apache.org/jira/browse/KUDU-1620[KUDU-1620] master hosts
+are always expected to be reachable.
+
+== Next Steps
+- link:installation.html[Installing Kudu]
+- link:configuration.html[Configuring Kudu]
