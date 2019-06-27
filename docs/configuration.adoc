@@ -141,4 +141,5 @@ link:configuration_reference.html#kudu-tserver_supported[Kudu Tablet Server Conf
 
 
 == Next Steps
+- link:quickstart.html[Get Started With Kudu]
 - link:developing.html[Developing Applications With Kudu]

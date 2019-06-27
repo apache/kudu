@@ -262,4 +262,5 @@ RDBMS, and some in files in HDFS. You can access and query all of these sources 
 formats using Impala, without the need to change your legacy systems.
 
 == Next Steps
+- link:quickstart.html[Get Started With Kudu]
 - link:installation.html[Installing Kudu]
