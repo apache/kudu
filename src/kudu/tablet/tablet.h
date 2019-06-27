@@ -627,6 +627,11 @@ class Tablet {
 
   void GetComponents(scoped_refptr<TabletComponents>* comps) const {
     shared_lock<rw_spinlock> l(component_lock_);
+    *comps = CHECK_NOTNULL(components_.get());
+  }
+
+  void GetComponentsOrNull(scoped_refptr<TabletComponents>* comps) const {
+    shared_lock<rw_spinlock> l(component_lock_);
     *comps = components_;
   }
 

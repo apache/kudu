@@ -1922,7 +1922,7 @@ Status Tablet::CountLiveRows(int64_t* count) const {
   }
 
   scoped_refptr<TabletComponents> comps;
-  GetComponents(&comps);
+  GetComponentsOrNull(&comps);
   if (!comps) {
     return Status::RuntimeError("The tablet has been shut down");
   }
@@ -1940,7 +1940,7 @@ Status Tablet::CountLiveRows(int64_t* count) const {
 
 size_t Tablet::MemRowSetSize() const {
   scoped_refptr<TabletComponents> comps;
-  GetComponents(&comps);
+  GetComponentsOrNull(&comps);
 
   if (comps) {
     return comps->memrowset->memory_footprint();
@@ -1964,7 +1964,7 @@ size_t Tablet::MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) cons
 
 size_t Tablet::OnDiskSize() const {
   scoped_refptr<TabletComponents> comps;
-  GetComponents(&comps);
+  GetComponentsOrNull(&comps);
 
   if (!comps) return 0;
 
@@ -1978,7 +1978,7 @@ size_t Tablet::OnDiskSize() const {
 
 size_t Tablet::OnDiskDataSize() const {
   scoped_refptr<TabletComponents> comps;
-  GetComponents(&comps);
+  GetComponentsOrNull(&comps);
 
   if (!comps) return 0;
 
