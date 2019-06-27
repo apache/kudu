@@ -17,9 +17,12 @@
 
 #include "kudu/common/wire_protocol.h"
 
-#include <cstddef>
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <numeric>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -32,8 +35,10 @@
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
@@ -50,6 +55,7 @@
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -83,8 +89,84 @@ class WireProtocolTest : public KuduTest {
       row.cell(2).set_null(false);
     }
   }
+
+  void ResetBenchmarkSchema(int num_columns) {
+    vector<ColumnSchema> column_schemas;
+    column_schemas.reserve(num_columns);
+    for (int i = 0; i < num_columns; i++) {
+      column_schemas.emplace_back(Substitute("col$0", i), i % 2 ? STRING : INT32);
+    }
+    benchmark_schema_.Reset(column_schemas, 1);
+  }
+
+  void FillRowBlockForBenchmark(RowBlock* block) {
+    test_data_arena_.Reset();
+    for (int i = 0; i < block->nrows(); i++) {
+      RowBlockRow row = block->row(i);
+      for (int j = 0; j < benchmark_schema_.num_columns(); j++) {
+        const ColumnSchema& column_schema = benchmark_schema_.column(j);
+        DataType type = column_schema.type_info()->type();
+        if (type == STRING) {
+          Slice col;
+          CHECK(test_data_arena_.RelocateSlice(Substitute("hello world $0",
+                                               column_schema.name()), &col));
+          memcpy(row.mutable_cell_ptr(j), &col, sizeof(Slice));
+        } else if (type == INT32) {
+          memcpy(row.mutable_cell_ptr(j), &i, sizeof(int32_t));
+        } else {
+          LOG(FATAL) << "Unexpected type.";
+        }
+      }
+    }
+  }
+
+  void SelectRandomRowsWithRate(RowBlock* block, double rate) {
+    CHECK_LE(rate, 1.0);
+    CHECK_GE(rate, 0.0);
+    int select_count = block->nrows() * rate;
+    SelectionVector* select_vector = block->selection_vector();
+    if (rate == 1.0) {
+      select_vector->SetAllTrue();
+    } else if (rate == 0.0) {
+      select_vector->SetAllFalse();
+    } else {
+      vector<int> indexes(block->nrows());
+      std::iota(indexes.begin(), indexes.end(), 0);
+      std::random_shuffle(indexes.begin(), indexes.end());
+      indexes.resize(select_count);
+      select_vector->SetAllFalse();
+      for (auto index : indexes) {
+        select_vector->SetRowSelected(index);
+      }
+    }
+    CHECK_EQ(select_vector->CountSelected(), select_count);
+  }
+
+  // Use column_count to control the schema scale.
+  // Use select_rate to control the number of selected rows.
+  void RunBenchmark(int column_count, double select_rate) {
+    ResetBenchmarkSchema(column_count);
+    Arena arena(1024);
+    const int kNumTrials = AllowSlowTests() ? 100 : 10;
+    RowBlock block(&benchmark_schema_, 10000, &arena);
+    FillRowBlockForBenchmark(&block);
+    SelectRandomRowsWithRate(&block, select_rate);
+
+    RowwiseRowBlockPB pb;
+    faststring direct, indirect;
+    LOG_TIMING(INFO, Substitute("Converting to PB with column count $0 and row select rate $1 ",
+                                column_count, select_rate)) {
+      for (int i = 0; i < kNumTrials; ++i) {
+        pb.Clear();
+        direct.clear();
+        indirect.clear();
+        SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
+      }
+    }
+  }
  protected:
   Schema schema_;
+  Schema benchmark_schema_;
   Arena test_data_arena_;
 };
 
@@ -340,18 +422,13 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
 
 #ifdef NDEBUG
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
-  Arena arena(1024);
-  const int kNumTrials = AllowSlowTests() ? 100 : 10;
-  RowBlock block(&schema_, 10000 * kNumTrials, &arena);
-  FillRowBlockWithTestRows(&block);
-
-  RowwiseRowBlockPB pb;
-
-  LOG_TIMING(INFO, "Converting to PB") {
-    for (int i = 0; i < kNumTrials; i++) {
-      pb.Clear();
-      faststring direct, indirect;
-      SerializeRowBlock(block, &pb, NULL, &direct, &indirect);
+  // Can set column_counts = {3, 30, 300} together with
+  // select_rates = {1.0, 0.8, 0.5, 0.2} for benchmark.
+  vector<int> column_counts = {3};
+  vector<double> select_rates = {1.0};
+  for (auto column_count : column_counts) {
+    for (auto select_rate : select_rates) {
+      RunBenchmark(column_count, select_rate);
     }
   }
 }
