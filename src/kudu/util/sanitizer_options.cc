@@ -110,6 +110,9 @@ SANITIZER_HOOK_ATTRIBUTE const char *__tsan_default_suppressions() {
   "race:google::InitVLOG3__\n"
   "race:glog_internal_namespace_::Mutex\n"
   "race:vlocal__\n"
+  // See https://issues.apache.org/jira/browse/KUDU-2212 for details on
+  // the destruction of a locked mutex in glog.
+  "mutex:glog_internal_namespace_::Mutex::~Mutex\n"
 
   // gflags variables are accessed without synchronization, but FlagSaver and other
   // APIs acquire locks when accessing them. This should be safe on x86 for
