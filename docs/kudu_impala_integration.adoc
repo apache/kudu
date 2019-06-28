@@ -65,7 +65,7 @@ locations of the Kudu Master servers:
 
 If this flag is not set within the Impala service, it will be necessary to manually
 provide this configuration each time you create a table by specifying the
-`kudu_master_addresses` property inside a `TBLPROPERTIES` clause.
+`kudu.master_addresses` property inside a `TBLPROPERTIES` clause.
 
 The rest of this guide assumes that the configuration has been set.
 
@@ -99,11 +99,27 @@ See the
 link:https://impala.apache.org/docs/build/html/topics/impala_tables.html[Impala documentation]
 for more information about internal and external tables.
 
+=== Using the Hive Metastore Integration
+
+Starting from Kudu 1.10.0 and Impala 3.3.0, the Impala integration
+can take advantage of the automatic Kudu-HMS catalog synchronization enabled by
+Kudu's Hive Metastore integration. Since there may be no one-to-one mapping
+between Kudu tables and external tables, only internal tables are automatically
+synchronized. See <<hive_metastore.adoc#hive_metastore,the HMS integration
+documentation>> for more details on Kudu's Hive Metastore integration.
+
+NOTE: When Kudu's integration with the Hive Metastore is not enabled, Impala
+will create metadata entries in the HMS on behalf of Kudu.
+
+NOTE: When Kudu's integration with the Hive Metastore is enabled, Impala should
+be configured to use the same Hive Metastore as Kudu.
+
 === Querying an Existing Kudu Table In Impala
 
-Tables created through the Kudu API or other integrations such as Apache Spark
-are not automatically visible in Impala. To query them, you must first create
-an external table within Impala to map the Kudu table into an Impala database:
+Without the HMS integration enabled, tables created through the Kudu API or
+other integrations such as Apache Spark are not automatically visible in
+Impala. To query them, you must first create an external table within Impala to
+map the Kudu table into an Impala database:
 
 [source,sql]
 ----
@@ -112,6 +128,16 @@ STORED AS KUDU
 TBLPROPERTIES (
   'kudu.table_name' = 'my_kudu_table'
 );
+----
+
+When the Kudu-HMS integration is enabled, internal table entries will be
+created automatically in the HMS when tables are created in Kudu without
+Impala. To access these tables through Impala, run `invalidate metadata` so
+Impala picks up the latest metadata.
+
+[source,sql]
+----
+INVALIDATE METADATA;
 ----
 
 [[kudu_impala_create_table]]
@@ -681,10 +707,10 @@ and whether the table is managed by Impala (internal) or externally.
 ALTER TABLE my_table RENAME TO my_new_table;
 ----
 
-NOTE: Renaming a table using the `ALTER TABLE ... RENAME` statement only renames
-the Impala mapping table, regardless of whether the table is an internal or external
-table. This avoids disruption to other applications that may be accessing the
-underlying Kudu table.
+NOTE: In Impala 3.2 and lower, renaming a table using the `ALTER TABLE ... RENAME` statement
+only renames the Impala mapping table, regardless of whether the table is an internal
+or external table. Starting from Impala 3.3, renaming a table also renames the underlying
+Kudu table.
 
 .Rename the underlying Kudu table for an internal table
 
@@ -720,6 +746,10 @@ SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-new-master.example.com:7051');
 ----
 ALTER TABLE my_table SET TBLPROPERTIES('EXTERNAL' = 'TRUE');
 ----
+
+WARNING: When the Hive Metastore integration is enabled, changing the table
+type is disallowed to avoid potentially introducing inconsistency between the
+Kudu and HMS catalogs.
 
 === Dropping a Kudu Table Using Impala
 
