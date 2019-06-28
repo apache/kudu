@@ -50,6 +50,7 @@ namespace kudu {
 class FsManager;
 class NodeInstancePB;
 class ThreadPool;
+class MonoDelta;
 
 namespace consensus {
 class ConsensusMetadataManager;
@@ -58,6 +59,7 @@ class OpId;
 
 namespace tserver {
 class TabletServer;
+struct TabletServerOptions;
 
 // Keeps track of the tablets hosted on the tablet server side.
 //
@@ -73,10 +75,14 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
 
   virtual ~TSTabletManager();
 
+  Status Load(FsManager *fs_manager);
+
   // Load all tablet metadata blocks from disk, and open their respective tablets.
   // Upon return of this method all existing tablets are registered, but
   // the bootstrap is performed asynchronously.
-  Status Init();
+  Status Init(bool is_first_run);
+
+  bool IsInitialized() const;
 
   // Shut down all of the tablets, gracefully flushing before shutdown.
   void Shutdown();
@@ -112,6 +118,8 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
     return LogPrefix(tablet_id, fs_manager_);
   }
 
+  std::string LogPrefix() const;
+
   TSTabletManagerStatePB state() const {
     shared_lock<RWMutex> l(lock_);
     return state_;
@@ -122,12 +130,30 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
     state_ = s;
   }
 
+  // waits in a loop to check that consensus has started to run
+  Status WaitUntilRunning();
+
+  // Wait for consensus to start running
+  Status WaitUntilConsensusRunning(const MonoDelta& timeout);
+
+  // Create either a standalone or distributed config
+  Status CreateNew(FsManager *fs_manager);
+
+  // Helper function to create and start the Raft consensus
+  Status SetupRaft();
+
+  Status InitRaftAsync(bool is_first_run);
 
   // Initializes the RaftPeerPB for the local peer.
   // Guaranteed to include both uuid and last_seen_addr fields.
   // Crashes with an invariant check if the RPC server is not currently in a
   // running state.
   void InitLocalRaftPeerPB();
+
+  // Use the master options to generate a new consensus configuration.
+  // In addition, resolve all UUIDs of this consensus configuration.
+  Status CreateDistributedConfig(const TabletServerOptions& options,
+                                 consensus::RaftConfigPB* committed_config);
 
   FsManager* const fs_manager_;
 

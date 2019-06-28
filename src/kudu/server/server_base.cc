@@ -128,7 +128,6 @@ DEFINE_string(user_acl, "*",
 TAG_FLAG(user_acl, stable);
 TAG_FLAG(user_acl, sensitive);
 
-#ifdef FB_DO_NOT_REMOVE
 DEFINE_string(principal, "kudu/_HOST",
               "Kerberos principal that this daemon will log in as. The special token "
               "_HOST will be replaced with the FQDN of the local host.");
@@ -208,7 +207,6 @@ DEFINE_string(rpc_private_key_password_cmd, "", "A Unix command whose output "
 TAG_FLAG(rpc_certificate_file, experimental);
 TAG_FLAG(rpc_private_key_file, experimental);
 TAG_FLAG(rpc_ca_certificate_file, experimental);
-#endif
 
 DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "If an RPC connection from a client is idle for this amount of time, the server "
@@ -446,9 +444,7 @@ Status ServerBase::Init() {
   // if we're having clock problems.
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
 
-#ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
-#endif
 
   fs::FsReport report;
   Status s = fs_manager_->Open(&report);
@@ -471,8 +467,6 @@ Status ServerBase::Init() {
   RETURN_NOT_OK(report.LogAndCheckForFatalErrors());
 
   RETURN_NOT_OK(InitAcls());
-#ifdef FB_DO_NOT_REMOVE
-#endif
 
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
@@ -483,8 +477,6 @@ Status ServerBase::Init() {
          .set_metric_entity(metric_entity())
          .set_connection_keep_alive_time(FLAGS_rpc_default_keepalive_time_ms)
          .set_rpc_negotiation_timeout_ms(FLAGS_rpc_negotiation_timeout_ms)
-         ;
-#ifdef FB_DO_NOT_REMOVE
          .set_rpc_authentication(FLAGS_rpc_authentication)
          .set_rpc_encryption(FLAGS_rpc_encryption)
          .set_rpc_tls_ciphers(FLAGS_rpc_tls_ciphers)
@@ -494,7 +486,6 @@ Status ServerBase::Init() {
          .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
          .set_keytab_file(FLAGS_keytab_file)
          .enable_inbound_tls();
-#endif
 
   if (options_.rpc_opts.rpc_reuseport) {
     builder.set_reuseport();
@@ -508,9 +499,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK(rpc_server_->Bind());
   clock_->RegisterMetrics(metric_entity_);
 
-#ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
-#endif
 
   result_tracker_->StartGCThread();
   RETURN_NOT_OK(StartExcessLogFileDeleterThread());
@@ -552,8 +541,6 @@ Status ServerBase::InitAcls() {
 
   return Status::OK();
 }
-#ifdef FB_DO_NOT_REMOVE
-#endif
 
 
 Status ServerBase::GetStatusPB(ServerStatusPB* status) const {

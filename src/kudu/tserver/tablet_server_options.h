@@ -34,9 +34,9 @@ namespace tserver {
 struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   TabletServerOptions();
 
-#ifdef FB_DO_NOT_REMOVE
-  std::vector<HostPort> master_addresses;
-#endif
+  std::vector<HostPort> tserver_addresses;
+
+  bool IsDistributed() const;
 };
 
 } // namespace tserver

@@ -63,7 +63,7 @@ using strings::Substitute;
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);
 
-METRIC_DECLARE_entity(tablet);
+//METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
 namespace consensus {
@@ -75,7 +75,7 @@ class LogCacheTest : public KuduTest {
  public:
   LogCacheTest()
     : schema_(GetSimpleTestSchema()),
-      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "LogCacheTest")) {
+      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "LogCacheTest")) {
   }
 
   virtual void SetUp() OVERRIDE {

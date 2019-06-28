@@ -29,17 +29,14 @@
 #endif
 #include "kudu/server/rpc_server.h"
 #include "kudu/tserver/tablet_server.h"
-#ifdef FB_DO_NOT_REMOVE
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 
-DEFINE_string(tserver_master_addrs, "127.0.0.1:7051",
-              "Comma separated addresses of the masters which the "
-              "tablet server should connect to. The masters do not "
-              "read this flag -- configure the masters separately "
-              "using 'rpc_bind_addresses'.");
-TAG_FLAG(tserver_master_addrs, stable);
-#endif
+DEFINE_string(tserver_addresses, "",
+              "Comma-separated list of the RPC addresses belonging to all "
+              "instances in this cluster. "
+              "NOTE: if not specified, configures a non-replicated Master.");
+TAG_FLAG(tserver_addresses, stable);
 
 namespace kudu {
 namespace tserver {
@@ -47,14 +44,30 @@ namespace tserver {
 TabletServerOptions::TabletServerOptions() {
   rpc_opts.default_port = TabletServer::kDefaultPort;
 
-#ifdef FB_DO_NOT_REMOVE
-  Status s = HostPort::ParseStrings(FLAGS_tserver_master_addrs,
-                                    master::Master::kDefaultPort,
-                                    &master_addresses);
-  if (!s.ok()) {
-    LOG(FATAL) << "Couldn't parse tablet_server_master_addrs flag: " << s.ToString();
+  if (!FLAGS_tserver_addresses.empty()) {
+    Status s = HostPort::ParseStrings(FLAGS_tserver_addresses, TabletServer::kDefaultPort,
+                                      &tserver_addresses);
+    if (!s.ok()) {
+      LOG(FATAL) << "Couldn't parse the tserver_addresses flag('" << FLAGS_tserver_addresses << "'): "
+                 << s.ToString();
+    }
+    if (tserver_addresses.size() < 2) {
+      LOG(FATAL) << "At least 2 tservers are required for a distributed config, but "
+          "tserver_addresses flag ('" << FLAGS_tserver_addresses << "') only specifies "
+                 << tserver_addresses.size() << " tservers.";
+    }
+
+    // TODO(wdberkeley): Un-actionable warning. Link to docs, once they exist.
+    if (tserver_addresses.size() == 2) {
+      LOG(WARNING) << "Only 2 tservers are specified by tserver_addresses_flag ('" <<
+          FLAGS_tserver_addresses << "'), but minimum of 3 are required to tolerate failures"
+          " of any one tserver. It is recommended to use at least 3 tservers.";
+    }
   }
-#endif
+}
+
+bool TabletServerOptions::IsDistributed() const {
+  return !tserver_addresses.empty();
 }
 
 } // namespace tserver

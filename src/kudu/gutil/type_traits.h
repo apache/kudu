@@ -56,8 +56,9 @@
 //   is_convertible
 // We can add more type traits as required.
 
-#ifndef BASE_TYPE_TRAITS_H_
-#define BASE_TYPE_TRAITS_H_
+// THESE #defines collide with spareshash
+#ifndef KUDU_BASE_TYPE_TRAITS_H_
+#define KUDU_BASE_TYPE_TRAITS_H_
 
 #include <utility>
 
@@ -360,4 +361,4 @@ struct is_convertible
     typedef int Dummy_Type_For_PROPAGATE_POD_FROM_TEMPLATE_ARGUMENT ATTRIBUTE_UNUSED
 #define ENFORCE_POD(TypeName) typedef int Dummy_Type_For_ENFORCE_POD ATTRIBUTE_UNUSED
 
-#endif  // BASE_TYPE_TRAITS_H_
+#endif  // KUDU_BASE_TYPE_TRAITS_H_

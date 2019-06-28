@@ -104,6 +104,10 @@ Status TabletServer::Init() {
   RETURN_NOT_OK(ValidateMasterAddressResolution());
 #endif
 
+  // This pool will be used to wait for Raft
+  RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
+
+  // Initialize FS, rpc_server, rpc messenger and Raft pool
   RETURN_NOT_OK(KuduServer::Init());
 
 #ifdef FB_DO_NOT_REMOVE
@@ -115,12 +119,6 @@ Status TabletServer::Init() {
       MaintenanceManager::kDefaultOptions, fs_manager_->uuid()));
 
   heartbeater_.reset(new Heartbeater(opts_, this));
-#endif
-
-  RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
-                        "Could not init Tablet Manager");
-
-#ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK_PREPEND(scanner_manager_->StartRemovalThread(),
                         "Could not start expired Scanner removal thread");
 #endif
@@ -129,12 +127,35 @@ Status TabletServer::Init() {
   return Status::OK();
 }
 
-Status TabletServer::WaitInited() {
+void TabletServer::InitTabletManagerTask() {
+  Status s = InitTabletManager();
+  if (!s.ok()) {
+    LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
+  }
+  init_status_.Set(s);
+}
+
+Status TabletServer::InitTabletManager() {
+  if (tablet_manager_->IsInitialized()) {
+    return Status::IllegalState("Catalog manager is already initialized");
+  }
+  RETURN_NOT_OK_PREPEND(tablet_manager_->Init(is_first_run_),
+                        "Unable to initialize catalog manager");
   return Status::OK();
-  //return tablet_manager_->WaitForAllBootstrapsToFinish();
+}
+
+Status TabletServer::WaitForTabletManagerInit() const {
+  return init_status_.Get();
 }
 
 Status TabletServer::Start() {
+  RETURN_NOT_OK(StartAsync());
+  RETURN_NOT_OK(WaitForTabletManagerInit());
+  google::FlushLogFiles(google::INFO); // Flush the startup messages.
+  return Status::OK();
+}
+
+Status TabletServer::StartAsync() {
   CHECK(initted_);
 
 #ifdef FB_DO_NOT_REMOVE
@@ -167,7 +188,9 @@ Status TabletServer::Start() {
   RETURN_NOT_OK(maintenance_manager_->Start());
 #endif
 
-  google::FlushLogFiles(google::INFO); // Flush the startup messages.
+  // Start initializing the catalog manager.
+  RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&TabletServer::InitTabletManagerTask,
+                                               Unretained(this))));
 
   return Status::OK();
 }

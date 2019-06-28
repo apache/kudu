@@ -26,6 +26,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/tserver/tablet_server_options.h"
+#include "kudu/util/promise.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -33,6 +34,7 @@ namespace kudu {
 #ifdef FB_DO_NOT_REMOVE
 class MaintenanceManager;
 #endif
+class ThreadPool;
 
 namespace tserver {
 
@@ -62,15 +64,14 @@ class TabletServer : public kserver::KuduServer {
   // complete by calling WaitInited().
   virtual Status Init() override;
 
-  // Waits for the tablet server to complete the initialization.
-  Status WaitInited();
-
   virtual Status Start() override;
   virtual void Shutdown() override;
 
   std::string ToString() const;
 
   TSTabletManager* tablet_manager() { return tablet_manager_.get(); }
+
+  const TabletServerOptions& opts() { return opts_; }
 
 #ifdef FB_DO_NOT_REMOVE
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
@@ -94,6 +95,12 @@ class TabletServer : public kserver::KuduServer {
  private:
   friend class TabletServerTestBase;
 
+  Status StartAsync();
+  Status WaitForTabletManagerInit() const;
+
+  void InitTabletManagerTask();
+  Status InitTabletManager();
+
 #ifdef FB_DO_NOT_REMOVE
   Status ValidateMasterAddressResolution() const;
 #endif
@@ -104,6 +111,13 @@ class TabletServer : public kserver::KuduServer {
   // If true, all heartbeats will be seen as failed.
   Atomic32 fail_heartbeats_for_tests_;
 #endif
+
+  // For initializing the catalog manager.
+  gscoped_ptr<ThreadPool> init_pool_;
+
+  // The status of the master initialization. This is set
+  // by the async initialization task.
+  Promise<Status> init_status_;
 
   // The options passed at construction time.
   const TabletServerOptions opts_;
