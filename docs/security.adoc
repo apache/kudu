@@ -244,6 +244,7 @@ control receives a request, it checks the privileges in the attached token,
 rejecting it if the privileges are not sufficient to perform the requested
 operation, or if it is invalid (e.g. expired).
 
+[[trusted-users]]
 === Trusted Users
 
 It may be desirable to allow certain users to view and modify any data stored
