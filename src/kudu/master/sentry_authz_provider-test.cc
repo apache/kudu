@@ -1393,8 +1393,8 @@ TEST_F(TestSentryClientMetrics, Basic) {
   // Shorten the default timeout parameters: make timeout interval shorter.
   NO_FATALS(sentry_authz_provider_->Stop());
   FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
-  FLAGS_sentry_service_send_timeout_seconds = 2;
-  FLAGS_sentry_service_recv_timeout_seconds = 2;
+  FLAGS_sentry_service_send_timeout_seconds = AllowSlowTests() ? 5 : 2;
+  FLAGS_sentry_service_recv_timeout_seconds = AllowSlowTests() ? 5 : 2;
   sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
   ASSERT_OK(sentry_authz_provider_->Start());
 
