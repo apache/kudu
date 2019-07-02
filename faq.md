@@ -45,8 +45,7 @@ workloads.
 
 #### Is Apache Kudu ready to be deployed into production yet?
 
-Yes! Although Kudu is still relatively new, as far as storage engines are considered,
-it is ready for production workloads.
+Yes! Kudu has been battle tested in production at many major corporations.
 
 #### Is Kudu open source?
 
@@ -82,12 +81,11 @@ store, and access data in Kudu tables with Apache Impala.
 Aside from training, you can also get help with using Kudu through
 [documentation](docs/index.html),
 the [mailing lists](community.html),
-the [Kudu chat room](https://getkudu-slack.herokuapp.com/), and the
-[Cloudera beta release forum](https://community.cloudera.com/t5/Beta-Releases-Kudu-RecordService/bd-p/Beta).
+and the [Kudu chat room](https://getkudu-slack.herokuapp.com/).
 
-#### Is there a quickstart VM?
+#### Is there a quickstart?
 
-Yes. Instructions on getting up and running on Kudu via a VM are provided in Kudu's
+Yes. Instructions on getting up and running on Kudu via a Docker based quickstart are provided in Kudu's
 [quickstart guide](http://kudu.apache.org/docs/quickstart.html).
 
 
@@ -257,10 +255,8 @@ Kudu hasn't been publicly tested with Jepsen but it is possible to run a set of 
 Kudu provides direct access via Java and C++ APIs. An experimental Python API is
 also available and is expected to be fully supported in the future. The easiest
 way to load data into Kudu is to use a `CREATE TABLE ... AS SELECT * FROM ...`
-statement in Impala. Although Kudu has not been extensively tested to work with
-ingest tools such as Flume, Sqoop, or Kafka, several of these have been
-experimentally tested. Explicit support for these ingest tools is expected with
-Kudu's first generally available release.
+statement in Impala. Additionally, data is commonly ingested into Kudu using
+Spark, Nifi, and Flume.
 
 #### What's the most efficient way to bulk load data into Kudu?
 
@@ -268,8 +264,8 @@ The easiest way to load data into Kudu is if the data is already managed by Impa
 In this case, a simple `INSERT INTO TABLE some_kudu_table SELECT * FROM some_csv_table`
 does the trick.
 
-You can also use Kudu's MapReduce OutputFormat to load data from HDFS, HBase, or
-any other data store that has an InputFormat.
+You can also use Kudu's Spark integration to load data from or
+any other Spark compatible data store.
 
 No tool is provided to load data directly into Kudu's on-disk data format. We
 have found that for many workloads, the insert performance of Kudu is comparable
@@ -284,7 +280,7 @@ BINARY column, but large values (10s of KB or more) are likely to cause
 performance or stability problems in current versions.
 
 Fuller support for semi-structured types like JSON and protobuf will be added in
-the future, contingent on demand from early adopters.
+the future, contingent on demand.
 
 #### Is there a JDBC driver available?
 
@@ -324,9 +320,8 @@ direction, for the following reasons:
 
 #### What frameworks are integrated with Kudu for data access?
 
-Kudu is already integrated with Impala, MapReduce, and Spark. Additional
-frameworks are expected for GA with Hive being the current highest priority
-addition.
+Kudu is integrated with Impala, Spark, Nifi, MapReduce, and more. Additional
+frameworks are expected, with Hive being the current highest priority addition.
 
 #### Can I colocate Kudu with HDFS on the same servers?
 
@@ -411,13 +406,18 @@ features.
 
 #### How can I back up my Kudu data?
 
-Kudu doesn't yet have a built-in backup mechanism. Similar to bulk loading data,
-Impala can help if you have it available. You can use it to copy your data into
-Parquet format using a statement like:
+As of Kudu 1.10.0, Kudu supports both full and incremental table backups via a
+job implemented using Apache Spark. Additionally it supports restoring tables
+from full and incremental backups via a restore job implemented using Apache Spark.
+See the [administration documentation](docs/administration.html) for details.
+
+For older versions which do not have a built-in backup mechanism, Impala can
+help if you have it available. You can use it to copy your data into Parquet
+format using a statement like:
 
     INSERT INTO TABLE some_parquet_table SELECT * FROM kudu_table
 
-then use [distcp](http://hadoop.apache.org/docs/r1.2.1/distcp2.html)
+then use [distcp](http://hadoop.apache.org/docs/current/hadoop-distcp/DistCp.html)
 to copy the Parquet data to another cluster.
 
 #### Can the WAL transaction logs be used to build a disaster recovery site?
