@@ -75,7 +75,7 @@ string AlterSchemaTransactionState::ToString() const {
                     has_timestamp() ? timestamp().ToString() : "<unassigned>",
                     schema_ == nullptr ? "(none)" : schema_->ToString(),
                     request_ == nullptr ? "(none)" : SecureShortDebugString(*request_),
-                    error_ ? "(none)" : SecureShortDebugString(error_->failed_status()));
+                    error_ ? SecureShortDebugString(error_->failed_status()) : "(none)");
 }
 
 AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
