@@ -273,6 +273,197 @@ it will choose to scan from the replica on `B`, since it is in the same
 location as the client, `/L0`. If there are multiple replicas meeting a
 criterion, one is chosen arbitrarily.
 
+[[backup]]
+== Backup and Restore
+
+[[logical_backup]]
+=== Logical backup and restore
+
+As of Kudu 1.10.0, Kudu supports both full and incremental table backups via a
+job implemented using Apache Spark. Additionally it supports restoring tables
+from full and incremental backups via a restore job implemented using Apache Spark.
+
+Given the Kudu backup and restore jobs use Apache Spark, ensure Apache Spark
+is installed in your environment following the
+link:https://spark.apache.org/docs/latest/#downloading[Spark documentation].
+Additionally review the Apache Spark documentation for
+link:https://spark.apache.org/docs/latest/submitting-applications.html[Submitting Applications].
+
+==== Backing up tables
+
+To backup one or more Kudu tables the `KuduBackup` Spark job can be used.
+The first time the job is run for a table, a full backup will be run.
+Additional runs will perform incremental backups which will only contain the
+rows that have changed since the initial full backup. A new set of full
+backups can be forced at anytime by passing the `--forceFull` flag to the
+backup job.
+
+The common flags that will be used when taking a backup are:
+
+* `--rootPath`: The root path to output backup data. Accepts any Spark-compatible path.
+** See <<backup_directory>> for the directory structure used in the `rootPath`.
+* `--kuduMasterAddresses`: Comma-separated addresses of Kudu masters. Default: localhost
+* `<table>...`:  A list of tables to be backed up.
+
+Note: You can see the full list of Job options at anytime by passing the `--help` flag.
+
+Below is a full example of a `KuduBackup` job execution which will backup the tables
+`foo` and `bar` to the HDFS directory `kudu-backups`:
+
+[source,bash]
+----
+spark-submit --class org.apache.kudu.backup.KuduBackup kudu-backup2_2.11-1.10.0.jar \
+  --kuduMasterAddresses master1-host,master-2-host,master-3-host \
+  --rootPath hdfs:///kudu-backups \
+  foo bar
+----
+
+==== Restoring tables from Backups
+
+To restore one or more Kudu tables, the `KuduRestore` Spark job can be used.
+For each backed up table, the `KuduRestore` job will restore the full backup
+and each associated incremental backup until the full table state is restored.
+Restoring the full series of full and incremental backups is possible because
+the backups are linked via the `from_ms` and `to_ms` fields in the backup metadata.
+By default the restore job will create tables with the same name as the table
+that was backed up. If you want to side-load the tables without affecting the
+existing tables, you can pass `--tableSuffix` to append a suffix to each
+restored table.
+
+The common flags that will be used when restoring are:
+
+* `--rootPath`: The root path to the backup data. Accepts any Spark-compatible path.
+** See <<backup_directory>> for the directory structure used in the `rootPath`.
+* `--kuduMasterAddresses`: Comma-separated addresses of Kudu masters. Default: localhost
+* `--tableSuffix`: If set, the suffix to add to the restored table names.
+  Only used when createTables is true.
+* `--timestampMs`: A UNIX timestamp in milliseconds that defines the latest time
+  to use when selecting restore candidates. Default: `System.currentTimeMillis()`
+* `<table>...`:  A list of tables to be backed up.
+
+Note: You can see the full list of job options at anytime by passing the `--help` flag.
+
+Below is a full example of a `KuduRestore` job execution which will restore the tables
+`foo` and `bar` from the HDFS directory `kudu-backups`:
+
+[source,bash]
+----
+spark-submit --class org.apache.kudu.backup.KuduRestore kudu-backup2_2.11-1.10.0.jar \
+  --kuduMasterAddresses master1-host,master-2-host,master-3-host \
+  --rootPath hdfs:///kudu-backups \
+  foo bar
+----
+
+==== Backup tools
+
+An additional `backup-tools` jar is available to provide some backup exploration and
+garbage collection capabilities. This jar does not use Spark directly, but instead
+only requires the Hadoop classpath to run.
+
+Commands:
+
+* `list`: Lists the backups in the rootPath.
+* `clean`: Cleans up old backup data in the rootPath.
+
+Note: You can see the full list of command options at anytime by passing the `--help` flag.
+
+Below is an example execution which will print the command options:
+
+[source,bash]
+----
+java -cp $(hadoop classpath):kudu-backup-tools-1.10.0.jar org.apache.kudu.backup.KuduBackupCLI --help
+----
+
+[[backup_directory]]
+==== Backup Directory Structure
+
+The backup directory structure in the `rootPath` is considered an internal detail
+and could change in future versions of Kudu. Additionally the format and content
+of the data and metadata files is meant for the backup and restore process only
+and could change in future versions of Kudu. That said, understanding the structure
+of the backup `rootPath` and how it is used can be useful when working with Kudu backups.
+
+The backup directory structure in the `rootPath` is as follows:
+
+[source,bash]
+----
+/<rootPath>/<tableId>-<tableName>/<backup-id>/
+   .kudu-metadata.json
+   part-*.<format>
+----
+
+* `rootPath`: Can be used to distinguish separate backup groups, jobs, or concerns.
+* `tableId`: The unique internal ID of the table being backed up.
+* `tableName`: The name of the table being backed up.
+** Note: Table names are URL encoded to prevent pathing issues.
+* `backup-id`: A way to uniquely identify/group the data for a single backup run.
+* `.kudu-metadata.json`: Contains all of the metadata to support recreating the table,
+  linking backups by time, and handling data format changes.
+** Written last so that failed backups will not have a metadata file and will not be
+  considered at restore time or backup linking time.
+* `part-*.<format>`: The data files containing the tables data.
+** Currently 1 part file per Kudu partition.
+** Incremental backups contain an additional “RowAction” byte column at the end.
+** Currently the only supported format/suffix is `parquet`
+
+==== Troubleshooting
+
+===== Generating a table list
+
+To generate a list of tables to backup using the `kudu table list` tool along
+with `grep` can be useful. Below is an example that will generate a list
+of all tables that start with `my_db.`:
+
+[source,bash]
+----
+kudu table list <master_addresses> | grep "^my_db\.*" | tr '\n' ' '
+----
+
+*Note*: This list could be saved as a part of you backup process to be used
+at restore time as well.
+
+===== Spark Tuning
+
+In general the Spark jobs were designed to run with minimal tuning and configuration.
+You can adjust the number of executors and resources to increase parallelism and performance
+using Spark's
+link:https://spark.apache.org/docs/latest/configuration.html[configuration options].
+
+If your tables are super wide and your default memory allocation is fairly low, you
+may see jobs fail. To resolve this increase the Spark executor memory. A conservative
+rule of thumb is 1 GiB per 50 columns.
+
+If your Spark resources drastically outscale the Kudu cluster you may want to limit the
+number of concurrent tasks allowed to run on restore.
+
+[[physical_backup]]
+=== Physical backups of an entire node
+
+Kudu does not yet provide built-in physical backup and restore functionality.
+However, it is possible to create a physical backup of a Kudu node (either
+tablet server or master) and restore it later.
+
+WARNING: The node to be backed up must be offline during the procedure, or else
+the backed up (or restored) data will be inconsistent.
+
+WARNING: Certain aspects of the Kudu node (such as its hostname) are embedded in
+the on-disk data. As such, it's not yet possible to restore a physical backup of
+a node onto another machine.
+
+. Stop all Kudu processes in the cluster. This prevents the tablets on the
+  backed up node from being rereplicated elsewhere unnecessarily.
+
+. If creating a backup, make a copy of the WAL, metadata, and data directories
+  on each node to be backed up. It is important that this copy preserve all file
+  attributes as well as sparseness.
+
+. If restoring from a backup, delete the existing WAL, metadata, and data
+  directories, then restore the backup via move or copy. As with creating a
+  backup, it is important that the restore preserve all file attributes and
+  sparseness.
+
+. Start all Kudu processes in the cluster.
+
 == Common Kudu workflows
 
 [[migrate_to_multi_master]]
@@ -1220,35 +1411,6 @@ $ rm -rf /data/0/kudu-tserver-wal/* /data/0/kudu-tserver-meta/* /data/1/kudu-tse
 . After directories are deleted, the server process can be started with the new
   directory configuration. The appropriate sub-directories will be created by
   Kudu upon starting up.
-
-[[physical_backup]]
-=== Physical backups of an entire node
-
-As documented in the link:known_issues.html#_replication_and_backup_limitations[Known Issues and Limitations],
-Kudu does not yet provide any built-in backup and restore functionality. However,
-it is possible to create a physical backup of a Kudu node (either tablet server
-or master) and restore it later.
-
-WARNING: The node to be backed up must be offline during the procedure, or else
-the backed up (or restored) data will be inconsistent.
-
-WARNING: Certain aspects of the Kudu node (such as its hostname) are embedded in
-the on-disk data. As such, it's not yet possible to restore a physical backup of
-a node onto another machine.
-
-. Stop all Kudu processes in the cluster. This prevents the tablets on the
-  backed up node from being rereplicated elsewhere unnecessarily.
-
-. If creating a backup, make a copy of the WAL, metadata, and data directories
-  on each node to be backed up. It is important that this copy preserve all file
-  attributes as well as sparseness.
-
-. If restoring from a backup, delete the existing WAL, metadata, and data
-  directories, then restore the backup via move or copy. As with creating a
-  backup, it is important that the restore preserve all file attributes and
-  sparseness.
-
-. Start all Kudu processes in the cluster.
 
 [[minimizing_cluster_disruption_during_temporary_single_ts_downtime]]
 === Minimizing cluster disruption during temporary planned downtime of a single tablet server
