@@ -24,6 +24,7 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
