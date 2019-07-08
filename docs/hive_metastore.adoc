@@ -87,6 +87,7 @@ multiple Kudu tables exist whose names only differ by case, the Kudu master(s)
 will fail to start up. Be sure to rename such conflicting tables before
 enabling the Hive Metastore integration.
 
+[[metadata_sync]]
 ### Metadata Synchronization
 When the Hive Metastore integration is enabled, Kudu will automatically
 synchronize metadata changes to Kudu tables between Kudu and the HMS. As such,

@@ -49,17 +49,20 @@
 * Kudu now supports both full and incremental table backups via a job
   implemented using Apache Spark. Additionally it supports restoring
   tables from full and incremental backups via a restore job implemented using
-  Apache Spark. See the backup documentation for more details.
+  Apache Spark. See the link:administration.html#backup[backup documentation]
+  for more details.
 
 * Kudu can now synchronize its internal catalog with the Apache Hive Metastore,
   automatically updating Hive Metastore table entries upon table creation,
-  deletion, and alterations in Kudu. See the HMS synchronization documentation
+  deletion, and alterations in Kudu. See the
+  link:hive_metastore.html#metadata_sync[HMS synchronization documentation]
   for more details.
 
 * Kudu now supports native fine-grained authorization via integration with
   Apache Sentry. Kudu may now enforce access control policies defined for Kudu
   tables and columns, as well as policies defined on Hive servers and databases
-  that may store Kudu tables. See the authorization documentation for more
+  that may store Kudu tables. See the
+  link:security.html#fine_grained_authz[authorization documentation] for more
   details.
 
 * Kudu’s web UI now supports SPNEGO, a protocol for securing HTTP requests with
