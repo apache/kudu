@@ -103,7 +103,10 @@ BUNDLE="$GEM_PATH/bin/bundle"
 echo "Locally installing ruby gems needed to build docs."
 if [ ! -x "$BUNDLE" ]; then
   set -x
-  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler
+  # The bundler install is pinned to an explicit version because versions after
+  # 2.0.0 require ruby >= 2.3.0 which is not available on many supported
+  # operating systems.
+  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler -v '1.17.3'
   set +x
 fi
 
