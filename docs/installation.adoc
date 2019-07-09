@@ -632,8 +632,58 @@ Before upgrading, you should read the link:release_notes.html[Release Notes] for
 the version of Kudu that you are about to install. Pay close attention to the
 incompatibilities, upgrade, and downgrade notes that are documented there.
 
-NOTE: Currently rolling upgrades are not supported. Please shut down all Kudu services before
-  upgrading the software.
+WARNING: The following upgrade process is only relevant when you have binaries available.
+
+. Prepare the software.
+  - Place the new `kudu-tserver`, `kudu-master`, and `kudu` binaries into the appropriate
+    Kudu binary directory.
+. Upgrade the tablet servers.
+  - Set the `follower_unavailable_considered_failed_sec` configuration to a high value
+    (conservatively, twice the expected restart time) to prevent tablet replicas hosted
+    on restarting tablet servers from being evicted and re-replicated.
++
+[source,bash]
+----
+$ ./kudu tserver set_flag <tserver> follower_unavailable_considered_failed_sec 7200
+----
+  - Restart one tablet server.
+  - Wait for all tablet replicas on the tablet server to finish bootstrapping by viewing
+    `/tablets` page in the tablet server web UI.
+  - Restarting the tablet server will have reset the `follower_unavailable_considered_failed_sec`
+    configuration. Raise it again as needed.
+  - Repeat the previous 3 steps for the remaining tablet servers.
+  - Restore the original gflag value of every tablet server (the default is 5 minutes)
++
+[source,bash]
+----
+$ ./kudu tserver set_flag <tserver> follower_unavailable_considered_failed_sec 300
+----
++
+An example for a cluster with three tablet servers A, B, C:
++
+[source,bash]
+----
+# Step 1: Set the unavailable time for every tablet server to a large value
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 7200
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 7200
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 7200
+
+# Step 2: Restart the tablet server and reset the gflag one by one
+<restart A and wait until A is online>
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 7200
+<restart B and wait until B is online>
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 7200
+<restart C and wait until C is online>
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 7200
+
+# Step 3: Restore the default gflag value (5 minutes) for every tablet server
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 300
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 300
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 300
+----
++
+. Upgrade the master servers.
+  - Restart the master server one by one.
 
 [[next_steps]]
 == Next Steps
