@@ -36,7 +36,7 @@ following:
   (see [KUDU-1711](https://issues.apache.org/jira/browse/KUDU-1711)).
 - The performance of mutations (i.e. UPDATE, DELETE, and re-INSERT) to
   not-yet-flushed Kudu data has been significantly optimized
-  (see [KUDU-2826]https://issues.apache.org/jira/browse/KUDU-2826) and
+  (see [KUDU-2826](https://issues.apache.org/jira/browse/KUDU-2826) and
   [f9f9526d3](https://github.com/apache/kudu/commit/f9f9526d3)).
 - Predicate performance for primitive columns and IS NULL and IS NOT NULL
   has been optimized
