@@ -2,7 +2,7 @@
 title: kudu-tserver Flags
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-07-09 07:33:29 PDT'
+last_updated: 'Last updated 2019-07-09 12:59:30 PDT'
 ---
 <!--
 
@@ -2372,93 +2372,6 @@ being changed or removed without notice.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="kudu-tserver_tcp_keepalive_probe_period_s"><a class="link" href="#kudu-tserver_tcp_keepalive_probe_period_s"><code>--tcp_keepalive_probe_period_s</code></a></h3>
-<div class="paragraph">
-<p>The duration in seconds after an outbound connection has gone idle before a TCP keepalive probe is sent to the peer. Set to 0 to disable TCP keepalive probes from being sent.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>&#160;</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="kudu-tserver_tcp_keepalive_retry_count"><a class="link" href="#kudu-tserver_tcp_keepalive_retry_count"><code>--tcp_keepalive_retry_count</code></a></h3>
-<div class="paragraph">
-<p>The maximum number of keepalive probes sent before declaring the remote end as dead. Effective only if --tcp_keepalive_probe_period_s is not 0.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>&#160;</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="kudu-tserver_tcp_keepalive_retry_period_s"><a class="link" href="#kudu-tserver_tcp_keepalive_retry_period_s"><code>--tcp_keepalive_retry_period_s</code></a></h3>
-<div class="paragraph">
-<p>The duration in seconds between successive keepalive probes from an outbound connection if the previous probes are not acknowledged. Effective only if --tcp_keepalive_probe_period_s is not 0.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>3</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>&#160;</p>
-</div>
-</div>
-<div class="sect2">
 <h3 id="kudu-tserver_remember_clients_ttl_ms"><a class="link" href="#kudu-tserver_remember_clients_ttl_ms"><code>--remember_clients_ttl_ms</code></a></h3>
 <div class="paragraph">
 <p>Maximum amount of time, in milliseconds, the server "remembers" a client for the purpose of caching its responses. After this period without hearing from it, the client is no longer remembered and the memory occupied by its responses is reclaimed. Retries of requests older than 'remember_clients_ttl_ms' are treated as new ones.</p>
@@ -2799,35 +2712,6 @@ being changed or removed without notice.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>&#160;</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="kudu-tserver_gc_tcmalloc_memory_interval_seconds"><a class="link" href="#kudu-tserver_gc_tcmalloc_memory_interval_seconds"><code>--gc_tcmalloc_memory_interval_seconds</code></a></h3>
-<div class="paragraph">
-<p>Interval seconds to GC tcmalloc memory, 0 means disabled.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>30</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">runtime,advanced</p></td>
 </tr>
 </tbody>
 </table>

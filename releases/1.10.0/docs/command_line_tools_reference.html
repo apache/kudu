@@ -2,7 +2,7 @@
 title: Apache Kudu Command Line Tools Reference
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-07-09 07:33:29 PDT'
+last_updated: 'Last updated 2019-07-09 12:59:30 PDT'
 ---
 <!--
 
@@ -286,12 +286,6 @@ limitations under the License.
 </li>
 <li>
 <p><a href="#table-copy">copy</a></p>
-</li>
-<li>
-<p><a href="#table-set_extra_config">set_extra_config</a></p>
-</li>
-<li>
-<p><a href="#table-get_extra_configs">get_extra_configs</a></p>
 </li>
 </ul>
 </div>
@@ -3713,108 +3707,6 @@ The only supported predicate operator is <code>AND</code>.</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">How data should be copied to the destination table. Valid values are 'insert', 'upsert' or the empty string. If the empty string, data will not be copied (useful when create_table is 'true').</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>insert</code></p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p><br></p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="table-set_extra_config"><a class="link" href="#table-set_extra_config"><code>set_extra_config</code>: Change a extra configuration value on a table&#160;</a></h4>
-<div class="paragraph">
-<p><strong>Usage:</strong><br>
-<code>kudu table set_extra_config &lt;master_addresses&gt; &lt;table_name&gt; &lt;config_name&gt; &lt;config_value&gt;</code>
-<br>
-<strong>Arguments:</strong></p>
-</div>
-<table class="tableblock frame-topbot grid-all spread">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Name</th>
-<th class="tableblock halign-left valign-top">Description</th>
-<th class="tableblock halign-left valign-top">Type</th>
-<th class="tableblock halign-left valign-top">Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Either comma-separated list of Kudu master addresses where each address is of form 'hostname:port', or a cluster name if it has been configured in ${KUDU_CONFIG}/kudurc</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">table_name</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the table to alter</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">config_name</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the configuration</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">config_value</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">New value for the configuration</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p><br></p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="table-get_extra_configs"><a class="link" href="#table-get_extra_configs"><code>get_extra_configs</code>: Get the extra configuration properties for a table&#160;</a></h4>
-<div class="paragraph">
-<p><strong>Usage:</strong><br>
-<code>kudu table get_extra_configs &lt;master_addresses&gt; &lt;table_name&gt; [-config_names=&lt;names&gt;]</code>
-<br>
-<strong>Arguments:</strong></p>
-</div>
-<table class="tableblock frame-topbot grid-all spread">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Name</th>
-<th class="tableblock halign-left valign-top">Description</th>
-<th class="tableblock halign-left valign-top">Type</th>
-<th class="tableblock halign-left valign-top">Default</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Either comma-separated list of Kudu master addresses where each address is of form 'hostname:port', or a cluster name if it has been configured in ${KUDU_CONFIG}/kudurc</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">table_name</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the table for which to get extra configurations</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">config_names (optional)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of configurations to display. An empty value displays all configs.</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 </tbody>
 </table>

@@ -2,7 +2,7 @@
 title: Configuring Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-07-09 07:00:31 PDT'
+last_updated: 'Last updated 2019-07-09 12:51:23 PDT'
 ---
 <!--
 
@@ -280,41 +280,6 @@ do not read this flag.</p></td>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configure_kudu_tables"><a class="link" href="#_configure_kudu_tables">Configure Kudu Tables</a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Kudu allows certain configurations to be set per table. To configure the behavior of a Kudu table,
-you can set these configurations at table creation, or alter them via the Kudu API or Kudu command
-line tool.</p>
-</div>
-<table class="tableblock frame-all grid-all spread">
-<caption class="title">Table 3. Supported Configurable Properties for Kudu Tables</caption>
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-<col style="width: 25%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Configuration</th>
-<th class="tableblock halign-left valign-top">Valid Options</th>
-<th class="tableblock halign-left valign-top">Default</th>
-<th class="tableblock halign-left valign-top">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">kudu.table.history_max_age_sec</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">integer</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Number of seconds to retain history for tablets in this table.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
 <h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
 <div class="sectionbody">
 <div class="ulist">
@@ -363,7 +328,6 @@ line tool.</p>
 <li><a href="#_configuring_tablet_servers">Configuring Tablet Servers</a></li>
 </ul>
 </li>
-<li><a href="#_configure_kudu_tables">Configure Kudu Tables</a></li>
 <li><a href="#_next_steps">Next Steps</a></li>
 </ul> 
       </li> 
