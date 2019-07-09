@@ -59,7 +59,8 @@ class TestRowSet : public KuduRowSetTest {
     : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows),
       op_id_(consensus::MaximumOpId()),
-      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+      log_anchor_registry_(new log::LogAnchorRegistry()) {
     CHECK_GT(n_rows_, 0);
   }
 
@@ -327,7 +328,7 @@ class TestRowSet : public KuduRowSetTest {
 
   Status OpenTestRowSet(std::shared_ptr<DiskRowSet> *rowset) {
     return DiskRowSet::Open(rowset_meta_,
-                            new log::LogAnchorRegistry(),
+                            log_anchor_registry_.get(),
                             TabletMemTrackers(),
                             nullptr,
                             rowset);
@@ -341,6 +342,7 @@ class TestRowSet : public KuduRowSetTest {
   consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
   scoped_refptr<clock::Clock> clock_;
   MvccManager mvcc_;
+  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 };
 
 } // namespace tablet

@@ -354,8 +354,8 @@ TEST_F(TestRowSet, TestDMSFlush) {
 
     ASSERT_OK(rs->FlushDeltas(nullptr));
 
-    // Check that the DiskRowSet's DMS has now been emptied.
-    ASSERT_EQ(0, rs->delta_tracker_->dms_->Count());
+    // Check that the DiskRowSet's DMS has not been initialized.
+    ASSERT_FALSE(rs->delta_tracker_->dms_);
 
     // Now read back the value column, and verify that the updates
     // are visible.
@@ -739,6 +739,7 @@ INSTANTIATE_TEST_CASE_P(RowIteratorOptionsPermutations, DiffScanRowSetTest,
 // the test operates on a variety of different on-disk and in-memory layouts.
 TEST_P(DiffScanRowSetTest, TestFuzz) {
   fs::IOContext test_context;
+  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry(new log::LogAnchorRegistry());
 
   // Create and open a DRS with four rows.
   shared_ptr<DiskRowSet> rs;
@@ -756,7 +757,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
       ASSERT_OK(WriteRow(rb.data(), &drsw));
     }
     ASSERT_OK(drsw.Finish());
-    ASSERT_OK(DiskRowSet::Open(rowset_meta_, new log::LogAnchorRegistry(),
+    ASSERT_OK(DiskRowSet::Open(rowset_meta_, log_anchor_registry.get(),
                                TabletMemTrackers(), &test_context, &rs));
   }
 

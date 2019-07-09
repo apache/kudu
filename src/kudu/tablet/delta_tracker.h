@@ -230,9 +230,9 @@ class DeltaTracker {
   // Get the delta MemStore's size in bytes, including pre-allocation.
   size_t DeltaMemStoreSize() const;
 
-  // Returns true if the DMS has no entries. This doesn't rely on the size.
+  // Returns true if the DMS doesn't exist. This doesn't rely on the size.
   bool DeltaMemStoreEmpty() const {
-    return dms_empty_.Load();
+    return !dms_exists_.Load();
   }
 
   // Get the minimum log index for this tracker's DMS, -1 if it wasn't set.
@@ -322,6 +322,8 @@ class DeltaTracker {
 
   std::string LogPrefix() const;
 
+  Status CreateAndInitDMSUnlocked(const fs::IOContext* io_context);
+
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
 
   bool open_;
@@ -337,6 +339,8 @@ class DeltaTracker {
 
   TabletMemTrackers mem_trackers_;
 
+  int64_t next_dms_id_;
+
   // The current DeltaMemStore into which updates should be written.
   std::shared_ptr<DeltaMemStore> dms_;
   // The set of tracked REDO delta stores, in increasing timestamp order.
@@ -345,12 +349,14 @@ class DeltaTracker {
   SharedDeltaStoreVector undo_delta_stores_;
 
   // The maintenance scheduler calls DeltaMemStoreEmpty() a lot.
-  // We cache this here to avoid having to take component_lock_
-  // in order to satisfy this call.
-  AtomicBool dms_empty_;
+  // We use an atomic variable to indicate whether DMS exists or not and
+  // to avoid having to take component_lock_ in order to satisfy this call.
+  AtomicBool dms_exists_;
 
   // read-write lock protecting dms_ and {redo,undo}_delta_stores_.
-  // - Readers and mutators take this lock in shared mode.
+  // - Readers take this lock in shared mode.
+  // - Mutators take this lock in exclusive mode if they need to create
+  //   a new DMS, and shared mode otherwise.
   // - Flushers take this lock in exclusive mode before they modify the
   //   structure of the rowset.
   //
