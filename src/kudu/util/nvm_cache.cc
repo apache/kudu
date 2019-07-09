@@ -59,7 +59,6 @@ DECLARE_bool(cache_force_single_shard);
 DEFINE_string(nvm_cache_path, "/pmem",
               "The path at which the NVM cache will try to allocate its memory. "
               "This can be a tmpfs or ramfs for testing purposes.");
-TAG_FLAG(nvm_cache_path, experimental);
 
 DEFINE_int32(nvm_cache_allocation_retry_count, 10,
              "The number of times that the NVM cache will retry attempts to allocate "
