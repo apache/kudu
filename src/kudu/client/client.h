@@ -2432,24 +2432,9 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
 
   /// @cond PRIVATE_API
-
-  /// Set the start and end timestamp for a diff scan. The timestamps should be
-  /// encoded HT timestamps.
-  ///
-  /// Additionally sets any other scan properties required by diff scans.
-  ///
-  /// Private API.
-  ///
-  /// @param [in] start_timestamp
-  ///   Start timestamp to set in raw encoded form
-  ///   (i.e. as returned by a previous call to a server).
-  /// @param [in] end_timestamp
-  ///   End timestamp to set in raw encoded form
-  ///   (i.e. as returned by a previous call to a server).
-  /// @return Operation result status.
+  /// @copydoc KuduScanner::SetDiffScan
   Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp)
       WARN_UNUSED_RESULT KUDU_NO_EXPORT;
-
   /// @endcond
 
   /// @copydoc KuduScanner::SetTimeoutMillis
