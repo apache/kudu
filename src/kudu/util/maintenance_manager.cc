@@ -35,7 +35,6 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
@@ -96,14 +95,6 @@ DEFINE_double(data_gc_prioritization_prob, 0.5,
              "delete old data before running performance improvement operations "
              "such as delta compaction.");
 TAG_FLAG(data_gc_prioritization_prob, experimental);
-
-DEFINE_string(maintenance_manager_table_priorities, "",
-              "Priorities of tables, semicolon-separated list of table-priority pairs, and each "
-              "table-priority pair is combined by table id, colon and priority level. Priority "
-              "level is ranged in [-FLAGS_max_priority_range, FLAGS_max_priority_range]");
-TAG_FLAG(maintenance_manager_table_priorities, advanced);
-TAG_FLAG(maintenance_manager_table_priorities, experimental);
-TAG_FLAG(maintenance_manager_table_priorities, runtime);
 
 DEFINE_double(maintenance_op_multiplier, 1.1,
               "Multiplier applied on different priority levels, table maintenance OPs on level N "
@@ -302,9 +293,6 @@ void MaintenanceManager::RunSchedulerThread() {
       return;
     }
 
-    // TODO(yingchun): move it to SetFlag, callback once as a gflags setter handler.
-    UpdateTablePriorities();
-
     // If we found no work to do, then we should sleep before trying again to schedule.
     // Otherwise, we can go right into trying to find the next op.
     prev_iter_found_no_work = !FindAndLaunchOp(&guard);
@@ -432,7 +420,7 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
                         op->name(), data_retained_bytes);
     }
 
-    const auto perf_improvement = PerfImprovement(stats.perf_improvement(), op->table_id());
+    const auto perf_improvement = PerfImprovement(stats.perf_improvement(), op->priority());
     if ((!best_perf_improvement_op) ||
         (perf_improvement > best_perf_improvement)) {
       best_perf_improvement_op = op;
@@ -491,13 +479,13 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   return {nullptr, "no ops with positive improvement"};
 }
 
-double MaintenanceManager::PerfImprovement(double perf_improvement,
-                                           const string& table_id) const {
-  int32_t priority = 0;
-  if (!FindCopy(table_priorities_, table_id, &priority)) {
+double MaintenanceManager::PerfImprovement(double perf_improvement, int32_t priority) const {
+  if (priority == 0) {
     return perf_improvement;
   }
 
+  priority = std::max(priority, -FLAGS_max_priority_range);
+  priority = std::min(priority, FLAGS_max_priority_range);
   return perf_improvement * std::pow(FLAGS_maintenance_op_multiplier, priority);
 }
 
@@ -598,28 +586,6 @@ bool MaintenanceManager::HasFreeThreads() {
 
 bool MaintenanceManager::CouldNotLaunchNewOp(bool prev_iter_found_no_work) {
   return (!HasFreeThreads() || prev_iter_found_no_work || disabled_for_tests()) && !shutdown_;
-}
-
-void MaintenanceManager::UpdateTablePriorities() {
-  string table_priorities_str;
-  CHECK(google::GetCommandLineOption("maintenance_manager_table_priorities",
-                                     &table_priorities_str));
-
-  TablePriorities table_priorities;
-  int32_t value;
-  for (auto table_priority_str : Split(table_priorities_str, ";", strings::SkipEmpty())) {
-    vector<string> table_priority = Split(table_priority_str, ":", strings::SkipEmpty());
-    if (safe_strto32_base(table_priority[1].c_str(), &value, 10)) {
-      value = std::max(value, -FLAGS_max_priority_range);
-      value = std::min(value, FLAGS_max_priority_range);
-      table_priorities[table_priority[0]] = value;
-    } else {
-      LOG(WARNING) << "Some error occured when parse flag maintenance_manager_table_priorities: "
-          << table_priorities_str;
-      return;
-    }
-  }
-  table_priorities_.swap(table_priorities);
 }
 
 void MaintenanceManager::IncreaseOpCount(MaintenanceOp *op) {

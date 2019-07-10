@@ -42,7 +42,7 @@ class TabletOpBase : public MaintenanceOp {
   std::string LogPrefix() const;
 
  protected:
-  const std::string& table_id() const override;
+  int32_t priority() const override;
 
   Tablet* const tablet_;
 };

@@ -51,7 +51,7 @@ class TabletReplicaOpBase : public MaintenanceOp {
   explicit TabletReplicaOpBase(std::string name, IOUsage io_usage, TabletReplica* tablet_replica);
 
  protected:
-  const std::string& table_id() const override;
+  int32_t priority() const override;
 
   TabletReplica *const tablet_replica_;
 };

@@ -445,4 +445,9 @@ message TableExtraConfigPB {
   // backups. Reads initiated at a snapshot that is older than this
   // age will be rejected. Equivalent to --tablet_history_max_age_sec.
   optional int32 history_max_age_sec = 1;
+
+  // Priority level of a table for maintenance, it will be clamped into
+  // range [-FLAGS_max_priority_range, FLAGS_max_priority_range] when
+  // calculate maintenance priority score.
+  optional int32 maintenance_priority = 2;
 }

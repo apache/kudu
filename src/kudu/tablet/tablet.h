@@ -53,7 +53,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-
+class AlterTableTest;
 class ConstContiguousRow;
 class EncodedKey;
 class KeyRange;
@@ -420,7 +420,6 @@ class Tablet {
   // This method is thread-safe.
   void CancelMaintenanceOps();
 
-  const std::string& table_id() const { return metadata_->table_id(); }
   const std::string& tablet_id() const { return metadata_->tablet_id(); }
 
   // Return the metrics for this tablet.
@@ -460,6 +459,7 @@ class Tablet {
                      std::vector<KeyRange>* ranges);
 
  private:
+  friend class kudu::AlterTableTest;
   friend class Iterator;
   friend class TabletReplicaTest;
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);

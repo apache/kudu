@@ -64,6 +64,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -102,6 +103,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
 using kudu::tablet::TabletReplica;
+using kudu::tablet::Tablet;
 using std::atomic;
 using std::map;
 using std::pair;
@@ -274,6 +276,15 @@ class AlterTableTest : public KuduTest {
                      const vector<string>& range_partition_columns,
                      vector<unique_ptr<KuduPartialRow>> split_rows,
                      vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> bounds);
+
+  void CheckMaintenancePriority(int32_t expect_priority) {
+    for (auto op : tablet_replica_->maintenance_ops_) {
+      ASSERT_EQ(op->priority(), expect_priority);
+    }
+    for (auto op : tablet_replica_->tablet()->maintenance_ops_) {
+      ASSERT_EQ(op->priority(), expect_priority);
+    }
+  }
 
  protected:
   virtual int num_replicas() const { return 1; }
@@ -2123,5 +2134,24 @@ TEST_F(AlterTableTest, TestKUDU2132) {
   table_alterer->DropColumn("c0");
   ASSERT_OK(table_alterer->Alter());
 }
+
+TEST_F(AlterTableTest, TestMaintenancePriorityAlter) {
+  // Default priority level.
+  NO_FATALS(CheckMaintenancePriority(0));
+
+  // Set to some priority level.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->AlterExtraConfig({{"kudu.table.maintenance_priority", "3"}})->Alter());
+  NO_FATALS(CheckMaintenancePriority(3));
+
+  // Set to another priority level.
+  ASSERT_OK(table_alterer->AlterExtraConfig({{"kudu.table.maintenance_priority", "-1"}})->Alter());
+  NO_FATALS(CheckMaintenancePriority(-1));
+
+  // Reset to default priority level.
+  ASSERT_OK(table_alterer->AlterExtraConfig({{"kudu.table.maintenance_priority", "0"}})->Alter());
+  NO_FATALS(CheckMaintenancePriority(0));
+}
+
 
 } // namespace kudu

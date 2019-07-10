@@ -667,11 +667,20 @@ Status ColumnPredicateFromPB(const Schema& schema,
 }
 
 const char kTableHistoryMaxAgeSec[] = "kudu.table.history_max_age_sec";
+const char kTableMaintenancePriority[] = "kudu.table.maintenance_priority";
 Status ExtraConfigPBToMap(const TableExtraConfigPB& pb, map<string, string>* configs) {
   Map<string, string> tmp;
   RETURN_NOT_OK(ExtraConfigPBToPBMap(pb, &tmp));
   map<string, string> result(tmp.begin(), tmp.end());
   *configs = std::move(result);
+  return Status::OK();
+}
+
+Status ParseInt32Config(const string& name, const string& value, int32_t* result) {
+  CHECK(result);
+  if (!safe_strto32(value, result)) {
+    return Status::InvalidArgument(Substitute("unable to parse $0", name), value);
+  }
   return Status::OK();
 }
 
@@ -683,10 +692,14 @@ Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConf
     if (name == kTableHistoryMaxAgeSec) {
       if (!value.empty()) {
         int32_t history_max_age_sec;
-        if (!safe_strto32(value, &history_max_age_sec)) {
-          return Status::InvalidArgument(Substitute("Unable to parse $0", name), value);
-        }
+        RETURN_NOT_OK(ParseInt32Config(name, value, &history_max_age_sec));
         result.set_history_max_age_sec(history_max_age_sec);
+      }
+    } else if (name == kTableMaintenancePriority) {
+      if (!value.empty()) {
+        int32_t maintenance_priority;
+        RETURN_NOT_OK(ParseInt32Config(name, value, &maintenance_priority));
+        result.set_maintenance_priority(maintenance_priority);
       }
     } else {
       LOG(WARNING) << "Unknown extra configuration property: " << name;
@@ -700,6 +713,9 @@ Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb, Map<string, string>* c
   Map<string, string> result;
   if (pb.has_history_max_age_sec()) {
     result[kTableHistoryMaxAgeSec] = std::to_string(pb.history_max_age_sec());
+  }
+  if (pb.has_maintenance_priority()) {
+    result[kTableMaintenancePriority] = std::to_string(pb.maintenance_priority());
   }
   *configs = std::move(result);
   return Status::OK();
@@ -1024,7 +1040,7 @@ void SerializeRowBlock(const RowBlock& block,
   rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
 }
 
-std::string StartTimeToString(const ServerRegistrationPB& reg) {
+string StartTimeToString(const ServerRegistrationPB& reg) {
   string start_time;
   if (reg.has_start_time()) {
     // Convert epoch time to localtime.

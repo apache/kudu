@@ -23,12 +23,15 @@
 #include <string>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -133,8 +136,13 @@ TabletReplicaOpBase::TabletReplicaOpBase(std::string name,
       tablet_replica_(tablet_replica) {
 }
 
-const std::string& TabletReplicaOpBase::table_id() const {
-  return tablet_replica_->table_id();
+int32_t TabletReplicaOpBase::priority() const {
+  int32_t priority = 0;
+  const auto& extra_config = tablet_replica_->tablet_metadata()->extra_config();
+  if (extra_config && extra_config->has_maintenance_priority()) {
+    priority = extra_config->maintenance_priority();
+  }
+  return priority;
 }
 
 //

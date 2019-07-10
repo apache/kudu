@@ -30,7 +30,6 @@
 #include <utility>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
-#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -61,7 +60,6 @@ METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
 DECLARE_int64(log_target_replay_size_mb);
-DECLARE_string(maintenance_manager_table_priorities);
 DECLARE_double(maintenance_op_multiplier);
 DECLARE_int32(max_priority_range);
 
@@ -112,7 +110,7 @@ class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
                     IOUsage io_usage,
-                    std::string table_id = "fake.table_id")
+                    int32_t priority = 0)
     : MaintenanceOp(name, io_usage),
       ram_anchored_(500),
       logs_retained_bytes_(0),
@@ -123,7 +121,7 @@ class TestMaintenanceOp : public MaintenanceOp {
       remaining_runs_(1),
       prepared_runs_(0),
       sleep_time_(MonoDelta::FromSeconds(0)),
-      table_id_(std::move(table_id)) {
+      priority_(priority) {
   }
 
   ~TestMaintenanceOp() override = default;
@@ -194,8 +192,8 @@ class TestMaintenanceOp : public MaintenanceOp {
     return maintenance_ops_running_;
   }
 
-  const std::string& table_id() const override {
-    return table_id_;
+  int32_t priority() const override {
+    return priority_;
   }
 
  private:
@@ -217,7 +215,9 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   // The amount of time each op invocation will sleep.
   MonoDelta sleep_time_;
-  std::string table_id_;
+
+  // Maintenance priority.
+  int32_t priority_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is
@@ -397,28 +397,20 @@ TEST_F(MaintenanceManagerTest, TestOpFactors) {
   StopManager();
 
   ASSERT_GE(FLAGS_max_priority_range, 1);
-  ASSERT_NE("", gflags::SetCommandLineOption(
-      "maintenance_manager_table_priorities",
-      Substitute("table_id_1:$0;table_id_2:$1;table_id_3:$2;table_id_4:$3;table_id_5:$4",
-                 -FLAGS_max_priority_range - 1, -1, 0, 1, FLAGS_max_priority_range + 1).c_str()));
-  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, "table_id_1");
-  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, "table_id_2");
-  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, "table_id_3");
-  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, "table_id_4");
-  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, "table_id_5");
-  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, "table_id_6");
-
-  manager_->UpdateTablePriorities();
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, -FLAGS_max_priority_range - 1);
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, -1);
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, 0);
+  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, 1);
+  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, FLAGS_max_priority_range + 1);
 
   ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, -FLAGS_max_priority_range),
-                   manager_->PerfImprovement(1, op1.table_id()));
+                   manager_->PerfImprovement(1, op1.priority()));
   ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, -1),
-                   manager_->PerfImprovement(1, op2.table_id()));
-  ASSERT_DOUBLE_EQ(1, manager_->PerfImprovement(1, op3.table_id()));
-  ASSERT_DOUBLE_EQ(FLAGS_maintenance_op_multiplier, manager_->PerfImprovement(1, op4.table_id()));
+                   manager_->PerfImprovement(1, op2.priority()));
+  ASSERT_DOUBLE_EQ(1, manager_->PerfImprovement(1, op3.priority()));
+  ASSERT_DOUBLE_EQ(FLAGS_maintenance_op_multiplier, manager_->PerfImprovement(1, op4.priority()));
   ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, FLAGS_max_priority_range),
-                   manager_->PerfImprovement(1, op5.table_id()));
-  ASSERT_DOUBLE_EQ(1, manager_->PerfImprovement(1, op6.table_id()));
+                   manager_->PerfImprovement(1, op5.priority()));
 }
 
 // Test priority OP launching.
@@ -426,37 +418,32 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   StopManager();
   StartManager(1);
 
-  ASSERT_NE("", gflags::SetCommandLineOption(
-      "maintenance_manager_table_priorities",
-      Substitute("table_id_1:$0;table_id_2:$1;table_id_3:$2;table_id_4:$3;table_id_5:$4",
-                 -FLAGS_max_priority_range - 1, -1, 0, 1, FLAGS_max_priority_range + 1).c_str()));
-
-  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, "table_id_1");
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, -FLAGS_max_priority_range - 1);
   op1.set_perf_improvement(10);
   op1.set_remaining_runs(1);
   op1.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, "table_id_2");
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, -1);
   op2.set_perf_improvement(10);
   op2.set_remaining_runs(1);
   op2.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, "table_id_3");
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, 0);
   op3.set_perf_improvement(10);
   op3.set_remaining_runs(1);
   op3.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, "table_id_4");
+  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, 1);
   op4.set_perf_improvement(10);
   op4.set_remaining_runs(1);
   op4.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, "table_id_5");
+  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, FLAGS_max_priority_range + 1);
   op5.set_perf_improvement(10);
   op5.set_remaining_runs(1);
   op5.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, "table_id_6");
+  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, 0);
   op6.set_perf_improvement(12);
   op6.set_remaining_runs(1);
   op6.set_sleep_time(MonoDelta::FromMilliseconds(1));

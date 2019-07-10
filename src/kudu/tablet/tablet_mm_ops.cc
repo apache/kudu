@@ -21,13 +21,16 @@
 #include <ostream>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -88,8 +91,13 @@ string TabletOpBase::LogPrefix() const {
   return tablet_->LogPrefix();
 }
 
-const std::string& TabletOpBase::table_id() const {
-  return tablet_->table_id();
+int32_t TabletOpBase::priority() const {
+  int32_t priority = 0;
+  const auto& extra_config = tablet_->metadata()->extra_config();
+  if (extra_config && extra_config->has_maintenance_priority()) {
+    priority = extra_config->maintenance_priority();
+  }
+  return priority;
 }
 
 ////////////////////////////////////////////////////////////
