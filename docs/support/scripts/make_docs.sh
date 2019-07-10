@@ -31,7 +31,7 @@
 set -e
 
 usage() {
-  echo usage: "$0 --build_root <path to build root> [--site <path to gh-pages checkout>]"
+  echo usage: "$0 --build_root <path> --output_subdir <relative path> [--site <path to gh-pages checkout>]"
 }
 
 while [[ $# > 0 ]] ; do
@@ -60,7 +60,15 @@ while [[ $# > 0 ]] ; do
           exit 1
         fi
         SITE=$(cd $SITE && pwd)
-        OUTPUT_DIR=$SITE/docs
+        ;;
+      --output_subdir|-o)
+        OUTPUT_SUBDIR=$2
+        if [ -z "$OUTPUT_SUBDIR" ]; then
+          usage
+          exit 1
+        fi
+        shift
+        shift
         ;;
       --no-jekyll)
         NO_JEKYLL=1
@@ -78,7 +86,9 @@ if [ -z "$BUILD_ROOT" ]; then
 fi
 
 if [ -z "$SITE" ]; then
-  OUTPUT_DIR=$BUILD_ROOT/docs
+  OUTPUT_DIR=$BUILD_ROOT/$OUTPUT_SUBDIR
+else
+  OUTPUT_DIR=$SITE/$OUTPUT_SUBDIR
 fi
 
 GEN_DOC_DIR=$BUILD_ROOT/gen-docs
