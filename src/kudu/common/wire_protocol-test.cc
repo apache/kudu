@@ -53,13 +53,17 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
-class WireProtocolTest : public KuduTest {
+class WireProtocolTest : public KuduTest,
+                         // Used for benchmark, int corresponds to the number of columns,
+                         // double corresponds to the selection rate.
+                         public testing::WithParamInterface<tuple<int, double>> {
  public:
   WireProtocolTest()
       : schema_({ ColumnSchema("col1", STRING),
@@ -420,19 +424,15 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   }
 }
 
-#ifdef NDEBUG
-TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
-  // Can set column_counts = {3, 30, 300} together with
-  // select_rates = {1.0, 0.8, 0.5, 0.2} for benchmark.
-  vector<int> column_counts = {3};
-  vector<double> select_rates = {1.0};
-  for (auto column_count : column_counts) {
-    for (auto select_rate : select_rates) {
-      RunBenchmark(column_count, select_rate);
-    }
-  }
+TEST_P(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
+  int column_count = std::get<0>(GetParam());
+  double select_rate = std::get<1>(GetParam());
+  RunBenchmark(column_count, select_rate);
 }
-#endif
+
+INSTANTIATE_TEST_CASE_P(ColumnarRowBlockToPBBenchmarkParams, WireProtocolTest,
+                        testing::Combine(testing::Values(3, 30, 300),
+                                         testing::Values(1.0, 0.8, 0.5, 0.2)));
 
 // Test that trying to extract rows from an invalid block correctly returns
 // Corruption statuses.
