@@ -161,13 +161,9 @@ if [ -n "$OPT_DOXYGEN" ]; then
   fi
 fi
 
-SITE_SUBDIRS="docs"
-if [ -n "$OPT_JAVADOC" ]; then
-  SITE_SUBDIRS="$SITE_SUBDIRS $JAVADOC_SUBDIR"
-fi
-if [ -n "$OPT_DOXYGEN" ]; then
-  SITE_SUBDIRS="$SITE_SUBDIRS $CPP_CLIENT_API_SUBDIR"
-fi
+# Generate the release index file.
+sed "s/@@KUDU_VERSION@@/$VERSION/g" "$SOURCE_ROOT/docs/support/scripts/index_template.md" > \
+  "$RELEASE_OUTPUT_DIR/index.md"
 
 cd "$SITE_OUTPUT_DIR"
 SITE_ARCHIVE="$SITE_OUTPUT_DIR/website_archive.zip"
