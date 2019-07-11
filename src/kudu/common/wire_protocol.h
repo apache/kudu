@@ -112,7 +112,8 @@ Status SchemaFromPB(const SchemaPB& pb, Schema *schema);
 void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb, int flags = 0);
 
 // Return the ColumnSchema created from the specified protobuf.
-ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb);
+// If the column schema is invalid, return a non-OK status.
+Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, boost::optional<ColumnSchema>* col_schema);
 
 // Convert the given list of ColumnSchemaPB objects into a Schema object.
 //

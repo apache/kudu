@@ -487,42 +487,47 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
 
   ColumnSchema col1("col1", STRING);
   ColumnSchemaToPB(col1, &pb);
-  ColumnSchema col1fpb = ColumnSchemaFromPB(pb);
-  ASSERT_FALSE(col1fpb.has_read_default());
-  ASSERT_FALSE(col1fpb.has_write_default());
-  ASSERT_TRUE(col1fpb.read_default_value() == nullptr);
+  boost::optional<ColumnSchema> col1fpb;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col1fpb));
+  ASSERT_FALSE(col1fpb->has_read_default());
+  ASSERT_FALSE(col1fpb->has_write_default());
+  ASSERT_TRUE(col1fpb->read_default_value() == nullptr);
 
   ColumnSchema col2("col2", STRING, false, &read_default_str);
   ColumnSchemaToPB(col2, &pb);
-  ColumnSchema col2fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col2fpb.has_read_default());
-  ASSERT_FALSE(col2fpb.has_write_default());
-  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col2fpb.read_default_value()));
-  ASSERT_EQ(nullptr, static_cast<const Slice *>(col2fpb.write_default_value()));
+  boost::optional<ColumnSchema> col2fpb;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col2fpb));
+  ASSERT_TRUE(col2fpb->has_read_default());
+  ASSERT_FALSE(col2fpb->has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col2fpb->read_default_value()));
+  ASSERT_EQ(nullptr, static_cast<const Slice *>(col2fpb->write_default_value()));
 
   ColumnSchema col3("col3", STRING, false, &read_default_str, &write_default_str);
   ColumnSchemaToPB(col3, &pb);
-  ColumnSchema col3fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col3fpb.has_read_default());
-  ASSERT_TRUE(col3fpb.has_write_default());
-  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col3fpb.read_default_value()));
-  ASSERT_EQ(write_default_str, *static_cast<const Slice *>(col3fpb.write_default_value()));
+  boost::optional<ColumnSchema> col3fpb;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col3fpb));
+  ASSERT_TRUE(col3fpb->has_read_default());
+  ASSERT_TRUE(col3fpb->has_write_default());
+  ASSERT_EQ(read_default_str, *static_cast<const Slice *>(col3fpb->read_default_value()));
+  ASSERT_EQ(write_default_str, *static_cast<const Slice *>(col3fpb->write_default_value()));
 
   ColumnSchema col4("col4", UINT32, false, &read_default_u32);
   ColumnSchemaToPB(col4, &pb);
-  ColumnSchema col4fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col4fpb.has_read_default());
-  ASSERT_FALSE(col4fpb.has_write_default());
-  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col4fpb.read_default_value()));
-  ASSERT_EQ(nullptr, static_cast<const uint32_t *>(col4fpb.write_default_value()));
+  boost::optional<ColumnSchema> col4fpb;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col4fpb));
+  ASSERT_TRUE(col4fpb->has_read_default());
+  ASSERT_FALSE(col4fpb->has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col4fpb->read_default_value()));
+  ASSERT_EQ(nullptr, static_cast<const uint32_t *>(col4fpb->write_default_value()));
 
   ColumnSchema col5("col5", UINT32, false, &read_default_u32, &write_default_u32);
   ColumnSchemaToPB(col5, &pb);
-  ColumnSchema col5fpb = ColumnSchemaFromPB(pb);
-  ASSERT_TRUE(col5fpb.has_read_default());
-  ASSERT_TRUE(col5fpb.has_write_default());
-  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb.read_default_value()));
-  ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb.write_default_value()));
+  boost::optional<ColumnSchema> col5fpb;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col5fpb));
+  ASSERT_TRUE(col5fpb->has_read_default());
+  ASSERT_TRUE(col5fpb->has_write_default());
+  ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb->read_default_value()));
+  ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb->write_default_value()));
 }
 
 // Regression test for KUDU-2378; the call to ColumnSchemaFromPB yielded a crash.
@@ -531,7 +536,32 @@ TEST_F(WireProtocolTest, TestCrashOnAlignedLoadOf128BitReadDefault) {
   pb.set_name("col");
   pb.set_type(DECIMAL128);
   pb.set_read_default_value(string(16, 'a'));
-  ColumnSchemaFromPB(pb);
+  boost::optional<ColumnSchema> col;
+  ASSERT_OK(ColumnSchemaFromPB(pb, &col));
+}
+
+// Regression test for KUDU-2622; Validate read and write default value sizes.
+TEST_F(WireProtocolTest, TestInvalidReadAndWriteDefault) {
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(DECIMAL128);
+    pb.set_read_default_value(string(8, 'a'));
+    boost::optional<ColumnSchema> col;
+    Status s = ColumnSchemaFromPB(pb, &col);
+    EXPECT_TRUE(s.IsCorruption());
+    ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: read default");
+  }
+  {
+    ColumnSchemaPB pb;
+    pb.set_name("col");
+    pb.set_type(DECIMAL128);
+    pb.set_write_default_value(string(8, 'a'));
+    boost::optional<ColumnSchema> col;
+    Status s = ColumnSchemaFromPB(pb, &col);
+    EXPECT_TRUE(s.IsCorruption());
+    ASSERT_STR_CONTAINS(s.ToString(), "Corruption: Not enough bytes for decimal: write default");
+  }
 }
 
 TEST_F(WireProtocolTest, TestColumnPredicateInList) {

@@ -257,7 +257,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   }
 }
 
-ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
+Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, boost::optional<ColumnSchema>* col_schema) {
   const void *write_default_ptr = nullptr;
   const void *read_default_ptr = nullptr;
   Slice write_default;
@@ -268,6 +268,11 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
     if (typeinfo->physical_type() == BINARY) {
       read_default_ptr = &read_default;
     } else {
+      if (typeinfo->size() > read_default.size()) {
+        return Status::Corruption(
+            Substitute("Not enough bytes for $0: read default size ($1) less than type size ($2)",
+                       typeinfo->name(), read_default.size(), typeinfo->size()));
+      }
       read_default_ptr = read_default.data();
     }
   }
@@ -276,6 +281,11 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
     if (typeinfo->physical_type() == BINARY) {
       write_default_ptr = &write_default;
     } else {
+      if (typeinfo->size() > write_default.size()) {
+        return Status::Corruption(
+            Substitute("Not enough bytes for $0: write default size ($1) less than type size ($2)",
+                       typeinfo->name(), write_default.size(), typeinfo->size()));
+      }
       write_default_ptr = write_default.data();
     }
   }
@@ -306,9 +316,10 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   // in protobuf is the empty string. So, it's safe to use pb.comment() directly
   // regardless of whether has_comment() is true or false.
   // https://developers.google.com/protocol-buffers/docs/proto#optional
-  return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
-                      read_default_ptr, write_default_ptr,
-                      attributes, type_attributes, pb.comment());
+  *col_schema = ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
+                             read_default_ptr, write_default_ptr,
+                             attributes, type_attributes, pb.comment());
+  return Status::OK();
 }
 
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {
@@ -373,7 +384,9 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   int num_key_columns = 0;
   bool is_handling_key = true;
   for (const ColumnSchemaPB& pb : column_pbs) {
-    columns.push_back(ColumnSchemaFromPB(pb));
+    boost::optional<ColumnSchema> column;
+    RETURN_NOT_OK(ColumnSchemaFromPB(pb, &column));
+    columns.push_back(*column);
     if (pb.is_key()) {
       if (!is_handling_key) {
         return Status::InvalidArgument(

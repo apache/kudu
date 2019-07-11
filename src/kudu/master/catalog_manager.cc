@@ -2091,13 +2091,14 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
         RETURN_NOT_OK(ProcessColumnPBDefaults(&new_col_pb));
 
         // Can't accept a NOT NULL column without a default.
-        ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
-        if (!new_col.is_nullable() && !new_col.has_read_default()) {
+        boost::optional<ColumnSchema> new_col;
+        RETURN_NOT_OK(ColumnSchemaFromPB(new_col_pb, &new_col));
+        if (!new_col->is_nullable() && !new_col->has_read_default()) {
           return Status::InvalidArgument(
-              Substitute("column `$0`: NOT NULL columns must have a default", new_col.name()));
+              Substitute("column `$0`: NOT NULL columns must have a default", new_col->name()));
         }
 
-        RETURN_NOT_OK(builder.AddColumn(new_col, false));
+        RETURN_NOT_OK(builder.AddColumn(*new_col, false));
         break;
       }
 
