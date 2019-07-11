@@ -60,7 +60,7 @@ Set the `KUDU_QUICKSTART_IP` environment variable to your ip address:
 
 [source,bash]
 ----
-$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 | cut -d" " -f2 | tail -1)
+$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)
 ----
 
 === Bring up the Cluster
