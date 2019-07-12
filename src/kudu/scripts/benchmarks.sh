@@ -216,9 +216,12 @@ run_benchmarks() {
       --n_keys=150000000 --block_cache_capacity_mb=100 &> $LOGDIR/$MT_BLOOM_TEST$i.log
   done
 
-  # run wire_protocol-test 5 times. 6 seconds per run
+  # run wire_protocol-test 5 times.
+  #
+  # We run the first shard, which uses a column count of 3 and a select rate of
+  # 1 (as this is most similar to the unsharded microbenchmark we ran for years).
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/wire_protocol-test --gtest_filter=*Benchmark \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/wire_protocol-test --gtest_filter=*Benchmark/0 \
       &> $LOGDIR/$WIRE_PROTOCOL_TEST$i.log
   done
 
@@ -358,7 +361,7 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER $MT_BLOOM_TEST $i $real
   done
 
-  # Parse out the real time from: "Time spent Converting to PB: real 5.962s  user 5.918s sys 0.025s"
+  # Parse out the real time from: "Time spent Converting to PB with column count 30 and row select rate 0.2: real 5.962s  user 5.918s sys 0.025s"
   for i in $(seq 1 $NUM_SAMPLES); do
     real=`grep "Time spent Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
     record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real
