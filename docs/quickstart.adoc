@@ -109,9 +109,9 @@ kudu cluster ksck localhost:7051,localhost:7151,localhost:7251
 Note: Setting `KUDU_USER_NAME=kudu` simplifies using Kudu from various user
 accounts in a non-secure environment.
 
-== Running an Example
+== Running a Brief Example
 
-Now that a kudu cluster is up and running, examples and integrations can be
+Now that a Kudu cluster is up and running, examples and integrations can be
 run against the cluster. The commands below run the `java-example` against
 the quickstart cluster:
 
@@ -122,6 +122,13 @@ cd examples/java/java-example
 mvn package
 java -DkuduMasters=localhost:7051,localhost:7151,localhost:7251 -jar target/kudu-java-example-1.0-SNAPSHOT.jar
 ----
+
+== More Examples
+
+More complete walkthroughs using the quickstart Kudu cluster can be found in the
+`examples/quickstart` directory. For convenience you can browse them on
+link:https://github.com/apache/kudu/tree/master/examples/quickstart[Github].
+
 
 == Destroying the Cluster
 
