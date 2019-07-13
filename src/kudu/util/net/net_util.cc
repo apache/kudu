@@ -73,8 +73,10 @@ using strings::Substitute;
 
 namespace kudu {
 
-// Allow 18-bit PIDs, max PID up to 147456, for binding in UNIQUE_LOOPBACK mode.
+// Allow 18-bit PIDs, max PID up to 262143, for binding in UNIQUE_LOOPBACK mode.
 static const int kPidBits = 18;
+// The PID and server indices share the same 24-bit space. The 24-bit space
+// corresponds to the 127.0.0.0/8 subnet.
 static const int kServerIdxBits = 24 - kPidBits;
 // The maximum allowed number of 'indexed servers' for binding in UNIQUE_LOOPBACK mode.
 const int kServersMaxNum = (1 << kServerIdxBits) - 2;
