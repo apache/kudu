@@ -59,6 +59,7 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -695,6 +696,31 @@ TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
     ASSERT_EQ(tablet::FAILED, tablet_replica_->state());
   });
   LOG(INFO) << "Tablet was successfully failed";
+}
+
+// Regression test for KUDU-2635.
+TEST_F(TabletServerTest, TestEIODuringDelete) {
+  // Delete some blocks, but don't always delete them persistently so we're
+  // left with some orphaned blocks in the orphaned blocks list. We'll do this
+  // by injecting some EIOs.
+  NO_FATALS(InsertTestRowsRemote(1, 1));
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  NO_FATALS(UpdateTestRowRemote(1, 2));
+  ASSERT_OK(tablet_replica_->tablet()->FlushAllDMSForTests());
+  FsManager* fs_manager = mini_server_->server()->fs_manager();
+  FLAGS_env_inject_eio_globs = JoinPathSegments(fs_manager->GetDataRootDirs()[0], "**");
+  FLAGS_env_inject_eio = 0.5;
+  ignore_result(tablet_replica_->tablet()->MajorCompactAllDeltaStoresForTests());
+
+  // Delete the tablet while still injecting failures. Even if we aren't
+  // successful in deleting our orphaned blocks list, we shouldn't crash.
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  req.set_dest_uuid(fs_manager->uuid());
+  req.set_tablet_id(kTabletId);
+  req.set_delete_type(tablet::TABLET_DATA_DELETED);
+  RpcController rpc;
+  ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
 }
 
 TEST_F(TabletServerTest, TestInsert) {

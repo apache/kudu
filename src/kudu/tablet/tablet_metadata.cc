@@ -524,10 +524,13 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
   WARN_NOT_OK(transaction->CommitDeletedBlocks(&deleted),
               "not all orphaned blocks were deleted");
 
-  // Remove the successfully-deleted blocks from the set.
+  // Regardless of whether we deleted all the blocks or not, remove them from
+  // the orphaned blocks list. If we failed to delete the blocks due to
+  // hardware issues, there's not much we can do and we assume the disk isn't
+  // coming back. At worst, this leaves some untracked orphaned blocks.
   {
     std::lock_guard<LockType> l(data_lock_);
-    for (const BlockId& b : deleted) {
+    for (const BlockId& b : blocks) {
       orphaned_blocks_.erase(b);
     }
   }
