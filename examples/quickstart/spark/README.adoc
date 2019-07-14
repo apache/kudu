@@ -3,7 +3,7 @@
 Below is a brief example using Apache Spark to load, query, and modify a real
 data set in Apache Kudu.
 
-== Start the Kudu Quickstart
+== Start the Kudu Quickstart Environment
 
 See the Apache Kudu
 link:https://kudu.apache.org/docs/quickstart.html[quickstart documentation]

@@ -30,7 +30,7 @@
 Follow these instructions to set up and run a local Kudu Cluster using Docker,
 and get started using Apache Kudu in minutes.
 
-Note: This is intended for demonstration purposes only and shouldn't
+NOTE: This is intended for demonstration purposes only and shouldn't
 be used for production or performance/scale testing.
 
 [[quickstart_vm]]
@@ -48,8 +48,8 @@ Clone the Apache Kudu repository using Git and change to the `kudu` directory:
 
 [source,bash]
 ----
-$ git clone https://github.com/apache/kudu
-$ cd kudu
+git clone https://github.com/apache/kudu
+cd kudu
 ----
 
 == Start the Quickstart Cluster
@@ -60,7 +60,7 @@ Set the `KUDU_QUICKSTART_IP` environment variable to your ip address:
 
 [source,bash]
 ----
-$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)
+export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)
 ----
 
 === Bring up the Cluster
@@ -75,7 +75,7 @@ you can specify the master addresses with `localhost:7051,localhost:7151,localho
 docker-compose -f docker/quickstart.yml up
 ----
 
-Note: You can include the `-d` flag to run the cluster in the background.
+NOTE: You can include the `-d` flag to run the cluster in the background.
 
 === View the Web-UI
 
@@ -106,7 +106,7 @@ export KUDU_USER_NAME=kudu
 kudu cluster ksck localhost:7051,localhost:7151,localhost:7251
 ----
 
-Note: Setting `KUDU_USER_NAME=kudu` simplifies using Kudu from various user
+NOTE: Setting `KUDU_USER_NAME=kudu` simplifies using Kudu from various user
 accounts in a non-secure environment.
 
 == Running a Brief Example

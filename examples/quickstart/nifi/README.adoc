@@ -1,0 +1,165 @@
+= Apache NiFi Quickstart
+
+Below is a brief example using Apache NiFi to ingest data in Apache Kudu.
+
+== Start the Kudu Quickstart Environment
+
+See the Apache Kudu
+link:https://kudu.apache.org/docs/quickstart.html[quickstart documentation]
+to setup and run the Kudu quickstart environment.
+
+== Run Apache NiFi
+
+Use the following command to run the latest Apache NiFi Docker image:
+
+[source,bash]
+----
+docker run --name kudu-nifi --network="docker_default" -p 8080:8080 apache/nifi:latest
+----
+
+You can view the running NiFi instance at link:http://localhost:8080/nifi[localhost:8080/nifi].
+
+NOTE: `--network="docker_default"` is specified to connect the container the
+same network as the quickstart cluster.
+
+NOTE: You can include the `-d` flag to run the cluster in the background.
+
+== Create the Kudu table
+
+Create the `random_user` Kudu table that matches the expected Schema.
+
+In order to do this without any dependencies on your host machine, we will
+use the `jshell` REPL in a Docker container to create the table using the
+Java API. First setup the Docker container, download the jar, and run the REPL:
+
+[source,bash]
+----
+docker run -it --rm --network="docker_default" maven:latest bin/bash
+# Download the kudu-client-tools jar which has the kudu-client and all the dependencies.
+mkdir jars
+mvn dependency:copy \
+    -Dartifact=org.apache.kudu:kudu-client-tools:1.10.0 \
+    -DoutputDirectory=jars
+# Run the jshell with the jar on the classpath.
+jshell --class-path jars/*
+----
+
+NOTE: `--network="docker_default"` is specified to connect the container the
+same network as the quickstart cluster.
+
+Then, once in the `jshell` REPL, create the table using the Java API:
+
+[source,java]
+----
+import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.client.KuduClient
+import org.apache.kudu.client.KuduClient.KuduClientBuilder
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
+
+KuduClient client =
+  new KuduClientBuilder("kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251").build();
+
+if(client.tableExists("random_user")) {
+  client.deleteTable("random_user");
+}
+
+Schema schema = new Schema(Arrays.asList(
+  new ColumnSchemaBuilder("ssn", Type.STRING).key(true).build(),
+  new ColumnSchemaBuilder("firstName", Type.STRING).build(),
+  new ColumnSchemaBuilder("lastName", Type.STRING).build(),
+  new ColumnSchemaBuilder("email", Type.STRING).build())
+);
+CreateTableOptions tableOptions =
+  new CreateTableOptions().setNumReplicas(3).addHashPartitions(Arrays.asList("ssn"), 4);
+client.createTable("random_user", schema, tableOptions);
+----
+
+Once complete, you can use `CTRL + D` to exit the REPL and `exit` to exit the container.
+
+== Load the Dataflow Template
+
+The `Random_User_Kudu.xml` template downloads randomly generated user data from
+http://randomuser.me and then pushes the data into Kudu. The data is pulled in
+100 records at a time and then split into individual records. The incoming data
+is in JSON Format.
+
+Next, the user's social security number, first name, last name, and e-mail
+address are extract from the JSON into FlowFile Attributes and the content is
+modified to become a new JSON document consisting of only 4 fields:
+`ssn`, `firstName`, `lastName`, and `email`. Finally, this smaller JSON is then pushed to
+Kudu as a single row, each field being a separate column in that row.
+
+To load the template follow the NiFi
+link:https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#Import_Template["Importing a Template" documentation]
+to load `Random_User_Kudu.xml`.
+
+Then follow the NiFi
+link:hhttps://nifi.apache.org/docs/nifi-docs/html/user-guide.html#instantiating-a-template["Instantiating a Template" documentation]
+to add the `Random User Kudu` template to the canvas.
+
+Once the template is added to the canvas you need to start the JsonTreeReader
+controller service. You can do this via the PutKudu processor configuration
+or via the Nifi Flow configuration in the Operate panel. See the Nifi
+link:https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#Controller_Services_for_Dataflows["Controller Service" documentation]
+for more details.
+
+Now you can start individual processors by right-clicking each processor and selecting `Start`.
+You can also explore the configuration, queue contents, and more by right-clicking on each element.
+Alternatively you can use the Operate panel and start the entire flow at once.
+More about starting and stopping NiFi components can be read in the NiFi
+link:https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#starting-a-component["Starting a Component" documentation].
+
+== Shutdown NiFi
+
+Once you are done with the NiFi container you can shutdown in a couple of ways.
+If you ran NiFi without the `-d` flag, you can use `ctrl + c` to stop the  container.
+
+If you ran NiFi with the `-d` flag, you can use the following to
+gracefully shutdown the cluster:
+
+[source,bash]
+----
+docker stop kudu-nifi
+----
+
+To permanently remove the container run the following:
+
+[source,bash]
+----
+docker rm kudu-nifi
+----
+
+== Next steps
+
+The above example showed how to ingest data into Kudu using Apache NiFi.
+Next explore the other quickstart guides to learn how to query or process
+the data using other tools.
+
+For example, the link:https://github.com/apache/kudu/tree/master/examples/quickstart/spark[Spark quickstart guide]
+will walk you through how to setup and query Kudu tables with the `spark-kudu`
+integration.
+
+If you have already run through the Spark quickstart the following is a brief
+example of the code to allow you to query the `random_user` table:
+
+[source,bash]
+----
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
+----
+
+[source,scala]
+----
+:paste
+val random_user = spark.read
+	.option("kudu.master", "localhost:7051,localhost:7151,localhost:7251")
+	.option("kudu.table", "random_user")
+	// We need to use leader_only because Kudu on Docker currently doesn't
+	// support Snapshot scans due to `--use_hybrid_clock=false`.
+	.option("kudu.scanLocality", "leader_only")
+	.format("kudu").load
+random_user.createOrReplaceTempView("random_user")
+spark.sql("SELECT count(*) FROM random_user").show()
+spark.sql("SELECT * FROM random_user LIMIT 5").show()
+----
