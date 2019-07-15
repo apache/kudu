@@ -2,7 +2,7 @@
 title: Apache Kudu Quickstart
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-07-09 07:00:31 PDT'
+last_updated: 'Last updated 2019-07-14 18:33:17 CDT'
 ---
 <!--
 
@@ -73,7 +73,7 @@ $ cd kudu</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 | cut -d" " -f2 | tail -1)</code></pre>
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)</code></pre>
 </div>
 </div>
 </div>
@@ -136,10 +136,10 @@ accounts in a non-secure environment.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_running_an_example"><a class="link" href="#_running_an_example">Running an Example</a></h2>
+<h2 id="_running_a_brief_example"><a class="link" href="#_running_a_brief_example">Running a Brief Example</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Now that a kudu cluster is up and running, examples and integrations can be
+<p>Now that a Kudu cluster is up and running, examples and integrations can be
 run against the cluster. The commands below run the <code>java-example</code> against
 the quickstart cluster:</p>
 </div>
@@ -150,6 +150,16 @@ cd examples/java/java-example
 mvn package
 java -DkuduMasters=localhost:7051,localhost:7151,localhost:7251 -jar target/kudu-java-example-1.0-SNAPSHOT.jar</code></pre>
 </div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_more_examples"><a class="link" href="#_more_examples">More Examples</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>More complete walkthroughs using the quickstart Kudu cluster can be found in the
+<code>examples/quickstart</code> directory. For convenience you can browse them on
+<a href="https://github.com/apache/kudu/tree/master/examples/quickstart">Github</a>.</p>
 </div>
 </div>
 </div>
@@ -263,7 +273,7 @@ are always expected to be reachable.</p>
           <a href="release_notes.html">Kudu Release Notes</a> 
       </li> 
       <li>
-<span class="active-toc">Getting Started with Kudu</span>
+<span class="active-toc">Quickstart Guide</span>
             <ul class="sectlevel1">
 <li><a href="#quickstart_vm">Install Docker</a></li>
 <li><a href="#_clone_the_repository">Clone the Repository</a></li>
@@ -275,7 +285,8 @@ are always expected to be reachable.</p>
 <li><a href="#_check_the_cluster_health">Check the cluster health</a></li>
 </ul>
 </li>
-<li><a href="#_running_an_example">Running an Example</a></li>
+<li><a href="#_running_a_brief_example">Running a Brief Example</a></li>
+<li><a href="#_more_examples">More Examples</a></li>
 <li><a href="#_destroying_the_cluster">Destroying the Cluster</a></li>
 <li><a href="#_troubleshooting">Troubleshooting</a>
 <ul class="sectlevel2">
@@ -295,6 +306,10 @@ are always expected to be reachable.</p>
       <li>
 
           <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
       </li> 
       <li>
 
