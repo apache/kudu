@@ -73,7 +73,7 @@
 #include "kudu/util/async_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
-METRIC_DEFINE_entity(tablet);
+//METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -85,7 +85,7 @@ METRIC_DEFINE_entity(tablet);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_bool(enable_leader_failure_detection);
 
-METRIC_DECLARE_entity(tablet);
+//METRIC_DECLARE_entity(tablet);
 
 using kudu::log::Log;
 using kudu::log::LogEntryPB;
@@ -127,7 +127,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   RaftConsensusQuorumTest()
     : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(1))),
-      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test"))
+      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "raft-test"))
 #ifdef FB_DO_NOT_REMOVE
       , schema_(GetSimpleTestSchema())
 #endif

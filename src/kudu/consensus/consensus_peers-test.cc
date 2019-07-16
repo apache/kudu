@@ -53,7 +53,7 @@
 #include "kudu/rpc/messenger.h"
 //#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/metrics.h"
-METRIC_DEFINE_entity(tablet);
+//METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -80,7 +80,7 @@ const char* kFollowerUuid = "peer-1";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test"))
+    : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "peer-test"))
 #ifdef FB_DO_NOT_REMOVE
       , schema_(GetSimpleTestSchema()) 
 #endif

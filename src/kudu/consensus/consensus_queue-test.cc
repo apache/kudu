@@ -58,7 +58,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
-METRIC_DEFINE_entity(tablet);
+//METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -86,7 +86,7 @@ class ConsensusQueueTest : public KuduTest {
 #ifdef FB_DO_NOT_REMOVE
         schema_(GetSimpleTestSchema()),
 #endif
-        metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
+        metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "queue-test")),
         registry_(new log::LogAnchorRegistry) {
   }
 

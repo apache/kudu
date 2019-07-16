@@ -46,8 +46,10 @@
 // Both of these outcomes means that we may be able to directly replace
 // some of these with boost equivalents.
 //
-#ifndef BASE_TEMPLATE_UTIL_H_
-#define BASE_TEMPLATE_UTIL_H_
+
+// These #defines collide with sparsehash
+#ifndef KUDU_BASE_TEMPLATE_UTIL_H_
+#define KUDU_BASE_TEMPLATE_UTIL_H_
 
 namespace base {
 
@@ -161,4 +163,4 @@ struct is_class
 
 }
 
-#endif  // BASE_TEMPLATE_UTIL_H_
+#endif  // KUDU_BASE_TEMPLATE_UTIL_H_
