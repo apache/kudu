@@ -233,8 +233,8 @@ $ ntpq -nc opeers
  91.189.89.199   10.17.100.238    2 u    3   64    1  135.265   -0.413 187.621
 ----
 
-TIP: Both `opeers` and `lpeers` may be helpful as `lpeers` lists refid and
-jitter, while `lpeers` lists dispersion.
+TIP: Both `lpeers` and `opeers` may be helpful as `lpeers` lists refid and
+jitter, while `opeers` lists clock dispersion.
 
 
 [NOTE]
