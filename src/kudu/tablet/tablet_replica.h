@@ -300,6 +300,10 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Return the total on-disk size of this tablet replica, in bytes.
   size_t OnDiskSize() const;
 
+  // Return the number of live rows of this tablet replica.
+  // -1 will be returned if the tablet doesn't support live row counting.
+  int64_t CountLiveRows() const;
+
  private:
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;

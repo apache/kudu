@@ -50,6 +50,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -73,14 +74,17 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
+DECLARE_int32(flush_threshold_mb);
+
 METRIC_DECLARE_entity(tablet);
 
-DECLARE_int32(flush_threshold_mb);
+METRIC_DECLARE_gauge_int64(live_row_count);
 
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -769,6 +773,26 @@ TEST_F(TabletReplicaTest, Kudu2690Test) {
   // write requests contained a column that was not in the log segment header's
   // schema.
   NO_FATALS(RestartReplica());
+}
+
+TEST_F(TabletReplicaTest, TestLiveRowCountMetric) {
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+
+  auto live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
+      tablet_replica_->tablet()->GetMetricEntity(), Callback<int64_t(void)>());
+  ASSERT_EQ(0, live_row_count->value());
+
+  // Insert some rows.
+  Random rand(SeedRandom());
+  const int kNumInsert = rand.Next() % 100 + 1;
+  ASSERT_OK(ExecuteInsertsAndRollLogs(kNumInsert));
+  ASSERT_EQ(kNumInsert, live_row_count->value());
+
+  // Delete some rows.
+  const int kNumDelete = rand.Next() % kNumInsert;
+  ASSERT_OK(ExecuteDeletesAndRollLogs(kNumDelete));
+  ASSERT_EQ(kNumInsert - kNumDelete, live_row_count->value());
 }
 
 } // namespace tablet

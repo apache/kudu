@@ -17,6 +17,8 @@
 
 #include "kudu/tserver/tserver_path_handlers.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <iosfwd>
 #include <map>
@@ -415,6 +417,12 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   output->Set("partition",
               tmeta->partition_schema().PartitionDebugString(tmeta->partition(), schema));
   output->Set("on_disk_size", HumanReadableNumBytes::ToString(replica->OnDiskSize()));
+  int64_t live_row_count = replica->CountLiveRows();
+  if (live_row_count >= 0) {
+    output->Set("tablet_live_row_count", live_row_count);
+  } else {
+    output->Set("tablet_live_row_count", "N/A");
+  }
 
   SchemaToJson(schema, output);
 }

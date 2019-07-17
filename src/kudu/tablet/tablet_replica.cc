@@ -89,6 +89,11 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
 METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
                            kudu::MetricUnit::kState,
                            "State of this tablet.");
+METRIC_DEFINE_gauge_int64(tablet, live_row_count, "Tablet Live Row Count",
+                          kudu::MetricUnit::kRows,
+                          "Number of live rows in this tablet, excludes deleted rows."
+                          "When the tablet doesn't support live row counting, -1 will "
+                          "be returned.");
 
 namespace kudu {
 namespace tablet {
@@ -199,10 +204,13 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
         txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
 
         METRIC_on_disk_size.InstantiateFunctionGauge(
-                tablet_->GetMetricEntity(), Bind(&TabletReplica::OnDiskSize, Unretained(this)))
+            tablet_->GetMetricEntity(), Bind(&TabletReplica::OnDiskSize, Unretained(this)))
             ->AutoDetach(&metric_detacher_);
         METRIC_state.InstantiateFunctionGauge(
             tablet_->GetMetricEntity(), Bind(&TabletReplica::StateName, Unretained(this)))
+            ->AutoDetach(&metric_detacher_);
+        METRIC_live_row_count.InstantiateFunctionGauge(
+            tablet_->GetMetricEntity(), Bind(&TabletReplica::CountLiveRows, Unretained(this)))
             ->AutoDetach(&metric_detacher_);
       }
       txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
@@ -793,6 +801,20 @@ size_t TabletReplica::OnDiskSize() const {
   }
   if (log) {
     ret += log->OnDiskSize();
+  }
+  return ret;
+}
+
+int64_t TabletReplica::CountLiveRows() const {
+  int64_t ret = -1;
+  shared_ptr<Tablet> tablet;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    tablet = tablet_;
+  }
+
+  if (tablet) {
+    ignore_result(tablet->CountLiveRows(&ret));
   }
   return ret;
 }
