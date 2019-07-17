@@ -192,6 +192,25 @@ public class CreateTableOptions {
   }
 
   /**
+   * Sets the dimension label for all tablets created at table creation time.
+   *
+   * By default, the master will try to place newly created tablet replicas on tablet
+   * servers with a small number of tablet replicas. If the dimension label is provided,
+   * newly created replicas will be evenly distributed in the cluster based on the dimension
+   * label. In other words, the master will try to place newly created tablet replicas on
+   * tablet servers with a small number of tablet replicas belonging to this dimension label.
+   *
+   * @param dimensionLabel the dimension label for the tablet to be created.
+   * @return this instance
+   */
+  public CreateTableOptions setDimensionLabel(String dimensionLabel) {
+    Preconditions.checkArgument(dimensionLabel != null,
+        "dimension label must not be null");
+    pb.setDimensionLabel(dimensionLabel);
+    return this;
+  }
+
+  /**
    * Sets the table's extra configuration properties.
    *
    * If the value of the kv pair is empty, the property will be ignored.

@@ -368,16 +368,20 @@ message TSHeartbeatResponsePB {
 //////////////////////////////
 
 message TabletLocationsPB {
-  // DEPRECATED: new clients should prefer the 'Interned' type below.
+  // DEPRECATED.
+  // TODO: new clients should prefer the 'Interned' type below.
+  // Remove 'ReplicaPB' when we stop using it internally.
   message ReplicaPB {
     required TSInfoPB ts_info = 1;
     required consensus.RaftPeerPB.Role role = 2;
+    optional string dimension_label = 3;
   }
 
   message InternedReplicaPB {
     // Index into the 'ts_infos' list in the top-level RPC response.
     required uint32 ts_info_idx = 1;
     required consensus.RaftPeerPB.Role role = 2;
+    optional string dimension_label = 3;
   }
 
   required bytes tablet_id = 1;

@@ -30,7 +30,9 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -745,5 +747,36 @@ public class TestKuduTable {
         table2.getSchema().getColumn("key").getComment());
     assertEquals("wrong value comment post alter", "",
         table2.getSchema().getColumn("value").getComment());
+  }
+
+  @Test(timeout = 100000)
+  public void testDimensionLabel() throws Exception {
+    // Create a table with dimension label.
+    KuduTable table = client.createTable(tableName, basicSchema,
+        getBasicTableOptionsWithNonCoveredRange().setDimensionLabel("labelA"));
+
+    // Add a range partition to the table with dimension label.
+    AlterTableOptions ato = new AlterTableOptions();
+    PartialRow bLowerBound = BASIC_SCHEMA.newPartialRow();
+    bLowerBound.addInt("key", 300);
+    PartialRow bUpperBound = BASIC_SCHEMA.newPartialRow();
+    bUpperBound.addInt("key", 400);
+    ato.addRangePartition(bLowerBound, bUpperBound, "labelB",
+                          RangePartitionBound.INCLUSIVE_BOUND,
+                          RangePartitionBound.EXCLUSIVE_BOUND);
+    client.alterTable(tableName, ato);
+
+    Map<String, Integer> dimensionMap = new HashMap<>();
+    for (LocatedTablet tablet : table.getTabletsLocations(DEFAULT_SLEEP)) {
+      for (LocatedTablet.Replica replica : tablet.getReplicas()) {
+        Integer number = dimensionMap.get(replica.getDimensionLabel());
+        if (number == null) {
+          number = 0;
+        }
+        dimensionMap.put(replica.getDimensionLabel(), number + 1);
+      }
+    }
+    assertEquals(9, dimensionMap.get("labelA").intValue());
+    assertEquals(3, dimensionMap.get("labelB").intValue());
   }
 }

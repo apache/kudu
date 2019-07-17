@@ -4763,6 +4763,10 @@ Status CatalogManager::BuildLocationsForTablet(
     };
 
     auto role = GetParticipantRole(peer, cstate);
+    optional<string> dimension = none;
+    if (l_tablet.data().pb.has_dimension_label()) {
+      dimension = l_tablet.data().pb.dimension_label();
+    }
     if (ts_infos_dict) {
       int idx = *ComputeIfAbsent(
           &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
@@ -4776,6 +4780,9 @@ Status CatalogManager::BuildLocationsForTablet(
       auto* interned_replica_pb = locs_pb->add_interned_replicas();
       interned_replica_pb->set_ts_info_idx(idx);
       interned_replica_pb->set_role(role);
+      if (dimension) {
+        interned_replica_pb->set_dimension_label(*dimension);
+      }
     } else {
       TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
       replica_pb->set_allocated_ts_info(make_tsinfo_pb().release());

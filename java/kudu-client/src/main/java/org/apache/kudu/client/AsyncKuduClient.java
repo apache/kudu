@@ -2303,6 +2303,9 @@ public class AsyncKuduClient implements AutoCloseable {
         Master.TabletLocationsPB.ReplicaPB.Builder builder = Master.TabletLocationsPB.ReplicaPB.newBuilder();
         builder.setRole(replica.getRole());
         builder.setTsInfo(tsInfo);
+        if (replica.hasDimensionLabel()) {
+          builder.setDimensionLabel(replica.getDimensionLabel());
+        }
         replicas.add(builder.build());
       }
 

@@ -137,6 +137,10 @@ public class LocatedTablet {
       return pb.getRole().toString();
     }
 
+    public String getDimensionLabel() {
+      return pb.hasDimensionLabel() ? pb.getDimensionLabel() : null;
+    }
+
     @Override
     public String toString() {
       return pb.toString();

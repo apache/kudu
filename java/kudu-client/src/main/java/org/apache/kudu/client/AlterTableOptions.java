@@ -283,6 +283,43 @@ public class AlterTableOptions {
                                              PartialRow upperBound,
                                              RangePartitionBound lowerBoundType,
                                              RangePartitionBound upperBoundType) {
+    return addRangePartition(lowerBound, upperBound, null, lowerBoundType, upperBoundType);
+  }
+
+  /**
+   * Add a range partition to the table with dimension label.
+   *
+   * If either row is empty, then that end of the range will be unbounded. If a range column is
+   * missing a value, the logical minimum value for that column type will be used as the default.
+   *
+   * Multiple range partitions may be added as part of a single alter table transaction by calling
+   * this method multiple times. Added range partitions must not overlap with each
+   * other or any existing range partitions (unless the existing range partitions are dropped as
+   * part of the alter transaction first). The lower bound must be less than the upper bound.
+   *
+   * This client will immediately be able to write and scan the new tablets when the alter table
+   * operation returns success, however other existing clients may have to wait for a timeout period
+   * to elapse before the tablets become visible. This period is configured by the master's
+   * 'table_locations_ttl_ms' flag, and defaults to 5 minutes.
+   *
+   * By default, the master will try to place newly created tablet replicas on tablet
+   * servers with a small number of tablet replicas. If the dimension label is provided,
+   * newly created replicas will be evenly distributed in the cluster based on the dimension
+   * label. In other words, the master will try to place newly created tablet replicas on
+   * tablet servers with a small number of tablet replicas belonging to this dimension label.
+   *
+   * @param lowerBound lower bound, may be empty but not null
+   * @param upperBound upper bound, may be empty but not null
+   * @param dimensionLabel the dimension label for the tablet to be created
+   * @param lowerBoundType the type of the lower bound, either inclusive or exclusive
+   * @param upperBoundType the type of the upper bound, either inclusive or exclusive
+   * @return this instance
+   */
+  public AlterTableOptions addRangePartition(PartialRow lowerBound,
+                                             PartialRow upperBound,
+                                             String dimensionLabel,
+                                             RangePartitionBound lowerBoundType,
+                                             RangePartitionBound upperBoundType) {
     Preconditions.checkNotNull(lowerBound);
     Preconditions.checkNotNull(upperBound);
     Preconditions.checkArgument(lowerBound.getSchema().equals(upperBound.getSchema()));
@@ -294,6 +331,9 @@ public class AlterTableOptions {
     builder.setRangeBounds(
         new Operation.OperationsEncoder()
             .encodeLowerAndUpperBounds(lowerBound, upperBound, lowerBoundType, upperBoundType));
+    if (dimensionLabel != null) {
+      builder.setDimensionLabel(dimensionLabel);
+    }
     step.setAddRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema(),
