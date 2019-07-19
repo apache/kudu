@@ -565,6 +565,9 @@ build_bitshuffle() {
   # suffix the AVX2 symbols with '_avx2'. OSX doesn't have objcopy, so we only
   # do this trick on Linux.
   if [ -n "$OS_LINUX" ]; then
+    AVX2_SUPPORT=$(echo | ${CC:-gcc} -mavx2 -dM -E - | awk '$2 == "__AVX2__" { print $3 }')
+  fi
+  if [ -n "$AVX2_SUPPORT" ]; then
     arches="default avx2"
   else
     arches="default"
