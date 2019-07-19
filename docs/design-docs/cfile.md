@@ -152,7 +152,7 @@ follows:
 
 ### Dictionary Encoding
 
-[Dictionary encoding](dictionary-encoding) may be used for BINARY or STRING
+Dictionary encoding may be used for BINARY or STRING
 columns. All dictionary encoded blocks in a CFile share the same dictionary. If
 the dictionary becomes full, subsequent blocks in the CFile switch to plain
 encoding. The dictionary is stored as a plain encoded binary block, and the data
