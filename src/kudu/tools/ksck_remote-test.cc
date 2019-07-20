@@ -445,10 +445,14 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
-    ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
-                                                      MonoDelta::FromSeconds(10),
-                                                      16, true,
-                                                      KsckChecksumOptions::kCurrentTimestamp)));
+    // It's possible for scans to fail because the tablets haven't been written
+    // to yet and haven't elected a leader.
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
+                                                        MonoDelta::FromSeconds(10),
+                                                        16, true,
+                                                        KsckChecksumOptions::kCurrentTimestamp)));
+    });
   }
   ASSERT_OK(promise.Get());
 }
