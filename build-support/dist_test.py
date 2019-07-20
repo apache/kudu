@@ -112,6 +112,10 @@ DEPS_FOR_ALL = \
 
      # Add the Kudu HMS plugin.
      "build/latest/bin/hms-plugin.jar",
+
+     # Add chrony binaries.
+     "build/latest/bin/chronyc",
+     "build/latest/bin/chronyd",
      ]
 
 class StagingDir(object):

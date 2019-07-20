@@ -33,6 +33,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
+#include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
@@ -70,6 +71,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::client::internal::ConnectToClusterRpc;
+using kudu::clock::MiniChronyd;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
@@ -112,7 +114,8 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       enable_sentry(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
-      rpc_negotiation_timeout(MonoDelta::FromSeconds(3)) {
+      rpc_negotiation_timeout(MonoDelta::FromSeconds(3)),
+      num_ntp_servers(0) {
 }
 
 ExternalMiniCluster::ExternalMiniCluster()
@@ -217,6 +220,14 @@ Status ExternalMiniCluster::Start() {
 
     RETURN_NOT_OK_PREPEND(kdc_->SetKrb5Environment(),
                           "could not set krb5 client env");
+  }
+
+  // Start NTP servers, if requested.
+  if (opts_.num_ntp_servers > 0) {
+    for (auto i = 0; i < opts_.num_ntp_servers; ++i) {
+      RETURN_NOT_OK_PREPEND(AddNtpServer(),
+                            Substitute("failed to start NTP server $0", i));
+    }
   }
 
   // Start the Sentry service and the HMS in the following steps, in order
@@ -578,6 +589,19 @@ Status ExternalMiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
+Status ExternalMiniCluster::AddNtpServer() {
+  const auto idx = ntp_servers_.size();
+  string bind_host = GetBindIpForExternalServer(idx);
+
+  clock::MiniChronydOptions options;
+  options.port = 10123 + idx;
+  options.bindaddress = bind_host;
+  unique_ptr<MiniChronyd> chrony(new MiniChronyd(std::move(options)));
+  RETURN_NOT_OK(chrony->Start());
+  ntp_servers_.emplace_back(std::move(chrony));
+  return Status::OK();
+}
+
 Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout) {
   MonoTime deadline = MonoTime::Now() + timeout;
 
@@ -753,6 +777,16 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
     results.push_back(master.get());
   }
   return results;
+}
+
+vector<MiniChronyd*> ExternalMiniCluster::ntp_servers() const {
+  vector<MiniChronyd*> servers;
+  servers.reserve(ntp_servers_.size());
+  for (const auto& server : ntp_servers_) {
+    DCHECK(server);
+    servers.emplace_back(server.get());
+  }
+  return servers;
 }
 
 vector<HostPort> ExternalMiniCluster::master_rpc_addrs() const {

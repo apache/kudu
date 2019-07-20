@@ -53,6 +53,10 @@ class KuduClient;
 class KuduClientBuilder;
 } // namespace client
 
+namespace clock {
+class MiniChronyd;
+} // namespace clock
+
 namespace hms {
 class MiniHms;
 } // namespace hms
@@ -182,6 +186,13 @@ struct ExternalMiniClusterOptions {
   //
   // Default: empty
   LocationInfo location_info;
+
+  // Number of NTP servers to start as part of the cluster. The servers
+  // are used as reference NTP servers for the built-in NTP client: it uses
+  // them to synchronize its internal clock.
+  //
+  // Default: 0
+  int num_ntp_servers;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -210,6 +221,10 @@ class ExternalMiniCluster : public MiniCluster {
   // Add a new TS to the cluster. The new TS is started.
   // Requires that the master is already running.
   Status AddTabletServer();
+
+  // Add a new NTP server to the cluster. The new NTP server is started upon
+  // adding it.
+  Status AddNtpServer();
 
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
   void ShutdownNodes(ClusterNodes nodes) override;
@@ -272,6 +287,10 @@ class ExternalMiniCluster : public MiniCluster {
 
   // Return all tablet servers and masters.
   std::vector<ExternalDaemon*> daemons() const;
+
+  // Return all configured NTP servers used for the synchronisation of the
+  // built-in NTP client.
+  std::vector<clock::MiniChronyd*> ntp_servers() const;
 
   MiniKdc* kdc() const {
     return kdc_.get();
@@ -408,6 +427,7 @@ class ExternalMiniCluster : public MiniCluster {
 
   std::vector<scoped_refptr<ExternalMaster>> masters_;
   std::vector<scoped_refptr<ExternalTabletServer>> tablet_servers_;
+  std::vector<std::unique_ptr<clock::MiniChronyd>> ntp_servers_;
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
   std::unique_ptr<sentry::MiniSentry> sentry_;

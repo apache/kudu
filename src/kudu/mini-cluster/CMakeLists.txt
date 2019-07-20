@@ -34,6 +34,7 @@ target_link_libraries(mini_cluster
   kudu_util
   master
   master_proto
+  mini_chronyd
   mini_hms
   mini_kdc
   mini_sentry
