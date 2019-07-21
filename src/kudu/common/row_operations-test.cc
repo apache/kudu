@@ -24,18 +24,21 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -45,8 +48,6 @@
 using std::shared_ptr;
 using std::string;
 using std::vector;
-using strings::Substitute;
-using strings::SubstituteAndAppend;
 
 namespace kudu {
 
@@ -372,6 +373,15 @@ string TestProjection(RowOperationsPB::Type type,
   return ops[0].ToString(server_schema);
 }
 
+Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
+  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  *idx = schema.find_column(sp);
+  if (PREDICT_FALSE(*idx == -1)) {
+    return Status::NotFound("No such column", col_name);
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 // Test decoding partial rows from a client who has a schema which matches
@@ -381,12 +391,32 @@ TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
                          ColumnSchema("int_val", INT32),
                          ColumnSchema("string_val", STRING, true) },
                        1);
+  // Test a row missing 'key', which is key column.
+  {
+    KuduPartialRow client_row(&client_schema);
+    EXPECT_EQ("row error: Invalid argument: No value provided for required column: "
+              "key INT32 NOT NULL",
+              TestProjection(RowOperationsPB::INSERT, client_row, schema_));
+  }
+
+  // Force to set null on key column.
+  {
+    int col_idx;
+    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    KuduPartialRow client_row(&client_schema);
+    ContiguousRow row(&client_schema, client_row.row_data_);
+    row.set_null(col_idx, true);
+    BitmapSet(client_row.isset_bitmap_, col_idx);
+    EXPECT_EQ("row error: Invalid argument: NULL values not allowed for non-nullable column: "
+              "key INT32 NOT NULL",
+              TestProjection(RowOperationsPB::INSERT, client_row, schema_));
+  }
 
   // Test a row missing 'int_val', which is required.
   {
     KuduPartialRow client_row(&client_schema);
     CHECK_OK(client_row.SetInt32("key", 12345));
-    EXPECT_EQ("error: Invalid argument: No value provided for required column: "
+    EXPECT_EQ("row error: Invalid argument: No value provided for required column: "
               "int_val INT32 NOT NULL",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
   }
@@ -469,6 +499,19 @@ TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
               " int32 non_null_with_default=54321)",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
+
+  // Specify the key and override both defaults, overriding the non-nullable
+  // one to NULL.
+  {
+    KuduPartialRow client_row(&client_schema);
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("nullable_with_default", 12345));
+    Status s = client_row.SetNull("non_null_with_default");
+    CHECK(s.IsInvalidArgument());
+    EXPECT_EQ("INSERT (int32 key=12345, int32 nullable_with_default=12345,"
+              " int32 non_null_with_default=456)",
+              TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
+  }
 }
 
 // Test cases where the client only has a subset of the fields
@@ -492,7 +535,7 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
   {
     KuduPartialRow client_row(&client_schema);
     CHECK_OK(client_row.SetInt32("key", 12345));
-    EXPECT_EQ("error: Invalid argument: No value provided for required column:"
+    EXPECT_EQ("row error: Invalid argument: No value provided for required column:"
               " int_val INT32 NOT NULL",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
@@ -539,14 +582,13 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
 
   // Check without specifying any columns
   KuduPartialRow client_row(&client_schema);
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
+  EXPECT_EQ("row error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and no columns to update
   ASSERT_OK(client_row.SetInt32("key", 12345));
-  EXPECT_EQ("error: Invalid argument: No fields updated, key is: (int32 key=12345)",
+  EXPECT_EQ("row error: Invalid argument: No fields updated, key is: (int32 key=12345)",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
-
 
   // Specify the key and update one column.
   ASSERT_OK(client_row.SetInt32("int_val", 12345));
@@ -562,6 +604,33 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
   ASSERT_OK(client_row.SetNull("string_val"));
   EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=12345, string_val=NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
+
+  // Force to set null on key column.
+  {
+    KuduPartialRow client_row(&client_schema);
+    int col_idx;
+    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    ContiguousRow row(&client_schema, client_row.row_data_);
+    row.set_null(col_idx, true);
+    BitmapSet(client_row.isset_bitmap_, col_idx);
+    EXPECT_EQ("row error: Invalid argument: NULL values not allowed for key column: "
+              "key INT32 NOT NULL",
+              TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
+  }
+
+  // Force to set null on non-nullable column.
+  {
+    KuduPartialRow client_row(&client_schema);
+    ASSERT_OK(client_row.SetInt32("key", 12345));
+    int col_idx;
+    ASSERT_OK(FindColumn(client_schema, "int_val", &col_idx));
+    ContiguousRow row(&client_schema, client_row.row_data_);
+    row.set_null(col_idx, true);
+    BitmapSet(client_row.isset_bitmap_, col_idx);
+    EXPECT_EQ("row error: Invalid argument: NULL value not allowed for non-nullable column: "
+              "int_val INT32 NOT NULL",
+              TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
+  }
 }
 
 // Client schema has the columns in a different order. Makes
@@ -623,18 +692,19 @@ TEST_F(RowOperationsTest, TestClientMismatchedType) {
 TEST_F(RowOperationsTest, TestProjectDeletes) {
   Schema client_schema({ ColumnSchema("key", INT32),
                          ColumnSchema("key_2", INT32),
+                         ColumnSchema("int_val", INT32),
                          ColumnSchema("string_val", STRING, true) },
                        2);
   Schema server_schema = SchemaBuilder(client_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
   // No columns set
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
+  EXPECT_EQ("row error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Only half the key set
   ASSERT_OK(client_row.SetInt32("key", 12345));
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2 INT32 NOT NULL",
+  EXPECT_EQ("row error: Invalid argument: No value provided for key column: key_2 INT32 NOT NULL",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Whole key set (correct)
@@ -642,11 +712,45 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
   EXPECT_EQ("MUTATE (int32 key=12345, int32 key_2=54321) DELETE",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
-  // Extra column set (incorrect)
-  ASSERT_OK(client_row.SetStringNoCopy("string_val", "hello"));
-  EXPECT_EQ("error: Invalid argument: DELETE should not have a value for column: "
+  // Extra column set
+  ASSERT_OK(client_row.SetNull("string_val"));
+  EXPECT_EQ("row error: Invalid argument: DELETE should not have a value for column: "
             "string_val STRING NULLABLE",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
+
+  // Extra column set (incorrect)
+  ASSERT_OK(client_row.SetStringNoCopy("string_val", "hello"));
+  EXPECT_EQ("row error: Invalid argument: DELETE should not have a value for column: "
+            "string_val STRING NULLABLE",
+            TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
+
+  // Force to set null on key column.
+  {
+    KuduPartialRow client_row(&client_schema);
+    int col_idx;
+    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    ContiguousRow row(&client_schema, client_row.row_data_);
+    row.set_null(col_idx, true);
+    BitmapSet(client_row.isset_bitmap_, col_idx);
+    EXPECT_EQ("row error: Invalid argument: NULL values not allowed for key column: "
+              "key INT32 NOT NULL",
+              TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
+  }
+
+  // Force to set null on non-key column.
+  {
+    KuduPartialRow client_row(&client_schema);
+    ASSERT_OK(client_row.SetInt32("key", 12345));
+    ASSERT_OK(client_row.SetInt32("key_2", 12345));
+    int col_idx;
+    ASSERT_OK(FindColumn(client_schema, "int_val", &col_idx));
+    ContiguousRow row(&client_schema, client_row.row_data_);
+    row.set_null(col_idx, true);
+    BitmapSet(client_row.isset_bitmap_, col_idx);
+    EXPECT_EQ("row error: Invalid argument: DELETE should not have a value for column: "
+              "int_val INT32 NOT NULL",
+              TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
+  }
 }
 
 TEST_F(RowOperationsTest, SplitKeyRoundTrip) {

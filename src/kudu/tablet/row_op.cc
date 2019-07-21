@@ -23,24 +23,23 @@
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 
 using kudu::pb_util::SecureDebugString;
 
 namespace kudu {
 
-class Status;
-
 namespace tablet {
 
-RowOp::RowOp(DecodedRowOperation decoded_op)
-    : decoded_op(std::move(decoded_op)),
-      orig_result_from_log_(nullptr) {
-}
-
-RowOp::~RowOp() {
+RowOp::RowOp(DecodedRowOperation op)
+    : decoded_op(std::move(op)) {
+  if (!decoded_op.result.ok()) {
+    SetFailed(decoded_op.result);
+    // This row has been validated as invalid in the prior phase.
+    validated = true;
+  }
 }
 
 void RowOp::SetFailed(const Status& s) {

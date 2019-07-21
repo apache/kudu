@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -70,8 +71,14 @@ struct DecodedRowOperation {
   // For SPLIT_ROW, the partial row to split on.
   std::shared_ptr<KuduPartialRow> split_row;
 
+  // Per-row result status.
+  Status result;
+
   // Stringifies, including redaction when appropriate.
   std::string ToString(const Schema& schema) const;
+
+  // The 'result' member will only be updated the first time this function is called.
+  void SetFailureStatusOnce(Status s);
 };
 
 enum DecoderMode {
@@ -99,6 +106,11 @@ class RowOperationsPBDecoder {
   Status ReadNullBitmap(const uint8_t** null_bm);
   Status GetColumnSlice(const ColumnSchema& col, Slice* slice);
   Status ReadColumn(const ColumnSchema& col, uint8_t* dst);
+  // Some column which is non-nullable has allocated a cell to row data in
+  // RowOperationsPBEncoder::Add, even if its data is useless (i.e. set to
+  // NULL), we have to consume data in order to properly validate subsequent
+  // columns and rows.
+  Status ReadColumnAndDiscard(const ColumnSchema& col);
   bool HasNext() const;
 
   Status DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
@@ -128,7 +140,7 @@ class RowOperationsPBDecoder {
   Arena* const dst_arena_;
 
   const int bm_size_;
-  const int tablet_row_size_;
+  const size_t tablet_row_size_;
   Slice src_;
 
   DISALLOW_COPY_AND_ASSIGN(RowOperationsPBDecoder);

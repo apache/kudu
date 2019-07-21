@@ -2412,11 +2412,16 @@ static Status ApplyInsertToSession(KuduSession* session,
                                    const shared_ptr<KuduTable>& table,
                                    int row_key,
                                    int int_val,
-                                   const char* string_val) {
+                                   const char* string_val,
+                                   boost::optional<int> non_null_with_default = boost::none) {
   unique_ptr<KuduInsert> insert(table->NewInsert());
   RETURN_NOT_OK(insert->mutable_row()->SetInt32("key", row_key));
   RETURN_NOT_OK(insert->mutable_row()->SetInt32("int_val", int_val));
   RETURN_NOT_OK(insert->mutable_row()->SetStringCopy("string_val", string_val));
+  if (non_null_with_default) {
+    RETURN_NOT_OK(insert->mutable_row()->SetInt32("non_null_with_default",
+                                                  non_null_with_default.get()));
+  }
   return session->Apply(insert.release());
 }
 
@@ -2444,9 +2449,13 @@ static Status ApplyUpdateToSession(KuduSession* session,
 
 static Status ApplyDeleteToSession(KuduSession* session,
                                    const shared_ptr<KuduTable>& table,
-                                   int row_key) {
+                                   int row_key,
+                                   boost::optional<int> int_val = boost::none) {
   unique_ptr<KuduDelete> del(table->NewDelete());
   RETURN_NOT_OK(del->mutable_row()->SetInt32("key", row_key));
+  if (int_val) {
+    RETURN_NOT_OK(del->mutable_row()->SetInt32("int_val", int_val.get()));
+  }
   return session->Apply(del.release());
 }
 
@@ -2620,9 +2629,9 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
             , rows[0]);
 }
 
-// Test a batch where one of the inserted rows succeeds while another
-// fails.
-TEST_F(ClientTest, TestBatchWithPartialError) {
+// Test a batch where one of the inserted rows succeeds while another fails.
+// 1. Insert duplicate keys.
+TEST_F(ClientTest, TestBatchWithPartialErrorOfDuplicateKeys) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
@@ -2639,19 +2648,181 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
 
   // Fetch and verify the reported error.
-  unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  unique_ptr<KuduError> error;
+  NO_FATALS(error = GetSingleErrorFromSession(session.get()));
   ASSERT_TRUE(error->status().IsAlreadyPresent());
+  ASSERT_EQ(error->status().ToString(),
+            "Already present: key already present");
   ASSERT_EQ(error->failed_op().ToString(),
             R"(INSERT int32 key=1, int32 int_val=1, string string_val="Attempted dup")");
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(2, rows.size());
   std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
             "int32 non_null_with_default=12345)", rows[0]);
   ASSERT_EQ(R"((int32 key=2, int32 int_val=1, string string_val="Should succeed", )"
+            "int32 non_null_with_default=12345)", rows[1]);
+}
+
+// 2. Insert a row missing a required column.
+TEST_F(ClientTest, TestBatchWithPartialErrorOfMissingRequiredColumn) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Remove default value of a non-nullable column.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  table_alterer->AlterColumn("non_null_with_default")->RemoveDefault();
+  ASSERT_OK(table_alterer->Alter());
+
+  // Insert a row successfully.
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "Should succeed", 1));
+  // Insert a row missing a required column, which will fail.
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 2, "Missing required column"));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+
+  // Fetch and verify the reported error.
+  unique_ptr<KuduError> error;
+  NO_FATALS(error = GetSingleErrorFromSession(session.get()));
+  ASSERT_TRUE(error->status().IsInvalidArgument());
+  ASSERT_EQ(error->status().ToString(),
+            "Invalid argument: No value provided for required column: "
+            "non_null_with_default INT32 NOT NULL");
+  ASSERT_EQ(error->failed_op().ToString(),
+            R"(INSERT int32 key=2, int32 int_val=2, )"
+            R"(string string_val="Missing required column")");
+
+  // Verify that the other row was successfully inserted
+  vector<string> rows;
+  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_EQ(1, rows.size());
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="Should succeed", )"
+            "int32 non_null_with_default=1)", rows[0]);
+}
+
+// 3. No fields updated for a row.
+TEST_F(ClientTest, TestBatchWithPartialErrorOfNoFieldsUpdated) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Insert two rows successfully.
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "One"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 2, "Two"));
+  ASSERT_OK(session->Flush());
+
+  // Update a row without any non-key fields updated, which will fail.
+  unique_ptr<KuduUpdate> update(client_table_->NewUpdate());
+  ASSERT_OK(update->mutable_row()->SetInt32("key", 1));
+  ASSERT_OK(session->Apply(update.release()));
+  // Update a row with some non-key fields updated, which will success.
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 2, 22));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+
+  // Fetch and verify the reported error.
+  unique_ptr<KuduError> error;
+  NO_FATALS(error = GetSingleErrorFromSession(session.get()));
+  ASSERT_TRUE(error->status().IsInvalidArgument());
+  ASSERT_EQ(error->status().ToString(),
+            "Invalid argument: No fields updated, key is: (int32 key=1)");
+  ASSERT_EQ(error->failed_op().ToString(), R"(UPDATE int32 key=1)");
+
+  // Verify that the other row was successfully updated.
+  vector<string> rows;
+  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_EQ(2, rows.size());
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="One", )"
+            "int32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ(R"((int32 key=2, int32 int_val=22, string string_val="Two", )"
+            "int32 non_null_with_default=12345)", rows[1]);
+}
+
+// 4. Delete a row with a non-key column specified.
+TEST_F(ClientTest, TestBatchWithPartialErrorOfNonKeyColumnSpecifiedDelete) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Insert two rows successfully.
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "One"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 2, "Two"));
+  ASSERT_OK(session->Flush());
+
+  // Delete a row without any non-key fields, which will success.
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  // Delete a row with some non-key fields, which will fail.
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2, 2));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+
+  // Fetch and verify the reported error.
+  unique_ptr<KuduError> error;
+  NO_FATALS(error = GetSingleErrorFromSession(session.get()));
+  ASSERT_TRUE(error->status().IsInvalidArgument());
+  ASSERT_EQ(error->status().ToString(),
+            "Invalid argument: DELETE should not have a value for column: "
+            "int_val INT32 NOT NULL");
+  ASSERT_EQ(error->failed_op().ToString(), R"(DELETE int32 key=2, int32 int_val=2)");
+
+  // Verify that the other row was successfully deleted.
+  vector<string> rows;
+  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_EQ(1, rows.size());
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ(R"((int32 key=2, int32 int_val=2, string string_val="Two", )"
+            "int32 non_null_with_default=12345)", rows[0]);
+}
+
+// 5. All row failed in prepare phase.
+TEST_F(ClientTest, TestBatchWithPartialErrorOfAllRowsFailed) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Insert two rows successfully.
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "One"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 2, "Two"));
+  ASSERT_OK(session->Flush());
+
+  // Delete rows with some non-key fields, which will fail.
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2, 2));
+  Status s = session->Flush();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
+
+  // Fetch and verify the reported error.
+  vector<KuduError*> errors;
+  ElementDeleter d(&errors);
+  bool overflow;
+  session->GetPendingErrors(&errors, &overflow);
+  ASSERT_TRUE(!overflow);
+  ASSERT_EQ(2, errors.size());
+  ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
+  ASSERT_EQ(errors[0]->status().ToString(),
+            "Invalid argument: DELETE should not have a value for column: "
+            "int_val INT32 NOT NULL");
+  ASSERT_EQ(errors[0]->failed_op().ToString(), R"(DELETE int32 key=1, int32 int_val=1)");
+  ASSERT_TRUE(errors[1]->status().IsInvalidArgument());
+  ASSERT_EQ(errors[1]->status().ToString(),
+            "Invalid argument: DELETE should not have a value for column: "
+            "int_val INT32 NOT NULL");
+  ASSERT_EQ(errors[1]->failed_op().ToString(), R"(DELETE int32 key=2, int32 int_val=2)");
+
+  // Verify that no row was deleted.
+  vector<string> rows;
+  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_EQ(2, rows.size());
+  std::sort(rows.begin(), rows.end());
+  ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="One", )"
+            "int32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ(R"((int32 key=2, int32 int_val=2, string string_val="Two", )"
             "int32 non_null_with_default=12345)", rows[1]);
 }
 

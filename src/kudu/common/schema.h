@@ -876,7 +876,7 @@ class Schema {
       if (base_idx >= 0) {
         const ColumnSchema& base_col_schema = base_schema.column(base_idx);
         // Column present in the Base Schema...
-        if (!col_schema.EqualsType(base_col_schema)) {
+        if (PREDICT_FALSE(!col_schema.EqualsType(base_col_schema))) {
           // ...but with a different type, (TODO: try with an adaptor)
           return Status::InvalidArgument("The column '" + col_schema.name() +
                                          "' must have type " +

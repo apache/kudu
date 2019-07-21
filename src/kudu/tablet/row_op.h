@@ -22,6 +22,8 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/lock_manager.h"
+#include "kudu/tablet/rowset.h"
+#include "kudu/tablet/tablet.pb.h"
 
 namespace kudu {
 
@@ -30,16 +32,11 @@ class Status;
 
 namespace tablet {
 
-class OperationResultPB;
-class RowSet;
-class RowSetKeyProbe;
-
 // Structure tracking the progress of a single row operation within a WriteTransaction.
 struct RowOp {
  public:
-  explicit RowOp(DecodedRowOperation decoded_op);
-  RowOp();
-  ~RowOp();
+  explicit RowOp(DecodedRowOperation op);
+  ~RowOp() = default;
 
   // Functions to set the result of the mutation.
   // Only one of the following four functions must be called, at most once.
@@ -57,7 +54,7 @@ struct RowOp {
   //
   // This pointer must stay live as long as this RowOp.
   void set_original_result_from_log(const OperationResultPB* orig_result) {
-    orig_result_from_log_ = orig_result;
+    orig_result_from_log = orig_result;
   }
 
   bool has_row_lock() const {
@@ -75,7 +72,7 @@ struct RowOp {
 
   // If this operation is being replayed from the log, set to the original
   // result. Otherwise nullptr.
-  const OperationResultPB* orig_result_from_log_;
+  const OperationResultPB* orig_result_from_log = nullptr;
 
   // The key probe structure contains the row key in both key-encoded and
   // ContiguousRow formats, bloom probe structure, etc. This is set during
@@ -86,7 +83,7 @@ struct RowOp {
   // phase.
   ScopedRowLock row_lock;
 
-  // Flag whether this op has already been validated by Tablet::ValidateOp.
+  // Flag whether this op has already been validated.
   bool validated = false;
 
   // Flag whether this op has already had 'present_in_rowset' filled in.
@@ -100,7 +97,7 @@ struct RowOp {
   // checked and found not to be alive in any RowSet.
   RowSet* present_in_rowset = nullptr;
 
-  // The result of the operation, after Apply.
+  // The result of the operation.
   gscoped_ptr<OperationResultPB> result;
 };
 

@@ -166,7 +166,7 @@ Status WriteTransaction::Prepare() {
 
   Status s = tablet->DecodeWriteOperations(&client_schema, state());
   if (!s.ok()) {
-    // TODO: is MISMATCHED_SCHEMA always right here? probably not.
+    // TODO(unknown): is MISMATCHED_SCHEMA always right here? probably not.
     state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
     return s;
   }
@@ -203,6 +203,22 @@ Status WriteTransaction::Start() {
   return Status::OK();
 }
 
+void WriteTransaction::UpdatePerRowErrors() {
+  // Add per-row errors to the result, update metrics.
+  for (int i = 0; i < state()->row_ops().size(); ++i) {
+    const RowOp* op = state()->row_ops()[i];
+    if (op->result->has_failed_status()) {
+      // Replicas disregard the per row errors, for now
+      // TODO(unknown): check the per-row errors against the leader's, at least in debug mode
+      WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
+      error->set_row_index(i);
+      error->mutable_error()->CopyFrom(op->result->failed_status());
+    }
+
+    state()->UpdateMetricsForOp(*op);
+  }
+}
+
 // FIXME: Since this is called as a void in a thread-pool callback,
 // it seems pointless to return a Status!
 Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
@@ -220,20 +236,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
   TRACE("APPLY: Finished.");
 
-  // Add per-row errors to the result, update metrics.
-  int i = 0;
-  for (const RowOp* op : state()->row_ops()) {
-    if (op->result->has_failed_status()) {
-      // Replicas disregard the per row errors, for now
-      // TODO check the per-row errors against the leader's, at least in debug mode
-      WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
-      error->set_row_index(i);
-      error->mutable_error()->CopyFrom(op->result->failed_status());
-    }
-
-    state()->UpdateMetricsForOp(*op);
-    i++;
-  }
+  UpdatePerRowErrors();
 
   // Create the Commit message
   commit_msg->reset(new CommitMsg());

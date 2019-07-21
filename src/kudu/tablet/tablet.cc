@@ -458,6 +458,7 @@ Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
                "num_locks", tx_state->row_ops().size());
   TRACE("Acquiring locks for $0 operations", tx_state->row_ops().size());
   for (RowOp* op : tx_state->row_ops()) {
+    if (op->has_result()) continue;
     RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
   TRACE("Locks acquired");
@@ -710,8 +711,8 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
 vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
                                            const TabletComponents* comps) {
   vector<RowSet*> to_check;
-  if (PREDICT_TRUE(!op->orig_result_from_log_)) {
-    // TODO: could iterate the rowsets in a smart order
+  if (PREDICT_TRUE(!op->orig_result_from_log)) {
+    // TODO(yingchun): could iterate the rowsets in a smart order
     // based on recent statistics - eg if a rowset is getting
     // updated frequently, pick that one first.
     comps->rowsets->FindRowSetsWithKeyInRange(op->key_probe->encoded_key_slice(),
@@ -728,7 +729,7 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
 
   // If we are replaying an operation during bootstrap, then we already have a
   // COMMIT message which tells us specifically which memory store to apply it to.
-  for (const auto& store : op->orig_result_from_log_->mutated_stores()) {
+  for (const auto& store : op->orig_result_from_log->mutated_stores()) {
     if (store.has_mrs_id()) {
       to_check.push_back(comps->memrowset.get());
     } else {
@@ -804,7 +805,7 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteTransactionSt
     RowOp* op = row_ops_base[i];
     // If the op already failed in validation, or if we've got the original result
     // filled in already during replay, then we don't need to consult the RowSetTree.
-    if (op->has_result() || op->orig_result_from_log_) continue;
+    if (op->has_result() || op->orig_result_from_log) continue;
     keys_and_indexes.emplace_back(op->key_probe->encoded_key_slice(), i);
   }
 

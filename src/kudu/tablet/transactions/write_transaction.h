@@ -325,6 +325,8 @@ class WriteTransaction : public Transaction {
   std::string ToString() const override;
 
  private:
+  void UpdatePerRowErrors();
+
   // this transaction's start time
   MonoTime start_time_;
 
