@@ -299,6 +299,20 @@ The following configurations must be set on the tablet servers:
 --tserver_enforce_access_control=true
 ```
 
+The following configurations must be set in `sentry-site.xml` on the Sentry servers:
+```xml
+# This example setup configures the Kudu service user as a privileged user to be
+# able to retrieve authorization policies stored in Sentry.
+<property>
+  <name>sentry.service.allow.connect</name>
+  <value>kudu</value>
+</property>
+
+<property>
+  <name>sentry.service.admin.group</name>
+  <value>kudu</value>
+</property>
+```
 [[privilege-caching]]
 === Caching
 
