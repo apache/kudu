@@ -45,14 +45,11 @@ TEST(VersionUtilTest, TestVersion) {
     { { "1.2.3-SNAPSHOT", 1, 2, 3, "SNAPSHOT" }, "1.2.3-SNAPSHOT" },
     { { "1.8.0-x-SNAPSHOT", 1, 8, 0, "x-SNAPSHOT" }, "1.8.0-x-SNAPSHOT" },
     { { "0.1.2-a-b-c-d", 0, 1, 2, "a-b-c-d" }, "0.1.2-a-b-c-d" },
-    { { " 0 .1 .2 -x", 0, 1, 2, "x" }, "0.1.2-x" },
-    { { " 0 . 1 .  2 -x ", 0, 1, 2, "x" }, "0.1.2-x" },
-    { { "+1.+2.+3-6", 1, 2, 3, "6" }, "1.2.3-6" },
-    { { " +1 .  +2 .   +3 -100 .. ", 1, 2, 3, "100 .." }, "1.2.3-100 .." },
     // no octals: leading zeros are just chopped off
     { { "00.01.010", 0, 1, 10, "" }, "0.1.10" },
     { { "  0.1.2----suffix  ", 0, 1, 2, "---suffix" }, "0.1.2----suffix" },
     { { "0.1.2- - -x- -y- ", 0, 1, 2, " - -x- -y-" }, "0.1.2- - -x- -y-" },
+    { { "1.11.0.7.0.0.0-SNAPSHOT", 1, 11, 0, "7.0.0.0-SNAPSHOT" }, "1.11.0-7.0.0.0-SNAPSHOT" },
   };
 
   for (const auto& test_case : good_test_cases) {
@@ -99,6 +96,16 @@ TEST(VersionUtilTest, TestVersion) {
     "1.0.foo",
     "1.0foo.bar",
     "foo5-1.4.3",
+    "1-2-3",
+    "1.2-3",
+    "1-2.3",
+    "1-2-3-SNAPSHOT",
+    "1.2-3-SNAPSHOT",
+    "1-2.3-SNAPSHOT",
+    " 0 .1 .2 -x",
+    " 0 . 1 .  2 -x ",
+    "+1.+2.+3-6",
+    " +1 .  +2 .   +3 -100 .. ",
   };
 
   for (const auto& input_str : bad_test_cases) {
