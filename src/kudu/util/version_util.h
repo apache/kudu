@@ -19,6 +19,8 @@
 #include <iosfwd>
 #include <string>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
@@ -49,6 +51,12 @@ struct Version {
   int major;
   int minor;
   int maintenance;
+
+  // The character separating the maintenance version from the extra component.
+  //
+  // Even if there was a delimiter, this will be boost::none unless there was
+  // a non-empty extra component.
+  boost::optional<char> extra_delimiter;
 
   // The extra component. Empty if there was no extra component.
   std::string extra;

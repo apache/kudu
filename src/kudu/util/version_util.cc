@@ -41,13 +41,14 @@ bool Version::operator==(const Version& other) const {
   return this->major == other.major &&
          this->minor == other.minor &&
          this->maintenance == other.maintenance &&
+         this->extra_delimiter == other.extra_delimiter &&
          this->extra == other.extra;
 }
 
 string Version::ToString() const {
   return extra.empty()
       ? Substitute("$0.$1.$2", major, minor, maintenance)
-      : Substitute("$0.$1.$2-$3", major, minor, maintenance, extra);
+      : Substitute("$0.$1.$2$3$4", major, minor, maintenance, *extra_delimiter, extra);
 }
 
 ostream& operator<<(ostream& os, const Version& v) {
@@ -93,8 +94,12 @@ Status ParseVersion(const string& version_str,
   PARSE_REQUIRED_COMPONENT(3, &temp_v.maintenance);
 #undef PARSE_REQUIRED_COMPONENT
   if (matches[4].rm_so != -1) {
-    temp_v.extra = v_str.substr(matches[4].rm_so + 1, // skip the delimiter
-                                matches[4].rm_eo - (matches[4].rm_so + 1));
+    int extra_comp_off = matches[4].rm_so + 1; // skip the delimiter
+    int extra_comp_len = matches[4].rm_eo - extra_comp_off;
+    if (extra_comp_len > 0) {
+      temp_v.extra_delimiter = v_str[extra_comp_off - 1];
+      temp_v.extra = v_str.substr(extra_comp_off, extra_comp_len);
+    }
   }
   temp_v.raw_version = version_str;
   *v = std::move(temp_v);
