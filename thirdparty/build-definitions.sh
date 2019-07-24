@@ -1004,3 +1004,43 @@ build_yaml() {
     popd
   done
 }
+
+build_chrony() {
+  CHRONY_BDIR=$TP_BUILD_DIR/$CHRONY_NAME$MODE_SUFFIX
+  mkdir -p $CHRONY_BDIR
+  pushd $CHRONY_BDIR
+
+  # The configure script for chrony doesn't follow the common policy of
+  # the autogen tools (probably, it's manually written from scratch).
+  # It's not possible to configure and build chrony in a separate directory;
+  # it's necessary to do so in the source directory itself.
+  rsync -av --delete $CHRONY_SOURCE/ .
+
+  # In the scope of using chrony in Kudu test framework, it's better to have
+  # leaner binaries for chronyd and chronyc, stripping off everything but
+  # essential functionality.
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    ./configure \
+    --prefix=$PREFIX \
+    --sysconfdir=$PREFIX/etc \
+    --localstatedir=$PREFIX/var \
+    --enable-debug \
+    --disable-ipv6 \
+    --disable-pps \
+    --disable-privdrop \
+    --disable-readline \
+    --without-editline \
+    --without-nettle \
+    --without-nss \
+    --without-tomcrypt \
+    --without-libcap \
+    --without-seccomp \
+    --disable-forcednsretry \
+    --disable-sechash
+
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}

@@ -1,0 +1,31 @@
+commit ecdaaf222a126ec9aeecb0479e2337f875a9618f
+Author: Alexey Serbin <alexey@apache.org>
+Date:   Tue Aug 20 16:47:02 2019 -0700
+
+    main: allow to run under regular user in server-only mode
+    
+    This patch allows for running chronyd under non-superuser account when
+    no clock control is requested (i.e. when '-d' option is specified).
+    
+    The motivation for this change is to run chronyd in server-only mode
+    (i.e. not driving system's clock) in various development and testing
+    environments.  Of course, it's assumed non-standard ports are used
+    for the NTP and the command endpoints in such a case, otherwise
+    chronyd would fail to bind to the standard NTP (123) and
+    command (323) ports since these are privileged ones.
+
+diff --git a/main.c b/main.c
+index fafca65..d94a3b5 100644
+--- a/main.c
++++ b/main.c
+@@ -501,8 +501,9 @@ int main
+     }
+   }
+ 
+-  if (getuid() && !client_only)
++  if (getuid() && !(client_only || !clock_control)) {
+     LOG_FATAL("Not superuser");
++  }
+ 
+   /* Turn into a daemon */
+   if (!nofork) {

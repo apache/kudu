@@ -102,6 +102,7 @@ else
       "hive")         F_HIVE=1 ;;
       "sentry")       F_SENTRY=1 ;;
       "yaml")         F_YAML=1 ;;
+      "chrony")       F_CHRONY=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -245,6 +246,10 @@ fi
 
 if [ -n "$F_COMMON" -o -n "$F_BISON" ]; then
   build_bison
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_CHRONY" ]; then
+  build_chrony
 fi
 
 # Install Hadoop, Hive, and Sentry by symlinking their source directories (which
