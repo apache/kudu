@@ -1393,8 +1393,8 @@ TEST_F(TestSentryClientMetrics, Basic) {
   // Shorten the default timeout parameters: make timeout interval shorter.
   NO_FATALS(sentry_authz_provider_->Stop());
   FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
-  FLAGS_sentry_service_send_timeout_seconds = AllowSlowTests() ? 5 : 2;
-  FLAGS_sentry_service_recv_timeout_seconds = AllowSlowTests() ? 5 : 2;
+  FLAGS_sentry_service_send_timeout_seconds = 2;
+  FLAGS_sentry_service_recv_timeout_seconds = 2;
   sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
   ASSERT_OK(sentry_authz_provider_->Start());
 
@@ -1412,9 +1412,11 @@ TEST_F(TestSentryClientMetrics, Basic) {
   scoped_refptr<Histogram> hist(metric_entity_->FindOrCreateHistogram(
       &METRIC_sentry_client_task_execution_time_us));
   ASSERT_LT(0, hist->histogram()->MinValue());
-  ASSERT_LT(2000000, hist->histogram()->MaxValue());
+  // Change the threshold to 1900000 in case of very unstable system clock
+  // and other scheduler anomalies of the OS scheduler.
+  ASSERT_LT(1900000, hist->histogram()->MaxValue());
   ASSERT_LE(5, hist->histogram()->TotalCount());
-  ASSERT_LT(2000000, hist->histogram()->TotalSum());
+  ASSERT_LT(1900000, hist->histogram()->TotalSum());
 }
 
 enum class ThreadsNumPolicy {
