@@ -907,51 +907,40 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
 // be copied to column 'dst_col_idx' in the output protobuf; otherwise,
 // dst_col_idx must be equal to col_idx.
 template<bool IS_NULLABLE, bool IS_VARLEN>
-static void CopyColumn(const RowBlock& block, int col_idx, int dst_col_idx, uint8_t* dst_base,
-                       faststring* indirect_data, const Schema* dst_schema, size_t row_stride,
-                       size_t schema_byte_size, size_t column_offset) {
+static void CopyColumn(
+    const ColumnBlock& column_block, int dst_col_idx, uint8_t* __restrict__ dst_base,
+    faststring* indirect_data, const Schema* dst_schema, size_t row_stride,
+    size_t schema_byte_size, size_t column_offset,
+    const vector<int>& row_idx_select) {
   DCHECK(dst_schema);
-  ColumnBlock column_block = block.column_block(col_idx);
   uint8_t* dst = dst_base + column_offset;
   size_t offset_to_null_bitmap = schema_byte_size - column_offset;
 
   size_t cell_size = column_block.stride();
   const uint8_t* src = column_block.cell_ptr(0);
 
-  BitmapIterator selected_row_iter(block.selection_vector()->bitmap(), block.nrows());
-  int run_size;
-  bool selected;
-  int row_idx = 0;
-  while ((run_size = selected_row_iter.Next(&selected))) {
-    if (!selected) {
-      src += run_size * cell_size;
-      row_idx += run_size;
-      continue;
-    }
-    for (int i = 0; i < run_size; i++) {
-      if (IS_NULLABLE && column_block.is_null(row_idx)) {
-        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
-      } else if (IS_VARLEN) {
-        const Slice *slice = reinterpret_cast<const Slice *>(src);
-        size_t offset_in_indirect = indirect_data->size();
-        indirect_data->append(reinterpret_cast<const char*>(slice->data()), slice->size());
+  for (auto index : row_idx_select) {
+    src = column_block.cell_ptr(index);
+    if (IS_NULLABLE && column_block.is_null(index)) {
+      BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
+    } else if (IS_VARLEN) {
+      const Slice* slice = reinterpret_cast<const Slice *>(src);
+      size_t offset_in_indirect = indirect_data->size();
+      indirect_data->append(reinterpret_cast<const char*>(slice->data()), slice->size());
 
-        Slice *dst_slice = reinterpret_cast<Slice *>(dst);
-        *dst_slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
-                           slice->size());
-        if (IS_NULLABLE) {
-          BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
-        }
-      } else { // non-string, non-null
-        strings::memcpy_inlined(dst, src, cell_size);
-        if (IS_NULLABLE) {
-          BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
-        }
+      Slice* dst_slice = reinterpret_cast<Slice *>(dst);
+      *dst_slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
+                         slice->size());
+      if (IS_NULLABLE) {
+        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
       }
-      dst += row_stride;
-      src += cell_size;
-      row_idx++;
+    } else { // non-string, non-null
+      strings::memcpy_inlined(dst, src, cell_size);
+      if (IS_NULLABLE) {
+        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
+      }
     }
+    dst += row_stride;
   }
 }
 
@@ -1002,6 +991,8 @@ void SerializeRowBlock(const RowBlock& block,
     memset(base, 0, additional_size);
   }
 
+  vector<int> selected_row_indexes;
+  block.selection_vector()->GetSelectedRows(&selected_row_indexes);
   size_t t_schema_idx = 0;
   size_t padding_so_far = 0;
   for (int p_schema_idx = 0; p_schema_idx < projection_schema->num_columns(); p_schema_idx++) {
@@ -1010,6 +1001,7 @@ void SerializeRowBlock(const RowBlock& block,
     DCHECK_NE(t_schema_idx, -1);
 
     size_t column_offset = projection_schema->column_offset(p_schema_idx) + padding_so_far;
+    const ColumnBlock& column_block = block.column_block(t_schema_idx);
 
     // Generating different functions for each of these cases makes them much less
     // branch-heavy -- we do the branch once outside the loop, and then have a
@@ -1018,17 +1010,17 @@ void SerializeRowBlock(const RowBlock& block,
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
     if (col.is_nullable() && col.type_info()->physical_type() == BINARY) {
-      CopyColumn<true, true>(block, t_schema_idx, p_schema_idx, base, indirect_data,
-                             projection_schema, row_stride, schema_byte_size, column_offset);
+      CopyColumn<true, true>(column_block, p_schema_idx, base, indirect_data, projection_schema,
+                             row_stride, schema_byte_size, column_offset, selected_row_indexes);
     } else if (col.is_nullable() && col.type_info()->physical_type() != BINARY) {
-      CopyColumn<true, false>(block, t_schema_idx, p_schema_idx, base, indirect_data,
-                              projection_schema, row_stride, schema_byte_size, column_offset);
+      CopyColumn<true, false>(column_block, p_schema_idx, base, indirect_data, projection_schema,
+                              row_stride, schema_byte_size, column_offset, selected_row_indexes);
     } else if (!col.is_nullable() && col.type_info()->physical_type() == BINARY) {
-      CopyColumn<false, true>(block, t_schema_idx, p_schema_idx, base, indirect_data,
-                              projection_schema, row_stride, schema_byte_size, column_offset);
+      CopyColumn<false, true>(column_block, p_schema_idx, base, indirect_data, projection_schema,
+                              row_stride, schema_byte_size, column_offset, selected_row_indexes);
     } else if (!col.is_nullable() && col.type_info()->physical_type() != BINARY) {
-      CopyColumn<false, false>(block, t_schema_idx, p_schema_idx, base, indirect_data,
-                               projection_schema, row_stride, schema_byte_size, column_offset);
+      CopyColumn<false, false>(column_block, p_schema_idx, base, indirect_data, projection_schema,
+                               row_stride, schema_byte_size, column_offset, selected_row_indexes);
     } else {
       LOG(FATAL) << "cannot reach here";
     }

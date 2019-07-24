@@ -103,6 +103,10 @@ class SelectionVector {
     return BitmapFindFirstSet(&bitmap_[0], row_offset, n_rows_, row);
   }
 
+  // Sets '*selected' to the indices of all rows marked as selected
+  // in this selection vector.
+  void GetSelectedRows(std::vector<int>* selected) const;
+
   uint8_t *mutable_bitmap() {
     return &bitmap_[0];
   }

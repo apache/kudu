@@ -16,11 +16,16 @@
 // under the License.
 #include "kudu/common/rowblock.h"
 
+#include <numeric>
+#include <vector>
+
 #include <glog/logging.h>
 
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
+
+using std::vector;
 
 namespace kudu {
 
@@ -65,6 +70,31 @@ void SelectionVector::ClearToSelectAtMost(size_t max_rows) {
     // If the limit is reached, zero out the rest of the selection vector.
     if (n_rows_ > end_idx) {
       BitmapChangeBits(&bitmap_[0], end_idx, n_rows_ - end_idx, false);
+    }
+  }
+}
+
+void SelectionVector::GetSelectedRows(vector<int>* selected) const {
+  int n_selected = CountSelected();
+  selected->resize(n_selected);
+  if (n_selected == 0) {
+    return;
+  }
+  if (n_selected == n_rows_) {
+    std::iota(selected->begin(), selected->end(), 0);
+    return;
+  }
+
+  const uint8_t* bitmap = &bitmap_[0];
+  int* dst = selected->data();
+  // Within each byte, keep flipping the least significant non-zero bit and adding
+  // the bit index to the output until none are set.
+  for (int i = 0; i < n_bytes_; i++) {
+    uint8_t bm = *bitmap++;
+    while (bm != 0) {
+      int bit = Bits::FindLSBSetNonZero(bm);
+      *dst++ = (i * 8) + bit;
+      bm ^= (1 << bit);
     }
   }
 }

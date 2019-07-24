@@ -39,6 +39,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
@@ -151,22 +152,28 @@ class WireProtocolTest : public KuduTest,
   void RunBenchmark(int column_count, double select_rate) {
     ResetBenchmarkSchema(column_count);
     Arena arena(1024);
-    const int kNumTrials = AllowSlowTests() ? 100 : 10;
-    RowBlock block(&benchmark_schema_, 10000, &arena);
+    RowBlock block(&benchmark_schema_, 1000, &arena);
+    // Regardless of the config, use a constant number of cells for the test by
+    // looping the conversion an appropriate number of times.
+    const int64_t kNumCellsToConvert = AllowSlowTests() ? 100000000 : 1000000;
+    const int kNumTrials = kNumCellsToConvert / select_rate / column_count / block.nrows();
     FillRowBlockForBenchmark(&block);
     SelectRandomRowsWithRate(&block, select_rate);
 
     RowwiseRowBlockPB pb;
     faststring direct, indirect;
-    LOG_TIMING(INFO, Substitute("Converting to PB with column count $0 and row select rate $1 ",
-                                column_count, select_rate)) {
-      for (int i = 0; i < kNumTrials; ++i) {
-        pb.Clear();
-        direct.clear();
-        indirect.clear();
-        SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
-      }
+    int64_t cycle_start = CycleClock::Now();
+    for (int i = 0; i < kNumTrials; ++i) {
+      pb.Clear();
+      direct.clear();
+      indirect.clear();
+      SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
     }
+    int64_t cycle_end = CycleClock::Now();
+    LOG(INFO) << Substitute(
+        "Converting to PB with column count $0 and row select rate $1: $2 cycles/cell",
+        column_count, select_rate,
+        static_cast<double>(cycle_end - cycle_start) / kNumCellsToConvert);
   }
  protected:
   Schema schema_;
