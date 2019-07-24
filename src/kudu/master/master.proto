@@ -371,7 +371,7 @@ message TabletLocationsPB {
   // DEPRECATED.
   // TODO: new clients should prefer the 'Interned' type below.
   // Remove 'ReplicaPB' when we stop using it internally.
-  message ReplicaPB {
+  message DEPRECATED_ReplicaPB {
     required TSInfoPB ts_info = 1;
     required consensus.RaftPeerPB.Role role = 2;
     optional string dimension_label = 3;
@@ -392,8 +392,9 @@ message TabletLocationsPB {
 
   optional PartitionPB partition = 6;
 
+  // DEPRECATED.
   // Used only if interned replicas are not supported by client.
-  repeated ReplicaPB replicas = 4;
+  repeated DEPRECATED_ReplicaPB DEPRECATED_replicas = 4;
 
   // More efficient representation of replicas: instead of duplicating the TSInfoPB
   // in each tablet location, instead we just encode indexes into a list of TSInfoPB
@@ -435,14 +436,18 @@ message GetTabletLocationsRequestPB {
   // What type of tablet replicas to include in the response.
   optional ReplicaTypeFilter replica_type_filter = 2 [ default = VOTER_REPLICA ];
 
-  // NOTE: we don't support the "interned" TSInfoPB response in this request
-  // since this RPC is currently called with a small number of tablets.
+  // Whether the response should use the 'interned_replicas' field.
+  optional bool intern_ts_infos_in_response = 3 [ default = false ];
 }
 
 message GetTabletLocationsResponsePB {
   optional MasterErrorPB error = 1;
 
   repeated TabletLocationsPB tablet_locations = 2;
+
+  // Used if 'intern_ts_infos_in_response' was requested.
+  // See InternedReplicaPB above.
+  repeated TSInfoPB ts_infos = 4;
 
   message Error {
     required bytes tablet_id = 1;

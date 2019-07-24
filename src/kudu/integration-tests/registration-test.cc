@@ -189,6 +189,7 @@ class RegistrationTest : public KuduTest {
           cluster_->mini_master()->master()->catalog_manager();
       Status s;
       TabletLocationsPB loc;
+      CatalogManager::TSInfosDict infos_dict;
       do {
         master::CatalogManager::ScopedLeaderSharedLock l(catalog);
         const Status& ls = l.first_failed_status();
@@ -203,10 +204,10 @@ class RegistrationTest : public KuduTest {
         s = catalog->GetTabletLocations(tablet_id,
                                         master::VOTER_REPLICA,
                                         &loc,
-                                        /*ts_infos_dict=*/nullptr,
+                                        &infos_dict,
                                         /*user=*/none);
       } while (false);
-      if (s.ok() && loc.replicas_size() == expected_count) {
+      if (s.ok() && loc.interned_replicas_size() == expected_count) {
         if (locations) {
           *locations = std::move(loc);
         }
@@ -302,7 +303,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
       cluster_->mini_master(), "tablet-reports-1", schema_, &tablet_id_1));
   TabletLocationsPB locs_1;
   ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs_1));
-  ASSERT_EQ(1, locs_1.replicas_size());
+  ASSERT_EQ(1, locs_1.interned_replicas_size());
 
   // Check that we inserted the right number of rows for the new single-tablet table
   // (one for the table, one for the tablet).

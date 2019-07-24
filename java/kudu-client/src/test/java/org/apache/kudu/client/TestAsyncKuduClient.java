@@ -155,6 +155,7 @@ public class TestAsyncKuduClient {
     }
 
     List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
+    List<Master.TSInfoPB> tsInfos = new ArrayList<>();
 
     // Builder three bad locations.
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
@@ -164,9 +165,10 @@ public class TestAsyncKuduClient {
       partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, UTF_8.name()));
       tabletPb.setPartition(partition);
       tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
-      tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
-          "uuid", badHostname + i, i, Metadata.RaftPeerPB.Role.FOLLOWER));
+      tabletPb.addInternedReplicas(ProtobufUtils.getFakeTabletInternedReplicaPB(
+          i, Metadata.RaftPeerPB.Role.FOLLOWER));
       tabletLocations.add(tabletPb.build());
+      tsInfos.add(ProtobufUtils.getFakeTSInfoPB("uuid",badHostname + i, i).build());
     }
 
     // Test that a tablet full of unreachable replicas won't make us retry.
@@ -174,7 +176,7 @@ public class TestAsyncKuduClient {
       KuduTable badTable = new KuduTable(asyncClient, "Invalid table name",
           "Invalid table ID", null, null, 3, null);
       asyncClient.discoverTablets(badTable, null, requestBatchSize,
-                                  tabletLocations, new ArrayList<>(), 1000);
+                                  tabletLocations, tsInfos, 1000);
       fail("This should have failed quickly");
     } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().contains(badHostname));
@@ -199,15 +201,18 @@ public class TestAsyncKuduClient {
 
     // Fake a master lookup that only returns one follower for the tablet.
     List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
+    List<Master.TSInfoPB> tsInfos = new ArrayList<>();
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
     tabletPb.setPartition(ProtobufUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFrom(tablet.getTabletId()));
-    tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
-        "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
+    tabletPb.addInternedReplicas(ProtobufUtils.getFakeTabletInternedReplicaPB(
+        0, Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
+    tsInfos.add(ProtobufUtils.getFakeTSInfoPB(
+        "master", leader.getRpcHost(), leader.getRpcPort()).build());
     try {
       asyncClient.discoverTablets(table, new byte[0], requestBatchSize,
-                                  tabletLocations, new ArrayList<>(), 1000);
+                                  tabletLocations, tsInfos, 1000);
       fail("discoverTablets should throw an exception if there's no leader");
     } catch (NoLeaderFoundException ex) {
       // Expected.

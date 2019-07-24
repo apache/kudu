@@ -221,7 +221,7 @@ Status WaitForReplicasReportedToMaster(
     WaitForLeader wait_for_leader,
     master::ReplicaTypeFilter filter,
     bool* has_leader,
-    master::TabletLocationsPB* tablet_locations);
+    master::GetTabletLocationsResponsePB* tablet_locations);
 
 // Wait until the last committed OpId has index exactly 'opid_index'.
 Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
@@ -351,7 +351,7 @@ Status GetTabletLocations(const std::shared_ptr<master::MasterServiceProxy>& mas
                           const std::string& tablet_id,
                           const MonoDelta& timeout,
                           master::ReplicaTypeFilter filter,
-                          master::TabletLocationsPB* tablet_locations);
+                          master::GetTabletLocationsResponsePB* tablet_locations);
 
 // Get the list of tablet locations for all tablets in the specified table via the given
 // table name (and table ID if provided) from the Master.

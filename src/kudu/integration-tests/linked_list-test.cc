@@ -320,7 +320,7 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
   // index, let's first make sure that the replica at the restarted tserver
   // is a voter.
   bool has_leader;
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(
       cluster_->master_proxy(), FLAGS_num_tablet_servers, tablet_id, wait_time,
       WAIT_FOR_LEADER, VOTER_REPLICA, &has_leader, &tablet_locations));

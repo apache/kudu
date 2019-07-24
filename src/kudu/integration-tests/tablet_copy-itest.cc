@@ -1256,8 +1256,8 @@ TEST_P(TabletCopyFailureITest, TestTabletCopyNewReplicaFailureCanVote) {
   ASSERT_EQ(1, table_locations.tablet_locations_size());
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
   set<string> replica_uuids;
-  for (const auto& replica : table_locations.tablet_locations(0).replicas()) {
-    replica_uuids.insert(replica.ts_info().permanent_uuid());
+  for (const auto& replica : table_locations.tablet_locations(0).interned_replicas()) {
+    replica_uuids.insert(table_locations.ts_infos(replica.ts_info_idx()).permanent_uuid());
   }
 
   string new_replica_uuid;

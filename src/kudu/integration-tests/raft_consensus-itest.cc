@@ -1768,7 +1768,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             2, tablet_id, timeout,

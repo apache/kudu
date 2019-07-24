@@ -30,6 +30,7 @@ import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -38,7 +39,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
 
 /**
  * This class encapsulates the information regarding a tablet and its locations.
@@ -71,8 +71,10 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
   RemoteTablet(String tableId,
                String tabletId,
                Partition partition,
-               List<Master.TabletLocationsPB.ReplicaPB> replicas,
+               List<LocatedTablet.Replica> replicas,
                List<ServerInfo> serverInfos) {
+    Preconditions.checkArgument(replicas.size() == serverInfos.size(),
+                                "the number of replicas does not equal the number of servers");
     this.tabletId = tabletId;
     this.tableId = tableId;
     this.partition = partition;
@@ -83,11 +85,10 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     }
 
     ImmutableList.Builder<LocatedTablet.Replica> replicasBuilder = new ImmutableList.Builder<>();
-    for (Master.TabletLocationsPB.ReplicaPB replica : replicas) {
-      String uuid = replica.getTsInfo().getPermanentUuid().toStringUtf8();
-      replicasBuilder.add(new LocatedTablet.Replica(replica));
-      if (replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
-        this.leaderUuid = uuid;
+    for (int i = 0; i < replicas.size(); ++i) {
+      replicasBuilder.add(replicas.get(i));
+      if (replicas.get(i).getRoleAsEnum().equals(Metadata.RaftPeerPB.Role.LEADER)) {
+        this.leaderUuid = serverInfos.get(i).getUuid();
       }
     }
 

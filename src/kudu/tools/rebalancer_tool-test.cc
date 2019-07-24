@@ -1321,8 +1321,8 @@ TEST_F(LocationAwareRebalancingBasicTest, Basic) {
       const auto& location = table_locations.tablet_locations(i);
       const auto& tablet_id = location.tablet_id();
       unordered_map<string, int> count_per_location;
-      for (const auto& replica : location.replicas()) {
-        const auto& ts_id = replica.ts_info().permanent_uuid();
+      for (const auto& replica : location.interned_replicas()) {
+        const auto& ts_id = table_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
         const auto& location = FindOrDie(location_by_ts_id, ts_id);
         ++LookupOrEmplace(&count_per_location, location, 0);
         ++LookupOrEmplace(&total_count_per_location, location, 0);

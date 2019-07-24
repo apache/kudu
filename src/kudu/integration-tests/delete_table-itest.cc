@@ -311,6 +311,7 @@ TEST_F(DeleteTableITest, TestDeleteEmptyTable) {
     master::GetTabletLocationsResponsePB resp;
     rpc.set_timeout(MonoDelta::FromSeconds(10));
     req.add_tablet_ids()->assign(tablet_id);
+    req.set_intern_ts_infos_in_response(true);
     ASSERT_OK(cluster_->master_proxy()->GetTabletLocations(req, &resp, &rpc));
     SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_EQ(1, resp.errors_size());
@@ -1183,8 +1184,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   std::set<string> replicas;
   for (const auto& t : table_locations.tablet_locations()) {
     tablet_id = t.tablet_id();
-    for (const auto& r : t.replicas()) {
-      replicas.insert(r.ts_info().permanent_uuid());
+    for (const auto& r : t.interned_replicas()) {
+      replicas.insert(table_locations.ts_infos(r.ts_info_idx()).permanent_uuid());
     }
   }
 

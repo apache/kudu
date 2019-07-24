@@ -223,7 +223,7 @@ public class TestRemoteTablet {
                                 int localReplicaIndex,
                                 int sameLocationReplicaIndex) {
     Partition partition = ProtobufHelper.pbToPartition(ProtobufUtils.getFakePartitionPB().build());
-    List<Master.TabletLocationsPB.ReplicaPB> replicas = new ArrayList<>();
+    List<LocatedTablet.Replica> replicas = new ArrayList<>();
     List<ServerInfo> servers = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
       InetAddress addr;
@@ -245,7 +245,7 @@ public class TestRemoteTablet {
                                  location));
       Metadata.RaftPeerPB.Role role = leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER :
                                                          Metadata.RaftPeerPB.Role.FOLLOWER;
-      replicas.add(ProtobufUtils.getFakeTabletReplicaPB(uuid, "host", i, role).build());
+      replicas.add(new LocatedTablet.Replica("host", i, role, null));
     }
 
     return new RemoteTablet("fake table", "fake tablet", partition, replicas, servers);

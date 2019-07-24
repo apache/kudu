@@ -97,7 +97,6 @@ using kudu::consensus::VoteResponsePB;
 using kudu::consensus::kInvalidOpIdIndex;
 using kudu::master::ListTabletServersResponsePB_Entry;
 using kudu::master::MasterServiceProxy;
-using kudu::master::TabletLocationsPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
@@ -502,15 +501,13 @@ Status WaitForReplicasReportedToMaster(
     WaitForLeader wait_for_leader,
     master::ReplicaTypeFilter filter,
     bool* has_leader,
-    master::TabletLocationsPB* tablet_locations) {
+    master::GetTabletLocationsResponsePB* tablet_locations) {
   MonoTime deadline(MonoTime::Now() + timeout);
   while (true) {
-    RETURN_NOT_OK(GetTabletLocations(
-        master_proxy, tablet_id, timeout, filter, tablet_locations));
+    RETURN_NOT_OK(GetTabletLocations(master_proxy, tablet_id, timeout, filter, tablet_locations));
     *has_leader = false;
-    if (tablet_locations->replicas_size() == num_replicas) {
-      for (const master::TabletLocationsPB_ReplicaPB& replica :
-                    tablet_locations->replicas()) {
+    if (tablet_locations->tablet_locations(0).interned_replicas_size() == num_replicas) {
+      for (const auto& replica : tablet_locations->tablet_locations(0).interned_replicas()) {
         if (replica.role() == RaftPeerPB::LEADER) {
           *has_leader = true;
         }
@@ -527,17 +524,18 @@ Status WaitForReplicasReportedToMaster(
     }
     SleepFor(MonoDelta::FromMilliseconds(20));
   }
-  if (num_replicas != tablet_locations->replicas_size()) {
+  if (num_replicas != tablet_locations->tablet_locations(0).interned_replicas_size()) {
       return Status::NotFound(Substitute("Number of replicas for tablet $0 "
           "reported to master $1:$2",
-          tablet_id, tablet_locations->replicas_size(),
+          tablet_id, tablet_locations->tablet_locations(0).interned_replicas_size(),
           SecureDebugString(*tablet_locations)));
   }
   if (wait_for_leader == WAIT_FOR_LEADER && !(*has_leader)) {
-    return Status::NotFound(Substitute("Leader for tablet $0 not found on master, "
-                                       "number of replicas $1:$2",
-                                       tablet_id, tablet_locations->replicas_size(),
-                                       SecureDebugString(*tablet_locations)));
+    return Status::NotFound(Substitute(
+        "Leader for tablet $0 not found on master, number of replicas $1:$2",
+        tablet_id,
+        tablet_locations->tablet_locations(0).interned_replicas_size(),
+        SecureDebugString(*tablet_locations)));
   }
   return Status::OK();
 }
@@ -907,24 +905,24 @@ Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
                           const string& tablet_id,
                           const MonoDelta& timeout,
                           master::ReplicaTypeFilter filter,
-                          master::TabletLocationsPB* tablet_locations) {
+                          master::GetTabletLocationsResponsePB* tablet_locations) {
   master::GetTabletLocationsRequestPB req;
   *req.add_tablet_ids() = tablet_id;
   req.set_replica_type_filter(filter);
-
-  master::GetTabletLocationsResponsePB resp;
+  req.set_intern_ts_infos_in_response(true);
   rpc::RpcController rpc;
   rpc.set_timeout(timeout);
-  RETURN_NOT_OK(master_proxy->GetTabletLocations(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
+  RETURN_NOT_OK(master_proxy->GetTabletLocations(req, tablet_locations, &rpc));
+  if (tablet_locations->has_error()) {
+    return StatusFromPB(tablet_locations->error().status());
   }
-  if (resp.errors_size() > 0) {
-    CHECK_EQ(1, resp.errors_size()) << SecureShortDebugString(resp);
-    return StatusFromPB(resp.errors(0).status());
+  if (tablet_locations->errors_size() > 0) {
+    CHECK_EQ(1, tablet_locations->errors_size())
+        << SecureShortDebugString(*tablet_locations);
+    return StatusFromPB(tablet_locations->errors(0).status());
   }
-  CHECK_EQ(1, resp.tablet_locations_size()) << SecureShortDebugString(resp);
-  *tablet_locations = resp.tablet_locations(0);
+  CHECK_EQ(1, tablet_locations->tablet_locations_size())
+      << SecureShortDebugString(*tablet_locations);
   return Status::OK();
 }
 
@@ -941,6 +939,7 @@ Status GetTableLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
   }
   req.set_replica_type_filter(filter);
   req.set_max_returned_locations(1000);
+  req.set_intern_ts_infos_in_response(true);
   rpc::RpcController rpc;
   rpc.set_timeout(timeout);
   RETURN_NOT_OK(master_proxy->GetTableLocations(req, table_locations, &rpc));
@@ -958,13 +957,13 @@ Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& ma
   MonoTime deadline = MonoTime::Now() + timeout;
   int num_voters_found = 0;
   while (true) {
-    TabletLocationsPB tablet_locations;
+    master::GetTabletLocationsResponsePB tablet_locations;
     MonoDelta time_remaining = deadline - MonoTime::Now();
     s = GetTabletLocations(master_proxy, tablet_id, time_remaining,
                            master::VOTER_REPLICA, &tablet_locations);
     if (s.ok()) {
       num_voters_found = 0;
-      for (const TabletLocationsPB::ReplicaPB& r : tablet_locations.replicas()) {
+      for (const auto& r : tablet_locations.tablet_locations(0).interned_replicas()) {
         if (r.role() == RaftPeerPB::LEADER || r.role() == RaftPeerPB::FOLLOWER) num_voters_found++;
       }
       if (num_voters_found == num_voters) break;

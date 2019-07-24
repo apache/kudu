@@ -100,6 +100,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/version_info.h"
 
+using kudu::consensus::RaftPeerPB;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
@@ -524,6 +525,7 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   GetTabletLocationsResponsePB resp;
 
   req.add_tablet_ids(tablet_id);
+  req.set_intern_ts_infos_in_response(true);
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
   Synchronizer sync;
   AsyncLeaderMasterRpc<GetTabletLocationsRequestPB, GetTabletLocationsResponsePB> rpc(
@@ -547,8 +549,10 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
 
   vector<const KuduReplica*> replicas;
   ElementDeleter deleter(&replicas);
-  for (const auto& r : t.replicas()) {
-    const TSInfoPB& ts_info = r.ts_info();
+
+  auto add_replica_func = [](const TSInfoPB& ts_info,
+                             const RaftPeerPB::Role role,
+                             vector<const KuduReplica*>* replicas) -> Status {
     if (ts_info.rpc_addresses_size() == 0) {
       return Status::IllegalState(Substitute(
           "No RPC addresses found for tserver $0",
@@ -560,12 +564,22 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
     ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp, ts_info.location());
 
     // TODO(aserbin): try to use member_type instead of role for metacache.
-    bool is_leader = r.role() == consensus::RaftPeerPB::LEADER;
-    bool is_voter = is_leader || r.role() == consensus::RaftPeerPB::FOLLOWER;
+    bool is_leader = role == RaftPeerPB::LEADER;
+    bool is_voter = is_leader || role == RaftPeerPB::FOLLOWER;
     unique_ptr<KuduReplica> replica(new KuduReplica);
     replica->data_ = new KuduReplica::Data(is_leader, is_voter, std::move(ts));
 
-    replicas.push_back(replica.release());
+    replicas->push_back(replica.release());
+    return Status::OK();
+  };
+
+  // Handle "old-style" non-interned replicas. It's used for backward compatibility.
+  for (const auto& r : t.deprecated_replicas()) {
+    RETURN_NOT_OK(add_replica_func(r.ts_info(), r.role(), &replicas));
+  }
+  // Handle interned replicas.
+  for (const auto& r : t.interned_replicas()) {
+    RETURN_NOT_OK(add_replica_func(resp.ts_infos(r.ts_info_idx()), r.role(), &replicas));
   }
 
   unique_ptr<KuduTablet> client_tablet(new KuduTablet);

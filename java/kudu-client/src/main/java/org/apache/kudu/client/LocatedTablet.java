@@ -26,7 +26,6 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;
-import org.apache.kudu.master.Master.TabletLocationsPB.ReplicaPB;
 
 /**
  * Information about the locations of tablets in a Kudu table.
@@ -107,43 +106,47 @@ public class LocatedTablet {
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   public static class Replica {
-    // TODO(wdberkeley): The ReplicaPB is deprecated server-side, so we ought to redo how this
-    // class stores its information.
-    private final ReplicaPB pb;
+    private final String host;
+    private final Integer port;
+    private final Role role;
+    private final String dimensionLabel;
 
-    Replica(ReplicaPB pb) {
-      this.pb = pb;
+    Replica(String host, Integer port, Role role, String dimensionLabel) {
+      this.host = host;
+      this.port = port;
+      this.role = role;
+      this.dimensionLabel = dimensionLabel;
     }
 
     public String getRpcHost() {
-      if (pb.getTsInfo().getRpcAddressesList().isEmpty()) {
-        return null;
-      }
-      return pb.getTsInfo().getRpcAddressesList().get(0).getHost();
+      return host;
     }
 
     public Integer getRpcPort() {
-      if (pb.getTsInfo().getRpcAddressesList().isEmpty()) {
-        return null;
-      }
-      return pb.getTsInfo().getRpcAddressesList().get(0).getPort();
+      return port;
     }
 
-    private Role getRoleAsEnum() {
-      return pb.getRole();
+    Role getRoleAsEnum() {
+      return role;
     }
 
     public String getRole() {
-      return pb.getRole().toString();
+      return role.toString();
     }
 
     public String getDimensionLabel() {
-      return pb.hasDimensionLabel() ? pb.getDimensionLabel() : null;
+      return dimensionLabel;
     }
 
     @Override
     public String toString() {
-      return pb.toString();
+      final StringBuilder buf = new StringBuilder();
+      buf.append("Replica(host=").append(host == null ? "null" : host);
+      buf.append(", port=").append(port == null ? "null" : port.toString());
+      buf.append(", role=").append(getRole());
+      buf.append(", dimensionLabel=").append(dimensionLabel == null ? "null" : dimensionLabel);
+      buf.append(')');
+      return buf.toString();
     }
   }
 }

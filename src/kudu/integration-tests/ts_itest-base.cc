@@ -168,6 +168,7 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
     rpc::RpcController controller;
     req.mutable_table()->set_table_name(table_id);
     req.set_replica_type_filter(master::ANY_REPLICA);
+    req.set_intern_ts_infos_in_response(true);
     controller.set_timeout(MonoDelta::FromSeconds(1));
     CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
     CHECK_OK(controller.status());
@@ -191,10 +192,10 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
       continue;
     }
 
-    for (const master::TabletLocationsPB& location : resp.tablet_locations()) {
-      for (const master::TabletLocationsPB_ReplicaPB& replica : location.replicas()) {
+    for (const auto& location : resp.tablet_locations()) {
+      for (const auto& replica : location.interned_replicas()) {
         TServerDetails* server =
-            FindOrDie(tablet_servers_, replica.ts_info().permanent_uuid());
+            FindOrDie(tablet_servers_, resp.ts_infos(replica.ts_info_idx()).permanent_uuid());
         tablet_replicas.insert(pair<string, TServerDetails*>(
             location.tablet_id(), server));
       }
@@ -345,13 +346,14 @@ Status TabletServerIntegrationTestBase::GetTabletLeaderUUIDFromMaster(
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(100));
   req.mutable_table()->set_table_name(kTableId);
+  req.set_intern_ts_infos_in_response(true);
 
   RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
   for (const master::TabletLocationsPB& loc : resp.tablet_locations()) {
     if (loc.tablet_id() == tablet_id) {
-      for (const master::TabletLocationsPB::ReplicaPB& replica : loc.replicas()) {
+      for (const auto& replica : loc.interned_replicas()) {
         if (replica.role() == consensus::RaftPeerPB::LEADER) {
-          *leader_uuid = replica.ts_info().permanent_uuid();
+          *leader_uuid = resp.ts_infos(replica.ts_info_idx()).permanent_uuid();
           return Status::OK();
         }
       }

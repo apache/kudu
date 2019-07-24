@@ -307,15 +307,14 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
   }
 
-  ServerRegistrationPB reg;
-  vector<TSDescriptor*> locs;
+  CatalogManager::TSInfosDict infos_dict;
   for (const string& tablet_id : req->tablet_ids()) {
     // TODO(todd): once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
     Status s = server_->catalog_manager()->GetTabletLocations(
         tablet_id, req->replica_type_filter(),
         locs_pb,
-        /*ts_infos_dict=*/nullptr,
+        req->intern_ts_infos_in_response() ? &infos_dict : nullptr,
         make_optional<const string&>(rpc->remote_user().username()));
     if (!s.ok()) {
       resp->mutable_tablet_locations()->RemoveLast();
@@ -324,6 +323,9 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
       err->set_tablet_id(tablet_id);
       StatusToPB(s, err->mutable_status());
     }
+  }
+  for (auto& pb : infos_dict.ts_info_pbs) {
+    resp->mutable_ts_infos()->AddAllocated(pb.release());
   }
 
   rpc->RespondSuccess();

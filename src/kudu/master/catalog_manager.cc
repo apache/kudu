@@ -4784,7 +4784,7 @@ Status CatalogManager::BuildLocationsForTablet(
         interned_replica_pb->set_dimension_label(*dimension);
       }
     } else {
-      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+      TabletLocationsPB_DEPRECATED_ReplicaPB* replica_pb = locs_pb->add_deprecated_replicas();
       replica_pb->set_allocated_ts_info(make_tsinfo_pb().release());
       replica_pb->set_role(role);
     }
@@ -4807,7 +4807,8 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  locs_pb->mutable_replicas()->Clear();
+  locs_pb->mutable_deprecated_replicas()->Clear();
+  locs_pb->mutable_interned_replicas()->Clear();
   scoped_refptr<TabletInfo> tablet_info;
   {
     shared_lock<LockType> l(lock_);

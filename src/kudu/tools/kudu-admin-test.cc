@@ -450,7 +450,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id, kTimeout,
@@ -497,18 +497,18 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 
   active_tablet_servers.clear();
   std::unordered_set<string> replica_uuids;
-  for (const auto& loc : tablet_locations.replicas()) {
-    const string& uuid = loc.ts_info().permanent_uuid();
+  for (const auto& loc : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(loc.ts_info_idx()).permanent_uuid();
     InsertOrDie(&active_tablet_servers, uuid, tablet_servers_[uuid]);
   }
   ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id, opid.index()));
 
   // Verify that two new servers are part of new config and old
   // servers are gone.
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[1]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), leader_ts->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, followers[1]->uuid());
+    ASSERT_NE(uuid, leader_ts->uuid());
   }
 
   // Also verify that when we bring back followers[1] and leader,
@@ -540,7 +540,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
@@ -595,10 +595,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[0]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[1]->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, followers[0]->uuid());
+    ASSERT_NE(uuid, followers[1]->uuid());
   }
 }
 
@@ -623,7 +623,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
@@ -677,9 +677,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), leader_ts->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, leader_ts->uuid());
   }
 }
 
@@ -714,7 +714,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
@@ -769,11 +769,11 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), leader_ts->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[2]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[3]->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, leader_ts->uuid());
+    ASSERT_NE(uuid, followers[2]->uuid());
+    ASSERT_NE(uuid, followers[3]->uuid());
   }
 }
 
@@ -800,7 +800,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
@@ -864,10 +864,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[0]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[1]->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, followers[0]->uuid());
+    ASSERT_NE(uuid, followers[1]->uuid());
   }
 }
 
@@ -895,7 +895,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
@@ -970,10 +970,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[1]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[0]->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, followers[1]->uuid());
+    ASSERT_NE(uuid, followers[0]->uuid());
   }
 }
 
@@ -1001,7 +1001,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
@@ -1074,10 +1074,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[0]->uuid());
-    ASSERT_NE(replica.ts_info().permanent_uuid(), followers[1]->uuid());
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    ASSERT_NE(uuid, followers[0]->uuid());
+    ASSERT_NE(uuid, followers[1]->uuid());
   }
 }
 
@@ -1112,7 +1112,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
 
   // Get a baseline config reported to the master.
   LOG(INFO) << "Waiting for Master to see the current replicas...";
-  master::TabletLocationsPB tablet_locations;
+  master::GetTabletLocationsResponsePB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
@@ -1182,11 +1182,11 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
-  for (const master::TabletLocationsPB_ReplicaPB& replica :
-      tablet_locations.replicas()) {
+  for (const auto& replica : tablet_locations.tablet_locations(0).interned_replicas()) {
     // Verify that old followers aren't part of new config.
     for (const auto& old_follower : followers) {
-      ASSERT_NE(replica.ts_info().permanent_uuid(), old_follower->uuid());
+      const auto& uuid = tablet_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+      ASSERT_NE(uuid, old_follower->uuid());
     }
   }
 }

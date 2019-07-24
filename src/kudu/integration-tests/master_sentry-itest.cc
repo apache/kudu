@@ -78,11 +78,11 @@ using kudu::master::AlterRoleGrantPrivilege;
 using kudu::master::CreateRoleAndAddToGroups;
 using kudu::master::GetDatabasePrivilege;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::GetTabletLocationsResponsePB;
 using kudu::master::GetTablePrivilege;
 using kudu::master::MasterServiceProxy;
 using kudu::master::ResetAuthzCacheRequestPB;
 using kudu::master::ResetAuthzCacheResponsePB;
-using kudu::master::TabletLocationsPB;
 using kudu::master::VOTER_REPLICA;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
@@ -260,7 +260,7 @@ class SentryITestBase : public HmsITestBase {
     user_credentials.set_real_user(kTestUser);
     proxy->set_user_credentials(user_credentials);
 
-    TabletLocationsPB tablet_locations;
+    GetTabletLocationsResponsePB tablet_locations;
     return itest::GetTabletLocations(proxy, tablet_id, kTimeout,
                                      VOTER_REPLICA, &tablet_locations);
   }

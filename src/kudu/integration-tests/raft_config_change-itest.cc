@@ -127,8 +127,8 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
                               kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
-  ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
-  string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
+  ASSERT_EQ(3, table_locations.tablet_locations(0).interned_replicas_size()); // 3 replicas.
+  string tablet_id = table_locations.tablet_locations(0).tablet_id();
 
   // Wait for all 3 replicas to converge before we start the test.
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
@@ -192,13 +192,14 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
                               kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
-  ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
-  string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
+  ASSERT_EQ(3, table_locations.tablet_locations(0).interned_replicas_size()); // 3 replicas.
+  string tablet_id = table_locations.tablet_locations(0).tablet_id();
 
   // Find the TS that does not have a replica.
   unordered_set<string> initial_replicas;
-  for (const auto& replica : table_locations.tablet_locations().begin()->replicas()) {
-    initial_replicas.insert(replica.ts_info().permanent_uuid());
+  for (const auto& replica : table_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = table_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    initial_replicas.insert(uuid);
   }
   TServerDetails* new_replica = nullptr;
   for (const auto& entry : ts_map_) {
@@ -250,12 +251,12 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
                               kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
-  ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations().begin()->replicas_size());
-  string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
+  ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations(0).interned_replicas_size());
+  string tablet_id = table_locations.tablet_locations(0).tablet_id();
   unordered_set<int> replica_indexes;
-  for (int i = 0; i < table_locations.tablet_locations().begin()->replicas_size(); i++) {
-    const auto& replica = table_locations.tablet_locations().begin()->replicas(i);
-    int idx = cluster_->tablet_server_index_by_uuid(replica.ts_info().permanent_uuid());
+  for (const auto& replica : table_locations.tablet_locations(0).interned_replicas()) {
+    const auto& uuid = table_locations.ts_infos(replica.ts_info_idx()).permanent_uuid();
+    int idx = cluster_->tablet_server_index_by_uuid(uuid);
     replica_indexes.emplace(idx);
     ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(idx)->uuid()],
                                             tablet_id, kTimeout));

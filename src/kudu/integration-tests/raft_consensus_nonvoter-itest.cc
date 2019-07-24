@@ -97,6 +97,7 @@ using kudu::itest::WaitForNumTabletsOnTS;
 using kudu::itest::WaitForReplicasReportedToMaster;
 using kudu::master::ANY_REPLICA;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::GetTabletLocationsResponsePB;
 using kudu::master::TabletLocationsPB;
 using kudu::master::VOTER_REPLICA;
 using kudu::tablet::TABLET_DATA_COPYING;
@@ -265,7 +266,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
     *num_leaders = 0;
     *num_followers = 0;
     *num_learners = 0;
-    for (const auto& r : tablet_locations.replicas()) {
+    for (const auto& r : tablet_locations.interned_replicas()) {
       *num_leaders += (r.role() == RaftPeerPB::LEADER) ? 1 : 0;
       *num_followers += (r.role() == RaftPeerPB::FOLLOWER) ? 1 : 0;
       *num_learners += (r.role() == RaftPeerPB::LEARNER) ? 1 : 0;
@@ -282,7 +283,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);
     ASSERT_EQ(tablet_id_, locations.tablet_id());
-    ASSERT_EQ(kOriginalReplicasNum, locations.replicas_size());
+    ASSERT_EQ(kOriginalReplicasNum, locations.interned_replicas_size());
     int num_leaders = 0, num_followers = 0, num_learners = 0;
     count_roles(locations, &num_leaders, &num_followers, &num_learners);
     ASSERT_EQ(kOriginalReplicasNum, num_leaders + num_followers);
@@ -296,7 +297,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);
     ASSERT_EQ(tablet_id_, locations.tablet_id());
-    ASSERT_EQ(kOriginalReplicasNum + 1, locations.replicas_size());
+    ASSERT_EQ(kOriginalReplicasNum + 1, locations.interned_replicas_size());
     int num_leaders = 0, num_followers = 0, num_learners = 0;
     count_roles(locations, &num_leaders, &num_followers, &num_learners);
     ASSERT_EQ(kOriginalReplicasNum, num_leaders + num_followers);
@@ -306,22 +307,24 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   // Verify that replica type filter yields appropriate results for
   // GetTabletLocations() RPC.
   {
-    TabletLocationsPB tablet_locations;
+    GetTabletLocationsResponsePB tablet_locations;
     ASSERT_OK(GetTabletLocations(cluster_->master_proxy(), tablet_id_,
                                  kTimeout, VOTER_REPLICA, &tablet_locations));
-    ASSERT_EQ(kOriginalReplicasNum, tablet_locations.replicas_size());
+    ASSERT_EQ(kOriginalReplicasNum,
+              tablet_locations.tablet_locations(0).interned_replicas_size());
     int num_leaders = 0, num_followers = 0, num_learners = 0;
-    count_roles(tablet_locations, &num_leaders, &num_followers, &num_learners);
+    count_roles(tablet_locations.tablet_locations(0), &num_leaders, &num_followers, &num_learners);
     ASSERT_EQ(kOriginalReplicasNum, num_leaders + num_followers);
     ASSERT_EQ(0, num_learners);
   }
   {
-    TabletLocationsPB tablet_locations;
+    GetTabletLocationsResponsePB tablet_locations;
     ASSERT_OK(GetTabletLocations(cluster_->master_proxy(), tablet_id_,
                                  kTimeout, ANY_REPLICA, &tablet_locations));
-    ASSERT_EQ(kOriginalReplicasNum + 1, tablet_locations.replicas_size());
+    ASSERT_EQ(kOriginalReplicasNum + 1,
+              tablet_locations.tablet_locations(0).interned_replicas_size());
     int num_leaders = 0, num_followers = 0, num_learners = 0;
-    count_roles(tablet_locations, &num_leaders, &num_followers, &num_learners);
+    count_roles(tablet_locations.tablet_locations(0), &num_leaders, &num_followers, &num_learners);
     ASSERT_EQ(kOriginalReplicasNum, num_leaders + num_followers);
     ASSERT_EQ(1, num_learners);
   }
@@ -527,7 +530,7 @@ TEST_F(RaftConsensusNonVoterITest, AddNonVoterReplica) {
   // The master should report about the newly added NON_VOTER tablet replica
   // to the established leader.
   bool has_leader;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(
       cluster_->master_proxy(), kOriginalReplicasNum + 1, tablet_id, kTimeout,
       WAIT_FOR_LEADER, ANY_REPLICA, &has_leader, &tablet_locations));
@@ -660,7 +663,7 @@ TEST_F(RaftConsensusNonVoterITest, AddThenRemoveNonVoterReplica) {
   // should report appropriate replica count at this point. The tablet leader
   // should be established.
   bool has_leader;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(
       cluster_->master_proxy(), kOriginalReplicasNum, tablet_id, kTimeout,
       WAIT_FOR_LEADER, ANY_REPLICA, &has_leader, &tablet_locations));
@@ -987,7 +990,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
     // The removed tablet replica should be gone, and the master should report
     // appropriate replica count at this point.
     bool has_leader;
-    TabletLocationsPB tablet_locations;
+    GetTabletLocationsResponsePB tablet_locations;
     ASSERT_OK(WaitForReplicasReportedToMaster(
         cluster_->master_proxy(), kInitialReplicasNum, tablet_id, kTimeout,
         WAIT_FOR_LEADER, ANY_REPLICA, &has_leader, &tablet_locations));
@@ -1192,7 +1195,7 @@ TEST_F(RaftConsensusNonVoterITest, CatalogManagerEvictsExcessNonVoter) {
   ASSERT_OK(AddReplica(tablet_id_, new_replica, RaftPeerPB::NON_VOTER, kTimeout));
 
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   // Make sure the extra replica is seen by the master.
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum + 1,
@@ -1281,7 +1284,7 @@ TEST_F(RaftConsensusNonVoterITest, CatalogManagerAddsNonVoter) {
   // Wait for a new non-voter replica added by the catalog manager to
   // replace the failed one.
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum + 1,
                                             tablet_id_,
@@ -1362,7 +1365,7 @@ TEST_F(RaftConsensusNonVoterITest, TabletServerIsGoneAndBack) {
   // catalog manager should spot that and add a new non-voter replica as a
   // replacement.
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum + 1,
                                             tablet_id_,
@@ -1491,7 +1494,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
   // manager evicts the failed replica right away since it failed in an
   // unrecoverable way.
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum - 1,
                                             tablet_id_,
@@ -1548,7 +1551,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
   // state.
   ASSERT_EVENTUALLY([&] {
     bool has_leader = false;
-    TabletLocationsPB tablet_locations;
+    GetTabletLocationsResponsePB tablet_locations;
     ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                               kReplicasNum,
                                               tablet_id_,
@@ -1653,7 +1656,7 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
   ts_with_replica->Shutdown();
 
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum + 1,
                                             tablet_id_,
@@ -1664,11 +1667,11 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
                                             &tablet_locations));
   // Find the location of the new non-voter replica.
   string new_replica_uuid;
-  for (const auto& r : tablet_locations.replicas()) {
+  for (const auto& r : tablet_locations.tablet_locations(0).interned_replicas()) {
     if (r.role() != RaftPeerPB::LEARNER) {
       continue;
     }
-    new_replica_uuid = r.ts_info().permanent_uuid();
+    new_replica_uuid = tablet_locations.ts_infos(r.ts_info_idx()).permanent_uuid();
     break;
   }
   ASSERT_FALSE(new_replica_uuid.empty());
@@ -2011,7 +2014,7 @@ TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
   // The catalog manager should evict the replicas which fell behing the WAL
   // segment GC threshold right away.
   bool has_leader = false;
-  TabletLocationsPB tablet_locations;
+  GetTabletLocationsResponsePB tablet_locations;
   const auto num_replicas = (tserver_behavior == BehindWalGcBehavior::SHUTDOWN)
       ? kReplicasNum : kReplicasNum - 1;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),

@@ -247,11 +247,35 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     EXPECT_EQ("aa", resp.tablet_locations(1).partition().partition_key_start());
     EXPECT_EQ("ab", resp.tablet_locations(2).partition().partition_key_start());
 
+    auto get_tablet_location = [](MasterServiceProxy* proxy, const string& tablet_id) {
+      rpc::RpcController rpc_old;
+      GetTabletLocationsRequestPB req_old;
+      GetTabletLocationsResponsePB resp_old;
+      *req_old.add_tablet_ids() = tablet_id;
+      ASSERT_OK(proxy->GetTabletLocations(req_old, &resp_old, &rpc_old));
+      const auto& loc_old = resp_old.tablet_locations(0);
+      ASSERT_GT(loc_old.deprecated_replicas_size(), 0);
+      ASSERT_EQ(0, loc_old.interned_replicas_size());
+
+      rpc::RpcController rpc_new;
+      GetTabletLocationsRequestPB req_new;
+      GetTabletLocationsResponsePB resp_new;
+      *req_new.add_tablet_ids() = tablet_id;
+      req_new.set_intern_ts_infos_in_response(true);
+      ASSERT_OK(proxy->GetTabletLocations(req_new, &resp_new, &rpc_new));
+      const auto& loc_new = resp_new.tablet_locations(0);
+      ASSERT_GT(loc_new.interned_replicas_size(), 0);
+      ASSERT_EQ(0, loc_new.deprecated_replicas_size());
+
+      ASSERT_EQ(loc_old.tablet_id(), loc_new.tablet_id());
+    };
+
     // Check that a UUID was returned for every replica
     for (const auto& loc : resp.tablet_locations()) {
-      ASSERT_GT(loc.replicas_size(), 0);
+      NO_FATALS(get_tablet_location(proxy_.get(), loc.tablet_id()));
+      ASSERT_GT(loc.deprecated_replicas_size(), 0);
       ASSERT_EQ(0, loc.interned_replicas_size());
-      for (const auto& replica : loc.replicas()) {
+      for (const auto& replica : loc.deprecated_replicas()) {
         ASSERT_NE("", replica.ts_info().permanent_uuid());
       }
     }
@@ -275,7 +299,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     EXPECT_EQ("ab", resp.tablet_locations(2).partition().partition_key_start());
     // Check that a UUID was returned for every replica
     for (const auto& loc : resp.tablet_locations()) {
-      ASSERT_EQ(loc.replicas_size(), 0);
+      ASSERT_EQ(loc.deprecated_replicas_size(), 0);
       ASSERT_GT(loc.interned_replicas_size(), 0);
       for (const auto& replica : loc.interned_replicas()) {
         int idx = replica.ts_info_idx();
@@ -324,14 +348,16 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     RpcController controller;
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
+    req.set_intern_ts_infos_in_response(true);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(1, resp.tablet_locations().size());
-    ASSERT_EQ(3, resp.tablet_locations(0).replicas_size());
-    for (int i = 0; i < 3; i++) {
-      EXPECT_EQ("", resp.tablet_locations(0).replicas(i).ts_info().location());
+    ASSERT_EQ(3, resp.tablet_locations(0).interned_replicas_size());
+    const auto& loc = resp.tablet_locations(0);
+    for (const auto& replica : loc.interned_replicas()) {
+      EXPECT_EQ("", resp.ts_infos(replica.ts_info_idx()).location());
     }
   }
 }
@@ -348,14 +374,16 @@ TEST_F(TableLocationsWithTSLocationTest, TestGetTSLocation) {
     GetTableLocationsResponsePB resp;
     RpcController controller;
     req.mutable_table()->set_table_name(table_name);
+    req.set_intern_ts_infos_in_response(true);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(1, resp.tablet_locations().size());
-    ASSERT_EQ(3, resp.tablet_locations(0).replicas_size());
-    for (int i = 0; i < 3; i++) {
-      ASSERT_EQ("/foo", resp.tablet_locations(0).replicas(i).ts_info().location());
+    ASSERT_EQ(3, resp.tablet_locations(0).interned_replicas_size());
+    const auto& loc = resp.tablet_locations(0);
+    for (const auto& replica : loc.interned_replicas()) {
+      ASSERT_EQ("/foo", resp.ts_infos(replica.ts_info_idx()).location());
     }
   }
 }

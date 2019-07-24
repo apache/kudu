@@ -35,6 +35,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
@@ -71,8 +72,6 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
-using master::TabletLocationsPB_InternedReplicaPB;
-using master::TabletLocationsPB_ReplicaPB;
 using master::TSInfoPB;
 using rpc::BackoffType;
 using rpc::CredentialsPolicy;
@@ -190,32 +189,30 @@ Status RemoteTablet::Refresh(
     const TabletLocationsPB& locs_pb,
     const google::protobuf::RepeatedPtrField<TSInfoPB>& ts_info_dict) {
 
-  vector<std::pair<string, consensus::RaftPeerPB::Role>> uuid_and_role;
+  vector<RemoteReplica> replicas;
 
-  for (const TabletLocationsPB_ReplicaPB& r : locs_pb.replicas()) {
-    uuid_and_role.emplace_back(r.ts_info().permanent_uuid(), r.role());
+  // Handle "old-style" non-interned replicas. It's used for backward compatibility.
+  for (const auto& r : locs_pb.deprecated_replicas()) {
+    RemoteReplica replica = { FindOrDie(tservers, r.ts_info().permanent_uuid()),
+                              r.role(), /*failed=*/false };
+    replicas.push_back(replica);
   }
-  for (const TabletLocationsPB_InternedReplicaPB& r : locs_pb.interned_replicas()) {
+  // Handle interned replicas.
+  for (const auto& r : locs_pb.interned_replicas()) {
     if (r.ts_info_idx() >= ts_info_dict.size()) {
       return Status::Corruption(Substitute(
           "invalid response from master: referenced tablet idx $0 but only $1 present",
           r.ts_info_idx(), ts_info_dict.size()));
     }
     const TSInfoPB& ts_info = ts_info_dict.Get(r.ts_info_idx());
-    uuid_and_role.emplace_back(ts_info.permanent_uuid(), r.role());
+    RemoteReplica replica = { FindOrDie(tservers, ts_info.permanent_uuid()),
+                              r.role(), /*failed=*/false };
+    replicas.push_back(replica);
   }
 
   // Adopt the data from the successful response.
   std::lock_guard<simple_spinlock> l(lock_);
-  replicas_.clear();
-
-  for (const auto& p : uuid_and_role) {
-    RemoteReplica rep;
-    rep.ts = FindOrDie(tservers, p.first);
-    rep.role = p.second;
-    rep.failed = false;
-    replicas_.emplace_back(rep);
-  }
+  replicas_ = std::move(replicas);
 
   stale_ = false;
   return Status::OK();
@@ -801,12 +798,13 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
     InsertOrDie(&tablets_by_key, "", entry);
   } else {
     // First, update the tserver cache, needed for the Refresh calls below.
+    // It's used for backward compatibility.
     for (const TabletLocationsPB& tablet : tablet_locations) {
-      for (const TabletLocationsPB_ReplicaPB& replicas : tablet.replicas()) {
+      for (const auto& replicas : tablet.deprecated_replicas()) {
         UpdateTabletServer(replicas.ts_info());
       }
     }
-    // In the case of "interned" replicas, the above 'replicas' lists will be empty
+    // In the case of "interned" replicas, the above 'deprecated_replicas' lists will be empty
     // and instead we'll need to update from the top-level list of tservers.
     const auto& ts_infos = rpc.resp().ts_infos();
     for (const TSInfoPB& ts_info : ts_infos) {

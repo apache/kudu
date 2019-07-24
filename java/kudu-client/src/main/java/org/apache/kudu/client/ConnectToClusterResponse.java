@@ -24,7 +24,7 @@ import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.master.Master.TSInfoPB;
 import org.apache.kudu.master.Master.TabletLocationsPB;
-import org.apache.kudu.master.Master.TabletLocationsPB.ReplicaPB;
+import org.apache.kudu.master.Master.TabletLocationsPB.InternedReplicaPB;
 
 /**
  * The aggregated response after connecting to a cluster. This stores the
@@ -67,10 +67,12 @@ class ConnectToClusterResponse {
                 .setPartitionKeyStart(ByteString.EMPTY)
                 .setPartitionKeyEnd(ByteString.EMPTY))
             .setTabletId(FAKE_TABLET_ID)
-            .addReplicas(ReplicaPB.newBuilder()
-                .setTsInfo(TSInfoPB.newBuilder()
-                    .addRpcAddresses(ProtobufHelper.hostAndPortToPB(leaderHostAndPort))
-                    .setPermanentUuid(ByteString.copyFromUtf8(fakeUuid)))
-                .setRole(connectResponse.getRole()))).build();
+            .addInternedReplicas(InternedReplicaPB.newBuilder()
+                .setTsInfoIdx(0)
+                .setRole(connectResponse.getRole())))
+        .addTsInfos(TSInfoPB.newBuilder()
+            .addRpcAddresses(ProtobufHelper.hostAndPortToPB(leaderHostAndPort))
+            .setPermanentUuid(ByteString.copyFromUtf8(fakeUuid)))
+        .build();
   }
 }
