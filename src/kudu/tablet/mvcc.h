@@ -182,9 +182,6 @@ class MvccSnapshot {
 //
 // NOTE: we do not support "rollback" of in-memory edits. Thus, once we call
 // StartApplyingTransaction(), the transaction _must_ commit.
-//
-// See: docs/design_docs/repeatable-reads.md for more information on some of the concepts in
-// this class like "clean" and "safe" time.
 class MvccManager {
  public:
   MvccManager();

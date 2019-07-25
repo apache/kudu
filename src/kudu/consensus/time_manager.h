@@ -61,8 +61,6 @@ class ReplicateMsg;
 // is responsible for broadcasting safe time from a leader (and will eventually be responsible
 // for calculating that leader's lease).
 //
-// See: docs/design-docs/repeatable-reads.md
-//
 // NOTE: Until leader leases are implemented the cluster's safe time can occasionally move back.
 //       This does not mean, however, that the timestamp returned by GetSafeTime() can move back.
 //       GetSafeTime will still return monotonically increasing timestamps, it's just
