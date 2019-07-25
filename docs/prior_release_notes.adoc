@@ -1086,7 +1086,7 @@ Apache Kudu 1.7.1 is a bug-fix release which fixes critical issues in Kudu 1.7.0
   matches the client who exported the security credentials. For example, this is
   useful to let the Spark executors know which username to use if the Spark
   driver has no authentication token. This change only affects clusters with
-  encryption disabled using `--rpc-encryption=disabled`.
+  encryption disabled using `--rpc_encryption=disabled`.
   (see link:https://issues.apache.org/jira/browse/KUDU-2259[KUDU-2259]).
 
 [[rn_1.7.0_wire_compatibility]]

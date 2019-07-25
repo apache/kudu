@@ -128,7 +128,7 @@ exist, the reader can optionally validate them against the read data.
 Block data is encoded before being stored. If compression is enabled, then the
 block is encoded first, and then compressed.
 
-Data blocks are best-effort size limited to `--cfile-default-block-size` bytes, at
+Data blocks are best-effort size limited to `--cfile_default_block_size` bytes, at
 which point a new block will be added to the CFile.
 
 ### Plain Encoding
