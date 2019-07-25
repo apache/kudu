@@ -57,6 +57,7 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
@@ -521,8 +522,17 @@ Status RemoteKsckCluster::RetrieveTablesList() {
   vector<shared_ptr<KsckTable>> tables;
   tables.reserve(table_names.size());
   simple_spinlock tables_lock;
+  int tables_count = 0;
+  filtered_tables_count_ = 0;
+  filtered_tablets_count_ = 0;
 
   for (const auto& table_name : table_names) {
+    if (!MatchesAnyPattern(table_filters_, table_name)) {
+      filtered_tables_count_++;
+      VLOG(1) << "Skipping table " << table_name;
+      continue;
+    }
+    tables_count++;
     RETURN_NOT_OK(pool_->SubmitFunc([&]() {
       client::sp::shared_ptr<KuduTable> t;
       Status s = client_->OpenTable(table_name, &t);
@@ -545,10 +555,10 @@ Status RemoteKsckCluster::RetrieveTablesList() {
 
   tables_.swap(tables);
 
-  if (tables_.size() < table_names.size()) {
+  if (tables_.size() < tables_count) {
     return Status::NetworkError(
-        Substitute("failed to gather info from all tables: $0 of $1 had errors",
-                   table_names.size() - tables_.size(), table_names.size()));
+        Substitute("failed to gather info from all filtered tables: $0 of $1 had errors",
+                   tables_count - tables_.size(), tables_count));
   }
 
   return Status::OK();
@@ -580,6 +590,11 @@ Status RemoteKsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table
 
   vector<shared_ptr<KsckTablet>> tablets;
   for (const auto* t : tokens) {
+    if (!MatchesAnyPattern(tablet_id_filters_, t->tablet().id())) {
+      filtered_tablets_count_++;
+      VLOG(1) << "Skipping tablet " << t->tablet().id();
+      continue;
+    }
     shared_ptr<KsckTablet> tablet(
         new KsckTablet(table.get(), t->tablet().id()));
     vector<shared_ptr<KsckTabletReplica>> replicas;

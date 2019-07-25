@@ -449,12 +449,47 @@ class KsckCluster {
     return nullptr;
   }
 
+  // Setters for filtering the tables/tablets to be checked.
+  // Equivalent to the same functions in class 'Ksck'.
+  void set_table_filters(std::vector<std::string> table_names) {
+    table_filters_ = std::move(table_names);
+  }
+
+  // See above.
+  void set_tablet_id_filters(std::vector<std::string> tablet_ids) {
+    tablet_id_filters_ = std::move(tablet_ids);
+  }
+
+  const std::vector<std::string>& table_filters() const {
+    return table_filters_;
+  }
+
+  const std::vector<std::string>& tablet_id_filters() const {
+    return tablet_id_filters_;
+  }
+
+  int filtered_tables_count() const {
+    return filtered_tables_count_;
+  }
+
+  int filtered_tablets_count() const {
+    return filtered_tablets_count_;
+  }
+
  protected:
-  KsckCluster() = default;
+  KsckCluster() : filtered_tables_count_(0), filtered_tablets_count_(0) {}
   MasterList masters_;
   TSMap tablet_servers_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
   gscoped_ptr<ThreadPool> pool_;
+
+  std::vector<std::string> table_filters_;
+  std::vector<std::string> tablet_id_filters_;
+
+  // The count of tables/tablets filtered out.
+  // Used to determine whether all tables/tablets have been filtered out.
+  std::atomic<int> filtered_tables_count_;
+  std::atomic<int> filtered_tablets_count_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);

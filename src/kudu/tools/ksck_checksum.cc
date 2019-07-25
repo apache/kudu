@@ -40,7 +40,6 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/periodic.h"
 #include "kudu/tools/ksck.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -478,12 +477,10 @@ Status KsckChecksummer::BuildTabletInfoMap(
   int num_replicas_tmp = 0;
   for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
     VLOG(1) << "Table: " << table->name();
-    if (!MatchesAnyPattern(opts.table_filters, table->name())) continue;
     num_tables += 1;
     num_tablets += table->tablets().size();
     for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
       VLOG(1) << "Tablet: " << tablet->id();
-      if (!MatchesAnyPattern(opts.tablet_id_filters, tablet->id())) continue;
       EmplaceOrDie(&tablet_infos_tmp,
                    tablet->id(),
                    TabletChecksumInfo(tablet, table->schema()));
@@ -491,7 +488,8 @@ Status KsckChecksummer::BuildTabletInfoMap(
     }
   }
 
-  if (num_tables == 0) {
+  if (cluster_->filtered_tables_count() > 0 && num_tables == 0) {
+    // Warn if all tables filtered out.
     string msg = "No table found.";
     if (!opts.table_filters.empty()) {
       msg += " Filter: table_filters=" + JoinStrings(opts.table_filters, ",");
@@ -499,9 +497,9 @@ Status KsckChecksummer::BuildTabletInfoMap(
     return Status::NotFound(msg);
   }
 
-  if (num_tablets > 0 && num_replicas_tmp == 0) {
-    // Warn if the table has tablets, but no replicas. The table may have no
-    // tablets if all range partitions have been dropped.
+  if (cluster_->filtered_tablets_count() > 0 && num_tablets == 0) {
+    // Warn if all tablets filtered out.
+    // The table may have no tablets if all range partitions have been dropped.
     string msg = "No tablet replicas found.";
     if (!opts.table_filters.empty() || !opts.tablet_id_filters.empty()) {
       msg += " Filter:";

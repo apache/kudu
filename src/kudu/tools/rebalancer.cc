@@ -949,8 +949,8 @@ Status Rebalancer::RefreshKsckResults() {
   RETURN_NOT_OK_PREPEND(
       RemoteKsckCluster::Build(config_.master_addresses, &cluster),
       "unable to build KsckCluster");
+  cluster->set_table_filters(config_.table_filters);
   ksck_.reset(new Ksck(cluster));
-  ksck_->set_table_filters(config_.table_filters);
   ignore_result(ksck_->Run());
   return Status::OK();
 }

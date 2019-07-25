@@ -616,8 +616,8 @@ Status DoKsckForTablet(const vector<string>& master_addresses,
   // Print to an unopened ofstream to discard ksck output.
   // See https://stackoverflow.com/questions/8243743.
   std::ofstream null_stream;
+  cluster->set_tablet_id_filters({ tablet_id });
   Ksck ksck(cluster, &null_stream);
-  ksck.set_tablet_id_filters({ tablet_id });
   RETURN_NOT_OK(ksck.CheckMasterHealth());
   RETURN_NOT_OK(ksck.CheckMasterConsensus());
   RETURN_NOT_OK(ksck.CheckClusterRunning());

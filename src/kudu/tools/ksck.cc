@@ -42,7 +42,6 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/color.h"
 #include "kudu/tools/ksck_checksum.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/string_case.h"
@@ -465,8 +464,8 @@ Status Ksck::Run() {
 
   if (FLAGS_checksum_scan) {
     // Copy the filters because they are passed by-value.
-    auto table_filters_for_checksum_opts = table_filters_;
-    auto tablet_id_filters_for_checksum_opts = tablet_id_filters_;
+    auto table_filters_for_checksum_opts = cluster_->table_filters();
+    auto tablet_id_filters_for_checksum_opts = cluster_->tablet_id_filters();
     PUSH_PREPEND_NOT_OK(
         ChecksumData(KsckChecksumOptions(std::move(table_filters_for_checksum_opts),
                                          std::move(tablet_id_filters_for_checksum_opts))),
@@ -565,10 +564,6 @@ Status Ksck::RunAndPrintResults() {
 Status Ksck::CheckTablesConsistency() {
   int bad_tables_count = 0;
   for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
-    if (!MatchesAnyPattern(table_filters_, table->name())) {
-      VLOG(1) << "Skipping table " << table->name();
-      continue;
-    }
     if (!VerifyTable(table)) {
       bad_tables_count++;
     }
@@ -593,14 +588,7 @@ Status Ksck::ChecksumData(const KsckChecksumOptions& opts) {
 }
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
-  const auto& all_tablets = table->tablets();
-  vector<shared_ptr<KsckTablet>> tablets;
-  std::copy_if(all_tablets.begin(), all_tablets.end(), std::back_inserter(tablets),
-                 [&](const shared_ptr<KsckTablet>& t) {
-                   return MatchesAnyPattern(tablet_id_filters_, t->id());
-                 });
-
-  if (tablets.empty()) {
+  if (table->tablets().empty()) {
     VLOG(1) << Substitute("Skipping table $0 as it has no matching tablets",
                           table->name());
     return true;
@@ -611,8 +599,8 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   ts.name = table->name();
   ts.replication_factor = table->num_replicas();
   VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
-                        tablets.size(), table->name(), table->num_replicas());
-  for (const auto& tablet : tablets) {
+                        table->tablets().size(), table->name(), table->num_replicas());
+  for (const auto& tablet : table->tablets()) {
     auto tablet_result = VerifyTablet(tablet, table->num_replicas());
     switch (tablet_result) {
       case KsckCheckResult::HEALTHY:

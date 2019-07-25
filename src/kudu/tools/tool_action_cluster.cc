@@ -178,10 +178,10 @@ Status RunKsck(const RunnerContext& context) {
   shared_ptr<KsckCluster> cluster;
   RETURN_NOT_OK_PREPEND(RemoteKsckCluster::Build(master_addresses, &cluster),
                         "unable to build KsckCluster");
+  cluster->set_table_filters(Split(FLAGS_tables, ",", strings::SkipEmpty()));
+  cluster->set_tablet_id_filters(Split(FLAGS_tablets, ",", strings::SkipEmpty()));
   shared_ptr<Ksck> ksck(new Ksck(cluster));
 
-  ksck->set_table_filters(Split(FLAGS_tables, ",", strings::SkipEmpty()));
-  ksck->set_tablet_id_filters(Split(FLAGS_tablets, ",", strings::SkipEmpty()));
   ksck->set_print_sections(Split(FLAGS_sections, ",", strings::SkipEmpty()));
 
   return ksck->RunAndPrintResults();
