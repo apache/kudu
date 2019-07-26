@@ -109,18 +109,24 @@ on the link:http://kudu.apache.org/releases/[releases page].
 spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
 ----
 
-Below is a minimal Spark SQL "select" example for a Kudu table created with
-Impala in the "default" database. We first import the kudu spark package,
+Below is a minimal Spark SQL "select" example. We first import the kudu spark package,
 then create a DataFrame, and then create a view from the DataFrame. After those
 steps, the table is accessible from Spark SQL.
+
+NOTE: There is also a Spark link:https://github.com/apache/kudu/tree/master/examples/quickstart/spark[quickstart]
+ guide and another link:https://github.com/apache/kudu/tree/master/examples/scala/spark-example[example]
+ available.
+
+NOTE: You can use the Kudu CLI tool to create table and generate data by
+ `kudu perf loadgen kudu.master:7051 -keep_auto_table` for the following two examples.
 
 [source,scala]
 ----
 import org.apache.kudu.spark.kudu._
 
 // Create a DataFrame that points to the Kudu table we want to query.
-val df = spark.read.options(Map("kudu.master" -> "master1.foo.com,master2.foo.com,master3.foo.com",
-                                "kudu.table" -> "default.my_table")).kudu
+val df = spark.read.options(Map("kudu.master" -> "kudu.master:7051",
+                                "kudu.table" -> "default.my_table")).format("kudu").load
 // Create a view from the DataFrame to make it accessible from Spark SQL.
 df.createOrReplaceTempView("my_table")
 // Now we can run Spark SQL queries against our view of the Kudu table.
@@ -132,6 +138,7 @@ Below is a more sophisticated example that includes both reads and writes:
 [source,scala]
 ----
 import org.apache.kudu.client._
+import org.apache.kudu.spark.kudu.KuduContext
 import collection.JavaConverters._
 
 // Read a table from Kudu
@@ -140,11 +147,11 @@ val df = spark.read
   .format("kudu").load
 
 // Query using the Spark API...
-df.select("id").filter("id >= 5").show()
+df.select("key").filter("key >= 5").show()
 
 // ...or register a temporary table and use SQL
 df.createOrReplaceTempView("kudu_table")
-val filteredDF = spark.sql("select id from kudu_table where id >= 5").show()
+val filteredDF = spark.sql("select key from kudu_table where key >= 5").show()
 
 // Use KuduContext to create, delete, or write to Kudu tables
 val kuduContext = new KuduContext("kudu.master:7051", spark.sparkContext)
@@ -157,18 +164,21 @@ kuduContext.createTable(
         .setNumReplicas(1)
         .addHashPartitions(List("key").asJava, 3))
 
+// Check for the existence of a Kudu table
+kuduContext.tableExists("test_table")
+
 // Insert data
 kuduContext.insertRows(df, "test_table")
 
 // Delete data
-kuduContext.deleteRows(filteredDF, "test_table")
+kuduContext.deleteRows(df, "test_table")
 
 // Upsert data
 kuduContext.upsertRows(df, "test_table")
 
 // Update data
-val alteredDF = df.select("id", $"count" + 1)
-kuduContext.updateRows(filteredRows, "test_table")
+val updateDF = df.select($"key", ($"int_val" + 1).as("int_val"))
+kuduContext.updateRows(updateDF, "test_table")
 
 // Data can also be inserted into the Kudu table using the data source, though the methods on
 // KuduContext are preferred
@@ -180,11 +190,8 @@ df.write
   .mode("append")
   .format("kudu").save
 
-// Check for the existence of a Kudu table
-kuduContext.tableExists("another_table")
-
 // Delete a Kudu table
-kuduContext.deleteTable("unwanted_table")
+kuduContext.deleteTable("test_table")
 ----
 
 === Upsert option in Kudu Spark
