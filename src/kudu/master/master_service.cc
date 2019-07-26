@@ -252,8 +252,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   ts_desc->UpdateHeartbeatTime();
   ts_desc->set_num_live_replicas(req->num_live_tablets());
   ts_desc->set_num_live_replicas_by_dimension(
-      std::move(TabletNumByDimensionMap(req->num_live_tablets_by_dimension().begin(),
-                                        req->num_live_tablets_by_dimension().end())));
+      TabletNumByDimensionMap(req->num_live_tablets_by_dimension().begin(),
+                              req->num_live_tablets_by_dimension().end()));
 
   // 5. Only leaders handle tablet reports.
   if (is_leader_master && req->has_tablet_report()) {

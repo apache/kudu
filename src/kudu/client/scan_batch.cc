@@ -27,7 +27,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/int128.h"
@@ -75,15 +74,6 @@ Slice KuduScanBatch::indirect_data() const {
 
 namespace {
 
-inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
-  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
-  *idx = schema.find_column(sp);
-  if (PREDICT_FALSE(*idx == -1)) {
-    return Status::NotFound("No such column", col_name);
-  }
-  return Status::OK();
-}
-
 // Just enough of a "cell" to support the Schema::DebugCellAppend calls
 // made by KuduScanBatch::RowPtr::ToString.
 class RowCell {
@@ -118,7 +108,7 @@ bool KuduScanBatch::RowPtr::IsNull(int col_idx) const {
 
 bool KuduScanBatch::RowPtr::IsNull(const Slice& col_name) const {
   int col_idx;
-  CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
+  CHECK_OK(schema_->FindColumn(col_name, &col_idx));
   return IsNull(col_idx);
 }
 
@@ -164,7 +154,7 @@ Status KuduScanBatch::RowPtr::GetDouble(const Slice& col_name, double* val) cons
 
 Status KuduScanBatch::RowPtr::GetUnscaledDecimal(const Slice& col_name, int128_t* val) const {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return GetUnscaledDecimal(col_idx, val);
 }
 
@@ -219,7 +209,7 @@ Status KuduScanBatch::RowPtr::GetBinary(int col_idx, Slice* val) const {
 template<typename T>
 Status KuduScanBatch::RowPtr::Get(const Slice& col_name, typename T::cpp_type* val) const {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return Get<T>(col_idx, val);
 }
 

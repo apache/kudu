@@ -343,6 +343,16 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   return Status::OK();
 }
 
+Status Schema::FindColumn(Slice col_name, int* idx) const {
+  DCHECK(idx);
+  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  *idx = find_column(sp);
+  if (PREDICT_FALSE(*idx == kColumnNotFound)) {
+    return Status::NotFound("No such column", col_name);
+  }
+  return Status::OK();
+}
+
 Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names,
                                        Schema* out) const {
   vector<ColumnId> ids;

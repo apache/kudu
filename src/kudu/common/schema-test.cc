@@ -657,6 +657,21 @@ TEST_F(TestSchema, TestCreateProjection) {
             partial_schema.ToString());
 }
 
+TEST_F(TestSchema, TestFindColumn) {
+  Schema schema({ ColumnSchema("col1", STRING),
+                  ColumnSchema("col2", INT32) },
+                1);
+
+  int col_idx;
+  ASSERT_OK(schema.FindColumn("col1", &col_idx));
+  ASSERT_EQ(0, col_idx);
+  ASSERT_OK(schema.FindColumn("col2", &col_idx));
+  ASSERT_EQ(1, col_idx);
+  Status s = schema.FindColumn("col3", &col_idx);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_EQ(s.ToString(), "Not found: No such column: col3");
+}
+
 #ifdef NDEBUG
 TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   faststring fs;

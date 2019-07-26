@@ -29,29 +29,20 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/logging.h"
+#ifndef NDEBUG
 #include "kudu/util/memory/overwrite.h"
+#endif
 #include "kudu/util/status.h"
 
 using std::string;
 using strings::Substitute;
 
 namespace kudu {
-namespace {
-inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
-  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
-  *idx = schema.find_column(sp);
-  if (PREDICT_FALSE(*idx == -1)) {
-    return Status::NotFound("No such column", col_name);
-  }
-  return Status::OK();
-}
-} // anonymous namespace
 
 KuduPartialRow::KuduPartialRow(const Schema* schema)
   : schema_(schema) {
@@ -118,7 +109,7 @@ Status KuduPartialRow::Set(const Slice& col_name,
                            const typename T::cpp_type& val,
                            bool owned) {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return Set<T>(col_idx, val, owned);
 }
 
@@ -274,7 +265,7 @@ Status KuduPartialRow::SetDouble(const Slice& col_name, double val) {
 }
 Status KuduPartialRow::SetUnscaledDecimal(const Slice& col_name, int128_t val) {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return SetUnscaledDecimal(col_idx, val);
 }
 Status KuduPartialRow::SetBool(int col_idx, bool val) {
@@ -398,7 +389,7 @@ Status KuduPartialRow::SetSliceCopy(int col_idx, const Slice& val) {
 
 Status KuduPartialRow::SetNull(const Slice& col_name) {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return SetNull(col_idx);
 }
 
@@ -420,7 +411,7 @@ Status KuduPartialRow::SetNull(int col_idx) {
 
 Status KuduPartialRow::Unset(const Slice& col_name) {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return Unset(col_idx);
 }
 
@@ -603,7 +594,7 @@ bool KuduPartialRow::IsColumnSet(int col_idx) const {
 
 bool KuduPartialRow::IsColumnSet(const Slice& col_name) const {
   int col_idx;
-  CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
+  CHECK_OK(schema_->FindColumn(col_name, &col_idx));
   return IsColumnSet(col_idx);
 }
 
@@ -621,7 +612,7 @@ bool KuduPartialRow::IsNull(int col_idx) const {
 
 bool KuduPartialRow::IsNull(const Slice& col_name) const {
   int col_idx;
-  CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
+  CHECK_OK(schema_->FindColumn(col_name, &col_idx));
   return IsNull(col_idx);
 }
 
@@ -656,7 +647,7 @@ Status KuduPartialRow::GetUnscaledDecimal(const Slice &col_name, int128_t *val) 
 }
 Status KuduPartialRow::GetUnscaledDecimal(const Slice &col_name, int128_t *val) const {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return GetUnscaledDecimal(col_idx, val);
 }
 Status KuduPartialRow::GetString(const Slice& col_name, Slice* val) const {
@@ -730,7 +721,7 @@ template<typename T>
 Status KuduPartialRow::Get(const Slice& col_name,
                            typename T::cpp_type* val) const {
   int col_idx;
-  RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
   return Get<T>(col_idx, val);
 }
 

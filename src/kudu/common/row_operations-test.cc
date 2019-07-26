@@ -36,8 +36,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -373,15 +371,6 @@ string TestProjection(RowOperationsPB::Type type,
   return ops[0].ToString(server_schema);
 }
 
-Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
-  StringPiece sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
-  *idx = schema.find_column(sp);
-  if (PREDICT_FALSE(*idx == -1)) {
-    return Status::NotFound("No such column", col_name);
-  }
-  return Status::OK();
-}
-
 } // anonymous namespace
 
 // Test decoding partial rows from a client who has a schema which matches
@@ -402,7 +391,7 @@ TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
   // Force to set null on key column.
   {
     int col_idx;
-    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    ASSERT_OK(client_schema.FindColumn("key", &col_idx));
     KuduPartialRow client_row(&client_schema);
     ContiguousRow row(&client_schema, client_row.row_data_);
     row.set_null(col_idx, true);
@@ -609,7 +598,7 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
   {
     KuduPartialRow client_row(&client_schema);
     int col_idx;
-    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    ASSERT_OK(client_schema.FindColumn("key", &col_idx));
     ContiguousRow row(&client_schema, client_row.row_data_);
     row.set_null(col_idx, true);
     BitmapSet(client_row.isset_bitmap_, col_idx);
@@ -623,7 +612,7 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
     KuduPartialRow client_row(&client_schema);
     ASSERT_OK(client_row.SetInt32("key", 12345));
     int col_idx;
-    ASSERT_OK(FindColumn(client_schema, "int_val", &col_idx));
+    ASSERT_OK(client_schema.FindColumn("int_val", &col_idx));
     ContiguousRow row(&client_schema, client_row.row_data_);
     row.set_null(col_idx, true);
     BitmapSet(client_row.isset_bitmap_, col_idx);
@@ -728,7 +717,7 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
   {
     KuduPartialRow client_row(&client_schema);
     int col_idx;
-    ASSERT_OK(FindColumn(client_schema, "key", &col_idx));
+    ASSERT_OK(client_schema.FindColumn("key", &col_idx));
     ContiguousRow row(&client_schema, client_row.row_data_);
     row.set_null(col_idx, true);
     BitmapSet(client_row.isset_bitmap_, col_idx);
@@ -743,7 +732,7 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
     ASSERT_OK(client_row.SetInt32("key", 12345));
     ASSERT_OK(client_row.SetInt32("key_2", 12345));
     int col_idx;
-    ASSERT_OK(FindColumn(client_schema, "int_val", &col_idx));
+    ASSERT_OK(client_schema.FindColumn("int_val", &col_idx));
     ContiguousRow row(&client_schema, client_row.row_data_);
     row.set_null(col_idx, true);
     BitmapSet(client_row.isset_bitmap_, col_idx);
