@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -36,6 +37,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -46,6 +48,9 @@
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using strings::Substitute;
+
+DECLARE_int32(max_cell_size_bytes);
 
 namespace kudu {
 
@@ -804,6 +809,166 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   CHECK_EQ(Slice("binary-value"), binary_val);
 
   CHECK(!row2->IsColumnSet("missing"));
+}
+
+namespace {
+void CheckExceedCellLimit(const Schema& client_schema,
+                          const vector<string>& col_values,
+                          RowOperationsPB::Type op_type,
+                          const Status& expect_status,
+                          const string& expect_msg) {
+  ASSERT_EQ(client_schema.num_columns(), col_values.size());
+
+  // Fill the row.
+  KuduPartialRow row(&client_schema);
+  for (size_t i = 0; i < client_schema.num_columns(); ++i) {
+    if (op_type == RowOperationsPB::DELETE && i >= client_schema.num_key_columns()) {
+      // DELETE should not have a value for non-key column.
+      break;
+    }
+    const ColumnSchema& column_schema = client_schema.column(i);
+    switch (column_schema.type_info()->type()) {
+      case STRING:
+        ASSERT_OK(row.SetStringNoCopy(static_cast<int>(i), col_values[i]));
+        break;
+      case BINARY:
+        ASSERT_OK(row.SetBinaryNoCopy(static_cast<int>(i), col_values[i]));
+        break;
+      default:
+        ASSERT_TRUE(false) << "Unsupported type: " << column_schema.ToString();
+    }
+  }
+
+  RowOperationsPB pb;
+  RowOperationsPBEncoder(&pb).Add(op_type, row);
+
+  Arena arena(1024*1024);
+  Schema schema = client_schema.CopyWithColumnIds();
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, &arena);
+  vector<DecodedRowOperation> ops;
+  Status s;
+  switch (op_type) {
+    case RowOperationsPB::INSERT:
+    case RowOperationsPB::UPDATE:
+    case RowOperationsPB::DELETE:
+    case RowOperationsPB::UPSERT:
+      s = decoder.DecodeOperations<WRITE_OPS>(&ops);
+      break;
+    case RowOperationsPB::SPLIT_ROW:
+    case RowOperationsPB::RANGE_LOWER_BOUND:
+    case RowOperationsPB::RANGE_UPPER_BOUND:
+    case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
+    case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
+      s = decoder.DecodeOperations<SPLIT_ROWS>(&ops);
+      break;
+    default:
+      ASSERT_TRUE(false) << "Unsupported op_type " << op_type;
+  }
+  ASSERT_OK(s);
+  for (const auto& op : ops) {
+    ASSERT_EQ(op.result.CodeAsString(), expect_status.CodeAsString());
+    ASSERT_STR_CONTAINS(op.result.ToString(), expect_msg);
+  }
+}
+
+void CheckInsertUpsertExceedCellLimit(const Schema& client_schema,
+                                      const vector<string>& col_values,
+                                      const Status& expect_status,
+                                      const string& expect_msg) {
+  for (auto op_type : { RowOperationsPB::INSERT,
+                        RowOperationsPB::UPSERT }) {
+    NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
+  }
+}
+
+void CheckUpdateDeleteExceedCellLimit(const Schema& client_schema,
+                                      const vector<string>& col_values,
+                                      const Status& expect_status,
+                                      const string& expect_msg) {
+  for (auto op_type : { RowOperationsPB::UPDATE,
+                        RowOperationsPB::DELETE }) {
+    NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
+  }
+}
+
+void CheckWriteExceedCellLimit(const Schema& client_schema,
+                               const vector<string>& col_values,
+                               const Status& expect_status,
+                               const string& expect_msg) {
+  NO_FATALS(CheckInsertUpsertExceedCellLimit(client_schema, col_values, expect_status, expect_msg));
+  NO_FATALS(CheckUpdateDeleteExceedCellLimit(client_schema, col_values, expect_status, expect_msg));
+}
+
+void CheckSplitExceedCellLimit(const Schema& client_schema,
+                               const vector<string>& col_values,
+                               const Status& expect_status,
+                               const string& expect_msg) {
+  for (auto op_type : { RowOperationsPB::SPLIT_ROW,
+                        RowOperationsPB::RANGE_LOWER_BOUND,
+                        RowOperationsPB::RANGE_UPPER_BOUND,
+                        RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND,
+                        RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND }) {
+    NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
+  }
+}
+} // anonymous namespace
+
+TEST_F(RowOperationsTest, ExceedCellLimit) {
+  Schema client_schema = Schema({ ColumnSchema("key_string", STRING),
+                                  ColumnSchema("key_binary", BINARY),
+                                  ColumnSchema("col_string", STRING),
+                                  ColumnSchema("col_binary", BINARY) },
+                                2);
+
+  const string long_string(static_cast<size_t>(FLAGS_max_cell_size_bytes), 'a');
+  const string too_long_string(static_cast<size_t>(FLAGS_max_cell_size_bytes + 1), 'a');
+  const vector<string> base_col_values(4, long_string);
+
+  // All column cell sizes are not exceed.
+  NO_FATALS(CheckWriteExceedCellLimit(client_schema, base_col_values, Status::OK(), ""));
+
+  // Some column cell size exceed for INSERT and UPSERT operation.
+  for (size_t i = 0; i < client_schema.num_columns(); ++i) {
+    auto col_values(base_col_values);
+    col_values[i] = too_long_string;
+    NO_FATALS(CheckInsertUpsertExceedCellLimit(client_schema,
+                                               col_values,
+                                               Status::InvalidArgument(""),
+                                               Substitute("value too large for column '$0'"
+                                                          " ($1 bytes, maximum is $2 bytes)",
+                                                          client_schema.column(i).name(),
+                                                          FLAGS_max_cell_size_bytes + 1,
+                                                          FLAGS_max_cell_size_bytes)));
+  }
+
+  // Key column cell size exceed for UPDATE and DELETE operation, it's OK.
+  for (size_t i = 0; i < client_schema.num_key_columns(); ++i) {
+    auto col_values(base_col_values);
+    col_values[i] = too_long_string;
+    NO_FATALS(CheckUpdateDeleteExceedCellLimit(client_schema, col_values, Status::OK(), ""));
+  }
+
+  // Non-key column cell size exceed for UPDATE operation.
+  for (size_t i = client_schema.num_key_columns(); i < client_schema.num_columns(); ++i) {
+    auto col_values(base_col_values);
+    col_values[i] = too_long_string;
+    NO_FATALS(CheckExceedCellLimit(client_schema,
+                                   col_values,
+                                   RowOperationsPB::UPDATE,
+                                   Status::InvalidArgument(""),
+                                   Substitute("value too large for column '$0'"
+                                              " ($1 bytes, maximum is $2 bytes)",
+                                              client_schema.column(i).name(),
+                                              FLAGS_max_cell_size_bytes + 1,
+                                              FLAGS_max_cell_size_bytes)));
+  }
+
+  // Some column cell size exceed for SPLIT_ROW type operation, it's OK.
+  for (size_t i = 0; i < client_schema.num_columns(); ++i) {
+    auto col_values(base_col_values);
+    col_values[i] = too_long_string;
+    NO_FATALS(CheckSplitExceedCellLimit(client_schema, col_values, Status::OK(), ""));
+  }
 }
 
 } // namespace kudu

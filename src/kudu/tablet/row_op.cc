@@ -37,8 +37,6 @@ RowOp::RowOp(DecodedRowOperation op)
     : decoded_op(std::move(op)) {
   if (!decoded_op.result.ok()) {
     SetFailed(decoded_op.result);
-    // This row has been validated as invalid in the prior phase.
-    validated = true;
   }
 }
 
@@ -64,7 +62,6 @@ std::string RowOp::ToString(const Schema& schema) const {
 }
 
 void RowOp::SetSkippedResult(const OperationResultPB& result) {
-  DCHECK(!this->result) << SecureDebugString(*this->result);
   DCHECK(result.skip_on_replay());
   this->result.reset(new OperationResultPB(result));
 }

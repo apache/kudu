@@ -1586,7 +1586,7 @@ Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
     // Actually apply it.
     ProbeStats stats; // we don't use this, but tablet internals require non-NULL.
     RETURN_NOT_OK(tablet_->ApplyRowOperation(io_context, tx_state, op, &stats));
-    DCHECK(op->result != nullptr);
+    DCHECK(op->has_result());
 
     // We expect that the above Apply() will always succeed, because we're
     // applying an operation that we know succeeded before the server

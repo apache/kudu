@@ -18,8 +18,6 @@
 #include "kudu/tablet/tablet.h"
 
 #include <algorithm>
-#include <cstdlib>
-#include <cstring>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -47,7 +45,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
@@ -141,12 +138,6 @@ DEFINE_int32(tablet_history_max_age_sec, 60 * 60 * 24 * 7,
              "rejected. To disable history removal, set to -1.");
 TAG_FLAG(tablet_history_max_age_sec, advanced);
 TAG_FLAG(tablet_history_max_age_sec, stable);
-
-DEFINE_int32(max_cell_size_bytes, 64 * 1024,
-             "The maximum size of any individual cell in a table. Attempting to store "
-             "string or binary columns with a size greater than this will result "
-             "in errors.");
-TAG_FLAG(max_cell_size_bytes, unsafe);
 
 // Large encoded keys cause problems because we store the min/max encoded key in the
 // CFile footer for the composite key column. The footer has a max length of 64K, so
@@ -426,7 +417,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                                      WriteTransactionState* tx_state) {
   TRACE_EVENT0("tablet", "Tablet::DecodeWriteOperations");
 
-  DCHECK_EQ(tx_state->row_ops().size(), 0);
+  DCHECK(tx_state->row_ops().empty());
 
   // Acquire the schema lock in shared mode, so that the schema doesn't
   // change while this transaction is in-flight.
@@ -484,6 +475,9 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
 Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
   ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
   op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
+  if (PREDICT_FALSE(!ValidateOpOrMarkFailed(op))) {
+    return Status::OK();
+  }
   RETURN_NOT_OK(CheckRowInTablet(row_key));
 
   op->row_lock = ScopedRowLock(&lock_manager_,
@@ -519,8 +513,12 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   tx_state->SetMvccTx(std::move(mvcc_tx));
 }
 
-bool Tablet::ValidateOpOrMarkFailed(RowOp* op) const {
-  if (op->validated) return true;
+bool Tablet::ValidateOpOrMarkFailed(RowOp* op) {
+  if (op->valid) return true;
+  if (PREDICT_FALSE(op->has_result())) {
+    DCHECK(op->result->has_failed_status());
+    return false;
+  }
 
   Status s = ValidateOp(*op);
   if (PREDICT_FALSE(!s.ok())) {
@@ -528,11 +526,11 @@ bool Tablet::ValidateOpOrMarkFailed(RowOp* op) const {
     op->SetFailed(s);
     return false;
   }
-  op->validated = true;
+  op->valid = true;
   return true;
 }
 
-Status Tablet::ValidateOp(const RowOp& op) const {
+Status Tablet::ValidateOp(const RowOp& op) {
   switch (op.decoded_op.type) {
     case RowOperationsPB::INSERT:
     case RowOperationsPB::UPSERT:
@@ -543,28 +541,12 @@ Status Tablet::ValidateOp(const RowOp& op) const {
       return ValidateMutateUnlocked(op);
 
     default:
-      LOG_WITH_PREFIX(FATAL) << RowOperationsPB::Type_Name(op.decoded_op.type);
+      LOG(FATAL) << RowOperationsPB::Type_Name(op.decoded_op.type);
   }
-  abort(); // unreachable
+  __builtin_unreachable();
 }
 
-Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) const {
-  // Check that no individual cell is larger than the specified max.
-  ConstContiguousRow row(schema(), op.decoded_op.row_data);
-  for (int i = 0; i < schema()->num_columns(); i++) {
-    if (!BitmapTest(op.decoded_op.isset_bitmap, i)) continue;
-    const auto& col = schema()->column(i);
-    if (col.type_info()->physical_type() != BINARY) continue;
-    const auto& cell = row.cell(i);
-    if (cell.is_nullable() && cell.is_null()) continue;
-    Slice s;
-    memcpy(&s, cell.ptr(), sizeof(s));
-    if (PREDICT_FALSE(s.size() > FLAGS_max_cell_size_bytes)) {
-      return Status::InvalidArgument(Substitute(
-          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
-          col.name(), s.size(), FLAGS_max_cell_size_bytes));
-    }
-  }
+Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) {
   // Check that the encoded key is not longer than the maximum.
   auto enc_key_size = op.key_probe->encoded_key_slice().size();
   if (PREDICT_FALSE(enc_key_size > FLAGS_max_encoded_key_size_bytes)) {
@@ -575,7 +557,7 @@ Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) const {
   return Status::OK();
 }
 
-Status Tablet::ValidateMutateUnlocked(const RowOp& op) const {
+Status Tablet::ValidateMutateUnlocked(const RowOp& op) {
   RowChangeListDecoder rcl_decoder(op.decoded_op.changelist);
   RETURN_NOT_OK(rcl_decoder.Init());
   if (rcl_decoder.is_reinsert()) {
@@ -591,21 +573,7 @@ Status Tablet::ValidateMutateUnlocked(const RowOp& op) const {
     return Status::OK();
   }
 
-  // For updates, just check the new cell values themselves, and not the row key,
-  // following the same logic.
-  while (rcl_decoder.HasNext()) {
-    RowChangeListDecoder::DecodedUpdate cell_update;
-    RETURN_NOT_OK(rcl_decoder.DecodeNext(&cell_update));
-    if (cell_update.null) continue;
-    Slice s = cell_update.raw_value;
-    if (PREDICT_FALSE(s.size() > FLAGS_max_cell_size_bytes)) {
-      const auto& col = schema()->column_by_id(cell_update.col_id);
-      return Status::InvalidArgument(Substitute(
-          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
-          col.name(), s.size(), FLAGS_max_cell_size_bytes));
-
-    }
-  }
+  DCHECK(rcl_decoder.is_update());
   return Status::OK();
 }
 
@@ -614,7 +582,7 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
                                       RowOp* op,
                                       ProbeStats* stats) {
   DCHECK(op->checked_present);
-  DCHECK(op->validated);
+  DCHECK(op->valid);
 
   const bool is_upsert = op->decoded_op.type == RowOperationsPB::UPSERT;
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
@@ -753,7 +721,7 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
                                  RowOp* mutate,
                                  ProbeStats* stats) {
   DCHECK(mutate->checked_present);
-  DCHECK(mutate->validated);
+  DCHECK(mutate->valid);
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
@@ -932,11 +900,6 @@ Status Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
 
   StartApplying(tx_state);
 
-  // Validate all of the ops.
-  for (RowOp* op : tx_state->row_ops()) {
-    ValidateOpOrMarkFailed(op);
-  }
-
   IOContext io_context({ tablet_id() });
   RETURN_NOT_OK(BulkCheckPresence(&io_context, tx_state));
 
@@ -944,7 +907,6 @@ Status Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
   for (int op_idx = 0; op_idx < num_ops; op_idx++) {
     RowOp* row_op = tx_state->row_ops()[op_idx];
     if (row_op->has_result()) continue;
-
     RETURN_NOT_OK(ApplyRowOperation(&io_context, tx_state, row_op,
                                     tx_state->mutable_op_stats(op_idx)));
     DCHECK(row_op->has_result());
@@ -960,6 +922,10 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
                                  WriteTransactionState* tx_state,
                                  RowOp* row_op,
                                  ProbeStats* stats) {
+  if (!ValidateOpOrMarkFailed(row_op)) {
+    return Status::OK();
+  }
+
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     RETURN_NOT_OK_PREPEND(CheckHasNotBeenStoppedUnlocked(),
@@ -970,10 +936,6 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
   DCHECK(tx_state != nullptr) << "must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
-
-  if (!ValidateOpOrMarkFailed(row_op)) {
-    return Status::OK();
-  }
 
   // If we were unable to check rowset presence in batch (e.g. because we are processing
   // a batch which contains some duplicate keys) we need to do so now.

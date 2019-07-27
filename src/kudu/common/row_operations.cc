@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -34,6 +35,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/safe_math.h"
@@ -42,6 +44,12 @@
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+DEFINE_int32(max_cell_size_bytes, 64 * 1024,
+             "The maximum size of any individual cell in a table. Attempting to store "
+             "string or binary columns with a size greater than this will result "
+             "in errors.");
+TAG_FLAG(max_cell_size_bytes, unsafe);
 
 namespace kudu {
 
@@ -202,7 +210,9 @@ Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* slice) {
+Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
+                                              Slice* slice,
+                                              Status* row_status) {
   size_t size = col.type_info()->size();
   if (PREDICT_FALSE(src_.size() < size)) {
     return Status::Corruption("Not enough data for column", col.ToString());
@@ -219,6 +229,15 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* sl
       return Status::Corruption("Bad indirect slice");
     }
 
+    // Check that no individual cell is larger than the specified max.
+    if (PREDICT_FALSE(row_status && ptr_slice->size() > FLAGS_max_cell_size_bytes)) {
+      *row_status = Status::InvalidArgument(Substitute(
+          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
+          col.name(), ptr_slice->size(), FLAGS_max_cell_size_bytes));
+      // After one row's column size has been found to exceed the limit and has been recorded
+      // in 'row_status', we will consider it OK and continue to consume data in order to properly
+      // validate subsequent columns and rows.
+    }
     *slice = Slice(&pb_->indirect_data()[offset_in_indirect], ptr_slice->size());
   } else {
     *slice = Slice(src_.data(), size);
@@ -227,9 +246,11 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* sl
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst) {
+Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col,
+                                          uint8_t* dst,
+                                          Status* row_status) {
   Slice slice;
-  RETURN_NOT_OK(GetColumnSlice(col, &slice));
+  RETURN_NOT_OK(GetColumnSlice(col, &slice, row_status));
   if (col.type_info()->physical_type() == BINARY) {
     memcpy(dst, &slice, col.type_info()->size());
   } else {
@@ -240,7 +261,7 @@ Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst)
 
 Status RowOperationsPBDecoder::ReadColumnAndDiscard(const ColumnSchema& col) {
   uint8_t scratch[kLargestTypeSize];
-  RETURN_NOT_OK(ReadColumn(col, scratch));
+  RETURN_NOT_OK(ReadColumn(col, scratch, nullptr));
   return Status::OK();
 }
 
@@ -373,6 +394,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
 
   // Now handle each of the columns passed by the user, replacing the defaults
   // from the prototype.
+  Status row_status;
   for (size_t client_col_idx = 0;
        client_col_idx < client_schema_->num_columns();
        client_col_idx++) {
@@ -395,7 +417,8 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
       }
       if (!client_set_to_null) {
         // Copy the value if it's not null.
-        RETURN_NOT_OK(ReadColumn(col, tablet_row.mutable_cell_ptr(tablet_col_idx)));
+        RETURN_NOT_OK(ReadColumn(col, tablet_row.mutable_cell_ptr(tablet_col_idx), &row_status));
+        if (PREDICT_FALSE(!row_status.ok())) op->SetFailureStatusOnce(row_status);
       } else if (PREDICT_FALSE(!col.is_nullable())) {
         op->SetFailureStatusOnce(Status::InvalidArgument(
             "NULL values not allowed for non-nullable column", col.ToString()));
@@ -467,7 +490,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
       continue;
     }
 
-    RETURN_NOT_OK(ReadColumn(col, rowkey.mutable_cell_ptr(tablet_col_idx)));
+    RETURN_NOT_OK(ReadColumn(col, rowkey.mutable_cell_ptr(tablet_col_idx), nullptr));
   }
   op->row_data = rowkey_storage;
 
@@ -475,6 +498,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   // For UPDATE, we expect at least one other column to be set, indicating the
   // update to perform.
   // For DELETE, we expect no other columns to be set (and we verify that).
+  Status row_status;
   if (op->type == RowOperationsPB::UPDATE) {
     faststring buf;
     RowChangeListEncoder rcl_encoder(&buf);
@@ -490,7 +514,8 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
         uint8_t scratch[kLargestTypeSize];
         uint8_t* val_to_add = nullptr;
         if (!client_set_to_null) {
-          RETURN_NOT_OK(ReadColumn(col, scratch));
+          RETURN_NOT_OK(ReadColumn(col, scratch, &row_status));
+          if (PREDICT_FALSE(!row_status.ok())) op->SetFailureStatusOnce(row_status);
           val_to_add = scratch;
         } else if (PREDICT_FALSE(!col.is_nullable())) {
           op->SetFailureStatusOnce(Status::InvalidArgument(
@@ -570,7 +595,7 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
     if (BitmapTest(client_isset_map, client_col_idx)) {
       // If the client provided a value for this column, copy it.
       Slice column_slice;
-      RETURN_NOT_OK(GetColumnSlice(col, &column_slice));
+      RETURN_NOT_OK(GetColumnSlice(col, &column_slice, nullptr));
       const uint8_t* data;
       if (col.type_info()->physical_type() == BINARY) {
         data = reinterpret_cast<const uint8_t*>(&column_slice);

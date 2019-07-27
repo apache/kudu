@@ -77,6 +77,7 @@ class Clock : public RefCountedThreadSafe<Clock> {
   // that HasPhysicalComponent() return true, otherwise it will crash.
   virtual MonoDelta GetPhysicalComponentDifference(Timestamp /*lhs*/, Timestamp /*rhs*/) const {
     LOG(FATAL) << "Clock's timestamps don't have a physical component.";
+    __builtin_unreachable();
   }
 
   // Update the clock with a transaction timestamp originating from

@@ -526,20 +526,17 @@ class Tablet {
   Status FlushUnlocked();
 
   // Validate the contents of 'op' and return a bad Status if it is invalid.
-  Status ValidateOp(const RowOp& op) const;
+  static Status ValidateOp(const RowOp& op);
 
   // Validate 'op' as in 'ValidateOp()' above. If it is invalid, marks the op as failed
-  // and returns false. If valid, marks the op as validated and returns true.
-  bool ValidateOpOrMarkFailed(RowOp* op) const;
+  // and returns false. If valid, marks the op as valid and returns true.
+  static bool ValidateOpOrMarkFailed(RowOp* op);
 
-  // Validate the given insert/upsert operation. In particular, checks that the size
-  // of any cells is not too large given the configured maximum on the server, and
-  // that the encoded key is not too large.
-  Status ValidateInsertOrUpsertUnlocked(const RowOp& op) const;
+  // Validate the given insert/upsert operation.
+  static Status ValidateInsertOrUpsertUnlocked(const RowOp& op);
 
-  // Validate the given update/delete operation. In particular, validates that no
-  // cell is being updated to an invalid (too large) value.
-  Status ValidateMutateUnlocked(const RowOp& op) const;
+  // Validate the given update/delete operation.
+  static Status ValidateMutateUnlocked(const RowOp& op);
 
   // Perform an INSERT or UPSERT operation, assuming that the transaction is already in
   // prepared state. This state ensures that:

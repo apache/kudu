@@ -83,8 +83,8 @@ struct RowOp {
   // phase.
   ScopedRowLock row_lock;
 
-  // Flag whether this op has already been validated.
-  bool validated = false;
+  // Flag whether this op has already been validated as valid.
+  bool valid = false;
 
   // Flag whether this op has already had 'present_in_rowset' filled in.
   // If false, 'present_in_rowset' must be nullptr. If true, and

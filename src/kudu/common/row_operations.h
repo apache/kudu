@@ -104,8 +104,14 @@ class RowOperationsPBDecoder {
   Status ReadOpType(RowOperationsPB::Type* type);
   Status ReadIssetBitmap(const uint8_t** bitmap);
   Status ReadNullBitmap(const uint8_t** null_bm);
-  Status GetColumnSlice(const ColumnSchema& col, Slice* slice);
-  Status ReadColumn(const ColumnSchema& col, uint8_t* dst);
+  // Read one row's column data from 'src_', read result is stored in 'slice'.
+  // Return bad Status if data is corrupt.
+  // NOTE: If 'row_status' is not nullptr, column data validate will be performed,
+  // and if column data validate error (i.e. column size exceed the limit), only
+  // set bad Status to 'row_status', and return Status::OK.
+  Status GetColumnSlice(const ColumnSchema& col, Slice* slice, Status* row_status);
+  // Same as above, but store result in 'dst'.
+  Status ReadColumn(const ColumnSchema& col, uint8_t* dst, Status* row_status);
   // Some column which is non-nullable has allocated a cell to row data in
   // RowOperationsPBEncoder::Add, even if its data is useless (i.e. set to
   // NULL), we have to consume data in order to properly validate subsequent
