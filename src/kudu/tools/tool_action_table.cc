@@ -26,9 +26,11 @@
 #include <utility>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
@@ -38,6 +40,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
@@ -61,6 +64,7 @@ using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
 using kudu::client::internal::ReplicaController;
 using std::cerr;
 using std::cout;
@@ -88,6 +92,12 @@ DEFINE_bool(modify_external_catalogs, true,
 DEFINE_string(config_names, "",
               "Comma-separated list of configurations to display. "
               "An empty value displays all configs.");
+DEFINE_string(lower_bound_type, "INCLUSIVE_BOUND",
+              "The type of the lower bound, either inclusive or exclusive. "
+              "Defaults to inclusive. This flag is case-insensitive.");
+DEFINE_string(upper_bound_type, "EXCLUSIVE_BOUND",
+              "The type of the upper bound, either inclusive or exclusive. "
+              "Defaults to exclusive. This flag is case-insensitive.");
 DECLARE_bool(show_values);
 DECLARE_string(tables);
 
@@ -147,6 +157,14 @@ const char* const kNewColumnNameArg = "new_column_name";
 const char* const kKeyArg = "primary_key";
 const char* const kConfigNameArg = "config_name";
 const char* const kConfigValueArg = "config_value";
+const char* const kErrorMsgArg = "unable to parse value $0 for column $1 of type $2";
+const char* const kTableRangeLowerBoundArg = "table_range_lower_bound";
+const char* const kTableRangeUpperBoundArg = "table_range_upper_bound";
+
+enum PartitionAction {
+    ADD,
+    DROP,
+};
 
 Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
@@ -464,6 +482,178 @@ Status GetExtraConfigs(const RunnerContext& context) {
   return data_table.PrintTo(cout);
 }
 
+Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
+                               const string& range_bound_str,
+                               KuduPartialRow* range_bound_partial_row) {
+  JsonReader reader(range_bound_str);
+  RETURN_NOT_OK(reader.Init());
+  vector<const rapidjson::Value *> values;
+  RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(),
+                                          /*field=*/nullptr,
+                                          &values));
+
+  // If range_bound_str is empty, an empty row will be used.
+  if (values.empty()) {
+    return Status::OK();
+  }
+  const Schema& schema = KuduSchema::ToSchema(table->schema());
+  const auto& partition_schema = table->partition_schema();
+  vector<int32_t> key_indexes;
+  RETURN_NOT_OK(partition_schema.GetRangeSchemaColumnIndexes(schema, &key_indexes));
+  if (values.size() != key_indexes.size()) {
+    return Status::InvalidArgument(
+        Substitute("wrong number of range columns specified: expected $0 but received $1",
+                   key_indexes.size(),
+                   values.size()));
+  }
+
+  for (int i = 0; i < values.size(); i++) {
+    const auto key_index = key_indexes[i];
+    const auto& column = table->schema().Column(key_index);
+    const auto& col_name = column.name();
+    const auto type = column.type();
+    const auto error_msg = Substitute(kErrorMsgArg, values[i], col_name,
+        KuduColumnSchema::DataTypeToString(type));
+    switch (type) {
+      case KuduColumnSchema::INT8: {
+        int64_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetInt8(col_name, static_cast<int8_t>(value));
+        break;
+      }
+      case KuduColumnSchema::INT16: {
+        int64_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetInt16(col_name, static_cast<int16_t>(value));
+        break;
+      }
+      case KuduColumnSchema::INT32: {
+        int32_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt32(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetInt32(col_name, value);
+        break;
+      }
+      case KuduColumnSchema::INT64: {
+        int64_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetInt64(col_name, value);
+        break;
+      }
+      case KuduColumnSchema::UNIXTIME_MICROS: {
+        int64_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetUnixTimeMicros(col_name, value);
+        break;
+      }
+      case KuduColumnSchema::BINARY: {
+        string value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractString(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetBinary(col_name, value);
+        break;
+      }
+      case KuduColumnSchema::STRING: {
+        string value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractString(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        range_bound_partial_row->SetString(col_name, value);
+        break;
+      }
+      case KuduColumnSchema::BOOL:
+      case KuduColumnSchema::FLOAT:
+      case KuduColumnSchema::DOUBLE:
+      case KuduColumnSchema::DECIMAL:
+      default:
+        return Status::NotSupported(
+            Substitute("unsupported type $0 for key column '$1': "
+                       "is this tool out of date?",
+                       KuduColumnSchema::DataTypeToString(type),
+                       col_name));
+    }
+  }
+  return Status::OK();
+}
+
+Status ModifyRangePartition(const RunnerContext& context, PartitionAction action) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& table_range_lower_bound = FindOrDie(context.required_args,
+                                                    kTableRangeLowerBoundArg);
+  const string& table_range_upper_bound = FindOrDie(context.required_args,
+                                                    kTableRangeUpperBoundArg);
+
+  const auto convert_bounds_type = [&] (const string& range_bound,
+                                        const string& flags_range_bound_type,
+                                        KuduTableCreator::RangePartitionBound* range_bound_type)
+      -> Status {
+    string inclusive_bound = boost::iequals(flags_range_bound_type, "INCLUSIVE_BOUND") ?
+        "INCLUSIVE_BOUND" : "";
+    string exclusive_bound = boost::iequals(flags_range_bound_type, "EXCLUSIVE_BOUND") ?
+        "EXCLUSIVE_BOUND" : "";
+
+    if (inclusive_bound.empty() && exclusive_bound.empty()) {
+      return Status::InvalidArgument(Substitute(
+          "wrong type of range $0 : only 'INCLUSIVE_BOUND' or "
+          "'EXCLUSIVE_BOUND' can be received", range_bound));
+
+    }
+    *range_bound_type = exclusive_bound.empty() ? KuduTableCreator::INCLUSIVE_BOUND :
+        KuduTableCreator::EXCLUSIVE_BOUND;
+
+    return Status::OK();
+  };
+
+  client::sp::shared_ptr<KuduClient> client;
+  client::sp::shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+  const auto& schema = table->schema();
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+
+  RETURN_NOT_OK(ConvertToKuduPartialRow(table, table_range_lower_bound, lower_bound.get()));
+  RETURN_NOT_OK(ConvertToKuduPartialRow(table, table_range_upper_bound, upper_bound.get()));
+
+  KuduTableCreator::RangePartitionBound lower_bound_type;
+  KuduTableCreator::RangePartitionBound upper_bound_type;
+
+  RETURN_NOT_OK(convert_bounds_type("lower bound", FLAGS_lower_bound_type, &lower_bound_type));
+  RETURN_NOT_OK(convert_bounds_type("upper bound", FLAGS_upper_bound_type, &upper_bound_type));
+
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  if (action == PartitionAction::ADD) {
+    return alterer->AddRangePartition(lower_bound.release(),
+                                      upper_bound.release(),
+                                      lower_bound_type,
+                                      upper_bound_type)->Alter();
+  }
+  DCHECK_EQ(PartitionAction::DROP, action);
+  return alterer->DropRangePartition(lower_bound.release(),
+                                     upper_bound.release(),
+                                     lower_bound_type,
+                                     upper_bound_type)->Alter();
+}
+
+Status DropRangePartition(const RunnerContext& context) {
+  return ModifyRangePartition(context, PartitionAction::DROP);
+}
+
+Status AddRangePartition(const RunnerContext& context) {
+  return ModifyRangePartition(context, PartitionAction::ADD);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTableMode() {
@@ -576,11 +766,46 @@ unique_ptr<Mode> BuildTableMode() {
                               "Name of the table for which to get extra configurations" })
       .AddOptionalParameter("config_names")
       .Build();
+  unique_ptr<Action> drop_range_partition =
+      ActionBuilder("drop_range_partition", &DropRangePartition)
+      .Description("Drop a range partition of table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table" })
+      .AddRequiredParameter({ kTableRangeLowerBoundArg,
+                              "String representation of lower bound of "
+                              "the table range partition as a JSON array" })
+      .AddRequiredParameter({ kTableRangeUpperBoundArg,
+                              "String representation of upper bound of "
+                              "the table range partition as a JSON array" })
+      .AddOptionalParameter("lower_bound_type")
+      .AddOptionalParameter("upper_bound_type")
+      .Build();
+
+  unique_ptr<Action> add_range_partition =
+      ActionBuilder("add_range_partition", &AddRangePartition)
+      .Description("Add a range partition for table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table" })
+      .AddRequiredParameter({ kTableRangeLowerBoundArg,
+                              "String representation of lower bound of "
+                              "the table range partition as a JSON array."
+                              "If the parameter is an empty array, "
+                              "the lower range partition will be unbounded" })
+      .AddRequiredParameter({ kTableRangeUpperBoundArg,
+                              "String representation of upper bound of "
+                              "the table range partition as a JSON array."
+                              "If the parameter is an empty array, "
+                              "the upper range partition will be unbounded" })
+      .AddOptionalParameter("lower_bound_type")
+      .AddOptionalParameter("upper_bound_type")
+      .Build();
 
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
+      .AddAction(std::move(add_range_partition))
       .AddAction(std::move(delete_table))
       .AddAction(std::move(describe_table))
+      .AddAction(std::move(drop_range_partition))
       .AddAction(std::move(list_tables))
       .AddAction(std::move(locate_row))
       .AddAction(std::move(rename_column))

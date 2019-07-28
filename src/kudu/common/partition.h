@@ -257,6 +257,12 @@ class PartitionSchema {
     return hash_bucket_schemas_;
   }
 
+  // Gets the vector containing the column indexes of the range partition keys.
+  // If any of the columns is not in the key range columns then an
+  // InvalidArgument status is returned.
+  Status GetRangeSchemaColumnIndexes(const Schema& schema,
+                                     std::vector<int>* range_column_idxs) const;
+
  private:
   friend class PartitionPruner;
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);

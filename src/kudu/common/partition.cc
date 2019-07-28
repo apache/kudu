@@ -1239,4 +1239,18 @@ Status PartitionSchema::MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow*
   return Status::OK();
 }
 
+Status PartitionSchema::GetRangeSchemaColumnIndexes(const Schema& schema,
+                                                    vector<int32_t>* range_column_idxs) const {
+  for (const ColumnId& column_id : range_schema_.column_ids) {
+    int32_t idx = schema.find_column_by_id(column_id);
+    if (idx == Schema::kColumnNotFound) {
+      return Status::InvalidArgument(Substitute("range partition column ID $0 "
+                                                "not found in range partition key schema.",
+                                                column_id));
+    }
+    range_column_idxs->push_back(idx);
+  }
+  return Status::OK();
+}
+
 } // namespace kudu

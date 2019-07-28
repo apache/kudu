@@ -35,6 +35,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -50,6 +51,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
@@ -2339,6 +2341,511 @@ TEST_F(AdminCliTest, TestExtraConfig) {
     ASSERT_EQ(stdout, " Configuration | Value\n"
                       "---------------+-------\n");
   }
+}
+
+// Insert num_rows into table from start key to (start key + num_rows).
+// The other two columns of the table are specified as fixed value.
+// If the insert value is out of the range partition of the table,
+// the function will return IOError which as we expect.
+static Status InsertTestRows(const client::sp::shared_ptr<KuduClient>& client,
+                             const string& table_name,
+                             int start_key,
+                             int num_rows) {
+  client::sp::shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+  auto session = client->NewSession();
+  for (int i = start_key; i < num_rows + start_key; ++i) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    auto* row = insert->mutable_row();
+    RETURN_NOT_OK(row->SetInt32("key", i));
+    RETURN_NOT_OK(row->SetInt32("int_val", 12345));
+    RETURN_NOT_OK(row->SetString("string_val", "hello"));
+    Status result = session->Apply(insert.release());
+    if (result.IsIOError()) {
+      vector<kudu::client::KuduError*> errors;
+      ElementDeleter drop(&errors);
+      bool overflowed;
+      session->GetPendingErrors(&errors, &overflowed);
+      EXPECT_FALSE(overflowed);
+      EXPECT_EQ(1, errors.size());
+      EXPECT_TRUE(errors[0]->status().IsNotFound());
+      return Status::NotFound(Substitute("No range partition covers the insert value $0", i));
+    }
+    RETURN_NOT_OK(result);
+  }
+  RETURN_NOT_OK(session->Flush());
+  RETURN_NOT_OK(session->Close());
+  return Status::OK();
+}
+
+TEST_F(AdminCliTest, TestAddAndDropUnboundedPartition) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  client::sp::shared_ptr<KuduTable> table;
+
+  // At first, the range partition is unbounded, we can insert any data into it.
+  // We insert 100 rows with key range from 0 to 100, now there are 100 rows.
+  int num_rows = 100;
+  NO_FATALS(InsertTestRows(client_, kTableId, 0, num_rows));
+  ASSERT_OK(client_->OpenTable(kTableId, &table));
+  ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // For the unbounded range partition table, add any range partition will
+  // conflict with it, so we need to drop unbounded range partition first and
+  // then add range partition for it. Since the table is unbounded, it will
+  // drop all rows when dropping range partition. After dropping there will
+  // be 0 rows left.
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "table",
+    "drop_range_partition",
+    master_addr,
+    kTableId,
+    "[]",
+    "[]",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+  ASSERT_OK(client_->OpenTable(kTableId, &table));
+  ASSERT_EQ(0, CountTableRows(table.get()));
+
+  // Since the unbounded partition has been dropped, now we can add a new unbounded
+  // range parititon for the table.
+  s = RunKuduTool({
+    "table",
+    "add_range_partition",
+    master_addr,
+    kTableId,
+    "[]",
+    "[]",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  // Insert 100 rows with key range from 0 to 100,
+  // now there are 100 rows again.
+  NO_FATALS(InsertTestRows(client_, kTableId, 0, num_rows));
+  ASSERT_OK(client_->OpenTable(kTableId, &table));
+  ASSERT_EQ(100, CountTableRows(table.get()));
+}
+
+TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  // The kTableId's range partition is unbounded, so we need to create another table to
+  // add or drop range partition.
+  const string kTestTableName = "TestTable0";
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Build the schema.
+  KuduSchema schema;
+  KuduSchemaBuilder builder;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
+  builder.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
+  builder.SetPrimaryKey({ "key" });
+  ASSERT_OK(builder.Build(&schema));
+
+  // Set up partitioning and create the table.
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 0));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 100));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTestTableName)
+      .schema(&schema)
+      .set_range_partition_columns({ "key" })
+      .add_range_partition(lower_bound.release(), upper_bound.release())
+      .num_replicas(FLAGS_num_replicas)
+      .Create());
+
+  client::sp::shared_ptr<KuduTable> table;
+
+  // Lambda function to add range partition using kudu CLI.
+  const auto add_range_partition_using_CLI = [&] (const string& lower_bound_json,
+                                                  const string& upper_bound_json,
+                                                  const string& lower_bound_type,
+                                                  const string& upper_bound_type) -> Status {
+    string error, out;
+    Status s = RunKuduTool({
+      "table",
+      "add_range_partition",
+      master_addr,
+      kTestTableName,
+      lower_bound_json,
+      upper_bound_json,
+      Substitute("-lower_bound_type=$0", lower_bound_type),
+      Substitute("-upper_bound_type=$0", upper_bound_type),
+    }, &out, &error);
+    return s;
+  };
+
+  // Lambda function to drop range partition using kudu CLI.
+  const auto drop_range_partition_using_CLI = [&] (const string& lower_bound_json,
+                                                   const string& upper_bound_json,
+                                                   const string& lower_bound_type,
+                                                   const string& upper_bound_type) -> Status {
+    string error, out;
+    Status s = RunKuduTool({
+      "table",
+      "drop_range_partition",
+      master_addr,
+      kTestTableName,
+      lower_bound_json,
+      upper_bound_json,
+      Substitute("-lower_bound_type=$0", lower_bound_type),
+      Substitute("-upper_bound_type=$0", upper_bound_type),
+    }, &out, &error);
+    return s;
+  };
+
+  const auto check_bounds = [&] (const string& lower_bound,
+                                 const string& upper_bound,
+                                 const string& lower_bound_type,
+                                 const string& upper_bound_type,
+                                 int start_row_to_insert,
+                                 int num_rows_to_insert,
+                                 vector<int> out_of_range_rows_to_insert) {
+    string lower_bound_type_internal = lower_bound_type.empty() ? "INCLUSIVE_BOUND" :
+        lower_bound_type;
+
+    string upper_bound_type_internal = upper_bound_type.empty() ? "EXCLUSIVE_BOUND" :
+        upper_bound_type;
+
+    // Add range partition.
+    ASSERT_OK(add_range_partition_using_CLI(lower_bound, upper_bound,
+                                            lower_bound_type_internal,
+                                            upper_bound_type_internal));
+
+    // Insert num_rows_to_insert rows to table.
+    ASSERT_OK(InsertTestRows(client_, kTestTableName, start_row_to_insert,
+                             num_rows_to_insert));
+    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+    ASSERT_EQ(num_rows_to_insert, CountTableRows(table.get()));
+
+    // Insert rows outside range partition,
+    // which will return error in lambda as we expect.
+    for (auto& value: out_of_range_rows_to_insert) {
+      EXPECT_TRUE(InsertTestRows(client_, kTestTableName, value, 1).IsNotFound());
+    }
+
+    // Drop range partition.
+    ASSERT_OK(drop_range_partition_using_CLI(lower_bound, upper_bound,
+                                             lower_bound_type_internal,
+                                             upper_bound_type_internal));
+    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+
+    // Verify no rows are left.
+    ASSERT_EQ(0, CountTableRows(table.get()));
+  };
+
+  {
+    // Test specifying the range bound type in lower-case.
+
+    // Drop the range partition added when create table, the range partition is
+    // [0,100). Insert 100 rows, data range is 0-99. Now there are 100 rows.
+    NO_FATALS(InsertTestRows(client_, kTestTableName, 0, 100));
+    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+    ASSERT_EQ(100, CountTableRows(table.get()));
+
+    // Drop range partition of [0,100) by command line, now there are 0 rows left.
+    ASSERT_OK(drop_range_partition_using_CLI("[0]", "[100]", "inclusive_bound",
+                                             "exclusive_bound"));
+    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+    ASSERT_EQ(0, CountTableRows(table.get()));
+  }
+
+  {
+    // Test adding (INCLUSIVE_BOUND, EXCLUSIVE_BOUND) range partition.
+
+    // Adding [100,200), 100 is inclusive and 200 is exclusive. Then insert
+    // 100 rows , the data range is [100-199]. Insert 99 and 200 to test
+    // insert out of range row. Last, dropping the range partition and checking
+    // that there are 0 rows left.
+    check_bounds("[100]", "[200]", "INCLUSIVE_BOUND", "EXCLUSIVE_BOUND", 100, 100,
+        { 99, 200 });
+  }
+
+  {
+    // Test adding (INCLUSIVE_BOUND, INCLUSIVE_BOUND) range partition.
+
+    // Adding [100,200], both 100 and 200 are inclusive. Then insert 101
+    // rows, the data range is [100,200]. Insert 99 and 201 to test insert
+    // out of range row. Last, dropping the range partition and checking
+    // that there are 0 rows left.
+    check_bounds("[100]", "[200]", "INCLUSIVE_BOUND", "INCLUSIVE_BOUND", 100, 101,
+        { 99, 201 });
+  }
+
+
+  {
+    // Test adding (EXCLUSIVE_BOUND, INCLUSIVE_BOUND) range partition.
+
+    // Adding (100,200], 100 is exclusive while 200 is inclusive.Then insert
+    // 100 rows, the data range is (100,200]. Insert 100 and 201 to test
+    // insert out of range row. Last, dropping the range partition and checking
+    // that there are 0 rows left.
+    check_bounds("[100]", "[200]", "EXCLUSIVE_BOUND", "INCLUSIVE_BOUND", 101, 100,
+        { 100, 201 });
+  }
+
+  {
+    // Test adding (EXCLUSIVE_BOUND, EXCLUSIVE_BOUND) range partition.
+
+    // Adding (100,200), both 100 and 200 are exclusive.Then insert 99 rows,
+    // the data range is (100,200). Insert 100 and 200 to test insert out of
+    // range row. Last, dropping the range partition and checking that there
+    // are 0 rows left.
+    check_bounds("[100]", "[200]", "EXCLUSIVE_BOUND", "EXCLUSIVE_BOUND", 101, 99,
+        { 100, 200 });
+  }
+
+  {
+    // Test adding (INCLUSIVE_BOUND, UNBOUNDED) range partition.
+
+    // Adding (1,unbouded), lower range bound is 1, upper range bound is unbounded,
+    // 1 is inclusive. Then insert 100 rows, the data range is [1-100]. Insert 0
+    // to test insert out of range row. Last, dropping the range partition and
+    // checking that there are 0 rows left.
+    check_bounds("[1]", "[]", "INCLUSIVE_BOUND", "", 1, 100,
+        { 0 });
+  }
+
+  {
+    // Test adding (EXCLUSIVE_BOUND, UNBOUNDED) range partition.
+
+    // Adding (0,unbouded), lower range bound is 0, upper range bound is unbounded,
+    // 0 is exclusive. Then insert 100 rows, the data range
+    // is [2-101]. Insert 1 to test insert out of range row. Last, dropping the range
+    // partition and checking that there are 0 rows left.
+    check_bounds("[1]", "[]", "EXCLUSIVE_BOUND", "", 2, 100,
+        { 1 });
+  }
+
+  {
+    // Test adding (UNBOUNDED, INCLUSIVE_BOUND) range partition.
+
+    // Adding (unbouded,100), lower range bound unbound, upper range bound is 100,
+    // 100 is inclusive. Then insert 100 rows, the data range
+    // is [1-100]. Insert 101 to test insert out of range row. Last, dropping the range
+    // partition and checking that there are 0 rows left.
+    check_bounds("[]", "[100]", "", "INCLUSIVE_BOUND", 1, 100,
+        { 101 });
+  }
+
+  {
+    // Test adding (UNBOUNDED, EXCLUSIVE_BOUND) range partition.
+
+    // Adding (unbouded,100), lower range bound unbound, upper range bound is 100,
+    // 100 is exclusive. Then insert 100 rows, the data range
+    // is [0-99]. Insert 100 to test insert out of range row. Last, dropping the range
+    // partition and checking that there are 0 rows left.
+    check_bounds("[]", "[100]", "", "EXCLUSIVE_BOUND", 0, 100,
+        { 100 });
+  }
+}
+
+TEST_F(AdminCliTest, TestAddAndDropRangePartitionWithWrongParameters) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  const string kTestTableName = "TestTable1";
+
+  // Build the schema.
+  KuduSchema schema;
+  KuduSchemaBuilder builder;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull();
+  builder.SetPrimaryKey({ "key" });
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 0));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 1));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTestTableName)
+      .schema(&schema)
+      .set_range_partition_columns({ "key" })
+      .add_range_partition(lower_bound.release(), upper_bound.release())
+      .num_replicas(FLAGS_num_replicas)
+      .Create());
+
+  // Lambda function to check bad input, the function will return
+  // OK if running tool to add range partition return RuntimeError,
+  // which as we expect.
+  const auto check_bad_input = [&](const string& lower_bound_json,
+                                   const string& upper_bound_json,
+                                   const string& lower_bound_type,
+                                   const string& upper_bound_type,
+                                   const string& error) {
+    string out, err;
+    Status s = RunKuduTool({
+      "table",
+      "add_range_partition",
+      master_addr,
+      kTestTableName,
+      lower_bound_json,
+      upper_bound_json,
+      Substitute("-lower_bound_type=$0", lower_bound_type),
+      Substitute("-upper_bound_type=$0", upper_bound_type),
+    }, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(err, error);
+  };
+
+  // Test providing wrong type of range lower bound type, it will return error.
+  NO_FATALS(check_bad_input("[]", "[]", "test_lower_bound_type",
+                            "EXCLUSIVE_BOUND",
+                            "wrong type of range lower bound"));
+
+  // Test providing wrong type of range upper bound type, it will return error.
+  NO_FATALS(check_bad_input("[]", "[]", "INCLUSIVE_BOUND",
+                            "test_upper_bound_type",
+                            "wrong type of range upper bound"));
+
+  // Test providing wrong number of range values, it will return error.
+  NO_FATALS(check_bad_input("[1,2]", "[3]", "INCLUSIVE_BOUND",
+                            "EXCLUSIVE_BOUND",
+                            "wrong number of range columns specified: "
+                            "expected 1 but received 2"));
+
+  // Test providing wrong type of range partition key: string instead of int,
+  // it will return error.
+  NO_FATALS(check_bad_input("[\"hello\"]", "[\"world\"]", "INCLUSIVE_BOUND",
+                            "EXCLUSIVE_BOUND",
+                            "unable to parse value"));
+
+  // Test providing incomplete json array of range bound, it will return error.
+  NO_FATALS(check_bad_input("[", "[2]", "INCLUSIVE_BOUND",
+                            "EXCLUSIVE_BOUND",
+                            "JSON text is corrupt"));
+
+  // Test providing wrong json array format of range bound, it will return error.
+  NO_FATALS(check_bad_input("[1,]", "[2]", "INCLUSIVE_BOUND",
+                            "EXCLUSIVE_BOUND",
+                            "JSON text is corrupt"));
+
+  // Test providing wrong JSON that's not an array, it will return error.
+  NO_FATALS(check_bad_input(
+      "{ \"key\" : 1}", "{\"key\" : 2 }", "INCLUSIVE_BOUND",
+      "EXCLUSIVE_BOUND",
+      "wrong type during field extraction: expected object array"));
+}
+
+TEST_F(AdminCliTest, TestAddAndDropRangePartitionForMultipleRangeColumnsTable) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  const string kTestTableName = "TestTable2";
+
+  {
+    // Build the schema.
+    KuduSchema schema;
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key_INT8")->Type(KuduColumnSchema::INT8)->NotNull();
+    builder.AddColumn("key_INT16")->Type(KuduColumnSchema::INT16)->NotNull();
+    builder.AddColumn("key_INT32")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_INT64")->Type(KuduColumnSchema::INT64)->NotNull();
+    builder.AddColumn("key_UNIXTIME_MICROS")->
+      Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
+    builder.AddColumn("key_BINARY")->Type(KuduColumnSchema::BINARY)->NotNull();
+    builder.AddColumn("key_STRING")->Type(KuduColumnSchema::STRING)->NotNull();
+    builder.SetPrimaryKey({ "key_INT8", "key_INT16", "key_INT32",
+                            "key_INT64", "key_UNIXTIME_MICROS",
+                            "key_BINARY", "key_STRING" });
+    ASSERT_OK(builder.Build(&schema));
+
+    // Init the range partition and create table.
+    unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+    ASSERT_OK(lower_bound->SetInt8("key_INT8", 0));
+    ASSERT_OK(lower_bound->SetInt16("key_INT16", 1));
+    ASSERT_OK(lower_bound->SetInt32("key_INT32", 2));
+    ASSERT_OK(lower_bound->SetInt64("key_INT64", 3));
+    ASSERT_OK(lower_bound->SetUnixTimeMicros("key_UNIXTIME_MICROS", 4));
+    ASSERT_OK(lower_bound->SetBinaryCopy("key_BINARY", "a"));
+    ASSERT_OK(lower_bound->SetString("key_STRING", "b"));
+
+    unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+    ASSERT_OK(upper_bound->SetInt8("key_INT8", 5));
+    ASSERT_OK(upper_bound->SetInt16("key_INT16", 6));
+    ASSERT_OK(upper_bound->SetInt32("key_INT32", 7));
+    ASSERT_OK(upper_bound->SetInt64("key_INT64", 8));
+    ASSERT_OK(upper_bound->SetUnixTimeMicros("key_UNIXTIME_MICROS", 9));
+    ASSERT_OK(upper_bound->SetBinaryCopy("key_BINARY", "c"));
+    ASSERT_OK(upper_bound->SetString("key_STRING", "d"));
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTestTableName)
+        .schema(&schema)
+        .set_range_partition_columns({ "key_INT8", "key_INT16", "key_INT32",
+                                       "key_INT64", "key_UNIXTIME_MICROS",
+                                       "key_BINARY", "key_STRING" })
+        .add_range_partition(lower_bound.release(), upper_bound.release())
+        .num_replicas(FLAGS_num_replicas)
+        .Create());
+  }
+
+  // Add range partition use CLI.
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "table",
+    "add_range_partition",
+    master_addr,
+    kTestTableName,
+    "[10, 11, 12, 13, 14, \"e\", \"f\"]",
+    "[15, 16, 17, 18, 19, \"g\", \"h\"]",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  client::sp::shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+  {
+    // Insert test row.
+    auto session = client_->NewSession();
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    auto* row = insert->mutable_row();
+    ASSERT_OK(row->SetInt8("key_INT8", 10));
+    ASSERT_OK(row->SetInt16("key_INT16", 11));
+    ASSERT_OK(row->SetInt32("key_INT32", 12));
+    ASSERT_OK(row->SetInt64("key_INT64", 13));
+    ASSERT_OK(row->SetUnixTimeMicros("key_UNIXTIME_MICROS", 14));
+    ASSERT_OK(row->SetBinaryCopy("key_BINARY", "e"));
+    ASSERT_OK(row->SetString("key_STRING", "f"));
+    ASSERT_OK(session->Apply(insert.release()));
+    ASSERT_OK(session->Flush());
+    ASSERT_OK(session->Close());
+  }
+
+  // There is 1 row in table now.
+  ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+  ASSERT_EQ(1, CountTableRows(table.get()));
+
+  // Drop range partition use CLI.
+  s = RunKuduTool({
+    "table",
+    "drop_range_partition",
+    master_addr,
+    kTestTableName,
+    "[10, 11, 12, 13, 14, \"e\", \"f\"]",
+    "[15, 16, 17, 18, 19, \"g\", \"h\"]",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  // There are 0 rows left.
+  ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+  ASSERT_EQ(0, CountTableRows(table.get()));
 }
 
 } // namespace tools
