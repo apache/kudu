@@ -107,7 +107,7 @@ public class KuduSession implements SessionConfiguration {
   }
 
   /**
-   * Blocking call that flushes the buffers (see {@link #flush()} and closes the sessions.
+   * Blocking call that flushes the buffers (see {@link #flush()}) and closes the sessions.
    * @return List of OperationResponse, one per operation that was flushed
    * @throws KuduException if anything went wrong
    */
