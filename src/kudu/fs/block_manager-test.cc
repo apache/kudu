@@ -851,8 +851,8 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
           // The dir was previously observed as full, so CreateBlock() checked
           // fullness again and failed.
           ASSERT_TRUE(s.IsIOError()) << s.ToString();
-          ASSERT_STR_CONTAINS(s.ToString(), "No directories available to add to test_tablet's "
-                                            "directory group");
+          ASSERT_STR_CONTAINS(
+              s.ToString(), "No directories available in test_tablet's directory group");
         } else {
           ASSERT_OK(s);
           ASSERT_OK(writer->Append("test data"));

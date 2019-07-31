@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <memory>
@@ -949,9 +950,10 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
   const vector<int>* group_uuid_indices;
   vector<int> valid_uuid_indices;
+  DataDirGroup* group = nullptr;
   if (PREDICT_TRUE(!opts.tablet_id.empty())) {
     // Get the data dir group for the tablet.
-    DataDirGroup* group = FindOrNull(group_by_tablet_map_, opts.tablet_id);
+    group = FindOrNull(group_by_tablet_map_, opts.tablet_id);
     if (group == nullptr) {
       return Status::NotFound("Tried to get directory but no directory group "
                               "registered for tablet", opts.tablet_id);
@@ -988,18 +990,24 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
       return Status::OK();
     }
   }
-  string tablet_id_str = "";
+
+  // All healthy directories are full. Return an error.
   if (PREDICT_TRUE(!opts.tablet_id.empty())) {
-    tablet_id_str = Substitute("$0's ", opts.tablet_id);
+    DCHECK(group);
+    size_t num_total = group->uuid_indices().size();
+    size_t num_full = valid_uuid_indices.size();
+    size_t num_failed = num_total - num_full;
+    return Status::IOError(
+        Substitute("No directories available in $0's directory group ($1 dirs "
+                   "total, $2 failed, $3 full)",
+                   opts.tablet_id, num_total, num_failed, num_full),
+        "", ENOSPC);
   }
-  string dirs_state_str = Substitute("$0 failed", failed_data_dirs_.size());
-  if (metrics_) {
-    dirs_state_str = Substitute("$0 full, $1",
-                                metrics_->data_dirs_full->value(), dirs_state_str);
-  }
-  return Status::IOError(Substitute("No directories available to add to $0directory group ($1 "
-                         "dirs total, $2).", tablet_id_str, data_dirs_.size(), dirs_state_str),
-                         "", ENOSPC);
+
+  return Status::IOError(
+      Substitute("No directories available ($0 dirs, all of which are full)",
+                 valid_uuid_indices.size()),
+      "", ENOSPC);
 }
 
 void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
