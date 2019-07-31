@@ -22,7 +22,7 @@ You can view the running NiFi instance at link:http://localhost:8080/nifi[localh
 NOTE: `--network="docker_default"` is specified to connect the container the
 same network as the quickstart cluster.
 
-NOTE: You can include the `-d` flag to run the cluster in the background.
+NOTE: You can include the `-d` flag to run the container in the background.
 
 == Create the Kudu table
 
@@ -117,7 +117,7 @@ Once you are done with the NiFi container you can shutdown in a couple of ways.
 If you ran NiFi without the `-d` flag, you can use `ctrl + c` to stop the  container.
 
 If you ran NiFi with the `-d` flag, you can use the following to
-gracefully shutdown the cluster:
+gracefully shutdown the container:
 
 [source,bash]
 ----
