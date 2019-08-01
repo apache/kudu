@@ -520,7 +520,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetInt8(col_name, static_cast<int8_t>(value));
+        RETURN_NOT_OK(range_bound_partial_row->SetInt8(col_name, static_cast<int8_t>(value)));
         break;
       }
       case KuduColumnSchema::INT16: {
@@ -528,7 +528,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetInt16(col_name, static_cast<int16_t>(value));
+        RETURN_NOT_OK(range_bound_partial_row->SetInt16(col_name, static_cast<int16_t>(value)));
         break;
       }
       case KuduColumnSchema::INT32: {
@@ -536,7 +536,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractInt32(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetInt32(col_name, value);
+        RETURN_NOT_OK(range_bound_partial_row->SetInt32(col_name, value));
         break;
       }
       case KuduColumnSchema::INT64: {
@@ -544,7 +544,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetInt64(col_name, value);
+        RETURN_NOT_OK(range_bound_partial_row->SetInt64(col_name, value));
         break;
       }
       case KuduColumnSchema::UNIXTIME_MICROS: {
@@ -552,7 +552,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetUnixTimeMicros(col_name, value);
+        RETURN_NOT_OK(range_bound_partial_row->SetUnixTimeMicros(col_name, value));
         break;
       }
       case KuduColumnSchema::BINARY: {
@@ -560,7 +560,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractString(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetBinary(col_name, value);
+        RETURN_NOT_OK(range_bound_partial_row->SetBinary(col_name, value));
         break;
       }
       case KuduColumnSchema::STRING: {
@@ -568,7 +568,7 @@ Status ConvertToKuduPartialRow(const client::sp::shared_ptr<KuduTable>& table,
         RETURN_NOT_OK_PREPEND(
             reader.ExtractString(values[i], /*field=*/nullptr, &value),
             error_msg);
-        range_bound_partial_row->SetString(col_name, value);
+        RETURN_NOT_OK(range_bound_partial_row->SetString(col_name, value));
         break;
       }
       case KuduColumnSchema::BOOL:
