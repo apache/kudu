@@ -74,7 +74,7 @@ DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
-DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
+DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_string(block_manager);
 DECLARE_double(env_inject_eio);
@@ -825,53 +825,31 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
                                      { GetTestDataDirectory() },
                                      false /* create */));
 
-  FLAGS_fs_data_dirs_full_disk_cache_seconds = 0; // Don't cache device fullness.
+  FLAGS_fs_data_dirs_available_space_cache_seconds = 0; // Don't cache device available space.
   FLAGS_fs_data_dirs_reserved_bytes = 1; // Keep at least 1 byte reserved in the FS.
   FLAGS_log_container_preallocate_bytes = 0; // Disable preallocation.
   FLAGS_fs_target_data_dirs_per_tablet = 3; // Use a subset of directories instead of all.
 
-  // Normally, a data dir is checked for fullness only after a block is closed;
-  // if it's now full, the next attempt at block creation will fail. Only when
-  // a data dir was last observed as full is it also checked before block creation.
-  //
-  // This behavior enforces a "soft" limit on disk space consumption but
-  // complicates testing somewhat.
-  bool data_dir_observed_full = false;
-
   int i = 0;
-  for (int free_space : { 0, 2, 0 }) {
+  for (int free_space : { 0, 2 }) {
     FLAGS_disk_reserved_bytes_free_for_testing = free_space;
 
-    for (int attempt = 0; attempt < 3; attempt++) {
+    for (int attempt = 0; attempt < 2; attempt++) {
       unique_ptr<WritableBlock> writer;
       LOG(INFO) << "Attempt #" << ++i;
       Status s = this->bm_->CreateBlock(this->test_block_opts_, &writer);
       if (FLAGS_disk_reserved_bytes_free_for_testing < FLAGS_fs_data_dirs_reserved_bytes) {
-        if (data_dir_observed_full) {
-          // The dir was previously observed as full, so CreateBlock() checked
-          // fullness again and failed.
-          ASSERT_TRUE(s.IsIOError()) << s.ToString();
-          ASSERT_STR_CONTAINS(
-              s.ToString(), "No directories available in test_tablet's directory group");
-        } else {
-          ASSERT_OK(s);
-          ASSERT_OK(writer->Append("test data"));
-          ASSERT_OK(writer->Close());
-
-          // The dir was not previously full so CreateBlock() did not check for
-          // fullness, but given the parameters of the test, we know that the
-          // dir was observed as full at Close().
-          data_dir_observed_full = true;
-        }
-        ASSERT_EQ(1, down_cast<AtomicGauge<uint64_t>*>(
-            entity->FindOrNull(METRIC_data_dirs_full).get())->value());
+        // The dir was previously observed as full, so CreateBlock() checked
+        // fullness again and failed.
+        ASSERT_TRUE(s.IsIOError()) << s.ToString();
+        ASSERT_STR_CONTAINS(
+            s.ToString(), "No directories available in test_tablet's directory group");
       } else {
         // CreateBlock() succeeded regardless of the previously fullness state,
         // and the new state is definitely not full.
         ASSERT_OK(s);
         ASSERT_OK(writer->Append("test data"));
         ASSERT_OK(writer->Close());
-        data_dir_observed_full = false;
         ASSERT_EQ(0, down_cast<AtomicGauge<uint64_t>*>(
             entity->FindOrNull(METRIC_data_dirs_full).get())->value());
       }

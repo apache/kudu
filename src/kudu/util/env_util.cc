@@ -127,22 +127,22 @@ static void OverrideBytesFreeWithTestingFlags(const string& path, int64_t* bytes
   }
 }
 
-Status VerifySufficientDiskSpace(Env *env, const std::string& path,
-                                 int64_t requested_bytes, int64_t reserved_bytes) {
+Status VerifySufficientDiskSpace(Env *env, const std::string& path, int64_t requested_bytes,
+                                 int64_t reserved_bytes, int64_t* available_bytes) {
   const int64_t kOnePercentReservation = -1;
   DCHECK_GE(requested_bytes, 0);
 
   SpaceInfo space_info;
   RETURN_NOT_OK(env->GetSpaceInfo(path, &space_info));
-  int64_t available_bytes = space_info.free_bytes;
+  int64_t free_bytes = space_info.free_bytes;
 
   // Allow overriding these values by tests.
   if (PREDICT_FALSE(FLAGS_disk_reserved_bytes_free_for_testing > -1)) {
-    available_bytes = FLAGS_disk_reserved_bytes_free_for_testing;
+    free_bytes = FLAGS_disk_reserved_bytes_free_for_testing;
   }
   if (PREDICT_FALSE(FLAGS_disk_reserved_override_prefix_1_bytes_free_for_testing != -1 ||
                     FLAGS_disk_reserved_override_prefix_2_bytes_free_for_testing != -1)) {
-    OverrideBytesFreeWithTestingFlags(path, &available_bytes);
+    OverrideBytesFreeWithTestingFlags(path, &free_bytes);
   }
 
   // If they requested a one percent reservation, calculate what that is in bytes.
@@ -150,10 +150,14 @@ Status VerifySufficientDiskSpace(Env *env, const std::string& path,
     reserved_bytes = space_info.capacity_bytes / 100;
   }
 
-  if (available_bytes - requested_bytes < reserved_bytes) {
+  if (available_bytes != nullptr) {
+    *available_bytes = free_bytes;
+  }
+
+  if (free_bytes - requested_bytes < reserved_bytes) {
     return Status::IOError(Substitute("Insufficient disk space to allocate $0 bytes under path $1 "
                                       "($2 bytes available vs $3 bytes reserved)",
-                                      requested_bytes, path, available_bytes, reserved_bytes),
+                                      requested_bytes, path, free_bytes, reserved_bytes),
                            "", ENOSPC);
   }
   return Status::OK();

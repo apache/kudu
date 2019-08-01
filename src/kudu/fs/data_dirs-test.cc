@@ -53,7 +53,7 @@ using strings::Substitute;
 
 DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
-DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
+DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
@@ -188,7 +188,7 @@ TEST_F(DataDirsTest, TestDeleteDataDirGroup) {
 }
 
 TEST_F(DataDirsTest, TestFullDisk) {
-  FLAGS_fs_data_dirs_full_disk_cache_seconds = 0;       // Don't cache device fullness.
+  FLAGS_fs_data_dirs_available_space_cache_seconds = 0; // Don't cache device available space.
   FLAGS_fs_data_dirs_reserved_bytes = 1;                // Reserved space.
   FLAGS_disk_reserved_bytes_free_for_testing = 0;       // Free space.
 

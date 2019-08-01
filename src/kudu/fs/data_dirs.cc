@@ -86,11 +86,10 @@ DEFINE_validator(fs_data_dirs_reserved_bytes, [](const char* /*n*/, int64_t v) {
 TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
 TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
 
-DEFINE_int32(fs_data_dirs_full_disk_cache_seconds, 30,
-             "Number of seconds we cache the full-disk status in the block manager. "
-             "During this time, writes to the corresponding root path will not be attempted.");
-TAG_FLAG(fs_data_dirs_full_disk_cache_seconds, advanced);
-TAG_FLAG(fs_data_dirs_full_disk_cache_seconds, evolving);
+DEFINE_int32(fs_data_dirs_available_space_cache_seconds, 10,
+             "Number of seconds we cache the available disk space in the block manager. ");
+TAG_FLAG(fs_data_dirs_available_space_cache_seconds, advanced);
+TAG_FLAG(fs_data_dirs_available_space_cache_seconds, evolving);
 
 DEFINE_bool(fs_lock_data_dirs, true,
             "Lock the data directories to prevent concurrent usage. "
@@ -223,7 +222,8 @@ DataDir::DataDir(Env* env,
       metadata_file_(std::move(metadata_file)),
       pool_(std::move(pool)),
       is_shutdown_(false),
-      is_full_(false) {
+      is_full_(false),
+      available_bytes_(0) {
 }
 
 DataDir::~DataDir() {
@@ -253,27 +253,28 @@ void DataDir::WaitOnClosures() {
   pool_->Wait();
 }
 
-Status DataDir::RefreshIsFull(RefreshMode mode) {
+Status DataDir::RefreshAvailableSpace(RefreshMode mode) {
   switch (mode) {
     case RefreshMode::EXPIRED_ONLY: {
       std::lock_guard<simple_spinlock> l(lock_);
-      DCHECK(last_check_is_full_.Initialized());
-      MonoTime expiry = last_check_is_full_ + MonoDelta::FromSeconds(
-          FLAGS_fs_data_dirs_full_disk_cache_seconds);
-      if (!is_full_ || MonoTime::Now() < expiry) {
+      DCHECK(last_space_check_.Initialized());
+      MonoTime expiry = last_space_check_ + MonoDelta::FromSeconds(
+          FLAGS_fs_data_dirs_available_space_cache_seconds);
+      if (MonoTime::Now() < expiry) {
         break;
       }
       FALLTHROUGH_INTENDED; // Root was previously full, check again.
     }
     case RefreshMode::ALWAYS: {
+      int64_t available_bytes_new;
       Status s = env_util::VerifySufficientDiskSpace(
-          env_, dir_, 0, FLAGS_fs_data_dirs_reserved_bytes);
+          env_, dir_, 0, FLAGS_fs_data_dirs_reserved_bytes, &available_bytes_new);
       bool is_full_new;
       if (PREDICT_FALSE(s.IsIOError() && s.posix_code() == ENOSPC)) {
         LOG(WARNING) << Substitute(
             "Insufficient disk space under path $0: creation of new data "
             "blocks under this path can be retried after $1 seconds: $2",
-            dir_, FLAGS_fs_data_dirs_full_disk_cache_seconds, s.ToString());
+            dir_, FLAGS_fs_data_dirs_available_space_cache_seconds, s.ToString());
         s = Status::OK();
         is_full_new = true;
       } else {
@@ -286,7 +287,8 @@ Status DataDir::RefreshIsFull(RefreshMode mode) {
           metrics_->data_dirs_full->IncrementBy(is_full_new ? 1 : -1);
         }
         is_full_ = is_full_new;
-        last_check_is_full_ = MonoTime::Now();
+        last_space_check_ = MonoTime::Now();
+        available_bytes_ = available_bytes_new;
       }
       break;
     }
@@ -860,7 +862,7 @@ Status DataDirManager::Open() {
     if (ContainsKey(failed_data_dirs_, uuid_idx)) {
       continue;
     }
-    Status refresh_status = dd->RefreshIsFull(DataDir::RefreshMode::ALWAYS);
+    Status refresh_status = dd->RefreshAvailableSpace(DataDir::RefreshMode::ALWAYS);
     if (PREDICT_FALSE(!refresh_status.ok())) {
       if (refresh_status.IsDiskFailure()) {
         RETURN_NOT_OK(MarkDataDirFailed(uuid_idx, refresh_status.ToString()));
@@ -951,6 +953,7 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
   const vector<int>* group_uuid_indices;
   vector<int> valid_uuid_indices;
   DataDirGroup* group = nullptr;
+
   if (PREDICT_TRUE(!opts.tablet_id.empty())) {
     // Get the data dir group for the tablet.
     group = FindOrNull(group_by_tablet_map_, opts.tablet_id);
@@ -975,20 +978,29 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
     AppendKeysFromMap(data_dir_by_uuid_idx_, &valid_uuid_indices);
     group_uuid_indices = &valid_uuid_indices;
   }
-  vector<int> random_indices(group_uuid_indices->size());
-  iota(random_indices.begin(), random_indices.end(), 0);
-  shuffle(random_indices.begin(), random_indices.end(), default_random_engine(rng_.Next()));
 
-  // Randomly select a member of the group that is not full.
-  for (int i : random_indices) {
-    int uuid_idx = (*group_uuid_indices)[i];
-    DataDir* candidate = FindOrDie(data_dir_by_uuid_idx_, uuid_idx);
-    Status s = candidate->RefreshIsFull(DataDir::RefreshMode::EXPIRED_ONLY);
+  // In a certain group of dirs, randomly choose two not full dirs and select the one
+  // with more free space.
+  vector<DataDir*> candidate_dirs;
+  for (auto uuid_idx : *group_uuid_indices) {
+    DataDir *candidate = FindOrDie(data_dir_by_uuid_idx_, uuid_idx);
+    Status s = candidate->RefreshAvailableSpace(DataDir::RefreshMode::EXPIRED_ONLY);
     WARN_NOT_OK(s, Substitute("failed to refresh fullness of $0", candidate->dir()));
     if (s.ok() && !candidate->is_full()) {
-      *dir = candidate;
-      return Status::OK();
+      candidate_dirs.emplace_back(candidate);
     }
+  }
+
+  if (candidate_dirs.size() == 1) {
+    *dir = candidate_dirs[0];
+    return Status::OK();
+  }
+
+  if (candidate_dirs.size() >= 2) {
+    shuffle(candidate_dirs.begin(), candidate_dirs.end(), default_random_engine(rng_.Next()));
+    *dir = (candidate_dirs[0]->available_bytes() > candidate_dirs[1]->available_bytes()) ?
+            candidate_dirs[0] : candidate_dirs[1];
+    return Status::OK();
   }
 
   // All healthy directories are full. Return an error.
@@ -1043,7 +1055,7 @@ void DataDirManager::GetDirsForGroupUnlocked(int target_size,
     if (ContainsKey(failed_data_dirs_, e.first)) {
       continue;
     }
-    Status s = e.second->RefreshIsFull(DataDir::RefreshMode::ALWAYS);
+    Status s = e.second->RefreshAvailableSpace(DataDir::RefreshMode::ALWAYS);
     WARN_NOT_OK(s, Substitute("failed to refresh fullness of $0", e.second->dir()));
     if (s.ok() && !e.second->is_full()) {
       // TODO(awong): If a disk is unhealthy at the time of group creation, the
@@ -1054,14 +1066,24 @@ void DataDirManager::GetDirsForGroupUnlocked(int target_size,
   }
   while (group_indices->size() < target_size && !candidate_indices.empty()) {
     shuffle(candidate_indices.begin(), candidate_indices.end(), default_random_engine(rng_.Next()));
-    if (candidate_indices.size() == 1 ||
-        FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[0]).size() <
-            FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[1]).size()) {
+    if (candidate_indices.size() == 1) {
       group_indices->push_back(candidate_indices[0]);
       candidate_indices.erase(candidate_indices.begin());
     } else {
-      group_indices->push_back(candidate_indices[1]);
-      candidate_indices.erase(candidate_indices.begin() + 1);
+      int tablets_in_first = FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[0]).size();
+      int tablets_in_second = FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[1]).size();
+      int selected_index = 0;
+      if (tablets_in_first == tablets_in_second) {
+        int64_t space_in_first = FindOrDie(data_dir_by_uuid_idx_,
+                                           candidate_indices[0])->available_bytes();
+        int64_t space_in_second = FindOrDie(data_dir_by_uuid_idx_,
+                                            candidate_indices[1])->available_bytes();
+        selected_index = space_in_first > space_in_second ? 0 : 1;
+      } else {
+        selected_index = tablets_in_first < tablets_in_second ? 0 : 1;
+      }
+      group_indices->push_back(candidate_indices[selected_index]);
+      candidate_indices.erase(candidate_indices.begin() + selected_index);
     }
   }
 }

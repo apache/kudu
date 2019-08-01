@@ -340,7 +340,7 @@ Status FileWritableBlock::Append(const Slice& data) {
 Status FileWritableBlock::AppendV(ArrayView<const Slice> data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY) << "Invalid state: " << state_;
   RETURN_NOT_OK_HANDLE_ERROR(writer_->AppendV(data));
-  RETURN_NOT_OK_HANDLE_ERROR(location_.data_dir()->RefreshIsFull(
+  RETURN_NOT_OK_HANDLE_ERROR(location_.data_dir()->RefreshAvailableSpace(
       DataDir::RefreshMode::ALWAYS));
   state_ = DIRTY;
 

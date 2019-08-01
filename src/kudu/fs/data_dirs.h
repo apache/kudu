@@ -174,7 +174,7 @@ class DataDir {
     EXPIRED_ONLY,
     ALWAYS,
   };
-  Status RefreshIsFull(RefreshMode mode);
+  Status RefreshAvailableSpace(RefreshMode mode);
 
   DataDirFsType fs_type() const { return fs_type_; }
 
@@ -189,6 +189,11 @@ class DataDir {
     return is_full_;
   }
 
+  int64_t available_bytes() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return available_bytes_;
+  }
+
  private:
   Env* env_;
   DataDirMetrics* metrics_;
@@ -199,10 +204,13 @@ class DataDir {
 
   bool is_shutdown_;
 
-  // Protects 'last_check_is_full_' and 'is_full_'.
+  // Protects 'last_space_check_', 'is_full_' and available_bytes_.
   mutable simple_spinlock lock_;
-  MonoTime last_check_is_full_;
+  MonoTime last_space_check_;
   bool is_full_;
+
+  // The available bytes of this dir, updated by RefreshAvailableSpace.
+  int64_t available_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(DataDir);
 };
@@ -327,8 +335,9 @@ class DataDirManager {
   // and data dir to tablet set are cleared of all references to the tablet.
   void DeleteDataDirGroup(const std::string& tablet_id);
 
-  // Returns a random directory from the specfied option's data dir group. If
-  // there is no room in the group, returns an error.
+  // Returns a random directory, giving preference to the one with more free
+  // space in the specified option's data dir group. If there is no room in the
+  // group, returns an error.
   Status GetNextDataDir(const CreateBlockOptions& opts, DataDir** dir);
 
   // Finds the set of tablet_ids in the data dir specified by 'uuid_idx' and
@@ -460,7 +469,8 @@ class DataDirManager {
   // Selection is based on "The Power of Two Choices in Randomized Load
   // Balancing", selecting two directories randomly and choosing the one with
   // less load, quantified as the number of unique tablets in the directory.
-  // The resulting behavior fills directories that have fewer tablets stored on
+  // Ties are broken by choosing the directory with more free space. The
+  // resulting behavior fills directories that have fewer tablets stored on
   // them while not completely neglecting those with more tablets.
   //
   // 'group_indices' is an output that stores the list of uuid_indices to be

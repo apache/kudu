@@ -208,12 +208,15 @@ class DiskErrorITest : public ExternalMiniClusterITestBase,
   FlagList InjectionFlags(ErrorType error, ExternalTabletServer* error_ts) const {
     FlagList injection_flags;
     switch (error) {
-      case ErrorType::DISK_FAILURE:
+      case ErrorType::DISK_FAILURE: {
         // Avoid injecting errors to the first data directory.
-        injection_flags.emplace_back("env_inject_eio_globs",
-            JoinPathSegments(error_ts->data_dirs()[1], "**"));
+        string data_dirs = Substitute("$0,$1",
+                                      JoinPathSegments(error_ts->data_dirs()[1], "**"),
+                                      JoinPathSegments(error_ts->data_dirs()[2], "**"));
+        injection_flags.emplace_back("env_inject_eio_globs", data_dirs);
         injection_flags.emplace_back("env_inject_eio", "1.0");
         break;
+      }
       case ErrorType::CFILE_CORRUPTION:
         injection_flags.emplace_back("cfile_inject_corruption", "1.0");
         break;
