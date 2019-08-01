@@ -575,6 +575,13 @@ class KUDU_EXPORT KuduSchema {
   /// @return Schema for the specified column.
   KuduColumnSchema Column(size_t idx) const;
 
+  /// @param [in] col_name
+  ///   Column name.
+  /// @param [out] col_schema.
+  ///   Schema for the specified column.
+  /// @return @c true iff the specified column exists.
+  bool HasColumn(const std::string& col_name, KuduColumnSchema* col_schema) const;
+
   /// @return The number of columns in the schema.
   size_t num_columns() const;
 

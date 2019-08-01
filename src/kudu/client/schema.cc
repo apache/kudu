@@ -718,6 +718,15 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
                           attrs, type_attrs, col.comment());
 }
 
+bool KuduSchema::HasColumn(const std::string& col_name, KuduColumnSchema* col_schema) const {
+  int idx = schema_->find_column(col_name);
+  if (idx == Schema::kColumnNotFound) {
+    return false;
+  }
+  *col_schema = Column(idx);
+  return true;
+}
+
 KuduPartialRow* KuduSchema::NewRow() const {
   return new KuduPartialRow(schema_);
 }

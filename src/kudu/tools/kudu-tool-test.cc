@@ -134,6 +134,7 @@
 
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
+DECLARE_bool(show_attributes);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
 
@@ -2922,6 +2923,8 @@ TEST_F(ToolTest, TestMasterList) {
 // (4)list tables
 // (5)scan a table
 // (6)copy a table
+// (7)alter a column
+// (8)delete a column
 TEST_F(ToolTest, TestDeleteTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -3003,7 +3006,6 @@ TEST_F(ToolTest, TestRenameColumn) {
   workload.Setup();
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
-  string out;
   NO_FATALS(RunActionStdoutNone(Substitute("table rename_column $0 $1 $2 $3",
                                            master_addr, kTableName,
                                            kColumnName, kNewColumnName)));
@@ -3250,6 +3252,253 @@ TEST_P(ToolTestCopyTableParameterized, TestCopyTable) {
   for (const auto& arg : GenerateArgs()) {
     NO_FATALS(RunCopyTableCheck(arg));
   }
+}
+
+TEST_F(ToolTest, TestAlterColumn) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.table.alter.column";
+  const string& kColumnName = "col.0";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn(kColumnName)
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->Compression(KuduColumnStorageAttributes::CompressionType::LZ4)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::BIT_SHUFFLE)
+      ->BlockSize(40960);
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  FLAGS_show_attributes = true;
+
+  // Test a few error cases.
+  const auto check_bad_input = [&](const string& alter_type,
+                                   const string& alter_value,
+                                   const string& err) {
+    string stderr;
+    Status s = RunActionStderrString(
+      Substitute("table $0 $1 $2 $3 $4",
+                 alter_type, master_addr, kTableName, kColumnName, alter_value), &stderr);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(stderr, err);
+  };
+
+  // Set write_default value for a column.
+  NO_FATALS(RunActionStdoutNone(Substitute("table column_set_default $0 $1 $2 $3",
+                                           master_addr, kTableName, kColumnName, "[1024]")));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), "1024");
+
+  // Remove write_default value for a column.
+  NO_FATALS(RunActionStdoutNone(Substitute("table column_remove_default $0 $1 $2",
+                                           master_addr, kTableName, kColumnName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), "1024");
+
+  // Alter compression type for a column.
+  NO_FATALS(RunActionStdoutNone(Substitute("table column_set_compression $0 $1 $2 $3",
+                                           master_addr, kTableName, kColumnName,
+                                           "DEFAULT_COMPRESSION")));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), "DEFAULT_COMPRESSION");
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), "LZ4");
+
+  // Test invalid compression type.
+  NO_FATALS(check_bad_input("column_set_compression",
+                            "UNKNOWN_COMPRESSION_TYPE",
+                            "Failed to parse compression type"));
+
+  // Alter encoding type for a column.
+  NO_FATALS(RunActionStdoutNone(Substitute("table column_set_encoding $0 $1 $2 $3",
+                                           master_addr, kTableName, kColumnName,
+                                           "PLAIN_ENCODING")));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), "PLAIN_ENCODING");
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), "BIT_SHUFFLE");
+
+  // Test invalid encoding type.
+  NO_FATALS(check_bad_input("column_set_encoding",
+                            "UNKNOWN_ENCODING_TYPE",
+                            "Failed to parse encoding type"));
+
+  // Alter block_size for a column.
+  NO_FATALS(RunActionStdoutNone(Substitute("table column_set_block_size $0 $1 $2 $3",
+                                           master_addr, kTableName, kColumnName, "10240")));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), "10240");
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), "40960");
+
+  // Test invalid block_size.
+  NO_FATALS(check_bad_input("column_set_block_size", "0", "Invalid block size:"));
+}
+
+TEST_F(ToolTest, TestColumnSetDefault) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.table.set.default";
+  const string& kIntColumn = "col.int";
+  const string& kStringColumn = "col.string";
+  const string& kBoolColumn = "col.bool";
+  const string& kFloatColumn = "col.float";
+  const string& kDoubleColumn = "col.double";
+  const string& kBinaryColumn = "col.binary";
+  const string& kUnixtimeMicrosColumn = "col.unixtime_micros";
+  const string& kDecimalColumn = "col.decimal";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn(kIntColumn)
+      ->Type(client::KuduColumnSchema::INT64);
+  schema_builder.AddColumn(kStringColumn)
+      ->Type(client::KuduColumnSchema::STRING);
+  schema_builder.AddColumn(kBoolColumn)
+      ->Type(client::KuduColumnSchema::BOOL);
+  schema_builder.AddColumn(kFloatColumn)
+      ->Type(client::KuduColumnSchema::FLOAT);
+  schema_builder.AddColumn(kDoubleColumn)
+      ->Type(client::KuduColumnSchema::DOUBLE);
+  schema_builder.AddColumn(kBinaryColumn)
+      ->Type(client::KuduColumnSchema::BINARY);
+  schema_builder.AddColumn(kUnixtimeMicrosColumn)
+      ->Type(client::KuduColumnSchema::UNIXTIME_MICROS);
+  schema_builder.AddColumn(kDecimalColumn)
+      ->Type(client::KuduColumnSchema::DECIMAL)
+      ->Precision(30)
+      ->Scale(4);
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  FLAGS_show_attributes = true;
+
+  // Test setting write_default value for a column.
+  const auto check_set_defult = [&](const string& col_name,
+                                    const string& value,
+                                    const string& target_value) {
+    RunActionStdoutNone(Substitute("table column_set_default $0 $1 $2 $3",
+                                   master_addr, kTableName, col_name, value));
+    ASSERT_OK(client->OpenTable(kTableName, &table));
+    ASSERT_STR_CONTAINS(table->schema().ToString(), target_value);
+  };
+
+  // Test a few error cases.
+  const auto check_bad_input = [&](const string& col_name,
+                                   const string& value,
+                                   const string& err) {
+    string stderr;
+    Status s = RunActionStderrString(
+      Substitute("table column_set_default $0 $1 $2 $3",
+                 master_addr, kTableName, col_name, value), &stderr);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(stderr, err);
+  };
+
+  // Set write_default value for a int column.
+  NO_FATALS(check_set_defult(kIntColumn, "[-2]", "-2"));
+  NO_FATALS(check_bad_input(kIntColumn, "[\"string\"]", "unable to parse"));
+  NO_FATALS(check_bad_input(kIntColumn, "[123.4]", "unable to parse"));
+
+  // Set write_default value for a string column.
+  NO_FATALS(check_set_defult(kStringColumn, "[\"string_value\"]", "string_value"));
+  NO_FATALS(check_bad_input(kStringColumn, "[123]", "unable to parse"));
+  // Test empty string is a valid default value for a string column.
+  NO_FATALS(check_set_defult(kStringColumn, "[\"\"]", "\"\""));
+  NO_FATALS(check_set_defult(kStringColumn, "[null]", "\"\""));
+  // Test invalid input of an empty string.
+  NO_FATALS(check_bad_input(kStringColumn, "\"\"", "expected object array but got string"));
+  NO_FATALS(check_bad_input(kStringColumn, "[]", "you should provide one default value"));
+
+  // Set write_default value for a bool column.
+  NO_FATALS(check_set_defult(kBoolColumn, "[true]", "true"));
+  NO_FATALS(check_set_defult(kBoolColumn, "[false]", "false"));
+  NO_FATALS(check_bad_input(kBoolColumn, "[TRUE]", "JSON text is corrupt: Invalid value."));
+
+  // Set write_default value for a float column.
+  NO_FATALS(check_set_defult(kFloatColumn, "[1.23]", "1.23"));
+
+  // Set write_default value for a double column.
+  NO_FATALS(check_set_defult(kDoubleColumn, "[-1.2345]", "-1.2345"));
+
+  // Set write_default value for a binary column.
+  // Empty string tests is the same with string column.
+  NO_FATALS(check_set_defult(kBinaryColumn, "[\"binary_value\"]", "binary_value"));
+
+  // Set write_default value for a unixtime_micro column.
+  NO_FATALS(check_set_defult(kUnixtimeMicrosColumn, "[12345]", "12345"));
+
+  // Test setting write_default value for a decimal column.
+  NO_FATALS(check_bad_input(
+    kDecimalColumn,
+    "[123]",
+    "DECIMAL columns are not supported for setting default value by this tool"));
+}
+
+TEST_F(ToolTest, TestDeleteColumn) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.table.delete.column";
+  const string& kColumnName = "col.0";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn(kColumnName)
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), kColumnName);
+  NO_FATALS(RunActionStdoutNone(Substitute("table delete_column $0 $1 $2",
+                                           master_addr, kTableName, kColumnName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_NOT_CONTAINS(table->schema().ToString(), kColumnName);
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

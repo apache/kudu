@@ -46,6 +46,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/table_scanner.h"
@@ -53,10 +54,12 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
+using kudu::client::KuduColumnStorageAttributes;
 using kudu::client::KuduPredicate;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
@@ -65,6 +68,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
 using std::cerr;
 using std::cout;
@@ -72,6 +76,7 @@ using std::endl;
 using std::set;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
@@ -160,10 +165,14 @@ const char* const kConfigValueArg = "config_value";
 const char* const kErrorMsgArg = "unable to parse value $0 for column $1 of type $2";
 const char* const kTableRangeLowerBoundArg = "table_range_lower_bound";
 const char* const kTableRangeUpperBoundArg = "table_range_upper_bound";
+const char* const kDefaultValueArg = "default_value";
+const char* const kCompressionTypeArg = "compression_type";
+const char* const kEncodingTypeArg = "encoding_type";
+const char* const kBlockSizeArg = "block_size";
 
 enum PartitionAction {
-    ADD,
-    DROP,
+  ADD,
+  DROP,
 };
 
 Status DeleteTable(const RunnerContext& context) {
@@ -654,6 +663,203 @@ Status AddRangePartition(const RunnerContext& context) {
   return ModifyRangePartition(context, PartitionAction::ADD);
 }
 
+Status ParseValueOfType(const string& default_value,
+                        KuduColumnSchema::DataType type,
+                        KuduValue** value) {
+  JsonReader reader(default_value);
+  RETURN_NOT_OK(reader.Init());
+  vector<const rapidjson::Value*> values;
+  RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(),
+                                          /*field=*/nullptr,
+                                          &values));
+  if (values.size() != 1) {
+    return Status::InvalidArgument(Substitute(
+      "We got $0 value(s), you should provide one default value.",
+      std::to_string(values.size())));
+  }
+
+  string msg = Substitute("unable to parse value for column type $0",
+                          KuduColumnSchema::DataTypeToString(type));
+  switch (type) {
+    case KuduColumnSchema::DataType::INT8:
+    case KuduColumnSchema::DataType::INT16:
+    case KuduColumnSchema::DataType::INT32:
+    case KuduColumnSchema::DataType::INT64:
+    case KuduColumnSchema::DataType::UNIXTIME_MICROS: {
+      int64_t int_value;
+      RETURN_NOT_OK_PREPEND(
+          reader.ExtractInt64(values[0], /*field=*/nullptr, &int_value), msg);
+      *value = KuduValue::FromInt(int_value);
+      break;
+    }
+    case KuduColumnSchema::DataType::BINARY:
+    case KuduColumnSchema::DataType::STRING: {
+      string str_value;
+      RETURN_NOT_OK_PREPEND(
+        reader.ExtractString(values[0], /*field=*/nullptr, &str_value), msg);
+      *value = KuduValue::CopyString(str_value);
+      break;
+    }
+    case KuduColumnSchema::DataType::BOOL: {
+      bool bool_value;
+      RETURN_NOT_OK_PREPEND(
+        reader.ExtractBool(values[0], /*field=*/nullptr, &bool_value), msg);
+      *value = KuduValue::FromBool(bool_value);
+      break;
+    }
+    case KuduColumnSchema::DataType::FLOAT: {
+      double double_value;
+      RETURN_NOT_OK_PREPEND(
+        reader.ExtractDouble(values[0], /*field=*/nullptr, &double_value), msg);
+      *value = KuduValue::FromFloat(double_value);
+      break;
+    }
+    case KuduColumnSchema::DataType::DOUBLE: {
+      double double_value;
+      RETURN_NOT_OK_PREPEND(
+        reader.ExtractDouble(values[0], /*field=*/nullptr, &double_value), msg);
+      *value = KuduValue::FromDouble(double_value);
+      break;
+    }
+    case KuduColumnSchema::DataType::DECIMAL:
+    default:
+      return Status::NotSupported(Substitute(
+        "$0 columns are not supported for setting default value by this tool,"
+        "is this tool out of date?",
+        KuduColumnSchema::DataTypeToString(type)));
+  }
+  return Status::OK();
+}
+
+Status ColumnSetDefault(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& default_value = FindOrDie(context.required_args, kDefaultValueArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  KuduSchema schema;
+  RETURN_NOT_OK(client->GetTableSchema(table_name, &schema));
+
+  // Here we use the first column to initialize an object of KuduColumnSchema
+  // for there is no default constructor for it.
+  KuduColumnSchema col_schema = schema.Column(0);
+  if (!schema.HasColumn(column_name, &col_schema)) {
+    return Status::NotFound(Substitute("Couldn't find column $0", column_name));
+  }
+
+  KuduValue* value = nullptr;
+  RETURN_NOT_OK(ParseValueOfType(default_value, col_schema.type(), &value));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->Default(value);
+  return alterer->Alter();
+}
+
+Status ColumnRemoveDefault(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->RemoveDefault();
+  return alterer->Alter();
+}
+
+Status ColumnSetCompression(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& compression_type_arg = FindOrDie(context.required_args, kCompressionTypeArg);
+  std::string compression_type_uc;
+  ToUpperCase(compression_type_arg, &compression_type_uc);
+
+  static unordered_map<string, KuduColumnStorageAttributes::CompressionType> compression_type_map =
+     {{"DEFAULT_COMPRESSION", KuduColumnStorageAttributes::CompressionType::DEFAULT_COMPRESSION},
+      {"NO_COMPRESSION", KuduColumnStorageAttributes::CompressionType::NO_COMPRESSION},
+      {"SNAPPY", KuduColumnStorageAttributes::CompressionType::SNAPPY},
+      {"LZ4", KuduColumnStorageAttributes::CompressionType::LZ4},
+      {"ZLIB", KuduColumnStorageAttributes::CompressionType::ZLIB}};
+
+  const KuduColumnStorageAttributes::CompressionType* compression_type =
+    FindOrNull(compression_type_map, compression_type_uc);
+  if (!compression_type) {
+    return Status::InvalidArgument(Substitute(
+      "Failed to parse compression type from $0, supported compression types are: $1.",
+      compression_type_arg,
+      JoinKeysIterator(compression_type_map.begin(), compression_type_map.end(), ", ")));
+  }
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->Compression(*compression_type);
+  return alterer->Alter();
+}
+
+Status ColumnSetEncoding(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& encoding_type_arg = FindOrDie(context.required_args, kEncodingTypeArg);
+  std::string encoding_type_uc;
+  ToUpperCase(encoding_type_arg, &encoding_type_uc);
+
+  static unordered_map<string, KuduColumnStorageAttributes::EncodingType> encoding_type_map =
+     {{"AUTO_ENCODING", KuduColumnStorageAttributes::EncodingType::AUTO_ENCODING},
+      {"PLAIN_ENCODING", KuduColumnStorageAttributes::EncodingType::PLAIN_ENCODING},
+      {"PREFIX_ENCODING", KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING},
+      {"RLE", KuduColumnStorageAttributes::EncodingType::RLE},
+      {"DICT_ENCODING", KuduColumnStorageAttributes::EncodingType::DICT_ENCODING},
+      {"BIT_SHUFFLE", KuduColumnStorageAttributes::EncodingType::BIT_SHUFFLE}};
+
+  const KuduColumnStorageAttributes::EncodingType* encoding_type =
+    FindOrNull(encoding_type_map, encoding_type_uc);
+  if (!encoding_type) {
+    return Status::InvalidArgument(Substitute(
+      "Failed to parse encoding type from $0, supported encoding types are: $1.",
+      encoding_type_arg,
+      JoinKeysIterator(encoding_type_map.begin(), encoding_type_map.end(), ", ")));
+  }
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->Encoding(*encoding_type);
+  return alterer->Alter();
+}
+
+Status ColumnSetBlockSize(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& str_block_size = FindOrDie(context.required_args, kBlockSizeArg);
+
+  int32_t block_size;
+  if (!safe_strto32(str_block_size, &block_size)) {
+    return Status::InvalidArgument(Substitute(
+      "Unable to parse block_size value: $0.", str_block_size));
+  }
+  if (block_size <= 0) {
+    return Status::InvalidArgument(Substitute(
+      "Invalid block size: $0, it should be set higher than 0.", str_block_size));
+  }
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->BlockSize(block_size);
+  return alterer->Alter();
+}
+
+Status DeleteColumn(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->DropColumn(column_name);
+  return alterer->Alter();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTableMode() {
@@ -800,9 +1006,69 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("upper_bound_type")
       .Build();
 
+  unique_ptr<Action> column_set_default =
+      ActionBuilder("column_set_default", &ColumnSetDefault)
+      .Description("Set write_default value for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .AddRequiredParameter({ kDefaultValueArg,
+                              "Write default value of the column, should be provided as a "
+                              "JSON array, e.g. [1] or [\"foo\"]" })
+      .Build();
+
+  unique_ptr<Action> column_remove_default =
+      ActionBuilder("column_remove_default", &ColumnRemoveDefault)
+      .Description("Remove write_default value for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .Build();
+
+  unique_ptr<Action> column_set_compression =
+      ActionBuilder("column_set_compression", &ColumnSetCompression)
+      .Description("Set compression type for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .AddRequiredParameter({ kCompressionTypeArg, "Compression type of the column" })
+      .Build();
+
+  unique_ptr<Action> column_set_encoding =
+      ActionBuilder("column_set_encoding", &ColumnSetEncoding)
+      .Description("Set encoding type for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .AddRequiredParameter({ kEncodingTypeArg, "Encoding type of the column" })
+      .Build();
+
+  unique_ptr<Action> column_set_block_size =
+      ActionBuilder("column_set_block_size", &ColumnSetBlockSize)
+      .Description("Set block size for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .AddRequiredParameter({ kBlockSizeArg, "Block size of the column" })
+      .Build();
+
+  unique_ptr<Action> delete_column =
+      ActionBuilder("delete_column", &DeleteColumn)
+      .Description("Delete a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to delete" })
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(add_range_partition))
+      .AddAction(std::move(column_set_default))
+      .AddAction(std::move(column_remove_default))
+      .AddAction(std::move(column_set_compression))
+      .AddAction(std::move(column_set_encoding))
+      .AddAction(std::move(column_set_block_size))
+      .AddAction(std::move(delete_column))
       .AddAction(std::move(delete_table))
       .AddAction(std::move(describe_table))
       .AddAction(std::move(drop_range_partition))
