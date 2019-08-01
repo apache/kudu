@@ -113,8 +113,8 @@ public class CreateTableOptions {
   }
 
   /**
-   * Add a range partition partition to the table with an inclusive lower bound
-   * and an exclusive upper bound.
+   * Add a range partition to the table with an inclusive lower bound and an
+   * exclusive upper bound.
    *
    * If either row is empty, then that end of the range will be unbounded. If a
    * range column is missing a value, the logical minimum value for that column
