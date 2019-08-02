@@ -73,7 +73,7 @@ class TestCFileSet : public KuduRowSetTest {
   TestCFileSet() :
     KuduRowSetTest(Schema({ ColumnSchema("c0", INT32),
                             ColumnSchema("c1", INT32, false, nullptr, nullptr, GetRLEStorage()),
-                            ColumnSchema("c2", INT32) }, 1))
+                            ColumnSchema("c2", INT32, true) }, 1))
   {}
 
   virtual void SetUp() OVERRIDE {
