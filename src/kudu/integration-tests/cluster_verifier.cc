@@ -18,7 +18,6 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 
 #include <memory>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -153,23 +152,6 @@ Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
                                          count, expected_row_count));
   }
   return Status::OK();
-}
-
-void ClusterVerifier::CheckRowCountWithRetries(const std::string& table_name,
-                                               ComparisonMode mode,
-                                               int expected_row_count,
-                                               const MonoDelta& timeout) {
-  MonoTime deadline = MonoTime::Now() + timeout;
-  Status s;
-  while (true) {
-    s = DoCheckRowCount(table_name, mode, expected_row_count);
-    if (s.ok() || deadline < MonoTime::Now()) break;
-    LOG(WARNING) << "CheckRowCount() has not succeeded yet: " << s.ToString()
-                 << "... will retry";
-    SleepFor(MonoDelta::FromMilliseconds(100));
-  }
-
-  ASSERT_OK(s);
 }
 
 } // namespace kudu

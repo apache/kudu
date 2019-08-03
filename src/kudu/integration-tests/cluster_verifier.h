@@ -70,12 +70,6 @@ class ClusterVerifier {
                      ComparisonMode mode,
                      int expected_row_count);
 
-  // The same as above, but retries until a timeout elapses.
-  void CheckRowCountWithRetries(const std::string& table_name,
-                                ComparisonMode mode,
-                                int expected_row_count,
-                                const MonoDelta& timeout);
-
   // Run the ksck utility against the cluster.
   Status RunKsck();
 
