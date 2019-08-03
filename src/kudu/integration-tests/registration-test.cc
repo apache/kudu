@@ -246,11 +246,22 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
 
-  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
+  int64_t seqno = descs.back()->latest_seqno();
+  descs.clear();
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
+  ASSERT_EQ(descs.back()->latest_seqno(), seqno);
 
-  // TODO: when the instance ID / sequence number stuff is implemented,
-  // restart the TS and ensure that it re-registers with the newer sequence
-  // number.
+  // Restart the tserver, so it will register, and ensure that it gets the
+  // newer sequence number.
+  cluster_->mini_tablet_server(0)->Shutdown();
+  ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
+
+  seqno = descs.back()->latest_seqno();
+  descs.clear();
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
+  ASSERT_GT(descs.back()->latest_seqno(), seqno);
 }
 
 TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
