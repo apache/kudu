@@ -218,6 +218,43 @@ LABEL name="Apache Kudu Build" \
       org.label-schema.version=$VERSION
 
 #
+# ---- Kudu Python ----
+# Builds a runtime image with the Kudu python client pre-installed.
+#
+FROM dev AS kudu-python
+
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib64
+WORKDIR $INSTALL_DIR/python
+# Copy the requirements file.
+COPY ./python/requirements.txt requirements.txt
+COPY --from=build /usr/local /usr/local/
+COPY --from=build /kudu/python/dist/kudu-python-*.tar.gz .
+RUN pip install -r requirements.txt \
+    && rm -rf requirements.txt \
+    && pip install kudu-python-*.tar.gz \
+    && rm -rf kudu-python-*.tar.gz
+
+ARG DOCKERFILE
+ARG MAINTAINER
+ARG URL
+ARG VCS_TYPE
+ARG VCS_URL
+ARG VERSION
+
+LABEL org.label-schema.name="Apache Kudu Python Client Base" \
+      org.label-schema.description="Builds a runtime image with the Kudu python client pre-installed." \
+      # Common labels.
+      org.label-schema.dockerfile=$DOCKERFILE \
+      org.label-schema.maintainer=$MAINTAINER \
+      org.label-schema.url=$URL \
+      org.label-schema.vcs-type=$VCS_TYPE \
+      org.label-schema.vcs-url=$VCS_URL \
+      org.label-schema.version=$VERSION
+
+# Entry point to the python.
+CMD ["python"]
+
+#
 # ---- Kudu ----
 # Builds a runtime image with the Kudu binaries pre-installed.
 #

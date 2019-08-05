@@ -107,6 +107,9 @@ A base image that has all the development libraries for Kudu pre-installed.
 === apache/kudu:runtime-[OS]-[VERSION]
 A base image that has all the runtime libraries for Kudu pre-installed.
 
+=== apache/kudu:kudu-python-[VERSION]
+Builds a runtime image with the Kudu python client pre-installed.
+
 == Tips and Troubleshooting
 
 === Ensure enough resources are allocated to docker
