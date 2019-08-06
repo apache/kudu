@@ -202,17 +202,15 @@ BISON_VERSION=3.0.5
 BISON_NAME=bison-$BISON_VERSION
 BISON_SOURCE=$TP_SOURCE_DIR/$BISON_NAME
 
-# TODO(dan): bump to a release version once HIVE-17747 and HIVE-16886/HIVE-18526
-# are published. The SHA below is the current head of branch-2.
 # Note: The Hive release binary tarball is stripped of unnecessary jars before
 # being uploaded. See thirdparty/package-hive.sh for details.
-HIVE_VERSION=498021fa15186aee8b282d3c032fbd2cede6bec4
+HIVE_VERSION=3.1.1
 HIVE_NAME=hive-$HIVE_VERSION
 HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 
 # Note: The Hadoop release tarball is stripped of unnecessary jars before being
 # uploaded. See thirdparty/package-hadoop.sh for details.
-HADOOP_VERSION=2.8.5
+HADOOP_VERSION=3.2.0
 HADOOP_NAME=hadoop-$HADOOP_VERSION
 HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 

@@ -27,10 +27,9 @@ import java.util.UUID;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.DefaultPartitionExpressionProxy;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.MetaStoreEventListener;
-import org.apache.hadoop.hive.metastore.MetaStoreUtils;
-import org.apache.hadoop.hive.metastore.MockPartitionExpressionForMetastore;
 import org.apache.hadoop.hive.metastore.PartitionExpressionProxy;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
@@ -39,7 +38,10 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
+import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.thrift.TException;
+import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -68,7 +70,7 @@ public class TestKuduMetastorePlugin {
     // Avoids a dependency on the default partition expression class, which is
     // contained in the hive-exec jar.
     metastoreConf.setClass(HiveConf.ConfVars.METASTORE_EXPRESSION_PROXY_CLASS.varname,
-                           MockPartitionExpressionForMetastore.class,
+                           DefaultPartitionExpressionProxy.class,
                            PartitionExpressionProxy.class);
 
     // Add the KuduMetastorePlugin.
@@ -516,7 +518,7 @@ public class TestKuduMetastorePlugin {
         EnvironmentContext envContext = new EnvironmentContext();
         envContext.putToProperties(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
                                    UUID.randomUUID().toString());
-        client.dropTable(table.getDbName(), table.getTableName(),
+        client.dropTable(table.getCatName(), table.getDbName(), table.getTableName(),
                          /* delete data */ true,
                          /* ignore unknown */ false,
                          envContext);
@@ -535,7 +537,7 @@ public class TestKuduMetastorePlugin {
     EnvironmentContext envContext = new EnvironmentContext();
     envContext.putToProperties(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
                                table.getParameters().get(KuduMetastorePlugin.KUDU_TABLE_ID_KEY));
-    client.dropTable(table.getDbName(), table.getTableName(),
+    client.dropTable(table.getCatName(), table.getDbName(), table.getTableName(),
                      /* delete data */ true,
                      /* ignore unknown */ false,
                      envContext);
@@ -545,7 +547,7 @@ public class TestKuduMetastorePlugin {
       table.getParameters().clear();
       client.createTable(table);
       try {
-        client.dropTable(table.getDbName(), table.getTableName(),
+        client.dropTable(table.getCatName(), table.getDbName(), table.getTableName(),
             /* delete data */ true,
             /* ignore unknown */ false,
             envContext);
@@ -563,7 +565,7 @@ public class TestKuduMetastorePlugin {
       table.getParameters().clear();
       client.createTable(table);
       try {
-        client.dropTable(table.getDbName(), table.getTableName(),
+        client.dropTable(table.getCatName(), table.getDbName(), table.getTableName(),
             /* delete data */ true,
             /* ignore unknown */ false,
             envContext);

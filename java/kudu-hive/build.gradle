@@ -27,7 +27,7 @@ dependencies {
   provided libs.hadoopMRClientCommon
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile libs.hiveMetastoreTest
+  testCompile libs.hiveTestUtils
   testCompile libs.junit
   testCompile libs.log4j
   testCompile libs.log4jSlf4jImpl
