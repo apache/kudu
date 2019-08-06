@@ -51,6 +51,8 @@ target_link_libraries(kudu_hms ${HMS_DEPS})
 # mini_hms
 ##############################
 
+# Link the home directories, so that they can be found via
+# test_util::FindHomeDir in MiniHms::Start.
 execute_process(COMMAND ln -nsf
                 "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hive"
                 "${EXECUTABLE_OUTPUT_PATH}/hive-home")
@@ -63,7 +65,8 @@ execute_process(COMMAND ln -nsf
 
 file(GLOB DEPENDENCY_JARS
   "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hive/lib/*"
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop/share/hadoop/common/*")
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop/share/hadoop/common/*"
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop/share/hadoop/common/lib/*")
 
 add_jar(hms-plugin
   "${CMAKE_SOURCE_DIR}/java/kudu-hive/src/main/java/org/apache/kudu/hive/metastore/KuduMetastorePlugin.java"

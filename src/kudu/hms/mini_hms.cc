@@ -149,11 +149,24 @@ Status MiniHms::Start() {
   map<string, string> env_vars {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
+      { "HADOOP_CONF_DIR",  Substitute("$0/etc/hadoop", hadoop_home) },
       { "HIVE_AUX_JARS_PATH", aux_jars },
       { "HIVE_CONF_DIR", data_root_ },
       { "JAVA_TOOL_OPTIONS", java_options },
       { "HADOOP_CONF_DIR", data_root_ },
+      // Set HADOOP_OS_TYPE=Linux due to HADOOP-8719.
+      // TODO(ghenke): Remove after HADOOP-15966 is available (Hadoop 3.1.3+)
+      { "HADOOP_OS_TYPE", "Linux" }
   };
+
+  if (!schema_initialized_) {
+    // Run the schematool to initialize the database.
+    RETURN_NOT_OK(Subprocess::Call({Substitute("$0/bin/schematool", hive_home),
+                                    "-dbType", "derby", "-initSchema"}, "",
+                                   nullptr, nullptr,
+                                   env_vars));
+    schema_initialized_ = true;
+  }
 
   // Start the HMS.
   hms_process_.reset(new Subprocess({
@@ -215,10 +228,6 @@ Status MiniHms::CreateHiveSite() const {
   const string listeners = Substitute("org.apache.hive.hcatalog.listener.DbNotificationListener$0",
       enable_kudu_plugin_ ? ",org.apache.kudu.hive.metastore.KuduMetastorePlugin" : "");
 
-  // - datanucleus.schema.autoCreateAll
-  // - hive.metastore.schema.verification
-  //     Allow Hive to startup and run without first running the schemaTool.
-  //
   // - hive.metastore.event.db.listener.timetolive
   //     Configures how long the Metastore will store notification log events
   //     before GCing them.
@@ -239,6 +248,14 @@ Status MiniHms::CreateHiveSite() const {
   //     Configures the HMS to add the entire thrift Table/Partition
   //     objects to the HMS notifications.
   //
+  // - hive.metastore.event.db.notification.api.auth
+  //     Disables the authorization on the DbNotificationListener related
+  //     metastore APIs such as get_next_notification. If set to true, then
+  //     only the superusers in proxy settings have the permission.
+  //
+  // - hive.log4j.file
+  //     Configures the location of the HMS log4j configuration.
+  //
   static const string kHiveFileTemplate = R"(
 <configuration>
   <property>
@@ -246,16 +263,6 @@ Status MiniHms::CreateHiveSite() const {
     <value>
       $0
     </value>
-  </property>
-
-  <property>
-    <name>datanucleus.schema.autoCreateAll</name>
-    <value>true</value>
-  </property>
-
-  <property>
-    <name>hive.metastore.schema.verification</name>
-    <value>false</value>
   </property>
 
   <property>
@@ -308,8 +315,17 @@ Status MiniHms::CreateHiveSite() const {
     <value>true</value>
   </property>
 
-  $7
+  <property>
+    <name>hive.metastore.event.db.notification.api.auth</name>
+    <value>false</value>
+  </property>
 
+  <property>
+    <name>hive.log4j.file</name>
+    <value>$7</value>
+  </property>
+
+  $8
 </configuration>
   )";
 
@@ -367,6 +383,7 @@ Status MiniHms::CreateHiveSite() const {
                                          keytab_file_,
                                          service_principal_,
                                          SaslProtection::name_of(protection_),
+                                         JoinPathSegments(data_root_, "hive-log4j2.properties"),
                                          sentry_properties);
 
   if (IsAuthorizationEnabled()) {
@@ -463,9 +480,7 @@ Status MiniHms::CreateCoreSite() const {
 Status MiniHms::CreateLogConfig() const {
   // Configure the HMS to output ERROR messages to the stderr console, and INFO
   // and above to hms.log in the data root. The console messages have a special
-  // 'HMS' tag included to disambiguate them from other Java component logs. The
-  // HMS automatically looks for a logging configuration named
-  // 'hive-log4j2.properties' in the configured HIVE_CONF_DIR.
+  // 'HMS' tag included to disambiguate them from other Java component logs.
   static const string kFileTemplate = R"(
 appender.console.type = Console
 appender.console.name = console

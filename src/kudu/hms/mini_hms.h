@@ -130,6 +130,9 @@ class MiniHms {
 
   // Whether to enable the Kudu listener plugin.
   bool enable_kudu_plugin_ = true;
+
+  // Whether the Hive metastore schema has been initialized.
+  bool schema_initialized_ = false;
 };
 
 } // namespace hms

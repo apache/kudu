@@ -76,6 +76,7 @@ fi
 DIRS="client"
 DIRS="$DIRS common/jdiff"
 DIRS="$DIRS common/sources"
+DIRS="$DIRS common/webapps"
 DIRS="$DIRS hdfs/sources"
 DIRS="$DIRS httpfs"
 DIRS="$DIRS kms"

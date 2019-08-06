@@ -143,10 +143,15 @@ class Subprocess {
   //
   // Also collects the output from the child process stdout and stderr into
   // 'stdout_out' and 'stderr_out' respectively.
+  //
+  // Optionally allows a passed map of environment variables to be set
+  // on the subprocess via `env_vars`.
   static Status Call(const std::vector<std::string>& argv,
                      const std::string& stdin_in = "",
                      std::string* stdout_out = nullptr,
-                     std::string* stderr_out = nullptr) WARN_UNUSED_RESULT;
+                     std::string* stderr_out = nullptr,
+                     std::map<std::string, std::string> env_vars = {})
+                     WARN_UNUSED_RESULT;
 
   // Return the pipe fd to the child's standard stream.
   // Stream should not be disabled or shared.

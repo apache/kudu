@@ -223,9 +223,10 @@ TEST_P(HmsClientTest, TestHmsOperations) {
       << "table names: " << table_names;
 
   // Get filtered table names.
+  // NOTE: LIKE filters are used instead of = filters due to HIVE-21614
   table_names.clear();
   string filter = Substitute(
-      "$0$1 = \"$2\"", HmsClient::kHiveFilterFieldParams,
+      "$0$1 LIKE \"$2\"", HmsClient::kHiveFilterFieldParams,
       HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler);
   ASSERT_OK(client.GetTableNames(database_name, filter, &table_names))
   std::sort(table_names.begin(), table_names.end());

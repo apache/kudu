@@ -230,9 +230,10 @@ Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
     for (const auto& database_name : database_names) {
       table_names.clear();
       tables.clear();
+      // NOTE: LIKE filters are used instead of = filters due to HIVE-21614
       RETURN_NOT_OK(client->GetTableNames(
             database_name,
-            Substitute("$0$1 = \"$2\" OR $0$1 = \"$3\"",
+            Substitute("$0$1 LIKE \"$2\" OR $0$1 LIKE \"$3\"",
               HmsClient::kHiveFilterFieldParams,
               HmsClient::kStorageHandlerKey,
               HmsClient::kKuduStorageHandler,

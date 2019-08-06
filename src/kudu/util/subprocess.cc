@@ -711,7 +711,8 @@ Status Subprocess::Call(const string& arg_str) {
 Status Subprocess::Call(const vector<string>& argv,
                         const string& stdin_in,
                         string* stdout_out,
-                        string* stderr_out) {
+                        string* stderr_out,
+                        map<string, string> env_vars) {
   Subprocess p(argv);
 
   if (stdout_out) {
@@ -720,6 +721,11 @@ Status Subprocess::Call(const vector<string>& argv,
   if (stderr_out) {
     p.ShareParentStderr(false);
   }
+
+  if (!env_vars.empty()) {
+    p.SetEnvVars(std::move(env_vars));
+  }
+
   RETURN_NOT_OK_PREPEND(p.Start(),
                         "Unable to fork " + argv[0]);
 
