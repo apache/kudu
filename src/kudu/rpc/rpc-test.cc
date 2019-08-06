@@ -942,15 +942,15 @@ TEST_P(TestRpc, TestCallTimeout) {
   // Test a very short timeout - we expect this will time out while the
   // call is still trying to connect, or in the send queue. This was triggering ASAN failures
   // before.
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromNanoseconds(1)));
+  NO_FATALS(DoTestExpectTimeout(p, MonoDelta::FromNanoseconds(1)));
 
   // Test a longer timeout - expect this will time out after we send the request,
   // but shorter than our threshold for two-stage timeout handling.
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(200)));
+  NO_FATALS(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(200)));
 
   // Test a longer timeout - expect this will trigger the "two-stage timeout"
   // code path.
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(1500)));
+  NO_FATALS(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(1500)));
 }
 
 // Inject 500ms delay in negotiation, and send a call with a short timeout, followed by
@@ -970,7 +970,7 @@ TEST_P(TestRpc, TestCallTimeoutDoesntAffectNegotiation) {
           GenericCalculatorService::static_service_name());
 
   FLAGS_rpc_negotiation_inject_delay_ms = 500;
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(50)));
+  NO_FATALS(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(50)));
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 
   // Only the second call should have been received by the server, because we
@@ -1015,7 +1015,7 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
           GenericCalculatorService::static_service_name());
 
   bool is_negotiation_error = false;
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(
+  NO_FATALS(DoTestExpectTimeout(
       p, MonoDelta::FromMilliseconds(100), &is_negotiation_error));
   EXPECT_TRUE(is_negotiation_error);
 

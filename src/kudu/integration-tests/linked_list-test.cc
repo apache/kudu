@@ -214,7 +214,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
                                          this, _1)));
     LOG(INFO) << "Done with tserver kill test.";
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
-    ASSERT_NO_FATAL_FAILURE(RestartCluster());
+    NO_FATALS(RestartCluster());
     // Again wait for cluster to finish bootstrapping.
     WaitForTSAndReplicas();
 
@@ -230,7 +230,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   }
 
   // Kill and restart the cluster, verify data remains.
-  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  NO_FATALS(RestartCluster());
 
   LOG(INFO) << "Verifying rows after restarting entire cluster.";
 
@@ -260,13 +260,13 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size() - 1));
   }
 
-  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  NO_FATALS(RestartCluster());
 
   // Sleep a little bit, so that the tablet is probably in bootstrapping state.
   SleepFor(MonoDelta::FromMilliseconds(100));
 
   // Restart while bootstrapping
-  ASSERT_NO_FATAL_FAILURE(RestartCluster());
+  NO_FATALS(RestartCluster());
 
   ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
   ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));

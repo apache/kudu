@@ -179,9 +179,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     StartThreads(rs.get());
     SleepFor(MonoDelta::FromSeconds(FLAGS_num_seconds_per_thread));
     base::subtle::NoBarrier_Store(&should_run_, 0);
-    ASSERT_NO_FATAL_FAILURE(JoinThreads());
+    NO_FATALS(JoinThreads());
 
-    ASSERT_NO_FATAL_FAILURE(ReadVerify(rs.get()));
+    NO_FATALS(ReadVerify(rs.get()));
   }
 
   bool ShouldRun() const {

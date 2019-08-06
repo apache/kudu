@@ -649,7 +649,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 
-  ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 2, 0, test_data.size() * 2));
+  NO_FATALS(CheckMetrics(entity, 0, 0, 0, 2, 0, test_data.size() * 2));
 }
 
 TYPED_TEST(BlockManagerTest, PersistenceTest) {
@@ -718,7 +718,7 @@ TYPED_TEST(BlockManagerTest, BlockDistributionTest) {
                                      paths,
                                      true /* create */,
                                      false /* load_test_group */));
-  ASSERT_NO_FATAL_FAILURE(this->RunBlockDistributionTest(paths));
+  NO_FATALS(this->RunBlockDistributionTest(paths));
 }
 
 TYPED_TEST(BlockManagerTest, MultiPathTest) {
@@ -734,7 +734,7 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
                                      true /* create */,
                                      false /* load_test_group */));
 
-  ASSERT_NO_FATAL_FAILURE(this->RunMultipathTest(paths));
+  NO_FATALS(this->RunMultipathTest(paths));
 }
 
 static void CloseHelper(ReadableBlock* block) {
@@ -770,7 +770,7 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
                                      shared_ptr<MemTracker>(),
                                      { this->test_dir_ },
                                      false));
-  ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
+  NO_FATALS(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
 
   for (int i = 0; i < 3; i++) {
     unique_ptr<WritableBlock> writer;
@@ -778,7 +778,7 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
 
     // An open writer. Also reflected in total_writable_blocks.
     ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &writer));
-    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+    NO_FATALS(CheckMetrics(
         entity, 0, 1, i, i + 1,
         i * kTestData.length(), i * kTestData.length()));
 
@@ -786,13 +786,13 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     // is now reflected in total_bytes_written.
     ASSERT_OK(writer->Append(kTestData));
     ASSERT_OK(writer->Close());
-    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+    NO_FATALS(CheckMetrics(
         entity, 0, 0, i, i + 1,
         i * kTestData.length(), (i + 1) * kTestData.length()));
 
     // An open reader.
     ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
-    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+    NO_FATALS(CheckMetrics(
         entity, 1, 0, i + 1, i + 1,
         i * kTestData.length(), (i + 1) * kTestData.length()));
 
@@ -800,20 +800,20 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
     Slice data(scratch.get(), kTestData.length());
     ASSERT_OK(reader->Read(0, data));
-    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+    NO_FATALS(CheckMetrics(
         entity, 1, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
 
     // The reader is now gone.
     ASSERT_OK(reader->Close());
-    ASSERT_NO_FATAL_FAILURE(CheckMetrics(
+    NO_FATALS(CheckMetrics(
         entity, 0, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
   }
 }
 
 TYPED_TEST(BlockManagerTest, MemTrackerTest) {
-  ASSERT_NO_FATAL_FAILURE(this->RunMemTrackerTest());
+  NO_FATALS(this->RunMemTrackerTest());
 }
 
 TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {

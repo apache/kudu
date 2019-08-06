@@ -389,7 +389,7 @@ class TestCompaction : public KuduRowSetTest {
       // Flush it to disk and re-open it.
       shared_ptr<DiskRowSet> rs;
       FlushMRSAndReopenNoRoll(*mrs, schema, &rs);
-      ASSERT_NO_FATAL_FAILURE();
+      NO_FATALS();
       rowsets.push_back(rs);
 
       // Perform some updates into DMS
@@ -399,7 +399,7 @@ class TestCompaction : public KuduRowSetTest {
 
     // Merge them.
     shared_ptr<DiskRowSet> result_rs;
-    ASSERT_NO_FATAL_FAILURE(CompactAndReopenNoRoll(rowsets, projection, &result_rs));
+    NO_FATALS(CompactAndReopenNoRoll(rowsets, projection, &result_rs));
 
     // Verify the resulting compaction output has the right number
     // of rows.
@@ -438,7 +438,7 @@ class TestCompaction : public KuduRowSetTest {
         }
         shared_ptr<DiskRowSet> rs;
         FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
-        ASSERT_NO_FATAL_FAILURE();
+        NO_FATALS();
         rowsets.push_back(rs);
       }
     } else {
@@ -557,7 +557,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
 
   // Update the rows in the rowset.
@@ -597,7 +597,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
   // Now delete the rows, this will make the rs report them as deleted and
   // so we would reinsert them into the MRS.
@@ -611,7 +611,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 1);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
   DeleteRows(rs2.get(), 10);
 
@@ -623,7 +623,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs3);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
 
   shared_ptr<DiskRowSet> result;
@@ -847,7 +847,7 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRow(mrs.get(), 1, 1);
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
 
   // Now make the row a ghost in rs1 in the same transaction as we reinsert it in the mrs then
@@ -868,7 +868,7 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
     InsertRowInTransaction(mrs.get(), tx, 2, 0);
     tx.Commit();
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2);
-    ASSERT_NO_FATAL_FAILURE();
+    NO_FATALS();
   }
 
   MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
@@ -912,7 +912,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   // Flush it to disk and re-open.
   shared_ptr<DiskRowSet> rs;
   FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
-  ASSERT_NO_FATAL_FAILURE();
+  NO_FATALS();
 
   // Update the rows with some updates that weren't in the snapshot.
   UpdateRows(mrs.get(), 1000, 0, 2);
@@ -957,7 +957,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   InsertRows(mrs.get(), 10, 0);
   shared_ptr<DiskRowSet> rs;
   FlushMRSAndReopenNoRoll(*mrs, schema_, &rs);
-  ASSERT_NO_FATAL_FAILURE();
+  NO_FATALS();
 
   shared_ptr<MemRowSet> mrs_b;
   ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
@@ -966,7 +966,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   MvccSnapshot snap(mvcc_);
   shared_ptr<DiskRowSet> rs_b;
   FlushMRSAndReopenNoRoll(*mrs_b, schema_, &rs_b);
-  ASSERT_NO_FATAL_FAILURE();
+  NO_FATALS();
 
   // Update all the rows in the second row set
   UpdateRows(mrs_b.get(), 10, 100, 2);
@@ -1058,7 +1058,7 @@ TEST_F(TestCompaction, BenchmarkMergeWithoutOverlap) {
     LOG(INFO) << "Skipped: must enable slow tests.";
     return;
   }
-  ASSERT_NO_FATAL_FAILURE(DoBenchmark<false>());
+  NO_FATALS(DoBenchmark<false>());
 }
 
 // Benchmark for the compaction merge input when the inputs are entirely
@@ -1068,7 +1068,7 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
     LOG(INFO) << "Skipped: must enable slow tests.";
     return;
   }
-  ASSERT_NO_FATAL_FAILURE(DoBenchmark<true>());
+  NO_FATALS(DoBenchmark<true>());
 }
 #endif
 

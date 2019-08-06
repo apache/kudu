@@ -167,7 +167,7 @@ class TestEnv : public KuduTest {
     unique_ptr<uint8_t[]> scratch(new uint8_t[n]);
     Slice s(scratch.get(), n);
     ASSERT_OK(raf->Read(offset, s));
-    ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
+    NO_FATALS(VerifyTestData(s, offset));
   }
 
   void TestAppendV(size_t num_slices, size_t slice_size, size_t iterations,
@@ -213,8 +213,8 @@ class TestEnv : public KuduTest {
         if (!fast) {
           // Verify as write. Note: this requires that file is pre-allocated, otherwise
           // the Read() fails with EINVAL.
-          ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
-                                                        num_slices * slice_size));
+          NO_FATALS(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
+                                          num_slices * slice_size));
         }
       }
     }
@@ -226,8 +226,8 @@ class TestEnv : public KuduTest {
       ASSERT_OK(env_util::OpenFileForRandom(env_, kTestPath, &raf));
     }
     for (int i = 0; i < iterations; i++) {
-      ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
-                                                    num_slices * slice_size));
+      NO_FATALS(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
+                                      num_slices * slice_size));
     }
   }
 
@@ -474,7 +474,7 @@ TEST_F(TestEnv, TestReadFully) {
   Env* env = Env::Default();
 
   WriteTestFile(env, kTestPath, kFileSize);
-  ASSERT_NO_FATAL_FAILURE();
+  NO_FATALS();
 
   // Reopen for read
   shared_ptr<RandomAccessFile> raf;
@@ -571,15 +571,15 @@ TEST_F(TestEnv, TestIOVMax) {
 TEST_F(TestEnv, TestAppendV) {
   WritableFileOptions opts;
   LOG(INFO) << "Testing AppendV() only, NO pre-allocation";
-  ASSERT_NO_FATAL_FAILURE(TestAppendV(2000, 1024, 5, true, false, opts));
+  NO_FATALS(TestAppendV(2000, 1024, 5, true, false, opts));
 
   if (!fallocate_supported_) {
     LOG(INFO) << "fallocate not supported, skipping preallocated runs";
   } else {
     LOG(INFO) << "Testing AppendV() only, WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendV(2000, 1024, 5, true, true, opts));
+    NO_FATALS(TestAppendV(2000, 1024, 5, true, true, opts));
     LOG(INFO) << "Testing AppendV() together with Append() and Read(), WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendV(128, 4096, 5, false, true, opts));
+    NO_FATALS(TestAppendV(128, 4096, 5, false, true, opts));
   }
 }
 
@@ -592,7 +592,7 @@ TEST_F(TestEnv, TestGetExecutablePath) {
 TEST_F(TestEnv, TestOpenEmptyRandomAccessFile) {
   Env* env = Env::Default();
   string test_file = GetTestPath("test_file");
-  ASSERT_NO_FATAL_FAILURE(WriteTestFile(env, test_file, 0));
+  NO_FATALS(WriteTestFile(env, test_file, 0));
   unique_ptr<RandomAccessFile> readable_file;
   ASSERT_OK(env->NewRandomAccessFile(test_file, &readable_file));
   uint64_t size;

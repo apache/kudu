@@ -570,7 +570,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_OK(CreateTable(kTableName, kTableSchema));
 
   ListTablesResponsePB tables;
-  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
+  NO_FATALS(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
 
@@ -586,7 +586,7 @@ TEST_F(MasterTest, TestCatalog) {
   }
 
   // List tables, should show no table
-  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
+  NO_FATALS(DoListAllTables(&tables));
   ASSERT_EQ(0, tables.tables_size());
 
   // Re-create the table
@@ -598,7 +598,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_OK(mini_master_->master()->
       WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
 
-  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
+  NO_FATALS(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
 
@@ -1719,7 +1719,7 @@ TEST_F(MasterTest, TestTableIdentifierWithIdAndName) {
   ASSERT_OK(CreateTable(kTableName, kTableSchema));
 
   ListTablesResponsePB tables;
-  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
+  NO_FATALS(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
   ASSERT_EQ(kTableName, tables.tables(0).name());
   string table_id = tables.tables(0).id();

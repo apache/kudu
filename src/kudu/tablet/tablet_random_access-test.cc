@@ -51,6 +51,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
@@ -157,7 +158,7 @@ class TestRandomAccess : public KuduTabletTest {
     s.start();
     while (s.elapsed().wall_seconds() < FLAGS_runtime_seconds) {
       for (int i = 0; i < 100; i++) {
-        ASSERT_NO_FATAL_FAILURE(DoRandomBatch());
+        NO_FATALS(DoRandomBatch());
         op_count++;
       }
     }

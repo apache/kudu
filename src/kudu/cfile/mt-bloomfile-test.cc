@@ -40,7 +40,7 @@ class MTBloomFileTest : public BloomFileTestBase {
 };
 
 TEST_F(MTBloomFileTest, Benchmark) {
-  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
+  NO_FATALS(WriteTestBloomFile());
   ASSERT_OK(OpenBloomFile());
 
   std::vector<scoped_refptr<kudu::Thread> > threads;

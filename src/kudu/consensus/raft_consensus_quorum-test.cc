@@ -1045,8 +1045,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
-                                                   fs_managers_[0]->uuid()));
+  NO_FATALS(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
+                                     fs_managers_[0]->uuid()));
   ASSERT_EQ(1, flush_count() - flush_count_before)
       << "A granted vote should flush only once";
 
@@ -1071,8 +1071,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::ALREADY_VOTED, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
-                                                   fs_managers_[0]->uuid()));
+  NO_FATALS(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
+                                     fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Rejected votes for same term should not flush";
 
@@ -1091,8 +1091,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
-                                                   fs_managers_[0]->uuid()));
+  NO_FATALS(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                     fs_managers_[0]->uuid()));
   ASSERT_EQ(1, flush_count() - flush_count_before)
       << "Accepted votes with increased term should flush once";
 
@@ -1109,8 +1109,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
-                                                   fs_managers_[0]->uuid()));
+  NO_FATALS(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                     fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Rejected votes for old terms should not flush";
 
@@ -1126,8 +1126,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.vote_granted());
   ASSERT_FALSE(response.has_consensus_error());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
-                                                   fs_managers_[0]->uuid()));
+  NO_FATALS(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                     fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Pre-elections should not flush";
   request.set_is_pre_election(false);
@@ -1148,7 +1148,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::LAST_OPID_TOO_OLD, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 3, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermWithoutVote(kPeerIndex, last_op_id.term() + 3));
+  NO_FATALS(AssertDurableTermWithoutVote(kPeerIndex, last_op_id.term() + 3));
   ASSERT_EQ(1, flush_count() - flush_count_before)
       << "Rejected votes for old op index but new term should flush once.";
 

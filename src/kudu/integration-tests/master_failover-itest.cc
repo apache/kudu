@@ -109,7 +109,7 @@ class MasterFailoverTest : public KuduTest,
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    ASSERT_NO_FATAL_FAILURE(RestartCluster());
+    NO_FATALS(RestartCluster());
   }
 
   virtual void TearDown() OVERRIDE {

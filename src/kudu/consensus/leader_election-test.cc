@@ -495,16 +495,16 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
   {
     // Start off undecided.
     VoteCounter counter(kNumVoters, kMajoritySize);
-    ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 0));
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 0, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // First yes vote.
     bool duplicate;
     ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
     ASSERT_FALSE(duplicate);
-    ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 1, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // Second yes vote wins it in a configuration of 3.
@@ -514,7 +514,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
     ElectionVote decision;
     ASSERT_OK(counter.GetDecision(&decision));
     ASSERT_TRUE(decision == VOTE_GRANTED);
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 2, 0));
+    NO_FATALS(AssertVoteCount(counter, 2, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
   }
 
@@ -522,16 +522,16 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
   {
     // Start off undecided.
     VoteCounter counter(kNumVoters, kMajoritySize);
-    ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 0));
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 0, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // First no vote.
     bool duplicate;
     ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate));
     ASSERT_FALSE(duplicate);
-    ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 1));
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 0, 1));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // Second no vote loses it in a configuration of 3.
@@ -541,7 +541,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
     ElectionVote decision;
     ASSERT_OK(counter.GetDecision(&decision));
     ASSERT_TRUE(decision == VOTE_DENIED);
-    ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 2));
+    NO_FATALS(AssertVoteCount(counter, 0, 2));
     ASSERT_FALSE(counter.AreAllVotesIn());
   }
 }
@@ -554,23 +554,23 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
 
   // Start off undecided.
   VoteCounter counter(kNumVoters, kMajoritySize);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 0));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 0, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Add single yes vote, still undecided.
   bool duplicate;
   ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
   ASSERT_FALSE(duplicate);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 1, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Attempt duplicate vote.
   ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
   ASSERT_TRUE(duplicate);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 1, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Attempt to change vote.
@@ -578,27 +578,27 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "voted a different way twice");
   LOG(INFO) << "Expected vote-changed error: " << s.ToString();
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 1, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Add more votes...
   ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_DENIED, &duplicate));
   ASSERT_FALSE(duplicate);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 1));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 1, 1));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   ASSERT_OK(counter.RegisterVote(voter_uuids[2], VOTE_GRANTED, &duplicate));
   ASSERT_FALSE(duplicate);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 2, 1));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 2, 1));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   ASSERT_OK(counter.RegisterVote(voter_uuids[3], VOTE_DENIED, &duplicate));
   ASSERT_FALSE(duplicate);
-  ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 2, 2));
+  NO_FATALS(AssertUndecided(counter));
+  NO_FATALS(AssertVoteCount(counter, 2, 2));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Win the election.
@@ -608,7 +608,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ElectionVote decision;
   ASSERT_OK(counter.GetDecision(&decision));
   ASSERT_TRUE(decision == VOTE_GRANTED);
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 3, 2));
+  NO_FATALS(AssertVoteCount(counter, 3, 2));
   ASSERT_TRUE(counter.AreAllVotesIn());
 
   // Attempt to vote with > the whole configuration.
@@ -617,7 +617,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_STR_CONTAINS(s.ToString(), "cause the number of votes to exceed the expected number");
   LOG(INFO) << "Expected voters-exceeded error: " << s.ToString();
   ASSERT_TRUE(counter.IsDecided());
-  ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 3, 2));
+  NO_FATALS(AssertVoteCount(counter, 3, 2));
   ASSERT_TRUE(counter.AreAllVotesIn());
 }
 

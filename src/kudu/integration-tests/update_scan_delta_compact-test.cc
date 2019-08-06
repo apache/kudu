@@ -106,7 +106,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
   }
 
   void CreateTable() {
-    ASSERT_NO_FATAL_FAILURE(InitCluster());
+    NO_FATALS(InitCluster());
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
@@ -196,9 +196,9 @@ TEST_F(UpdateScanDeltaCompactionTest, TestAll) {
     FLAGS_maintenance_manager_polling_interval_ms = 50;
   }
 
-  ASSERT_NO_FATAL_FAILURE(CreateTable());
-  ASSERT_NO_FATAL_FAILURE(InsertBaseData());
-  ASSERT_NO_FATAL_FAILURE(RunThreads());
+  NO_FATALS(CreateTable());
+  NO_FATALS(InsertBaseData());
+  NO_FATALS(RunThreads());
 }
 
 void UpdateScanDeltaCompactionTest::InsertBaseData() {

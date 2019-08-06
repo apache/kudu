@@ -52,10 +52,10 @@
 #include "kudu/util/test_util.h"
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
-  ASSERT_NO_FATAL_FAILURE(AssertReportHasUpdatedTablet(report, tablet_id))
+  NO_FATALS(AssertReportHasUpdatedTablet(report, tablet_id))
 
 #define ASSERT_MONOTONIC_REPORT_SEQNO(report_seqno, tablet_report) \
-  ASSERT_NO_FATAL_FAILURE(AssertMonotonicReportSeqno(report_seqno, tablet_report))
+  NO_FATALS(AssertMonotonicReportSeqno(report_seqno, tablet_report))
 
 using std::string;
 using std::vector;

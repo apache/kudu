@@ -176,7 +176,7 @@ TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
     return;
   }
   string table_name = "test_table";
-  ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
+  NO_FATALS(CreateBigTable(table_name, FLAGS_num_test_tablets));
   master::GetTableLocationsResponsePB resp;
   ASSERT_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
                                       FLAGS_num_test_tablets, &resp));
@@ -211,7 +211,7 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   }
 
   string table_name = "test_table";
-  ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
+  NO_FATALS(CreateBigTable(table_name, FLAGS_num_test_tablets));
 
   for (int i = 0; i < 3; i++) {
     SleepFor(MonoDelta::FromMicroseconds(500));
@@ -241,7 +241,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   string table_name = "test_table";
   LOG(INFO) << CURRENT_TEST_NAME() << ": Step 1. Creating big table " << table_name << " ...";
   LOG_TIMING(INFO, "creating big table") {
-    ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
+    NO_FATALS(CreateBigTable(table_name, FLAGS_num_test_tablets));
   }
 
   master::GetTableLocationsRequestPB req;

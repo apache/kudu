@@ -538,7 +538,7 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording1) {
   TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
 
   DropTracedMetadataRecords();
-  ASSERT_NO_FATAL_FAILURE();
+  NO_FATALS();
   VerifyCallbackAndRecordedEvents(2, 2);
 }
 

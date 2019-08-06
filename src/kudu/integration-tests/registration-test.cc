@@ -239,7 +239,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
         << "Should not include wildcards in registration";
   }
 
-  ASSERT_NO_FATAL_FAILURE(CheckTabletServersPage());
+  NO_FATALS(CheckTabletServersPage());
 
   // Restart the master, so it loses the descriptor, and ensure that the
   // heartbeater thread handles re-registering.

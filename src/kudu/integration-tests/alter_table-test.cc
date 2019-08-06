@@ -856,7 +856,7 @@ TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
 
   // Test that restart doesn't fail when trying to replay updates or inserts
   // with the dropped column.
-  ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
+  NO_FATALS(RestartTabletServer());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -870,7 +870,7 @@ TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
   ASSERT_EQ("(int32 c0=0, int32 c2=12345, int32 c1=20000)", rows[0]);
   ASSERT_EQ("(int32 c0=16777216, int32 c2=12345, int32 c1=20000)", rows[1]);
 
-  ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
+  NO_FATALS(RestartTabletServer());
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
   ASSERT_EQ("(int32 c0=0, int32 c2=12345, int32 c1=20000)", rows[0]);

@@ -210,7 +210,7 @@ class ClientTest : public KuduTest {
         .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
         .Build(&client_));
 
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
+    NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
   }
 
   void TearDown() override {
@@ -356,10 +356,9 @@ class ClientTest : public KuduTest {
     shared_ptr<KuduSession> session = client->NewSession();
     ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
     session->SetTimeoutMillis(60000);
-    ASSERT_NO_FATAL_FAILURE(InsertTestRows(table, session.get(),
-                                           num_rows, first_row));
+    NO_FATALS(InsertTestRows(table, session.get(), num_rows, first_row));
     FlushSessionOrDie(session);
-    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
+    NO_FATALS(CheckNoRpcOverflow());
   }
 
   // Inserts 'num_rows' using the default client.
@@ -376,7 +375,7 @@ class ClientTest : public KuduTest {
       ASSERT_OK(session->Apply(update.release()));
     }
     FlushSessionOrDie(session);
-    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
+    NO_FATALS(CheckNoRpcOverflow());
   }
 
   void DeleteTestRows(KuduTable* table, int lo, int hi) {
@@ -388,7 +387,7 @@ class ClientTest : public KuduTest {
       ASSERT_OK(session->Apply(del.release()))
     }
     FlushSessionOrDie(session);
-    ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
+    NO_FATALS(CheckNoRpcOverflow());
   }
 
   unique_ptr<KuduInsert> BuildTestRow(KuduTable* table, int index) {
@@ -853,8 +852,7 @@ TEST_F(ClientTest, TestRandomizedLimitScans) {
   FLAGS_flush_threshold_secs = 1;
 
   FLAGS_scanner_batch_size_rows = batch_size;
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(
-      client_table_.get(), num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), num_rows));
   SleepFor(MonoDelta::FromSeconds(1));
   LOG(INFO) << Substitute("Total number of rows: $0, batch size: $1", num_rows, batch_size);
 
@@ -892,8 +890,7 @@ TEST_F(ClientTest, TestRandomizedLimitScans) {
 }
 
 TEST_F(ClientTest, TestScan) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(
-      client_table_.get(), FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
 
   ASSERT_EQ(FLAGS_test_scan_num_rows, CountRowsFromClient(client_table_.get()));
 
@@ -925,8 +922,7 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   int half_the_rows = FLAGS_test_scan_num_rows / 2;
 
   // Insert half the rows
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         half_the_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), half_the_rows));
 
   // Get the time from the server and transform to micros, disregarding any
   // logical values (we shouldn't have any with a single server anyway).
@@ -934,8 +930,7 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
       cluster_->mini_tablet_server(0)->server()->clock()->Now());
 
   // Insert the second half of the rows
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         half_the_rows, half_the_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), half_the_rows, half_the_rows));
 
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.Open());
@@ -1014,8 +1009,8 @@ TEST_P(ScanMultiTabletParamTest, Test) {
       ASSERT_OK(row->SetInt32(0, i * kRowsPerTablet));
       rows.emplace_back(std::move(row));
     }
-    ASSERT_NO_FATAL_FAILURE(CreateTable("TestScanMultiTablet", 1,
-                                        std::move(rows), {}, &table));
+    NO_FATALS(CreateTable("TestScanMultiTablet", 1,
+                          std::move(rows), {}, &table));
   }
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
@@ -1142,8 +1137,7 @@ TEST_F(ClientTest, TestScanEmptyTable) {
 // row block with the proper number of rows filled in. Impala issues
 // scans like this in order to implement COUNT(*).
 TEST_F(ClientTest, TestScanEmptyProjection) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.SetProjectedColumnNames({}));
   ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 0);
@@ -1177,8 +1171,7 @@ TEST_F(ClientTest, TestProjectInvalidColumn) {
 // Test a scan where we have a predicate on a key column that is not
 // in the projection.
 TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.SetProjectedColumnNames({ "int_val" }));
   ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 1);
@@ -1214,8 +1207,7 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
 // Test a scan where we have a predicate on a non-key column that is
 // not in the projection.
 TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(scanner.AddConjunctPredicate(
                 client_table_->NewComparisonPredicate("int_val", KuduPredicate::GREATER_EQUAL,
@@ -1286,7 +1278,7 @@ TEST_F(ClientTest, TestInvalidPredicates) {
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitRows(), {}, &table));
+  NO_FATALS(CreateTable(kEmptyTable, 3, GenerateSplitRows(), {}, &table));
 
   {
     // Open and close an empty scanner.
@@ -1297,8 +1289,7 @@ TEST_F(ClientTest, TestScanCloseProxy) {
   }
 
   // Insert some test rows.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
   {
     // Open and close a scanner with rows.
     KuduScanner scanner(table.get());
@@ -1329,8 +1320,7 @@ TEST_F(ClientTest, TestRowPtrNoRedaction) {
 
 TEST_F(ClientTest, TestScanYourWrites) {
   // Insert the rows
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
 
   // Verify that no matter which replica is selected, client could
   // achieve read-your-writes/read-your-reads.
@@ -1428,8 +1418,8 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   FLAGS_leader_failure_exp_backoff_max_delta_ms = 1000;
 
   const int kNumReplicas = 3;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
+  NO_FATALS(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
+  NO_FATALS(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
   vector<string> expected_rows;
@@ -1455,14 +1445,14 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 
       // Restarting and waiting should result in a SCANNER_EXPIRED error.
       LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
-      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
           boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
                       this, _1)));
 
       // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
       // a TABLET_NOT_RUNNING error.
       LOG(INFO) << "Doing a scan while restarting a tserver...";
-      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
           boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
                       this, _1)));
       for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
@@ -1472,7 +1462,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 
       // Killing the tserver should lead to an RPC timeout.
       LOG(INFO) << "Doing a scan while killing a tserver...";
-      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
           boost::bind(&ClientTest_TestScanFaultTolerance_Test::KillTServer,
                       this, _1)));
 
@@ -1497,8 +1487,8 @@ TEST_F(ClientTest, TestNonFaultTolerantScannerExpired) {
   shared_ptr<KuduTable> table;
 
   const int kNumReplicas = 1;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
+  NO_FATALS(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
+  NO_FATALS(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   KuduScanner scanner(table.get());
   ASSERT_OK(scanner.SetTimeoutMillis(30 * 1000));
@@ -1560,11 +1550,11 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   // Aggresively clear the meta cache between insert batches so that the meta
   // cache will execute GetTableLocation RPCs at different partition keys.
 
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 0));
+  NO_FATALS(InsertTestRows(table.get(), 50, 0));
   client_->data_->meta_cache_->ClearCache();
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 50, 50));
+  NO_FATALS(InsertTestRows(table.get(), 50, 50));
   client_->data_->meta_cache_->ClearCache();
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 200));
+  NO_FATALS(InsertTestRows(table.get(), 100, 200));
   client_->data_->meta_cache_->ClearCache();
 
   // Insert out-of-range rows.
@@ -1770,8 +1760,8 @@ TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
   ASSERT_OK(alterer->Alter());
   ASSERT_OK(client_->OpenTable(table_name, &table));
 
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 0));
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100, 200));
+  NO_FATALS(InsertTestRows(table.get(), 100, 0));
+  NO_FATALS(InsertTestRows(table.get(), 100, 200));
 
   // Insert out-of-range rows.
   shared_ptr<KuduSession> session = client_->NewSession();
@@ -1981,11 +1971,11 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
-                                      3,
-                                      GenerateSplitRows(),
-                                      {},
-                                      &table));
+  NO_FATALS(CreateTable("blacklist",
+                        3,
+                        GenerateSplitRows(),
+                        {},
+                        &table));
   InsertTestRows(table.get(), 1, 0);
 
   // Look up the tablet and its replicas into the metadata cache.
@@ -2058,16 +2048,16 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
 
 TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable("split-table",
-                                      1, /* replicas */
-                                      GenerateSplitRows(),
-                                      {},
-                                      &table));
+  NO_FATALS(CreateTable("split-table",
+                        1, /* replicas */
+                        GenerateSplitRows(),
+                        {},
+                        &table));
 
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100));
+  NO_FATALS(InsertTestRows(table.get(), 100));
 
   vector<string> all_rows;
-  ASSERT_NO_FATAL_FAILURE(ScanTableToStrings(table.get(), &all_rows));
+  NO_FATALS(ScanTableToStrings(table.get(), &all_rows));
   ASSERT_EQ(100, all_rows.size());
 
   unique_ptr<KuduPartialRow> row(table->schema().NewRow());
@@ -2182,7 +2172,7 @@ int64_t SumResults(const KuduScanBatch& batch) {
 } // anonymous namespace
 
 TEST_F(ClientTest, TestScannerKeepAlive) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000));
+  NO_FATALS(InsertTestRows(client_table_.get(), 1000));
   // Set the scanner ttl really low
   FLAGS_scanner_ttl_ms = 100; // 100 milliseconds
   // Start a scan but don't get the whole data back
@@ -2249,7 +2239,7 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
 
 // Test cleanup of scanners on the server side when closed.
 TEST_F(ClientTest, TestCloseScanner) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 10));
+  NO_FATALS(InsertTestRows(client_table_.get(), 10));
 
   const tserver::ScannerManager* manager =
     cluster_->mini_tablet_server(0)->server()->scanner_manager();
@@ -2301,7 +2291,7 @@ TEST_F(ClientTest, TestScanTimeout) {
 
   // Warm the cache so that the subsequent timeout occurs within the scan,
   // not the lookup.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1));
+  NO_FATALS(InsertTestRows(client_table_.get(), 1));
 
   // The "overall operation" timed out; no replicas failed.
   {
@@ -2314,7 +2304,7 @@ TEST_F(ClientTest, TestScanTimeout) {
 
   // Insert some more rows so that the scan takes multiple batches, instead of
   // fetching all the data on the 'Open()' call.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000, 1));
+  NO_FATALS(InsertTestRows(client_table_.get(), 1000, 1));
   {
     google::FlagSaver saver;
     FLAGS_scanner_max_batch_size_bytes = 100;
@@ -4194,17 +4184,17 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
-                                      kNumReplicas,
-                                      GenerateSplitRows(),
-                                      {},
-                                      &table));
+  NO_FATALS(CreateTable(kReplicatedTable,
+                        kNumReplicas,
+                        GenerateSplitRows(),
+                        {},
+                        &table));
 
   // Should have no rows to begin with.
   ASSERT_EQ(0, CountRowsFromClient(table.get()));
 
   // Insert some data.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
+  NO_FATALS(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Should now see the data.
   ASSERT_EQ(kNumRowsToWrite, CountRowsFromClient(table.get()));
@@ -4220,14 +4210,14 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   const int kNumTries = 100;
 
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
-                                      kNumReplicas,
-                                      GenerateSplitRows(),
-                                      {},
-                                      &table));
+  NO_FATALS(CreateTable(kReplicatedTable,
+                        kNumReplicas,
+                        GenerateSplitRows(),
+                        {},
+                        &table));
 
   // Insert some data.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
+  NO_FATALS(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Find the leader of the first tablet.
   scoped_refptr<internal::RemoteTablet> rt = MetaCacheLookup(table.get(), "");
@@ -4269,24 +4259,16 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
 
 // This test that we can keep writing to a tablet when the leader
 // tablet dies.
-// This currently forces leader promotion through RPC and creates
-// a new client afterwards.
 TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const string kReplicatedTable = "replicated_failover_on_writes";
   const int kNumRowsToWrite = 100;
   const int kNumReplicas = 3;
 
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable, kNumReplicas, {}, {}, &table));
+  NO_FATALS(CreateTable(kReplicatedTable, kNumReplicas, {}, {}, &table));
 
   // Insert some data.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), kNumRowsToWrite));
-
-  // TODO: we have to sleep here to make sure that the leader has time to
-  // propagate the writes to the followers. We can remove this once the
-  // followers run a leader election on their own and handle advancing
-  // the commit index.
-  SleepFor(MonoDelta::FromMilliseconds(1500));
+  NO_FATALS(InsertTestRows(table.get(), kNumRowsToWrite));
 
   // Find the leader replica
   scoped_refptr<internal::RemoteTablet> rt = MetaCacheLookup(table.get(), "");
@@ -4305,16 +4287,10 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   ASSERT_OK(KillTServer(killed_uuid));
 
   LOG(INFO) << "Inserting additional rows...";
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_.get(),
-                                         table.get(),
-                                         kNumRowsToWrite,
-                                         kNumRowsToWrite));
-
-  // TODO: we have to sleep here to make sure that the leader has time to
-  // propagate the writes to the followers. We can remove this once the
-  // followers run a leader election on their own and handle advancing
-  // the commit index.
-  SleepFor(MonoDelta::FromMilliseconds(1500));
+  NO_FATALS(InsertTestRows(client_.get(),
+                           table.get(),
+                           kNumRowsToWrite,
+                           kNumRowsToWrite));
 
   LOG(INFO) << "Counting rows...";
   ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),
@@ -4383,7 +4359,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
     if (i % 50 == 0) {
       LOG(INFO) << "Correctness test " << i;
       FlushSessionOrDie(session);
-      ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
+      NO_FATALS(CheckCorrectness(&scanner, row, nrows));
       LOG(INFO) << "...complete";
     }
 
@@ -4420,7 +4396,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
 
   // And one more time for the last batch.
   FlushSessionOrDie(session);
-  ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
+  NO_FATALS(CheckCorrectness(&scanner, row, nrows));
 }
 
 // Test whether a batch can handle several mutations in a batch
@@ -4485,8 +4461,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
 // rows are inserted.
 TEST_F(ClientTest, TestMasterLookupPermits) {
   int initial_value = client_->data_->meta_cache_->master_lookup_sem_.GetValue();
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         FLAGS_test_scan_num_rows));
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   ASSERT_EQ(initial_value,
             client_->data_->meta_cache_->master_lookup_sem_.GetValue());
 }
@@ -4950,7 +4925,7 @@ TEST_P(LatestObservedTimestampParamTest, Test) {
   // Check that a write updates the latest observed timestamp.
   const uint64_t ts0 = client_->GetLatestObservedTimestamp();
   ASSERT_EQ(KuduClient::kNoTimestamp, ts0);
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1, 0));
+  NO_FATALS(InsertTestRows(client_table_.get(), 1, 0));
   const uint64_t ts1 = client_->GetLatestObservedTimestamp();
   ASSERT_NE(ts0, ts1);
 
@@ -5067,8 +5042,7 @@ TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
       CHECK_OK(row->SetInt32(0, i * kRowsPerTablet));
       rows.push_back(std::move(row));
     }
-    ASSERT_NO_FATAL_FAILURE(CreateTable("test_table", 1,
-                                        std::move(rows), {}, &table));
+    NO_FATALS(CreateTable("test_table", 1, std::move(rows), {}, &table));
     // Insert some data into the table, so each tablet would get populated.
     shared_ptr<KuduSession> session(client_->NewSession());
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
@@ -5435,8 +5409,7 @@ INSTANTIATE_TEST_CASE_P(BinaryColEncodings,
                         ::testing::Values(kPlainBin, kPrefix, kDictionary));
 
 TEST_F(ClientTest, TestClonePredicates) {
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
-                                         2, 0));
+  NO_FATALS(InsertTestRows(client_table_.get(), 2, 0));
   unique_ptr<KuduPredicate> predicate(client_table_->NewComparisonPredicate(
       "key",
       KuduPredicate::EQUAL,
@@ -5593,7 +5566,7 @@ TEST_F(ClientTest, TestBatchScanConstIterator) {
   {
     // Insert a few rows
     const int kRowNum = 2;
-    ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), kRowNum));
+    NO_FATALS(InsertTestRows(client_table_.get(), kRowNum));
 
     KuduScanner scanner(client_table_.get());
     ASSERT_OK(scanner.Open());

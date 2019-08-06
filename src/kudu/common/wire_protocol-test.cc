@@ -579,7 +579,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
 
     kudu::ColumnPredicate cp = kudu::ColumnPredicate::InList(col1, &values);
     ColumnPredicatePB pb;
-    ASSERT_NO_FATAL_FAILURE(ColumnPredicateToPB(cp, &pb));
+    NO_FATALS(ColumnPredicateToPB(cp, &pb));
 
     ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
     ASSERT_EQ(predicate->predicate_type(), PredicateType::InList);
