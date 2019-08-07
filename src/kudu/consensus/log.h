@@ -66,6 +66,11 @@ class ThreadPool;
 class WritableFile;
 struct WritableFileOptions;
 
+namespace consensus {
+class OpId;
+class ReplicateMsg;
+}
+
 namespace log {
 
 struct LogEntryBatchLogicalSize;
@@ -110,16 +115,17 @@ class Log : public RefCountedThreadSafe<Log> {
                      const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
 
-  ~Log();
+  virtual ~Log();
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
-  Status Append(LogEntryPB* entry);
+  virtual Status Append(LogEntryPB* entry);
 
   // Append the given set of replicate messages, asynchronously.
   // This requires that the replicates have already been assigned OpIds.
-  Status AsyncAppendReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates,
-                               const StatusCallback& callback);
+  virtual Status AsyncAppendReplicates(
+      const std::vector<consensus::ReplicateRefPtr>& replicates,
+      const StatusCallback& callback);
 
   // Append the given commit message, asynchronously.
   //
@@ -130,7 +136,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Blocks the current thread until all the entries in the log queue
   // are flushed and fsynced (if fsync of log entries is enabled).
-  Status WaitUntilAllFlushed();
+  virtual Status WaitUntilAllFlushed();
 
   // Kick off an asynchronous task that pre-allocates a new
   // log-segment, setting 'allocation_status_'. To wait for the
@@ -253,6 +259,15 @@ class Log : public RefCountedThreadSafe<Log> {
   void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
 #endif
 
+  // Virtual functions to override LogReader, LogCache, LogIndex,
+  // ReadableLogSegment etc.
+  virtual Status ReadReplicatesInRange(
+      int64_t starting_at,
+      int64_t up_to,
+      int64_t max_bytes_to_read,
+      std::vector<consensus::ReplicateMsg*>* replicates) const;
+  virtual Status LookupOpId(int64_t op_index, consensus::OpId* op_id) const;
+
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -277,7 +292,7 @@ class Log : public RefCountedThreadSafe<Log> {
   };
 
   Log(LogOptions options, FsManager* fs_manager, std::string log_path,
-      std::string tablet_id, 
+      std::string tablet_id,
 #ifdef FB_DO_NOT_REMOVE
       const Schema& schema, uint32_t schema_version,
 #endif

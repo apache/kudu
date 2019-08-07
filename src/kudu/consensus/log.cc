@@ -34,6 +34,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
@@ -953,6 +954,19 @@ void Log::SetSchemaForNextLogSegment(const Schema& schema,
   schema_version_ = version;
 }
 #endif
+
+Status Log::ReadReplicatesInRange(
+    int64_t starting_at,
+    int64_t up_to,
+    int64_t max_bytes_to_read,
+    std::vector<consensus::ReplicateMsg*>* replicates) const {
+  return reader()->ReadReplicatesInRange(
+      starting_at, up_to, max_bytes_to_read, replicates);
+}
+
+Status Log::LookupOpId(int64_t op_index, OpId* op_id) const {
+  return reader()->LookupOpId(op_index, op_id);
+}
 
 Status Log::Close() {
   allocation_pool_->Shutdown();
