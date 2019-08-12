@@ -59,7 +59,6 @@ using kudu::master::ListMastersRequestPB;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
-using kudu::master::MasterServiceProxy;
 using kudu::master::ResetAuthzCacheRequestPB;
 using kudu::master::ResetAuthzCacheResponsePB;
 using kudu::consensus::RaftPeerPB;
