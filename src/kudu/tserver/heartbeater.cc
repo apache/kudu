@@ -110,7 +110,6 @@ using kudu::master::TabletReportPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcController;
-using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -130,7 +129,7 @@ class Heartbeater::Thread {
   Status Start();
   Status Stop();
   void TriggerASAP();
-  void MarkTabletDirty(const string& tablet_id, const string& reason);
+  void MarkTabletsDirty(const vector<string>& tablet_ids, const string& reason);
   void GenerateIncrementalTabletReport(TabletReportPB* report);
   void GenerateFullTabletReport(TabletReportPB* report);
 
@@ -218,7 +217,6 @@ class Heartbeater::Thread {
 
 Heartbeater::Heartbeater(UnorderedHostPortSet master_addrs, TabletServer* server) {
   DCHECK_GT(master_addrs.size(), 0);
-
   for (auto addr : master_addrs) {
     threads_.emplace_back(new Thread(std::move(addr), server));
   }
@@ -261,9 +259,9 @@ void Heartbeater::TriggerASAP() {
   }
 }
 
-void Heartbeater::MarkTabletDirty(const string& tablet_id, const string& reason) {
+void Heartbeater::MarkTabletsDirty(const vector<string>& tablet_ids, const string& reason) {
   for (const auto& thread : threads_) {
-    thread->MarkTabletDirty(tablet_id, reason);
+    thread->MarkTabletsDirty(tablet_ids, reason);
   }
 }
 
@@ -377,6 +375,9 @@ int Heartbeater::Thread::GetMillisUntilNextHeartbeat() const {
 
 Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
                                         ErrorStatusPB* error_status) {
+  // Update the tablet statistics if necessary.
+  server_->tablet_manager()->UpdateTabletStatsIfNecessary();
+
   if (PREDICT_FALSE(server_->fail_heartbeats_for_tests())) {
     return Status::IOError("failing all heartbeats for tests");
   }
@@ -665,28 +666,31 @@ void Heartbeater::Thread::TriggerASAP() {
   cond_.Signal();
 }
 
-void Heartbeater::Thread::MarkTabletDirty(const string& tablet_id, const string& reason) {
+void Heartbeater::Thread::MarkTabletsDirty(const vector<string>& tablet_ids,
+                                           const string& /*reason*/) {
   std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
 
   // Even though this is an atomic load, it needs to hold the lock. To see why,
   // consider this sequence:
   // 0. Tablet t exists in dirty_tablets_.
-  // 1. T1 calls MarkTabletDirty(t), loads x from next_report_seq_, and is
+  // 1. T1 calls MarkTabletsDirty(t), loads x from next_report_seq_, and is
   //    descheduled.
   // 2. T2 generates a tablet report, incrementing next_report_seq_ to x+1.
-  // 3. T3 calls MarkTabletDirty(t), loads x+1 into next_report_seq_, and
+  // 3. T3 calls MarkTabletsDirty(t), loads x+1 into next_report_seq_, and
   //    writes x+1 to state->change_seq.
   // 4. T1 is scheduled. It tries to write x to state->change_seq, failing the
   //    CHECK_GE().
   int32_t seqno = next_report_seq_.load();
 
-  TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
-  if (state != nullptr) {
-    CHECK_GE(seqno, state->change_seq);
-    state->change_seq = seqno;
-  } else {
-    TabletReportState state = { seqno };
-    InsertOrDie(&dirty_tablets_, tablet_id, state);
+  for (const auto& tablet_id : tablet_ids) {
+    TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
+    if (state != nullptr) {
+      CHECK_GE(seqno, state->change_seq);
+      state->change_seq = seqno;
+    } else {
+      TabletReportState state = { seqno };
+      InsertOrDie(&dirty_tablets_, tablet_id, state);
+    }
   }
 }
 

@@ -198,6 +198,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // TsTabletManager, such as consensus role changes.
   void MarkTabletDirty(const std::string& tablet_id, const std::string& reason);
 
+  // Marks tablets as dirty in batch.
+  void MarkTabletsDirty(const std::vector<std::string>& tablet_ids, const std::string& reason);
+
   // Return the number of tablets in RUNNING or BOOTSTRAPPING state.
   int GetNumLiveTablets() const;
 
@@ -235,8 +238,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // This method is for use in tests only. See KUDU-2444.
   Status WaitForNoTransitionsForTests(const MonoDelta& timeout) const;
 
+  // Update the tablet statistics if necessary.
+  void UpdateTabletStatsIfNecessary();
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
+  FRIEND_TEST(TsTabletManagerTest, TestTabletStatsReports);
+  FRIEND_TEST(TsTabletManagerITest, TestTableStats);
 
   // Flag specified when registering a TabletReplica.
   enum RegisterTabletReplicaMode {
@@ -340,6 +348,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // running state.
   void InitLocalRaftPeerPB();
 
+  // Just for tests.
+  void SetNextUpdateTimeForTests();
+
   FsManager* const fs_manager_;
 
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
@@ -390,6 +401,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   gscoped_ptr<ThreadPool> delete_tablet_pool_;
 
   FunctionGaugeDetacher metric_detacher_;
+
+  // Ensures that we only update stats from a single thread at a time.
+  mutable rw_spinlock lock_update_;
+  MonoTime next_update_time_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

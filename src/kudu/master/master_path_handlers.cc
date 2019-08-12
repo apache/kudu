@@ -42,10 +42,12 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -55,6 +57,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_options.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
@@ -62,6 +65,7 @@
 #include "kudu/util/cow_object.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -424,6 +428,19 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     }
   }
 
+  const TableMetrics* table_metrics = table->GetMetrics();
+  if (table_metrics) {
+    // If the table doesn't support live row counts, the value will be negative.
+    // But the value of disk size will never be negative.
+    (*output)["table_disk_size"] =
+        HumanReadableNumBytes::ToString(table_metrics->on_disk_size->value());
+    int64 live_row_count = table_metrics->live_row_count->value();
+    if (live_row_count >= 0) {
+      (*output)["table_live_row_count"] = live_row_count;
+    } else {
+      (*output)["table_live_row_count"] = "N/A";
+    }
+  }
   (*output)["partition_schema"] = partition_schema.DisplayString(schema, range_partitions);
 
   string str_extra_configs;

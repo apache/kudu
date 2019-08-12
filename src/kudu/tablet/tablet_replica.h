@@ -304,6 +304,14 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // -1 will be returned if the tablet doesn't support live row counting.
   int64_t CountLiveRows() const;
 
+  // Update the tablet stats.
+  // When the replica's stats change and it's the LEADER, it is added to
+  // the 'dirty_tablets'.
+  void UpdateTabletStats(std::vector<std::string>* dirty_tablets);
+
+  // Return the tablet stats.
+  ReportedTabletStatsPB GetTabletStats() const;
+
  private:
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
@@ -380,6 +388,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   scoped_refptr<rpc::ResultTracker> result_tracker_;
 
   FunctionGaugeDetacher metric_detacher_;
+
+  // Cached stats for the tablet replica.
+  ReportedTabletStatsPB stats_pb_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletReplica);
 };

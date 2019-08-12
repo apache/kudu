@@ -246,6 +246,10 @@ message ReportedTabletPB {
 
   optional AppStatusPB error = 4;
   optional uint32 schema_version = 5;
+
+  // Tablet statistics.
+  // This is only included in the report if the replica is a LEADER.
+  optional tablet.ReportedTabletStatsPB stats = 7;
 }
 
 // Sent by the tablet server to report the set of tablets hosted by that TS.

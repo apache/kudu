@@ -43,6 +43,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
@@ -59,13 +60,15 @@ namespace kudu {
 
 class AuthzTokenTest_TestSingleMasterUnavailable_Test;
 class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
+class MetricEntity;
+class MetricRegistry;
 class MonitoredTask;
 class NodeInstancePB;
 class PartitionPB;
 class PartitionSchema;
 class Schema;
-class ThreadPool;
 class TableExtraConfigPB;
+class ThreadPool;
 struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
@@ -93,6 +96,10 @@ class TokenSigner;
 class TokenSigningPublicKeyPB;
 } // namespace security
 
+namespace tserver {
+class TsTabletManagerITest_TestTableStats_Test;
+}
+
 namespace tablet {
 class TabletReplica;
 } // namespace tablet
@@ -108,6 +115,7 @@ class SysCatalogTable;
 class TSDescriptor;
 class TableInfo;
 struct DeferredAssignmentActions;
+struct TableMetrics;
 
 // The data related to a tablet which is persisted on disk.
 // This portion of TableInfo is managed via CowObject.
@@ -184,6 +192,12 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   // No synchronization needed.
   std::string ToString() const;
 
+  // Update the stats.
+  void UpdateStats(tablet::ReportedTabletStatsPB stats);
+
+  // Return the stats.
+  tablet::ReportedTabletStatsPB GetStats() const;
+
  private:
   friend class RefCountedThreadSafe<TabletInfo>;
   ~TabletInfo();
@@ -204,6 +218,9 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   //
   // Set to NOT_YET_REPORTED when the tablet hasn't yet reported.
   int64_t reported_schema_version_;
+
+  // Cached stats for the LEADER replica.
+  tablet::ReportedTabletStatsPB stats_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletInfo);
 };
@@ -300,9 +317,27 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
     return tablet_map_.size();
   }
 
+  // Register metrics for the table.
+  void RegisterMetrics(MetricRegistry* metric_registry, const std::string& table_name);
+
+  // Unregister metrics for the table.
+  void UnregisterMetrics();
+
+  // Update the metrics.
+  void UpdateMetrics(const tablet::ReportedTabletStatsPB& old_stats,
+                     const tablet::ReportedTabletStatsPB& new_stats);
+
+  // Update the attributes of the metrics.
+  void UpdateMetricsAttrs(const std::string& new_table_name);
+
+  // Return the metrics.
+  const TableMetrics* GetMetrics() const;
+
  private:
   friend class RefCountedThreadSafe<TableInfo>;
   friend class TabletInfo;
+  FRIEND_TEST(kudu::tserver::TsTabletManagerITest, TestTableStats);
+
   ~TableInfo();
 
   // Increments or decrements the value for the key 'version' in
@@ -337,6 +372,9 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // The contents of this map are equivalent to iterating over every table in
   // tablet_map_ and summing up the tablets' reported schema versions.
   std::map<int64_t, int64_t> schema_version_counts_;
+
+  scoped_refptr<MetricEntity> metric_entity_;
+  std::unique_ptr<TableMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
@@ -1011,7 +1049,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status WaitForNotificationLogListenerCatchUp(RespClass* resp,
                                                rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
 
-  // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
+  // TODO(unknown): the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
 

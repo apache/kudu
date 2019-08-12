@@ -108,6 +108,7 @@
 #include "kudu/master/placement_policy.h"
 #include "kudu/master/sentry_authz_provider.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
@@ -271,6 +272,8 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
 DECLARE_int64(tsk_rotation_seconds);
 
+METRIC_DEFINE_entity(table);
+
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
 using boost::make_optional;
@@ -300,6 +303,7 @@ using kudu::security::TokenSigner;
 using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenSigningPrivateKeyPB;
 using kudu::security::TokenSigningPublicKeyPB;
+using kudu::tablet::ReportedTabletStatsPB;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletDataState;
@@ -362,6 +366,9 @@ class TableLoader : public TableVisitor {
     l.Commit();
 
     if (!is_deleted) {
+      // It's unnecessary to register metrics for the deleted tables.
+      table->RegisterMetrics(catalog_manager_->master_->metric_registry(),
+          CatalogManager::NormalizeTableName(metadata.name()));
       LOG(INFO) << Substitute("Loaded metadata for table $0", table->ToString());
     }
     VLOG(2) << Substitute("Metadata for table $0: $1",
@@ -1778,6 +1785,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   partition_schema.ToPB(metadata->mutable_partition_schema());
   metadata->set_create_timestamp(time(nullptr));
   (*metadata->mutable_extra_config()) = std::move(extra_config_pb);
+  table->RegisterMetrics(master_->metric_registry(), metadata->name());
   return table;
 }
 
@@ -2049,6 +2057,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
                    << " from map in response to DeleteTable request: "
                    << SecureShortDebugString(req);
       }
+      table->UnregisterMetrics();
     }
 
     // 5. Commit the dirty tablet state.
@@ -2675,6 +2684,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                    << SecureShortDebugString(req);
       }
       InsertOrDie(&normalized_table_names_map_, normalized_new_table_name, table);
+
+      // Alter the table name in the attributes of the metrics.
+      table->UpdateMetricsAttrs(normalized_new_table_name);
     }
 
     // Insert new tablets into the global tablet map. After this, the tablets
@@ -4176,12 +4188,23 @@ Status CatalogManager::ProcessTabletReport(
     if (tablet_was_mutated) {
       mutated_tablets.push_back(tablet);
     }
+
+    // 10. Process the report's tablet statistics.
+    if (report.has_stats() && report.has_consensus_state()) {
+      DCHECK(ts_desc->permanent_uuid() == report.consensus_state().leader_uuid());
+
+      // Now the tserver only reports the LEADER replicas its own.
+      // First, update table's stats.
+      tablet->table()->UpdateMetrics(tablet->GetStats(), report.stats());
+      // Then, update tablet's stats.
+      tablet->UpdateStats(report.stats());
+    }
   }
 
-  // 10. Unlock the tables; we no longer need to access their state.
+  // 11. Unlock the tables; we no longer need to access their state.
   tables_lock.Unlock();
 
-  // 11. Write all tablet mutations to the catalog table.
+  // 12. Write all tablet mutations to the catalog table.
   //
   // SysCatalogTable::Write will short-circuit the case where the data has not
   // in fact changed since the previous version and avoid any unnecessary mutations.
@@ -4198,10 +4221,10 @@ Status CatalogManager::ProcessTabletReport(
   // Having successfully written the tablet mutations, this function cannot
   // fail from here on out.
 
-  // 12. Publish the in-memory tablet mutations and release the locks.
+  // 13. Publish the in-memory tablet mutations and release the locks.
   tablets_lock.Commit();
 
-  // 13. Process all tablet schema version changes.
+  // 14. Process all tablet schema version changes.
   //
   // This is separate from tablet state mutations because only tablet in-memory
   // state (and table on-disk state) is changed.
@@ -4214,7 +4237,7 @@ Status CatalogManager::ProcessTabletReport(
     }
   }
 
-  // 14. Send all queued RPCs.
+  // 15. Send all queued RPCs.
   for (auto& rpc : rpcs) {
     if (rpc->table() != nullptr) {
       rpc->table()->AddTask(rpc.get());
@@ -5302,6 +5325,17 @@ string TabletInfo::ToString() const {
                     (table_ != nullptr ? table_->ToString() : "MISSING"));
 }
 
+
+void TabletInfo::UpdateStats(ReportedTabletStatsPB stats) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  stats_ = std::move(stats);
+}
+
+ReportedTabletStatsPB TabletInfo::GetStats() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return stats_;
+}
+
 void PersistentTabletInfo::set_state(SysTabletsEntryPB::State state, const string& msg) {
   pb.set_state(state);
   pb.set_state_msg(msg);
@@ -5328,6 +5362,8 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
     const auto& lower_bound = tablet->metadata().state().pb.partition().partition_key_start();
     CHECK(EraseKeyReturnValuePtr(&tablet_map_, lower_bound) != nullptr);
     DecrementSchemaVersionCountUnlocked(tablet->reported_schema_version());
+    // Update the table metrics for the deleted tablets.
+    UpdateMetrics(tablet->GetStats(), ReportedTabletStatsPB());
   }
   for (const auto& tablet : tablets_to_add) {
     TabletInfo* old = nullptr;
@@ -5460,6 +5496,39 @@ void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo>>* ret) const {
   for (const auto& e : tablet_map_) {
     ret->emplace_back(make_scoped_refptr(e.second));
   }
+}
+
+void TableInfo::RegisterMetrics(MetricRegistry* metric_registry, const string& table_name) {
+  if (metric_registry) {
+    MetricEntity::AttributeMap attrs;
+    attrs["table_name"] = table_name;
+    metric_entity_ = METRIC_ENTITY_table.Instantiate(metric_registry, table_id_, attrs);
+    metrics_.reset(new TableMetrics(metric_entity_));
+  }
+}
+
+void TableInfo::UnregisterMetrics() {
+  if (metric_entity_) {
+    metric_entity_->Unpublish();
+  }
+}
+
+void TableInfo::UpdateMetrics(const tablet::ReportedTabletStatsPB& old_stats,
+                              const tablet::ReportedTabletStatsPB& new_stats) {
+  if (metrics_) {
+    metrics_->on_disk_size->IncrementBy(new_stats.on_disk_size() - old_stats.on_disk_size());
+    metrics_->live_row_count->IncrementBy(new_stats.live_row_count() - old_stats.live_row_count());
+  }
+}
+
+void TableInfo::UpdateMetricsAttrs(const string& new_table_name) {
+  if (metric_entity_) {
+    metric_entity_->SetAttribute("table_name", new_table_name);
+  }
+}
+
+const TableMetrics* TableInfo::GetMetrics() const {
+  return metrics_.get();
 }
 
 void TableInfo::IncrementSchemaVersionCountUnlocked(int64_t version) {

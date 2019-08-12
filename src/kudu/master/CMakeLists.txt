@@ -49,6 +49,7 @@ set(MASTER_SRCS
   sentry_privileges_cache_metrics.cc
   sentry_privileges_fetcher.cc
   sys_catalog.cc
+  table_metrics.cc
   ts_descriptor.cc
   ts_manager.cc)
 

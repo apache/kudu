@@ -91,7 +91,7 @@ METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
                            "State of this tablet.");
 METRIC_DEFINE_gauge_int64(tablet, live_row_count, "Tablet Live Row Count",
                           kudu::MetricUnit::kRows,
-                          "Number of live rows in this tablet, excludes deleted rows."
+                          "Number of live rows in this tablet, excludes deleted rows. "
                           "When the tablet doesn't support live row counting, -1 will "
                           "be returned.");
 
@@ -817,6 +817,36 @@ int64_t TabletReplica::CountLiveRows() const {
     ignore_result(tablet->CountLiveRows(&ret));
   }
   return ret;
+}
+
+void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
+  // It's necessary to check the state before visiting the "consensus_".
+  if (RUNNING != state()) {
+    return;
+  }
+
+  ReportedTabletStatsPB pb;
+  pb.set_on_disk_size(OnDiskSize());
+  pb.set_live_row_count(CountLiveRows());
+
+  // We cannot hold 'lock_' while calling RaftConsensus::role() because
+  // it may invoke TabletReplica::StartFollowerTransaction() and lead to
+  // a deadlock.
+  RaftPeerPB::Role role = consensus_->role();
+
+  std::lock_guard<simple_spinlock> l(lock_);
+  if (stats_pb_.on_disk_size() != pb.on_disk_size() ||
+      stats_pb_.live_row_count() != pb.live_row_count()) {
+    if (consensus::RaftPeerPB_Role_LEADER == role) {
+      dirty_tablets->emplace_back(tablet_id());
+    }
+    stats_pb_.Swap(&pb);
+  }
+}
+
+ReportedTabletStatsPB TabletReplica::GetTabletStats() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return stats_pb_;
 }
 
 void TabletReplica::MakeUnavailable(const Status& error) {

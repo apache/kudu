@@ -157,6 +157,8 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(
     Substitute("--follower_unavailable_considered_failed_sec=$0", kUnavailableSec),
     Substitute("--consensus_rpc_timeout_ms=$0", kConsensusRpcTimeoutSec * 1000),
     Substitute("--heartbeat_interval_ms=$0", kTsToMasterHbIntervalSec * 1000),
+    // 'update_tablet_stats_interval_ms' should be larger than 'heartbeat_interval_ms'.
+    Substitute("--update_tablet_stats_interval_ms=$0", (kTsToMasterHbIntervalSec + 1) * 1000),
     "--raft_heartbeat_interval_ms=50",
     "--enable_leader_failure_detection=false",
   };

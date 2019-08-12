@@ -468,5 +468,17 @@ Status GetTsCounterValue(cluster::ExternalTabletServer* ets,
 Status SetupAdministratorPrivileges(MiniKdc* kdc,
                                     const HostPort& address);
 
+// Alter the table name.
+Status AlterTableName(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                      const std::string& table_id,
+                      const std::string& old_table_name,
+                      const std::string& new_table_name,
+                      const MonoDelta& timeout);
+
+// Delete the table.
+Status DeleteTable(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                   const std::string& table_id,
+                   const std::string& table_name,
+                   const MonoDelta& timeout);
 } // namespace itest
 } // namespace kudu

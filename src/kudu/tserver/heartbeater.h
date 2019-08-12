@@ -52,12 +52,12 @@ class Heartbeater {
   // heartbeat interval has not expired.
   void TriggerASAP();
 
-  // Mark the given tablet as dirty, or do nothing if it is already dirty.
+  // Mark the given tablets as dirty, or do nothing if they are already dirty.
   //
   // Tablet dirtiness is tracked separately for each master. Dirty tablets are
   // included in the heartbeat's tablet report, and only marked not dirty once
   // the report has been acknowledged by the master.
-  void MarkTabletDirty(const std::string& tablet_id, const std::string& reason);
+  void MarkTabletsDirty(const std::vector<std::string>& tablet_ids, const std::string& reason);
 
   ~Heartbeater();
 

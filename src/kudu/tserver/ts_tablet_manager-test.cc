@@ -24,10 +24,12 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -37,6 +39,8 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -50,6 +54,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_int32(update_tablet_metrics_interval_ms);
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
   NO_FATALS(AssertReportHasUpdatedTablet(report, tablet_id))
@@ -71,12 +77,14 @@ using consensus::RaftConfigPB;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
 using pb_util::SecureShortDebugString;
+using tablet::LocalTabletWriter;
+using tablet::Tablet;
 using tablet::TabletReplica;
 
 class TsTabletManagerTest : public KuduTest {
  public:
   TsTabletManagerTest()
-    : schema_({ ColumnSchema("key", UINT32) }, 1) {
+    : schema_({ ColumnSchema("key", INT32) }, 1) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -137,6 +145,15 @@ class TsTabletManagerTest : public KuduTest {
 
   void MarkTabletReportAcknowledged(const TabletReportPB& report) {
     heartbeater_->MarkTabletReportsAcknowledgedForTests({ report });
+  }
+
+  void InsertTestRows(Tablet* tablet, int64_t count) {
+    LocalTabletWriter writer(tablet, &schema_);
+    KuduPartialRow row(&schema_);
+    for (int64_t i = 0; i < count; i++) {
+      ASSERT_OK(row.SetInt32(0, i));
+      ASSERT_OK(writer.Insert(row));
+    }
   }
 
  protected:
@@ -248,7 +265,6 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     ASSERT_TRUE(report.is_incremental());
     ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
   }
-
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
 
   // If we don't acknowledge the report, and ask for another incremental report,
@@ -306,6 +322,74 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
   ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-2");
   ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+}
+
+TEST_F(TsTabletManagerTest, TestTabletStatsReports) {
+  TabletReportPB report;
+  int64_t seqno = -1;
+  const int64_t kCount = 12;
+
+  // 1. Create two tablets.
+  scoped_refptr<tablet::TabletReplica> replica1;
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, boost::none, &replica1));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, boost::none, nullptr));
+
+  // 2. Do a full report - should include these two tablets but statistics are all zero.
+  NO_FATALS(GenerateFullTabletReport(&report));
+  ASSERT_FALSE(report.is_incremental());
+  ASSERT_EQ(2, report.updated_tablets().size());
+  ASSERT_FALSE(report.updated_tablets(0).has_stats());
+  ASSERT_FALSE(report.updated_tablets(1).has_stats());
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+  MarkTabletReportAcknowledged(report);
+
+  // 3. Trigger updates to tablet statistics as soon as possible.
+  tablet_manager_->SetNextUpdateTimeForTests();
+  heartbeater_->TriggerASAP();
+
+  // Do an incremental report - should include these two tablets and tablet statistics.
+  ASSERT_EVENTUALLY([&] () {
+    NO_FATALS(GenerateIncrementalTabletReport(&report));
+    ASSERT_TRUE(report.is_incremental());
+    ASSERT_EQ(2, report.updated_tablets().size());
+  });
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_TRUE(report.updated_tablets(i).has_stats());
+    ASSERT_GT(report.updated_tablets(i).stats().on_disk_size(), 0);
+    ASSERT_EQ(0, report.updated_tablets(i).stats().live_row_count());
+  }
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-2");
+  MarkTabletReportAcknowledged(report);
+
+  // Clean the pending dirty tablets that are not acknowledged since the seqno race.
+  ASSERT_EVENTUALLY([&] () {
+    NO_FATALS(GenerateIncrementalTabletReport(&report));
+    ASSERT_TRUE(report.is_incremental());
+    MarkTabletReportAcknowledged(report);
+    ASSERT_EQ(0, report.updated_tablets().size());
+  });
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+
+  // 4. Write some test rows to 'tablet-1'.
+  NO_FATALS(InsertTestRows(replica1->tablet(), kCount));
+
+  // Trigger updates to tablet statistics as soon as possible again.
+  tablet_manager_->SetNextUpdateTimeForTests();
+  heartbeater_->TriggerASAP();
+
+  // Do an incremental report - should include the tablet and tablet statistics.
+  ASSERT_EVENTUALLY([&] () {
+    NO_FATALS(GenerateIncrementalTabletReport(&report));
+    ASSERT_TRUE(report.is_incremental());
+    ASSERT_EQ(1, report.updated_tablets().size());
+  });
+  ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+  ASSERT_GT(report.updated_tablets(0).stats().on_disk_size(), 0);
+  ASSERT_EQ(kCount, report.updated_tablets(0).stats().live_row_count());
+  ASSERT_REPORT_HAS_UPDATED_TABLET(report, "tablet-1");
+  MarkTabletReportAcknowledged(report);
 }
 
 } // namespace tserver

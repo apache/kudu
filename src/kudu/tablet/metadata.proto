@@ -193,3 +193,9 @@ enum TabletStatePB {
   // The Tablet has been completely shut down.
   SHUTDOWN = 4;
 }
+
+// Statistics for a tablet replica.
+message ReportedTabletStatsPB {
+  required int64 on_disk_size = 1;
+  required int64 live_row_count = 2;
+}

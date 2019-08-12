@@ -1270,6 +1270,47 @@ Status SetupAdministratorPrivileges(MiniKdc* kdc,
   return kdc->Kinit("test-admin");
 }
 
+Status AlterTableName(const shared_ptr<MasterServiceProxy>& master_proxy,
+                      const string& table_id,
+                      const string& old_table_name,
+                      const string& new_table_name,
+                      const MonoDelta& timeout) {
+  master::AlterTableRequestPB req;
+  req.mutable_table()->set_table_id(table_id);
+  req.mutable_table()->set_table_name(old_table_name);
+  req.set_new_table_name(new_table_name);
+  master::AlterTableResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+
+  RETURN_NOT_OK(master_proxy->AlterTable(req, &resp, &controller));
+  RETURN_NOT_OK(controller.status());
+  if (resp.has_error()) {
+    return Status::RemoteError("Response had an error", SecureShortDebugString(resp.error()));
+  }
+
+  return Status::OK();
+}
+
+Status DeleteTable(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                   const std::string& table_id,
+                   const std::string& table_name,
+                   const MonoDelta& timeout) {
+  master::DeleteTableRequestPB req;
+  req.mutable_table()->set_table_id(table_id);
+  req.mutable_table()->set_table_name(table_name);
+  master::DeleteTableResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+
+  RETURN_NOT_OK(master_proxy->DeleteTable(req, &resp, &controller));
+  RETURN_NOT_OK(controller.status());
+  if (resp.has_error()) {
+    return Status::RemoteError("Response had an error", SecureShortDebugString(resp.error()));
+  }
+
+  return Status::OK();
+}
 
 } // namespace itest
 } // namespace kudu

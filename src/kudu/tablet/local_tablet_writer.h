@@ -23,10 +23,12 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/gutil/macros.h"
 
 namespace kudu {
 namespace tablet {
@@ -116,6 +118,13 @@ class LocalTabletWriter {
       }
       op_idx++;
     }
+
+    // Update the metrics.
+    TabletMetrics* metrics = tablet_->metrics();
+    if (metrics) {
+      metrics->rows_inserted->IncrementBy(op_idx);
+    }
+
     return Status::OK();
   }
 

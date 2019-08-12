@@ -15,7 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <stdint.h>
+
 #include <cstdlib>
+#include <functional>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -32,19 +35,25 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/master/catalog_manager.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/table_metrics.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -54,6 +63,8 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -67,12 +78,18 @@ DECLARE_bool(catalog_manager_evict_excess_replicas);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_bool(enable_leader_failure_detection);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
+DECLARE_double(leader_failure_max_missed_heartbeat_periods);
+DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(metrics_retirement_age_ms);
+DECLARE_int32(raft_heartbeat_interval_ms);
 DEFINE_int32(num_election_test_loops, 3,
              "Number of random EmulateElection() loops to execute in "
              "TestReportNewLeaderOnLeaderChange");
 
 using kudu::client::KuduClient;
+using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::InternalMiniCluster;
@@ -85,8 +102,12 @@ using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::SimpleIntKeyKuduSchema;
+using kudu::KuduPartialRow;
+using kudu::master::CatalogManager;
+using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::master::ReportedTabletPB;
+using kudu::master::TableInfo;
 using kudu::master::TabletReportPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
@@ -557,6 +578,208 @@ TEST_F(TsTabletManagerITest, TestDeduplicateMasterAddrsForHeartbeaters) {
   // thread should exist.
   tserver::Heartbeater* hb = mini_tserver->server()->heartbeater();
   ASSERT_EQ(1, hb->threads_.size());
+}
+
+TEST_F(TsTabletManagerITest, TestTableStats) {
+  const int kNumMasters = 3;
+  const int kNumTservers = 3;
+  const int kNumReplicas = 3;
+  const int kNumHashBuckets = 3;
+  const int kRowsCount = rand() % 1000;
+  const string kNewTableName = "NewTableName";
+  client::sp::shared_ptr<KuduTable> table;
+
+  // Shorten the time and speed up the test.
+  FLAGS_heartbeat_interval_ms = 100;
+  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 2;
+  int64_t kMaxElectionTime =
+      FLAGS_raft_heartbeat_interval_ms * FLAGS_leader_failure_max_missed_heartbeat_periods;
+
+  // Get the LEADER master.
+  const auto GetLeaderMaster = [&] () -> Master* {
+    int idx = 0;
+    Master* master = nullptr;
+    Status s = cluster_->GetLeaderMasterIndex(&idx);
+    if (s.ok()) {
+      master = cluster_->mini_master(idx)->master();
+    }
+    return CHECK_NOTNULL(master);
+  };
+  // Get the LEADER master's service proxy.
+  const auto GetLeaderMasterServiceProxy = [&] () -> shared_ptr<MasterServiceProxy> {
+    const auto& addr = GetLeaderMaster()->first_rpc_address();
+    shared_ptr<MasterServiceProxy> proxy(
+        new MasterServiceProxy(client_messenger_, addr, addr.host()));
+    return proxy;
+  };
+  // Get the LEADER master and run the check function.
+  const auto GetLeaderMasterAndRun = [&] (int64_t live_row_count,
+      const std::function<void(TableInfo*, int64_t)>& check_function) {
+    CatalogManager* catalog = GetLeaderMaster()->catalog_manager();
+    master::CatalogManager::ScopedLeaderSharedLock l(catalog);
+    ASSERT_OK(l.first_failed_status());
+    // Get the TableInfo.
+    vector<scoped_refptr<TableInfo>> table_infos;
+    ASSERT_OK(catalog->GetAllTables(&table_infos));
+    ASSERT_EQ(1, table_infos.size());
+    // Run the check function.
+    NO_FATALS(check_function(table_infos[0].get(), live_row_count));
+  };
+  // Check the stats.
+  const auto CheckStats = [&] (int64_t live_row_count) {
+    // Trigger heartbeat.
+    for (int i = 0; i < kNumTservers; ++i) {
+      TabletServer* tserver = CHECK_NOTNULL(cluster_->mini_tablet_server(i)->server());
+      tserver->tablet_manager()->SetNextUpdateTimeForTests();
+      tserver->heartbeater()->TriggerASAP();
+    }
+
+    // Check the stats.
+    NO_FATALS(GetLeaderMasterAndRun(live_row_count, [&] (
+      TableInfo* table_info, int64_t live_row_count) {
+        ASSERT_EVENTUALLY([&] () {
+          ASSERT_EQ(live_row_count, table_info->GetMetrics()->live_row_count->value());
+        });
+      }));
+  };
+
+  // 1. Start a cluster.
+  {
+    InternalMiniClusterOptions opts;
+    opts.num_masters = kNumMasters;
+    opts.num_tablet_servers = kNumTservers;
+    NO_FATALS(StartCluster(std::move(opts)));
+    ASSERT_EQ(kNumMasters, cluster_->num_masters());
+    ASSERT_EQ(kNumTservers, cluster_->num_tablet_servers());
+  }
+
+  // 2. Create a table.
+  {
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                            .schema(&schema_)
+                            .add_hash_partitions({ "key" }, kNumHashBuckets)
+                            .num_replicas(kNumReplicas)
+                            .timeout(MonoDelta::FromSeconds(60))
+                            .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+    NO_FATALS(CheckStats(0));
+  }
+
+  // 3. Write some rows and verify the stats.
+  {
+    client::sp::shared_ptr<KuduSession> session(client_->NewSession());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    for (int i = 0; i < kRowsCount; i++) {
+      KuduInsert* insert = table->NewInsert();
+      KuduPartialRow* row = insert->mutable_row();
+      ASSERT_OK(row->SetInt32(0, i));
+      ASSERT_OK(session->Apply(insert));
+    }
+    ASSERT_OK(session->Flush());
+    NO_FATALS(CheckStats(kRowsCount));
+  }
+
+  // 4. Change the tablet leadership.
+  {
+    // Build a TServerDetails map so we can check for convergence.
+    itest::TabletServerMap ts_map;
+    ASSERT_OK(CreateTabletServerMap(GetLeaderMasterServiceProxy(), client_messenger_, &ts_map));
+    ValueDeleter deleter(&ts_map);
+
+    // Collect the TabletReplicas so we get direct access to RaftConsensus.
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ASSERT_OK(PrepareTabletReplicas(MonoDelta::FromSeconds(60), &tablet_replicas));
+    ASSERT_EQ(kNumReplicas * kNumHashBuckets, tablet_replicas.size());
+
+    for (int i = 0; i < kNumReplicas * kNumHashBuckets; ++i) {
+      scoped_refptr<TabletReplica> replica = tablet_replicas[i];
+      if (consensus::RaftPeerPB_Role_LEADER == replica->consensus()->role()) {
+        // Step down.
+        itest::TServerDetails* tserver =
+            CHECK_NOTNULL(FindOrDie(ts_map, replica->permanent_uuid()));
+        ASSERT_OK(LeaderStepDown(tserver, replica->tablet_id(), MonoDelta::FromSeconds(10)));
+        SleepFor(MonoDelta::FromMilliseconds(kMaxElectionTime));
+        // Check stats after every election.
+        NO_FATALS(CheckStats(kRowsCount));
+      }
+    }
+  }
+
+  // 5. Rename the table.
+  {
+    ASSERT_OK(itest::AlterTableName(GetLeaderMasterServiceProxy(),
+        table->id(), kTableName, kNewTableName, MonoDelta::FromSeconds(5)));
+
+    // Check table id, table name and stats.
+    NO_FATALS(GetLeaderMasterAndRun(kRowsCount ,[&] (
+      TableInfo* table_info, int64_t live_row_count) {
+        std::ostringstream out;
+        JsonWriter writer(&out, JsonWriter::PRETTY);
+        ASSERT_OK(table_info->metric_entity_->WriteAsJson(&writer, MetricJsonOptions()));
+        string metric_attrs_str = out.str();
+        ASSERT_STR_NOT_CONTAINS(metric_attrs_str, kTableName);
+        ASSERT_STR_CONTAINS(metric_attrs_str, kNewTableName);
+        ASSERT_EQ(table->id(), table_info->metric_entity_->id());
+        ASSERT_EQ(live_row_count, table_info->GetMetrics()->live_row_count->value());
+      }));
+  }
+
+  // 6. Restart the masters.
+  {
+    for (int i = 0; i < kNumMasters; ++i) {
+      int idx = 0;
+      ASSERT_OK(cluster_->GetLeaderMasterIndex(&idx));
+      master::MiniMaster* mini_master = CHECK_NOTNULL(cluster_->mini_master(idx));
+      mini_master->Shutdown();
+      SleepFor(MonoDelta::FromMilliseconds(kMaxElectionTime));
+      ASSERT_OK(mini_master->Restart());
+      // Sometimes the election fails until the node restarts.
+      // And the restarted node is elected leader again.
+      // So, it is necessary to wait for all tservers to report.
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_interval_ms));
+      NO_FATALS(CheckStats(kRowsCount));
+    }
+  }
+
+  // 7. Restart the tservers.
+  {
+    for (int i = 0; i < kNumTservers; ++i) {
+      tserver::MiniTabletServer* mini_tserver = CHECK_NOTNULL(cluster_->mini_tablet_server(i));
+      mini_tserver->Shutdown();
+      ASSERT_OK(mini_tserver->Start());
+      SleepFor(MonoDelta::FromMilliseconds(kMaxElectionTime));
+      ASSERT_OK(mini_tserver->WaitStarted());
+      NO_FATALS(CheckStats(kRowsCount));
+    }
+  }
+
+  // 8. Delete the table.
+  {
+    ASSERT_OK(itest::DeleteTable(GetLeaderMasterServiceProxy(),
+        table->id(), kNewTableName, MonoDelta::FromSeconds(5)));
+
+    FLAGS_metrics_retirement_age_ms = -1;
+    MetricRegistry* metric_registry = CHECK_NOTNULL(GetLeaderMaster()->metric_registry());
+    const auto GetMetricsString = [&] (string* ret) {
+      std::ostringstream out;
+      JsonWriter writer(&out, JsonWriter::PRETTY);
+      ASSERT_OK(metric_registry->WriteAsJson(&writer, MetricJsonOptions()));
+      *ret = out.str();
+    };
+
+    string metrics_str;
+    // On the first call, the metric is returned and internally retired, but it is not deleted.
+    NO_FATALS(GetMetricsString(&metrics_str));
+    ASSERT_STR_CONTAINS(metrics_str, kNewTableName);
+    // On the second call, the metric is returned and then deleted.
+    NO_FATALS(GetMetricsString(&metrics_str));
+    ASSERT_STR_CONTAINS(metrics_str, kNewTableName);
+    // On the third call, the metric is no longer available.
+    NO_FATALS(GetMetricsString(&metrics_str));
+    ASSERT_STR_NOT_CONTAINS(metrics_str, kNewTableName);
+  }
 }
 
 } // namespace tserver

@@ -156,7 +156,6 @@ scoped_refptr<MetricEntity> MetricEntityPrototype::Instantiate(
   return registry->FindOrCreateEntity(this, id, initial_attrs);
 }
 
-
 //
 // MetricEntity
 //

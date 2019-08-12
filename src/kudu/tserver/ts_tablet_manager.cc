@@ -65,6 +65,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -132,6 +133,11 @@ DEFINE_int32(delete_tablet_inject_latency_ms, 0,
              "Amount of delay in milliseconds to inject into delete tablet operations.");
 TAG_FLAG(delete_tablet_inject_latency_ms, unsafe);
 
+DEFINE_int32(update_tablet_stats_interval_ms, 5000,
+             "Interval at which the tablet statistics should be updated."
+             "Should be greater than 'heartbeat_interval_ms'");
+TAG_FLAG(update_tablet_stats_interval_ms, advanced);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
@@ -174,6 +180,8 @@ METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
                           kudu::MetricUnit::kTablets,
                           "Number of tablets currently shut down");
 
+DECLARE_int32(heartbeat_interval_ms);
+
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -199,6 +207,7 @@ using fs::DataDirManager;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
+using tablet::ReportedTabletStatsPB;
 using tablet::Tablet;
 using tablet::TABLET_DATA_COPYING;
 using tablet::TABLET_DATA_DELETED;
@@ -211,6 +220,20 @@ using tserver::TabletCopyClient;
 
 namespace tserver {
 
+namespace {
+bool ValidateUpdateTabletStatsInterval() {
+  if (FLAGS_update_tablet_stats_interval_ms < FLAGS_heartbeat_interval_ms) {
+    LOG(ERROR) << "Tablet stats updating interval (--update_tablet_stats_interval_ms)"
+               << "should be greater than heartbeat interval (--heartbeat_interval_ms)";
+    return false;
+  }
+
+  return true;
+}
+} // anonymous namespace
+
+GROUP_FLAG_VALIDATOR(update_tablet_stats_interval_ms, ValidateUpdateTabletStatsInterval);
+
 TSTabletManager::TSTabletManager(TabletServer* server)
   : fs_manager_(server->fs_manager()),
     cmeta_manager_(new ConsensusMetadataManager(fs_manager_)),
@@ -218,6 +241,9 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
     state_(MANAGER_INITIALIZING) {
+  next_update_time_ = MonoTime::Now() +
+      MonoDelta::FromMilliseconds(FLAGS_update_tablet_stats_interval_ms);
+
   METRIC_tablets_num_not_initialized.InstantiateFunctionGauge(
           server->metric_entity(),
           Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
@@ -1222,11 +1248,15 @@ void TSTabletManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica> >* r
   AppendValuesFromMap(tablet_map_, replicas);
 }
 
-void TSTabletManager::MarkTabletDirty(const std::string& tablet_id, const std::string& reason) {
+void TSTabletManager::MarkTabletDirty(const string& tablet_id, const string& reason) {
   VLOG(2) << Substitute("$0 Marking dirty. Reason: $1. Will report this "
       "tablet to the Master in the next heartbeat",
       LogPrefix(tablet_id), reason);
-  server_->heartbeater()->MarkTabletDirty(tablet_id, reason);
+  MarkTabletsDirty({ tablet_id }, reason);
+}
+
+void TSTabletManager::MarkTabletsDirty(const vector<string>& tablet_ids, const string& reason) {
+  server_->heartbeater()->MarkTabletsDirty(tablet_ids, reason);
   server_->heartbeater()->TriggerASAP();
 }
 
@@ -1288,6 +1318,16 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
     Status s = consensus->ConsensusState(&cstate, include_health);
     if (PREDICT_TRUE(s.ok())) {
       *reported_tablet->mutable_consensus_state() = std::move(cstate);
+    }
+  }
+
+  // First, the replica's state should be RUNNING already.
+  // Then fill in the replica's stats only when it's LEADER.
+  if (tablet::RUNNING == replica->state() &&
+      consensus::RaftPeerPB_Role_LEADER == consensus->role()) {
+    ReportedTabletStatsPB stats_pb = replica->GetTabletStats();
+    if (stats_pb.IsInitialized()) {
+      *reported_tablet->mutable_stats() = std::move(stats_pb);
     }
   }
 }
@@ -1538,6 +1578,36 @@ Status TSTabletManager::WaitForNoTransitionsForTests(const MonoDelta& timeout) c
   }
   return Status::TimedOut("transitions still in progress after waiting $0",
                           timeout.ToString());
+}
+
+void TSTabletManager::UpdateTabletStatsIfNecessary() {
+  // Only one thread is allowed to update at the same time.
+  std::unique_lock<rw_spinlock> try_lock(lock_update_, std::try_to_lock);
+  if (!try_lock.owns_lock()) {
+    return;
+  }
+
+  if (MonoTime::Now() < next_update_time_) {
+    return;
+  }
+  next_update_time_ = MonoTime::Now() +
+      MonoDelta::FromMilliseconds(FLAGS_update_tablet_stats_interval_ms);
+  try_lock.unlock();
+
+  // Update the tablet stats and collect the dirty tablets.
+  vector<string> dirty_tablets;
+  vector<scoped_refptr<TabletReplica>> replicas;
+  GetTabletReplicas(&replicas);
+  for (const auto& replica : replicas) {
+    replica->UpdateTabletStats(&dirty_tablets);
+  }
+
+  MarkTabletsDirty(dirty_tablets, "The tablet statistics have been changed");
+}
+
+void TSTabletManager::SetNextUpdateTimeForTests() {
+  std::lock_guard<rw_spinlock> l(lock_update_);
+  next_update_time_ = MonoTime::Now();
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(
