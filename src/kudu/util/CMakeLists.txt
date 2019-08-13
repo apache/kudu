@@ -313,9 +313,14 @@ set(UTIL_COMPRESSION_LIBS
   lz4
   snappy
   zlib)
+
 ADD_EXPORTABLE_LIBRARY(kudu_util_compression
   SRCS ${UTIL_COMPRESSION_SRCS}
   DEPS ${UTIL_COMPRESSION_LIBS})
+# Define LZ4_DISABLE_DEPRECATE_WARNINGS to mute warnings like:
+# "'int LZ4_compress(const char*, char*, int)' is deprecated".
+target_compile_definitions(kudu_util_compression PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS)
+target_compile_definitions(kudu_util_compression_exported PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS)
 
 # See the comment in sanitizer_options.cc for details on this library's usage.
 # The top-level CMakeLists sets a ${SANITIZER_OPTIONS_OVERRIDE} variable which
