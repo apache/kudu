@@ -744,10 +744,16 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                                             dfr));
   VLOG_WITH_PREFIX(1) << "Opened new delta block " << block_id.ToString() << " for read";
 
-  // Merge the deleted row count of the old DMS to the RowSetMetadata if necessary.
-  rowset_metadata_->IncrementLiveRows(-deleted_row_count_);
-
-  RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
+  {
+    // Merge the deleted row count of the old DMS to the RowSetMetadata
+    // and reset deleted_row_count_ should be atomic, so we lock the
+    // component_lock_ in exclusive mode.
+    std::lock_guard<rw_spinlock> lock(component_lock_);
+    RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(),
+                                                             deleted_row_count_,
+                                                             block_id));
+    deleted_row_count_ = 0;
+  }
   if (flush_type == FLUSH_METADATA) {
     RETURN_NOT_OK_PREPEND(rowset_metadata_->Flush(),
                           Substitute("Unable to commit Delta block metadata for: $0",
@@ -814,7 +820,6 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     CHECK_EQ(redo_delta_stores_[idx], old_dms)
         << "Another thread modified the delta store list during flush";
     redo_delta_stores_[idx] = dfr;
-    deleted_row_count_ = 0;
   }
 
   return Status::OK();

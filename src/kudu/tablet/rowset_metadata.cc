@@ -187,10 +187,12 @@ void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& bloc
 }
 
 Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
+                                                int64_t num_deleted_rows,
                                                 const BlockId& block_id) {
   std::lock_guard<LockType> l(lock_);
   last_durable_redo_dms_id_ = dms_id;
   redo_delta_blocks_.push_back(block_id);
+  IncrementLiveRowsUnlocked(-num_deleted_rows);
   return Status::OK();
 }
 
@@ -278,12 +280,16 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
   blocks_by_col_id_.shrink_to_fit();
 }
 
-void RowSetMetadata::IncrementLiveRows(int64_t row_count) {
+void RowSetMetadata::IncrementLiveRowsUnlocked(int64_t row_count) {
   if (tablet_metadata_->supports_live_row_count() && row_count != 0) {
-    std::lock_guard<LockType> l(lock_);
     live_row_count_ += row_count;
     DCHECK_GE(live_row_count_, 0);
   }
+}
+
+void RowSetMetadata::IncrementLiveRows(int64_t row_count) {
+  std::lock_guard<LockType> l(lock_);
+  IncrementLiveRowsUnlocked(row_count);
 }
 
 int64_t RowSetMetadata::live_row_count() const {

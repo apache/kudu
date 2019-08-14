@@ -117,7 +117,11 @@ class RowSetMetadata {
 
   void SetColumnDataBlocks(const std::map<ColumnId, BlockId>& blocks_by_col_id);
 
-  Status CommitRedoDeltaDataBlock(int64_t dms_id, const BlockId& block_id);
+  // Atomically commit the new redo delta block to RowSetMetadata.
+  // This atomic operation includes updates to last_durable_redo_dms_id_ and live_row_count_.
+  Status CommitRedoDeltaDataBlock(int64_t dms_id,
+                                  int64_t num_deleted_rows,
+                                  const BlockId& block_id);
 
   Status CommitUndoDeltaDataBlock(const BlockId& block_id);
 
@@ -255,6 +259,8 @@ class RowSetMetadata {
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
+
+  void IncrementLiveRowsUnlocked(int64_t row_count);
 
   TabletMetadata* const tablet_metadata_;
   bool initted_;

@@ -46,7 +46,7 @@ class MetadataTest : public KuduTest {
     tablet_meta_ = new TabletMetadata(nullptr, "fake-tablet");
     CHECK_OK(RowSetMetadata::CreateNew(tablet_meta_.get(), 0, &meta_));
     for (int i = 0; i < all_blocks_.size(); i++) {
-      CHECK_OK(meta_->CommitRedoDeltaDataBlock(i, all_blocks_[i]));
+      CHECK_OK(meta_->CommitRedoDeltaDataBlock(i, 0, all_blocks_[i]));
     }
     CHECK_EQ(4, meta_->redo_delta_blocks().size());
   }

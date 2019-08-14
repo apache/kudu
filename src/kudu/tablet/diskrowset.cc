@@ -467,7 +467,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     s = cur_redo_writer_->FinishAndReleaseBlock(block_transaction_.get());
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
-      cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
+      cur_drs_metadata_->CommitRedoDeltaDataBlock(0, 0, cur_redo_ds_block_id_);
     } else {
       DCHECK_EQ(cur_redo_delta_stats->min_timestamp(), Timestamp::kMax);
     }

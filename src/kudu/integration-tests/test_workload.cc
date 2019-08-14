@@ -17,7 +17,6 @@
 
 #include "kudu/integration-tests/test_workload.h"
 
-#include <cstddef>
 #include <memory>
 #include <ostream>
 
@@ -43,6 +42,8 @@ namespace kudu {
 
 using client::KuduClient;
 using client::KuduColumnSchema;
+using client::KuduDelete;
+using client::KuduError;
 using client::KuduInsert;
 using client::KuduScanBatch;
 using client::KuduScanner;
@@ -53,6 +54,8 @@ using client::KuduTableCreator;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
 using cluster::MiniCluster;
+
+using std::vector;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
@@ -65,6 +68,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     // high-stress workloads.
     read_timeout_millis_(60000),
     write_batch_size_(50),
+    write_interval_millis_(0),
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     not_found_allowed_(false),
@@ -77,6 +81,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     start_latch_(0),
     should_run_(false),
     rows_inserted_(0),
+    rows_deleted_(0),
     batches_completed_(0),
     sequential_key_gen_(0) {
   // Make the default write pattern random row inserts.
@@ -87,11 +92,11 @@ TestWorkload::~TestWorkload() {
   StopAndJoin();
 }
 
-void TestWorkload::set_schema(const client::KuduSchema& schema) {
+void TestWorkload::set_schema(const KuduSchema& schema) {
   // Do some sanity checks on the schema. They reflect how the rest of
   // TestWorkload is going to use the schema.
   CHECK_GT(schema.num_columns(), 0) << "Schema should have at least one column";
-  std::vector<int> key_indexes;
+  vector<int> key_indexes;
   schema.GetPrimaryKeyColumnIndexes(&key_indexes);
   CHECK_LE(1, key_indexes.size()) << "Schema should have at least one key column";
   CHECK_EQ(0, key_indexes[0]) << "Schema's first key column should be index 0";
@@ -137,73 +142,69 @@ void TestWorkload::WriteThread() {
 
   while (should_run_.Load()) {
     int inserted = 0;
-    for (int i = 0; i < write_batch_size_; i++) {
-      if (write_pattern_ == UPDATE_ONE_ROW) {
-        gscoped_ptr<KuduUpdate> update(table->NewUpdate());
-        KuduPartialRow* row = update->mutable_row();
-        tools::GenerateDataForRow(schema_, 0, &rng_, row);
-        CHECK_OK(session->Apply(update.release()));
-      } else {
-        gscoped_ptr<KuduInsert> insert(table->NewInsert());
-        KuduPartialRow* row = insert->mutable_row();
-        int32_t key;
-        if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
-          key = sequential_key_gen_.Increment();
+    int deleted = 0;
+    vector<int32_t> keys;
+    // Write insert or update row to cluster.
+    {
+      for (int i = 0; i < write_batch_size_; i++) {
+        if (write_pattern_ == UPDATE_ONE_ROW) {
+          gscoped_ptr<KuduUpdate> update(table->NewUpdate());
+          KuduPartialRow* row = update->mutable_row();
+          tools::GenerateDataForRow(schema_, 0, &rng_, row);
+          CHECK_OK(session->Apply(update.release()));
         } else {
-          key = rng_.Next();
-          if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
-            key %= kNumRowsForDuplicateKeyWorkload;
+          gscoped_ptr<KuduInsert> insert(table->NewInsert());
+          KuduPartialRow* row = insert->mutable_row();
+          int32_t key;
+          if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
+            key = sequential_key_gen_.Increment();
+          } else {
+            key = rng_.Next();
+            if (write_pattern_ == INSERT_WITH_MANY_DUP_KEYS) {
+              key %= kNumRowsForDuplicateKeyWorkload;
+            }
           }
-        }
+          keys.push_back(key);
 
-        tools::GenerateDataForRow(schema_, key, &rng_, row);
-        if (payload_bytes_) {
-          // Note: overriding payload_bytes_ requires the "simple" schema.
-          std::string test_payload(payload_bytes_.get(), '0');
-          CHECK_OK(row->SetStringCopy(2, test_payload));
+          tools::GenerateDataForRow(schema_, key, &rng_, row);
+          if (payload_bytes_) {
+            // Note: overriding payload_bytes_ requires the "simple" schema.
+            std::string test_payload(payload_bytes_.get(), '0');
+            CHECK_OK(row->SetStringCopy(2, test_payload));
+          }
+          CHECK_OK(session->Apply(insert.release()));
+
+          inserted++;
         }
-        CHECK_OK(session->Apply(insert.release()));
-        inserted++;
+      }
+      Status s = session->Flush();
+      if (PREDICT_FALSE(!s.ok())) {
+        inserted -= GetNumberOfErrors(session.get());
+      }
+      if (inserted > 0) {
+        rows_inserted_.IncrementBy(inserted);
+        batches_completed_.Increment();
       }
     }
-
-    Status s = session->Flush();
-
-    if (PREDICT_FALSE(!s.ok())) {
-      std::vector<client::KuduError*> errors;
-      ElementDeleter d(&errors);
-      bool overflow;
-      session->GetPendingErrors(&errors, &overflow);
-      CHECK(!overflow);
-      for (const client::KuduError* e : errors) {
-        if (timeout_allowed_ && e->status().IsTimedOut()) {
-          continue;
-        }
-
-        if (not_found_allowed_ && e->status().IsNotFound()) {
-          continue;
-        }
-
-        if (already_present_allowed_ && e->status().IsAlreadyPresent()) {
-          continue;
-        }
-
-        if (network_error_allowed_ && e->status().IsNetworkError()) {
-          continue;
-        }
-
-        if (remote_error_allowed_ && e->status().IsRemoteError()) {
-          continue;
-        }
-
-        LOG(FATAL) << e->status().ToString();
-      }
-      inserted -= errors.size();
+    if (PREDICT_FALSE(write_interval_millis_ > 0)) {
+      SleepFor(MonoDelta::FromMilliseconds(write_interval_millis_));
     }
-
-    if (inserted > 0) {
-      rows_inserted_.IncrementBy(inserted);
-      batches_completed_.Increment();
+    // Write delete row to cluster.
+    if (write_pattern_ == INSERT_RANDOM_ROWS_WITH_DELETE) {
+      for (auto key : keys) {
+        gscoped_ptr<KuduDelete> op(table->NewDelete());
+        KuduPartialRow* row = op->mutable_row();
+        tools::WriteValueToColumn(schema_, 0, key, row);
+        CHECK_OK(session->Apply(op.release()));
+        deleted++;
+      }
+      Status s = session->Flush();
+      if (PREDICT_FALSE(!s.ok())) {
+        deleted -= GetNumberOfErrors(session.get());
+      }
+      if (deleted > 0) {
+        rows_deleted_.IncrementBy(deleted);
+      }
     }
   }
 }
@@ -220,7 +221,10 @@ void TestWorkload::ReadThread() {
     CHECK_OK(scanner.SetTimeoutMillis(read_timeout_millis_));
     CHECK_OK(scanner.SetFaultTolerant());
 
-    int64_t expected_row_count = rows_inserted_.Load();
+    // Note: when INSERT_RANDOM_ROWS_WITH_DELETE is used, ReadThread doesn't really verify
+    // anything except that a scan works.
+    int64_t expected_row_count = write_pattern_ == INSERT_RANDOM_ROWS_WITH_DELETE ?
+                                 0 : rows_inserted_.Load();
     size_t row_count = 0;
 
     CHECK_OK(scanner.Open());
@@ -232,6 +236,25 @@ void TestWorkload::ReadThread() {
 
     CHECK_GE(row_count, expected_row_count);
   }
+}
+
+size_t TestWorkload::GetNumberOfErrors(KuduSession* session) {
+  vector<KuduError*> errors;
+  ElementDeleter d(&errors);
+  bool overflow;
+  session->GetPendingErrors(&errors, &overflow);
+  CHECK(!overflow);
+  for (const KuduError* e : errors) {
+    if ((timeout_allowed_ && e->status().IsTimedOut()) ||
+        (not_found_allowed_ && e->status().IsNotFound()) ||
+        (already_present_allowed_ && e->status().IsAlreadyPresent()) ||
+        (network_error_allowed_ && e->status().IsNetworkError()) ||
+        (remote_error_allowed_ && e->status().IsRemoteError())) {
+      continue;
+    }
+    LOG(FATAL) << e->status().ToString();
+  }
+  return errors.size();
 }
 
 shared_ptr<KuduClient> TestWorkload::CreateClient() {
@@ -259,7 +282,7 @@ void TestWorkload::Setup() {
 
   if (!table_exists) {
     // Create split rows.
-    std::vector<const KuduPartialRow*> splits;
+    vector<const KuduPartialRow*> splits;
     for (int i = 1; i < num_tablets_; i++) {
       KuduPartialRow* r = schema_.NewRow();
       CHECK_OK(r->SetInt32("key", MathLimits<int32_t>::kMax / num_tablets_ * i));

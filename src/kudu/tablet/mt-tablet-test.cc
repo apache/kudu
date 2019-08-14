@@ -35,6 +35,7 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -408,13 +409,18 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       "num_rowsets");
     shared_ptr<TimeSeries> memrowset_size_ts = ts_collector_.GetTimeSeries(
       "memrowset_kb");
+    shared_ptr<TimeSeries> num_live_rows_ts = ts_collector_.GetTimeSeries(
+      "num_live_rows");
 
     while (running_insert_count_.count() > 0) {
       num_rowsets_ts->SetValue(tablet()->num_rowsets());
       memrowset_size_ts->SetValue(tablet()->MemRowSetSize() / 1024.0);
+      int64_t num_live_rows;
+      ignore_result(tablet()->CountLiveRows(&num_live_rows));
+      num_live_rows_ts->SetValue(num_live_rows);
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(250));
+      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(10));
     }
   }
 
@@ -491,6 +497,7 @@ TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   FLAGS_flusher_initial_frequency_ms = 1;
   FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01f;
   FLAGS_tablet_delta_store_minor_compact_max = 10;
+  this->StartThreads(1, &TestFixture::CollectStatisticsThread);
   this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
   this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
   this->StartThreads(FLAGS_num_undo_delta_gc_threads, &TestFixture::DeleteAncientUndoDeltasThread);

@@ -17,6 +17,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 #define KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 
+#include <cstddef>
 #include <cstdint>
 #include <ostream>
 #include <string>
@@ -74,6 +75,10 @@ class TestWorkload {
 
   void set_write_batch_size(int s) {
     write_batch_size_ = s;
+  }
+
+  void set_write_interval_millis(int t) {
+    write_interval_millis_ = t;
   }
 
   void set_client_default_rpc_timeout_millis(int t) {
@@ -149,6 +154,11 @@ class TestWorkload {
     // duplicate, but with 32-bit keys, they won't be frequent.
     INSERT_RANDOM_ROWS,
 
+    // Insert random rows, then delete them.
+    // This may cause an occasional duplicate, but with 32-bit keys, they won't be frequent.
+    // This requires two flush operations.
+    INSERT_RANDOM_ROWS_WITH_DELETE,
+
     // All threads generate updates against a single row.
     UPDATE_ONE_ROW,
 
@@ -170,6 +180,7 @@ class TestWorkload {
         set_already_present_allowed(true);
         break;
       case INSERT_RANDOM_ROWS:
+      case INSERT_RANDOM_ROWS_WITH_DELETE:
       case UPDATE_ONE_ROW:
       case INSERT_SEQUENTIAL_ROWS:
         set_already_present_allowed(false);
@@ -199,6 +210,12 @@ class TestWorkload {
     return rows_inserted_.Load();
   }
 
+  // Return the number of rows deleted so far. This may be called either
+  // during or after the write workload.
+  int64_t rows_deleted() const {
+    return rows_deleted_.Load();
+  }
+
   // Return the number of batches in which we have successfully inserted at
   // least one row.
   // NOTE: it is not safe to assume that this is exactly equal to the number
@@ -214,6 +231,7 @@ class TestWorkload {
   void OpenTable(client::sp::shared_ptr<client::KuduTable>* table);
   void WriteThread();
   void ReadThread();
+  size_t GetNumberOfErrors(client::KuduSession* session);
 
   cluster::MiniCluster* cluster_;
   client::KuduClientBuilder client_builder_;
@@ -225,6 +243,7 @@ class TestWorkload {
   int num_read_threads_;
   int read_timeout_millis_;
   int write_batch_size_;
+  int write_interval_millis_;
   int write_timeout_millis_;
   bool timeout_allowed_;
   bool not_found_allowed_;
@@ -241,6 +260,7 @@ class TestWorkload {
   CountDownLatch start_latch_;
   AtomicBool should_run_;
   AtomicInt<int64_t> rows_inserted_;
+  AtomicInt<int64_t> rows_deleted_;
   AtomicInt<int64_t> batches_completed_;
   AtomicInt<int32_t> sequential_key_gen_;
 
