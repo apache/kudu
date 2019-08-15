@@ -2409,8 +2409,10 @@ TEST_F(AdminCliTest, TestAddAndDropUnboundedPartition) {
     "[]",
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_OK(client_->OpenTable(kTableId, &table));
-  ASSERT_EQ(0, CountTableRows(table.get()));
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(client_->OpenTable(kTableId, &table));
+    ASSERT_EQ(0, CountTableRows(table.get()));
+  });
 
   // Since the unbounded partition has been dropped, now we can add a new unbounded
   // range parititon for the table.
@@ -2525,6 +2527,7 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
     // Insert num_rows_to_insert rows to table.
     ASSERT_OK(InsertTestRows(client_, kTestTableName, start_row_to_insert,
                              num_rows_to_insert));
+
     ASSERT_OK(client_->OpenTable(kTestTableName, &table));
     ASSERT_EQ(num_rows_to_insert, CountTableRows(table.get()));
 
@@ -2538,10 +2541,12 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
     ASSERT_OK(drop_range_partition_using_CLI(lower_bound, upper_bound,
                                              lower_bound_type_internal,
                                              upper_bound_type_internal));
-    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
 
-    // Verify no rows are left.
-    ASSERT_EQ(0, CountTableRows(table.get()));
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+      // Verify no rows are left.
+      ASSERT_EQ(0, CountTableRows(table.get()));
+    });
   };
 
   {
@@ -2556,8 +2561,10 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
     // Drop range partition of [0,100) by command line, now there are 0 rows left.
     ASSERT_OK(drop_range_partition_using_CLI("[0]", "[100]", "inclusive_bound",
                                              "exclusive_bound"));
-    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
-    ASSERT_EQ(0, CountTableRows(table.get()));
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+      ASSERT_EQ(0, CountTableRows(table.get()));
+    });
   }
 
   {
@@ -2844,8 +2851,10 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartitionForMultipleRangeColumnsTable) {
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
   // There are 0 rows left.
-  ASSERT_OK(client_->OpenTable(kTestTableName, &table));
-  ASSERT_EQ(0, CountTableRows(table.get()));
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(client_->OpenTable(kTestTableName, &table));
+    ASSERT_EQ(0, CountTableRows(table.get()));
+  });
 }
 
 } // namespace tools
