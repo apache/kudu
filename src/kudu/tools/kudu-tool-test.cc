@@ -4914,8 +4914,13 @@ TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
               Substitute(R"*(clusters_info:)*""\n"
                          R"*(  $0:)*""\n"
                          R"*(    master_addresses: bad,masters,addresses)*", kClusterName),
+#ifdef __APPLE__
+              Substitute("Network error: Could not connect to the cluster: unable to resolve "
+                         "address for bad: nodename nor servname provided, or not known")));
+#else
               Substitute("Network error: Could not connect to the cluster: unable to resolve "
                          "address for bad: Name or service not known")));
+#endif
 }
 
 TEST_F(ToolTest, ClusterNameResolverNormal) {
