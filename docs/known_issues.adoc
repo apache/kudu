@@ -90,7 +90,7 @@
 * Tables must be manually pre-split into tablets using simple or compound primary
   keys. Automatic splitting is not yet possible. Range partitions may be added
   or dropped after a table has been created. See
-  link:schema_design.html[Schema Design] for more information.
+  <<schema_design.adoc#schema_design,Schema Design>> for more information.
 
 * Data in existing tables cannot currently be automatically repartitioned. As a workaround,
   create a new table with the new partitioning and insert the contents of the old

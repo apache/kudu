@@ -902,7 +902,7 @@ Apache Kudu 1.7.1 is a bug-fix release which fixes critical issues in Kudu 1.7.0
   calculations where the imprecise representation and rounding behavior of float and
   double make those types impractical. The decimal type is also useful for integers
   larger than int64 and cases with fractional values in a primary key.
-  See link:schema_design.html#decimal[Decimal Type] for more details.
+  See <<schema_design.adoc#decimal,Decimal Type>> for more details.
 
 * The strategy Kudu uses for automatically healing tablets which have lost a
   replica due to server or disk failures has been improved. The new re-replication
@@ -2620,7 +2620,7 @@ changes between 0.8.0 and 0.9.0</a>+++.
 
 - Default table partitioning has been removed. All tables must now be created
   with explicit partitioning. Existing tables are unaffected. See the
-  link:schema_design.html#no_default_partitioning[schema design guide] for more
+  <<schema_design.adoc#no_default_partitioning,schema design guide>> for more
   details.
 
 [[rn_0.9.0_new_features]]

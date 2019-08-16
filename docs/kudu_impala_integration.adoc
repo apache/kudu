@@ -288,7 +288,7 @@ key columns. Each tablet is served by at least one tablet server. Ideally, a tab
 should be split into tablets that are distributed across a number of tablet servers
 to maximize parallel operations. The details of the partitioning schema you use
 will depend entirely on the type of data you store and how you access it. For a full
-discussion of schema design in Kudu, see link:schema_design.html[Schema Design].
+discussion of schema design in Kudu, see <<schema_design.adoc#schema_design,Schema Design>>.
 
 Kudu currently has no mechanism for splitting or merging tablets after the table has
 been created. You must provide a partition schema for your table when you create it.
@@ -497,7 +497,7 @@ which address scenarios like the following:
   need to be added or removed, such as the introduction or elimination of a product
   type.
 
-See link:schema_design.html[Schema Design] for the caveats of non-covering partitions.
+See <<schema_design.adoc#schema_design,Schema Design>> for the caveats of non-covering partitions.
 
 This example creates a tablet per year (5 tablets total), for storing log data.
 The table only accepts data from 2012 to 2016. Keys outside of these

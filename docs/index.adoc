@@ -82,7 +82,7 @@ Flexible Partitioning::
   pre-split tables by hash or range into a predefined number of tablets, in order
   to distribute writes and queries evenly across your cluster. You can partition by
   any number of primary key columns, by any number of hashes, and an optional list of
-  split rows. See link:schema_design.html[Schema Design].
+  split rows. See <<schema_design.adoc#schema_design,Schema Design>>.
 Parallel Scan::
   To achieve the highest possible performance on modern hardware, the Kudu client
   used by Impala parallelizes scans across multiple tablets.
@@ -112,7 +112,7 @@ pattern-based compression can be orders of magnitude more efficient than
 compressing mixed data types, which are used in row-based solutions. Combined
 with the efficiencies of reading data from columns, compression allows you to
 fulfill your query while reading even fewer blocks from disk. See
-link:schema_design.html#encoding[Data Compression]
+<<schema_design.adoc#encoding,Data Compression>>
 
 .Table
 
