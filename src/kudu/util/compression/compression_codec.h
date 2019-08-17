@@ -74,5 +74,8 @@ Status GetCompressionCodec(CompressionType compression,
 // Returns the compression codec type given the name
 CompressionType GetCompressionCodecType(const std::string& name);
 
+// Returns the compression codec name given the type
+std::string GetCompressionCodecName(CompressionType type);
+
 } // namespace kudu
 #endif

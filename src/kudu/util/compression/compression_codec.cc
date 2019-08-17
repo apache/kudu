@@ -283,4 +283,20 @@ CompressionType GetCompressionCodecType(const std::string& name) {
   return NO_COMPRESSION;
 }
 
+std::string GetCompressionCodecName(CompressionType type) {
+  switch (type) {
+    case NO_COMPRESSION:
+      return "NO_COMPRESSION";
+    case SNAPPY:
+      return "SNAPPY";
+    case LZ4:
+      return "LZ4";
+    case ZLIB:
+      return "ZLIB";
+    default:
+      return "DEFAULT_COMPRESSION";
+  }
+  __builtin_unreachable();
+}
+
 } // namespace kudu
