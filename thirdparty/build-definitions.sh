@@ -866,10 +866,16 @@ build_boost() {
 
   # If CC and CXX are set, set the compiler in user-config.jam.
   if [ -n "$CC" -a -n "$CXX" ]; then
-    # Determine the name of the compiler referenced in $CC. This assumes the compiler
-    # prints its name as the first word of the first line, which appears to work for gcc
-    # and clang, even when they're called through ccache.
-    local COMPILER=$($CC --version | awk 'NR==1 {print $1;}')
+    # Determine the name of the compiler referenced in $CC. This assumes
+    # the compiler prints its name in the first line of the output. The pattern
+    # matching works for various flavors of GCC and LLVM clang. As the last
+    # resort, output the first word of the first line. The '$CC --version'
+    # approach appears to work even if the compiler is called through ccache.
+    local COMPILER=$($CC --version | \
+      awk '/(Apple )?(clang|LLVM) version [[:digit:]]+\.[[:digit:]]+/ {
+             print "clang"; exit }
+           /\(GCC\) [[:digit:]]+\.[[:digit:]]+/{ print "gcc"; exit }
+           { print $1; exit }')
 
     # If the compiler binary used was 'cc' and not 'gcc', it will also report
     # itself as 'cc'. Coerce it to gcc.
