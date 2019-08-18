@@ -261,7 +261,7 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021NegotiateWithMaster) {
                         Substitute("$0", FLAGS_rpc_negotiation_timeout_ms * 2)));
   thread pause_thread([&]() {
       SleepFor(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms / 2));
-      CHECK_OK(m->Pause())
+      CHECK_OK(m->Pause());
     });
   // An automatic clean-up to handle both success and failure cases.
   SCOPED_CLEANUP({

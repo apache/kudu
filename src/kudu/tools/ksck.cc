@@ -49,9 +49,9 @@
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
   ::kudu::Status _s = (s); \
   if (PREDICT_FALSE(!_s.ok())) { \
-    statuses.push_back(_s.CloneAndPrepend(msg)); \
+    (statuses).push_back(_s.CloneAndPrepend(msg)); \
   } \
-} while (0);
+} while (0)
 
 DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster.");

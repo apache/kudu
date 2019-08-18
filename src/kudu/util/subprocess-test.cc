@@ -147,7 +147,7 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
   }, "", &stdout, &stderr));
 
   // Reset the alarm when the test is done
-  SCOPED_CLEANUP({ alarm(0); })
+  SCOPED_CLEANUP({ alarm(0); });
 }
 
 // Test that environment variables can be passed to the subprocess.

@@ -162,7 +162,7 @@ static string ToolRunInfo(const Status& s, const string& out, const string& err)
   } else { \
     FAIL() << ToolRunInfo(_s, _out, _err); \
   } \
-} while (0);
+} while (0)
 
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
 };

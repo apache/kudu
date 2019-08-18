@@ -91,7 +91,7 @@ class FileCacheStressTest : public KuduTest {
       }                                                                   \
     }                                                                     \
     CHECK(_s.ok()) << "Bad status: " << _s.ToString();                    \
-  } while (0);
+  } while (0)
 
  public:
   typedef unordered_map<string, unordered_map<string, int>> MetricMap;

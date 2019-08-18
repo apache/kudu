@@ -300,7 +300,7 @@ class KsckTest : public KuduTest {
         // written to expect a reversed order and doing that here is more
         // convenient than rewriting many ASSERTs.
         std::reverse(assignment_plan_.begin(), assignment_plan_.end());
-      })
+      });
     while (tablets_count > 0) {
       for (const auto& entry : cluster_->tablet_servers_) {
         if (tablets_count-- == 0) return;
@@ -463,24 +463,24 @@ class KsckTest : public KuduTest {
   string actual; \
   ASSERT_OK((reader).ExtractString((value), (field), &actual)); \
   EXPECT_EQ((expected), actual); \
-} while (0);
+} while (0)
 
 #define EXPECT_JSON_INT_FIELD(reader, value, field, expected) do { \
   int64_t actual; \
   ASSERT_OK((reader).ExtractInt64((value), (field), &actual)); \
   EXPECT_EQ((expected), actual); \
-} while (0);
+} while (0)
 
 #define EXPECT_JSON_BOOL_FIELD(reader, value, field, expected) do { \
   bool actual; \
   ASSERT_OK((reader).ExtractBool((value), (field), &actual)); \
   EXPECT_EQ((expected), actual); \
-} while (0);
+} while (0)
 
 #define EXPECT_JSON_FIELD_NOT_PRESENT(reader, value, field) do { \
   int64_t unused; \
   ASSERT_TRUE((reader).ExtractInt64((value), (field), &unused).IsNotFound()); \
-} while (0);
+} while (0)
 
 // 'array' is a vector<const rapidjson::Value*> into which the array elements
 // will be extracted.
@@ -488,7 +488,7 @@ class KsckTest : public KuduTest {
 #define EXTRACT_ARRAY_CHECK_SIZE(reader, value, field, array, exp_size) do { \
   ASSERT_OK((reader).ExtractObjectArray((value), (field), &(array))); \
   ASSERT_EQ(exp_size, (array).size()); \
-} while (0);
+} while (0)
 
 void CheckJsonVsServerHealthSummaries(
     const JsonReader& r,

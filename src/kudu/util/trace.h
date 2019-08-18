@@ -53,7 +53,7 @@ class Trace;
       _trace->SubstituteAndTrace(__FILE__, __LINE__, (format),  \
         ##substitutions); \
     } \
-  } while (0);
+  } while (0)
 
 // Like the above, but takes the trace pointer as an explicit argument.
 #define TRACE_TO(trace, format, substitutions...) \
@@ -82,7 +82,7 @@ class Trace;
     if (_trace) { \
       _trace->metrics()->Increment(counter_name, val); \
     } \
-  } while (0);
+  } while (0)
 
 // Increment a counter for the amount of wall time spent in the current
 // scope. For example:
@@ -110,7 +110,7 @@ class Trace;
     } else {                                            \
       return prefix "_lt_1ms";                          \
     }                                                   \
-  }();
+  }()
 
 namespace kudu {
 

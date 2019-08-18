@@ -259,7 +259,7 @@ TEST_F(CodegenTest, ObservablesTest) {
   // Test when identity
   Schema iproj = *&base_;
   gscoped_ptr<CodegenRP> iwith;
-  CHECK_OK(Generate(&iproj, &iwith))
+  CHECK_OK(Generate(&iproj, &iwith));
   NoCodegenRP iwithout(&base_, &iproj);
   ASSERT_OK(iwithout.Init());
   ASSERT_EQ(iwith->base_schema(), iwithout.base_schema());

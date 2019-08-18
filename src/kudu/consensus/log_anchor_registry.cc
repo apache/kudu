@@ -55,7 +55,7 @@ Status LogAnchorRegistry::UpdateRegistration(int64_t log_index,
                                              LogAnchor* anchor) {
   std::lock_guard<simple_spinlock> l(lock_);
   RETURN_NOT_OK_PREPEND(UnregisterUnlocked(anchor),
-                        "Unable to swap registration, anchor not registered")
+                        "Unable to swap registration, anchor not registered");
   RegisterUnlocked(log_index, owner, anchor);
   return Status::OK();
 }

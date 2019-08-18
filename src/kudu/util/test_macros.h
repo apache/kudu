@@ -36,7 +36,7 @@
   } else { \
     FAIL() << "Bad status: " << _s.ToString();  \
   } \
-} while (0);
+} while (0)
 
 #define EXPECT_OK(status) do { \
   const Status& _s = status; \
@@ -45,7 +45,7 @@
   } else { \
     ADD_FAILURE() << "Bad status: " << _s.ToString();  \
   } \
-} while (0);
+} while (0)
 
 // Like the above, but doesn't record successful
 // tests.
@@ -54,7 +54,7 @@
   if (!_s.ok()) { \
     FAIL() << "Bad status: " << _s.ToString(); \
   } \
-} while (0);
+} while (0)
 
 // Substring matches.
 #define ASSERT_STR_CONTAINS(str, substr) \
@@ -111,15 +111,15 @@
 
 #define ASSERT_FILE_EXISTS(env, path) do { \
   const std::string& _s = path; \
-  ASSERT_TRUE(env->FileExists(_s)) \
+  ASSERT_TRUE((env)->FileExists(_s)) \
     << "Expected file to exist: " << _s; \
-} while (0);
+} while (0)
 
 #define ASSERT_FILE_NOT_EXISTS(env, path) do { \
   const std::string& _s = path; \
-  ASSERT_FALSE(env->FileExists(_s)) \
+  ASSERT_FALSE((env)->FileExists(_s)) \
     << "Expected file not to exist: " << _s; \
-} while (0);
+} while (0)
 
 #define CURRENT_TEST_NAME() \
   ::testing::UnitTest::GetInstance()->current_test_info()->name()

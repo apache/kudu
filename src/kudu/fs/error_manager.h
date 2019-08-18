@@ -48,7 +48,7 @@ typedef Callback<void(const std::string&)> ErrorNotificationCb;
   } \
   HandleError(_s); \
   return _s; \
-} while (0);
+} while (0)
 
 // Evaluates the expression and runs 'err_handler' if it results in a disk
 // failure. Returns if the expression results in an error.
@@ -61,7 +61,7 @@ typedef Callback<void(const std::string&)> ErrorNotificationCb;
     (err_handler); \
   } \
   return _s; \
-} while (0);
+} while (0)
 
 // Evaluates the expression and runs 'err_handler' if it results in a
 // corruption. Returns if the expression results in an error.
@@ -74,7 +74,7 @@ typedef Callback<void(const std::string&)> ErrorNotificationCb;
     (err_handler); \
   } \
   return _s; \
-} while (0);
+} while (0)
 
 // Evaluates the expression and runs 'err_handler' if it results in a disk
 // failure.
@@ -83,7 +83,7 @@ typedef Callback<void(const std::string&)> ErrorNotificationCb;
   if (PREDICT_FALSE(_s.IsDiskFailure())) { \
     (err_handler); \
   } \
-} while (0);
+} while (0)
 
 enum ErrorHandlerType {
   // For disk failures.

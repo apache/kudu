@@ -2016,7 +2016,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
         resp, MasterErrorPB::TABLE_NOT_FOUND);
   }
 
-  TRACE("Modifying in-memory table state")
+  TRACE("Modifying in-memory table state");
   string deletion_msg = "Table deleted at " + LocalTimeAsString();
   l.mutable_data()->set_state(SysTablesEntryPB::REMOVED, deletion_msg);
 

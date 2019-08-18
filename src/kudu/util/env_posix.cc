@@ -125,7 +125,7 @@ typedef struct xfs_flock64 {
   const string& f_ = (filename_expr); \
   MAYBE_RETURN_FAILURE(FLAGS_env_inject_eio, \
       ShouldInject(f_, FLAGS_env_inject_eio_globs) ? (error_expr) : Status::OK()) \
-} while (0);
+} while (0)
 
 bool ShouldInject(const string& candidate, const string& glob_patterns) {
   // Never inject on /proc/ file accesses regardless of the configured flag,

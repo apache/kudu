@@ -384,7 +384,7 @@ class ClientTest : public KuduTest {
     session->SetTimeoutMillis(10000);
     for (int i = lo; i < hi; i++) {
       unique_ptr<KuduDelete> del(DeleteTestRow(table, i));
-      ASSERT_OK(session->Apply(del.release()))
+      ASSERT_OK(session->Apply(del.release()));
     }
     FlushSessionOrDie(session);
     NO_FATALS(CheckNoRpcOverflow());
@@ -1358,7 +1358,7 @@ static void DoScanWithCallback(KuduTable* table,
   }
   ASSERT_OK(scanner.SetFaultTolerant());
   // Set a long timeout as we'll be restarting nodes while performing snapshot scans.
-  ASSERT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */))
+  ASSERT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */));
   // Set a small batch size so it reads in multiple batches.
   ASSERT_OK(scanner.SetBatchSizeBytes(1));
 

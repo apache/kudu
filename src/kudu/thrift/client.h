@@ -349,7 +349,7 @@ Status HaClient<Service>::Reconnect() {
     }
 
     WARN_NOT_OK(s, strings::Substitute("Failed to connect to $0 ($1)",
-          Service::kServiceName, address.ToString()))
+          Service::kServiceName, address.ToString()));
   }
 
   WARN_NOT_OK(service_client_.Stop(),

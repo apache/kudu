@@ -1411,7 +1411,7 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
     tablet_replica_->tablet()->GetRowSetsForTests(&rsets);
     vector<ColumnId> col_ids = { tablet_replica_->tablet()->schema()->column_id(1),
                                  tablet_replica_->tablet()->schema()->column_id(2) };
-    ASSERT_OK(tablet_replica_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
+    ASSERT_OK(tablet_replica_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));
   }
 
   // Verify that data is still the same.

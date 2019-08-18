@@ -31,7 +31,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck.h"
@@ -53,13 +52,6 @@ using std::unique_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
-
-#define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
-  ::kudu::Status _s = (s); \
-  if (PREDICT_FALSE(!_s.ok())) { \
-    (statuses).push_back(string((msg)) + ": " + _s.message().ToString()); \
-  } \
-} while (0);
 
 DECLARE_string(tables);
 DECLARE_string(tablets);

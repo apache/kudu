@@ -60,6 +60,7 @@ using kudu::consensus::RECEIVED_OPID;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::DeleteTablet;
+using kudu::itest::RequestVote;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForServersToAgree;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
@@ -213,19 +214,19 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
     // Note: peers are required to vote regardless of whether they recognize the
     // candidate's UUID or not, so the ID used here ("A") is not important.
     TServerDetails* ts1_ets = ts_map_[cluster_->mini_tablet_server(1)->uuid()];
-    ASSERT_OK(itest::RequestVote(ts1_ets, tablet_id, "A", current_term, last_logged_opid,
-                                /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout))
+    ASSERT_OK(RequestVote(ts1_ets, tablet_id, "A", current_term, last_logged_opid,
+                          /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout));
 
     // Ask TS1 for a vote that should be denied (different candidate, same term).
-    Status s = itest::RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,
-                                  /*ignore_live_leader=*/ true, /*is_pre_election=*/ false,
-                                  kTimeout);
+    Status s = RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,
+                           /*ignore_live_leader=*/ true, /*is_pre_election=*/ false,
+                           kTimeout);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Already voted for candidate A in this term");
 
     // Ask TS1 for a vote that should be denied (old term).
-    s = itest::RequestVote(ts1_ets, tablet_id, "B", current_term - 1, last_logged_opid,
-                          /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
+    s = RequestVote(ts1_ets, tablet_id, "B", current_term - 1, last_logged_opid,
+                    /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_MATCHES(s.ToString(), "Denying vote to candidate B for earlier term");
 
@@ -234,15 +235,15 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
     OpId old_opid = MakeOpId(last_logged_opid.term(), last_logged_opid.index() - 1);
 
     // Ask TS1 for a vote that should be denied (old last-logged opid).
-    s = itest::RequestVote(ts1_ets, tablet_id, "B", current_term, old_opid,
-                          /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
+    s = RequestVote(ts1_ets, tablet_id, "B", current_term, old_opid,
+                    /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_MATCHES(s.ToString(),
                       "Denying vote to candidate B.*greater than that of the candidate");
 
     // Ask for a successful vote for candidate B.
-    ASSERT_OK(itest::RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,
-                                /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout))
+    ASSERT_OK(RequestVote(ts1_ets, tablet_id, "B", current_term, last_logged_opid,
+                          /*ignore_live_leader=*/ true, /*is_pre_election=*/ false, kTimeout));
   }
 }
 

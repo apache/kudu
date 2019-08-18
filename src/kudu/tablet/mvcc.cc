@@ -283,7 +283,7 @@ void MvccManager::AdjustCleanTime() {
 Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts, const MonoTime& deadline) const {
   TRACE_EVENT2("tablet", "MvccManager::WaitUntil",
                "wait_for", wait_for == ALL_COMMITTED ? "all_committed" : "none_applying",
-               "ts", ts.ToUint64())
+               "ts", ts.ToUint64());
 
   // If MVCC is closed, there's no point in waiting.
   RETURN_NOT_OK(CheckOpen());

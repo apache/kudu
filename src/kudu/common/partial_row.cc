@@ -153,63 +153,63 @@ Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
     case BOOL: {
       RETURN_NOT_OK(SetBool(column_idx, *reinterpret_cast<const bool*>(val)));
       break;
-    };
+    }
     case INT8: {
       RETURN_NOT_OK(SetInt8(column_idx, *reinterpret_cast<const int8_t*>(val)));
       break;
-    };
+    }
     case INT16: {
       RETURN_NOT_OK(SetInt16(column_idx, *reinterpret_cast<const int16_t*>(val)));
       break;
-    };
+    }
     case INT32: {
       RETURN_NOT_OK(SetInt32(column_idx, *reinterpret_cast<const int32_t*>(val)));
       break;
-    };
+    }
     case INT64: {
       RETURN_NOT_OK(SetInt64(column_idx, *reinterpret_cast<const int64_t*>(val)));
       break;
-    };
+    }
     case FLOAT: {
       RETURN_NOT_OK(SetFloat(column_idx, *reinterpret_cast<const float*>(val)));
       break;
-    };
+    }
     case DOUBLE: {
       RETURN_NOT_OK(SetDouble(column_idx, *reinterpret_cast<const double*>(val)));
       break;
-    };
+    }
     case STRING: {
       // TODO(todd) Is reinterpret_cast unsafe here?
       RETURN_NOT_OK(SetStringCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
       break;
-    };
+    }
     case BINARY: {
       // TODO(todd) Is reinterpret_cast unsafe here?
       RETURN_NOT_OK(SetBinaryCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
       break;
-    };
+    }
     case UNIXTIME_MICROS: {
       RETURN_NOT_OK(SetUnixTimeMicros(column_idx, *reinterpret_cast<const int64_t*>(val)));
       break;
-    };
+    }
     case DECIMAL32: {
       RETURN_NOT_OK(Set<TypeTraits<DECIMAL32> >(column_idx,
                                                 *reinterpret_cast<const int32_t*>(val)));
       break;
-    };
+    }
     case DECIMAL64: {
       RETURN_NOT_OK(Set<TypeTraits<DECIMAL64> >(column_idx,
                                                 *reinterpret_cast<const int64_t*>(val)));
       break;
-    };
+    }
     case DECIMAL128: {
       RETURN_NOT_OK(Set<TypeTraits<DECIMAL128>>(column_idx, UnalignedLoad<int128_t>(val)));
       break;
-    };
+    }
     default: {
       return Status::InvalidArgument("Unknown column type in schema",
                                      column_schema.ToString());
-    };
+    }
   }
   return Status::OK();
 }
@@ -309,13 +309,13 @@ Status KuduPartialRow::SetUnscaledDecimal(int col_idx, int128_t val) {
   const DataType col_type = col.type_info()->type();
   switch (col_type) {
     case DECIMAL32:
-      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val));
       return Set<TypeTraits<DECIMAL32> >(col_idx, static_cast<int32_t>(val));
     case DECIMAL64:
-      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val));
       return Set<TypeTraits<DECIMAL64> >(col_idx, static_cast<int64_t>(val));
     case DECIMAL128:
-      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val));
       return Set<TypeTraits<DECIMAL128> >(col_idx, static_cast<int128_t>(val));
     default:
       return Status::InvalidArgument(

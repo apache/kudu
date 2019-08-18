@@ -85,7 +85,7 @@ Status LogReader::Open(Env* env,
   auto log_reader = LogReader::make_shared(env, index, tablet_id, metric_entity);
 
   RETURN_NOT_OK_PREPEND(log_reader->Init(tablet_wal_dir),
-                        "Unable to initialize log reader")
+                        "Unable to initialize log reader");
   *reader = log_reader;
   return Status::OK();
 }

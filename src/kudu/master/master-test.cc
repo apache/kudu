@@ -366,7 +366,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     EasyCurl c;
     faststring buf;
     string addr = mini_master_->bound_http_addr().ToString();
-    ASSERT_OK(c.FetchURL(Substitute("http://$0/dump-entities", addr), &buf))
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/dump-entities", addr), &buf));
     rapidjson::Document doc;
     doc.Parse<0>(buf.ToString().c_str());
     const rapidjson::Value& tablet_servers = doc["tablet_servers"];

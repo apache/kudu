@@ -205,7 +205,7 @@ Status InternalMiniCluster::AddTabletServer() {
 
   // set the master addresses
   tablet_server->options()->master_addresses = master_rpc_addrs();
-  RETURN_NOT_OK(tablet_server->Start())
+  RETURN_NOT_OK(tablet_server->Start());
   mini_tablet_servers_.push_back(shared_ptr<MiniTabletServer>(tablet_server.release()));
   return Status::OK();
 }

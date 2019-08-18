@@ -816,7 +816,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, \
       dd_manager_->FindDataDirByUuidIndex( \
       internal::FileBlockLocation::GetDataDirIdx(block_id)))); \
-} while (0);
+} while (0)
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,
                                    unique_ptr<ReadableBlock>* block) {

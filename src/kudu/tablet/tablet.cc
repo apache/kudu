@@ -251,7 +251,7 @@ Tablet::~Tablet() {
   std::lock_guard<simple_spinlock> l(state_lock_); \
   RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked()); \
   CHECK_EQ(expected_state, state_); \
-} while (0);
+} while (0)
 
 Status Tablet::Open() {
   TRACE_EVENT0("tablet", "Tablet::Open");

@@ -31,7 +31,7 @@
 // NOTE: in the case that you want to cancel the cleanup, use the more verbose
 // (non-macro) form below.
 #define SCOPED_CLEANUP(func_body) \
-  auto VARNAME_LINENUM(scoped_cleanup) = MakeScopedCleanup([&] { func_body });
+  auto VARNAME_LINENUM(scoped_cleanup) = MakeScopedCleanup([&] { func_body })
 
 namespace kudu {
 

@@ -228,7 +228,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   string filter = Substitute(
       "$0$1 LIKE \"$2\"", HmsClient::kHiveFilterFieldParams,
       HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler);
-  ASSERT_OK(client.GetTableNames(database_name, filter, &table_names))
+  ASSERT_OK(client.GetTableNames(database_name, filter, &table_names));
   std::sort(table_names.begin(), table_names.end());
   EXPECT_EQ(vector<string>({ new_table_name, "my_uppercase_table" }), table_names)
       << "table names: " << table_names;

@@ -685,7 +685,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   HANDLE_DISK_FAILURE(s_, block_manager_->error_manager_->RunErrorNotificationCb( \
       ErrorHandlerType::DISK_ERROR, data_dir_)); \
   WARN_NOT_OK(s_, msg); \
-} while (0);
+} while (0)
 
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager,
@@ -730,7 +730,7 @@ void LogBlockContainer::HandleError(const Status& s) const {
 #define RETURN_NOT_OK_CONTAINER_DISK_FAILURE(status_expr) do { \
   RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
     block_manager->error_manager()->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir)); \
-} while (0);
+} while (0)
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
                                  DataDir* dir,
@@ -2630,14 +2630,14 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   s_ = s_.CloneAndPrepend(msg); \
   RETURN_NOT_OK_HANDLE_DISK_FAILURE(s_, \
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir)); \
-} while (0);
+} while (0)
 
 #define WARN_NOT_OK_LBM_DISK_FAILURE(status_expr, msg) do { \
   Status s_ = (status_expr); \
   HANDLE_DISK_FAILURE(s_, error_manager_->RunErrorNotificationCb( \
       ErrorHandlerType::DISK_ERROR, dir)); \
   WARN_NOT_OK(s_, msg); \
-} while (0);
+} while (0)
 
 Status LogBlockManager::Repair(
     DataDir* dir,
