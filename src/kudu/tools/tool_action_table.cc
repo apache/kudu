@@ -708,10 +708,10 @@ Status ParseValueOfType(const string& default_value,
       break;
     }
     case KuduColumnSchema::DataType::FLOAT: {
-      double double_value;
+      float float_value;
       RETURN_NOT_OK_PREPEND(
-        reader.ExtractDouble(values[0], /*field=*/nullptr, &double_value), msg);
-      *value = KuduValue::FromFloat(double_value);
+        reader.ExtractFloat(values[0], /*field=*/nullptr, &float_value), msg);
+      *value = KuduValue::FromFloat(float_value);
       break;
     }
     case KuduColumnSchema::DataType::DOUBLE: {
