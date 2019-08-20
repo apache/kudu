@@ -663,7 +663,7 @@ For better scalability on nodes hosting many replicas, we recommend that you use
 When DNS lookups are slow, you will see a log message similar to the following:
 
 ----
-W0926 11:19:01.339553 27231 net_util.cc:129] Time spent resolving address for kudu-tserver.example.com: real 4.647s    user 0.000s     sys 0.000s
+W0926 11:19:01.339553 27231 net_util.cc:193] Time spent resolve address for kudu-tserver.example.com: real 4.647s    user 0.000s     sys 0.000s
 ----
 
 `nscd` (name service cache daemon) can alleviate slow name resolution by providing

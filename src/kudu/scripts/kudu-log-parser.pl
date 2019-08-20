@@ -81,7 +81,7 @@ my $pat_blocked_reactor = qr{$pat_glog_prefix RPC callback for RPC call (\S+) ->
 # W0926 11:17:05.677790 15105 kernel_stack_watchdog.cc:146] Thread 15122 stuck at /home/mpercy/src/kudu/src/kudu/rpc/outbound_call.cc:218 for 166ms:
 my $pat_kernel_stack_watchdog = qr{$pat_glog_prefix Thread (\d+) stuck at .*/([^/]+\.\w+):(\d+) for (\S+):$};
 
-# W0926 11:19:01.339553 27231 net_util.cc:129] Time spent resolving address for foo1.example.com: real 0.202s    user 0.000s     sys 0.000s
+# W0926 11:19:01.339553 27231 net_util.cc:193] Time spent resolve address for foo1.example.com: real 0.202s    user 0.000s     sys 0.000s
 my $pat_slow_execution = qr{$pat_glog_prefix .*(Time spent .*): real (\S+)};
 
 # Global datetime formatter object.
