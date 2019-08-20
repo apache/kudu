@@ -27,14 +27,18 @@ enum TSTabletManagerStatePB {
   // Indicates that Tablet Manager is initializing.
   MANAGER_INITIALIZING = 0;
 
-  // Indicates that Tablet Manager is running and can create new
-  // tablets.
-  MANAGER_RUNNING = 1;
+  // Indicates that Tablet Manager is initialized and
+  // Raft data structures e.g. consensus and log have been created.
+  // However Raft has not yet started
+  MANAGER_INITIALIZED = 1;
+
+  // Indicates that Raft is running for the simple tablet manager
+  MANAGER_RUNNING = 2;
 
   // Indicates that tablet manager is shutting down and no new tablets
   // can be created.
-  MANAGER_QUIESCING = 2;
+  MANAGER_QUIESCING = 3;
 
   // Tablet Manager has shutdown.
-  MANAGER_SHUTDOWN = 3;
+  MANAGER_SHUTDOWN = 4;
 }

@@ -2663,6 +2663,12 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   }
 }
 
+boost::optional<OpId> RaftConsensus::GetNextOpId() const {
+  LockGuard l(lock_);
+  if (!queue_) return boost::none;
+  return queue_->GetNextOpId();
+}
+
 boost::optional<OpId> RaftConsensus::GetLastOpId(OpIdType type) {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);

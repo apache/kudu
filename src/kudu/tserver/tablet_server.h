@@ -62,9 +62,14 @@ class TabletServer : public kserver::KuduServer {
   // Some initialization tasks are asynchronous, such as the bootstrapping
   // of tablets. Caller can block, waiting for the initialization to fully
   // complete by calling WaitInited().
+  // RPC server is created and addresses bound
+  // Tablet manager is initialized
+  // Raft is created.
+  // Raft log is created.
   virtual Status Init() override;
 
   virtual Status Start() override;
+
   virtual void Shutdown() override;
 
   std::string ToString() const;
@@ -95,12 +100,6 @@ class TabletServer : public kserver::KuduServer {
  private:
   friend class TabletServerTestBase;
 
-  Status StartAsync();
-  Status WaitForTabletManagerInit() const;
-
-  void InitTabletManagerTask();
-  Status InitTabletManager();
-
 #ifdef FB_DO_NOT_REMOVE
   Status ValidateMasterAddressResolution() const;
 #endif
@@ -114,10 +113,6 @@ class TabletServer : public kserver::KuduServer {
 
   // For initializing the catalog manager.
   gscoped_ptr<ThreadPool> init_pool_;
-
-  // The status of the master initialization. This is set
-  // by the async initialization task.
-  Promise<Status> init_status_;
 
   // The options passed at construction time.
   const TabletServerOptions opts_;

@@ -18,11 +18,16 @@
 #define KUDU_TSERVER_TABLET_SERVER_OPTIONS_H
 
 #include <vector>
+#include <memory>
 
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
+namespace log {
+class LogFactory;
+}
+
 namespace tserver {
 
 // Options for constructing a tablet server.
@@ -35,6 +40,8 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   TabletServerOptions();
 
   std::vector<HostPort> tserver_addresses;
+
+  std::shared_ptr<kudu::log::LogFactory> log_factory;
 
   bool IsDistributed() const;
 };

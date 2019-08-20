@@ -52,6 +52,11 @@ class NodeInstancePB;
 class ThreadPool;
 class MonoDelta;
 
+namespace log {
+
+class Log;
+}
+
 namespace consensus {
 class ConsensusMetadataManager;
 class OpId;
@@ -82,7 +87,11 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // the bootstrap is performed asynchronously.
   Status Init(bool is_first_run);
 
+  Status Start();
+
   bool IsInitialized() const;
+
+  bool IsRunning() const;
 
   // Shut down all of the tablets, gracefully flushing before shutdown.
   void Shutdown();
@@ -139,10 +148,10 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // Create either a standalone or distributed config
   Status CreateNew(FsManager *fs_manager);
 
-  // Helper function to create and start the Raft consensus
+  // Helper function to create Raft consensus and log
+  // Consensus is yet to be started at the end of this
+  // call.
   Status SetupRaft();
-
-  Status InitRaftAsync(bool is_first_run);
 
   // Initializes the RaftPeerPB for the local peer.
   // Guaranteed to include both uuid and last_seen_addr fields.
@@ -158,6 +167,10 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   FsManager* const fs_manager_;
 
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
+
+  // Kudu log, which was created by the passed in
+  // factory entity
+  scoped_refptr<kudu::log::Log> log_;
 
   TabletServer* server_;
 

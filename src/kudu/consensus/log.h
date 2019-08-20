@@ -256,6 +256,7 @@ class Log : public RefCountedThreadSafe<Log> {
  private:
   friend class LogTest;
   friend class LogTestBase;
+  friend class LogFactory;
   FRIEND_TEST(LogTestOptionalCompression, TestMultipleEntriesInABatch);
   FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
@@ -435,6 +436,21 @@ class Log : public RefCountedThreadSafe<Log> {
   std::atomic<int64_t> on_disk_size_;
 
   DISALLOW_COPY_AND_ASSIGN(Log);
+};
+
+// Log Factory which enables the Raft based application
+// to create the appropriate log implementation.
+// Application e.g. MySQL is expected to specialize
+// the LogFactory class to create the derived log implementation
+// object.
+class LogFactory {
+public:
+  virtual ~LogFactory() {}
+  virtual Status createLog(LogOptions options,
+      FsManager* fs_manager, std::string log_path,
+      std::string tablet_id,
+      scoped_refptr<MetricEntity> metric_entity,
+      scoped_refptr<Log> *new_log);
 };
 
 // Indicates which log indexes should be retained for different purposes.
