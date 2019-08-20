@@ -50,6 +50,8 @@ class GetTableLocationsRequestPB;
 class GetTableLocationsResponsePB;
 class GetTableSchemaRequestPB;
 class GetTableSchemaResponsePB;
+class GetTableStatisticsRequestPB;
+class GetTableStatisticsResponsePB;
 class GetTabletLocationsRequestPB;
 class GetTabletLocationsResponsePB;
 class IsAlterTableDoneRequestPB;
@@ -131,6 +133,10 @@ class MasterServiceImpl : public MasterServiceIf {
   void ListTables(const ListTablesRequestPB* req,
                   ListTablesResponsePB* resp,
                   rpc::RpcContext* rpc) override;
+
+  void GetTableStatistics(const GetTableStatisticsRequestPB* req,
+                          GetTableStatisticsResponsePB* resp,
+                          rpc::RpcContext* rpc) override;
 
   void GetTableLocations(const GetTableLocationsRequestPB* req,
                          GetTableLocationsResponsePB* resp,

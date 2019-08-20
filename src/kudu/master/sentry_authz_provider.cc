@@ -253,6 +253,15 @@ Status SentryAuthzProvider::AuthorizeListTables(const string& user,
   return Status::OK();
 }
 
+Status SentryAuthzProvider::AuthorizeGetTableStatistics(const std::string& table_name,
+                                                        const std::string& user) {
+  // Statistics contain data (e.g. number of rows) that requires the 'SELECT ON TABLE'
+  // privilege.
+  return Authorize(SentryAuthorizableScope::Scope::TABLE,
+                   SentryAction::Action::SELECT,
+                   table_name, user);
+}
+
 Status SentryAuthzProvider::FillTablePrivilegePB(const string& table_name,
                                                  const string& user,
                                                  const SchemaPB& schema_pb,

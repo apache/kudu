@@ -633,6 +633,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                     ListTablesResponsePB* resp,
                     boost::optional<const std::string&> user);
 
+  // Get table statistics. If 'user' is provided, checks if the user is
+  // authorized to get such statistics.
+  Status GetTableStatistics(const GetTableStatisticsRequestPB* req,
+                            GetTableStatisticsResponsePB* resp,
+                            boost::optional<const std::string&> user);
+
   // Lookup the tablets contained in the partition range of the request. If 'user'
   // is provided, checks that the user is authorized to get such information.
   //

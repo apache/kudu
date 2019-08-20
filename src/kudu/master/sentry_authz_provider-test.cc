@@ -812,6 +812,19 @@ TEST_F(SentryAuthzProviderTest, TestAuthorizeAlterTable) {
                                                         kTestUser));
 }
 
+TEST_F(SentryAuthzProviderTest, TestAuthorizeGetTableStatistics) {
+  // Don't authorize getting statistics of a table for a user without required
+  // privileges.
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  Status s = sentry_authz_provider_->AuthorizeGetTableStatistics("db.table", kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+
+  // Authorize get table statistics on a user with proper privileges.
+  TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT");
+  ASSERT_OK(AlterRoleGrantPrivilege(privilege));
+  ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableStatistics("db.table", kTestUser));
+}
+
 TEST_F(SentryAuthzProviderTest, TestAuthorizeGetTableMetadata) {
   // Don't authorize getting metadata on a table for a user without required
   // privileges.

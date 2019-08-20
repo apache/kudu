@@ -95,6 +95,14 @@ class AuthzProvider {
                                      std::unordered_set<std::string>* table_names,
                                      bool* checked_table_names) WARN_UNUSED_RESULT = 0;
 
+  // Checks if statistics of the table is authorized for the
+  // given user.
+  //
+  // If the operation is not authorized, returns Status::NotAuthorized().
+  // Otherwise, may return other Status error codes depend on actual errors.
+  virtual Status AuthorizeGetTableStatistics(const std::string& table_name,
+                                             const std::string& user) WARN_UNUSED_RESULT = 0;
+
   // Populates the privilege fields of 'pb' with the table-specific privileges
   // for the given user, using 'schema_pb' for metadata (e.g. column IDs). This
   // does not populate the table ID field of 'pb' -- only the privilege fields;

@@ -535,6 +535,19 @@ message ListTablesResponsePB {
   repeated TableInfo tables = 2;
 }
 
+message GetTableStatisticsRequestPB {
+  required TableIdentifierPB table = 1;
+}
+
+message GetTableStatisticsResponsePB {
+  // The error, if an error occurred with this request.
+  optional MasterErrorPB error = 1;
+
+  // The table statistics from table metrics.
+  optional uint64 on_disk_size = 2;
+  optional uint64 live_row_count = 3;
+}
+
 message GetTableLocationsRequestPB {
   required TableIdentifierPB table = 1;
 
@@ -919,6 +932,11 @@ service MasterService {
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
+
+  rpc GetTableStatistics(GetTableStatisticsRequestPB) returns (GetTableStatisticsResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
   rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }

@@ -808,6 +808,22 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
+   * Get table's statistics from master.
+   * @param name the table's name
+   * @return an deferred KuduTableStatistics
+   */
+  public Deferred<KuduTableStatistics> getTableStatistics(String name) {
+    GetTableStatisticsRequest rpc = new GetTableStatisticsRequest(this.masterTable,
+                                                                  name,
+                                                                  timer,
+                                                                  defaultAdminOperationTimeoutMs);
+
+    return sendRpcToTablet(rpc).addCallback(resp -> {
+      return new KuduTableStatistics(resp.getOnDiskSize(), resp.getLiveRowCount());
+    });
+  }
+
+  /**
    * Test if a table exists.
    * @param name a non-null table name
    * @return true if the table exists, else false

@@ -268,6 +268,21 @@ DEFINE_int32(catalog_manager_inject_latency_list_authz_ms, 0,
 TAG_FLAG(catalog_manager_inject_latency_list_authz_ms, hidden);
 TAG_FLAG(catalog_manager_inject_latency_list_authz_ms, unsafe);
 
+DEFINE_bool(mock_table_metrics_for_testing, false,
+            "Whether to enable mock table metrics for testing.");
+TAG_FLAG(mock_table_metrics_for_testing, hidden);
+TAG_FLAG(mock_table_metrics_for_testing, runtime);
+
+DEFINE_int64(on_disk_size_for_testing, 0,
+             "Mock the on disk size of metrics for testing.");
+TAG_FLAG(on_disk_size_for_testing, hidden);
+TAG_FLAG(on_disk_size_for_testing, runtime);
+
+DEFINE_int64(live_row_count_for_testing, 0,
+             "Mock the live row count of metrics for testing.");
+TAG_FLAG(live_row_count_for_testing, hidden);
+TAG_FLAG(live_row_count_for_testing, runtime);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
 DECLARE_int64(tsk_rotation_seconds);
@@ -2894,6 +2909,32 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
   return Status::OK();
 }
 
+Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req,
+                                          GetTableStatisticsResponsePB* resp,
+                                          optional<const string&> user) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
+  scoped_refptr<TableInfo> table;
+  TableMetadataLock l;
+  auto authz_func = [&] (const string& username, const string& table_name) {
+      return SetupError(authz_provider_->AuthorizeGetTableStatistics(table_name, username),
+                        resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
+                                          &table, &l));
+
+  int64_t on_disk_size = table->GetMetrics()->on_disk_size->value();
+  int64_t live_row_count = table->GetMetrics()->live_row_count->value();
+  if (FLAGS_mock_table_metrics_for_testing) {
+    on_disk_size = FLAGS_on_disk_size_for_testing;
+    live_row_count = FLAGS_live_row_count_for_testing;
+  }
+  resp->set_on_disk_size(on_disk_size);
+  resp->set_live_row_count(live_row_count);
+  return Status::OK();
+}
+
 Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
@@ -5236,6 +5277,7 @@ INITTED_AND_LEADER_OR_RESPOND(IsCreateTableDoneResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(ListTablesResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableLocationsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableSchemaResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(GetTableStatisticsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTabletLocationsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(ReplaceTabletResponsePB);
 

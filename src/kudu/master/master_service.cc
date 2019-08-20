@@ -411,6 +411,19 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::GetTableStatistics(const GetTableStatisticsRequestPB* req,
+                                           GetTableStatisticsResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+  Status s = server_->catalog_manager()->GetTableStatistics(
+      req, resp, make_optional<const string&>(rpc->remote_user().username()));
+  CheckRespErrorOrSetUnknown(s, resp);
+  rpc->RespondSuccess();
+}
+
 void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
                                           GetTableLocationsResponsePB* resp,
                                           rpc::RpcContext* rpc) {

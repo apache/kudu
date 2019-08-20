@@ -34,8 +34,10 @@ import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
+import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.junit.Before
 import org.junit.Test
 
@@ -1052,5 +1054,76 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       assertEquals(rowCount * 100, results.size())
     }
     assert(actualNumTasks > 2)
+  }
+
+  @Test
+  @MasterServerConfig(
+    flags = Array(
+      "--mock_table_metrics_for_testing=true",
+      "--on_disk_size_for_testing=1024",
+      "--live_row_count_for_testing=100"
+    ))
+  def testGetTableStatistics(): Unit = {
+    val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
+    val kuduRelation = kuduRelationFromDataFrame(dataFrame)
+    assert(kuduRelation.sizeInBytes == 1024)
+  }
+
+  @Test
+  @MasterServerConfig(
+    flags = Array(
+      "--mock_table_metrics_for_testing=true",
+      "--on_disk_size_for_testing=1024",
+      "--live_row_count_for_testing=100"
+    ))
+  def testJoinWithTableStatistics(): Unit = {
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+
+    // 1. Create two tables.
+    val table1 = "table1"
+    kuduContext.createTable(
+      table1,
+      df.schema,
+      Seq("key"),
+      new CreateTableOptions()
+        .setRangePartitionColumns(List("key").asJava)
+        .setNumReplicas(1))
+    var options1: Map[String, String] =
+      Map("kudu.table" -> table1, "kudu.master" -> harness.getMasterAddressesAsString)
+    df.write.options(options1).mode("append").format("kudu").save
+    val df1 = sqlContext.read.options(options1).format("kudu").load
+    df1.createOrReplaceTempView(table1)
+
+    val table2 = "table2"
+    kuduContext.createTable(
+      table2,
+      df.schema,
+      Seq("key"),
+      new CreateTableOptions()
+        .setRangePartitionColumns(List("key").asJava)
+        .setNumReplicas(1))
+    var options2: Map[String, String] =
+      Map("kudu.table" -> table2, "kudu.master" -> harness.getMasterAddressesAsString)
+    df.write.options(options2).mode("append").format("kudu").save
+    val df2 = sqlContext.read.options(options2).format("kudu").load
+    df2.createOrReplaceTempView(table2)
+
+    // 2. Get the table statistics of each table and verify.
+    val relation1 = kuduRelationFromDataFrame(df1)
+    val relation2 = kuduRelationFromDataFrame(df2)
+    assert(relation1.sizeInBytes == relation2.sizeInBytes)
+    assert(relation1.sizeInBytes == 1024)
+
+    // 3. Test join with table size should be able to broadcast.
+    val sqlStr = s"SELECT * FROM $table1 JOIN $table2 ON $table1.key = $table2.key"
+    var physical = sqlContext.sql(sqlStr).queryExecution.sparkPlan
+    var operators = physical.collect {
+      case j: BroadcastHashJoinExec => j
+    }
+    assert(operators.size == 1)
+
+    // Verify result.
+    var results = sqlContext.sql(sqlStr).collectAsList()
+    assert(results.size() == rowCount)
   }
 }

@@ -105,10 +105,13 @@ using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(master_support_authz_tokens);
+DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
+DECLARE_int64(live_row_count_for_testing);
+DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 
 namespace kudu {
@@ -1770,6 +1773,31 @@ TEST_F(MasterTest, TestTableIdentifierWithIdAndName) {
     ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
     ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
   }
+}
+
+TEST_F(MasterTest, TestGetTableStatistics) {
+  const char *kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  // Get table statistics with right name.
+  GetTableStatisticsRequestPB req;
+  GetTableStatisticsResponsePB resp;
+  RpcController controller;
+  req.mutable_table()->set_table_name(kTableName);
+  ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &controller));
+  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_EQ(0, resp.on_disk_size());
+  ASSERT_EQ(0, resp.live_row_count());
+
+  FLAGS_mock_table_metrics_for_testing = true;
+  FLAGS_on_disk_size_for_testing = 1024;
+  FLAGS_live_row_count_for_testing = 100;
+  controller.Reset();
+  ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &controller));
+  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  ASSERT_EQ(FLAGS_on_disk_size_for_testing, resp.on_disk_size());
+  ASSERT_EQ(FLAGS_live_row_count_for_testing, resp.live_row_count());
 }
 
 class AuthzTokenMasterTest : public MasterTest,

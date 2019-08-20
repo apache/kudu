@@ -73,6 +73,11 @@ class DefaultAuthzProvider : public AuthzProvider {
     return Status::OK();
   }
 
+  Status AuthorizeGetTableStatistics(const std::string& /*table_name*/,
+                                     const std::string& /*user*/) override WARN_UNUSED_RESULT {
+    return Status::OK();
+  }
+
   Status FillTablePrivilegePB(const std::string& /*table_name*/,
                               const std::string& /*user*/,
                               const SchemaPB& /*schema_pb*/,

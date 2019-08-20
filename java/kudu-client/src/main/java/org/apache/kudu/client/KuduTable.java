@@ -281,4 +281,12 @@ public class KuduTable {
     }
     return rangePartitions;
   }
+
+  /**
+   * Get this table's statistics.
+   * @return this table's statistics
+   */
+  public KuduTableStatistics getTableStatistics() throws KuduException {
+    return client.syncClient().getTableStatistics(name);
+  }
 }

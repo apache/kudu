@@ -30,6 +30,8 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.SaveMode
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.KuduReadOptions._
@@ -254,11 +256,35 @@ class KuduRelation(
     val readOptions: KuduReadOptions = new KuduReadOptions,
     val writeOptions: KuduWriteOptions = new KuduWriteOptions)(val sqlContext: SQLContext)
     extends BaseRelation with PrunedFilteredScan with InsertableRelation {
+  val log: Logger = LoggerFactory.getLogger(getClass)
 
   private val context: KuduContext =
     new KuduContext(masterAddrs, sqlContext.sparkContext)
 
   private val table: KuduTable = context.syncClient.openTable(tableName)
+
+  private val estimatedSize: Long = {
+    try {
+      table.getTableStatistics().getOnDiskSize
+    } catch {
+      case e: Exception =>
+        log.warn("Error while getting table statistic from master, maybe the current" +
+          " master doesn't support the rpc, please check the version.", e)
+        super.sizeInBytes
+    }
+  }
+
+  /**
+   * Estimated size of this relation in bytes, this information is used by spark to
+   * decide whether it is safe to broadcast a relation such as in join selection. It
+   * is always better to overestimate this size than underestimate, because underestimation
+   * may lead to expensive execution plan such as broadcasting a very large table which
+   * will cause great network bandwidth consumption.
+   * TODO(KUDU-2933): Consider projection and predicates in size estimation.
+   *
+   * @return size of this relation in bytes
+   */
+  override def sizeInBytes: Long = estimatedSize
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] =
     filters.filterNot(KuduRelation.supportsFilter)

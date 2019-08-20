@@ -219,6 +219,17 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Get table's statistics from master.
+   * @param name the table's name
+   * @return the statistics of table
+   * @throws KuduException if anything went wrong
+   */
+  public KuduTableStatistics getTableStatistics(String name) throws KuduException {
+    Deferred<KuduTableStatistics> d = asyncClient.getTableStatistics(name);
+    return joinAndHandleException(d);
+  }
+
+  /**
    * Test if a table exists.
    * @param name a non-null table name
    * @return true if the table exists, else false

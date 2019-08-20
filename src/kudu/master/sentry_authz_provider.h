@@ -96,6 +96,9 @@ class SentryAuthzProvider : public AuthzProvider {
                              std::unordered_set<std::string>* table_names,
                              bool* checked_table_names) override WARN_UNUSED_RESULT;
 
+  Status AuthorizeGetTableStatistics(const std::string& table_name,
+                                     const std::string& user) override WARN_UNUSED_RESULT;
+
   Status FillTablePrivilegePB(const std::string& table_name,
                               const std::string& user,
                               const SchemaPB& schema_pb,

@@ -779,4 +779,42 @@ public class TestKuduTable {
     assertEquals(9, dimensionMap.get("labelA").intValue());
     assertEquals(3, dimensionMap.get("labelB").intValue());
   }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.TabletServerConfig(flags = {
+      "--update_tablet_stats_interval_ms=200",
+      "--heartbeat_interval_ms=100",
+  })
+  public void testGetTableStatistics() throws Exception {
+    // Create a table.
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    KuduTable table = client.createTable(tableName, BASIC_SCHEMA, builder);
+
+    // Insert some rows and test the statistics.
+    KuduTableStatistics prevStatistics = new KuduTableStatistics(-1, -1);
+    KuduTableStatistics currentStatistics = new KuduTableStatistics(-1, -1);
+    KuduSession session = client.newSession();
+    int num = 100;
+    for (int i = 0; i < num; ++i) {
+      // Get current table statistics.
+      currentStatistics = table.getTableStatistics();
+      assertTrue(currentStatistics.getOnDiskSize() >= prevStatistics.getOnDiskSize());
+      assertTrue(currentStatistics.getLiveRowCount() >= prevStatistics.getLiveRowCount());
+      assertTrue(currentStatistics.getLiveRowCount() <= i + 1);
+      prevStatistics = currentStatistics;
+      // Insert row.
+      Insert insert = createBasicSchemaInsert(table, i);
+      session.apply(insert);
+      List<String> rows = scanTableToStrings(table);
+      assertEquals("wrong number of rows", i + 1, rows.size());
+    }
+
+    // Final accuracy test.
+    // Wait for master to aggregate table statistics.
+    Thread.sleep(200 * 6);
+    currentStatistics = table.getTableStatistics();
+    assertTrue(currentStatistics.getOnDiskSize() >= prevStatistics.getOnDiskSize());
+    assertTrue(currentStatistics.getLiveRowCount() >= prevStatistics.getLiveRowCount());
+    assertTrue(currentStatistics.getLiveRowCount() == num);
+  }
 }
