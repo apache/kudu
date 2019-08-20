@@ -166,8 +166,7 @@ Status TSTabletManager::Load(FsManager *fs_manager) {
     }
   }
 
-  RETURN_NOT_OK(SetupRaft());
-  return Status::OK();
+  return SetupRaft();
 }
 
 Status TSTabletManager::CreateNew(FsManager *fs_manager) {
@@ -277,24 +276,63 @@ Status TSTabletManager::WaitUntilRunning() {
   return Status::OK();
 }
 
-Status TSTabletManager::InitRaftAsync(bool is_first_run) {
-  if (is_first_run) {
-    RETURN_NOT_OK(CreateNew(server_->fs_manager()));
-  } else {
-    RETURN_NOT_OK(Load(server_->fs_manager()));
-  }
-  return Status::OK();
+bool TSTabletManager::IsInitialized() const {
+  return state() == MANAGER_INITIALIZED;
 }
 
-bool TSTabletManager::IsInitialized() const {
+bool TSTabletManager::IsRunning() const {
   return state() == MANAGER_RUNNING;
 }
 
 Status TSTabletManager::Init(bool is_first_run) {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
-  RETURN_NOT_OK_PREPEND(InitRaftAsync(is_first_run),
-                        "Failed to initialize raft async");
+  if (is_first_run) {
+    RETURN_NOT_OK_PREPEND(
+        CreateNew(server_->fs_manager()),
+        "Failed to CreateNew in TabletManager");
+  } else {
+    RETURN_NOT_OK_PREPEND(
+        Load(server_->fs_manager()),
+        "Failed to Load in TabletManager");
+  }
+
+  set_state(MANAGER_INITIALIZED);
+  return Status::OK();
+}
+
+Status TSTabletManager::Start() {
+  CHECK_EQ(state(), MANAGER_INITIALIZED);
+
+  // set_state(INITIALIZED);
+  // SetStatusMessage("Initialized. Waiting to start...");
+
+  scoped_refptr<ConsensusMetadata> cmeta;
+  Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
+
+  consensus::ConsensusBootstrapInfo bootstrap_info;
+
+  TRACE("Starting consensus");
+  VLOG(2) << "T " << kSysCatalogTabletId << " P " << consensus_->peer_uuid() << ": Peer starting";
+  VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
+
+  gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
+  scoped_refptr<TimeManager> time_manager;
+
+  peer_proxy_factory.reset(new RpcPeerProxyFactory(server_->messenger()));
+  // THIS IS OBVIOUSLY NOT CORRECT.
+  // ONLY TO MAKE CODE COMPILE [ Anirban ]
+  time_manager.reset(new TimeManager(server_->clock(), Timestamp::kInitialTimestamp));
+  //time_manager.reset(new TimeManager(server_->clock(), tablet_->mvcc_manager()->GetCleanTimestamp()));
+
+  // We cannot hold 'lock_' while we call RaftConsensus::Start() because it
+  // may invoke TabletReplica::StartFollowerTransaction() during startup,
+  // causing a self-deadlock. We take a ref to members protected by 'lock_'
+  // before unlocking.
+  RETURN_NOT_OK(consensus_->Start(
+        bootstrap_info, std::move(peer_proxy_factory),
+        log_, std::move(time_manager),
+        this, server_->metric_entity(), mark_dirty_clbk_));
 
   RETURN_NOT_OK_PREPEND(WaitUntilRunning(),
                         "Failed waiting for the raft to run");
@@ -322,38 +360,16 @@ Status TSTabletManager::SetupRaft() {
   // set_state(INITIALIZED);
   // SetStatusMessage("Initialized. Waiting to start...");
 
+  // Not sure these 2 lines are required
   scoped_refptr<ConsensusMetadata> cmeta;
   Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
 
-  consensus::ConsensusBootstrapInfo bootstrap_info;
-
-  TRACE("Starting consensus");
-  VLOG(2) << "T " << kSysCatalogTabletId << " P " << consensus_->peer_uuid() << ": Peer starting";
-  VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
-
-  scoped_refptr<Log> log;
-  RETURN_NOT_OK(Log::Open(LogOptions(), fs_manager_, kSysCatalogTabletId, server_->metric_entity(),
-                          &log));
-
-  gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
-  scoped_refptr<TimeManager> time_manager;
-
-  peer_proxy_factory.reset(new RpcPeerProxyFactory(server_->messenger()));
-  // THIS IS OBVIOUSLY NOT CORRECT.
-  // ONLY TO MAKE CODE COMPILE [ Anirban ]
-  time_manager.reset(new TimeManager(server_->clock(), Timestamp::kInitialTimestamp));
-  //time_manager.reset(new TimeManager(server_->clock(), tablet_->mvcc_manager()->GetCleanTimestamp()));
-
-  // We cannot hold 'lock_' while we call RaftConsensus::Start() because it
-  // may invoke TabletReplica::StartFollowerTransaction() during startup,
-  // causing a self-deadlock. We take a ref to members protected by 'lock_'
-  // before unlocking.
-  RETURN_NOT_OK(consensus_->Start(
-        bootstrap_info, std::move(peer_proxy_factory),
-        log, std::move(time_manager),
-        this, server_->metric_entity(), mark_dirty_clbk_));
-
-  return Status::OK();
+  // Open the log, while passing in the factory class.
+  // Factory could be empty.
+  LogOptions log_options;
+  log_options.log_factory = server_->opts().log_factory;
+  return Log::Open(log_options, fs_manager_, kSysCatalogTabletId,
+      server_->metric_entity(), &log_);
 }
 
 void TSTabletManager::Shutdown() {

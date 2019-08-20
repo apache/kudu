@@ -455,15 +455,21 @@ Status Log::Open(const LogOptions &options,
   RETURN_NOT_OK(env_util::CreateDirIfMissing(
       fs_manager->env(), tablet_wal_path));
 
-  scoped_refptr<Log> new_log(new Log(options,
-                                     fs_manager,
-                                     tablet_wal_path,
-                                     tablet_id,
+  scoped_refptr<Log> new_log;
+  if (options.log_factory) {
+    RETURN_NOT_OK(options.log_factory->createLog(options,
+        fs_manager, tablet_wal_path,
+        tablet_id, metric_entity, &new_log));
+  } else {
+    new_log = new Log(options, fs_manager,
+                     tablet_wal_path,
+                     tablet_id,
 #ifdef FB_DO_NOT_REMOVE
-                                     schema,
-                                     schema_version,
+                     schema,
+                     schema_version,
 #endif
-                                     metric_entity));
+                     metric_entity);
+  }
   RETURN_NOT_OK(new_log->Init());
   log->swap(new_log);
   return Status::OK();
@@ -498,6 +504,16 @@ Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
   if (metric_entity_) {
     metrics_.reset(new LogMetrics(metric_entity_));
   }
+}
+
+Status LogFactory::createLog(LogOptions options,
+    FsManager* fs_manager, std::string log_path,
+    std::string tablet_id,
+    scoped_refptr<MetricEntity> metric_entity,
+    scoped_refptr<Log> *new_log) {
+  *new_log = new Log(options, fs_manager, log_path,
+      tablet_id, metric_entity);
+  return Status::OK();
 }
 
 Status Log::Init() {

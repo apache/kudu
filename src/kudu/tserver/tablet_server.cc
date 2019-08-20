@@ -123,39 +123,20 @@ Status TabletServer::Init() {
                         "Could not start expired Scanner removal thread");
 #endif
 
-  initted_ = true;
-  return Status::OK();
-}
-
-void TabletServer::InitTabletManagerTask() {
-  Status s = InitTabletManager();
-  if (!s.ok()) {
-    LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
-  }
-  init_status_.Set(s);
-}
-
-Status TabletServer::InitTabletManager() {
+  // Moving tablet manager initialization to Init phase of
+  // tablet server
   if (tablet_manager_->IsInitialized()) {
     return Status::IllegalState("Catalog manager is already initialized");
   }
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(is_first_run_),
                         "Unable to initialize catalog manager");
-  return Status::OK();
-}
 
-Status TabletServer::WaitForTabletManagerInit() const {
-  return init_status_.Get();
+  google::FlushLogFiles(google::INFO); // Flush the startup messages.
+  initted_ = true;
+  return Status::OK();
 }
 
 Status TabletServer::Start() {
-  RETURN_NOT_OK(StartAsync());
-  RETURN_NOT_OK(WaitForTabletManagerInit());
-  google::FlushLogFiles(google::INFO); // Flush the startup messages.
-  return Status::OK();
-}
-
-Status TabletServer::StartAsync() {
   CHECK(initted_);
 
 #ifdef FB_DO_NOT_REMOVE
@@ -188,10 +169,13 @@ Status TabletServer::StartAsync() {
   RETURN_NOT_OK(maintenance_manager_->Start());
 #endif
 
-  // Start initializing the catalog manager.
-  RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&TabletServer::InitTabletManagerTask,
-                                               Unretained(this))));
+  if (!tablet_manager_->IsInitialized()) {
+    return Status::IllegalState("Tablet manager is not initialized");
+  }
 
+  RETURN_NOT_OK_PREPEND(tablet_manager_->Start(),
+                        "Unable to start raft in tablet manager");
+  google::FlushLogFiles(google::INFO); // Flush the startup messages.
   return Status::OK();
 }
 

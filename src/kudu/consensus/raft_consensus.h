@@ -323,6 +323,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns boost::none if RaftConsensus was not properly initialized.
   boost::optional<OpId> GetLastOpId(OpIdType type);
 
+  boost::optional<OpId> GetNextOpId() const;
+
   // Returns the current Raft role of this instance.
   RaftPeerPB::Role role() const;
 

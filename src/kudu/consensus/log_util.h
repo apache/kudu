@@ -49,6 +49,8 @@ class CompressionCodec;
 
 namespace log {
 
+class LogFactory;
+
 // Each log entry is prefixed by a header. See DecodeEntryHeader()
 // implementation for details.
 extern const size_t kEntryHeaderSizeV2;
@@ -72,6 +74,8 @@ struct LogOptions {
 
   // Whether the allocation should happen asynchronously.
   bool async_preallocate_segments;
+
+  std::shared_ptr<LogFactory> log_factory;
 
   LogOptions();
 };

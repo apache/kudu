@@ -496,6 +496,9 @@ Status ServerBase::Init() {
       &ServerBase::ServiceQueueOverflowed, this, std::placeholders::_1));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
+
+  // Bind the RPC server so that the
+  // local raft peer can be initialized
   RETURN_NOT_OK(rpc_server_->Bind());
   clock_->RegisterMetrics(metric_entity_);
 
