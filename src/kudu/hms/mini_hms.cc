@@ -153,7 +153,6 @@ Status MiniHms::Start() {
       { "HIVE_AUX_JARS_PATH", aux_jars },
       { "HIVE_CONF_DIR", data_root_ },
       { "JAVA_TOOL_OPTIONS", java_options },
-      { "HADOOP_CONF_DIR", data_root_ },
       // Set HADOOP_OS_TYPE=Linux due to HADOOP-8719.
       // TODO(ghenke): Remove after HADOOP-15966 is available (Hadoop 3.1.3+)
       { "HADOOP_OS_TYPE", "Linux" }
