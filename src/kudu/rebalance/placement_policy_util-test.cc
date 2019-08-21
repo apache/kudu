@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/placement_policy_util.h"
+#include "kudu/rebalance/placement_policy_util.h"
 
 #include <cstdint>
 #include <iostream>
@@ -32,8 +32,8 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tools/rebalance_algo.h"
-#include "kudu/tools/rebalancer.h"
+#include "kudu/rebalance/rebalance_algo.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
@@ -47,7 +47,7 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 // TODO(aserbin): consider renaming the structures below XxxInfo --> Xxx
 
@@ -729,5 +729,5 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsNoneEvenRF) {
   NO_FATALS(RunTest(configs));
 }
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

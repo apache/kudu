@@ -202,22 +202,22 @@ message ControlShellRequestPB {
 message KsckResultsPB {
   repeated string errors = 1;
 
-  repeated KsckServerHealthSummaryPB master_summaries = 2;
-  repeated KsckServerHealthSummaryPB tserver_summaries = 3;
+  repeated ServerHealthSummaryPB master_summaries = 2;
+  repeated ServerHealthSummaryPB tserver_summaries = 3;
 
   repeated string master_uuids = 4;
   optional bool master_consensus_conflict = 5;
-  repeated KsckConsensusStatePB master_consensus_states = 6;
+  repeated ConsensusStatePB master_consensus_states = 6;
 
-  repeated KsckTabletSummaryPB tablet_summaries = 7;
-  repeated KsckTableSummaryPB table_summaries = 8;
+  repeated TabletSummaryPB tablet_summaries = 7;
+  repeated TableSummaryPB table_summaries = 8;
 
   optional KsckChecksumResultsPB checksum_results = 9;
   repeated KsckVersionSummaryPB version_summaries = 10;
   repeated KsckCountSummaryPB count_summaries = 11;
 }
 
-message KsckServerHealthSummaryPB {
+message ServerHealthSummaryPB {
   enum ServerHealth {
     UNKNOWN = 999;
     HEALTHY = 0;
@@ -233,7 +233,7 @@ message KsckServerHealthSummaryPB {
   optional string location = 6;
 }
 
-message KsckConsensusStatePB {
+message ConsensusStatePB {
   enum ConfigType {
     UNKNOWN = 999;
     MASTER = 0;
@@ -257,17 +257,17 @@ enum KsckTabletHealthPB {
   CONSENSUS_MISMATCH = 4;
 }
 
-message KsckTabletSummaryPB {
+message TabletSummaryPB {
   optional string id = 1;
   optional string table_id = 2;
   optional string table_name = 3;
   optional KsckTabletHealthPB health = 4;
   optional string status = 5;
-  optional KsckConsensusStatePB master_cstate = 6;
-  repeated KsckReplicaSummaryPB replicas = 7;
+  optional ConsensusStatePB master_cstate = 6;
+  repeated ReplicaSummaryPB replicas = 7;
 }
 
-message KsckReplicaSummaryPB {
+message ReplicaSummaryPB {
   optional string ts_uuid = 1;
   optional string ts_address = 2;
   optional bool ts_healthy = 3;
@@ -275,10 +275,10 @@ message KsckReplicaSummaryPB {
   optional bool is_voter = 5;
   optional tablet.TabletStatePB state = 6;
   optional tablet.TabletStatusPB status_pb = 7;
-  optional KsckConsensusStatePB consensus_state = 8;
+  optional ConsensusStatePB consensus_state = 8;
 }
 
-message KsckTableSummaryPB {
+message TableSummaryPB {
   optional string id = 1;
   optional string name = 2;
   optional KsckTabletHealthPB health = 3;

@@ -39,6 +39,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rebalance/cluster_status.h" // IWYU pragma: keep
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
@@ -290,14 +291,14 @@ class KsckTabletServer {
   // If Status is OK, 'health' will be HEALTHY
   // If the UUID is not what ksck expects, 'health' will be WRONG_SERVER_UUID
   // Otherwise 'health' will be UNAVAILABLE
-  virtual Status FetchInfo(KsckServerHealth* health) = 0;
+  virtual Status FetchInfo(cluster_summary::ServerHealth* health) = 0;
 
   // Connects to the configured tablet server and populates the consensus map. 'health' must not be
   // nullptr.
   //
   // If Status is OK, 'health' will be HEALTHY
   // Otherwise 'health' will be UNAVAILABLE
-  virtual Status FetchConsensusState(KsckServerHealth* health) = 0;
+  virtual Status FetchConsensusState(cluster_summary::ServerHealth* health) = 0;
 
   // Retrieves "unusual" flags from the KsckTabletServer.
   // "Unusual" flags ares ones tagged hidden, experimental, or unsafe.
@@ -608,8 +609,9 @@ class Ksck {
                               const MonoDelta& timeout,
                               const MonoDelta& retry_interval);
 
-  KsckCheckResult VerifyTablet(const std::shared_ptr<KsckTablet>& tablet,
-                           int table_num_replicas);
+  cluster_summary::HealthCheckResult VerifyTablet(
+      const std::shared_ptr<KsckTablet>& tablet,
+      int table_num_replicas);
 
   const std::shared_ptr<KsckCluster> cluster_;
   gscoped_ptr<ThreadPool> pool_;

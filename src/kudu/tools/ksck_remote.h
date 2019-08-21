@@ -38,6 +38,10 @@ namespace client {
 class KuduClient;
 }
 
+namespace cluster_summary {
+enum class ServerHealth;
+}
+
 namespace consensus {
 class ConsensusServiceProxy;
 }
@@ -57,8 +61,6 @@ class TabletServerServiceProxy;
 namespace tools {
 
 class KsckChecksumManager;
-
-enum class KsckServerHealth;
 struct KsckChecksumOptions;
 
 // This implementation connects to a master via RPC.
@@ -104,9 +106,9 @@ class RemoteKsckTabletServer : public KsckTabletServer,
   // Must be called after constructing.
   Status Init();
 
-  Status FetchInfo(KsckServerHealth* health) override;
+  Status FetchInfo(cluster_summary::ServerHealth* health) override;
 
-  Status FetchConsensusState(KsckServerHealth* health) override;
+  Status FetchConsensusState(cluster_summary::ServerHealth* health) override;
 
   Status FetchUnusualFlags() override;
 

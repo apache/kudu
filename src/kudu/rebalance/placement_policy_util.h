@@ -23,16 +23,16 @@
 
 #include <boost/optional/optional.hpp>
 
-#include "kudu/tools/rebalancer.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
+
+struct ClusterLocalityInfo;
 
 // Below are the structures to describe Kudu entities such as tablet replicas,
 // tablets, and tables from the perspective of the placement policy constraints.
-
-struct ClusterLocalityInfo;
 
 enum class ReplicaRole {
   LEADER,
@@ -118,5 +118,5 @@ Status FindMovesToReimposePlacementPolicy(
     const std::vector<PlacementPolicyViolationInfo>& violations_info,
     std::vector<Rebalancer::ReplicaMove>* replicas_to_remove);
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

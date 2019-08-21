@@ -76,6 +76,7 @@ target_link_libraries(ksck
   kudu_tools_util
   master
   master_proto
+  rebalance
   server_base_proto
   tserver_proto
   tserver_service_proto
@@ -87,14 +88,13 @@ target_link_libraries(ksck
 #######################################
 
 add_library(kudu_tools_rebalance
-  rebalancer.cc
-  rebalance_algo.cc
-  placement_policy_util.cc
+  rebalancer_tool.cc
   tool_replica_util.cc
 )
 target_link_libraries(kudu_tools_rebalance
   ksck
   kudu_common
+  rebalance
   ${KUDU_BASE_LIBS}
 )
 
@@ -188,9 +188,6 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
-ADD_KUDU_TEST(placement_policy_util-test)
-ADD_KUDU_TEST(rebalance-test)
-ADD_KUDU_TEST(rebalance_algo-test)
 ADD_KUDU_TEST(rebalancer_tool-test
   NUM_SHARDS 8 PROCESSORS 3
   DATA_FILES ../scripts/assign-location.py)

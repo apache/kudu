@@ -27,10 +27,15 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tools/ksck_results.h"
-#include "kudu/tools/rebalance_algo.h"
-#include "kudu/tools/rebalancer.h"
+#include "kudu/rebalance/cluster_status.h"
+#include "kudu/rebalance/rebalance_algo.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/test_macros.h"
+
+using kudu::cluster_summary::ReplicaSummary;
+using kudu::cluster_summary::ServerHealthSummary;
+using kudu::cluster_summary::TableSummary;
+using kudu::cluster_summary::TabletSummary;
 
 using std::inserter;
 using std::ostream;
@@ -41,26 +46,26 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 namespace {
 
-struct KsckReplicaSummaryInput {
+struct ReplicaSummaryInput {
   std::string ts_uuid;
   bool is_voter;
 };
 
-struct KsckServerHealthSummaryInput {
+struct ServerHealthSummaryInput {
   std::string uuid;
 };
 
-struct KsckTabletSummaryInput {
+struct TabletSummaryInput {
   std::string id;
   std::string table_id;
-  std::vector<KsckReplicaSummaryInput> replicas;
+  std::vector<ReplicaSummaryInput> replicas;
 };
 
-struct KsckTableSummaryInput {
+struct TableSummaryInput {
   std::string id;
   int replication_factor;
 };
@@ -68,9 +73,9 @@ struct KsckTableSummaryInput {
 // The input to build KsckResults data. Contains relevant sub-fields of the
 // KsckResults to use in the test.
 struct KsckResultsInput {
-  vector<KsckServerHealthSummaryInput> tserver_summaries;
-  vector<KsckTabletSummaryInput> tablet_summaries;
-  vector<KsckTableSummaryInput> table_summaries;
+  vector<ServerHealthSummaryInput> tserver_summaries;
+  vector<TabletSummaryInput> tablet_summaries;
+  vector<TableSummaryInput> table_summaries;
 };
 
 // The configuration for the test.
@@ -85,22 +90,22 @@ struct KsckResultsTestConfig {
 ClusterRawInfo GenerateRawClusterInfo(const KsckResultsInput& input) {
   ClusterRawInfo raw_info;
   {
-    vector<KsckServerHealthSummary>& summaries = raw_info.tserver_summaries;
+    vector<ServerHealthSummary>& summaries = raw_info.tserver_summaries;
     for (const auto& summary_input : input.tserver_summaries) {
-      KsckServerHealthSummary summary;
+      ServerHealthSummary summary;
       summary.uuid = summary_input.uuid;
       summaries.emplace_back(std::move(summary));
     }
   }
   {
-    vector<KsckTabletSummary>& summaries = raw_info.tablet_summaries;
+    vector<TabletSummary>& summaries = raw_info.tablet_summaries;
     for (const auto& summary_input : input.tablet_summaries) {
-      KsckTabletSummary summary;
+      TabletSummary summary;
       summary.id = summary_input.id;
       summary.table_id = summary_input.table_id;
       auto& replicas = summary.replicas;
       for (const auto& replica_input : summary_input.replicas) {
-        KsckReplicaSummary replica;
+        ReplicaSummary replica;
         replica.ts_uuid = replica_input.ts_uuid;
         replica.is_voter = replica_input.is_voter;
         replicas.emplace_back(std::move(replica));
@@ -109,9 +114,9 @@ ClusterRawInfo GenerateRawClusterInfo(const KsckResultsInput& input) {
     }
   }
   {
-    vector<KsckTableSummary>& summaries = raw_info.table_summaries;
+    vector<TableSummary>& summaries = raw_info.table_summaries;
     for (const auto& summary_input : input.table_summaries) {
-      KsckTableSummary summary;
+      TableSummary summary;
       summary.id = summary_input.id;
       summary.replication_factor = summary_input.replication_factor;
       summaries.emplace_back(std::move(summary));
@@ -449,5 +454,5 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
   NO_FATALS(RunTest(rebalancer_config, test_configs));
 }
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

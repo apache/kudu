@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/rebalance_algo.h"
+#include "kudu/rebalance/rebalance_algo.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -42,11 +42,12 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+// IWYU pragma: keep.
 namespace kudu {
-namespace tools {
+namespace rebalance {
 struct TestClusterConfig;
-}  // namespace tools
-}  // namespace kudu
+} // namespace rebalance
+} // namespace kudu
 
 #define VERIFY_MOVES(test_config) \
   do { \
@@ -75,7 +76,7 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 struct TablePerServerReplicas {
   const string table_id;
@@ -1114,5 +1115,5 @@ TEST(RebalanceAlgoUnitTest, LocationBalancingSimpleMT) {
   VERIFY_LOCATION_BALANCING_MOVES(kConfigs);
 }
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

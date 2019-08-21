@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/placement_policy_util.h"
+#include "kudu/rebalance/placement_policy_util.h"
 
 #include <cstdint>
 #include <functional>
@@ -33,8 +33,9 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tools/ksck_results.h"
-#include "kudu/tools/rebalance_algo.h"
+#include "kudu/rebalance/cluster_status.h"
+#include "kudu/rebalance/rebalance_algo.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/status.h"
 
 using std::multimap;
@@ -44,7 +45,7 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 namespace {
 
@@ -239,12 +240,12 @@ Status BuildTabletsPlacementInfo(
   for (const auto& tablet_summary : raw_info.tablet_summaries) {
     const auto& tablet_id = tablet_summary.id;
     // TODO(aserbin): process RF=1 tablets as necessary
-    if (tablet_summary.result != KsckCheckResult::HEALTHY &&
-        tablet_summary.result != KsckCheckResult::RECOVERING) {
+    if (tablet_summary.result != cluster_summary::HealthCheckResult::HEALTHY &&
+        tablet_summary.result != cluster_summary::HealthCheckResult::RECOVERING) {
       VLOG(1) << Substitute("tablet $0: not considering replicas for movement "
                             "since the tablet's status is '$1'",
                             tablet_id,
-                            KsckCheckResultToString(tablet_summary.result));
+                            cluster_summary::HealthCheckResultToString(tablet_summary.result));
       continue;
     }
     EmplaceOrDie(&tablet_to_table_id, tablet_id, tablet_summary.table_id);
@@ -454,5 +455,5 @@ Status FindMovesToReimposePlacementPolicy(
   return Status::OK();
 }
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

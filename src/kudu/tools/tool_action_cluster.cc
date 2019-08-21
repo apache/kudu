@@ -33,16 +33,19 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rebalance/cluster_status.h"
+#include "kudu/rebalance/rebalancer.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/ksck_results.h"
-#include "kudu/tools/rebalancer.h"
+#include "kudu/tools/rebalancer_tool.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/version_util.h"
 
+using kudu::rebalance::Rebalancer;
 using std::cout;
 using std::endl;
 using std::make_tuple;
@@ -123,7 +126,7 @@ DEFINE_bool(disable_intra_location_rebalancing, false,
             "This setting is applicable to multi-location clusters only.");
 
 DEFINE_double(load_imbalance_threshold,
-              kudu::tools::Rebalancer::Config::kLoadImbalanceThreshold,
+              kudu::rebalance::Rebalancer::Config::kLoadImbalanceThreshold,
               "The threshold for the per-table location load imbalance. "
               "The threshold is used during the cross-location rebalancing "
               "phase. If the measured cross-location load imbalance for a "
@@ -225,8 +228,8 @@ Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
   ignore_result(ksck->Run());
   const auto& ksck_results = ksck->results();
 
-  for (const auto& summaries : { ksck_results.tserver_summaries,
-                                 ksck_results.master_summaries }) {
+  for (const auto& summaries : { ksck_results.cluster_status.tserver_summaries,
+                                 ksck_results.cluster_status.master_summaries }) {
     for (const auto& summary : summaries) {
       if (summary.version) {
         if (!VersionSupportsRF1Movement(*summary.version)) {
@@ -255,8 +258,8 @@ Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
   // available. The idea is to reduce the risk of unintended unavailability
   // unless it's explicitly requested by the operator.
   boost::optional<string> tid;
-  if (!ksck_results.tablet_summaries.empty()) {
-    tid = ksck_results.tablet_summaries.front().id;
+  if (!ksck_results.cluster_status.tablet_summaries.empty()) {
+    tid = ksck_results.cluster_status.tablet_summaries.front().id;
   }
   bool is_343_scheme = false;
   auto s = Is343SchemeCluster(master_addresses, tid, &is_343_scheme);
@@ -293,7 +296,7 @@ Status RunRebalance(const RunnerContext& context) {
   bool move_single_replicas = false;
   RETURN_NOT_OK(EvaluateMoveSingleReplicasFlag(master_addresses,
                                                &move_single_replicas));
-  Rebalancer rebalancer(Rebalancer::Config(
+  RebalancerTool rebalancer(Rebalancer::Config(
       ignored_tservers,
       master_addresses,
       table_filters,
@@ -314,17 +317,17 @@ Status RunRebalance(const RunnerContext& context) {
     return Status::OK();
   }
 
-  Rebalancer::RunStatus result_status;
+  RebalancerTool::RunStatus result_status;
   size_t moves_count;
   RETURN_NOT_OK(rebalancer.Run(&result_status, &moves_count));
 
   const string msg_template = "rebalancing is complete: $0 (moved $1 replicas)";
   string msg_result_status;
   switch (result_status) {
-    case Rebalancer::RunStatus::CLUSTER_IS_BALANCED:
+    case RebalancerTool::RunStatus::CLUSTER_IS_BALANCED:
       msg_result_status = "cluster is balanced";
       break;
-    case Rebalancer::RunStatus::TIMED_OUT:
+    case RebalancerTool::RunStatus::TIMED_OUT:
       msg_result_status = "time is up";
       break;
     default:

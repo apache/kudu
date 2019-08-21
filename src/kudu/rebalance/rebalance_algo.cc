@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/rebalance_algo.h"
+#include "kudu/rebalance/rebalance_algo.h"
 
 #include <algorithm>
 #include <cmath>
@@ -51,7 +51,7 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 namespace {
 
@@ -195,7 +195,6 @@ Status RebalancingAlgo::ApplyMove(const TableReplicaMove& move,
 
 TwoDimensionalGreedyAlgo::TwoDimensionalGreedyAlgo(EqualSkewOption opt)
     : equal_skew_opt_(opt),
-      random_device_(),
       generator_(random_device_()) {
 }
 
@@ -618,5 +617,5 @@ Status LocationBalancingAlgo::FindBestMove(
   return Status::OK();
 }
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu

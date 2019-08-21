@@ -33,7 +33,7 @@ template <class T> class optional;
 } // namespace boost
 
 namespace kudu {
-namespace tools {
+namespace rebalance {
 
 // A map from a count of replicas to a server identifier. The "reversed"
 // relationship facilitates finding the servers with the maximum and minimum
@@ -286,5 +286,5 @@ class LocationBalancingAlgo : public RebalancingAlgo {
   const double load_imbalance_threshold_;
 };
 
-} // namespace tools
+} // namespace rebalance
 } // namespace kudu
