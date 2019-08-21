@@ -322,15 +322,15 @@ endif()
 #######################################
 # kudu_curl_util
 #######################################
-if(NOT NO_TESTS)
-  add_library(kudu_curl_util
-    curl_util.cc)
-  target_link_libraries(kudu_curl_util
-    security
-    ${CURL_LIBRARIES}
-    glog
-    gutil)
-endif()
+#if(NOT NO_TESTS)
+#  add_library(kudu_curl_util
+#    curl_util.cc)
+#  target_link_libraries(kudu_curl_util
+#    security
+#    ${CURL_LIBRARIES}
+#    glog
+#    gutil)
+#endif()
 
 #######################################
 # kudu_test_main
