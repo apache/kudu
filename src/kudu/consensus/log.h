@@ -268,7 +268,7 @@ class Log : public RefCountedThreadSafe<Log> {
       std::vector<consensus::ReplicateMsg*>* replicates) const;
   virtual Status LookupOpId(int64_t op_index, consensus::OpId* op_id) const;
 
- private:
+ protected:
   friend class LogTest;
   friend class LogTestBase;
   friend class LogFactory;
