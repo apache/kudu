@@ -2130,7 +2130,7 @@ void LogBlockManager::RemoveDeadContainer(const string& container_name) {
 Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
                                              LogBlockContainerRefPtr* container) {
   DataDir* dir;
-  RETURN_NOT_OK_EVAL(dd_manager_->GetNextDataDir(opts, &dir),
+  RETURN_NOT_OK_EVAL(dd_manager_->GetDirAddIfNecessary(opts, &dir),
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, opts.tablet_id));
 
   {

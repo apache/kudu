@@ -335,10 +335,10 @@ class DataDirManager {
   // and data dir to tablet set are cleared of all references to the tablet.
   void DeleteDataDirGroup(const std::string& tablet_id);
 
-  // Returns a random directory, giving preference to the one with more free
-  // space in the specified option's data dir group. If there is no room in the
-  // group, returns an error.
-  Status GetNextDataDir(const CreateBlockOptions& opts, DataDir** dir);
+  // Returns a dir for block placement in the data dir group specified in
+  // 'opts'. If none exists, adds a new dir to the group and returns the dir,
+  // and if none can be added, returns an error.
+  Status GetDirAddIfNecessary(const CreateBlockOptions& opts, DataDir** dir);
 
   // Finds the set of tablet_ids in the data dir specified by 'uuid_idx' and
   // returns a copy, returning an empty set if none are found.
@@ -464,8 +464,16 @@ class DataDirManager {
       std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
       std::vector<std::string> new_all_uuids);
 
+  // Returns a random directory in the data dir group specified in 'opts',
+  // giving preference to those with more free space. If there is no room in
+  // the group, returns an IOError with the ENOSPC posix code and returns the
+  // new target size for the data dir group.
+  Status GetDirForBlock(const CreateBlockOptions& opts, DataDir** dir,
+                        int* new_target_group_size) const;
+
   // Repeatedly selects directories from those available to put into a new
   // DataDirGroup until 'group_indices' reaches 'target_size' elements.
+  //
   // Selection is based on "The Power of Two Choices in Randomized Load
   // Balancing", selecting two directories randomly and choosing the one with
   // less load, quantified as the number of unique tablets in the directory.
@@ -473,10 +481,11 @@ class DataDirManager {
   // resulting behavior fills directories that have fewer tablets stored on
   // them while not completely neglecting those with more tablets.
   //
-  // 'group_indices' is an output that stores the list of uuid_indices to be
-  // added. Although this function does not itself change DataDirManager state,
-  // its expected usage warrants that it is called within the scope of a
-  // lock_guard of dir_group_lock_.
+  // 'group_indices' is an in/out parameter that stores the list of UUID
+  // indices to be added; UUID indices that are already in 'group_indices' are
+  // not considered. Although this function does not itself change
+  // DataDirManager state, its expected usage warrants that it is called within
+  // the scope of a lock_guard of dir_group_lock_.
   void GetDirsForGroupUnlocked(int target_size, std::vector<int>* group_indices);
 
   // Goes through the data dirs in 'uuid_indices' and populates
@@ -529,7 +538,7 @@ class DataDirManager {
   mutable percpu_rwlock dir_group_lock_;
 
   // RNG used to select directories.
-  ThreadSafeRandom rng_;
+  mutable ThreadSafeRandom rng_;
 
   DISALLOW_COPY_AND_ASSIGN(DataDirManager);
 };

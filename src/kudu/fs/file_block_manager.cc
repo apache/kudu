@@ -748,7 +748,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   CHECK(!opts_.read_only);
 
   DataDir* dir;
-  RETURN_NOT_OK_EVAL(dd_manager_->GetNextDataDir(opts, &dir),
+  RETURN_NOT_OK_EVAL(dd_manager_->GetDirAddIfNecessary(opts, &dir),
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, opts.tablet_id));
   int uuid_idx;
   CHECK(dd_manager_->FindUuidIndexByDataDir(dir, &uuid_idx));

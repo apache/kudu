@@ -17,9 +17,11 @@
 
 #include "kudu/util/env_util.h"
 
+#include <fnmatch.h>
+
 #include <algorithm>
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -33,12 +35,14 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DEFINE_int64(disk_reserved_bytes_free_for_testing, -1,
@@ -70,6 +74,18 @@ TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, unsafe);
 TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, runtime);
 TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, runtime);
 
+DEFINE_double(env_inject_full, 0.0,
+              "Fraction of the time that space checks on certain paths will "
+              "yield the posix code ENOSPC.");
+TAG_FLAG(env_inject_full, hidden);
+
+DEFINE_string(env_inject_full_globs, "*",
+              "Comma-separated list of glob patterns specifying which paths "
+              "return with space errors.");
+TAG_FLAG(env_inject_full_globs, hidden);
+
+
+using kudu::fault_injection::MaybeTrue;
 using std::pair;
 using std::shared_ptr;
 using std::string;
@@ -78,7 +94,25 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+
 namespace kudu {
+
+namespace {
+// Returns whether the path specified by 'data_dir' should be considered full.
+bool ShouldInjectSpaceError(const string& data_dir) {
+  if (PREDICT_FALSE(MaybeTrue(FLAGS_env_inject_full))) {
+    vector<string> globs =
+        strings::Split(FLAGS_env_inject_full_globs, ",", strings::SkipEmpty());
+    for (const auto& glob : globs) {
+      if (fnmatch(glob.c_str(), data_dir.c_str(), 0) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+} // anonymous namespace
+
 namespace env_util {
 
 Status OpenFileForWrite(Env* env, const string& path,
@@ -129,9 +163,14 @@ static void OverrideBytesFreeWithTestingFlags(const string& path, int64_t* bytes
 
 Status VerifySufficientDiskSpace(Env *env, const std::string& path, int64_t requested_bytes,
                                  int64_t reserved_bytes, int64_t* available_bytes) {
-  const int64_t kOnePercentReservation = -1;
   DCHECK_GE(requested_bytes, 0);
-
+  if (ShouldInjectSpaceError(path)) {
+    if (available_bytes) {
+      *available_bytes = 0;
+    }
+    return Status::IOError(Env::kInjectedFailureStatusMsg, "", ENOSPC);
+  }
+  const int64_t kOnePercentReservation = -1;
   SpaceInfo space_info;
   RETURN_NOT_OK(env->GetSpaceInfo(path, &space_info));
   int64_t free_bytes = space_info.free_bytes;
@@ -150,7 +189,7 @@ Status VerifySufficientDiskSpace(Env *env, const std::string& path, int64_t requ
     reserved_bytes = space_info.capacity_bytes / 100;
   }
 
-  if (available_bytes != nullptr) {
+  if (available_bytes) {
     *available_bytes = free_bytes;
   }
 

@@ -28,6 +28,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -56,6 +57,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
@@ -120,6 +122,7 @@ using kudu::clock::Clock;
 using kudu::clock::HybridClock;
 using kudu::consensus::ConsensusStatePB;
 using kudu::fs::CreateCorruptBlock;
+using kudu::fs::DataDirManager;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
@@ -137,6 +140,7 @@ using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -157,8 +161,11 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
+DECLARE_double(env_inject_full);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
+DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int32(maintenance_manager_num_threads);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
@@ -166,6 +173,7 @@ DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
+DECLARE_string(env_inject_full_globs);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
@@ -573,6 +581,66 @@ TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   // contain the server's RPC address.
   ASSERT_STR_NOT_CONTAINS(s, mini_server_->bound_rpc_addr().ToString());
 }
+
+class TabletServerDiskSpaceTest : public TabletServerTestBase,
+                                  public testing::WithParamInterface<string> {
+ public:
+  void SetUp() override {
+    FLAGS_block_manager = GetParam();
+    NO_FATALS(TabletServerTestBase::SetUp());
+    NO_FATALS(StartTabletServer(/*num_data_dirs=*/kNumDirs));
+  }
+ protected:
+  const int kNumDirs = FLAGS_fs_target_data_dirs_per_tablet + 1;
+};
+
+// Test that when there isn't enough space in a tablet's data directory group
+// and there are additional directories available, directories are added to the
+// group, and the new groups are persisted to disk.
+TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
+  DataDirManager* dd_manager = mini_server_->server()->fs_manager()->dd_manager();
+  vector<string> dir_group;
+  ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
+  ASSERT_EQ(kNumDirs - 1, dir_group.size());
+  FLAGS_fs_data_dirs_available_space_cache_seconds = 0;
+  FLAGS_env_inject_full_globs = JoinStrings(dir_group, ",");
+  FLAGS_env_inject_full = 1.0;
+
+  // Insert some data and flush. This should lead to the creation of a block,
+  // and the addition of a new directory in the dir group.
+  unordered_set<string> old_group(dir_group.begin(), dir_group.end());
+  NO_FATALS(InsertTestRowsRemote(1, 1));
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
+  ASSERT_EQ(kNumDirs, dir_group.size());
+
+  // Grab the newly added directory and check that failing it means the tablet
+  // is in a failed directory.
+  string new_dir;
+  for (const auto& dir : dir_group) {
+    if (!ContainsKey(old_group, dir)) {
+      new_dir = dir;
+      break;
+    }
+  }
+  ASSERT_FALSE(new_dir.empty());
+  string new_uuid;
+  ASSERT_TRUE(dd_manager->FindUuidByRoot(DirName(new_dir), &new_uuid));
+  dd_manager->MarkDataDirFailedByUuid(new_uuid);
+  ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
+
+  // The group should be the updated even after restarting the tablet server.
+  NO_FATALS(ShutdownAndRebuildTablet(kNumDirs));
+  dd_manager = mini_server_->server()->fs_manager()->dd_manager();
+  ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
+  ASSERT_EQ(kNumDirs, dir_group.size());
+  ASSERT_TRUE(dd_manager->FindUuidByRoot(DirName(new_dir), &new_uuid));
+  dd_manager->MarkDataDirFailedByUuid(new_uuid);
+  ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
+}
+
+INSTANTIATE_TEST_CASE_P(BlockManager, TabletServerDiskSpaceTest,
+    ::testing::Values("log", "file"));
 
 enum class ErrorType {
   DISK_FAILURE,

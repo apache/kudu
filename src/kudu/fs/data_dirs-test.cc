@@ -21,7 +21,9 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -37,6 +39,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
@@ -47,17 +50,21 @@
 
 using std::set;
 using std::string;
+using std::thread;
 using std::vector;
 using std::unique_ptr;
+using std::unordered_set;
 using strings::Substitute;
 
 DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
+DECLARE_double(env_inject_full);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(env_inject_eio_globs);
+DECLARE_string(env_inject_full_globs);
 
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 
@@ -108,7 +115,7 @@ TEST_F(DataDirsTest, TestCreateGroup) {
   // Test that the DataDirManager doesn't know about the tablets we're about
   // to insert.
   DataDir* dd = nullptr;
-  Status s = dd_manager_->GetNextDataDir(test_block_opts_, &dd);
+  Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dd);
   ASSERT_EQ(nullptr, dd);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no directory group "
@@ -145,7 +152,7 @@ TEST_F(DataDirsTest, TestCreateGroup) {
   ASSERT_EQ(FLAGS_fs_target_data_dirs_per_tablet, num_dirs_with_tablets);
 
   // Try to use the group.
-  ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &dd));
+  ASSERT_OK(dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dd));
   ASSERT_FALSE(dd->is_full());
 }
 
@@ -177,24 +184,106 @@ TEST_F(DataDirsTest, TestLoadFromPB) {
 TEST_F(DataDirsTest, TestDeleteDataDirGroup) {
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
   DataDir* dd;
-  ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &dd));
+  ASSERT_OK(dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dd));
   ASSERT_FALSE(dd->is_full());
   dd_manager_->DeleteDataDirGroup(test_tablet_name_);
-  Status s = dd_manager_->GetNextDataDir(test_block_opts_, &dd);
+  Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dd);
   ASSERT_FALSE(dd->is_full());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no directory group "
                                     "registered for tablet");
 }
 
+// Inject full disk errors a couple different ways and make sure that we can't
+// create directory groups.
 TEST_F(DataDirsTest, TestFullDisk) {
+  FLAGS_env_inject_full = 1.0;
+  Status s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "All healthy data directories are full");
+  FLAGS_env_inject_full = 0;
+
   FLAGS_fs_data_dirs_available_space_cache_seconds = 0; // Don't cache device available space.
   FLAGS_fs_data_dirs_reserved_bytes = 1;                // Reserved space.
   FLAGS_disk_reserved_bytes_free_for_testing = 0;       // Free space.
 
-  Status s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
+  s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "All healthy data directories are full");
+}
+
+// Test that when an entire directory group is full, new directories are added
+// to the group.
+TEST_F(DataDirsTest, TestFullDiskGrowsGroup) {
+  // First, create a directory group.
+  ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+
+  // Mark every directory in the directory group full.
+  vector<string> data_dir_group;
+  ASSERT_OK(dd_manager_->FindDataDirsByTabletId(test_tablet_name_, &data_dir_group));
+  FLAGS_fs_data_dirs_available_space_cache_seconds = 0;
+  FLAGS_env_inject_full_globs = JoinStrings(data_dir_group, ",");
+  FLAGS_env_inject_full = 1.0;
+
+  // Try getting a new directory, adding if necessary.
+  DataDir* new_dir;
+  ASSERT_OK(dd_manager_->GetDirAddIfNecessary(test_block_opts_, &new_dir));
+  unordered_set<string> old_dirs(data_dir_group.begin(), data_dir_group.end());
+  ASSERT_FALSE(ContainsKey(old_dirs, new_dir->dir()));
+
+  // The selected directory should have been added to the data directory group.
+  vector<string> new_dir_group;
+  ASSERT_OK(dd_manager_->FindDataDirsByTabletId(test_tablet_name_, &new_dir_group));
+  unordered_set<string> new_dirs(new_dir_group.begin(), new_dir_group.end());
+  ASSERT_TRUE(ContainsKey(new_dirs, new_dir->dir()));
+
+  // If all directories are full, we shouldn't be able to get a new directory.
+  FLAGS_env_inject_full_globs = "*";
+  Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &new_dir);
+  ASSERT_STR_CONTAINS(s.ToString(), "No directories available");
+  ASSERT_TRUE(s.IsIOError());
+}
+
+// Test that concurrently adding dirs to a data dir group yields the expected
+// number of dirs added.
+TEST_F(DataDirsTest, TestGrowGroupInParallel) {
+  // Set up a data dir group with no space so we can add to it.
+  ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+  vector<string> data_dir_group;
+  ASSERT_OK(dd_manager_->FindDataDirsByTabletId(test_tablet_name_, &data_dir_group));
+  FLAGS_fs_data_dirs_available_space_cache_seconds = 0;
+  FLAGS_env_inject_full_globs = JoinStrings(data_dir_group, ",");
+  FLAGS_env_inject_full = 1.0;
+
+  // In parallel, try adding a directory to the group.
+  const int kNumThreads = 32;
+  vector<thread> threads;
+  vector<Status> statuses(kNumThreads);
+  vector<DataDir*> dds(kNumThreads);
+  Barrier b(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i] {
+      b.Wait();
+      statuses[i] = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dds[i]);
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  for (const auto& s : statuses) {
+    EXPECT_OK(s);
+  }
+  // Check that we added a directory.
+  unordered_set<string> old_dirs(data_dir_group.begin(), data_dir_group.end());
+  ASSERT_OK(dd_manager_->FindDataDirsByTabletId(test_tablet_name_, &data_dir_group));
+  ASSERT_EQ(FLAGS_fs_target_data_dirs_per_tablet + 1, data_dir_group.size());
+  DataDir* new_dir = dds[0];
+  ASSERT_FALSE(ContainsKey(old_dirs, new_dir->dir()));
+
+  // All returned data directories should have been the newly added one.
+  for (int i = 1; i < kNumThreads; i++) {
+    ASSERT_EQ(new_dir, dds[i]);
+  }
 }
 
 TEST_F(DataDirsTest, TestFailedDirNotReturned) {
@@ -204,7 +293,7 @@ TEST_F(DataDirsTest, TestFailedDirNotReturned) {
   DataDir* failed_dd;
   int uuid_idx;
   // Fail one of the directories in the group and verify that it is not used.
-  ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &failed_dd));
+  ASSERT_OK(dd_manager_->GetDirAddIfNecessary(test_block_opts_, &failed_dd));
   ASSERT_TRUE(dd_manager_->FindUuidIndexByDataDir(failed_dd, &uuid_idx));
   // These calls are idempotent.
   ASSERT_OK(dd_manager_->MarkDataDirFailed(uuid_idx));
@@ -213,7 +302,7 @@ TEST_F(DataDirsTest, TestFailedDirNotReturned) {
   ASSERT_EQ(1, down_cast<AtomicGauge<uint64_t>*>(
         entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
   for (int i = 0; i < 10; i++) {
-    ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &dd));
+    ASSERT_OK(dd_manager_->GetDirAddIfNecessary(test_block_opts_, &dd));
     ASSERT_NE(dd, failed_dd);
   }
 
@@ -222,7 +311,7 @@ TEST_F(DataDirsTest, TestFailedDirNotReturned) {
   ASSERT_OK(dd_manager_->MarkDataDirFailed(uuid_idx));
   ASSERT_EQ(2, down_cast<AtomicGauge<uint64_t>*>(
         entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
-  Status s = dd_manager_->GetNextDataDir(test_block_opts_, &failed_dd);
+  Status s = dd_manager_->GetDirAddIfNecessary(test_block_opts_, &failed_dd);
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "No healthy directories exist in tablet's directory group");
 }
