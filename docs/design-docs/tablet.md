@@ -135,12 +135,12 @@ Note that "mutation" in this case can be one of three types:
 
 As a concrete example, consider the following sequence on a table with schema
 (key STRING, val UINT32):
-
+```
   INSERT INTO t VALUES ("row", 1);         [timestamp 1]
   UPDATE t SET val = 2 WHERE key = "row";  [timestamp 2]
   DELETE FROM t WHERE key = "row";         [timestamp 3]
   INSERT INTO t VALUES ("row", 3);         [timestamp 4]
-
+```
 This would result in the following structure in the MemRowSet:
 ```
   +-----------------------------------+
