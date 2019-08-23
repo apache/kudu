@@ -46,7 +46,6 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -198,32 +197,10 @@ class MockKsckCluster : public KsckCluster {
   }
 
   virtual Status RetrieveTablesList() override {
-    filtered_tables_count_ = 0;
-    filtered_tablets_count_ = 0;
-    for (auto it = tables_.begin(); it != tables_.end();)  {
-      if (!MatchesAnyPattern(table_filters_, (*it)->name())) {
-        filtered_tables_count_++;
-        it = tables_.erase(it);
-        continue;
-      }
-      it++;
-    }
     return Status::OK();
   }
 
   virtual Status RetrieveAllTablets() override {
-    for (auto& table : tables_) {
-      vector<shared_ptr<KsckTablet>> tablets(table->tablets());
-      for (auto it = tablets.begin(); it != tablets.end();) {
-        if (!MatchesAnyPattern(tablet_id_filters_, (*it)->id())) {
-          filtered_tablets_count_++;
-          it = tablets.erase(it);
-          continue;
-        }
-        it++;
-      }
-      table->set_tablets(tablets);
-    }
     return Status::OK();
   }
 
@@ -1227,86 +1204,6 @@ TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }
 
-// Test filtering on a cluster with no table.
-TEST_F(KsckTest, TestFilterOnNoTableCluster) {
-  cluster_->tables_.clear();
-  cluster_->set_table_filters({"xyz"});
-  FLAGS_checksum_scan = true;
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "The cluster doesn't have any matching tables");
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-// Test filtering on a non-matching table pattern.
-TEST_F(KsckTest, TestNonMatchingTableFilter) {
-  CreateOneSmallReplicatedTable();
-  cluster_->set_table_filters({"xyz"});
-  FLAGS_checksum_scan = true;
-  ASSERT_TRUE(RunKsck().IsRuntimeError());
-  const vector<Status>& error_messages = ksck_->results().error_messages;
-  ASSERT_EQ(1, error_messages.size());
-  EXPECT_EQ("Not found: checksum scan error: No table found. Filter: table_filters=xyz",
-            error_messages[0].ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "The cluster doesn't have any matching tables");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-// Test filtering with a matching table pattern.
-TEST_F(KsckTest, TestMatchingTableFilter) {
-  CreateOneSmallReplicatedTable();
-  cluster_->set_table_filters({"te*"});
-  FLAGS_checksum_scan = true;
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "0/9 replicas remaining (180B from disk, 90 rows summed)");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-// Test filtering on a table with no tablet.
-TEST_F(KsckTest, TestFilterOnNotabletTable) {
-  CreateAndAddTable("test", 0);
-  cluster_->set_table_filters({"te*"});
-  FLAGS_checksum_scan = true;
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "The cluster doesn't have any matching tablets");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-// Test filtering on a non-matching tablet id pattern.
-TEST_F(KsckTest, TestNonMatchingTabletIdFilter) {
-  CreateOneSmallReplicatedTable();
-  cluster_->set_tablet_id_filters({"xyz"});
-  FLAGS_checksum_scan = true;
-  ASSERT_TRUE(RunKsck().IsRuntimeError());
-  const vector<Status>& error_messages = ksck_->results().error_messages;
-  ASSERT_EQ(1, error_messages.size());
-  EXPECT_EQ(
-      "Not found: checksum scan error: No tablet replicas found. Filter: tablet_id_filters=xyz",
-      error_messages[0].ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "The cluster doesn't have any matching tablets");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-// Test filtering with a matching tablet ID pattern.
-TEST_F(KsckTest, TestMatchingTabletIdFilter) {
-  CreateOneSmallReplicatedTable();
-  cluster_->set_tablet_id_filters({"*-id-2"});
-  FLAGS_checksum_scan = true;
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-                      "0/3 replicas remaining (60B from disk, 30 rows summed)");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
 TEST_F(KsckTest, TestOneSmallReplicatedTableWithConsensusState) {
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
@@ -1596,71 +1493,6 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
                                                /*underreplicated_tablets=*/ 3,
                                                /*consensus_mismatch_tablets=*/ 0,
                                                /*unavailable_tablets=*/ 0));
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-TEST_F(KsckTest, TestTableFiltersNoMatch) {
-  CreateOneSmallReplicatedTable();
-
-  cluster_->set_table_filters({ "fake-table" });
-
-  // Every table we check is healthy ;).
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tables");
-  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
-      "                | Total Count\n"
-      "----------------+-------------\n");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-TEST_F(KsckTest, TestTableFilters) {
-  CreateOneSmallReplicatedTable();
-  CreateOneSmallReplicatedTable("other", "other-");
-
-  cluster_->set_table_filters({ "test" });
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-      "                | Total Count\n"
-      "----------------+-------------\n"
-      " Masters        | 3\n"
-      " Tablet Servers | 3\n"
-      " Tables         | 1\n"
-      " Tablets        | 3\n"
-      " Replicas       | 9\n");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-TEST_F(KsckTest, TestTabletFiltersNoMatch) {
-  CreateOneSmallReplicatedTable();
-
-  cluster_->set_tablet_id_filters({ "tablet-id-fake" });
-
-  // Every tablet we check is healthy ;).
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tablets");
-  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
-      "                | Total Count\n"
-      "----------------+-------------\n");
-
-  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
-}
-
-TEST_F(KsckTest, TestTabletFilters) {
-  CreateOneSmallReplicatedTable();
-
-  cluster_->set_tablet_id_filters({ "tablet-id-0", "tablet-id-1" });
-  ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
-      "                | Total Count\n"
-      "----------------+-------------\n"
-      " Masters        | 3\n"
-      " Tablet Servers | 3\n"
-      " Tables         | 1\n"
-      " Tablets        | 2\n"
-      " Replicas       | 6\n");
 
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }

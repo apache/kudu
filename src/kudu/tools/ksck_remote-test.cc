@@ -38,12 +38,14 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tools/data_gen_util.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_checksum.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
@@ -60,6 +62,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_bool(checksum_scan);
+DECLARE_bool(consensus);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(safe_time_max_lag_ms);
 DECLARE_int32(scanner_max_wait_ms);
@@ -75,9 +79,12 @@ TAG_FLAG(experimental_flag_for_ksck_test, experimental);
 
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduInsert;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
@@ -134,13 +141,13 @@ class RemoteKsckTest : public KuduTest {
     ASSERT_OK(client_->OpenTable(kTableName, &client_table));
 
     vector<string> master_addresses;
+    master_addresses.reserve(opts.num_masters);
     for (int i = 0; i < mini_cluster_->num_masters(); i++) {
         master_addresses.push_back(
             mini_cluster_->mini_master(i)->bound_rpc_addr_str());
     }
-    std::shared_ptr<KsckCluster> cluster;
-    ASSERT_OK(RemoteKsckCluster::Build(master_addresses, &cluster));
-    ksck_.reset(new Ksck(cluster, &err_stream_));
+    ASSERT_OK(RemoteKsckCluster::Build(master_addresses, &cluster_));
+    ksck_.reset(new Ksck(cluster_, &err_stream_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -223,9 +230,56 @@ class RemoteKsckTest : public KuduTest {
     return Status::OK();
   }
 
+  void CreateTableWithNoTablet(const string& table_name) {
+    // Create a table with one range partition.
+    client::KuduSchema schema;
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+    ASSERT_OK(b.Build(&schema));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    int lower_bound = 0;
+    int upper_bound = 100;
+    unique_ptr<KuduPartialRow> lower(schema.NewRow());
+    unique_ptr<KuduPartialRow> upper(schema.NewRow());
+    ASSERT_OK(lower->SetInt32("key", lower_bound));
+    ASSERT_OK(upper->SetInt32("key", upper_bound));
+    ASSERT_OK(table_creator->table_name(table_name)
+                            .schema(&schema)
+                            .set_range_partition_columns({ "key" })
+                            .add_range_partition(lower.release(),upper.release())
+                            .num_replicas(3)
+                            .Create());
+
+    // Drop range partition.
+    lower.reset(schema.NewRow());
+    upper.reset(schema.NewRow());
+    ASSERT_OK(lower->SetInt32("key", lower_bound));
+    ASSERT_OK(upper->SetInt32("key", upper_bound));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
+    table_alterer->DropRangePartition(lower.release(), upper.release());
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  Status GetTabletIds(vector<string>* tablet_ids) {
+    shared_ptr<KuduTable> table;
+    RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
+
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+
+    KuduScanTokenBuilder builder(table.get());
+    RETURN_NOT_OK(builder.Build(&tokens));
+    for (const auto* t : tokens) {
+      tablet_ids->emplace_back(t->tablet().id());
+    }
+    return Status::OK();
+  }
+
   unique_ptr<InternalMiniCluster> mini_cluster_;
   unique_ptr<Ksck> ksck_;
   shared_ptr<client::KuduClient> client_;
+  std::shared_ptr<KsckCluster> cluster_;
 
   // Captures logged messages from ksck.
   std::ostringstream err_stream_;
@@ -606,6 +660,179 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
     "----------+---------\n");
   ASSERT_STR_CONTAINS(err_string,
     " /foo     |       4\n");
+}
+
+// Test filtering on a cluster with no table.
+TEST_F(RemoteKsckTest, TestFilterOnNoTableCluster) {
+  client_->DeleteTable(kTableName);
+  cluster_->set_table_filters({ "ksck-test-table" });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "The cluster doesn't have any matching tables");
+}
+
+// Test filtering on a non-matching table pattern.
+TEST_F(RemoteKsckTest, TestNonMatchingTableFilter) {
+  cluster_->set_table_filters({ "fake-table" });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  ASSERT_TRUE(ksck_->RunAndPrintResults().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  EXPECT_EQ("Not found: checksum scan error: No table found. Filter: table_filters=fake-table",
+            error_messages[0].ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "The cluster doesn't have any matching tables");
+}
+
+// Test filtering with a matching table pattern.
+TEST_F(RemoteKsckTest, TestMatchingTableFilter) {
+  uint64_t num_writes = 100;
+  LOG(INFO) << "Generating row writes...";
+  ASSERT_OK(GenerateRowWrites(num_writes));
+
+  cluster_->set_table_filters({ "ksck-te*" });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
+  Status s;
+  while (MonoTime::Now() < deadline) {
+    ksck_.reset(new Ksck(cluster_, &err_stream_));
+    s = ksck_->RunAndPrintResults();
+    if (s.ok()) {
+      // Check the status message at the end of the checksum.
+      // We expect '0B from disk' because we didn't write enough data to trigger a flush
+      // in this short-running test.
+      ASSERT_STR_CONTAINS(err_stream_.str(),
+                          AllowSlowTests() ?
+                          "0/30 replicas remaining (0B from disk, 300 rows summed)" :
+                          "0/9 replicas remaining (0B from disk, 300 rows summed)");
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_OK(s);
+}
+
+// Test filtering on a table with no tablet.
+TEST_F(RemoteKsckTest, TestFilterOnNotabletTable) {
+  NO_FATALS(CreateTableWithNoTablet("other-table"));
+  cluster_->set_table_filters({ "other-table" });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "The cluster doesn't have any matching tablets");
+}
+
+// Test filtering on a non-matching tablet id pattern.
+TEST_F(RemoteKsckTest, TestNonMatchingTabletIdFilter) {
+  cluster_->set_tablet_id_filters({ "tablet-id-fake" });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  ASSERT_TRUE(ksck_->RunAndPrintResults().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  EXPECT_EQ(
+      "Not found: checksum scan error: No tablet replicas found. "
+      "Filter: tablet_id_filters=tablet-id-fake",
+      error_messages[0].ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "The cluster doesn't have any matching tablets");
+}
+
+// Test filtering with a matching tablet ID pattern.
+TEST_F(RemoteKsckTest, TestMatchingTabletIdFilter) {
+  uint64_t num_writes = 300;
+  LOG(INFO) << "Generating row writes...";
+  ASSERT_OK(GenerateRowWrites(num_writes));
+
+  vector<string> tablet_ids;
+  ASSERT_OK(GetTabletIds(&tablet_ids));
+  ASSERT_EQ(tablet_ids.size(), AllowSlowTests() ? 10 : 3);
+
+  cluster_->set_tablet_id_filters({ tablet_ids[0] });
+  FLAGS_checksum_scan = true;
+  FLAGS_consensus = false;
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
+  Status s;
+  while (MonoTime::Now() < deadline) {
+    ksck_.reset(new Ksck(cluster_, &err_stream_));
+    s = ksck_->RunAndPrintResults();
+    if (s.ok()) {
+      // Check the status message at the end of the checksum.
+      // We expect '0B from disk' because we didn't write enough data to trigger a flush
+      // in this short-running test.
+      ASSERT_STR_CONTAINS(err_stream_.str(),
+                          "0/3 replicas remaining (0B from disk, 30 rows summed)");
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_OK(s);
+}
+
+TEST_F(RemoteKsckTest, TestTableFiltersNoMatch) {
+  cluster_->set_table_filters({ "fake-table" });
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tables");
+  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n");
+}
+
+TEST_F(RemoteKsckTest, TestTableFilters) {
+  NO_FATALS(CreateTableWithNoTablet("other-table"));
+  cluster_->set_table_filters({ "ksck-test-table" });
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      AllowSlowTests() ?
+      "                | Total Count\n"
+      "----------------+-------------\n"
+      " Masters        | 3\n"
+      " Tablet Servers | 3\n"
+      " Tables         | 1\n"
+      " Tablets        | 10\n"
+      " Replicas       | 30\n" :
+      "                | Total Count\n"
+      "----------------+-------------\n"
+      " Masters        | 3\n"
+      " Tablet Servers | 3\n"
+      " Tables         | 1\n"
+      " Tablets        | 3\n"
+      " Replicas       | 9\n");
+}
+
+TEST_F(RemoteKsckTest, TestTabletFiltersNoMatch) {
+  cluster_->set_tablet_id_filters({ "tablet-id-fake" });
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tablets");
+  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n");
+}
+
+TEST_F(RemoteKsckTest, TestTabletFilters) {
+  vector<string> tablet_ids;
+  ASSERT_OK(GetTabletIds(&tablet_ids));
+  ASSERT_EQ(tablet_ids.size(), AllowSlowTests() ? 10 : 3);
+
+  cluster_->set_tablet_id_filters({ tablet_ids[0] });
+  FLAGS_consensus = false;
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n"
+      " Masters        | 3\n"
+      " Tablet Servers | 3\n"
+      " Tables         | 1\n"
+      " Tablets        | 1\n"
+      " Replicas       | 3\n");
 }
 
 } // namespace tools
