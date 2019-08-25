@@ -35,7 +35,7 @@ services:
         --webserver_port=8051
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8051
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-master-2:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -54,7 +54,7 @@ services:
         --webserver_port=8151
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8151
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-master-3:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -73,7 +73,7 @@ services:
         --webserver_port=8251
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8251
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-tserver-1:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -96,7 +96,7 @@ services:
         --webserver_port=8050
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8050
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-tserver-2:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -119,7 +119,7 @@ services:
         --webserver_port=8150
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8150
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-tserver-3:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -142,7 +142,7 @@ services:
         --webserver_port=8250
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8250
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-tserver-4:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -165,7 +165,7 @@ services:
         --webserver_port=8350
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8350
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
   kudu-tserver-5:
     image: apache/kudu:${KUDU_QUICKSTART_VERSION:-latest}
@@ -188,7 +188,7 @@ services:
         --webserver_port=8450
         --webserver_advertised_addresses=${KUDU_QUICKSTART_IP}:8450
         --webserver_doc_root=/opt/kudu/www
-        --logtostderr
+        --stderrthreshold=0
         --use_hybrid_clock=false
 volumes:
   kudu-master-1:

@@ -56,7 +56,7 @@ SERVICE_DIR="$DATA_DIR/$1"
  # TODO: Remove use_hybrid_clock=false when ntpd is setup.
 DEFAULT_ARGS="--fs_wal_dir=$SERVICE_DIR \
  --webserver_doc_root=/opt/kudu/www \
- --logtostderr \
+ --stderrthreshold=0 \
  --use_hybrid_clock=false"
 MASTER_ARGS=${MASTER_ARGS:="$DEFAULT_ARGS"}
 TSERVER_ARGS=${TSERVER_ARGS:="$DEFAULT_ARGS"}
