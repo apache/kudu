@@ -754,7 +754,22 @@ Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRo
 Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round) {
   DCHECK(lock_.is_locked());
 
-  *round->replicate_msg()->mutable_id() = queue_->GetNextOpId();
+  // If index was set in the ReplicateMsgg Round before starting
+  // ::Replicate() we need to check that the ground has not shifted
+  // under our feet. The term and index has also been serialized
+  // into the WRITE_OP which would make it inconsistent to
+  // replicate this message
+  if (PREDICT_TRUE(round->replicate_msg()->id().index() != 0)) {
+    if (PREDICT_FALSE(round->replicate_msg()->id().index() != queue_->GetNextOpId().index())) {
+      return Status::Aborted(
+        strings::Substitute(
+          "Transaction submitted with index $0 mismatches with queue index $1",
+          round->replicate_msg()->id().index(),
+          queue_->GetNextOpId().index()));
+    }
+  } else {
+    *round->replicate_msg()->mutable_id() = queue_->GetNextOpId();
+  }
   RETURN_NOT_OK(AddPendingOperationUnlocked(round));
 
   // The only reasons for a bad status would be if the log itself were shut down,
