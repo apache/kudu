@@ -223,11 +223,10 @@
 //
 /////////////////////////////////////////////////////
 
-#include <cstring>
-
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -258,8 +257,13 @@
 //
 // The metrics subsystem itself defines the entity type 'server', but other
 // entity types can be registered using this macro.
-#define METRIC_DEFINE_entity(name)                               \
-  ::kudu::MetricEntityPrototype METRIC_ENTITY_##name(#name)
+#define METRIC_DEFINE_entity(name)                                                  \
+  ::kudu::MetricEntityPrototype METRIC_ENTITY_##name(#name);                        \
+  METRIC_DEFINE_gauge_size(name, merged_entities_count_of_##name,                   \
+                           "Entities Count Merged From",                            \
+                           kudu::MetricUnit::kEntries,                              \
+                           "Count of entities merged together when entities are "   \
+                           "merged by common attribute value.");
 
 // Convenience macros to define metric prototypes.
 // See the documentation at the top of this file for example usage.
@@ -761,6 +765,11 @@ class Metric : public RefCountedThreadSafe<Metric> {
     }
   }
 
+  // Invalidate 'm_epoch_', causing this metric to be invisible until its value changes.
+  void InvalidateEpoch() {
+    m_epoch_ = -1;
+  }
+
   // The last metrics epoch in which this metric was modified.
   // We use epochs instead of timestamps since we can ensure that epochs
   // only change rarely. Thus this member is read-mostly and doesn't cause
@@ -773,6 +782,9 @@ class Metric : public RefCountedThreadSafe<Metric> {
 
   friend class MetricEntity;
   friend class RefCountedThreadSafe<Metric>;
+  template<typename T>
+  friend class GaugePrototype;
+  FRIEND_TEST(MetricsTest, TestDumpOnlyChanged);
 
   // The time at which we should retire this metric if it is still un-referenced outside
   // of the metrics subsystem. If this metric is not due for retirement, this member is
@@ -889,6 +901,16 @@ class GaugePrototype : public MetricPrototype {
       const scoped_refptr<MetricEntity>& entity,
       const Callback<T()>& function) const {
     return entity->FindOrCreateFunctionGauge(this, function);
+  }
+
+  // Instantiate a "manual" gauge and hide it. It will appear
+  // when its value is updated, or when its entity is merged.
+  scoped_refptr<AtomicGauge<T> > InstantiateHidden(
+      const scoped_refptr<MetricEntity>& entity,
+      const T& initial_value) const {
+    auto gauge = Instantiate(entity, initial_value);
+    gauge->InvalidateEpoch();
+    return gauge;
   }
 
   virtual MetricType::Type type() const OVERRIDE {

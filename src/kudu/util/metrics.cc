@@ -354,19 +354,24 @@ Status MetricEntity::CollectTo(MergedEntityMetrics* collections,
   auto* merge_rule = ::FindOrNull(merge_rules, prototype_->name());
   if (merge_rule) {
     entity_type = merge_rule->merge_to;
-    entity_id = attrs[merge_rule->attribute_to_merge_by];
+    auto entity_id_ptr = ::FindOrNull(attrs, merge_rule->attribute_to_merge_by);
+    if (!entity_id_ptr) {
+      return Status::NotFound(Substitute("attribute $0 not found in entity $1",
+                                         merge_rule->attribute_to_merge_by, entity_id));
+    }
+    entity_id = *entity_id_ptr;
   }
 
   MergedEntity e(entity_type, entity_id);
-  auto& table_collection = collections->emplace(std::make_pair(e, MergedMetrics())).first->second;
+  auto& entity_collection = collections->emplace(std::make_pair(e, MergedMetrics())).first->second;
   for (const auto& val : metrics) {
     const MetricPrototype* prototype = val.first;
     const scoped_refptr<Metric>& metric = val.second;
 
-    scoped_refptr<Metric> entry = FindPtrOrNull(table_collection, prototype);
+    scoped_refptr<Metric> entry = FindPtrOrNull(entity_collection, prototype);
     if (!entry) {
       scoped_refptr<Metric> new_metric = metric->snapshot();
-      InsertOrDie(&table_collection, new_metric->prototype(), new_metric);
+      InsertOrDie(&entity_collection, new_metric->prototype(), new_metric);
     } else {
       entry->MergeFrom(metric);
     }

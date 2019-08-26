@@ -5546,6 +5546,7 @@ void TableInfo::RegisterMetrics(MetricRegistry* metric_registry, const string& t
     attrs["table_name"] = table_name;
     metric_entity_ = METRIC_ENTITY_table.Instantiate(metric_registry, table_id_, attrs);
     metrics_.reset(new TableMetrics(metric_entity_));
+    METRIC_merged_entities_count_of_table.InstantiateHidden(metric_entity_, 1);
   }
 }
 

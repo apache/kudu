@@ -218,6 +218,8 @@ DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
 
+METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
+
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
 using std::ostringstream;
@@ -372,6 +374,8 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
           MonoDelta::FromSeconds(FLAGS_dns_resolver_cache_ttl_sec))),
       options_(options),
       stop_background_threads_latch_(1) {
+  METRIC_merged_entities_count_of_server.InstantiateHidden(metric_entity_, 1);
+
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;
   fs_opts.parent_mem_tracker = mem_tracker_;

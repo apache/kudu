@@ -705,14 +705,19 @@ TEST_F(MetricsTest, TestDumpOnlyChanged) {
   };
 
   scoped_refptr<Counter> test_counter = METRIC_test_counter.Instantiate(entity_);
+  test_counter->InvalidateEpoch();
 
-  int64_t epoch_when_modified = Metric::current_epoch();
+  // It's not visible before it changed.
+  int64_t epoch_before_modified = Metric::current_epoch();
+  ASSERT_STR_NOT_CONTAINS(GetJson(epoch_before_modified), "test_counter");
+
+  // Increment() will make it visible.
   test_counter->Increment();
 
   // If we pass a "since dirty" epoch from before we incremented it, we should
   // see the metric.
   for (int i = 0; i < 2; i++) {
-    ASSERT_STR_CONTAINS(GetJson(epoch_when_modified), "{\"name\":\"test_counter\",\"value\":1}");
+    ASSERT_STR_CONTAINS(GetJson(epoch_before_modified), "{\"name\":\"test_counter\",\"value\":1}");
     Metric::IncrementEpoch();
   }
 
@@ -723,7 +728,6 @@ TEST_F(MetricsTest, TestDumpOnlyChanged) {
   test_counter->Increment();
   ASSERT_STR_CONTAINS(GetJson(new_epoch), "{\"name\":\"test_counter\",\"value\":2}");
 }
-
 
 // Test that 'include_untouched_metrics=false' prevents dumping counters and histograms
 // which have never been incremented.

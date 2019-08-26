@@ -78,6 +78,7 @@ _MUTED_FILES = set([
   "src/kudu/server/webserver.cc",
   "src/kudu/util/bit-util-test.cc",
   "src/kudu/util/group_varint-test.cc",
+  "src/kudu/util/metrics.h",
   "src/kudu/util/minidump.cc",
   "src/kudu/util/mt-metrics-test.cc",
   "src/kudu/util/process_memory.cc",
