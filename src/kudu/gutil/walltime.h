@@ -41,9 +41,9 @@ typedef double WallTime;
 // Append result to a supplied string.
 // If an error occurs during conversion 'dst' is not modified.
 void StringAppendStrftime(std::string* dst,
-                                 const char* format,
-                                 time_t when,
-                                 bool local);
+                          const char* format,
+                          time_t when,
+                          bool local);
 
 // Return the local time as a string suitable for user display.
 std::string LocalTimeAsString();
@@ -53,10 +53,10 @@ std::string LocalTimeAsString();
 // time. If local is set to true, the same exact result as
 // WallTime_Parse is returned.
 bool WallTime_Parse_Timezone(const char* time_spec,
-                                    const char* format,
-                                    const struct tm* default_time,
-                                    bool local,
-                                    WallTime* result);
+                             const char* format,
+                             const struct tm* default_time,
+                             bool local,
+                             WallTime* result);
 
 // Return current time in seconds as a WallTime.
 WallTime WallTime_Now();
@@ -158,12 +158,32 @@ inline MicrosecondsInt64 GetCurrentTimeMicros() {
 }
 
 // Returns the time since some arbitrary reference point, measured in microseconds.
-// Guaranteed to be monotonic (and therefore useful for measuring intervals)
+// Guaranteed to be monotonic (and therefore useful for measuring intervals),
+// but the underlying clock is subject for adjustment by adjtime() and
+// the kernel's NTP discipline. For example, the underlying clock might
+// be slewed a bit to reach some reference point, time to time adjusted to be
+// of the desired result frequency, etc.
 inline MicrosecondsInt64 GetMonoTimeMicros() {
 #if defined(__APPLE__)
+  // In fact, walltime_internal::GetMonoTimeMicros() is implemented via
+  // mach_absolute_time() which is not actually affected by adjtime()
+  // or the NTP discipline. On Darwin 16.0 and newer (macOS 10.12 and newer),
+  // it's the same as clock_gettime(CLOCK_UPTIME_RAW); see 'man clock_gettime'
+  // on macOS 10.12 and newer.
   return walltime_internal::GetMonoTimeMicros();
 #else
   return walltime_internal::GetClockTimeMicros(CLOCK_MONOTONIC);
+#endif  // defined(__APPLE__)
+}
+
+// Returns the time since some arbitrary reference point, measured in microseconds.
+// Guaranteed to be monotonic and not affected at all by frequency and time
+// adjustments such as adjtime() or the kernel's NTP discipline.
+inline MicrosecondsInt64 GetMonoTimeMicrosRaw() {
+#if defined(__APPLE__)
+  return walltime_internal::GetMonoTimeMicros();
+#else
+  return walltime_internal::GetClockTimeMicros(CLOCK_MONOTONIC_RAW);
 #endif  // defined(__APPLE__)
 }
 
