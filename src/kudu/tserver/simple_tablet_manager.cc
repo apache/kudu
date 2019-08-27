@@ -325,6 +325,12 @@ Status TSTabletManager::Start() {
   time_manager.reset(new TimeManager(server_->clock(), Timestamp::kInitialTimestamp));
   //time_manager.reset(new TimeManager(server_->clock(), tablet_->mvcc_manager()->GetCleanTimestamp()));
 
+  ConsensusRoundHandler *round_handler = this;
+  // If round handler comes from server options then override it
+  if (server_->opts().round_handler) {
+    round_handler = server_->opts().round_handler;
+  }
+
   // We cannot hold 'lock_' while we call RaftConsensus::Start() because it
   // may invoke TabletReplica::StartFollowerTransaction() during startup,
   // causing a self-deadlock. We take a ref to members protected by 'lock_'
@@ -332,7 +338,7 @@ Status TSTabletManager::Start() {
   RETURN_NOT_OK(consensus_->Start(
         bootstrap_info, std::move(peer_proxy_factory),
         log_, std::move(time_manager),
-        this, server_->metric_entity(), mark_dirty_clbk_));
+        round_handler, server_->metric_entity(), mark_dirty_clbk_));
 
   RETURN_NOT_OK_PREPEND(WaitUntilRunning(),
                         "Failed waiting for the raft to run");
