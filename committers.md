@@ -29,7 +29,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | julien | Julien Le Dem | PMC |
 | laiyingchun | Yingchun Lai | PMC |
 | mattmann | Chris Mattmann | PMC |
-| misty | Misty Stanley-Jones | PMC |
+| misty | Misty Linville | PMC |
 | mpercy | Mike Percy | PMC |
 | sailesh | Sailesh Mukil | PMC |
 | stack | Michael Stack | PMC |
