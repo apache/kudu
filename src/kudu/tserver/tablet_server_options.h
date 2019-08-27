@@ -27,6 +27,9 @@ namespace kudu {
 namespace log {
 class LogFactory;
 }
+namespace consensus {
+class ConsensusRoundHandler;
+}
 
 namespace tserver {
 
@@ -42,6 +45,8 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   std::vector<HostPort> tserver_addresses;
 
   std::shared_ptr<kudu::log::LogFactory> log_factory;
+
+  kudu::consensus::ConsensusRoundHandler *round_handler = nullptr;
 
   bool IsDistributed() const;
 };
