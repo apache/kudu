@@ -281,10 +281,10 @@ class TypeEncodingResolver {
 
   template<DataType type, EncodingType encoding> void AddMapping() {
     TypeEncodingTraits<type, encoding> traits;
-    pair<DataType, EncodingType> encoding_for_type = make_pair(type, encoding);
-    if (mapping_.find(encoding_for_type) == mapping_.end()) {
-      default_mapping_.emplace(type, encoding);
-    }
+    // The first call to AddMapping() for a given data-type is always the default one.
+    // emplace() will no-op if the data-type is already present, so we can blindly
+    // call emplace() here(i.e. no need to call find() to check before inserting)
+    default_mapping_.emplace(type, encoding);
     mapping_.emplace(make_pair(type, encoding),
                      unique_ptr<TypeEncodingInfo>(new TypeEncodingInfo(traits)));
   }
