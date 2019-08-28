@@ -64,6 +64,7 @@ Rebalancer::Config::Config(
     size_t max_moves_per_server,
     size_t max_staleness_interval_sec,
     int64_t max_run_time_sec,
+    bool move_replicas_from_ignored_tservers,
     bool move_rf1_replicas,
     bool output_replica_distribution_details,
     bool run_policy_fixer,
@@ -76,6 +77,7 @@ Rebalancer::Config::Config(
       max_moves_per_server(max_moves_per_server),
       max_staleness_interval_sec(max_staleness_interval_sec),
       max_run_time_sec(max_run_time_sec),
+      move_replicas_from_ignored_tservers(move_replicas_from_ignored_tservers),
       move_rf1_replicas(move_rf1_replicas),
       output_replica_distribution_details(output_replica_distribution_details),
       run_policy_fixer(run_policy_fixer),
@@ -101,9 +103,9 @@ Rebalancer::Rebalancer(Config config)
 // replicas of affected tablets would make the client to re-resolve new leaders
 // and retry the operations. Moving leader replicas is used as last resort
 // when no other candidates are left.
-Status Rebalancer::FindReplicas(const TableReplicaMove& move,
-                                const ClusterRawInfo& raw_info,
-                                vector<string>* tablet_ids) {
+void Rebalancer::FindReplicas(const TableReplicaMove& move,
+                              const ClusterRawInfo& raw_info,
+                              vector<string>* tablet_ids) {
   const auto& table_id = move.table_id;
 
   // Tablet ids of replicas on the source tserver that are non-leaders.
@@ -162,7 +164,7 @@ Status Rebalancer::FindReplicas(const TableReplicaMove& move,
     // If there are tablets with non-leader replicas at the source server,
     // those are the best candidates for movement.
     tablet_ids->swap(tablet_uuids);
-    return Status::OK();
+    return;
   }
 
   // If no tablets with non-leader replicas were found, resort to tablets with
@@ -175,8 +177,6 @@ Status Rebalancer::FindReplicas(const TableReplicaMove& move,
       inserter(tablet_uuids, tablet_uuids.begin()));
 
   tablet_ids->swap(tablet_uuids);
-
-  return Status::OK();
 }
 
 void Rebalancer::FilterMoves(const MovesInProgress& scheduled_moves,
@@ -282,6 +282,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
 
   unordered_map<string, int32_t> tserver_replicas_count;
   unordered_map<string, TableReplicasAtServer> table_replicas_info;
+  unordered_set<string> unhealthy_tablet_servers;
 
   // Build a set of tables with RF=1 (single replica tables).
   unordered_set<string> rf1_tables;
@@ -311,6 +312,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
                               "non-HEALTHY status ($2)",
                               s.uuid, s.address,
                               ServerHealthToString(s.health));
+      unhealthy_tablet_servers.emplace(s.uuid);
       continue;
     }
     tserver_replicas_count.emplace(s.uuid, 0);
@@ -318,7 +320,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
 
   for (const auto& tablet : raw_info.tablet_summaries) {
     if (!config_.move_rf1_replicas) {
-      if (rf1_tables.find(tablet.table_id) != rf1_tables.end()) {
+      if (ContainsKey(rf1_tables, tablet.table_id)) {
         LOG(INFO) << Substitute("tablet $0 of table '$1' ($2) has single replica, skipping",
                                 tablet.id, tablet.table_name, tablet.table_id);
         continue;
@@ -409,6 +411,10 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
   // Populate ClusterBalanceInfo::servers_by_total_replica_count
   auto& servers_by_count = result_info.balance.servers_by_total_replica_count;
   for (const auto& elem : tserver_replicas_count) {
+    if (ContainsKey(config_.ignored_tservers, elem.first)) {
+      VLOG(1) << Substitute("ignoring tserver $0", elem.first);
+      continue;
+    }
     servers_by_count.emplace(elem.second, elem.first);
   }
 
@@ -423,12 +429,33 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
     for (const auto& e : elem.second) {
       const auto& ts_uuid = e.first;
       const auto replica_count = e.second;
+      if (ContainsKey(config_.ignored_tservers, ts_uuid)) {
+        VLOG(1) << Substitute("ignoring replicas of table $0 on tserver $1", table_id, ts_uuid);
+        continue;
+      }
       tbi.servers_by_replica_count.emplace(replica_count, ts_uuid);
       max_count = std::max(replica_count, max_count);
       min_count = std::min(replica_count, min_count);
     }
     table_info_by_skew.emplace(max_count - min_count, std::move(tbi));
   }
+
+  // Populate ClusterInfo::tservers_to_empty
+  if (config_.move_replicas_from_ignored_tservers) {
+    auto& tservers_to_empty = result_info.tservers_to_empty;
+    for (const auto& ignored_tserver : config_.ignored_tservers) {
+      if (ContainsKey(unhealthy_tablet_servers, ignored_tserver)) {
+        continue;
+      }
+      const int* replica_count = FindOrNull(tserver_replicas_count, ignored_tserver);
+      if (!replica_count) {
+        return Status::InvalidArgument(Substitute(
+            "ignored tserver $0 is not reported among known tservers", ignored_tserver));
+      }
+      tservers_to_empty.emplace(ignored_tserver, *replica_count);
+    }
+  }
+
   // TODO(aserbin): add sanity checks on the result.
   *info = std::move(result_info);
 

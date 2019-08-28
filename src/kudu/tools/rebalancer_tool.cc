@@ -37,10 +37,14 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rebalance/placement_policy_util.h"
 #include "kudu/rebalance/rebalance_algo.h"
@@ -58,6 +62,9 @@ using kudu::cluster_summary::ServerHealth;
 using kudu::cluster_summary::ServerHealthSummary;
 using kudu::cluster_summary::TableSummary;
 using kudu::cluster_summary::TabletSummary;
+using kudu::master::ListTabletServersRequestPB;
+using kudu::master::ListTabletServersResponsePB;
+using kudu::master::MasterServiceProxy;
 using kudu::rebalance::ClusterInfo;
 using kudu::rebalance::ClusterRawInfo;
 using kudu::rebalance::PlacementPolicyViolationInfo;
@@ -99,6 +106,9 @@ Status RebalancerTool::PrintStats(ostream& out) {
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
+
+  // Print information about replica count of healthy ignored tservers.
+  RETURN_NOT_OK(PrintIgnoredTserversStats(ci, out));
 
   const auto& ts_id_by_location = ci.locality.servers_by_location;
   if (ts_id_by_location.empty()) {
@@ -174,6 +184,16 @@ Status RebalancerTool::Run(RunStatus* result_status, size_t* moves_count) {
   }
 
   size_t moves_count_total = 0;
+  if (config_.move_replicas_from_ignored_tservers) {
+    // Move replicas from healthy ignored tservers to other healthy tservers.
+    RETURN_NOT_OK(CheckIgnoredServers(raw_info, ci));
+    LOG(INFO) << "replacing replicas on healthy ignored tservers";
+    IgnoredTserversRunner runner(
+        this, config_.ignored_tservers, config_.max_moves_per_server, deadline);
+    RETURN_NOT_OK(runner.Init(config_.master_addresses));
+    RETURN_NOT_OK(RunWith(&runner, result_status));
+    moves_count_total += runner.moves_count();
+  }
   if (ts_id_by_location.size() == 1) {
     const auto& location = ts_id_by_location.cbegin()->first;
     LOG(INFO) << "running whole-cluster rebalancing";
@@ -301,6 +321,23 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
   raw_info->tserver_summaries = std::move(tserver_summaries);
   raw_info->table_summaries = std::move(table_summaries);
   raw_info->tablet_summaries = std::move(tablet_summaries);
+
+  return Status::OK();
+}
+
+Status RebalancerTool::PrintIgnoredTserversStats(const ClusterInfo& ci,
+                                                 ostream& out) const {
+  const auto& tservers_to_empty = ci.tservers_to_empty;
+  if (tservers_to_empty.empty()) {
+    return Status::OK();
+  }
+  out << "Per-server replica distribution summary for tservers_to_empty:" << endl;
+  DataTable summary({"Server UUID", "Replica Count"});
+  for (const auto& elem: tservers_to_empty) {
+    summary.AddRow({ elem.first, to_string(elem.second) });
+  }
+  RETURN_NOT_OK(summary.PrintTo(out));
+  out << endl;
 
   return Status::OK();
 }
@@ -594,6 +631,22 @@ Status RebalancerTool::RefreshKsckResults() {
   return Status::OK();
 }
 
+Status RebalancerTool::CheckIgnoredServers(const rebalance::ClusterRawInfo& raw_info,
+                                           const rebalance::ClusterInfo& cluster_info) {
+  int remaining_tservers_count = cluster_info.balance.servers_by_total_replica_count.size();
+  int max_replication_factor = 0;
+  for (const auto& s : raw_info.table_summaries) {
+    max_replication_factor = std::max(max_replication_factor, s.replication_factor);
+  }
+  if (remaining_tservers_count < max_replication_factor) {
+    return Status::InvalidArgument(
+        Substitute("Too many ignored tservers; "
+                   "$0 healthy non-ignored servers exist but $1 are required.",
+                   remaining_tservers_count, max_replication_factor));
+  }
+  return Status::OK();
+}
+
 RebalancerTool::BaseRunner::BaseRunner(RebalancerTool* rebalancer,
                                        std::unordered_set<std::string> ignored_tservers,
                                        size_t max_moves_per_server,
@@ -870,6 +923,8 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
   for (const auto& s : raw_info.tserver_summaries) {
     if (s.health != ServerHealth::HEALTHY) {
       if (ContainsKey(ignored_tservers_, s.uuid)) {
+        LOG(INFO) << Substitute("ignoring unhealthy tablet server $0 ($1).",
+                                s.uuid, s.address);
         continue;
       }
       return Status::IllegalState(
@@ -932,7 +987,7 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
             });
   for (const auto& move : moves) {
     vector<string> tablet_ids;
-    RETURN_NOT_OK(FindReplicas(move, raw_info, &tablet_ids));
+    FindReplicas(move, raw_info, &tablet_ids);
     if (!loc) {
       // In case of cross-location (a.k.a. inter-location) rebalancing it is
       // necessary to make sure the majority of replicas would not end up
@@ -946,7 +1001,7 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
     std::shuffle(tablet_ids.begin(), tablet_ids.end(), random_generator_);
     string move_tablet_id;
     for (const auto& tablet_id : tablet_ids) {
-      if (tablets_in_move.find(tablet_id) == tablets_in_move.end()) {
+      if (!ContainsKey(tablets_in_move, tablet_id)) {
         // For now, choose the very first tablet that does not have replicas
         // in move. Later on, additional logic might be added to find
         // the best candidate.
@@ -1083,6 +1138,7 @@ RebalancerTool::IntraLocationRunner::IntraLocationRunner(
                       std::move(deadline)),
       location_(std::move(location)) {
 }
+
 RebalancerTool::CrossLocationRunner::CrossLocationRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
@@ -1096,7 +1152,7 @@ RebalancerTool::CrossLocationRunner::CrossLocationRunner(
       algorithm_(load_imbalance_threshold) {
 }
 
-RebalancerTool::PolicyFixer::PolicyFixer(
+RebalancerTool::ReplaceBasedRunner::ReplaceBasedRunner(
     RebalancerTool* rebalancer,
     std::unordered_set<std::string> ignored_tservers,
     size_t max_moves_per_server,
@@ -1107,12 +1163,12 @@ RebalancerTool::PolicyFixer::PolicyFixer(
                  std::move(deadline)) {
 }
 
-Status RebalancerTool::PolicyFixer::Init(vector<string> master_addresses) {
+Status RebalancerTool::ReplaceBasedRunner::Init(vector<string> master_addresses) {
   DCHECK(moves_to_schedule_.empty());
   return BaseRunner::Init(std::move(master_addresses));
 }
 
-void RebalancerTool::PolicyFixer::LoadMoves(
+void RebalancerTool::ReplaceBasedRunner::LoadMoves(
     vector<Rebalancer::ReplicaMove> replica_moves) {
   // Replace the list of moves operations to schedule. Even if it's not empty,
   // some elements of it might be irrelevant anyway, so there is no need to
@@ -1138,8 +1194,8 @@ void RebalancerTool::PolicyFixer::LoadMoves(
   }
 }
 
-bool RebalancerTool::PolicyFixer::ScheduleNextMove(bool* has_errors,
-                                                   bool* timed_out) {
+bool RebalancerTool::ReplaceBasedRunner::ScheduleNextMove(bool* has_errors,
+                                                          bool* timed_out) {
   DCHECK(has_errors);
   DCHECK(timed_out);
   *has_errors = false;
@@ -1170,7 +1226,7 @@ bool RebalancerTool::PolicyFixer::ScheduleNextMove(bool* has_errors,
   return true;
 }
 
-bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
+bool RebalancerTool::ReplaceBasedRunner::UpdateMovesInProgressStatus(
     bool* has_errors, bool* timed_out, bool* has_pending_moves) {
   DCHECK(has_errors);
   DCHECK(timed_out);
@@ -1205,7 +1261,6 @@ bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
       // The replacement has completed (success or failure): update the stats
       // on the pending operations per server.
       ++moves_count_;
-      has_updates = true;
       LOG(INFO) << Substitute("tablet $0: '$1' -> '?' move completed: $2",
                               tablet_id, ts_uuid, completion_status.ToString());
       UpdateOnMoveCompleted(ts_uuid);
@@ -1219,7 +1274,7 @@ bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
   return has_updates;
 }
 
-Status RebalancerTool::PolicyFixer::GetNextMovesImpl(
+Status RebalancerTool::ReplaceBasedRunner::GetNextMovesImpl(
     vector<Rebalancer::ReplicaMove>* replica_moves) {
   ClusterRawInfo raw_info;
   RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(boost::none, &raw_info));
@@ -1232,6 +1287,8 @@ Status RebalancerTool::PolicyFixer::GetNextMovesImpl(
   for (const auto& s : raw_info.tserver_summaries) {
     if (s.health != ServerHealth::HEALTHY) {
       if (ContainsKey(ignored_tservers_, s.uuid)) {
+        LOG(INFO) << Substitute("ignoring unhealthy tablet server $0 ($1).",
+                                s.uuid, s.address);
         continue;
       }
       return Status::IllegalState(
@@ -1241,7 +1298,76 @@ Status RebalancerTool::PolicyFixer::GetNextMovesImpl(
   }
   ClusterInfo ci;
   RETURN_NOT_OK(rebalancer_->BuildClusterInfo(raw_info, scheduled_moves_, &ci));
+  return GetReplaceMoves(ci, raw_info, replica_moves);
+}
 
+bool RebalancerTool::ReplaceBasedRunner::FindNextMove(Rebalancer::ReplicaMove* move) {
+  DCHECK(move);
+  // use pessimistic /2 limit for max_moves_per_server_ since the
+  // desitnation servers for the move of the replica marked with
+  // the REPLACE attribute is not known.
+
+  // Load the least loaded (in terms of scheduled moves) tablet servers first.
+  for (auto it = ts_per_op_count_.begin(); it != ts_per_op_count_.end() &&
+       it->first <= max_moves_per_server_ / 2; ++it) {
+    const auto& ts_uuid = it->second;
+    if (FindCopy(moves_to_schedule_, ts_uuid, move)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void RebalancerTool::ReplaceBasedRunner::UpdateOnMoveScheduled(Rebalancer::ReplicaMove move) {
+  const auto tablet_uuid = move.tablet_uuid;
+  const auto ts_uuid = move.ts_uuid_from;
+
+  // Add information on scheduled move into the scheduled_moves_.
+  // Only one replica of a tablet can be moved at a time.
+  EmplaceOrDie(&scheduled_moves_, tablet_uuid, std::move(move));
+
+  // Remove the element from moves_to_schedule_.
+  bool erased = false;
+  auto range = moves_to_schedule_.equal_range(ts_uuid);
+  for (auto it = range.first; it != range.second; ++it) {
+    if (tablet_uuid == it->second.tablet_uuid) {
+      moves_to_schedule_.erase(it);
+      erased = true;
+      break;
+    }
+  }
+  CHECK(erased) << Substitute("T $0 P $1: move information not found", tablet_uuid, ts_uuid);
+
+  // Update helper containers.
+  const auto op_count = op_count_per_ts_[ts_uuid]++;
+  const auto op_range = ts_per_op_count_.equal_range(op_count);
+  bool ts_op_count_updated = false;
+  for (auto it = op_range.first; it != op_range.second; ++it) {
+    if (it->second == ts_uuid) {
+      ts_per_op_count_.erase(it);
+      ts_per_op_count_.emplace(op_count + 1, ts_uuid);
+      ts_op_count_updated = true;
+      break;
+    }
+  }
+  DCHECK(ts_op_count_updated);
+}
+
+RebalancerTool::PolicyFixer::PolicyFixer(
+    RebalancerTool* rebalancer,
+    std::unordered_set<std::string> ignored_tservers,
+    size_t max_moves_per_server,
+    boost::optional<MonoTime> deadline)
+    : ReplaceBasedRunner(rebalancer,
+                         std::move(ignored_tservers),
+                         max_moves_per_server,
+                         std::move(deadline)) {
+}
+
+Status RebalancerTool::PolicyFixer::GetReplaceMoves(
+    const rebalance::ClusterInfo& ci,
+    const rebalance::ClusterRawInfo& raw_info,
+    vector<Rebalancer::ReplicaMove>* replica_moves) {
   TabletsPlacementInfo placement_info;
   RETURN_NOT_OK(
       BuildTabletsPlacementInfo(raw_info, scheduled_moves_, &placement_info));
@@ -1279,56 +1405,128 @@ Status RebalancerTool::PolicyFixer::GetNextMovesImpl(
   return Status::OK();
 }
 
-bool RebalancerTool::PolicyFixer::FindNextMove(Rebalancer::ReplicaMove* move) {
-  DCHECK(move);
-  // use pessimistic /2 limit for max_moves_per_server_ since the
-  // desitnation servers for the move of the replica marked with
-  // the REPLACE attribute is not known.
-
-  // Load the least loaded (in terms of scheduled moves) tablet servers first.
-  for (auto it = ts_per_op_count_.begin(); it != ts_per_op_count_.end() &&
-       it->first <= max_moves_per_server_ / 2; ++it) {
-    const auto& ts_uuid = it->second;
-    if (FindCopy(moves_to_schedule_, ts_uuid, move)) {
-      return true;
-    }
-  }
-  return false;
+RebalancerTool::IgnoredTserversRunner::IgnoredTserversRunner(
+    RebalancerTool* rebalancer,
+    std::unordered_set<std::string> ignored_tservers,
+    size_t max_moves_per_server,
+    boost::optional<MonoTime> deadline)
+    : ReplaceBasedRunner(rebalancer,
+                         std::move(ignored_tservers),
+                         max_moves_per_server,
+                         std::move(deadline)),
+      random_generator_(random_device_()) {
 }
 
-void RebalancerTool::PolicyFixer::UpdateOnMoveScheduled(Rebalancer::ReplicaMove move) {
-  const auto tablet_uuid = move.tablet_uuid;
-  const auto ts_uuid = move.ts_uuid_from;
+Status RebalancerTool::IgnoredTserversRunner::GetReplaceMoves(
+    const rebalance::ClusterInfo& ci,
+    const rebalance::ClusterRawInfo& raw_info,
+    vector<Rebalancer::ReplicaMove>* replica_moves) {
 
-  // Add information on scheduled move into the scheduled_moves_.
-  // Only one replica of a tablet can be moved at a time.
-  EmplaceOrDie(&scheduled_moves_, tablet_uuid, std::move(move));
+  // In order not to place any replica on the ignored tservers,
+  // allow to run only when all healthy ignored tservers are in
+  // maintenance (or decommision) mode.
+  RETURN_NOT_OK(CheckIgnoredTserversState(ci));
 
-  // Remove the element from moves_to_schedule_.
-  bool erased = false;
-  auto range = moves_to_schedule_.equal_range(ts_uuid);
-  for (auto it = range.first; it != range.second; ++it) {
-    if (tablet_uuid == it->second.tablet_uuid) {
-      moves_to_schedule_.erase(it);
-      erased = true;
-      break;
+  // Build IgnoredTserversInfo.
+  IgnoredTserversInfo ignored_tservers_info;
+  for (const auto& tablet_summary : raw_info.tablet_summaries) {
+    if (ContainsKey(scheduled_moves_, tablet_summary.id)) {
+      continue;
+    }
+    if (tablet_summary.result != cluster_summary::HealthCheckResult::HEALTHY &&
+        tablet_summary.result != cluster_summary::HealthCheckResult::RECOVERING) {
+      VLOG(1) << Substitute("tablet $0: not considering replicas for movement "
+                            "since the tablet's status is '$1'",
+                            tablet_summary.id,
+                            cluster_summary::HealthCheckResultToString(tablet_summary.result));
+      continue;
+    }
+    TabletInfo tablet_info;
+    for (const auto& replica_info : tablet_summary.replicas) {
+      if (replica_info.is_leader && replica_info.consensus_state) {
+        const auto& cstate = *replica_info.consensus_state;
+        if (cstate.opid_index) {
+          tablet_info.tablet_id = tablet_summary.id;
+          tablet_info.config_idx = *cstate.opid_index;
+          break;
+        }
+      }
+    }
+    for (const auto& replica_info : tablet_summary.replicas) {
+      if (!ContainsKey(ci.tservers_to_empty, replica_info.ts_uuid)) {
+        continue;
+      }
+      auto& tablets = LookupOrEmplace(
+          &ignored_tservers_info, replica_info.ts_uuid, vector<TabletInfo>());
+      tablets.emplace_back(tablet_info);
     }
   }
-  CHECK(erased) << Substitute("T $0 P $1: move information not found", tablet_uuid, ts_uuid);
+  GetMovesFromIgnoredTservers(ignored_tservers_info, replica_moves);
+  return Status::OK();
+}
 
-  // Update helper containers.
-  const auto op_count = op_count_per_ts_[ts_uuid]++;
-  const auto op_range = ts_per_op_count_.equal_range(op_count);
-  bool ts_op_count_updated = false;
-  for (auto it = op_range.first; it != op_range.second; ++it) {
-    if (it->second == ts_uuid) {
-      ts_per_op_count_.erase(it);
-      ts_per_op_count_.emplace(op_count + 1, ts_uuid);
-      ts_op_count_updated = true;
-      break;
+Status RebalancerTool::IgnoredTserversRunner::CheckIgnoredTserversState(
+    const rebalance::ClusterInfo& ci) {
+  if (ci.tservers_to_empty.empty()) {
+    return Status::OK();
+  }
+
+  LeaderMasterProxy proxy(client_);
+  ListTabletServersRequestPB req;
+  ListTabletServersResponsePB resp;
+  req.set_include_states(true);
+  RETURN_NOT_OK((proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
+      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync)));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  const auto& servers = resp.servers();
+  for (const auto& server : servers) {
+    const auto& ts_uuid = server.instance_id().permanent_uuid();
+    if (!ContainsKey(ci.tservers_to_empty, ts_uuid)) {
+      continue;
+    }
+    if (server.state() != master::TServerStatePB::MAINTENANCE_MODE) {
+      return Status::IllegalState(Substitute(
+        "You should set maintenance mode for tablet server $0 first", ts_uuid));
     }
   }
-  DCHECK(ts_op_count_updated);
+  return Status::OK();
+}
+
+void RebalancerTool::IgnoredTserversRunner::GetMovesFromIgnoredTservers(
+    const IgnoredTserversInfo& ignored_tservers_info,
+    vector<Rebalancer::ReplicaMove>* replica_moves) {
+  DCHECK(replica_moves);
+  if (ignored_tservers_info.empty()) {
+    return;
+  }
+
+  unordered_set<string> tablets_in_move;
+  transform(scheduled_moves_.begin(), scheduled_moves_.end(),
+            inserter(tablets_in_move, tablets_in_move.begin()),
+            [](const Rebalancer::MovesInProgress::value_type& elem) {
+              return elem.first;
+            });
+
+  vector<Rebalancer::ReplicaMove> result_moves;
+  for (const auto& elem : ignored_tservers_info) {
+    auto tablets_info = elem.second;
+    // Some tablets are randomly picked to move from ignored tservers in a batch.
+    // This method will output sufficient tablet replica movement operations
+    // to avoid repeated calculations.
+    shuffle(tablets_info.begin(), tablets_info.end(), random_generator_);
+    for (int i = 0; i < tablets_info.size() && i < max_moves_per_server_ * 5; ++i) {
+      if (ContainsKey(tablets_in_move, tablets_info[i].tablet_id)) {
+        continue;
+      }
+      tablets_in_move.emplace(tablets_info[i].tablet_id);
+      ReplicaMove move = {tablets_info[i].tablet_id, elem.first, "", tablets_info[i].config_idx};
+      result_moves.emplace_back(std::move(move));
+    }
+  }
+  *replica_moves = std::move(result_moves);
 }
 
 } // namespace tools

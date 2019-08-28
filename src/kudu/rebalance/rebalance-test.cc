@@ -18,14 +18,15 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
-#include <iterator>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rebalance/rebalance_algo.h"
@@ -37,11 +38,10 @@ using kudu::cluster_summary::ServerHealthSummary;
 using kudu::cluster_summary::TableSummary;
 using kudu::cluster_summary::TabletSummary;
 
-using std::inserter;
+using std::multimap;
 using std::ostream;
 using std::sort;
 using std::string;
-using std::transform;
 using std::vector;
 using strings::Substitute;
 
@@ -129,17 +129,17 @@ ClusterRawInfo GenerateRawClusterInfo(const KsckResultsInput& input) {
 // of insertion and does not change. Since the insertion order is not
 // important for the comparison with the reference results, this comparison
 // operator normalizes both the 'lhs' and 'rhs', so the comparison operator
-// compares only the contents of the 'servers_by_replica_count', not the order
-// of the elements.
-bool HasSameContents(const ServersByCountMap& lhs,
-                     const ServersByCountMap& rhs) {
+// compares only the contents of the 'servers_by_replica_count' and
+// 'table_info_by_skew, not the order of the elements.
+template<typename T>
+bool HasSameContents(const multimap<int32_t, T>& lhs, const multimap<int32_t, T>& rhs) {
   if (lhs.size() != rhs.size()) {
     return false;
   }
 
   auto it_lhs = lhs.begin();
   auto it_rhs = rhs.begin();
-  for (; it_lhs != lhs.end() && it_rhs != rhs.end(); ) {
+  while (it_lhs != lhs.end() && it_rhs != rhs.end()) {
     auto key_lhs = it_lhs->first;
     auto key_rhs = it_rhs->first;
     if (key_lhs != key_rhs) {
@@ -149,23 +149,19 @@ bool HasSameContents(const ServersByCountMap& lhs,
     auto eq_range_lhs = lhs.equal_range(key_lhs);
     auto eq_range_rhs = rhs.equal_range(key_rhs);
 
-    vector<string> lhs_values;
+    vector<T> lhs_values;
     {
-      transform(eq_range_lhs.first, eq_range_lhs.second,
-                inserter(lhs_values, lhs_values.begin()),
-                [](const ServersByCountMap::value_type& elem) {
-                  return elem.second;
-                });
+      for (auto it = eq_range_lhs.first; it != eq_range_lhs.second; ++it) {
+        lhs_values.push_back(it->second);
+      }
       sort(lhs_values.begin(), lhs_values.end());
     }
 
-    vector<string> rhs_values;
+    vector<T> rhs_values;
     {
-      transform(eq_range_rhs.first, eq_range_rhs.second,
-                inserter(rhs_values, rhs_values.begin()),
-                [](const ServersByCountMap::value_type& elem) {
-                  return elem.second;
-                });
+      for (auto it = eq_range_rhs.first; it != eq_range_rhs.second; ++it) {
+        rhs_values.push_back(it->second);
+      }
       sort(rhs_values.begin(), rhs_values.end());
     }
 
@@ -184,13 +180,19 @@ bool HasSameContents(const ServersByCountMap& lhs,
 } // anonymous namespace
 
 bool operator==(const TableBalanceInfo& lhs, const TableBalanceInfo& rhs) {
-  return HasSameContents(lhs.servers_by_replica_count,
-                         rhs.servers_by_replica_count);
+  return
+    lhs.table_id == rhs.table_id &&
+    HasSameContents(lhs.servers_by_replica_count,
+                    rhs.servers_by_replica_count);
+}
+
+bool operator<(const TableBalanceInfo& lhs, const TableBalanceInfo& rhs) {
+  return lhs.table_id < rhs.table_id;
 }
 
 bool operator==(const ClusterBalanceInfo& lhs, const ClusterBalanceInfo& rhs) {
   return
-      lhs.table_info_by_skew == rhs.table_info_by_skew &&
+      HasSameContents(lhs.table_info_by_skew, rhs.table_info_by_skew) &&
       HasSameContents(lhs.servers_by_total_replica_count,
                       rhs.servers_by_total_replica_count);
 }
@@ -228,7 +230,26 @@ class KsckResultsToClusterBalanceInfoTest : public ::testing::Test {
           raw_info, Rebalancer::MovesInProgress(), &ci));
 
       ASSERT_EQ(cfg.ref_balance_info, ci.balance);
+      // Make sure that ClusterInfo::balance dosen't contain any ignored tserver,
+      // so no replica would be moved to ignored tservers.
+      ASSERT_FALSE(ContainsOneOfIgnoredTservers(ci.balance.servers_by_total_replica_count,
+                                                rebalancer_cfg.ignored_tservers));
+      for (const auto& elem : ci.balance.table_info_by_skew) {
+        SCOPED_TRACE(Substitute("check table $0 ", elem.second.table_id));
+        ASSERT_FALSE(ContainsOneOfIgnoredTservers(elem.second.servers_by_replica_count,
+                                                  rebalancer_cfg.ignored_tservers));
+      }
     }
+  }
+ private:
+  bool ContainsOneOfIgnoredTservers(const ServersByCountMap& map,
+                                    const std::unordered_set<string>& ignored_tservers) {
+    for (const auto& elem : map) {
+      if (ContainsKey(ignored_tservers, elem.second)) {
+        return true;
+      }
+    }
+    return false;
   }
 };
 
@@ -242,6 +263,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
     5,      // max_moves_per_server
     30,     // max_staleness_interval_sec
     0,      // max_run_time_sec
+    false,  // move_replicas_from_ignored_tservers
     true,   // move_rf1_replicas
   };
 
@@ -379,6 +401,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
     5,      // max_moves_per_server
     30,     // max_staleness_interval_sec
     0,      // max_run_time_sec
+    false,  // move_replicas_from_ignored_tservers
     false,  // move_rf1_replicas
   };
 
@@ -400,7 +423,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
         { { 0, "ts_0" }, }
       }
     },
-    // Two tserver, two tables, RF=1.
+    // Two tservers, two tables, RF=1.
     {
       {
         { { "ts_0" }, { "ts_1" }, },
@@ -446,6 +469,84 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
         },
         {
           { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+        },
+      }
+    },
+  };
+
+  NO_FATALS(RunTest(rebalancer_config, test_configs));
+}
+
+// Test converting KsckResults result into ClusterBalanceInfo if moving
+// replicas from specified 'ignored_tservers'.
+TEST_F(KsckResultsToClusterBalanceInfoTest, MoveIgnoredTserversReplicas) {
+  const Rebalancer::Config rebalancer_config = {
+    { "ts_0", "ts_1" },     // ignored_tservers
+    {},     // master_addresses
+    {},     // table_filters
+    5,      // max_moves_per_server
+    30,     // max_staleness_interval_sec
+    0,      // max_run_time_sec
+    true,   // move_replicas_from_ignored_tservers
+    false,  // move_rf1_replicas
+  };
+
+  const vector<KsckResultsTestConfig> test_configs = {
+    // five tservers, three tables
+    // table_a: 1 tablet with RF=3
+    // table_b: 2 tablets with RF=3
+    // table_c: 3 tablets with RF=3
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, { "ts_2" }, { "ts_3" }, { "ts_4" }, },
+        {
+          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", { { "ts_1", true }, }, },
+          { "tablet_b_0", "table_b", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", { { "ts_3", true }, }, },
+          { "tablet_b_1", "table_b", { { "ts_2", true }, }, },
+          { "tablet_b_1", "table_b", { { "ts_3", true }, }, },
+          { "tablet_b_1", "table_b", { { "ts_4", true }, }, },
+          { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
+          { "tablet_c_0", "table_c", { { "ts_2", true }, }, },
+          { "tablet_c_0", "table_c", { { "ts_3", true }, }, },
+          { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", { { "ts_2", true }, }, },
+          { "tablet_c_1", "table_c", { { "ts_3", true }, }, },
+          { "tablet_c_2", "table_c", { { "ts_2", true }, }, },
+          { "tablet_c_2", "table_c", { { "ts_3", true }, }, },
+          { "tablet_c_2", "table_c", { { "ts_4", true }, }, },
+        },
+        { { { "table_a", 3 }, { "table_b", 3 }, { "table_c", 3 }, } },
+      },
+      {
+        {
+          {
+            1, {
+              "table_a", {
+                { 0, "ts_4" }, { 0, "ts_3" }, { 1, "ts_2" },
+              }
+            }
+          },
+          {
+            1, {
+              "table_b", {
+                { 1, "ts_4" }, { 2, "ts_3" }, { 2, "ts_2" },
+              }
+            }
+          },
+          {
+            2, {
+              "table_c", {
+                { 1, "ts_4" }, { 3, "ts_3" }, { 3, "ts_2" },
+              }
+            }
+          },
+        },
+        {
+          { 2, "ts_4" }, { 5, "ts_3" }, { 6, "ts_2" },
         },
       }
     },

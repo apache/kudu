@@ -61,10 +61,11 @@ DECLARE_string(tablets);
 
 DEFINE_string(ignored_tservers, "",
               "UUIDs of tablet servers to ignore while rebalancing the cluster "
-              "(comma-separated list). If specified, allow to run the rebalancing "
-              "when some tablet servers in 'ignored_tservers' are unhealthy. "
-              "If not specified, allow to run the rebalancing only when all tablet "
-              "servers are healthy.");
+              "(comma-separated list). If specified, the tablet servers are "
+              "effectively ignored by the rebalancer tool, they are not considered "
+              "as a part of the cluster as well as the replicas on them. "
+              "If not specified, the rebalancer tool will run on all the tablet servers "
+              "in the cluster.");
 
 DEFINE_string(sections, "*",
               "Sections to print (comma-separated list of sections, "
@@ -124,6 +125,14 @@ DEFINE_bool(disable_intra_location_rebalancing, false,
             "In case of multi-location cluster, whether to rebalance tablet "
             "replica distribution within each location. "
             "This setting is applicable to multi-location clusters only.");
+
+DEFINE_bool(move_replicas_from_ignored_tservers, false,
+            "Whether to move replicas from the specified 'ignored_tservers' to other "
+            "servers when the source tablet server is healthy. "
+            "This setting is effective only if the '--ignored_tservers' flag "
+            "is specified as well. "
+            "If set true, then all ignored tablet servers must be placed into "
+            "the 'maintenance mode'.");
 
 DEFINE_double(load_imbalance_threshold,
               kudu::rebalance::Rebalancer::Config::kLoadImbalanceThreshold,
@@ -303,6 +312,7 @@ Status RunRebalance(const RunnerContext& context) {
       FLAGS_max_moves_per_server,
       FLAGS_max_staleness_interval_sec,
       FLAGS_max_run_time_sec,
+      FLAGS_move_replicas_from_ignored_tservers,
       move_single_replicas,
       FLAGS_output_replica_distribution_details,
       !FLAGS_disable_policy_fixer,
@@ -405,6 +415,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("max_moves_per_server")
         .AddOptionalParameter("max_run_time_sec")
         .AddOptionalParameter("max_staleness_interval_sec")
+        .AddOptionalParameter("move_replicas_from_ignored_tservers")
         .AddOptionalParameter("move_single_replicas")
         .AddOptionalParameter("output_replica_distribution_details")
         .AddOptionalParameter("report_only")

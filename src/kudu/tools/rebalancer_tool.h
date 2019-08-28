@@ -137,7 +137,7 @@ class RebalancerTool : public rebalance::Rebalancer {
   // Runner that leverages RebalancingAlgo interface for rebalancing.
   class AlgoBasedRunner : public BaseRunner {
    public:
-    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // The 'ignored_tservers' specifies tablet servers that could be
     // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
@@ -207,7 +207,7 @@ class RebalancerTool : public rebalance::Rebalancer {
 
   class IntraLocationRunner : public AlgoBasedRunner {
    public:
-    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // The 'ignored_tservers' specifies tablet servers that could be
     // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
@@ -238,7 +238,7 @@ class RebalancerTool : public rebalance::Rebalancer {
 
   class CrossLocationRunner : public AlgoBasedRunner {
    public:
-    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // The 'ignored_tservers' specifies tablet servers that could be
     // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
@@ -267,12 +267,21 @@ class RebalancerTool : public rebalance::Rebalancer {
     rebalance::LocationBalancingAlgo algorithm_;
   };
 
-  class PolicyFixer : public BaseRunner {
+  // Runner that leverages 'SetReplace' method to move replicas.
+  class ReplaceBasedRunner : public BaseRunner {
    public:
-    PolicyFixer(RebalancerTool* rebalancer,
-                std::unordered_set<std::string> ignored_tservers,
-                size_t max_moves_per_server,
-                boost::optional<MonoTime> deadline);
+    // The 'ignored_tservers' specifies tablet servers that could be
+    // ignored by rebalancer.
+    // The 'max_moves_per_server' specifies the maximum number of operations
+    // per tablet server (both the source and the destination are counted in).
+    // The 'load_imbalance_threshold' specified the threshold for the
+    // balancing algorithm used for finding the most optimal replica movements.
+    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // if no timeout is set.
+    ReplaceBasedRunner(RebalancerTool* rebalancer,
+                       std::unordered_set<std::string> ignored_tservers,
+                       size_t max_moves_per_server,
+                       boost::optional<MonoTime> deadline);
 
     Status Init(std::vector<std::string> master_addresses) override;
 
@@ -284,11 +293,15 @@ class RebalancerTool : public rebalance::Rebalancer {
                                      bool* timed_out,
                                      bool* has_pending_moves) override;
 
-   private:
+   protected:
     // Key is tserver UUID which corresponds to value.ts_uuid_from.
     typedef std::unordered_multimap<std::string, Rebalancer::ReplicaMove> MovesToSchedule;
 
     Status GetNextMovesImpl(std::vector<Rebalancer::ReplicaMove>* replica_moves) override;
+
+    virtual Status GetReplaceMoves(const rebalance::ClusterInfo& ci,
+                                   const rebalance::ClusterRawInfo& raw_info,
+                                   std::vector<Rebalancer::ReplicaMove>* replica_moves) = 0;
 
     bool FindNextMove(Rebalancer::ReplicaMove* move);
 
@@ -297,6 +310,60 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     // Moves yet to schedule.
     MovesToSchedule moves_to_schedule_;
+  };
+
+  class PolicyFixer : public ReplaceBasedRunner {
+   public:
+    PolicyFixer(RebalancerTool* rebalancer,
+                std::unordered_set<std::string> ignored_tservers,
+                size_t max_moves_per_server,
+                boost::optional<MonoTime> deadline);
+   private:
+   // Get replica moves to restore the placement policy restrictions.
+   // If returns Status::OK() with replica_moves empty, the distribution
+   // of tablet relicas is considered conform the main constraint of the
+   // placement policy.
+    Status GetReplaceMoves(const rebalance::ClusterInfo& ci,
+                           const rebalance::ClusterRawInfo& raw_info,
+                           std::vector<Rebalancer::ReplicaMove>* replica_moves) override;
+  };
+
+  class IgnoredTserversRunner : public ReplaceBasedRunner {
+   public:
+    IgnoredTserversRunner(RebalancerTool* rebalancer,
+                          std::unordered_set<std::string> ignored_tservers,
+                          size_t max_moves_per_server,
+                          boost::optional<MonoTime> deadline);
+
+   private:
+    // Key is tserver UUID which corresponds to value.ts_uuid_from.
+    typedef std::unordered_multimap<std::string, Rebalancer::ReplicaMove> MovesToSchedule;
+
+    struct TabletInfo {
+      std::string tablet_id;
+      boost::optional<int64_t> config_idx;  // For CAS-like change of Raft configs.
+    };
+
+    // Mapping tserver UUID to tablets on it.
+    typedef std::unordered_map<std::string, std::vector<TabletInfo>> IgnoredTserversInfo;
+
+    // Get replica moves to move replicas from healthy ignored tservers.
+    // If returns Status::OK() with replica_moves empty, there would be
+    // no replica on the healthy ignored tservers.
+    Status GetReplaceMoves(const rebalance::ClusterInfo& ci,
+                           const rebalance::ClusterRawInfo& raw_info,
+                           std::vector<Rebalancer::ReplicaMove>* replica_moves) override;
+
+    // Check the state of ignored tservers.
+    // Return Status::OK() only when all the ignored tservers are in maintenance mode.
+    Status CheckIgnoredTserversState(const rebalance::ClusterInfo& ci);
+
+    void GetMovesFromIgnoredTservers(const IgnoredTserversInfo& ignored_tservers_info,
+                                     std::vector<Rebalancer::ReplicaMove>* replica_moves);
+
+    // Random device and generator for selecting among multiple choices, when appropriate.
+    std::random_device random_device_;
+    std::mt19937 random_generator_;
   };
 
   // Convert ksck results into information relevant to rebalancing the cluster
@@ -308,6 +375,10 @@ class RebalancerTool : public rebalance::Rebalancer {
       const boost::optional<std::string>& location,
       const KsckResults& ksck_info,
       rebalance::ClusterRawInfo* raw_info);
+
+  // Print replica count infomation on ClusterInfo::tservers_to_empty.
+  Status PrintIgnoredTserversStats(const rebalance::ClusterInfo& ci,
+                                   std::ostream& out) const;
 
   // Print information on the cross-location balance.
   Status PrintCrossLocationBalanceStats(const rebalance::ClusterInfo& ci,
@@ -323,6 +394,10 @@ class RebalancerTool : public rebalance::Rebalancer {
 
   Status PrintPolicyViolationInfo(const rebalance::ClusterRawInfo& raw_info,
                                   std::ostream& out) const;
+
+  // Check whether it is safe to move all replicas from the ignored to other servers.
+  Status CheckIgnoredServers(const rebalance::ClusterRawInfo& raw_info,
+                             const rebalance::ClusterInfo& cluster_info);
 
   // Run rebalancing using the specified runner.
   Status RunWith(Runner* runner, RunStatus* result_status);

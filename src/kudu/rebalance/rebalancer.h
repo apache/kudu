@@ -59,6 +59,7 @@ class Rebalancer {
            size_t max_moves_per_server = 5,
            size_t max_staleness_interval_sec = 300,
            int64_t max_run_time_sec = 0,
+           bool move_replicas_from_ignored_tservers = false,
            bool move_rf1_replicas = false,
            bool output_replica_distribution_details = false,
            bool run_policy_fixer = true,
@@ -66,10 +67,11 @@ class Rebalancer {
            bool run_intra_location_rebalancing = true,
            double load_imbalance_threshold = kLoadImbalanceThreshold);
 
-    // UUIDs of ignored servers. If empty, allow to run the
-    // rebalancing only when all tablet servers in cluster are healthy.
-    // If not empty, allow to run the rebalancing when servers in
-    // ignored_tservers are unhealthy.
+    // UUIDs of ignored servers. If empty, run the rebalancing on
+    // all tablet servers in the cluster only when all tablet servers
+    // in cluster are healthy. If not empty, specified tablet servers
+    // (including their health state and replicas on them) will be
+    // ignored by the rebalancer tool.
     std::unordered_set<std::string> ignored_tservers;
 
     // Kudu masters' RPC endpoints.
@@ -94,6 +96,13 @@ class Rebalancer {
 
     // Maximum run time, in seconds.
     int64_t max_run_time_sec;
+
+    // Whether to move replicas from ignored tservers to other tservers.
+    // If true, replicas on healthy ignored tservers will be moved to other tservers
+    // before running the rebalancing.
+    // If false, ignored tservers and replicas on them will be ignored by the
+    // rebalancer tool.
+    bool move_replicas_from_ignored_tservers;
 
     // Whether to move replicas of tablets with replication factor of one.
     bool move_rf1_replicas;
@@ -198,10 +207,10 @@ class Rebalancer {
   // The source and destination replicas are determined by the elements of the
   // 'tablet_ids' container and tablet server UUIDs TableReplicaMove::from and
   // TableReplica::to correspondingly. If no suitable tablet replicas are found,
-  // 'tablet_ids' will be empty with the result status of Status::OK().
-  static Status FindReplicas(const TableReplicaMove& move,
-                             const ClusterRawInfo& raw_info,
-                             std::vector<std::string>* tablet_ids);
+  // 'tablet_ids' will be empty.
+  static void FindReplicas(const TableReplicaMove& move,
+                           const ClusterRawInfo& raw_info,
+                           std::vector<std::string>* tablet_ids);
 
   // Filter move operations in 'replica_moves': remove all operations that would
   // involve moving replicas of tablets which are in 'scheduled_moves'. The
