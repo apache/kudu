@@ -361,9 +361,9 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER $MT_BLOOM_TEST $i $real
   done
 
-  # Parse out the real time from: "Time spent Converting to PB with column count 30 and row select rate 0.2: real 5.962s  user 5.918s sys 0.025s"
+  # Parse out rate of cycles/sec from: "Converting to PB with column count 3 and row select rate 1: 32.987841 cycles/cell"
   for i in $(seq 1 $NUM_SAMPLES); do
-    real=`grep "Time spent Converting" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | ./parse_real_out.sh`
+    real=`grep "Converting to PB with column count" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | sed 's|^.*: \([[:digit:].]*\) cycles/cell$|\1|'`
     record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real
   done
 
