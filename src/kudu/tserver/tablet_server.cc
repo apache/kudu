@@ -123,6 +123,14 @@ Status TabletServer::Init() {
                         "Could not start expired Scanner removal thread");
 #endif
 
+  // Moving registration of consensus service and RPC server
+  // start to Init. This allows us to create a barebones Raft
+  // distributed config. We need the service to be here, because
+  // Raft::create makes remote GetNodeInstance RPC calls.
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
+  RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
+  RETURN_NOT_OK(KuduServer::Start());
+
   // Moving tablet manager initialization to Init phase of
   // tablet server
   if (tablet_manager_->IsInitialized()) {
@@ -148,7 +156,6 @@ Status TabletServer::Start() {
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
 #endif
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
 
 #ifdef FB_DO_NOT_REMOVE
   gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
@@ -157,12 +164,10 @@ Status TabletServer::Start() {
   RETURN_NOT_OK(RegisterService(std::move(ts_service)));
   RETURN_NOT_OK(RegisterService(std::move(admin_service)));
 #endif
-  RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
 
 #ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK(RegisterService(std::move(tablet_copy_service)));
 #endif
-  RETURN_NOT_OK(KuduServer::Start());
 
 #ifdef FB_DO_NOT_REMOVE
   RETURN_NOT_OK(heartbeater_->Start());
