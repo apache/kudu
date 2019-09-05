@@ -365,7 +365,7 @@ Status AnalyzeCatalogs(const string& master_addrs,
   // table type and table ID.
   const set<string> kudu_master_addrs = Split(master_addrs, ",");
   vector<hive::Table> orphan_hms_tables;
-  unordered_map<string, vector<hive::Table>> managed_hms_tables_by_id;
+  unordered_map<string, vector<hive::Table>> synchronized_hms_tables_by_id;
   unordered_map<string, vector<hive::Table>> external_hms_tables_by_id;
   {
     vector<hive::Table> hms_tables;
@@ -392,7 +392,7 @@ Status AnalyzeCatalogs(const string& master_addrs,
         }
       }
 
-      // If this is a non-legacy, managed table, we expect a table ID to exist
+      // If this is a non-legacy, synchronized table, we expect a table ID to exist
       // in the HMS entry; look up the Kudu table by ID. Otherwise, look it up
       // by table name.
       shared_ptr<KuduTable>* kudu_table;
@@ -400,10 +400,10 @@ Status AnalyzeCatalogs(const string& master_addrs,
       const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
       const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
       if (storage_handler == HmsClient::kKuduStorageHandler &&
-          hms_table.tableType == HmsClient::kManagedTable) {
+          HmsClient::IsSynchronized(hms_table)) {
         kudu_table = FindOrNull(kudu_tables_by_id, hms_table_id);
         // If there is no kudu table that matches the id, or the id doesn't exist,
-        // lookup the table by name. This handles manged tables created when HMS
+        // lookup the table by name. This handles synchronized tables created when HMS
         // sync was off or tables with IDs out of sync.
         if (!kudu_table) {
           kudu_table = FindOrNull(kudu_tables_by_name, hms_table_name);
@@ -413,16 +413,17 @@ Status AnalyzeCatalogs(const string& master_addrs,
       }
 
       if (kudu_table) {
-        if (hms_table.tableType == HmsClient::kExternalTable) {
+        if (HmsClient::IsSynchronized(hms_table)) {
+          synchronized_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
+              std::move(hms_table));
+        } else if (hms_table.tableType == HmsClient::kExternalTable) {
           external_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
               std::move(hms_table));
-        } else if (hms_table.tableType == HmsClient::kManagedTable) {
-          managed_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
-              std::move(hms_table));
         }
-      } else if (hms_table.tableType == HmsClient::kManagedTable) {
-        // Note: we only consider managed HMS table entries "orphans" because
-        // external tables don't always point at valid Kudu tables.
+      } else if (HmsClient::IsSynchronized(hms_table)) {
+        // Note: we only consider synchronized HMS table entries "orphans"
+        // because unsynchronized external tables don't always point at valid
+        // Kudu tables.
         orphan_hms_tables.emplace_back(std::move(hms_table));
       }
     }
@@ -437,10 +438,10 @@ Status AnalyzeCatalogs(const string& master_addrs,
   vector<shared_ptr<KuduTable>> invalid_name_tables;
   for (auto& kudu_table_pair : kudu_tables_by_id) {
     shared_ptr<KuduTable> kudu_table = kudu_table_pair.second;
-    // Check all of the managed HMS tables.
-    vector<hive::Table>* hms_tables = FindOrNull(managed_hms_tables_by_id,
+    // Check all of the synchronized HMS tables.
+    vector<hive::Table>* hms_tables = FindOrNull(synchronized_hms_tables_by_id,
                                                  kudu_table_pair.first);
-    // If the there are no managed HMS table entries, this table is missing
+    // If the there are no synchronized HMS table entries, this table is missing
     // HMS tables and might have an invalid table name.
     if (!hms_tables) {
       const string& table_name = kudu_table->name();
@@ -451,7 +452,7 @@ Status AnalyzeCatalogs(const string& master_addrs,
       } else {
         missing_tables.emplace_back(std::move(kudu_table));
       }
-    // If there is a single managed HMS table, this table could be unsynced or
+    // If there is a single synchronized HMS table, this table could be unsynced or
     // using the legacy handler.
     } else if (hms_tables->size() == 1) {
       hive::Table& hms_table = (*hms_tables)[0];
@@ -462,7 +463,7 @@ Status AnalyzeCatalogs(const string& master_addrs,
       } else if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
         legacy_tables.emplace_back(make_pair(std::move(kudu_table), std::move(hms_table)));
       }
-    // Otherwise, there are multiple managed HMS tables for a single Kudu table.
+    // Otherwise, there are multiple synchronized HMS tables for a single Kudu table.
     } else {
       for (hive::Table& hms_table : *hms_tables) {
         duplicate_tables.emplace_back(make_pair(kudu_table, std::move(hms_table)));
@@ -694,8 +695,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
               hms_table_name));
       }
 
-      if (hms_table.tableType == HmsClient::kManagedTable &&
-          kudu_table.name() != hms_table_name) {
+      if (HmsClient::IsSynchronized(hms_table) && kudu_table.name() != hms_table_name) {
         if (FLAGS_dryrun) {
           LOG(INFO) << "[dryrun] Renaming Kudu table " << TableIdent(kudu_table)
                     << " to " << hms_table_name;

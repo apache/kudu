@@ -61,13 +61,18 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
   Status AlterHmsTableDropColumns(const std::string& database_name,
                                   const std::string& table_name) WARN_UNUSED_RESULT;
 
+  // Alter the HMS entry to be an external table with `external.table.purge = true`.
+  Status AlterHmsTableExternalPurge(const std::string& database_name,
+                                    const std::string& table_name) WARN_UNUSED_RESULT;
+
   // Checks that the Kudu table schema and the HMS table entry in their
   // respective catalogs are synchronized for a particular table. It also
   // verifies that the table owner is the given user (if not provided,
   // checks against the logged in user).
   void CheckTable(const std::string& database_name,
                   const std::string& table_name,
-                  boost::optional<const std::string&> user);
+                  boost::optional<const std::string&> user,
+                  const std::string& table_type = hms::HmsClient::kManagedTable);
 
   // Checks that a table does not exist in the Kudu and HMS catalogs.
   void CheckTableDoesNotExist(const std::string& database_name,

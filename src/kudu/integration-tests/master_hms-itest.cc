@@ -253,6 +253,17 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   ASSERT_OK(comment_alterer->Alter());
   NO_FATALS(CheckTable("default", "a", /*user=*/ none));
 
+  // Create the Kudu table and alter the HMS entry to be an external table
+  // with `external.table.purge = true`, then alter it in the HMS and ensure
+  // the Kudu table is actually altered.
+  ASSERT_OK(CreateKuduTable("default", "b"));
+  ASSERT_OK(AlterHmsTableExternalPurge("default", "b"));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+  unique_ptr<KuduTableAlterer> comment_alterer_b(client_->NewTableAlterer("default.b"));
+  comment_alterer_b->AlterColumn("int16_val")->Comment("Another comment");
+  ASSERT_OK(comment_alterer_b->Alter());
+  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+
   // Shutdown the HMS and try to alter the table.
   ASSERT_OK(StopHms());
   table_alterer.reset(client_->NewTableAlterer("default.a")->DropColumn("int16_val"));
@@ -268,11 +279,11 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   NO_FATALS(CheckTable("default", "a", /*user=*/ none));
 
   // Only alter the table in Kudu, the corresponding table in the HMS will not be altered.
-  table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b")
+  table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.c")
                              ->modify_external_catalogs(false));
   ASSERT_OK(table_alterer->Alter());
   bool exists;
-  ASSERT_OK(client_->TableExists("default.b", &exists));
+  ASSERT_OK(client_->TableExists("default.c", &exists));
   ASSERT_TRUE(exists);
   hive::Table hms_table;
   ASSERT_OK(hms_client_->GetTable("default", "a", &hms_table));
@@ -298,6 +309,19 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   ASSERT_OK(hms_client_->DropTable("default", "b"));
   ASSERT_EVENTUALLY([&] {
       NO_FATALS(CheckTableDoesNotExist("default", "b"));
+  });
+
+  // Create the Kudu table and alter the HMS entry to be an external table
+  // with `external.table.purge = true`, then drop it from the HMS, and ensure
+  // the Kudu table is deleted.
+  ASSERT_OK(CreateKuduTable("default", "b"));
+  ASSERT_OK(AlterHmsTableExternalPurge("default", "b"));
+  NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
+  shared_ptr<KuduTable> table2;
+  ASSERT_OK(client_->OpenTable("default.b", &table2));
+  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTableDoesNotExist("default", "b"));
   });
 
   // Ensure that dropping a table while the HMS is unreachable fails.
@@ -388,6 +412,29 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   s = hms_client_->DropTable("default", "a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckTableDoesNotExist("default", "a"));
+
+  // Create the Kudu table and alter the HMS entry to be an external table
+  // with `external.table.purge = true`.
+  ASSERT_OK(CreateKuduTable("default", "d"));
+  ASSERT_OK(AlterHmsTableExternalPurge("default", "d"));
+  NO_FATALS(CheckTable("default", "d", /*user=*/ none, hms::HmsClient::kExternalTable));
+
+  // Rename the table in the HMS, and ensure that the notification log listener
+  // detects the rename and updates the Kudu catalog accordingly.
+  ASSERT_OK(RenameHmsTable("default", "d", "e"));
+  ASSERT_EVENTUALLY([&] {
+  NO_FATALS({
+      CheckTable("default", "e", /*user=*/ none, hms::HmsClient::kExternalTable);
+      CheckTableDoesNotExist("default", "d");
+    });
+  });
+
+  // Drop the table in the HMS, and ensure that the notification log listener
+  // detects the drop and updates the Kudu catalog accordingly.
+  ASSERT_OK(hms_client_->DropTable("default", "e"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTableDoesNotExist("default", "e"));
+  });
 }
 
 TEST_F(MasterHmsTest, TestIgnoreExternalTables) {

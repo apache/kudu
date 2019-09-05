@@ -333,8 +333,8 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
   hive::Table before_table;
   RETURN_NOT_OK(DeserializeTable(event, message, "tableObjBeforeJson", &before_table));
 
-  if (before_table.tableType != hms::HmsClient::kManagedTable) {
-    // Not a managed table; skip it.
+  if (!hms::HmsClient::IsSynchronized(before_table)) {
+    // Not a synchronized table; skip it.
     VLOG(2) << Substitute("Ignoring alter event for table $0 of type $1",
                           before_table.tableName, before_table.tableType);
     return Status::OK();
@@ -394,8 +394,8 @@ Status HmsNotificationLogListenerTask::HandleDropTableEvent(const hive::Notifica
   hive::Table table;
   RETURN_NOT_OK(DeserializeTable(event, message, "tableObjJson", &table));
 
-  if (table.tableType != hms::HmsClient::kManagedTable) {
-    // Not a managed table; skip it.
+  if (!hms::HmsClient::IsSynchronized(table)) {
+    // Not a synchronized table; skip it.
     VLOG(2) << Substitute("Ignoring drop event for table $0 of type $1",
                           table.tableName, table.tableType);
     return Status::OK();

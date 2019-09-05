@@ -120,6 +120,7 @@ const char* const HmsClient::kDisallowIncompatibleColTypeChanges =
 const char* const HmsClient::kDbNotificationListener =
   "org.apache.hive.hcatalog.listener.DbNotificationListener";
 const char* const HmsClient::kExternalTableKey = "EXTERNAL";
+const char* const HmsClient::kExternalPurgeKey = "external.table.purge";
 const char* const HmsClient::kStorageHandlerKey = "storage_handler";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
@@ -403,6 +404,14 @@ bool HmsClient::IsKuduTable(const hive::Table& table) {
     return false;
   }
   return *storage_handler == hms::HmsClient::kKuduStorageHandler;
+}
+
+bool HmsClient::IsSynchronized(const hive::Table& table) {
+  const string externalPurge =
+      FindWithDefault(table.parameters, hms::HmsClient::kExternalPurgeKey, "false");
+  return table.tableType == hms::HmsClient::kManagedTable ||
+         (table.tableType == hms::HmsClient::kExternalTable &&
+          boost::iequals(externalPurge, "true"));
 }
 
 } // namespace hms

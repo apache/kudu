@@ -122,7 +122,9 @@ public class TestKuduMetastorePlugin {
     Table table = new Table();
     table.setDbName("default");
     table.setTableName(name);
-    table.setTableType(TableType.MANAGED_TABLE.toString());
+    table.setTableType(TableType.EXTERNAL_TABLE.toString());
+    table.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+    table.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
     table.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
                           storageHandler);
     if (!storageHandler.equals(KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER)) {
@@ -210,10 +212,12 @@ public class TestKuduMetastorePlugin {
       client.dropTable(table.getDbName(), table.getTableName());
     }
 
-    // Check that creating a non-managed table is accepted.
+    // Check that creating an unsynchronized table is accepted.
     {
       Table table = newTable("table");
-      table.setTableType(TableType.EXTERNAL_TABLE.name());
+      table.setTableType(TableType.EXTERNAL_TABLE.toString());
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
       client.createTable(table);
       client.dropTable(table.getDbName(), table.getTableName());
     }
@@ -227,6 +231,8 @@ public class TestKuduMetastorePlugin {
     Table legacyTable = newLegacyTable("legacy_table");
     client.createTable(legacyTable, masterContext());
     try {
+      // Check that altering the table succeeds.
+      client.alter_table(table.getDbName(), table.getTableName(), table);
 
       // Try to alter the Kudu table with a different table ID.
       try {
@@ -260,7 +266,7 @@ public class TestKuduMetastorePlugin {
       // Try to alter the Kudu table to a different type.
       try {
         Table alteredTable = table.deepCopy();
-        alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
+        alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
@@ -268,10 +274,10 @@ public class TestKuduMetastorePlugin {
             "Kudu table type may not be altered"));
       }
 
-      // Alter the Kudu table to a different type by setting the table property fails.
+      // Alter the Kudu table to a different type by setting the external property fails.
       try {
         Table alteredTable = table.deepCopy();
-        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "true");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
@@ -282,12 +288,40 @@ public class TestKuduMetastorePlugin {
       // Alter the Kudu table to the same type by setting the table property works.
       {
         Table alteredTable = table.deepCopy();
-        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "false");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
       }
 
-      // Check that altering the table succeeds.
-      client.alter_table(table.getDbName(), table.getTableName(), table);
+      // Alter the Kudu table to a managed type with the master context succeeds.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
+        client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
+            alteredTable, masterContext());
+      }
+
+      // Alter the Kudu table to a different type by setting the purge property fails.
+      try {
+        Table alteredTable = table.deepCopy();
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+        fail();
+      } catch (TException e) {
+        assertTrue(e.getMessage().contains(
+            "Kudu table type may not be altered"));
+      }
+
+      // Alter the Kudu table to an external type with the master context succeeds.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
+        client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
+            alteredTable, masterContext());
+      }
 
       // Check that adding a column fails.
       table.getSd().addToCols(new FieldSchema("b", "int", ""));
@@ -309,6 +343,9 @@ public class TestKuduMetastorePlugin {
       {
         Table alteredTable = table.deepCopy();
         alteredTable.getParameters().clear();
+        alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
         alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
             KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
         alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_NAME,
@@ -372,10 +409,12 @@ public class TestKuduMetastorePlugin {
       }
     }
 
-    // Test altering a non-managed table is accepted.
+    // Test altering an unsynchronized table is accepted.
     {
       table.getParameters().clear();
       table.setTableType(TableType.EXTERNAL_TABLE.name());
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
       client.createTable(table);
       try {
         client.alter_table(table.getDbName(), table.getTableName(), table);
@@ -478,10 +517,12 @@ public class TestKuduMetastorePlugin {
       }
     }
 
-    // Test dropping a non-managed table is accepted.
+    // Test dropping an unsynchronized table is accepted.
     {
       table.getParameters().clear();
       table.setTableType(TableType.EXTERNAL_TABLE.name());
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
+      table.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
       client.createTable(table);
       client.dropTable(table.getDbName(), table.getTableName());
     }

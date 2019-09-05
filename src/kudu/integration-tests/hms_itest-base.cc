@@ -162,9 +162,26 @@ Status HmsITestBase::AlterHmsTableDropColumns(const string& database_name,
     return Status::OK();
 }
 
+Status HmsITestBase::AlterHmsTableExternalPurge(const string& database_name,
+                                                const string& table_name) {
+  hive::Table table;
+  RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
+  table.tableType = HmsClient::kExternalTable;
+  table.parameters[HmsClient::kExternalTableKey] = "TRUE";
+  table.parameters[HmsClient::kExternalPurgeKey] = "TRUE";
+
+  // The KuduMetastorePlugin only allows the master to alter the table type
+  // and purge property, so we pretend to be the master.
+  hive::EnvironmentContext env_ctx;
+  env_ctx.__set_properties({ std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true") });
+  RETURN_NOT_OK(hms_client_->AlterTable(database_name, table_name, table, env_ctx));
+  return Status::OK();
+}
+
 void HmsITestBase::CheckTable(const string& database_name,
                               const string& table_name,
-                              boost::optional<const string&> user) {
+                              boost::optional<const string&> user,
+                              const string& table_type) {
   SCOPED_TRACE(Substitute("Checking table $0.$1", database_name, table_name));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(Substitute("$0.$1", database_name, table_name), &table));
@@ -172,7 +189,7 @@ void HmsITestBase::CheckTable(const string& database_name,
   hive::Table hms_table;
   ASSERT_OK(hms_client_->GetTable(database_name, table_name, &hms_table));
 
-  ASSERT_EQ(hms::HmsClient::kManagedTable, hms_table.tableType);
+  ASSERT_EQ(table_type, hms_table.tableType);
 
   string username;
   if (user) {

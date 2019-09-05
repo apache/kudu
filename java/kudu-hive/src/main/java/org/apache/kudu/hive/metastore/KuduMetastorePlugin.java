@@ -18,6 +18,7 @@
 package org.apache.kudu.hive.metastore;
 
 import java.util.Map;
+import java.util.Objects;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
@@ -83,7 +84,9 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   // The key should keep in sync with the one used in
   // org.apache.hadoop.hive.metastore.MetaStoreUtils.isExternalTable().
   @VisibleForTesting
-  static final String EXTERNAL_TABLE_KEY= "EXTERNAL";
+  static final String EXTERNAL_TABLE_KEY = "EXTERNAL";
+
+  static final String EXTERNAL_PURGE_KEY = "external.table.purge";
 
   // System env to track if the HMS plugin validation should be skipped.
   static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
@@ -102,8 +105,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
 
     Table table = tableEvent.getTable();
 
-    // Only validate managed tables. Kudu only synchronizes managed tables.
-    if (!TableType.MANAGED_TABLE.name().equals(table.getTableType())) {
+    // Only validate synchronized tables.
+    if (!isSynchronizedTable(table)) {
       return;
     }
 
@@ -130,8 +133,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return;
     }
 
-    // Only validate managed tables. Kudu only synchronizes managed tables.
-    if (!TableType.MANAGED_TABLE.name().equals(table.getTableType())) {
+    // Only validate synchronized tables.
+    if (!isSynchronizedTable(table)) {
       return;
     }
 
@@ -170,23 +173,24 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     Table newTable = tableEvent.getNewTable();
 
     // Prevent altering the table type (managed/external) of Kudu tables (or via
-    // altering table property 'EXTERNAL'). This can cause orphaned tables and
-    // the Sentry integration depends on having a managed table for each Kudu
-    // table to prevent security issues due to overlapping names with Kudu tables
-    // and tables in the HMS.
+    // altering table properties 'EXTERNAL' or `external.table.purge`).
+    // This can cause orphaned tables and the Sentry integration depends on having a
+    // synchronized table for each Kudu table to prevent security issues due to overlapping
+    // names with Kudu tables and tables in the HMS.
     // Note: This doesn't prevent altering the table type for legacy tables
     // because they should continue to work as they always have primarily for
     // migration purposes.
-    String oldTableType = oldTable.getTableType();
+    // The Kudu master is allowed to make these changes if necessary as it is a trusted user.
     if (isKuduTable(oldTable) &&
-        ((oldTableType != null && !oldTableType.equals(newTable.getTableType())) ||
-         (isExternalTable(oldTable) != isExternalTable(newTable)))) {
+        !isKuduMasterAction(tableEvent) &&
+        (!Objects.equals(oldTable.getTableType(), newTable.getTableType()) ||
+            isExternalTable(oldTable) != isExternalTable(newTable) ||
+            isPurgeTable(oldTable) != isPurgeTable(newTable))) {
       throw new MetaException("Kudu table type may not be altered");
     }
 
-    // Only validate managed tables.
-    // Kudu only synchronizes managed tables.
-    if (!TableType.MANAGED_TABLE.name().equals(oldTableType)) {
+    // Only validate synchronized tables.
+    if (!isSynchronizedTable(oldTable)) {
       return;
     }
 
@@ -267,6 +271,33 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return false;
     }
     return Boolean.parseBoolean(isExternal);
+  }
+
+  /**
+   * Checks whether the table should be purged when deleted, i.e. the
+   * underlying Kudu table should be deleted when the HMS table entry is
+   * deleted.
+   *
+   * @param table the table to check
+   * @return {@code true} if the table is a managed table or has external.table.purge = true,
+   *         otherwise {@code false}
+   */
+  private boolean isPurgeTable(Table table) {
+    boolean externalPurge =
+        Boolean.parseBoolean(table.getParameters().getOrDefault(EXTERNAL_PURGE_KEY, "false"));
+    return TableType.MANAGED_TABLE.name().equals(table.getTableType()) || externalPurge;
+  }
+
+  /**
+   * Checks whether the table is considered a synchronized Kudu table.
+   *
+   * @param table the table to check
+   * @return {@code true} if the table is a managed table or an external table with
+   *         `external.table.purge = true`, otherwise {@code false}
+   */
+  private boolean isSynchronizedTable(Table table) {
+    return TableType.MANAGED_TABLE.name().equals(table.getTableType()) ||
+        (isExternalTable(table) && isPurgeTable(table));
   }
 
   /**

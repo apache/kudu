@@ -186,14 +186,17 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
       return Status::IllegalState("non-legacy table cannot be upgraded");
     }
 
-    // If this is an external table, only upgrade the storage handler.
-    if (table.tableType == HmsClient::kExternalTable) {
+    if (table.tableType != HmsClient::kManagedTable &&
+        table.tableType != HmsClient::kExternalTable) {
+      return Status::IllegalState(Substitute("Unsupported table type $0", table.tableType));
+    }
+
+    // If this is an unsynchronized table, only upgrade the storage handler.
+    if (!HmsClient::IsSynchronized(table)) {
       table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
-    } else if (table.tableType == HmsClient::kManagedTable) {
+    } else {
       RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name),
                                   table.owner, schema, master_addresses_, table.tableType, &table));
-    } else {
-      return Status::IllegalState(Substitute("Unsupported table type $0", table.tableType));
     }
     return client->AlterTable(db_name, tb_name, table, EnvironmentContext());
   });
@@ -212,10 +215,8 @@ Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
     }
     // Downgrade the storage handler.
     table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kLegacyKuduStorageHandler;
-    if (table.tableType == HmsClient::kManagedTable) {
-      // Remove the Kudu-specific field 'kudu.table_id'.
-      EraseKeyReturnValuePtr(&table.parameters, HmsClient::kKuduTableIdKey);
-    }
+    // Remove the Kudu-specific field 'kudu.table_id'.
+    EraseKeyReturnValuePtr(&table.parameters, HmsClient::kKuduTableIdKey);
     return client->AlterTable(table.dbName, table.tableName, table, EnvironmentContext());
   });
 }
@@ -377,11 +378,14 @@ Status HmsCatalog::PopulateTable(const string& id,
   // TODO(HIVE-19253): Used along with table type to indicate an external table.
   if (table_type == HmsClient::kExternalTable) {
     table->parameters[HmsClient::kExternalTableKey] = "TRUE";
-  // Only set the table id on managed tables and ensure the
-  // kExternalTableKey property is unset.
+  // Ensure the kExternalTableKey property is unset on a managed table.
   } else if (table_type == HmsClient::kManagedTable) {
-    table->parameters[HmsClient::kKuduTableIdKey] = id;
     EraseKeyReturnValuePtr(&table->parameters, HmsClient::kExternalTableKey);
+  }
+
+  // Only set the table id on synchronized tables.
+  if (HmsClient::IsSynchronized(*table)) {
+    table->parameters[HmsClient::kKuduTableIdKey] = id;
   }
 
   // Add the Kudu-specific parameters. This intentionally avoids overwriting

@@ -57,6 +57,7 @@ class HmsClient {
  public:
 
   static const char* const kExternalTableKey;
+  static const char* const kExternalPurgeKey;
   static const char* const kLegacyKuduStorageHandler;
   static const char* const kLegacyTablePrefix;
   static const char* const kKuduTableIdKey;
@@ -185,6 +186,11 @@ class HmsClient {
 
   // Returns true if the HMS table is a Kudu table.
   static bool IsKuduTable(const hive::Table& table) WARN_UNUSED_RESULT;
+
+  // Returns if the HMS table should be synchronized.
+  // Returns true if the HMS table is a managed table or
+  // if the HMS is an external table with `external.table.purge = true`.
+  static bool IsSynchronized(const hive::Table& table) WARN_UNUSED_RESULT;
 
   // Deserializes a JSON encoded table.
   //
