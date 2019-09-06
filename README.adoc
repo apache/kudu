@@ -429,6 +429,18 @@ With this exclusion, the only false positives (shown as "red squigglies") that
 CDT presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for
 example).
 
+Another way to approach enormous source code indexing in Ecplise is to get rid of
+unnecessary source code in "thirdparty/src" directory right after building code
+and before opening project in Eclipse. You can remove all source code except
+hadoop, hive and sentry directories.
+Additionally, if you encounter red squigglies in code editor due to
+Eclipse's poor macro discovery, you may need to provide Eclipse with preprocessor
+macros values, which it could not extract during auto-discovery.
+Go to "Project Explorer" -> "Properties" -> "C/C++ General" ->
+"Preprocessor Include Paths, Macros, etc" -> "Entries" tab -> Language "GNU C++" ->
+Setting Entries "CDT User Setting Entries" -> button "Add"
+-> choose "Preprocessor Macro" [3]
+
 Another Eclipse annoyance stems from the "[Targets]" linked resource that Eclipse
 generates for each unit test. These are probably used for building within Eclipse,
 but one side effect is that nearly every source file appears in the indexer twice:
@@ -438,6 +450,7 @@ on writing code, though it may affect your ability to build from within Eclipse.
 
 1. https://cmake.org/pipermail/cmake-developers/2011-November/014153.html
 2. https://public.kitware.com/Bug/view.php?id=15102
+3. https://www.eclipse.org/community/eclipse_newsletter/2013/october/article4.php
 
 == Export Control Notice
 
