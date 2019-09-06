@@ -19,10 +19,13 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 
@@ -34,6 +37,23 @@ TEST(CurlUtilTest, TestTimeout) {
   curl.set_timeout(MonoDelta::FromMilliseconds(1));
   Status s = curl.FetchURL("http://not_exist_host:12345", &dst);
   ASSERT_TRUE(s.IsTimedOut());
+}
+
+TEST(CurlUtilTest, NonSharedObjectsBetweenThreads) {
+  const int kThreadCount = 8;
+  gscoped_ptr<ThreadPool> pool;
+  ThreadPoolBuilder("curl-util-test")
+      .set_min_threads(kThreadCount)
+      .set_max_threads(kThreadCount)
+      .Build(&pool);
+
+  for (int i = 0; i < kThreadCount; i++) {
+    ASSERT_OK(pool->SubmitFunc([&]() {
+      EasyCurl curl;
+    }));
+  }
+
+  pool->Shutdown();
 }
 
 } // namespace kudu

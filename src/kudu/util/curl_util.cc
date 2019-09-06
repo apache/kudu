@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <ostream>
 
 #include <curl/curl.h>
@@ -58,7 +59,13 @@ EasyCurl::EasyCurl() {
   // Use our own SSL initialization, and disable curl's.
   // Both of these calls are idempotent.
   security::InitializeOpenSSL();
-  CHECK_EQ(0, curl_global_init(CURL_GLOBAL_DEFAULT & ~CURL_GLOBAL_SSL));
+  // curl_global_init() is not thread safe and multiple calls have the
+  // same effect as one call.
+  // See more details: https://curl.haxx.se/libcurl/c/curl_global_init.html
+  static std::once_flag once;
+  std::call_once(once, []() {
+    CHECK_EQ(0, curl_global_init(CURL_GLOBAL_DEFAULT & ~CURL_GLOBAL_SSL));
+  });
   curl_ = curl_easy_init();
   CHECK(curl_) << "Could not init curl";
 }
