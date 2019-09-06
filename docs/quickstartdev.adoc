@@ -1,0 +1,39 @@
+= Quickstart using Bash scripts
+
+Create, start, and stop Kudu cluster using shell scripts
+
+== Start Kudu cluster
+
+Create and start Kudu cluster with one master and three tablet servers
+
+[source,bash]
+----
+cd build/latest
+../../src/kudu/scripts/start_kudu.sh
+----
+
+== Check Kudu master server web interface
+
+Open in browser: http://localhost:8764/
+
+== Generate and load some data into Kudu
+
+[source,bash]
+----
+./bin/kudu perf loadgen 127.0.0.1:8765 --keep_auto_table=true --num_rows_per_thread=100000 --run_scan=true
+----
+
+== Query Kudu servers
+
+[source,bash]
+----
+./bin/kudu master get_flags 127.0.0.1:8765
+./bin/kudu tserver get_flags 127.0.0.1:9870
+----
+
+== Stop Kudu cluster
+
+[source,bash]
+----
+../../src/kudu/scripts/stop_kudu.sh
+----
