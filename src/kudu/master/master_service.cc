@@ -83,11 +83,10 @@ TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
 DEFINE_bool(master_client_location_assignment_enabled, true,
             "Whether masters assign locations to connecting clients. "
             "By default they do if the location assignment command is set, "
-            "but in some test scenarios it's useful to make masters assign "
-            "locations only to tablet servers, but not clients.");
-TAG_FLAG(master_client_location_assignment_enabled, hidden);
+            "but setting this flag to 'false' makes masters assign "
+            "locations only to tablet servers, not clients.");
+TAG_FLAG(master_client_location_assignment_enabled, advanced);
 TAG_FLAG(master_client_location_assignment_enabled, runtime);
-TAG_FLAG(master_client_location_assignment_enabled, unsafe);
 
 DEFINE_bool(master_support_authz_tokens, true,
             "Whether the master supports generating authz tokens. Used for "
@@ -571,7 +570,7 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   // Assign a location to the client if needed.
   auto* location_cache = server_->location_cache();
   if (location_cache != nullptr &&
-      PREDICT_TRUE(FLAGS_master_client_location_assignment_enabled)) {
+      FLAGS_master_client_location_assignment_enabled) {
     string location;
     const auto s = location_cache->GetLocation(
         rpc->remote_address().host(), &location);

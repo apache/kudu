@@ -112,6 +112,7 @@ Status LocationCache::GetLocation(const string& key, string* location) {
     std::lock_guard<rw_spinlock> l(location_map_lock_);
     // This simple implementation doesn't protect against multiple runs of the
     // location-mapping command for the same key.
+    // TODO(KUDU-2771): queue concurrent requests for the same key
     InsertIfNotPresent(&location_map_, key, value);
     *location = value;
   }

@@ -117,11 +117,11 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   // a location involves calling the location mapping script which is relatively
   // long and expensive operation.
   boost::optional<string> location;
-  if (PREDICT_TRUE(location_cache_ != nullptr)) {
+  if (location_cache_) {
     // In some test scenarios the location is assigned per tablet server UUID.
     // That's the case when multiple (or even all) tablet servers have the same
     // IP address for their RPC endpoint.
-    const auto& cmd_arg = FLAGS_location_mapping_by_uuid
+    const auto& cmd_arg = PREDICT_FALSE(FLAGS_location_mapping_by_uuid)
         ? uuid : registration.rpc_addresses(0).host();
     TRACE(Substitute("tablet server $0: assigning location", uuid));
     string location_str;
