@@ -66,3 +66,83 @@ function bytesSorter(left, right) {
   }
   return 0;
 }
+
+// Converts numeric strings to numbers and then compares them.
+function compareNumericStrings(left, right) {
+  left_num = parseInt(left, 10);
+  right_num = parseInt(right, 10);
+  if (left_num < right_num) {
+    return -1;
+  }
+  if (left_num > right_num) {
+    return 1;
+  }
+  return 0;
+}
+
+// A comparison function for human-readable time strings.
+//
+// The human-readable time format should look like this:
+//   "2019-09-06 19:56:46 CST"
+//
+// Note: the time zones will be ignored since the masters
+// should not be deployed across time zones. In addition,
+// we compare the time strings unit by unit since it's
+// really hard to convert them to timestamps.
+function timesSorter(left, right) {
+  // "2019-09-06 19:56:46".
+  var expect_min_length = 19;
+  if (left.length < expect_min_length && right.length < expect_min_length) {
+    return 0;
+  }
+  if (left.length < expect_min_length) {
+    return -1;
+  }
+  if (right.length < expect_min_length) {
+    return 1;
+  }
+
+  // Year.
+  var ret = compareNumericStrings(left.substr(0, 4), right.substr(0, 4));
+  if (ret != 0) {
+    return ret;
+  }
+  // Month.
+  ret = compareNumericStrings(left.substr(5, 2), right.substr(5, 2));
+  if (ret != 0) {
+    return ret;
+  }
+  // Day.
+  ret = compareNumericStrings(left.substr(8, 2), right.substr(8, 2));
+  if (ret != 0) {
+    return ret;
+  }
+  // Hour.
+  ret = compareNumericStrings(left.substr(11, 2), right.substr(11, 2));
+  if (ret != 0) {
+    return ret;
+  }
+  // Minute.
+  ret = compareNumericStrings(left.substr(14, 2), right.substr(14, 2));
+  if (ret != 0) {
+    return ret;
+  }
+  // Second.
+  ret = compareNumericStrings(left.substr(17, 2), right.substr(17, 2));
+  if (ret != 0) {
+    return ret;
+  }
+
+  return 0;
+}
+
+// A comparison function for strings.
+function stringsSorter(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}

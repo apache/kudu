@@ -28,19 +28,19 @@ under the License.
 {{/leader_redirect}}
 {{^error}}
 There are {{num_tables}} tables.
-<table class="table table-striped">
+<table data-toggle="table" class="table table-striped">
   <thead><tr>
-    <th>Table Name</th>
+    <th data-sorter="stringsSorter" data-sortable="true">Table Name</th>
     <th>Table Id</th>
     <th>State</th>
     <th>State Message</th>
-    <th>Create Time</th>
-    <th>Last Alter Time</th>
+    <th data-sorter="timesSorter" data-sortable="true">Create Time</th>
+    <th data-sorter="timesSorter" data-sortable="true">Last Alter Time</th>
   </tr></thead>
   <tbody>
    {{#tables}}
     <tr>
-      <th>{{name}}</th>
+      <td>{{name}}</td>
       <td><a href="/table?id={{id}}">{{id}}</a></td>
       <td>{{state}}</td>
       <td>{{message}}</td>
