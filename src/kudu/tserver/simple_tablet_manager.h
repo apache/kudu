@@ -60,6 +60,7 @@ class Log;
 namespace consensus {
 class ConsensusMetadataManager;
 class OpId;
+struct ElectionResult;
 } // namespace consensus
 
 namespace tserver {
@@ -151,7 +152,8 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // Helper function to create Raft consensus and log
   // Consensus is yet to be started at the end of this
   // call.
-  Status SetupRaft();
+  Status SetupRaft(
+      std::function<void(const kudu::consensus::ElectionResult&)> edcb);
 
   // Initializes the RaftPeerPB for the local peer.
   // Guaranteed to include both uuid and last_seen_addr fields.
