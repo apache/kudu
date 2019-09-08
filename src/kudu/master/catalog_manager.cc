@@ -1111,6 +1111,17 @@ void CatalogManager::PrepareForLeadershipTask() {
       }
     }
 
+    static const char* const kTServerStatesDescription =
+        "Initializing in-progress tserver states";
+    LOG(INFO) << kTServerStatesDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kTServerStatesDescription) {
+      if (!check(std::bind(&TSManager::ReloadTServerStates, master_->ts_manager(),
+                           sys_catalog_.get()),
+                 *consensus, term, kTServerStatesDescription).ok()) {
+        return;
+      }
+    }
+
     if (hms_catalog_) {
       static const char* const kNotificationLogEventIdDescription =
           "Loading latest processed Hive Metastore notification log event ID";

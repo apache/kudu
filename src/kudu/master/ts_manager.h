@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_TS_MANAGER_H
-#define KUDU_MASTER_TS_MANAGER_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -23,9 +22,11 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -37,6 +38,7 @@ class ServerRegistrationPB;
 namespace master {
 
 class LocationCache;
+class SysCatalogTable;
 
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
@@ -68,7 +70,7 @@ class TSManager {
   // Returns false if the TS has never registered.
   // Otherwise, *desc is set and returns true.
   bool LookupTSByUUID(const std::string& uuid,
-                        std::shared_ptr<TSDescriptor>* desc) const;
+                      std::shared_ptr<TSDescriptor>* desc) const;
 
   // Register or re-register a tablet server with the manager.
   //
@@ -89,16 +91,38 @@ class TSManager {
   // Get the TS count.
   int GetCount() const;
 
+  // Sets the tserver state for the given tserver, persisting it to disk.
+  Status SetTServerState(const std::string& ts_uuid,
+                         TServerStatePB ts_state,
+                         SysCatalogTable* sys_catalog);
+
+  // Return the tserver state for the given tablet server UUID, or NONE if one
+  // doesn't exist.
+  TServerStatePB GetTServerState(const std::string& ts_uuid) const;
+
+  // Resets the tserver states and reloads them from disk.
+  Status ReloadTServerStates(SysCatalogTable* sys_catalog);
+
  private:
+  friend class TServerStateLoader;
+
   int ClusterSkew() const;
 
   mutable rw_spinlock lock_;
 
   FunctionGaugeDetacher metric_detacher_;
 
+  // TODO(awong): add a map from HostPort to descriptor so we aren't forced to
+  // know UUIDs up front, e.g. if specifying a given tablet server for
+  // maintenance mode, it'd be easier for users to specify the HostPort.
   typedef std::unordered_map<
-    std::string, std::shared_ptr<TSDescriptor>> TSDescriptorMap;
+      std::string, std::shared_ptr<TSDescriptor>> TSDescriptorMap;
   TSDescriptorMap servers_by_id_;
+
+  mutable RWMutex ts_state_lock_;
+  // Maps from the UUIDs of tablet servers to their tserver state, if any.
+  // Note: the states don't necessarily belong to registered tablet servers.
+  std::unordered_map<std::string, TServerStatePB> ts_state_by_uuid_;
 
   LocationCache* location_cache_;
 
@@ -108,4 +132,3 @@ class TSManager {
 } // namespace master
 } // namespace kudu
 
-#endif

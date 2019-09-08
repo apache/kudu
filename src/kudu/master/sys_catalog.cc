@@ -468,20 +468,8 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
   return Status::OK();
 }
 
-// Schema for the unified SysCatalogTable:
-//
-// (entry_type, entry_id) -> metadata
-//
-// entry_type is a enum defined in sys_tables. It indicates
-// whether an entry is a table or a tablet.
-//
-// entry_type is the first part of a compound key as to allow
-// efficient scans of entries of only a single type (e.g., only
-// scan all of the tables, or only scan all of the tablets).
-//
-// entry_id is either a table id or a tablet id. For tablet entries,
-// the table id that the tablet is associated with is stored in the
-// protobuf itself.
+// Schema for the unified SysCatalogTable. See the comment in the header for
+// more details.
 Schema SysCatalogTable::BuildTableSchema() {
   SchemaBuilder builder;
   CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColType, INT8));
@@ -582,6 +570,15 @@ string SysCatalogTable::TskSeqNumberToEntryId(int64_t seq_number) {
   string entry_id;
   KeyEncoderTraits<DataType::INT64, string>::Encode(seq_number, &entry_id);
   return entry_id;
+}
+
+Status SysCatalogTable::VisitTServerStates(TServerStateVisitor* visitor) {
+  TRACE_EVENT0("master", "SysCatalogTable::VisitTServerStates");
+  const auto processor = [&] (const string& entry_id,
+                              const SysTServerStateEntryPB& entry_data) {
+    return visitor->Visit(entry_id, entry_data);
+  };
+  return ProcessRows<SysTServerStateEntryPB, TSERVER_STATE>(processor);
 }
 
 Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
@@ -758,6 +755,41 @@ Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, id));
     enc.Add(RowOperationsPB::DELETE, row);
   }
+
+  WriteResponsePB resp;
+  return SyncWrite(&req, &resp);
+}
+
+Status SysCatalogTable::WriteTServerState(const string& tserver_id,
+                                          const SysTServerStateEntryPB& entry) {
+  DCHECK(!tserver_id.empty());
+  WriteRequestPB req;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+  KuduPartialRow row(&schema_);
+  RETURN_NOT_OK(row.SetInt8(kSysCatalogTableColType, TSERVER_STATE));
+  RETURN_NOT_OK(row.SetString(kSysCatalogTableColId, tserver_id));
+
+  faststring metadata_buf;
+  pb_util::SerializeToString(entry, &metadata_buf);
+  RETURN_NOT_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
+
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::INSERT, row);
+
+  WriteResponsePB resp;
+  return SyncWrite(&req, &resp);
+}
+
+Status SysCatalogTable::RemoveTServerState(const string& tserver_id) {
+  WriteRequestPB req;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+  KuduPartialRow row(&schema_);
+  RETURN_NOT_OK(row.SetInt8(kSysCatalogTableColType, TSERVER_STATE));
+  RETURN_NOT_OK(row.SetStringNoCopy(kSysCatalogTableColId, tserver_id));
+  enc.Add(RowOperationsPB::DELETE, row);
 
   WriteResponsePB resp;
   return SyncWrite(&req, &resp);

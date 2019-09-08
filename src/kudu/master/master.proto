@@ -224,6 +224,13 @@ message SysNotificationLogEventIdPB {
   optional int64 latest_notification_log_event_id = 1;
 }
 
+// The on-disk entry in the sys.catalog table to represent the existence of
+// on-going tserver state (e.g. maintenance mode).
+message SysTServerStateEntryPB {
+  // TODO(awong): consider adding a timestamp here.
+  optional TServerStatePB state = 1;
+}
+
 ////////////////////////////////////////////////////////////
 // RPCs
 ////////////////////////////////////////////////////////////
@@ -810,6 +817,20 @@ message ListTabletServersResponsePB {
     optional string location = 4;
   }
   repeated Entry servers = 2;
+}
+
+// Representation of the state of a tablet server.
+// TODO(KUDU-1827): add state for decommissioning.
+enum TServerStatePB {
+  // Default value for backwards compatibility.
+  UNKNOWN_STATE = 0;
+
+  // No state for the tserver.
+  NONE = 1;
+
+  // New replicas are not added to the tserver, and failed replicas on the
+  // tserver are not re-replicated.
+  MAINTENANCE_MODE = 2;
 }
 
 // GetMasterRegistrationRequest/Response: get the instance id and
