@@ -95,7 +95,7 @@ Requirements
     connection between locations is not reliable or has high latency.
 
 -   Support location-aware clients so at minimum a location-aware client
-    performing a READ\_CLOSEST scan will read from the same location if
+    performing a CLOSEST\_REPLICA scan will read from the same location if
     possible.
 -   Enhance the rebalancing tool to preserve placement policies if they
     hold and to move replicas to enforce placement policies if they are
@@ -250,7 +250,7 @@ When the client connects to the cluster, it will include the hostname or
 IP of the machine it is running on. The master will assign it a location
 and return that to the client. It will also return location information
 to the client about tablet servers. The client will use this information
-to select a server to read from in READ\_CLOSEST mode. It will prefer a
+to select a server to read from in CLOSEST\_REPLICA mode. It will prefer a
 local server, as it does now, and then after that prefer servers in the
 same location (with ties by random choice). This procedure generalizes
 to a hierarchical scheme: the client would prefer servers having the
