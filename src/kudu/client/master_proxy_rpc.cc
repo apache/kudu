@@ -64,6 +64,8 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
+using master::GetTableStatisticsRequestPB;
+using master::GetTableStatisticsResponsePB;
 using master::ListMastersRequestPB;
 using master::ListMastersResponsePB;
 using master::ListTablesRequestPB;
@@ -291,6 +293,7 @@ template class AsyncLeaderMasterRpc<IsAlterTableDoneRequestPB, IsAlterTableDoneR
 template class AsyncLeaderMasterRpc<GetTableSchemaRequestPB, GetTableSchemaResponsePB>;
 template class AsyncLeaderMasterRpc<GetTableLocationsRequestPB, GetTableLocationsResponsePB>;
 template class AsyncLeaderMasterRpc<GetTabletLocationsRequestPB, GetTabletLocationsResponsePB>;
+template class AsyncLeaderMasterRpc<GetTableStatisticsRequestPB, GetTableStatisticsResponsePB>;
 template class AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>;
 template class AsyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>;
 template class AsyncLeaderMasterRpc<ListMastersRequestPB, ListMastersResponsePB>;

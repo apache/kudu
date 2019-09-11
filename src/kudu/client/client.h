@@ -78,6 +78,7 @@ class KuduSession;
 class KuduStatusCallback;
 class KuduTableAlterer;
 class KuduTableCreator;
+class KuduTableStatistics;
 class KuduTablet;
 class KuduTabletServer;
 class KuduUpdate;
@@ -457,6 +458,16 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Status object for the operation.
   Status GetTablet(const std::string& tablet_id,
                    KuduTablet** tablet) KUDU_NO_EXPORT;
+
+  /// Get the table statistics by table name.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table.
+  /// @param [out] statistics
+  ///   Table statistics. The caller takes ownership of the statistics.
+  /// @return Operation status.
+  Status GetTableStatistics(const std::string& table_name,
+                            KuduTableStatistics** statistics);
 
   /// Get the master RPC addresses as configured on the last leader master this
   /// client connected to, as a CSV. If the client has not connected to a leader
@@ -942,6 +953,33 @@ class KUDU_EXPORT KuduTableCreator {
   Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTableCreator);
+};
+
+/// @brief In-memory statistics of table.
+class KUDU_EXPORT KuduTableStatistics {
+ public:
+  KuduTableStatistics();
+  ~KuduTableStatistics();
+
+  /// @return The table's on disk size.
+  ///
+  /// @note This statistic is pre-replication.
+  int64_t on_disk_size();
+
+  /// @return The table's live row count.
+  ///
+  /// @note This statistic is pre-replication.
+  int64_t live_row_count();
+
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  friend class KuduClient;
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTableStatistics);
 };
 
 /// @brief A representation of a table on a particular cluster.

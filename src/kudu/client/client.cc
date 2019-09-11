@@ -51,6 +51,7 @@
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
 #include "kudu/client/table_creator-internal.h"
+#include "kudu/client/table_statistics-internal.h"
 #include "kudu/client/tablet-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/value.h"
@@ -109,6 +110,8 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
+using kudu::master::GetTableStatisticsRequestPB;
+using kudu::master::GetTableStatisticsResponsePB;
 using kudu::master::GetTabletLocationsRequestPB;
 using kudu::master::GetTabletLocationsResponsePB;
 using kudu::master::ListTablesRequestPB;
@@ -590,6 +593,31 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   return Status::OK();
 }
 
+Status KuduClient::GetTableStatistics(const string& table_name,
+                                      KuduTableStatistics** statistics) {
+  GetTableStatisticsRequestPB req;
+  GetTableStatisticsResponsePB resp;
+  TableIdentifierPB* table = req.mutable_table();
+  table->set_table_name(table_name);
+  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<GetTableStatisticsRequestPB, GetTableStatisticsResponsePB> rpc(
+      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
+      &MasterServiceProxy::GetTableStatisticsAsync, "GetTableStatistics",
+      sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  RETURN_NOT_OK(sync.Wait());
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  unique_ptr<KuduTableStatistics> table_statistics(new KuduTableStatistics);
+  table_statistics->data_ = new KuduTableStatistics::Data(resp.on_disk_size(),
+      resp.live_row_count());
+
+  *statistics = table_statistics.release();
+  return Status::OK();
+}
+
 string KuduClient::GetMasterAddresses() const {
   return HostPort::ToCommaSeparatedString(data_->master_hostports());
 }
@@ -844,6 +872,25 @@ Status KuduTableCreator::Create() {
   }
 
   return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// KuduTableStatistics
+////////////////////////////////////////////////////////////
+
+KuduTableStatistics::KuduTableStatistics() : data_(nullptr) {
+}
+
+KuduTableStatistics::~KuduTableStatistics() {
+  delete data_;
+}
+
+int64_t KuduTableStatistics::on_disk_size() {
+  return data_->on_disk_size_;
+}
+
+int64_t KuduTableStatistics::live_row_count() {
+  return data_->live_row_count_;
 }
 
 ////////////////////////////////////////////////////////////

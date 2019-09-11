@@ -118,6 +118,7 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
+DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
 DECLARE_int32(flush_threshold_mb);
@@ -136,6 +137,8 @@ DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(table_locations_ttl_ms);
+DECLARE_int64(live_row_count_for_testing);
+DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
@@ -779,6 +782,20 @@ TEST_F(ClientTest, TestListTabletServers) {
             tss[0]->uuid());
   ASSERT_EQ(cluster_->mini_tablet_server(0)->server()->first_rpc_address().host(),
             tss[0]->hostname());
+}
+
+TEST_F(ClientTest, TestGetTableStatistics) {
+  unique_ptr<KuduTableStatistics> statistics;
+  FLAGS_mock_table_metrics_for_testing = true;
+  FLAGS_on_disk_size_for_testing = 1024;
+  FLAGS_live_row_count_for_testing = 1000;
+  {
+    KuduTableStatistics *table_statistics;
+    ASSERT_OK(client_->GetTableStatistics(kTableName, &table_statistics));
+    statistics.reset(table_statistics);
+  }
+  ASSERT_EQ(FLAGS_on_disk_size_for_testing, statistics->on_disk_size());
+  ASSERT_EQ(FLAGS_live_row_count_for_testing, statistics->live_row_count());
 }
 
 TEST_F(ClientTest, TestBadTable) {
