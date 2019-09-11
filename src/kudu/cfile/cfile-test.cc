@@ -79,6 +79,8 @@
 DECLARE_bool(cfile_write_checksums);
 DECLARE_bool(cfile_verify_checksums);
 DECLARE_string(block_cache_type);
+DECLARE_bool(force_block_cache_capacity);
+DECLARE_int64(block_cache_capacity_mb);
 
 #if defined(__linux__)
 DECLARE_string(nvm_cache_path);
@@ -1047,6 +1049,22 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestNvmAllocationFailure) {
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
 }
 #endif
+
+TEST_P(TestCFileBothCacheMemoryTypes, TestValidateBlockCacheCapacity) {
+  FLAGS_force_block_cache_capacity = false;
+  FLAGS_block_cache_capacity_mb = 100000000; // very big number (100TB)
+  switch (GetParam()) {
+    case Cache::MemoryType::DRAM:
+      ASSERT_FALSE(kudu::cfile::ValidateBlockCacheCapacity());
+      break;
+    case Cache::MemoryType::NVM:
+      ASSERT_TRUE(kudu::cfile::ValidateBlockCacheCapacity());
+      break;
+    default:
+      LOG(FATAL) << "Unknown block cache type: "
+                 << static_cast<int16_t>(GetParam());
+  }
+}
 
 class TestCFileDifferentCodecs : public TestCFile,
                                  public testing::WithParamInterface<CompressionType> {

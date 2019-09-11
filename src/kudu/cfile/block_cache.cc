@@ -87,10 +87,13 @@ Cache* CreateCache(int64_t capacity) {
   }
 }
 
-// Validates the block cache capacity won't permit the cache to grow large enough
-// to cause pernicious flushing behavior. See KUDU-2318.
+} // anonymous namespace
+
 bool ValidateBlockCacheCapacity() {
   if (FLAGS_force_block_cache_capacity) {
+    return true;
+  }
+  if (FLAGS_block_cache_type != "DRAM") {
     return true;
   }
   int64_t capacity = FLAGS_block_cache_capacity_mb * 1024 * 1024;
@@ -115,7 +118,6 @@ bool ValidateBlockCacheCapacity() {
   return true;
 }
 
-} // anonymous namespace
 
 GROUP_FLAG_VALIDATOR(block_cache_capacity_mb, ValidateBlockCacheCapacity);
 

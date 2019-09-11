@@ -221,6 +221,10 @@ inline void BlockCache::PendingEntry::reset() {
   handle_.reset();
 }
 
+// Validates the block cache capacity. Won't permit the cache to grow large
+// enough to cause pernicious flushing behavior. See KUDU-2318.
+bool ValidateBlockCacheCapacity();
+
 } // namespace cfile
 } // namespace kudu
 
