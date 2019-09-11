@@ -43,6 +43,38 @@ namespace clock {
 class MiniChronydTest: public KuduTest {
 };
 
+// Run chronyd without any reference: neither local reference mode, nor
+// reference NTP server present. Such server cannot be a good NTP source
+// because its clock is unsynchronized.
+TEST_F(MiniChronydTest, UnsynchronizedServer) {
+  MiniChronydOptions options;
+  options.bindaddress = GetBindIpForDaemon(1, kDefaultBindMode);
+  options.port = 10123 + getpid() % 1000;
+  options.local = false;
+  MiniChronyd chrony(options);
+  ASSERT_OK(chrony.Start());
+
+  // No client has talked to the NTP server yet.
+  {
+    MiniChronyd::ServerStats stats;
+    ASSERT_OK(chrony.GetServerStats(&stats));
+    ASSERT_EQ(0, stats.ntp_packets_received);
+  }
+
+  auto s = MiniChronyd::CheckNtpSource(
+      { HostPort(chrony.options().bindaddress, chrony.options().port) });
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "failed measure clock offset from reference NTP servers");
+
+  // Make sure the client has communicated with the server.
+  {
+    MiniChronyd::ServerStats stats;
+    ASSERT_OK(chrony.GetServerStats(&stats));
+    ASSERT_LT(0, stats.ntp_packets_received);
+  }
+}
+
 // This scenario verifies basic functionality of the mini-chronyd wrapper:
 // start, stop, manually setting the reference time, etc.
 TEST_F(MiniChronydTest, BasicSingleServerInstance) {
@@ -155,6 +187,62 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
     ASSERT_STR_CONTAINS(s.ToString(), "No suitable source for synchronisation");
   }
 #endif
+}
+
+// This scenario runs multi-tier set of chronyd servers: few servers of
+// stratum X and few more servers of stratum X+1, so the latter use the former
+// as the source for synchronisation. Both set of servers should be a good clock
+// source to serve NTP clients.
+TEST_F(MiniChronydTest, MultiTierBasic) {
+  const uint16_t base_port = 10123 + getpid() % 1000;
+
+  vector<unique_ptr<MiniChronyd>> servers_0;
+  vector<HostPort> ntp_endpoints_0;
+  for (auto idx = 0; idx < 3; ++idx) {
+    MiniChronydOptions options;
+    options.index = idx;
+    options.bindaddress = GetBindIpForDaemon(idx + 1, kDefaultBindMode);
+    options.port = base_port + idx * 10;
+    unique_ptr<MiniChronyd> chrony(new MiniChronyd(options));
+    ASSERT_OK(chrony->Start());
+    ntp_endpoints_0.emplace_back(chrony->options().bindaddress,
+                                 chrony->options().port);
+    servers_0.emplace_back(std::move(chrony));
+  }
+
+  vector<unique_ptr<MiniChronyd>> servers_1;
+  vector<HostPort> ntp_endpoints_1;
+  for (auto idx = 3; idx < 5; ++idx) {
+    MiniChronydOptions options;
+    options.index = idx;
+    options.bindaddress = GetBindIpForDaemon(idx + 1, kDefaultBindMode);
+    options.port = base_port + idx * 10;
+    options.local = false;
+    for (const auto& ref : servers_0) {
+      MiniChronydServerOptions server_options;
+      server_options.port = ref->options().port;
+      server_options.address = ref->options().bindaddress;
+      options.servers.emplace_back(std::move(server_options));
+    }
+    unique_ptr<MiniChronyd> chrony(new MiniChronyd(options));
+    ASSERT_OK(chrony->Start());
+    ntp_endpoints_1.emplace_back(chrony->options().bindaddress,
+                                 chrony->options().port);
+    servers_1.emplace_back(std::move(chrony));
+  }
+
+  {
+    // All chronyd servers that use the system clock as a reference lock should
+    // present themselves as a set of NTP servers suitable for synchronisation.
+    auto s = MiniChronyd::CheckNtpSource(ntp_endpoints_0);
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  }
+  {
+    // All chronyd servers that use the above mentioned chronyd servers
+    // as reference should be a set of good NTP sources as well.
+    auto s = MiniChronyd::CheckNtpSource(ntp_endpoints_1);
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  }
 }
 
 } // namespace clock

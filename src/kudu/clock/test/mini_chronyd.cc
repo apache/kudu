@@ -57,13 +57,36 @@ using strings::Substitute;
 namespace kudu {
 namespace clock {
 
-string MiniChronydOptions::ToString() const {
+string MiniChronydServerOptions::ToString() const {
   return Substitute(
-      "{bindaddress: $0,"
+      "{address: $0,"
       " port: $1,"
-      " data_root: $2,"
-      " bindcmdaddress: $3}",
-      bindaddress, port, data_root, bindcmdaddress);
+      " minpoll: $2,"
+      " maxpoll: $3,"
+      " iburst: $4,"
+      " burst: $5,"
+      " offset: $6}",
+      address, port, minpoll, maxpoll, iburst, burst, offset);
+}
+
+string MiniChronydOptions::ToString() const {
+  string servers_str = "[";
+  for (const auto& s : servers) {
+    servers_str += " " + s.ToString() + ",";
+  }
+  servers_str += "]";
+  return Substitute(
+      "{index: $0,"
+      " data_root: $1,"
+      " bindcmdaddress: $2,"
+      " bindaddress: $3,"
+      " port: $4,"
+      " pidfile: $5,"
+      " local: $6,"
+      " local_stratum: $7,"
+      " servers: $8}",
+      index, data_root, bindcmdaddress, bindaddress, port, pidfile,
+      local, local_stratum, servers_str);
 }
 
 // Check that the specified servers are seen as good enough synchronisation
@@ -303,7 +326,7 @@ string MiniChronyd::config_file_path() const {
 // instances on the same node, so all the 'defaults' should be customized
 // to avoid conflicts.
 Status MiniChronyd::CreateConf() {
-  static const string kFileTemplate = R"(
+  static const string kFileTemplateCommon = R"(
 # Override the default user chronyd NTP server starts because the compiled-in
 # default 'root' is not suitable when running chronyd in the context of the Kudu
 # testing framework. It's also be possible to override this parameter in the
@@ -334,10 +357,6 @@ pidfile $4
 # is already enabled.
 cmdport 0
 
-# Using the local clock as the clock source (usually it's a high precision
-# oscillator or a NTP server).
-local
-
 # NTP clients from all addresses are allowed to access the NTP server that is
 # serving requests as specified by the 'bindaddress' and 'port' directives.
 allow all
@@ -345,6 +364,18 @@ allow all
 # Allow setting the time manually using the cronyc CLI utility.
 manual
 )";
+
+  static const string kFileTemplateLocal = R"(
+# Use the local clock as the clock source (usually it's a high precision
+# oscillator or a NTP server), and report the stratum as configured.
+local stratum $0
+)";
+
+  static const string kFileTemplateServers = R"(
+# The set of NTP servers to synchronize with.
+$0
+)";
+
   if (options_.bindcmdaddress.empty()) {
     // The path to Unix domain socket file cannot be longer than ~100 bytes,
     // so it's necessary to create a directory with shorter absolute path.
@@ -362,12 +393,32 @@ manual
   }
   string username;
   RETURN_NOT_OK(GetLoggedInUser(&username));
-  auto contents = Substitute(kFileTemplate,
+  auto contents = Substitute(kFileTemplateCommon,
                              username,
                              options_.bindaddress,
                              options_.bindcmdaddress,
                              options_.port,
                              options_.pidfile);
+  if (options_.local) {
+    contents += Substitute(kFileTemplateLocal, options_.local_stratum);
+  }
+  if (!options_.servers.empty()) {
+    string servers_str;
+    for (const auto& server : options_.servers) {
+      auto str = Substitute(
+          "server $0 port $1 minpoll $2 maxpoll $3 offset $4",
+          server.address, server.port, server.minpoll, server.maxpoll, server.offset);
+      if (server.iburst) {
+        str += " iburst";
+      }
+      if (server.burst) {
+        str += " burst";
+      }
+      str += "\n";
+      servers_str += str;
+    }
+    contents += Substitute(kFileTemplateServers, servers_str);
+  }
   return WriteStringToFile(Env::Default(), contents, config_file_path());
 }
 

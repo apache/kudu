@@ -34,6 +34,65 @@ class Subprocess;
 
 namespace clock {
 
+// This structure represents a set of properties for the 'server' configuration
+// directive in the chrony.conf file. All the fields of the structure except
+// for the 'address' directly map into corresponding options of the 'server'
+// configuration directive (see 'man chrony.conf' for details).
+//
+// NOTE: the default values for the most configuration options are different
+//       from the defaults used in chronyd's config file (chrony.conf)
+struct MiniChronydServerOptions {
+  // Hostname or IP address of the server.
+  //
+  // Default: ""
+  std::string address;
+
+  // Port number where server listens for NTP requests.
+  //
+  // Default: 123
+  uint16_t port = 123;
+
+  // The minimum interval between requests sent to the server as a power of 2
+  // in seconds.
+  //
+  // Default: -3
+  int8_t minpoll = -3;
+
+  // The maximum interval between requests sent to the server as a power of 2
+  // in seconds.
+  //
+  // Default: 2
+  int8_t maxpoll = 2;
+
+  // With this option enabled, the interval between the first four requests sent
+  // to the server is much less than interval specified by the 'minpoll' option,
+  // which allows chronyd to make the first update of the clock shortly after
+  // it has started.
+  //
+  // Default: true
+  bool iburst = true;
+
+  // With this option enabled, chronyd will shorten the interval between up to
+  // four requests to 2 seconds or less when it cannot get a good measurement
+  // from the server.
+  //
+  // Default: true
+  bool burst = true;
+
+  // This option specifies a correction (in seconds) which will be applied to
+  // offsets measured with this source. In test scenarios, this is useful for
+  // fine-tuning the true time offsets as seen by a client in NTP responses
+  // sent from the server. For example, if running multiple chronyd NTP servers
+  // that use the local clock as a reference clock, it's possible to get precise
+  // distribution of the true time offsets observed by a client.
+  //
+  // Default: 0.0
+  double offset = 0.0;
+
+  // Returns a string representation of the options suitable for debug printing.
+  std::string ToString() const;
+};
+
 // Options to run MiniChronyd with.
 struct MiniChronydOptions {
   // There might be multiple mini_chronyd run by the same test.
@@ -73,6 +132,27 @@ struct MiniChronydOptions {
   // Default: "", which auto-generates a unique pid file path for this chronyd.
   // The default may only be used from a gtest unit test.
   std::string pidfile;
+
+  // Whether to run in the 'local reference mode', using the local clock of the
+  // machine as a reference clock. With 'local' set to 'true', chronyd is able
+  // to operate as NTP server synchronised to real time (from the viewpoint of
+  // clients polling it), even if it was never synchronised or the last update
+  // of the clock happened a long time ago.
+  //
+  // Default: true
+  bool local = true;
+
+  // Stratum of the server to report when running in local reference mode.
+  // This directly maps to chronyd's 'stratum' option of the 'local'
+  // configuration directive.
+  //
+  // Default: 10, which is default when running in local reference mode
+  uint8_t local_stratum = 10;
+
+  // NTP servers to use as reference servers for chronyd instance.
+  //
+  // Default: {} (an empty container)
+  std::vector<MiniChronydServerOptions> servers;
 
   // Returns a string representation of the options suitable for debug printing.
   std::string ToString() const;
