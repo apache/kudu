@@ -26,6 +26,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/clock/builtin_ntp.h"
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/system_ntp.h"
 #include "kudu/gutil/bind.h"
@@ -60,15 +61,16 @@ TAG_FLAG(use_hybrid_clock, hidden);
 
 DEFINE_string(time_source, "system",
               "The clock source that HybridClock should use. Must be one of "
-              "'system' or 'mock' (for tests only)");
+              "'system', 'builtin', or 'mock' (for tests only)");
 TAG_FLAG(time_source, experimental);
 DEFINE_validator(time_source, [](const char* /* flag_name */, const string& value) {
   if (boost::iequals(value, "system") ||
+      boost::iequals(value, "builtin") ||
       boost::iequals(value, "mock")) {
     return true;
   }
   LOG(ERROR) << "unknown value for 'time_source': '" << value << "'"
-             << " (expected one of 'system' or 'mock')";
+             << " (expected one of 'system', 'builtin', or 'mock')";
   return false;
 });
 
@@ -124,13 +126,15 @@ HybridClock::HybridClock()
 
 Status HybridClock::Init() {
   if (boost::iequals(FLAGS_time_source, "mock")) {
-    time_service_.reset(new clock::MockNtp());
+    time_service_.reset(new clock::MockNtp);
   } else if (boost::iequals(FLAGS_time_source, "system")) {
 #ifndef __APPLE__
-    time_service_.reset(new clock::SystemNtp());
+    time_service_.reset(new clock::SystemNtp);
 #else
-    time_service_.reset(new clock::SystemUnsyncTime());
+    time_service_.reset(new clock::SystemUnsyncTime);
 #endif
+  } else if (boost::iequals(FLAGS_time_source, "builtin")) {
+    time_service_.reset(new clock::BuiltInNtp);
   } else {
     return Status::InvalidArgument("invalid NTP source", FLAGS_time_source);
   }

@@ -16,6 +16,7 @@
 # under the License.
 
 set(CLOCK_SRCS
+  builtin_ntp.cc
   hybrid_clock.cc
   logical_clock.cc
   mock_ntp.cc
@@ -66,3 +67,4 @@ ADD_KUDU_TEST(logical_clock-test)
 
 SET_KUDU_TEST_LINK_LIBS(clock mini_chronyd mini_chronyd_test_util)
 ADD_KUDU_TEST(test/mini_chronyd-test)
+ADD_KUDU_TEST(ntp-test)
