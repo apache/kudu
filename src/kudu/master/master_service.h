@@ -38,6 +38,8 @@ namespace master {
 
 class AlterTableRequestPB;
 class AlterTableResponsePB;
+class ChangeTServerStateRequestPB;
+class ChangeTServerStateResponsePB;
 class ConnectToMasterRequestPB;
 class ConnectToMasterResponsePB;
 class CreateTableRequestPB;
@@ -97,6 +99,10 @@ class MasterServiceImpl : public MasterServiceIf {
   bool AuthorizeSuperUser(const google::protobuf::Message* req,
                           google::protobuf::Message* resp,
                           rpc::RpcContext* context) override;
+
+  void ChangeTServerState(const ChangeTServerStateRequestPB* req,
+                          ChangeTServerStateResponsePB* resp,
+                          rpc::RpcContext* rpc) override;
 
   void Ping(const PingRequestPB* req,
             PingResponsePB* resp,

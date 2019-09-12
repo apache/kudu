@@ -56,6 +56,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(hive_metastore_sasl_enabled);
@@ -93,6 +94,12 @@ DEFINE_bool(master_support_authz_tokens, true,
             "testing version compatibility in the client.");
 TAG_FLAG(master_support_authz_tokens, hidden);
 
+// TODO(awong): once maintenance mode is done, remove this.
+DEFINE_bool(master_support_maintenance_mode, false,
+            "Whether the master supports maintenance mode. Used for "
+            "testing while maintenance mode in progress.");
+TAG_FLAG(master_support_maintenance_mode, hidden);
+
 using boost::make_optional;
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -119,6 +126,22 @@ void CheckRespErrorOrSetUnknown(const Status& s, RespClass* resp) {
   if (PREDICT_FALSE(!s.ok() && !resp->has_error())) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
     resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+  }
+}
+
+// Sets 'to_state' to the end state of the given 'change' and returns true.
+// Returns false if the 'change' isn't supported.
+bool StateChangeToTServerState(const TServerStateChangePB::StateChange& change,
+                               TServerStatePB* to_state) {
+  switch (change) {
+    case TServerStateChangePB::ENTER_MAINTENANCE_MODE:
+      *to_state = TServerStatePB::MAINTENANCE_MODE;
+      return true;
+    case TServerStateChangePB::EXIT_MAINTENANCE_MODE:
+      *to_state = TServerStatePB::NONE;
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -160,6 +183,59 @@ bool MasterServiceImpl::AuthorizeSuperUser(const Message* /*req*/,
 void MasterServiceImpl::Ping(const PingRequestPB* /*req*/,
                              PingResponsePB* /*resp*/,
                              rpc::RpcContext* rpc) {
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::ChangeTServerState(const ChangeTServerStateRequestPB* req,
+                                           ChangeTServerStateResponsePB* resp,
+                                           rpc::RpcContext* rpc) {
+  // Do some basic checking on the contents of the request.
+  Status s;
+  auto respond_error = MakeScopedCleanup([&] {
+    if (PREDICT_FALSE(!s.ok())) {
+      rpc->RespondFailure(s);
+    }
+  });
+  if (PREDICT_FALSE(!FLAGS_master_support_maintenance_mode)) {
+    s = Status::NotSupported("maintenance mode is not supported");
+    return;
+  }
+  if (!req->has_change()) {
+    s = Status::InvalidArgument("request must contain tserver state change");
+    return;
+  }
+  const auto& ts_state_change = req->change();
+  if (!ts_state_change.has_uuid()) {
+    s = Status::InvalidArgument("uuid not provided");
+    return;
+  }
+  const auto& ts_uuid = ts_state_change.uuid();
+  if (!ts_state_change.has_change()) {
+    s = Status::InvalidArgument(Substitute("state change not provided for $0", ts_uuid));
+    return;
+  }
+  const auto& change = ts_state_change.change();
+  TServerStatePB to_state;
+  if (!StateChangeToTServerState(change, &to_state)) {
+    s = Status::InvalidArgument(Substitute("invalid state change: $0", change));
+    return;
+  }
+  respond_error.cancel();
+
+  // Make sure we're the leader.
+  CatalogManager* catalog_manager = server_->catalog_manager();
+  CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+
+  // Set the appropriate state for the given tserver.
+  s = server_->ts_manager()->SetTServerState(ts_uuid, to_state,
+      server_->catalog_manager()->sys_catalog());
+  if (PREDICT_FALSE(!s.ok())) {
+    rpc->RespondFailure(s);
+    return;
+  }
   rpc->RespondSuccess();
 }
 

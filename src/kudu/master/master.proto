@@ -833,6 +833,37 @@ enum TServerStatePB {
   MAINTENANCE_MODE = 2;
 }
 
+message TServerStateChangePB {
+  // Representation of a change in tserver state.
+  enum StateChange {
+    // Default value for backwards compatibility.
+    UNKNOWN_STATE_CHANGE = 0;
+
+    // Transitions from having no state to being in maintenance mode. If the
+    // tserver is already in maintenance mode, this is a no-op.
+    ENTER_MAINTENANCE_MODE = 1;
+
+    // Transitions from being in maintenance mode to having no tserver state. If
+    // the tserver already has no state, this is a no-op.
+    EXIT_MAINTENANCE_MODE = 2;
+  }
+
+  // The tserver UUID on which to apply the state change.
+  optional string uuid = 1;
+
+  // The change in tserver state.
+  optional StateChange change = 2;
+}
+
+message ChangeTServerStateRequestPB {
+  // TODO(awong): consider setting tserver state in batches.
+  optional TServerStateChangePB change = 1;
+}
+
+message ChangeTServerStateResponsePB {
+  optional MasterErrorPB error = 1;
+}
+
 // GetMasterRegistrationRequest/Response: get the instance id and
 // HTTP/RPC addresses for this Master server.
 message GetMasterRegistrationRequestPB {
@@ -981,6 +1012,10 @@ service MasterService {
   }
   rpc ResetAuthzCache(ResetAuthzCacheRequestPB) returns
       (ResetAuthzCacheResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
+  }
+  rpc ChangeTServerState(ChangeTServerStateRequestPB) returns
+      (ChangeTServerStateResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
   }
 

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -47,6 +48,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_bool(master_support_maintenance_mode);
 
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::rpc::Messenger;
@@ -305,6 +308,43 @@ TEST_F(TServerStateTest, MaintenanceModeTServerDoesntGetNewReplicas) {
   // And if we exit maintenance mode, we should be able to create tables again.
   ASSERT_OK(SetTServerState(tserver_ids[1], TServerStatePB::NONE));
   ASSERT_OK(CreateTable("happy-table"));
+}
+
+// Test to exercise the RPC endpoint to change the tserver state.
+TEST_F(TServerStateTest, TestRPCs) {
+  FLAGS_master_support_maintenance_mode = true;
+  ChangeTServerStateRequestPB req;
+  Status s;
+  // Sends a state change RPC and ensures there's an error, matching the
+  // input error string if provided.
+  const auto send_req_check_failed = [&] (const string& error) {
+    RpcController rpc;
+    ChangeTServerStateResponsePB resp;
+    s = proxy_->ChangeTServerState(req, &resp, &rpc);
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+    if (!error.empty()) {
+      ASSERT_STR_CONTAINS(s.ToString(), error);
+    }
+  };
+  NO_FATALS(send_req_check_failed("must contain tserver state change"));
+  TServerStateChangePB* ts_state_change = req.mutable_change();
+
+  NO_FATALS(send_req_check_failed("uuid not provided"));
+  ts_state_change->set_uuid(kTServer);
+
+  NO_FATALS(send_req_check_failed("state change not provided"));
+
+  // Now send over a correct request. Do this a couple times to sanity check
+  // that repeated calls are just no-ops.
+  ts_state_change->set_change(TServerStateChangePB::ENTER_MAINTENANCE_MODE);
+  const int kNumRepeatedCalls = 2;
+  for (int i = 0; i < kNumRepeatedCalls; i++) {
+    RpcController rpc;
+    ChangeTServerStateResponsePB resp;
+    ASSERT_OK(proxy_->ChangeTServerState(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(TServerStatePB::MAINTENANCE_MODE, ts_manager_->GetTServerState(kTServer));
+  }
 }
 
 } // namespace master
