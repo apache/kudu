@@ -32,6 +32,9 @@ oprofile_data
 *.iml
 README.html
 
+# macOS-specific cruft
+.DS_Store
+
 # VIM/emacs/other editors stuff
 *.swp
 *.autosave
