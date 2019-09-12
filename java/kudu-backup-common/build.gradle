@@ -56,3 +56,4 @@ javadoc {
 // Skip publishing kudu-backup-common artifact because it will always be shaded into
 // kudu-backup and kudu-backup-tools.
 uploadArchives.enabled = false
+install.enabled = false
