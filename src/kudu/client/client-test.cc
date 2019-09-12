@@ -5615,6 +5615,17 @@ TEST_F(ClientTest, TestBatchScanConstIterator) {
       CHECK_EQ(ref_count, count);
     }
 
+    // Check access to row via indirection operator *
+    // and member access through pointer operator ->
+    {
+      KuduScanBatch::const_iterator it(batch.begin());
+      ASSERT_TRUE(it != batch.end());
+      int32_t x = 0, y = 0;
+      ASSERT_OK((*it).GetInt32(0, &x));
+      ASSERT_OK(it->GetInt32(0, &y));
+      ASSERT_EQ(x, y);
+    }
+
     {
       KuduScanBatch::const_iterator it_pre(batch.begin());
       KuduScanBatch::const_iterator it_post(batch.begin());

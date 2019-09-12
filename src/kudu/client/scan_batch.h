@@ -162,6 +162,13 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   /// a properly-initialized value.
   RowPtr() : schema_(NULL), row_data_(NULL) {}
 
+  /// Overloaded operator -> to support pointer trait
+  /// for access via const_iterator.
+
+  /// @return Pointer to the row
+  const RowPtr* operator->() const {
+    return this;
+  }
   /// @param [in] col_name
   ///   Name of the column.
   /// @return @c true iff the specified column of the row has @c NULL value.
@@ -331,6 +338,16 @@ class KUDU_EXPORT KuduScanBatch::const_iterator
 
   /// @return The row in the batch the iterator is pointing at.
   KuduScanBatch::RowPtr operator*() const {
+    return batch_->Row(idx_);
+  }
+
+  /// @note Since iterator does not keep current KuduScanBatch::RowPtr,
+  /// we cannot return pointer to it.
+  /// Instead we return KuduScanBatch::RowPtr,
+  /// which implements pointer operator ->
+
+  /// @return The row in the batch the iterator is pointing at.
+  KuduScanBatch::RowPtr operator->() const {
     return batch_->Row(idx_);
   }
 
