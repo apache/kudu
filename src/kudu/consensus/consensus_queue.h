@@ -368,7 +368,7 @@ class PeerMessageQueue {
 
   ~PeerMessageQueue();
 
-  // Begin or end the watch for an eligible successor. If 'successor_uuid' is
+  // Begin or end the watch for an eligible successor. If 'successor_uuid' is not
   // boost::none, the queue will notify its observers when 'successor_uuid' is
   // caught up to the leader. Otherwise, it will notify its observers
   // with the UUID of the first voter that is caught up.

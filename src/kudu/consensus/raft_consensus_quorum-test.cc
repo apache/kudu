@@ -208,7 +208,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       RETURN_NOT_OK(
           RaftConsensus::Create(
               options_, config_.peers(i), cmeta_managers_[i],
-              raft_pool_.get(), nullptr, &peer));
+              raft_pool_.get(), &peer));
       peers_->AddPeer(config_.peers(i).permanent_uuid(), peer);
     }
     return Status::OK();

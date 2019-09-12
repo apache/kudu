@@ -50,6 +50,7 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   kudu::consensus::ConsensusRoundHandler *round_handler = nullptr;
 
   std::function<void(const kudu::consensus::ElectionResult&)> edcb;
+  std::function<void(int64_t)> tacb;
 
   bool IsDistributed() const;
 };

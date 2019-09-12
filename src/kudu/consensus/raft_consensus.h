@@ -78,6 +78,10 @@ namespace rpc {
 class PeriodicTimer;
 }
 
+namespace tserver {
+class TSTabletManager;
+}
+
 namespace consensus {
 
 class ConsensusMetadataManager;
@@ -119,6 +123,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public PeerMessageQueueObserver {
  public:
   typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
+  typedef std::function<void(int64_t)> TermAdvancementCallback;
 
   // Modes for StartElection().
   enum ElectionMode {
@@ -159,7 +164,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                        RaftPeerPB local_peer_pb,
                        scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                        ThreadPool* raft_pool,
-                       ElectionDecisionCallback edcb,
                        std::shared_ptr<RaftConsensus>* consensus_out);
 
   // Starts running the Raft consensus algorithm.
@@ -412,11 +416,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   RaftConsensus(ConsensusOptions options,
                 RaftPeerPB local_peer_pb,
                 scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                ThreadPool* raft_pool,
-                ElectionDecisionCallback edcb);
+                ThreadPool* raft_pool);
 
  private:
   friend class RaftConsensusQuorumTest;
+  friend class tserver::TSTabletManager;
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind);
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind);
   FRIEND_TEST(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum);
@@ -779,6 +783,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Resets the pending configuration to null.
   Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit);
 
+  void ScheduleTermAdvancementCallback(int64_t term);
+  void DoTermAdvancmentCallback(int64_t term);
+
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
   //
@@ -823,6 +830,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   std::string ToStringUnlocked() const;
 
   ConsensusMetadata* consensus_metadata_for_tests() const;
+
+  void SetElectionDecisionCallback(ElectionDecisionCallback edcb);
+  void SetTermAdvancementCallback(TermAdvancementCallback tacb);
 
   const ConsensusOptions options_;
 
@@ -912,8 +922,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
-  // Explicitly registered callback for an election decision.
+  // Explicitly registered callbacks.
   ElectionDecisionCallback edcb_;
+  TermAdvancementCallback tacb_;
 
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.

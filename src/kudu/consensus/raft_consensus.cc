@@ -191,8 +191,7 @@ RaftConsensus::RaftConsensus(
     ConsensusOptions options,
     RaftPeerPB local_peer_pb,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-    ThreadPool* raft_pool,
-    ElectionDecisionCallback edcb)
+    ThreadPool* raft_pool)
     : options_(std::move(options)),
       local_peer_pb_(std::move(local_peer_pb)),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
@@ -203,7 +202,6 @@ RaftConsensus::RaftConsensus(
       withhold_votes_until_(MonoTime::Min()),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
-      edcb_(std::move(edcb)),
       shutdown_(false),
       update_calls_for_tests_(0) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
@@ -224,13 +222,11 @@ Status RaftConsensus::Create(ConsensusOptions options,
                              RaftPeerPB local_peer_pb,
                              scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                              ThreadPool* raft_pool,
-                             ElectionDecisionCallback edcb,
                              shared_ptr<RaftConsensus>* consensus_out) {
   shared_ptr<RaftConsensus> consensus(RaftConsensus::make_shared(std::move(options),
                                                                  std::move(local_peer_pb),
                                                                  std::move(cmeta_manager),
-                                                                 raft_pool,
-                                                                 std::move(edcb)));
+                                                                 raft_pool));
   RETURN_NOT_OK_PREPEND(consensus->Init(), "Unable to initialize Raft consensus");
   *consensus_out = std::move(consensus);
   return Status::OK();
@@ -1166,7 +1162,6 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* 
     if (request->caller_term() < CurrentTermUnlocked()) {
       string msg = Substitute("Rejecting Update request from peer $0 for earlier term $1. "
                               "Current term is $2. Ops: $3",
-
                               request->caller_uuid(),
                               request->caller_term(),
                               CurrentTermUnlocked(),
@@ -2685,7 +2680,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 void RaftConsensus::NestedElectionDecisionCallback(
     ElectionReason reason, const ElectionResult& result) {
   DoElectionCallback(reason, result);
-  if (!result.vote_request.is_pre_election()) {
+  if (!result.vote_request.is_pre_election() && edcb_) {
     edcb_(result);
   }
 }
@@ -3037,6 +3032,20 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
   return Status::OK();
 }
 
+void RaftConsensus::ScheduleTermAdvancementCallback(int64_t new_term) {
+  WARN_NOT_OK(
+      raft_pool_token_->SubmitFunc(
+        std::bind(&RaftConsensus::DoTermAdvancmentCallback,
+                  shared_from_this(),
+                  new_term)),
+      LogPrefixThreadSafe() + "Unable to run term advancement callback");
+}
+
+void RaftConsensus::DoTermAdvancmentCallback(int64_t new_term) {
+  // Simply execute the registered callback for term advancement.
+  if (tacb_) tacb_(new_term);
+}
+
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
                                             FlushToDisk flush) {
   TRACE_EVENT1("consensus", "RaftConsensus::SetCurrentTermUnlocked",
@@ -3052,7 +3061,12 @@ Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
   if (flush == FLUSH_TO_DISK) {
     CHECK_OK(cmeta_->Flush());
   }
+
   ClearLeaderUnlocked();
+
+  // Trigger term advancement callback
+  ScheduleTermAdvancementCallback(new_term);
+
   return Status::OK();
 }
 
@@ -3147,6 +3161,16 @@ ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
 int64_t RaftConsensus::GetMillisSinceLastLeaderHeartbeat() const {
     return last_leader_communication_time_micros_ == 0 ?
         0 : (GetMonoTimeMicros() - last_leader_communication_time_micros_) / 1000;
+}
+
+void RaftConsensus::SetElectionDecisionCallback(ElectionDecisionCallback edcb) {
+  CHECK(edcb);
+  edcb_ = std::move(edcb);
+}
+
+void RaftConsensus::SetTermAdvancementCallback(TermAdvancementCallback tacb) {
+  CHECK(tacb);
+  tacb_ = std::move(tacb);
 }
 
 ////////////////////////////////////////////////////////////////////////
