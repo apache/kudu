@@ -118,6 +118,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public enable_make_shared<RaftConsensus>,
                       public PeerMessageQueueObserver {
  public:
+  typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
 
   // Modes for StartElection().
   enum ElectionMode {
@@ -158,6 +159,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                        RaftPeerPB local_peer_pb,
                        scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                        ThreadPool* raft_pool,
+                       ElectionDecisionCallback edcb,
                        std::shared_ptr<RaftConsensus>* consensus_out);
 
   // Starts running the Raft consensus algorithm.
@@ -410,7 +412,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   RaftConsensus(ConsensusOptions options,
                 RaftPeerPB local_peer_pb,
                 scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                ThreadPool* raft_pool);
+                ThreadPool* raft_pool,
+                ElectionDecisionCallback edcb);
 
  private:
   friend class RaftConsensusQuorumTest;
@@ -625,6 +628,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // reactor thread, so it simply defers its work to DoElectionCallback.
   void ElectionCallback(ElectionReason reason, const ElectionResult& result);
   void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
+  void NestedElectionDecisionCallback(
+      ElectionReason reason, const ElectionResult& result);
 
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
@@ -906,6 +911,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   int64_t failed_elections_since_stable_leader_;
 
   Callback<void(const std::string& reason)> mark_dirty_clbk_;
+
+  // Explicitly registered callback for an election decision.
+  ElectionDecisionCallback edcb_;
 
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.

@@ -191,7 +191,8 @@ RaftConsensus::RaftConsensus(
     ConsensusOptions options,
     RaftPeerPB local_peer_pb,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-    ThreadPool* raft_pool)
+    ThreadPool* raft_pool,
+    ElectionDecisionCallback edcb)
     : options_(std::move(options)),
       local_peer_pb_(std::move(local_peer_pb)),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
@@ -202,6 +203,7 @@ RaftConsensus::RaftConsensus(
       withhold_votes_until_(MonoTime::Min()),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
+      edcb_(std::move(edcb)),
       shutdown_(false),
       update_calls_for_tests_(0) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
@@ -222,11 +224,13 @@ Status RaftConsensus::Create(ConsensusOptions options,
                              RaftPeerPB local_peer_pb,
                              scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                              ThreadPool* raft_pool,
+                             ElectionDecisionCallback edcb,
                              shared_ptr<RaftConsensus>* consensus_out) {
   shared_ptr<RaftConsensus> consensus(RaftConsensus::make_shared(std::move(options),
                                                                  std::move(local_peer_pb),
                                                                  std::move(cmeta_manager),
-                                                                 raft_pool));
+                                                                 raft_pool,
+                                                                 std::move(edcb)));
   RETURN_NOT_OK_PREPEND(consensus->Init(), "Unable to initialize Raft consensus");
   *consensus_out = std::move(consensus);
   return Status::OK();
@@ -2559,7 +2563,7 @@ void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult
   // The election callback runs on a reactor thread, so we need to defer to our
   // threadpool. If the threadpool is already shut down for some reason, it's OK --
   // we're OK with the callback never running.
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::DoElectionCallback,
+  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::NestedElectionDecisionCallback,
                                                      shared_from_this(),
                                                      reason,
                                                      result)),
@@ -2675,6 +2679,14 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     // It races with the above state check.
     // This could be a problem during tablet deletion.
     CHECK_OK(BecomeLeaderUnlocked());
+  }
+}
+
+void RaftConsensus::NestedElectionDecisionCallback(
+    ElectionReason reason, const ElectionResult& result) {
+  DoElectionCallback(reason, result);
+  if (!result.vote_request.is_pre_election()) {
+    edcb_(result);
   }
 }
 

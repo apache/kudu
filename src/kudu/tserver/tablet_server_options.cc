@@ -23,6 +23,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
 #ifdef FB_DO_NOT_REMOVE
 #include "kudu/master/master.h"
