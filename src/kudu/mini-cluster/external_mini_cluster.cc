@@ -158,6 +158,24 @@ Status ExternalMiniCluster::HandleOptions() {
   return Status::OK();
 }
 
+Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
+  DCHECK(flags);
+  if (opts_.num_ntp_servers > 0) {
+    vector<string> ntp_endpoints;
+    CHECK_EQ(opts_.num_ntp_servers, ntp_servers_.size());
+    for (const auto& server : ntp_servers_) {
+      const auto& opt = server->options();
+      ntp_endpoints.emplace_back(HostPort(opt.bindaddress, opt.port).ToString());
+    }
+    flags->emplace_back(Substitute("--builtin_ntp_servers=$0",
+                                   JoinStrings(ntp_endpoints, ",")));
+    flags->emplace_back(Substitute("--builtin_ntp_poll_interval_ms=100"));
+    flags->emplace_back(Substitute("--ntp_initial_sync_wait_secs=2"));
+    flags->emplace_back("--time_source=builtin");
+  }
+  return Status::OK();
+}
+
 Status ExternalMiniCluster::StartSentry() {
   sentry_->SetDataRoot(opts_.cluster_root);
 
@@ -224,8 +242,24 @@ Status ExternalMiniCluster::Start() {
 
   // Start NTP servers, if requested.
   if (opts_.num_ntp_servers > 0) {
+    // Collect and keep alive the set of sockets bound with SO_REUSEPORT option
+    // until all chronyd proccesses are started. This allows to avoid port
+    // conflicts: chronyd doesn't support binding to wildcard addresses and
+    // it's necessary to make sure chronyd is able to bind to the port specified
+    // in its configuration. So, the mini-cluster reserves a set of ports up
+    // front, then starts the set of chronyd processes, each bound to one
+    // of the reserved ports.
+    vector<unique_ptr<Socket>> reserved_sockets;
     for (auto i = 0; i < opts_.num_ntp_servers; ++i) {
-      RETURN_NOT_OK_PREPEND(AddNtpServer(),
+      unique_ptr<Socket> reserved_socket;
+      RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(
+          DaemonType::EXTERNAL_SERVER, i, opts_.bind_mode, &reserved_socket),
+          "failed to reserve chronyd socket address");
+      Sockaddr addr;
+      RETURN_NOT_OK(reserved_socket->GetSocketAddress(&addr));
+      reserved_sockets.emplace_back(std::move(reserved_socket));
+
+      RETURN_NOT_OK_PREPEND(AddNtpServer(addr),
                             Substitute("failed to start NTP server $0", i));
     }
   }
@@ -489,9 +523,10 @@ Status ExternalMiniCluster::StartMasters() {
     flags.emplace_back("--location_mapping_by_uuid");
 #   endif
   }
-  string exe = GetBinaryPath(kMasterBinaryName);
+  RETURN_NOT_OK(AddNtpFlags(&flags));
 
   // Start the masters.
+  const string& exe = GetBinaryPath(kMasterBinaryName);
   for (int i = 0; i < num_masters; i++) {
     string daemon_id = Substitute("master-$0", i);
 
@@ -556,11 +591,9 @@ Status ExternalMiniCluster::AddTabletServer() {
   CHECK(leader_master() != nullptr)
       << "Must have started at least 1 master before adding tablet servers";
 
-  int idx = tablet_servers_.size();
-  string daemon_id = Substitute("ts-$0", idx);
-
-  vector<HostPort> master_hostports = master_rpc_addrs();
-  string bind_host = GetBindIpForTabletServer(idx);
+  const int idx = tablet_servers_.size();
+  const string daemon_id = Substitute("ts-$0", idx);
+  const string bind_host = GetBindIpForTabletServer(idx);
 
   ExternalDaemonOptions opts;
   opts.messenger = messenger_;
@@ -573,11 +606,14 @@ Status ExternalMiniCluster::AddTabletServer() {
     opts.perf_record_filename =
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
-  opts.extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
+  auto extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
+  RETURN_NOT_OK(AddNtpFlags(&extra_flags));
+  opts.extra_flags = extra_flags;
   opts.start_process_timeout = opts_.start_process_timeout;
   opts.rpc_bind_address = HostPort(bind_host, 0);
   opts.logtostderr = opts_.logtostderr;
 
+  vector<HostPort> master_hostports = master_rpc_addrs();
   scoped_refptr<ExternalTabletServer> ts = new ExternalTabletServer(opts, master_hostports);
   if (opts_.enable_kerberos) {
     RETURN_NOT_OK_PREPEND(ts->EnableKerberos(kdc_.get(), bind_host),
@@ -589,13 +625,11 @@ Status ExternalMiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-Status ExternalMiniCluster::AddNtpServer() {
-  const auto idx = ntp_servers_.size();
-  string bind_host = GetBindIpForExternalServer(idx);
-
+Status ExternalMiniCluster::AddNtpServer(const Sockaddr& addr) {
   clock::MiniChronydOptions options;
-  options.port = 10123 + idx;
-  options.bindaddress = bind_host;
+  options.index = ntp_servers_.size();
+  options.bindaddress = addr.host();
+  options.port = static_cast<uint16_t>(addr.port());
   unique_ptr<MiniChronyd> chrony(new MiniChronyd(std::move(options)));
   RETURN_NOT_OK(chrony->Start());
   ntp_servers_.emplace_back(std::move(chrony));

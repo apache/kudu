@@ -197,7 +197,11 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   }
 
   // Bring down the old cluster configuration and bring up the new one.
-  cluster->Shutdown();
+  // In addition in masters and tablet servers, shut down other helper processes
+  // as well by destroying the ExternalMiniCluster object wrapped into
+  // unique_ptr wrapper by calling 'std::unique_ptr::reset()'.
+  cluster.reset();
+
   opts.num_masters = 3;
   opts.master_rpc_addresses = master_rpc_addresses;
   ExternalMiniCluster migrated_cluster(std::move(opts));

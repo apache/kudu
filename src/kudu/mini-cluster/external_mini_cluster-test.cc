@@ -40,51 +40,76 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-namespace cluster {
-
-using std::make_pair;
-using std::pair;
 using std::string;
+using std::tuple;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
+namespace cluster {
+
 enum class Kerberos {
-  ENABLED,
   DISABLED,
+  ENABLED,
 };
 
-enum HiveMetastore {
-  ENABLED,
+enum class HiveMetastore {
   DISABLED,
+  ENABLED,
 };
 
-// Beautifies CLI test output.
-std::ostream& operator<<(std::ostream& o, Kerberos k) {
-  switch (k) {
-    case Kerberos::ENABLED: return o << "Kerberos::ENABLED";
-    case Kerberos::DISABLED: return o << "Kerberos::DISABLED";
+enum BuiltInNtp {
+  DISABLED = 0,
+  ENABLED_SINGLE_SERVER = 1,
+  ENABLED_MULTIPLE_SERVERS = 5,
+};
+
+// Beautifies test output if a test scenario fails.
+std::ostream& operator<<(std::ostream& o, Kerberos opt) {
+  switch (opt) {
+    case Kerberos::ENABLED:
+      return o << "Kerberos::ENABLED";
+    case Kerberos::DISABLED:
+      return o << "Kerberos::DISABLED";
   }
   return o;
 }
-std::ostream& operator<<(std::ostream& o, HiveMetastore k) {
-  switch (k) {
-    case HiveMetastore::ENABLED: return o << "HiveMetastore::ENABLED";
-    case HiveMetastore::DISABLED: return o << "HiveMetastore::DISABLED";
+
+std::ostream& operator<<(std::ostream& o, HiveMetastore opt) {
+  switch (opt) {
+    case HiveMetastore::ENABLED:
+      return o << "HiveMetastore::ENABLED";
+    case HiveMetastore::DISABLED:
+      return o << "HiveMetastore::DISABLED";
   }
   return o;
 }
 
-class ExternalMiniClusterTest : public KuduTest,
-                                public testing::WithParamInterface<pair<Kerberos, HiveMetastore>> {
+std::ostream& operator<<(std::ostream& o, BuiltInNtp opt) {
+  switch (opt) {
+    case BuiltInNtp::DISABLED:
+      return o << "BuiltInNtp::DISABLED";
+    case BuiltInNtp::ENABLED_SINGLE_SERVER:
+      return o << "BuiltInNtp::ENABLED_SINGLE_SERVER";
+    case BuiltInNtp::ENABLED_MULTIPLE_SERVERS:
+      return o << "BuiltInNtp::ENABLED_MULTIPLE_SERVERS";
+  }
+  return o;
+}
+
+class ExternalMiniClusterTest :
+    public KuduTest,
+    public testing::WithParamInterface<tuple<Kerberos, HiveMetastore, BuiltInNtp>> {
 };
 
-INSTANTIATE_TEST_CASE_P(KerberosOnAndOff,
-                        ExternalMiniClusterTest,
-                        testing::Values(make_pair(Kerberos::DISABLED, HiveMetastore::DISABLED),
-                                        make_pair(Kerberos::ENABLED, HiveMetastore::DISABLED),
-                                        make_pair(Kerberos::DISABLED, HiveMetastore::ENABLED),
-                                        make_pair(Kerberos::ENABLED, HiveMetastore::ENABLED)));
+INSTANTIATE_TEST_CASE_P(,
+    ExternalMiniClusterTest,
+    ::testing::Combine(
+        ::testing::Values(Kerberos::DISABLED, Kerberos::ENABLED),
+        ::testing::Values(HiveMetastore::DISABLED, HiveMetastore::ENABLED),
+        ::testing::Values(BuiltInNtp::DISABLED,
+                          BuiltInNtp::ENABLED_SINGLE_SERVER,
+                          BuiltInNtp::ENABLED_MULTIPLE_SERVERS)));
 
 void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   ASSERT_TRUE(opts.enable_kerberos);
@@ -124,11 +149,15 @@ TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
 }
 
 TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   ExternalMiniClusterOptions opts;
-  opts.enable_kerberos = GetParam().first == Kerberos::ENABLED;
-  if (GetParam().second == HiveMetastore::ENABLED) {
+  const auto& param = GetParam();
+  opts.enable_kerberos = std::get<0>(param) == Kerberos::ENABLED;
+  if (std::get<1>(param) == HiveMetastore::ENABLED) {
     opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
   }
+  opts.num_ntp_servers = std::get<2>(param);
 
   opts.num_masters = 3;
   opts.num_tablet_servers = 3;

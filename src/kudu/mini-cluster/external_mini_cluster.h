@@ -187,9 +187,11 @@ struct ExternalMiniClusterOptions {
   // Default: empty
   LocationInfo location_info;
 
-  // Number of NTP servers to start as part of the cluster. The servers
-  // are used as reference NTP servers for the built-in NTP client: it uses
-  // them to synchronize its internal clock.
+  // Number of NTP servers to start as part of the cluster. The NTP servers are
+  // used as true time references for the NTP client built into masters and
+  // tablet servers. Specifying a value greater than 0 automatically enables
+  // the built-in NTP client, i.e. switches the clock source from the system
+  // wallclock to the wallclock tracked by the built-in NTP client.
   //
   // Default: 0
   int num_ntp_servers;
@@ -223,8 +225,8 @@ class ExternalMiniCluster : public MiniCluster {
   Status AddTabletServer();
 
   // Add a new NTP server to the cluster. The new NTP server is started upon
-  // adding it.
-  Status AddNtpServer();
+  // adding, bind to the address and port specified by 'addr'.
+  Status AddNtpServer(const Sockaddr& addr);
 
   // Currently, this uses SIGKILL on each daemon for a non-graceful shutdown.
   void ShutdownNodes(ClusterNodes nodes) override;
@@ -422,6 +424,7 @@ class ExternalMiniCluster : public MiniCluster {
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
+  Status AddNtpFlags(std::vector<std::string>* flags);
 
   ExternalMiniClusterOptions opts_;
 
