@@ -442,12 +442,13 @@ fetch_and_patch \
  $YAML_SOURCE \
  $YAML_PATCHLEVEL
 
-CHRONY_PATCHLEVEL=1
+CHRONY_PATCHLEVEL=2
 fetch_and_patch \
  $CHRONY_NAME.tar.gz \
  $CHRONY_SOURCE \
  $CHRONY_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/chrony-no-superuser.patch"
+ "patch -p1 < $TP_DIR/patches/chrony-no-superuser.patch" \
+ "patch -p1 < $TP_DIR/patches/chrony-reuseport.patch"
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

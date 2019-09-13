@@ -1,0 +1,33 @@
+commit 7f5475515484885c112dffc51f32db3985acc4d6
+Author: Alexey Serbin <alexey@apache.org>
+Date:   Thu Sep 12 23:48:20 2019 -0700
+
+    ntp: add SO_REUSEPORT option for NTP server socket
+    
+    This patch makes the NTP server socket capable of binding to a port
+    which is already bound, but not yet listened to.  This is useful
+    in scenarios when it's necessary to make chronyd serving NTP requests
+    at a port which has been reserved for chronyd by some other process.
+
+diff --git a/ntp_io.c b/ntp_io.c
+index ab08372..1ab554d 100644
+--- a/ntp_io.c
++++ b/ntp_io.c
+@@ -206,6 +206,17 @@ prepare_socket(int family, int port_number, int client_only)
+     LOG(LOGS_ERR, "Could not set %s socket option", "SO_REUSEADDR");
+     /* Don't quit - we might survive anyway */
+   }
++
++  /* Make the socket capable of binding to a port which is already bound,
++   * but not yet listened to. This is useful in scenarios when it's necessary
++   * to make chronyd serving NTP requests at a port which has been reserved
++   * for chronyd by some other process.
++   */
++  if (!client_only && port_number &&
++      setsockopt(sock_fd, SOL_SOCKET, SO_REUSEPORT, (char *)&on_off, sizeof(on_off)) < 0) {
++    LOG(LOGS_ERR, "Could not set %s socket option", "SO_REUSEPORT");
++    /* Don't quit yet - we might survive anyway */
++  }
+   
+   /* Make the socket capable of sending broadcast pkts - needed for NTP broadcast mode */
+   if (!client_only &&
