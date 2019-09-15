@@ -84,9 +84,11 @@ class TSManager {
   // list.
   void GetAllDescriptors(TSDescriptorVector* descs) const;
 
-  // Return all of the currently registered TS descriptors that have sent a
-  // heartbeat recently, indicating that they're alive and well.
-  void GetAllLiveDescriptors(TSDescriptorVector* descs) const;
+  // Return all of the currently registered TS descriptors that are available
+  // for replica placement -- they have sent a heartbeat recently, indicating
+  // that they're alive and well, and they aren't in a mode that would block
+  // replication to them (e.g. maintenance mode).
+  void GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) const;
 
   // Get the TS count.
   int GetCount() const;
@@ -107,6 +109,14 @@ class TSManager {
   friend class TServerStateLoader;
 
   int ClusterSkew() const;
+
+  // Return the tserver state for the given tablet server UUID, or NONE if one
+  // doesn't exist. Must hold 'ts_state_lock_' to call.
+  TServerStatePB GetTServerStateUnlocked(const std::string& ts_uuid) const;
+
+  // Returns whether the given server can have replicas placed on it (e.g. it
+  // is not dead, not in maintenance mode).
+  bool AvailableForPlacementUnlocked(const TSDescriptor& ts) const;
 
   mutable rw_spinlock lock_;
 

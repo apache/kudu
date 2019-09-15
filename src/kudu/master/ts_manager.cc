@@ -197,22 +197,22 @@ void TSManager::GetAllDescriptors(TSDescriptorVector* descs) const {
   AppendValuesFromMap(servers_by_id_, descs);
 }
 
-void TSManager::GetAllLiveDescriptors(TSDescriptorVector* descs) const {
-  descs->clear();
-
-  shared_lock<rw_spinlock> l(lock_);
-  descs->reserve(servers_by_id_.size());
-  for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
-    const shared_ptr<TSDescriptor>& ts = entry.second;
-    if (!ts->PresumedDead()) {
-      descs->push_back(ts);
-    }
-  }
-}
-
 int TSManager::GetCount() const {
   shared_lock<rw_spinlock> l(lock_);
   return servers_by_id_.size();
+}
+
+void TSManager::GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) const {
+  descs->clear();
+  shared_lock<rw_spinlock> l(lock_);
+  shared_lock<RWMutex> tsl(ts_state_lock_);
+  descs->reserve(servers_by_id_.size());
+  for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
+    const shared_ptr<TSDescriptor>& ts = entry.second;
+    if (AvailableForPlacementUnlocked(*ts)) {
+      descs->push_back(ts);
+    }
+  }
 }
 
 Status TSManager::SetTServerState(const string& ts_uuid,
@@ -238,9 +238,14 @@ Status TSManager::SetTServerState(const string& ts_uuid,
   return Status::OK();
 }
 
+TServerStatePB TSManager::GetTServerStateUnlocked(const string& ts_uuid) const {
+  ts_state_lock_.AssertAcquired();
+  return FindWithDefault(ts_state_by_uuid_, ts_uuid, TServerStatePB::NONE);
+}
+
 TServerStatePB TSManager::GetTServerState(const string& ts_uuid) const {
   shared_lock<RWMutex> l(ts_state_lock_);
-  return FindWithDefault(ts_state_by_uuid_, ts_uuid, TServerStatePB::NONE);
+  return GetTServerStateUnlocked(ts_uuid);
 }
 
 Status TSManager::ReloadTServerStates(SysCatalogTable* sys_catalog) {
@@ -264,6 +269,17 @@ int TSManager::ClusterSkew() const {
     max_count = std::max(max_count, num_live_replicas);
   }
   return max_count - min_count;
+}
+
+bool TSManager::AvailableForPlacementUnlocked(const TSDescriptor& ts) const {
+  DCHECK(lock_.is_locked());
+  // TODO(KUDU-1827): this should also be used when decommissioning a server.
+  if (GetTServerStateUnlocked(ts.permanent_uuid()) == TServerStatePB::MAINTENANCE_MODE) {
+    return false;
+  }
+  // If the tablet server has heartbeated recently enough, it is considered
+  // alive and available for placement.
+  return !ts.PresumedDead();
 }
 
 } // namespace master

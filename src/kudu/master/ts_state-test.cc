@@ -19,12 +19,15 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -33,6 +36,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -90,10 +94,10 @@ class TServerStateTest : public KuduTest {
     mini_master_.reset(new MiniMaster(GetTestPath("master"),
                                       HostPort("127.0.0.1", 0)));
     ASSERT_OK(mini_master_->Start());
-    Master* master = mini_master_->master();
-    ASSERT_OK(master->WaitUntilCatalogManagerIsLeaderAndReadyForTests(
+    master_ = mini_master_->master();
+    ASSERT_OK(master_->WaitUntilCatalogManagerIsLeaderAndReadyForTests(
         MonoDelta::FromSeconds(30)));
-    ts_manager_ = master->ts_manager();
+    ts_manager_ = master_->ts_manager();
     MessengerBuilder builder("client");
     ASSERT_OK(builder.Build(&client_messenger_));
     proxy_.reset(new MasterServiceProxy(client_messenger_,
@@ -103,9 +107,8 @@ class TServerStateTest : public KuduTest {
 
   // Sets the tserver state for the given tablet server to 'state'.
   Status SetTServerState(const string& tserver_uuid, TServerStatePB state) {
-    Master* master = mini_master_->master();
-    return master->ts_manager()->SetTServerState(
-        tserver_uuid, state, master->catalog_manager()->sys_catalog());
+    return master_->ts_manager()->SetTServerState(
+        tserver_uuid, state, master_->catalog_manager()->sys_catalog());
   }
 
   // Pretends to be a tserver by sending a heartbeat to the master from the
@@ -130,8 +133,28 @@ class TServerStateTest : public KuduTest {
     return proxy_->TSHeartbeat(req, &resp_pb, &rpc);
   }
 
+  // Creates a table with the given name with a simple schema, a default
+  // replication factor, and a single partition.
+  Status CreateTable(const string& table_name) {
+    RpcController rpc;
+    CreateTableResponsePB resp;
+    CreateTableRequestPB req;
+    req.set_name(table_name);
+    RETURN_NOT_OK(SchemaToPB(GetSimpleTestSchema(), req.mutable_schema()));
+
+    RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &rpc));
+    if (resp.has_error()) {
+      RETURN_NOT_OK(StatusFromPB(resp.error().status()));
+    }
+    if (!resp.has_table_id()) {
+      return Status::RuntimeError("expected table id");
+    }
+    return Status::OK();
+  }
+
  protected:
   unique_ptr<MiniMaster> mini_master_;
+  Master* master_;
   TSManager* ts_manager_;
   unique_ptr<MasterServiceProxy> proxy_;
   shared_ptr<Messenger> client_messenger_;
@@ -235,6 +258,53 @@ TEST_F(TServerStateTest, TestConcurrentSetTServerState) {
   for (int i = 0; i < tservers.size(); i++) {
     ASSERT_EQ(in_memory_states[i], ts_manager_->GetTServerState(tservers[i]));
   }
+}
+
+// Test that tablet servers that are in maintenance mode don't get tablet
+// replicas placed on them.
+TEST_F(TServerStateTest, MaintenanceModeTServerDoesntGetNewReplicas) {
+  const int kNumTServers = 4;
+  vector<string> tserver_ids;
+
+  // Report to the master from a few tablet servers to register them.
+  for (int i = 0; i < kNumTServers; i++) {
+    string tserver_id = Substitute("$0-$1", kTServer, i);
+    ASSERT_OK(SendHeartbeat(tserver_id));
+    tserver_ids.emplace_back(std::move(tserver_id));
+  }
+
+  // Put one of the tablet servers in maintenance mode and create a few tables.
+  const string& first_maintenance_tserver = tserver_ids[0];
+  ASSERT_OK(SetTServerState(first_maintenance_tserver, TServerStatePB::MAINTENANCE_MODE));
+  const int kNumTables = 10;
+  for (int i = 0; i < kNumTables; i++) {
+    ASSERT_OK(CreateTable(Substitute("table-$0", i)));
+  }
+  TSDescriptorVector descs;
+  master_->ts_manager()->GetAllDescriptors(&descs);
+  for (const auto& desc : descs) {
+    if (desc->permanent_uuid() == first_maintenance_tserver) {
+      // The tablet server in maintenance mode should have had no replicas
+      // placed on it because it's in maintenance mode.
+      ASSERT_EQ(0, desc->RecentReplicaCreations());
+    } else {
+      // All others should have some. Note that we can't compare an exact
+      // number because the replica creations has a decay factor built into it.
+      ASSERT_LT(0, desc->RecentReplicaCreations());
+    }
+  }
+  // If we put another tserver in maintenance mode, we'll only have two
+  // remaining tservers, and won't be able to create new tables with the
+  // default replication factor.
+  ASSERT_OK(SetTServerState(tserver_ids[1], TServerStatePB::MAINTENANCE_MODE));
+  string sad_table_id;
+  Status s = CreateTable("sad-table");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not enough live tablet servers");
+
+  // And if we exit maintenance mode, we should be able to create tables again.
+  ASSERT_OK(SetTServerState(tserver_ids[1], TServerStatePB::NONE));
+  ASSERT_OK(CreateTable("happy-table"));
 }
 
 } // namespace master
