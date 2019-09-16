@@ -14,11 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CONSENSUS_QUORUM_UTIL_H_
-#define KUDU_CONSENSUS_QUORUM_UTIL_H_
+#pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/util/status.h"
@@ -106,12 +105,16 @@ std::string DiffConsensusStates(const ConsensusStatePB& old_state,
 std::string DiffRaftConfigs(const RaftConfigPB& old_config,
                             const RaftConfigPB& new_config);
 
-// Return 'true' iff the specified tablet configuration is under-replicated
-// given the 'replication_factor' and a healthy majority exists. The decision
-// is based on the health information provided by the Raft configuration in the
-// 'config' parameter.
+// Return 'true' iff there is a quorum and the specified tablet configuration
+// is under-replicated given the 'replication_factor', ignoring failures of
+// the UUIDs in 'uuids_ignored_for_underreplication'.
+//
+// The decision is based on the health information provided by the Raft
+// configuration in the 'config' parameter.
 bool ShouldAddReplica(const RaftConfigPB& config,
-                      int replication_factor);
+                      int replication_factor,
+                      const std::unordered_set<std::string>& uuids_ignored_for_underreplication =
+                          std::unordered_set<std::string>());
 
 // Check if the given Raft configuration contains at least one extra replica
 // which should (and can) be removed in accordance with the specified
@@ -126,4 +129,3 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
 }  // namespace consensus
 }  // namespace kudu
 
-#endif /* KUDU_CONSENSUS_QUORUM_UTIL_H_ */

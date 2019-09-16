@@ -3989,6 +3989,8 @@ Status CatalogManager::ProcessTabletReport(
   // 3. Process each tablet. This may not be in the order that the tablets
   // appear in 'full_report', but that has no bearing on correctness.
   vector<scoped_refptr<TabletInfo>> mutated_tablets;
+  unordered_set<string> uuids_ignored_for_underreplication =
+      master_->ts_manager()->GetUuidsToIgnoreForUnderreplication();
   for (const auto& e : tablet_infos) {
     const string& tablet_id = e.first;
     const scoped_refptr<TabletInfo>& tablet = e.second;
@@ -4199,7 +4201,8 @@ Status CatalogManager::ProcessTabletReport(
           rpcs.emplace_back(new AsyncEvictReplicaTask(
               master_, tablet, cstate, std::move(to_evict)));
         } else if (FLAGS_master_add_server_when_underreplicated &&
-                   ShouldAddReplica(config, replication_factor)) {
+                   ShouldAddReplica(config, replication_factor,
+                                    uuids_ignored_for_underreplication)) {
           rpcs.emplace_back(new AsyncAddReplicaTask(
               master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
         }

@@ -561,6 +561,134 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
   }
 }
 
+// Test that when tablet replicas are ignored for underreplication (e.g. due to
+// maintenance mode of a tablet server), the decision to add a replica will
+// actually ignore failures as appropriate.
+TEST(QuorumUtilTest, ShouldAddReplicaIgnoreFailures) {
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    // The failed server is ignored, and doesn't count towards being
+    // under-replicated. Note: The server with unknown health also doesn't
+    // count towards being under-replicated.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "B" }));
+    // While the server with unknown health doesn't count towards being
+    // under-replicated, the failed server does. But since we require a
+    // majority to add replicas, we can't add a replica.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    // This is healthy, with or without ignoring failures.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    // But when a healthy server is in maintenance mode, we should consider the
+    // unhealthy server as failed and add a replica.
+    EXPECT_TRUE(ShouldAddReplica(config, 3, { "B" }));
+    // When the unhealthy server is in maintenance mode, we shouldn't add a
+    // replica, since all three servers aren't considered failed.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+    // And when everything is in maintenance mode, we shouldn't add a replica
+    // even though a majority exists.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A", "B", "C" }));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    // A majority doesn't exist, so no matter what failures are being ignored,
+    // we will not add a replica.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A", "B" }));
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A", "B", "C" }));
+  }
+  {
+    // Ignored servers shouldn't change the decision when we really are
+    // under-replicated.
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+
+    // No majority present.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+    EXPECT_FALSE(ShouldAddReplica(config, 3, { "B" }));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '+');
+    AddPeer(&config, "E", V, '+');
+    // When both failed replicas are being ignored, we shouldn't add a replica.
+    EXPECT_FALSE(ShouldAddReplica(config, 5, { "A", "B" }));
+    // When only one of them is ignored, we should.
+    EXPECT_TRUE(ShouldAddReplica(config, 5, { "A" }));
+  }
+}
+
+// Test that when tablet replicas are ignored for underreplication, replace is
+// still honored as appropriate.
+TEST(QuorumUtilTest, ShouldAddReplicaHonorReplaceWhenIgnoringFailures) {
+  // Even if the replica to replace is meant to be ignored on failure, we
+  // should honor the replacement and try to add a replica.
+  for (char health : { '+', '-', '?' }) {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, health, {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    EXPECT_TRUE(ShouldAddReplica(config, 3, { "A" }));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    // Ignoring failures shouldn't impede our ability to add a replica when the
+    // "ignored" server is actually healthy.
+    EXPECT_TRUE(ShouldAddReplica(config, 3, { "A" }));
+  }
+}
+
+TEST(QuorumUtilTest, ShouldAddReplicaHonorPromoteWhenIgnoringFailures) {
+  // If one of our replicas to promote has failed, and we are supposed to
+  // ignore its failure, we should not add a replica because of it.
+  // And if they're healthy or unknown, we also shouldn't add a replica.
+  for (char health : { '+', '-', '?' }) {
+    {
+      RaftConfigPB config;
+      AddPeer(&config, "A", N, health, {{"PROMOTE", true}});
+      AddPeer(&config, "B", V, '+');
+      AddPeer(&config, "C", V, '+');
+      EXPECT_FALSE(ShouldAddReplica(config, 3, { "A" }));
+    }
+    {
+      RaftConfigPB config;
+      AddPeer(&config, "A", N, health, {{"PROMOTE", true}});
+      AddPeer(&config, "B", N, '-', {{"PROMOTE", true}});
+      AddPeer(&config, "C", V, '+');
+      AddPeer(&config, "D", V, '+');
+      AddPeer(&config, "E", V, '+');
+      EXPECT_FALSE(ShouldAddReplica(config, 5, { "A", "B" }));
+      // But when there is a failure that isn't supposed to be ignored (B), we
+      // should add a replica.
+      EXPECT_TRUE(ShouldAddReplica(config, 5, { "A" }));
+    }
+  }
+}
+
 // Verify logic of the kudu::consensus::ShouldEvictReplica(), anticipating
 // removal of a voter replica.
 TEST(QuorumUtilTest, ShouldEvictReplicaVoters) {

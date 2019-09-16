@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <limits>
 #include <mutex>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -57,6 +58,7 @@ METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
 
 using kudu::pb_util::SecureShortDebugString;
 using std::lock_guard;
+using std::unordered_set;
 using std::shared_ptr;
 using std::string;
 using strings::Substitute;
@@ -202,10 +204,22 @@ int TSManager::GetCount() const {
   return servers_by_id_.size();
 }
 
+unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
+  unordered_set<string> uuids;
+  shared_lock<RWMutex> tsl(ts_state_lock_);
+  uuids.reserve(ts_state_by_uuid_.size());
+  for (const auto& ts_and_state : ts_state_by_uuid_) {
+    if (ts_and_state.second == TServerStatePB::MAINTENANCE_MODE) {
+      uuids.emplace(ts_and_state.first);
+    }
+  }
+  return uuids;
+}
+
 void TSManager::GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) const {
   descs->clear();
-  shared_lock<rw_spinlock> l(lock_);
   shared_lock<RWMutex> tsl(ts_state_lock_);
+  shared_lock<rw_spinlock> l(lock_);
   descs->reserve(servers_by_id_.size());
   for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
@@ -272,7 +286,7 @@ int TSManager::ClusterSkew() const {
 }
 
 bool TSManager::AvailableForPlacementUnlocked(const TSDescriptor& ts) const {
-  DCHECK(lock_.is_locked());
+  ts_state_lock_.AssertAcquired();
   // TODO(KUDU-1827): this should also be used when decommissioning a server.
   if (GetTServerStateUnlocked(ts.permanent_uuid()) == TServerStatePB::MAINTENANCE_MODE) {
     return false;
