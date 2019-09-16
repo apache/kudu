@@ -138,12 +138,12 @@ struct PersistentTabletInfo {
   SysTabletsEntryPB pb;
 };
 
-// The information about a single tablet which exists in the cluster,
+// The information about a single tablet which exists in the cluster.
 //
 // This object uses copy-on-write for the portions of data which are persisted
 // on disk. This allows the mutated data to be staged and written to disk
 // while readers continue to access the previous version. These portions
-// of data are in PersistentTableInfo above, and typically accessed using
+// of data are in PersistentTabletInfo above, and typically accessed using
 // TabletMetadataLock. For example:
 //
 //   TabletInfo* table = ...;
