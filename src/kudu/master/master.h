@@ -20,7 +20,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "kudu/common/wire_protocol.pb.h"
@@ -73,8 +72,6 @@ class Master : public kserver::KuduServer {
   // If 'timeout' time is exceeded, returns Status::TimedOut.
   Status WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout)
       WARN_UNUSED_RESULT;
-
-  std::string ToString() const;
 
   MasterCertAuthority* cert_authority() { return cert_authority_.get(); }
 

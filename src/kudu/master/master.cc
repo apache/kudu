@@ -127,13 +127,6 @@ Master::~Master() {
   CHECK_NE(kRunning, state_);
 }
 
-string Master::ToString() const {
-  if (state_ != kRunning) {
-    return "Master (stopped)";
-  }
-  return strings::Substitute("Master@$0", first_rpc_address().ToString());
-}
-
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
 
@@ -243,8 +236,8 @@ Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& 
 
 void Master::Shutdown() {
   if (state_ == kRunning) {
-    string name = ToString();
-    LOG(INFO) << name << " shutting down...";
+    const string name = rpc_server_->ToString();
+    LOG(INFO) << "Master@" << name << " shutting down...";
 
     // 1. Stop accepting new RPCs.
     UnregisterAllServices();
@@ -255,7 +248,7 @@ void Master::Shutdown() {
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();
-    LOG(INFO) << name << " shutdown complete.";
+    LOG(INFO) << "Master@" << name << " shutdown complete.";
   }
   state_ = kStopped;
 }

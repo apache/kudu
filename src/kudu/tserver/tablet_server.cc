@@ -31,6 +31,7 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/service_if.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_copy_service.h"
@@ -52,7 +53,7 @@ namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
   : KuduServer("TabletServer", opts, "kudu.tabletserver"),
-    initted_(false),
+    state_(kStopped),
     fail_heartbeats_for_tests_(false),
     opts_(opts),
     tablet_manager_(new TSTabletManager(this)),
@@ -64,13 +65,8 @@ TabletServer::~TabletServer() {
   Shutdown();
 }
 
-string TabletServer::ToString() const {
-  // TODO: include port numbers, etc.
-  return "TabletServer";
-}
-
 Status TabletServer::Init() {
-  CHECK(!initted_);
+  CHECK_EQ(kStopped, state_);
 
   cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
 
@@ -113,7 +109,7 @@ Status TabletServer::Init() {
   RETURN_NOT_OK_PREPEND(scanner_manager_->StartRemovalThread(),
                         "Could not start expired Scanner removal thread");
 
-  initted_ = true;
+  state_ = kInitialized;
   return Status::OK();
 }
 
@@ -122,7 +118,7 @@ Status TabletServer::WaitInited() {
 }
 
 Status TabletServer::Start() {
-  CHECK(initted_);
+  CHECK_EQ(kInitialized, state_);
 
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&TSTabletManager::FailTabletsInDataDir, Unretained(tablet_manager_.get())));
@@ -146,13 +142,14 @@ Status TabletServer::Start() {
 
   google::FlushLogFiles(google::INFO); // Flush the startup messages.
 
+  state_ = kRunning;
   return Status::OK();
 }
 
 void TabletServer::Shutdown() {
-  if (initted_) {
-    string name = ToString();
-    LOG(INFO) << name << " shutting down...";
+  if (kInitialized == state_ || kRunning == state_) {
+    const string name = rpc_server_->ToString();
+    LOG(INFO) << "TabletServer@" << name << " shutting down...";
 
     // 1. Stop accepting new RPCs.
     UnregisterAllServices();
@@ -166,8 +163,9 @@ void TabletServer::Shutdown() {
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();
-    LOG(INFO) << name << " shutdown complete.";
+    LOG(INFO) << "TabletServer@" << name << " shutdown complete.";
   }
+  state_ = kStopped;
 }
 
 } // namespace tserver

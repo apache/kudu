@@ -85,7 +85,13 @@ class TabletServer : public kserver::KuduServer {
  private:
   friend class TabletServerTestBase;
 
-  bool initted_;
+  enum TabletServerState {
+    kStopped,
+    kInitialized,
+    kRunning
+  };
+
+  TabletServerState state_;
 
   // If true, all heartbeats will be seen as failed.
   Atomic32 fail_heartbeats_for_tests_;
