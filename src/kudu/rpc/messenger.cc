@@ -372,9 +372,7 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 }
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
-  shared_lock<rw_spinlock> guard(lock_.get_lock());
-  scoped_refptr<RpcService>* service = FindOrNull(rpc_services_,
-                                                  call->remote_method().service_name());
+  const auto service = rpc_service(call->remote_method().service_name());
   if (PREDICT_FALSE(!service)) {
     Status s =  Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
                                                       call->remote_method().service_name(), name_));
@@ -383,10 +381,10 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     return;
   }
 
-  call->set_method_info((*service)->LookupMethod(call->remote_method()));
+  call->set_method_info(service->LookupMethod(call->remote_method()));
 
   // The RpcService will respond to the client on success or failure.
-  WARN_NOT_OK((*service)->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
+  WARN_NOT_OK(service->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
 }
 
 void Messenger::QueueCancellation(const shared_ptr<OutboundCall> &call) {
@@ -427,7 +425,6 @@ Messenger::Messenger(const MessengerBuilder &bld)
 }
 
 Messenger::~Messenger() {
-  std::lock_guard<percpu_rwlock> guard(lock_);
   CHECK(closing_) << "Should have already shut down";
   STLDeleteElements(&reactors_);
 }
@@ -451,7 +448,6 @@ Status Messenger::Init() {
 
 Status Messenger::DumpConnections(const DumpConnectionsRequestPB& req,
                                   DumpConnectionsResponsePB* resp) {
-  shared_lock<rw_spinlock> guard(lock_.get_lock());
   for (Reactor* reactor : reactors_) {
     RETURN_NOT_OK(reactor->DumpConnections(req, resp));
   }
