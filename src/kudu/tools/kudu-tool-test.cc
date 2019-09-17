@@ -4933,7 +4933,7 @@ TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
   ASSERT_OK(mts->WaitStarted());
 }
 
-TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {
+TEST_F(ToolTest, TestCheckFSWithNonDefaultMetadataDir) {
   const string kTestDir = GetTestPath("test");
   ASSERT_OK(env_->CreateDir(kTestDir));
   string uuid;
@@ -4950,7 +4950,7 @@ TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {
   // enough arguments to open the FsManager, or else FS tools will not work.
   // The tool will fail in its own process. Catch its output.
   string stderr;
-  Status s = RunTool(Substitute("fs dump uuid --fs_wal_dir=$0", opts.wal_root),
+  Status s = RunTool(Substitute("fs check --fs_wal_dir=$0", opts.wal_root),
                     nullptr, &stderr, {}, {});
   ASSERT_TRUE(s.IsRuntimeError());
   ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
@@ -4960,10 +4960,9 @@ TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {
   // Providing the necessary arguments, the tool should work.
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute(
-      "fs dump uuid --fs_wal_dir=$0 --fs_metadata_dir=$1",
+      "fs check --fs_wal_dir=$0 --fs_metadata_dir=$1",
       opts.wal_root, opts.metadata_root), &stdout));
   SCOPED_TRACE(stdout);
-  ASSERT_EQ(uuid, stdout);
 }
 
 TEST_F(ToolTest, TestReplaceTablet) {

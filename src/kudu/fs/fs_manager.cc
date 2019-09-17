@@ -38,7 +38,6 @@
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -312,24 +311,21 @@ void FsManager::InitBlockManager() {
   }
 }
 
-Status FsManager::Open(FsReport* report) {
+Status FsManager::PartialOpen(CanonicalizedRootsList* missing_roots) {
   RETURN_NOT_OK(Init());
 
-  // Load and verify the instance metadata files.
-  //
-  // Done first to minimize side effects in the case that the configured roots
-  // are not yet initialized on disk.
-  CanonicalizedRootsList missing_roots;
   for (auto& root : canonicalized_all_fs_roots_) {
     if (!root.status.ok()) {
       continue;
     }
-    gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
+    unique_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
                                                 pb.get());
     if (PREDICT_FALSE(!s.ok())) {
       if (s.IsNotFound()) {
-        missing_roots.emplace_back(root);
+        if (missing_roots) {
+          missing_roots->emplace_back(root);
+        }
         continue;
       }
       if (s.IsDiskFailure()) {
@@ -352,6 +348,16 @@ Status FsManager::Open(FsReport* report) {
   if (!metadata_) {
     return Status::NotFound("could not find a healthy instance file");
   }
+  return Status::OK();
+}
+
+Status FsManager::Open(FsReport* report) {
+  // Load and verify the instance metadata files.
+  //
+  // Done first to minimize side effects in the case that the configured roots
+  // are not yet initialized on disk.
+  CanonicalizedRootsList missing_roots;
+  RETURN_NOT_OK(PartialOpen(&missing_roots));
 
   // Ensure all of the ancillary directories exist.
   vector<string> ancillary_dirs = { GetWalsRootDir(),

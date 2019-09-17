@@ -233,7 +233,7 @@ Status DumpUuid(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
-  RETURN_NOT_OK(fs_manager.Open());
+  RETURN_NOT_OK(fs_manager.PartialOpen());
   cout << fs_manager.uuid() << endl;
   return Status::OK();
 }

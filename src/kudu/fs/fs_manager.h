@@ -136,7 +136,21 @@ class FsManager {
   FsManager(Env* env, FsManagerOpts opts);
   ~FsManager();
 
-  // Initialize and load the basic filesystem metadata, checking it for
+  // ==========================================================================
+  //  Initialization
+  // ==========================================================================
+
+  // Initializes and loads the instance metadata files, and verifies that they
+  // are all matching, returning any root paths that do not have metadata
+  // files. Sets 'metadata_' on success, and returns NotFound if none of the
+  // metadata files could be read. This must be called before calling uuid().
+  //
+  // This only partially initialize the FsManager to expose the file
+  // system's UUID. To do anything more than that, call Open() or
+  // CreateInitialFileSystemLayout().
+  Status PartialOpen(CanonicalizedRootsList* missing_roots = nullptr);
+
+  // Initializes and loads the basic filesystem metadata, checking it for
   // inconsistencies. If found, and if the FsManager was not constructed in
   // read-only mode, an attempt will be made to repair them.
   //
@@ -150,6 +164,17 @@ class FsManager {
   // on-disk and in-memory structures.
   Status Open(fs::FsReport* report = nullptr);
 
+  // Create the initial filesystem layout. If 'uuid' is provided, uses it as
+  // uuid of the filesystem. Otherwise generates one at random.
+  //
+  // Returns an error if the file system is already initialized.
+  Status CreateInitialFileSystemLayout(
+      boost::optional<std::string> uuid = boost::none);
+
+  // ==========================================================================
+  //  Error handling helpers
+  // ==========================================================================
+
   // Registers an error-handling callback with the FsErrorManager.
   //
   // If a disk failure is detected, this callback will be invoked with the
@@ -161,19 +186,6 @@ class FsManager {
   // This must be called before the callback's callee is destroyed. Calls to
   // this are idempotent and are safe even if a callback has not been set.
   void UnsetErrorNotificationCb(fs::ErrorHandlerType e);
-
-  // Create the initial filesystem layout. If 'uuid' is provided, uses it as
-  // uuid of the filesystem. Otherwise generates one at random.
-  //
-  // Returns an error if the file system is already initialized.
-  Status CreateInitialFileSystemLayout(
-      boost::optional<std::string> uuid = boost::none);
-
-  void DumpFileSystemTree(std::ostream& out);
-
-  // Return the UUID persisted in the local filesystem. If Open()
-  // has not been called, this will crash.
-  const std::string& uuid() const;
 
   // ==========================================================================
   //  Data read/write interfaces
@@ -240,6 +252,10 @@ class FsManager {
     return opts_.read_only;
   }
 
+  // Return the UUID persisted in the local filesystem. If PartialOpen() or
+  // Open() have not been called, this will crash.
+  const std::string& uuid() const;
+
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
@@ -258,6 +274,9 @@ class FsManager {
   fs::BlockManager* block_manager() {
     return block_manager_.get();
   }
+
+  // Prints the file system trees under the file system roots.
+  void DumpFileSystemTree(std::ostream& out);
 
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
@@ -300,6 +319,9 @@ class FsManager {
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================
+
+  // Prints the file system tree for the objects in 'objects' under the given
+  // 'path'. Prints lines with the given 'prefix'.
   void DumpFileSystemTree(std::ostream& out,
                           const std::string& prefix,
                           const std::string& path,
