@@ -275,7 +275,7 @@ bool SoftLimitExceeded(double* current_capacity_pct) {
 void MaybeGCAfterRelease(int64_t released_bytes) {
 #ifdef TCMALLOC_ENABLED
   int64_t now_released = base::subtle::NoBarrier_AtomicIncrement(
-      &g_released_memory_since_gc, -released_bytes);
+      &g_released_memory_since_gc, released_bytes);
   if (PREDICT_FALSE(now_released > kGcReleaseSize)) {
     base::subtle::NoBarrier_Store(&g_released_memory_since_gc, 0);
     GcTcmalloc();
