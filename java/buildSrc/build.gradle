@@ -28,7 +28,6 @@ repositories {
 // Manage plugin dependencies since the plugin block can't be used in included build scripts yet.
 // For more details see: https://docs.gradle.org/current/userguide/plugins.html#plugins_dsl_limitations
 dependencies {
-  compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.16.0"
   compile "com.github.ben-manes:gradle-versions-plugin:0.21.0"
   compile "com.github.jengelman.gradle.plugins:shadow:5.0.0"
   compile "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.6.2"
