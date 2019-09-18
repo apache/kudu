@@ -372,7 +372,15 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 }
 
 void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
-  const auto service = rpc_service(call->remote_method().service_name());
+  // This lock acquisition spans the entirety of the function to avoid having to
+  // take a ref on the RpcService. In doing so, we guarantee that the service
+  // isn't shut down here, which would be problematic because shutdown is a
+  // blocking operation and QueueInboundCall is called by the reactor thread.
+  //
+  // See KUDU-2946 for more details.
+  shared_lock<rw_spinlock> guard(lock_.get_lock());
+  scoped_refptr<RpcService>* service = FindOrNull(rpc_services_,
+                                                  call->remote_method().service_name());
   if (PREDICT_FALSE(!service)) {
     Status s =  Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
                                                       call->remote_method().service_name(), name_));
@@ -381,10 +389,10 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     return;
   }
 
-  call->set_method_info(service->LookupMethod(call->remote_method()));
+  call->set_method_info((*service)->LookupMethod(call->remote_method()));
 
   // The RpcService will respond to the client on success or failure.
-  WARN_NOT_OK(service->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
+  WARN_NOT_OK((*service)->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
 }
 
 void Messenger::QueueCancellation(const shared_ptr<OutboundCall> &call) {
