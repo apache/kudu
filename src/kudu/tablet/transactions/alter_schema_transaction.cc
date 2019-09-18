@@ -80,7 +80,7 @@ string AlterSchemaTransactionState::ToString() const {
 
 AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
                                                DriverType type)
-    : Transaction(state.get(), type, Transaction::ALTER_SCHEMA_TXN),
+    : Transaction(type, Transaction::ALTER_SCHEMA_TXN),
       state_(std::move(state)) {
 }
 

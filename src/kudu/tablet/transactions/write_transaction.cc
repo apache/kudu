@@ -133,7 +133,7 @@ Status WriteAuthorizationContext::CheckPrivileges() const {
 }
 
 WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, DriverType type)
-  : Transaction(state.get(), type, Transaction::WRITE_TXN),
+  : Transaction(type, Transaction::WRITE_TXN),
   state_(std::move(state)) {
   start_time_ = MonoTime::Now();
 }

@@ -88,11 +88,11 @@ class Transaction {
     ABORTED
   };
 
-  Transaction(TransactionState* state, consensus::DriverType type, TransactionType tx_type);
+  Transaction(consensus::DriverType type, TransactionType tx_type);
 
   // Returns the TransactionState for this transaction.
-  virtual TransactionState* state() { return state_; }
-  virtual const TransactionState* state() const { return state_; }
+  virtual TransactionState* state() = 0;
+  virtual const TransactionState* state() const = 0;
 
   // Returns whether this transaction is being executed on the leader or on a
   // replica.
@@ -141,9 +141,6 @@ class Transaction {
   virtual ~Transaction() {}
 
  private:
-  // A private version of this transaction's transaction state so that
-  // we can use base TransactionState methods on destructors.
-  TransactionState* state_;
   const consensus::DriverType type_;
   const TransactionType tx_type_;
 };

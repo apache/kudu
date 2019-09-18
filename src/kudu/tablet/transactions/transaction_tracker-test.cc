@@ -72,13 +72,15 @@ class TransactionTrackerTest : public KuduTest {
   class NoOpTransaction : public Transaction {
    public:
     explicit NoOpTransaction(NoOpTransactionState* state)
-      : Transaction(state, consensus::LEADER, Transaction::WRITE_TXN),
+      : Transaction(consensus::LEADER, Transaction::WRITE_TXN),
         state_(state) {
     }
 
     virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE {
       replicate_msg->reset(new consensus::ReplicateMsg());
     }
+    virtual TransactionState* state() { return state_.get();  }
+    virtual const TransactionState* state() const { return state_.get();  }
 
     virtual Status Prepare() OVERRIDE { return Status::OK(); }
     virtual Status Start() OVERRIDE { return Status::OK(); }
