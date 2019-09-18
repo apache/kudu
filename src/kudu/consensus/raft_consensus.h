@@ -643,6 +643,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void SnoozeFailureDetector(boost::optional<std::string> reason_for_log = boost::none,
                              boost::optional<MonoDelta> delta = boost::none);
 
+  // Update the voting withhold interval, bumping it up for the minimum
+  // election timeout interval, i.e. 'FLAGS_raft_heartbeat_interval_ms' *
+  // 'FLAGS_leader_failure_max_missed_heartbeat_periods' milliseconds.
+  // This method is safe to call even it's a leader replica.
+  void WithholdVotesUnlocked();
+
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.
   MonoDelta MinimumElectionTimeout() const;

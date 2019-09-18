@@ -29,6 +29,8 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -61,16 +63,21 @@ METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 METRIC_DECLARE_gauge_int64(raft_term);
 
 using kudu::cluster::ExternalTabletServer;
+using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::MakeOpId;
+using kudu::consensus::OpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
 using kudu::itest::GetConsensusState;
+using kudu::itest::GetLastOpIdForReplica;
 using kudu::itest::GetReplicaStatusAndCheckIfLeader;
 using kudu::itest::LeaderStepDown;
 using kudu::itest::RemoveServer;
+using kudu::itest::RequestVote;
 using kudu::itest::StartElection;
-using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
+using kudu::itest::TabletServerMap;
 using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::pb_util::SecureShortDebugString;
@@ -562,6 +569,159 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
     ASSERT_GE(workload.rows_inserted(), 100);
   });
   workload.StopAndJoin();
+}
+
+// A test scenario to verify that a disruptive server doesn't start needless
+// elections in case if it takes a long time to replicate Raft transactions
+// from leader to follower replicas (e.g., due to slowness in WAL IO ops).
+TEST_F(RaftConsensusElectionITest, DisruptiveServerAndSlowWAL) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  // Shorten the heartbeat interval for faster test run time.
+  const auto kHeartbeatIntervalMs = 200;
+  const auto kMaxMissedHeartbeatPeriods = 3;
+  const vector<string> ts_flags {
+    Substitute("--raft_heartbeat_interval_ms=$0", kHeartbeatIntervalMs),
+    Substitute("--leader_failure_max_missed_heartbeat_periods=$0",
+               kMaxMissedHeartbeatPeriods),
+  };
+  NO_FATALS(BuildAndStart(ts_flags));
+
+  // Sanity check: this scenario assumes there are 3 tablet servers. The test
+  // table is created with RF=FLAGS_num_replicas.
+  ASSERT_EQ(3, FLAGS_num_replicas);
+  ASSERT_EQ(3, tablet_servers_.size());
+
+  // A convenience array to access each tablet server as TServerDetails.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(cluster_->num_tablet_servers(), tservers.size());
+
+  // The leadership might fluctuate before shutting down the third tablet
+  // server, so ASSERT_EVENTUALLY() below is for those rare cases.
+  //
+  // However, after one of the tablet servers is shutdown, the leadership should
+  // not fluctuate because:
+  //   1) only two voters out of three are alive
+  //   2) current leader should not be disturbed by any rogue votes -- that's
+  //      the whole premise of this test scenario
+  //
+  // So, for this scenario the leadership can fluctuate only if significantly
+  // delaying or dropping Raft heartbeats sent from leader to follower replicas.
+  // However, minicluster components send heartbeats via the loopback interface,
+  // so no real network layer that might significantly delay heartbeats
+  // is involved. Also, the consensus RPC queues should not overflow
+  // in this scenario because the number of consensus RPCs is relatively low.
+  TServerDetails* leader_tserver = nullptr;
+  TServerDetails* other_tserver = nullptr;
+  TServerDetails* shutdown_tserver = nullptr;
+  ASSERT_EVENTUALLY([&] {
+    // This is a clean-up in case of retry.
+    if (shutdown_tserver != nullptr) {
+      auto* ts = cluster_->tablet_server_by_uuid(shutdown_tserver->uuid());
+      if (ts->IsShutdown()) {
+        ASSERT_OK(ts->Restart());
+      }
+    }
+    for (auto idx = 0; idx < cluster_->num_tablet_servers(); ++idx) {
+      auto* ts = cluster_->tablet_server(idx);
+      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency", "false"));
+    }
+    leader_tserver = nullptr;
+    other_tserver = nullptr;
+    shutdown_tserver = nullptr;
+
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader_tserver));
+    ASSERT_OK(WriteSimpleTestRow(leader_tserver, tablet_id_,
+                                 RowOperationsPB::UPSERT, 0, 0, "", kTimeout));
+    OpId op_id;
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver,
+                                    consensus::COMMITTED_OPID, kTimeout,
+                                    &op_id));
+    ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_,
+                                    op_id.index()));
+    // Shutdown one tablet server that doesn't host the leader replica of the
+    // target tablet and inject WAL latency to others.
+    for (const auto& server : tservers) {
+      auto* ts = cluster_->tablet_server_by_uuid(server->uuid());
+      if (server->uuid() != leader_tserver->uuid() && shutdown_tserver == nullptr) {
+        shutdown_tserver = server;
+        continue;
+      }
+      if (server->uuid() != leader_tserver->uuid() && other_tserver == nullptr) {
+        other_tserver = server;
+      }
+      // For this scenario it's important to reserve some inactivity intervals
+      // for the follower between processing Raft messages from the leader.
+      // If a vote request arrives while replica is busy with processing
+      // Raft message from leader, it is rejected with 'busy' status before
+      // evaluating the vote withholding interval.
+      const auto mult = (server->uuid() == leader_tserver->uuid()) ? 2 : 1;
+      const auto latency_ms = mult *
+          kHeartbeatIntervalMs * kMaxMissedHeartbeatPeriods;
+      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency_ms_mean",
+                                  std::to_string(latency_ms)));
+      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency_ms_stddev", "0"));
+      ASSERT_OK(cluster_->SetFlag(ts, "log_inject_latency", "true"));
+    }
+
+    // Shutdown the third tablet server.
+    cluster_->tablet_server_by_uuid(shutdown_tserver->uuid())->Shutdown();
+
+    // Sanity check: make sure the leadership hasn't changed since the leader
+    // has been determined.
+    TServerDetails* current_leader;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &current_leader));
+    ASSERT_EQ(cluster_->tablet_server_index_by_uuid(leader_tserver->uuid()),
+              cluster_->tablet_server_index_by_uuid(current_leader->uuid()));
+  });
+
+  // Get the Raft term from the established leader.
+  ConsensusStatePB cstate;
+  ASSERT_OK(GetConsensusState(leader_tserver, tablet_id_, kTimeout,
+                              consensus::EXCLUDE_HEALTH_REPORT, &cstate));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.set_network_error_allowed(true);
+  workload.set_already_present_allowed(true);
+  workload.set_num_read_threads(0);
+  workload.set_num_write_threads(1);
+  workload.set_write_batch_size(1);
+  // Make a 'space' for the artificial vote requests (see below) to arrive
+  // while there is no activity on RaftConsensus::Update().
+  workload.set_write_interval_millis(kHeartbeatIntervalMs);
+  workload.Setup();
+  workload.Start();
+
+  // Issue rogue vote requests, imitating a disruptive tablet replica.
+  const auto& shutdown_server_uuid = shutdown_tserver->uuid();
+  const auto next_term = cstate.current_term() + 1;
+  const auto targets = { leader_tserver, other_tserver };
+  for (auto i = 0; i < 100; ++i) {
+    SleepFor(MonoDelta::FromMilliseconds(kHeartbeatIntervalMs / 4));
+    for (const auto* ts : targets) {
+      auto s = RequestVote(ts, tablet_id_, shutdown_server_uuid,
+                           next_term, MakeOpId(next_term + i, 0),
+                           /*ignore_live_leader=*/ false,
+                           /*is_pre_election=*/ false,
+                           kTimeout);
+      // Neither leader nor follower replica should grant 'yes' vote
+      // since the healthy leader is there and doing well, sending Raft
+      // transactions to be replicated.
+      ASSERT_TRUE(s.IsInvalidArgument() || s.IsServiceUnavailable())
+          << s.ToString();
+      ASSERT_STR_MATCHES(s.ToString(),
+          "("
+              "because replica is either leader or "
+              "believes a valid leader to be alive"
+          "|"
+              "because replica is already servicing an update "
+              "from a current leader or another vote"
+          ")");
+    }
+  }
 }
 
 }  // namespace tserver
