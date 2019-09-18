@@ -454,13 +454,16 @@ TEST_F(HmsCatalogTest, TestReconnect) {
 
 TEST_F(HmsCatalogTest, TestMetastoreUuid) {
   // Test that if the HMS has a DB UUID, we can retrieve it.
+  const auto get_and_verify_uuid = [&] (string* ret) {
+    Status s = hms_catalog_->GetUuid(ret);
+    if (s.ok()) {
+      ASSERT_EQ(36, ret->size());
+    } else {
+      ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    }
+  };
   string uuid;
-  Status s = hms_catalog_->GetUuid(&uuid);
-  if (s.ok()) {
-    ASSERT_EQ(36, uuid.size());
-  } else {
-    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
-  }
+  NO_FATALS(get_and_verify_uuid(&uuid));
 
   // After stopping the HMS:
   // 1. We should still be able to initialize the catalog.
@@ -476,14 +479,13 @@ TEST_F(HmsCatalogTest, TestMetastoreUuid) {
   ASSERT_OK(hms_->Start());
   string uuid2;
   ASSERT_EVENTUALLY([&] {
-      Status s2 = hms_catalog_->GetUuid(&uuid2);
-      if (s.ok()) {
-        ASSERT_OK(s2);
-      } else {
-        ASSERT_TRUE(s2.IsNotSupported());
-      }
-    });
-  ASSERT_EQ(uuid, uuid2);
+    NO_FATALS(get_and_verify_uuid(&uuid2));
+    // Verify that if we got a UUID the first time, that it's the same as the
+    // one we go this time.
+    if (!uuid.empty()) {
+      ASSERT_EQ(uuid, uuid2);
+    }
+  });
 }
 
 } // namespace hms
