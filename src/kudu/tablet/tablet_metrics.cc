@@ -269,6 +269,7 @@ namespace tablet {
 
 #define MINIT(x) x(METRIC_##x.Instantiate(entity))
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
+#define MEANINIT(x) x(METRIC_##x.InstantiateMeanGauge(entity))
 TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
   : MINIT(rows_inserted),
     MINIT(rows_upserted),
@@ -313,10 +314,11 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(undo_delta_block_gc_delete_duration),
     MINIT(undo_delta_block_gc_perform_duration),
     MINIT(leader_memory_pressure_rejections),
-    GINIT(average_diskrowset_height) {
+    MEANINIT(average_diskrowset_height) {
 }
 #undef MINIT
 #undef GINIT
+#undef MEANINIT
 
 void TabletMetrics::AddProbeStats(const ProbeStats* stats_array, int len,
                                   Arena* work_arena) {

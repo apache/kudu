@@ -168,6 +168,39 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
             state_for_merge->unique_values());
 }
 
+METRIC_DEFINE_gauge_double(test_entity, test_mean_gauge, "Test mean Gauge",
+                           MetricUnit::kUnits, "Description of mean Gauge");
+
+TEST_F(MetricsTest, SimpleMeanGaugeTest) {
+  scoped_refptr<MeanGauge> average_usage =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
+  ASSERT_EQ(METRIC_test_mean_gauge.description(), average_usage->prototype()->description());
+  ASSERT_EQ(0, average_usage->value());
+  average_usage->set_value(10.0, 2.0);
+  ASSERT_EQ(5, average_usage->value());
+  average_usage->set_value(5.0, 2.0);
+  ASSERT_EQ(2.5, average_usage->value());
+}
+
+TEST_F(MetricsTest, SimpleMeanGaugeMergeTest) {
+  scoped_refptr<MeanGauge> average_usage =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
+  scoped_refptr<MeanGauge> average_usage_for_merge =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_same_attr_);
+  average_usage_for_merge->MergeFrom(average_usage);
+  ASSERT_EQ(0, average_usage->value());
+  ASSERT_EQ(0, average_usage_for_merge->value());
+  average_usage->set_value(10.0, 1.0);
+  average_usage_for_merge->set_value(2.0, 2.0);
+  ASSERT_EQ(10, average_usage->value());
+  ASSERT_EQ(1, average_usage_for_merge->value());
+  average_usage_for_merge->MergeFrom(average_usage);
+  ASSERT_EQ(10, average_usage->value());
+  ASSERT_EQ(4, average_usage_for_merge->value());
+  average_usage_for_merge->MergeFrom(average_usage_for_merge);
+  ASSERT_EQ(4, average_usage_for_merge->value());
+}
+
 METRIC_DEFINE_gauge_uint64(test_entity, test_gauge, "Test uint64 Gauge",
                            MetricUnit::kBytes, "Description of Test Gauge");
 

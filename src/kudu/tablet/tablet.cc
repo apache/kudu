@@ -1725,12 +1725,13 @@ void Tablet::UpdateAverageRowsetHeight() {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   std::lock_guard<std::mutex> l(compact_select_lock_);
-  double avg_height;
+  double rowset_total_height, rowset_total_width;
   RowSetInfo::ComputeCdfAndCollectOrdered(*comps->rowsets,
-                                          &avg_height,
+                                          &rowset_total_height,
+                                          &rowset_total_width,
                                           nullptr,
                                           nullptr);
-  metrics_->average_diskrowset_height->set_value(avg_height);
+  metrics_->average_diskrowset_height->set_value(rowset_total_height, rowset_total_width);
 }
 
 Status Tablet::Compact(CompactFlags flags) {
@@ -2358,9 +2359,16 @@ void Tablet::PrintRSLayout(ostream* o) {
     out << "</p>";
   }
 
-  double avg_height;
+  double rowset_total_height, rowset_total_width;
   vector<RowSetInfo> min, max;
-  RowSetInfo::ComputeCdfAndCollectOrdered(*rowsets_copy, &avg_height, &min, &max);
+  RowSetInfo::ComputeCdfAndCollectOrdered(*rowsets_copy,
+                                          &rowset_total_height,
+                                          &rowset_total_width,
+                                          &min,
+                                          &max);
+  double average_rowset_height = rowset_total_width > 0
+                               ? rowset_total_height / rowset_total_width
+                               : 0.0;
   DumpCompactionSVG(min, picked, o, /*print_xml_header=*/false);
 
   // Compaction policy ignores rowsets unavailable for compaction. This is good,
@@ -2422,7 +2430,7 @@ void Tablet::PrintRSLayout(ostream* o) {
                       HumanReadableNumBytes::ToString(size_bytes_median),
                       HumanReadableNumBytes::ToString(size_bytes_third_quartile),
                       HumanReadableNumBytes::ToString(size_bytes_max),
-                      avg_height);
+                      average_rowset_height);
     out << "</table>" << endl;
   }
 

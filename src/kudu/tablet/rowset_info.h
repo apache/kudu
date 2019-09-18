@@ -47,14 +47,16 @@ class RowSetInfo {
 
   // From the rowset tree 'tree', computes the keyspace cdf and collects rowset
   // information in min-key- and max-key-sorted order into 'info_by_min_key'
-  // and 'info_by_max_key', respectively. The average value of the height of the
-  // rowset tree is set into 'average_height', if it is not nullptr.
+  // and 'info_by_max_key', respectively.
+  // The total weighted height and the total width of the rowset tree is set into
+  // 'rowset_total_height' and 'rowset_total_width', if they are not nullptr.
   // If one of 'info_by_min_key' and 'info_by_max_key' is nullptr, the other
   // must be.
   // Requires holding the compact_select_lock_ for the tablet that the
   // rowsets in 'tree' references.
   static void ComputeCdfAndCollectOrdered(const RowSetTree& tree,
-                                          double* average_height,
+                                          double* rowset_total_height,
+                                          double* rowset_total_width,
                                           std::vector<RowSetInfo>* info_by_min_key,
                                           std::vector<RowSetInfo>* info_by_max_key);
 

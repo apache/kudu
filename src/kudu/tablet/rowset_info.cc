@@ -253,7 +253,8 @@ void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
 }
 
 void RowSetInfo::ComputeCdfAndCollectOrdered(const RowSetTree& tree,
-                                             double* average_height,
+                                             double* rowset_total_height,
+                                             double* rowset_total_width,
                                              vector<RowSetInfo>* info_by_min_key,
                                              vector<RowSetInfo>* info_by_max_key) {
   DCHECK((info_by_min_key && info_by_max_key) ||
@@ -352,9 +353,9 @@ void RowSetInfo::ComputeCdfAndCollectOrdered(const RowSetTree& tree,
   FinalizeCDFVector(total_width, &info_by_min_key_tmp);
   FinalizeCDFVector(total_width, &info_by_max_key_tmp);
 
-  if (average_height) {
-    *average_height = total_width > 0 ? weighted_height_sum / total_width
-                                      : 0.0;
+  if (rowset_total_height && rowset_total_width) {
+    *rowset_total_height = weighted_height_sum;
+    *rowset_total_width = total_width;
   }
 
   if (info_by_min_key && info_by_max_key) {

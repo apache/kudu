@@ -107,7 +107,8 @@ void BudgetedCompactionPolicy::SetupKnapsackInput(
     vector<RowSetInfo>* asc_min_key,
     vector<RowSetInfo>* asc_max_key) const {
   RowSetInfo::ComputeCdfAndCollectOrdered(tree,
-                                          /*average_height=*/nullptr,
+                                          /*rowset_total_height=*/nullptr,
+                                          /*rowset_total_width=*/nullptr,
                                           asc_min_key,
                                           asc_max_key);
 

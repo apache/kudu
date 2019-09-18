@@ -445,9 +445,13 @@ double ComputeAverageRowsetHeight(
   RowSetTree tree;
   CHECK_OK(tree.Reset(rowsets));
 
-  double avg_height;
-  RowSetInfo::ComputeCdfAndCollectOrdered(tree, &avg_height, nullptr, nullptr);
-  return avg_height;
+  double rowset_total_height, rowset_total_width;
+  RowSetInfo::ComputeCdfAndCollectOrdered(tree,
+                                          &rowset_total_height,
+                                          &rowset_total_width,
+                                          nullptr,
+                                          nullptr);
+  return rowset_total_width > 0 ? rowset_total_height / rowset_total_width : 0.0;
 }
 } // anonymous namespace
 

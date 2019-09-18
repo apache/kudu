@@ -33,7 +33,7 @@ struct ProbeStats;
 
 // Container for all metrics specific to a single tablet.
 struct TabletMetrics {
-  explicit TabletMetrics(const scoped_refptr<MetricEntity>& metric_entity);
+  explicit TabletMetrics(const scoped_refptr<MetricEntity>& entity);
 
   // Add a batch of probe stats to the metrics.
   //
@@ -100,7 +100,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> leader_memory_pressure_rejections;
 
   // Compaction metrics.
-  scoped_refptr<AtomicGauge<double>> average_diskrowset_height;
+  scoped_refptr<MeanGauge> average_diskrowset_height;
 };
 
 } // namespace tablet

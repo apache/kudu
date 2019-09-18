@@ -727,6 +727,54 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 }
 
 //
+// MeanGauge
+//
+
+scoped_refptr<Metric> MeanGauge::snapshot() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  scoped_refptr<Metric> m
+    = new MeanGauge(down_cast<const GaugePrototype<double>*>(prototype_));
+  return m;
+}
+
+double MeanGauge::value() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return total_count_ > 0 ? total_sum_ / total_count_
+                          : 0.0;
+}
+
+double MeanGauge::total_sum() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return total_sum_;
+}
+
+double MeanGauge::total_count() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return total_count_;
+}
+
+void MeanGauge::set_value(double total_sum, double total_count) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  total_sum_ = total_sum;
+  total_count_ = total_count;
+}
+
+void MeanGauge::MergeFrom(const scoped_refptr<Metric>& other) {
+  if (PREDICT_FALSE(this == other.get())) {
+    return;
+  }
+
+  scoped_refptr<MeanGauge> other_ptr = down_cast<MeanGauge*>(other.get());
+  std::lock_guard<simple_spinlock> l(lock_);
+  total_sum_ += other_ptr->total_sum();
+  total_count_ += other_ptr->total_count();
+}
+
+void MeanGauge::WriteValue(JsonWriter* writer) const {
+  writer->Double(value());
+}
+
+//
 // Counter
 //
 // This implementation is optimized by using a striped counter. See LongAdder for details.
