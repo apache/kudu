@@ -2388,6 +2388,11 @@ int64_t RaftConsensus::CurrentTerm() const {
   return CurrentTermUnlocked();
 }
 
+string RaftConsensus::GetLeaderUuid() const {
+  LockGuard l(lock_);
+  return GetLeaderUuidUnlocked();
+}
+
 void RaftConsensus::SetStateUnlocked(State new_state) {
   switch (new_state) {
     case kInitialized:

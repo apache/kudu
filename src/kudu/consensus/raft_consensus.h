@@ -333,6 +333,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns the current term.
   int64_t CurrentTerm() const;
 
+  // Returns uuid of the current leader
+  std::string GetLeaderUuid() const;
+
   // Returns the uuid of this peer.
   // Thread-safe.
   const std::string& peer_uuid() const;
