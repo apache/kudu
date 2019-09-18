@@ -12,6 +12,7 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <list>
 #include <sstream>
 #include <type_traits>
@@ -36,7 +37,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
-
 #include "kudu/util/atomic.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
@@ -906,6 +906,7 @@ void TraceResultBuffer::Collect(
 //
 ////////////////////////////////////////////////////////////////////////////////
 class TraceBucketData;
+
 typedef Callback<void(TraceBucketData*)> TraceSampleCallback;
 
 class TraceBucketData {
@@ -1357,10 +1358,10 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
           "bucket2",
           Bind(&TraceSamplingThread::DefaultSamplingCallback));
 
-      Status s = Thread::Create("tracing", "sampler",
-                                &TraceSamplingThread::ThreadMain,
-                                sampling_thread_.get(),
-                                &sampling_thread_handle_);
+      Status s = Thread::CreateWithFlags(
+          "tracing", "sampler",
+          std::bind(&TraceSamplingThread::ThreadMain,sampling_thread_.get()),
+          Thread::NO_STACK_WATCHDOG, &sampling_thread_handle_);
       if (!s.ok()) {
         LOG(DFATAL) << "failed to create trace sampling thread: " << s.ToString();
       }

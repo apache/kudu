@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/trace.h"
+
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <ostream>
 #include <string>
@@ -47,7 +50,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace_metrics.h"
-#include "kudu/util/trace.h"
 
 using kudu::debug::TraceLog;
 using kudu::debug::TraceResultBuffer;
@@ -169,8 +171,10 @@ TEST_F(TraceTest, TestChromeTracing) {
   Stopwatch s;
   s.start();
   for (int i = 0; i < kNumThreads; i++) {
-    CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTraceEvents, i, kEventsPerThread,
-                            &threads[i]));
+    CHECK_OK(Thread::CreateWithFlags(
+        "test", "gen-traces",
+        std::bind(GenerateTraceEvents, i, kEventsPerThread),
+        Thread::NO_STACK_WATCHDOG, &threads[i]));
   }
 
   for (int i = 0; i < kNumThreads; i++) {
@@ -203,8 +207,9 @@ TEST_F(TraceTest, TestTraceFromExitedThread) {
   // Generate 10 trace events in a separate thread.
   int kNumEvents = 10;
   scoped_refptr<Thread> t;
-  CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTraceEvents, 1, kNumEvents,
-                          &t));
+  CHECK_OK(Thread::CreateWithFlags(
+      "test", "gen-traces", std::bind(GenerateTraceEvents, 1, kNumEvents),
+      Thread::NO_STACK_WATCHDOG, &t));
   t->Join();
   tl->SetDisabled();
   string trace_json = TraceResultBuffer::FlushTraceLogToString();
@@ -231,7 +236,9 @@ TEST_F(TraceTest, TestWideSpan) {
                  TraceLog::RECORD_CONTINUOUSLY);
 
   scoped_refptr<Thread> t;
-  CHECK_OK(Thread::Create("test", "gen-traces", &GenerateWideSpan, &t));
+  CHECK_OK(Thread::CreateWithFlags(
+      "test", "gen-traces", &GenerateWideSpan,
+      Thread::NO_STACK_WATCHDOG, &t));
   t->Join();
   tl->SetDisabled();
 
@@ -277,8 +284,10 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
   CountDownLatch latch(1);
   AtomicInt<int64_t> num_events_generated(0);
   scoped_refptr<Thread> t;
-  CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTracesUntilLatch,
-                          &num_events_generated, &latch, &t));
+  CHECK_OK(Thread::CreateWithFlags(
+      "test", "gen-traces",
+      std::bind(GenerateTracesUntilLatch, &num_events_generated, &latch),
+      Thread::NO_STACK_WATCHDOG, &t));
 
   const int num_flushes = AllowSlowTests() ? 50 : 3;
   for (int i = 0; i < num_flushes; i++) {
