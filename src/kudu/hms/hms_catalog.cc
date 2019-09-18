@@ -464,7 +464,9 @@ void HmsCatalog::LoopInitializeUuid() {
       VLOG(1) << "Connected to HMS with uuid " << uuid;
       std::lock_guard<simple_spinlock> l(uuid_lock_);
       uuid_ = std::move(uuid);
-    } else if (s.IsNotSupported()) {
+      return;
+    }
+    if (s.IsNotSupported()) {
       VLOG(1) << "Unable to fetch UUID for HMS: " << s.ToString();
       return;
     }
