@@ -103,14 +103,14 @@ TEST_F(MetricsTest, SimpleCounterMergeTest) {
     new Counter(&METRIC_test_counter);
   requests->IncrementBy(2);
   requests_for_merge->IncrementBy(3);
-  ASSERT_TRUE(requests_for_merge->MergeFrom(requests));
+  requests_for_merge->MergeFrom(requests);
   ASSERT_EQ(2, requests->value());
   ASSERT_EQ(5, requests_for_merge->value());
   requests->IncrementBy(7);
-  ASSERT_TRUE(requests_for_merge->MergeFrom(requests));
+  requests_for_merge->MergeFrom(requests);
   ASSERT_EQ(9, requests->value());
   ASSERT_EQ(14, requests_for_merge->value());
-  ASSERT_TRUE(requests_for_merge->MergeFrom(requests_for_merge));
+  requests_for_merge->MergeFrom(requests_for_merge);
   ASSERT_EQ(14, requests_for_merge->value());
 }
 
@@ -133,7 +133,7 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
     new StringGauge(&METRIC_test_string_gauge, "Healthy");
   scoped_refptr<StringGauge> state_for_merge =
     new StringGauge(&METRIC_test_string_gauge, "Recovering");
-  ASSERT_TRUE(state_for_merge->MergeFrom(state));
+  state_for_merge->MergeFrom(state);
   ASSERT_EQ("Healthy", state->value());
   ASSERT_EQ(unordered_set<string>({"Recovering", "Healthy"}),
             state_for_merge->unique_values());
@@ -148,22 +148,22 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
 
   state_old->set_value("Unavailable");
   ASSERT_EQ("Unavailable", state_old->value());
-  ASSERT_TRUE(state_for_merge_old->MergeFrom(state_old));
+  state_for_merge_old->MergeFrom(state_old);
   ASSERT_EQ(unordered_set<string>({"Unavailable", "Recovering", "Healthy"}),
             state_for_merge_old->unique_values());
 
   state->set_value("Under-replicated");
-  ASSERT_TRUE(state_for_merge->MergeFrom(state));
+  state_for_merge->MergeFrom(state);
   ASSERT_EQ(unordered_set<string>({"Under-replicated", "Healthy", "Recovering"}),
             state_for_merge->unique_values());
 
-  ASSERT_TRUE(state_for_merge->MergeFrom(state_for_merge_old));
+  state_for_merge->MergeFrom(state_for_merge_old);
   ASSERT_EQ(unordered_set<string>({"Unavailable", "Healthy", "Recovering"}),
             state_for_merge_old->unique_values());
   ASSERT_EQ(unordered_set<string>({"Unavailable", "Under-replicated", "Healthy", "Recovering"}),
             state_for_merge->unique_values());
 
-  ASSERT_TRUE(state_for_merge->MergeFrom(state_for_merge));
+  state_for_merge->MergeFrom(state_for_merge);
   ASSERT_EQ(unordered_set<string>({"Unavailable", "Under-replicated", "Healthy", "Recovering"}),
             state_for_merge->unique_values());
 }
@@ -187,14 +187,14 @@ TEST_F(MetricsTest, SimpleAtomicGaugeMergeTest) {
     METRIC_test_gauge.Instantiate(entity_, 2);
   scoped_refptr<AtomicGauge<uint64_t> > mem_usage_for_merge =
     METRIC_test_gauge.Instantiate(entity_same_attr_, 3);
-  ASSERT_TRUE(mem_usage_for_merge->MergeFrom(mem_usage));
+  mem_usage_for_merge->MergeFrom(mem_usage);
   ASSERT_EQ(2, mem_usage->value());
   ASSERT_EQ(5, mem_usage_for_merge->value());
   mem_usage->IncrementBy(7);
-  ASSERT_TRUE(mem_usage_for_merge->MergeFrom(mem_usage));
+  mem_usage_for_merge->MergeFrom(mem_usage);
   ASSERT_EQ(9, mem_usage->value());
   ASSERT_EQ(14, mem_usage_for_merge->value());
-  ASSERT_TRUE(mem_usage_for_merge->MergeFrom(mem_usage_for_merge));
+  mem_usage_for_merge->MergeFrom(mem_usage_for_merge);
   ASSERT_EQ(14, mem_usage_for_merge->value());
 }
 
@@ -284,15 +284,15 @@ TEST_F(MetricsTest, SimpleFunctionGaugeMergeTest) {
     METRIC_test_func_gauge.InstantiateFunctionGauge(
       entity_same_attr_, Bind(&MyFunction, Unretained(&metric_val_for_merge)));
 
-  ASSERT_TRUE(gauge_for_merge->MergeFrom(gauge));
+  gauge_for_merge->MergeFrom(gauge);
   ASSERT_EQ(1001, gauge->value());
   ASSERT_EQ(1002, gauge->value());
   ASSERT_EQ(2234, gauge_for_merge->value());
   ASSERT_EQ(2234, gauge_for_merge->value());
-  ASSERT_TRUE(gauge_for_merge->MergeFrom(gauge));
+  gauge_for_merge->MergeFrom(gauge);
   ASSERT_EQ(3237, gauge_for_merge->value());
   ASSERT_EQ(3237, gauge_for_merge->value());
-  ASSERT_TRUE(gauge_for_merge->MergeFrom(gauge_for_merge));
+  gauge_for_merge->MergeFrom(gauge_for_merge);
   ASSERT_EQ(3237, gauge_for_merge->value());
 }
 
@@ -362,7 +362,7 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
   hist->IncrementBy(6, 1);
   hist_for_merge->Increment(1);
   hist_for_merge->IncrementBy(3, 3);
-  ASSERT_TRUE(hist_for_merge->MergeFrom(hist));
+  hist_for_merge->MergeFrom(hist);
   ASSERT_EQ(2, hist->histogram()->MinValue());
   ASSERT_EQ(4, hist->histogram()->MeanValue());
   ASSERT_EQ(6, hist->histogram()->MaxValue());
@@ -378,7 +378,7 @@ TEST_F(MetricsTest, SimpleHistogramMergeTest) {
   ASSERT_EQ(3, hist_for_merge->histogram()->ValueAtPercentile(50.0));
   ASSERT_EQ(3, hist_for_merge->histogram()->ValueAtPercentile(90.0));
   ASSERT_EQ(6, hist_for_merge->histogram()->ValueAtPercentile(100.0));
-  ASSERT_TRUE(hist_for_merge->MergeFrom(hist_for_merge));
+  hist_for_merge->MergeFrom(hist_for_merge);
   ASSERT_EQ(6, hist_for_merge->histogram()->TotalCount());
   ASSERT_EQ(18, hist_for_merge->histogram()->TotalSum());
 }

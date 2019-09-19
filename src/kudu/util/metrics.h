@@ -746,9 +746,8 @@ class Metric : public RefCountedThreadSafe<Metric> {
   static void IncrementEpoch();
 
   // Merges 'other' into this Metric object.
-  // Return false if any error occurs, otherwise return true.
-  // NOTE: If merge with self, do nothing and return true directly.
-  virtual bool MergeFrom(const scoped_refptr<Metric>& other) = 0;
+  // NOTE: If merge with self, do nothing.
+  virtual void MergeFrom(const scoped_refptr<Metric>& other) = 0;
 
  protected:
   explicit Metric(const MetricPrototype* prototype);
@@ -954,7 +953,7 @@ class StringGauge : public Gauge {
   virtual bool IsUntouched() const override {
     return false;
   }
-  bool MergeFrom(const scoped_refptr<Metric>& other) OVERRIDE;
+  void MergeFrom(const scoped_refptr<Metric>& other) OVERRIDE;
 
  protected:
   FRIEND_TEST(MetricsTest, SimpleStringGaugeForMergeTest);
@@ -1004,11 +1003,10 @@ class AtomicGauge : public Gauge {
   virtual bool IsUntouched() const override {
     return false;
   }
-  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+  void MergeFrom(const scoped_refptr<Metric>& other) override {
     if (PREDICT_TRUE(this != other.get())) {
       IncrementBy(down_cast<AtomicGauge<T>*>(other.get())->value());
     }
-    return true;
   }
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
@@ -1140,11 +1138,10 @@ class FunctionGauge : public Gauge {
   }
 
   // value() will be constant after MergeFrom()
-  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+  void MergeFrom(const scoped_refptr<Metric>& other) override {
     if (PREDICT_TRUE(this != other.get())) {
       DetachToConstant(value() + down_cast<FunctionGauge<T>*>(other.get())->value());
     }
-    return true;
   }
 
  private:
@@ -1203,11 +1200,10 @@ class Counter : public Metric {
     return value() == 0;
   }
 
-  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+  void MergeFrom(const scoped_refptr<Metric>& other) override {
     if (PREDICT_TRUE(this != other.get())) {
       IncrementBy(down_cast<Counter*>(other.get())->value());
     }
-    return true;
   }
 
  private:
@@ -1278,11 +1274,10 @@ class Histogram : public Metric {
     return TotalCount() == 0;
   }
 
-  bool MergeFrom(const scoped_refptr<Metric>& other) override {
+  void MergeFrom(const scoped_refptr<Metric>& other) override {
     if (PREDICT_TRUE(this != other.get())) {
       histogram_->MergeFrom(*(down_cast<Histogram*>(other.get())->histogram()));
     }
-    return true;
   }
 
  private:
