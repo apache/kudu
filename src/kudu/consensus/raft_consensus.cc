@@ -2218,6 +2218,9 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
   CHECK(IsConsensusOnlyOperation(op_type))
       << "Expected a consensus-only op type, got " << OperationType_Name(op_type)
       << ": " << SecureShortDebugString(*msg->get());
+  if (op_type == NO_OP) {
+    ScheduleNoOpReceivedCallback(msg);
+  }
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
@@ -3046,6 +3049,19 @@ void RaftConsensus::DoTermAdvancmentCallback(int64_t new_term) {
   if (tacb_) tacb_(new_term);
 }
 
+void RaftConsensus::ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg) {
+  WARN_NOT_OK(
+      raft_pool_token_->SubmitFunc(
+        std::bind(&RaftConsensus::DoNoOpReceivedCallback,
+                  shared_from_this(),
+                  msg->get()->id())),
+      LogPrefixThreadSafe() + "Unable to run term advancement callback");
+}
+
+void RaftConsensus::DoNoOpReceivedCallback(const OpId id) {
+  if (norcb_) norcb_(id);
+}
+
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
                                             FlushToDisk flush) {
   TRACE_EVENT1("consensus", "RaftConsensus::SetCurrentTermUnlocked",
@@ -3171,6 +3187,11 @@ void RaftConsensus::SetElectionDecisionCallback(ElectionDecisionCallback edcb) {
 void RaftConsensus::SetTermAdvancementCallback(TermAdvancementCallback tacb) {
   CHECK(tacb);
   tacb_ = std::move(tacb);
+}
+
+void RaftConsensus::SetNoOpReceivedCallback(NoOpReceivedCallback norcb) {
+  CHECK(norcb);
+  norcb_ = std::move(norcb);
 }
 
 ////////////////////////////////////////////////////////////////////////

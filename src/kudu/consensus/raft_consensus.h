@@ -124,6 +124,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
  public:
   typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
   typedef std::function<void(int64_t)> TermAdvancementCallback;
+  typedef std::function<void(const OpId opId)> NoOpReceivedCallback;
 
   // Modes for StartElection().
   enum ElectionMode {
@@ -786,6 +787,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void ScheduleTermAdvancementCallback(int64_t term);
   void DoTermAdvancmentCallback(int64_t term);
 
+  void ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg);
+  void DoNoOpReceivedCallback(const OpId opid);
+
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
   //
@@ -833,6 +837,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   void SetElectionDecisionCallback(ElectionDecisionCallback edcb);
   void SetTermAdvancementCallback(TermAdvancementCallback tacb);
+  void SetNoOpReceivedCallback(NoOpReceivedCallback norcb);
 
   const ConsensusOptions options_;
 
@@ -925,6 +930,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Explicitly registered callbacks.
   ElectionDecisionCallback edcb_;
   TermAdvancementCallback tacb_;
+  NoOpReceivedCallback norcb_;
 
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.
