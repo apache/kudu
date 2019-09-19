@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -41,6 +42,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -56,6 +58,7 @@
 #include "kudu/master/table_metrics.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
@@ -63,12 +66,14 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -104,6 +109,8 @@ using kudu::consensus::RaftPeerPB;
 using kudu::itest::SimpleIntKeyKuduSchema;
 using kudu::KuduPartialRow;
 using kudu::master::CatalogManager;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::master::ReportedTabletPB;
@@ -117,6 +124,7 @@ using kudu::ClusterVerifier;
 using std::map;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -268,51 +276,125 @@ INSTANTIATE_TEST_CASE_P(,
                         FailedTabletsAreReplacedITest,
                         ::testing::Bool());
 
-// Test that when the leader changes, the tablet manager gets notified and
-// includes that information in the next tablet report.
-TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
+class LeadershipChangeReportingTest : public TsTabletManagerITest {
+ public:
   const int kNumReplicas = 2;
-  {
+  void SetUp() override {
+    NO_FATALS(TsTabletManagerITest::SetUp());
+
+    // For tests that heartbeat, set a lower interval to speed things up.
+    FLAGS_heartbeat_interval_ms = 100;
+
     InternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumReplicas;
     NO_FATALS(StartCluster(std::move(opts)));
+
+    // We need to control elections precisely for this test since we're using
+    // EmulateElection() with a distributed consensus configuration.
+    FLAGS_enable_leader_failure_detection = false;
+    FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
+
+    // Allow creating table with even replication factor.
+    FLAGS_allow_unsafe_replication_factor = true;
+
+    // Run a few more iters in slow-test mode.
+    OverrideFlagForSlowTests("num_election_test_loops", "10");
+
+    // Build a TServerDetails map so we can check for convergence.
+    const auto& addr = cluster_->mini_master()->bound_rpc_addr();
+    master_proxy_.reset(new MasterServiceProxy(client_messenger_, addr, addr.host()));
   }
 
-  // We need to control elections precisely for this test since we're using
-  // EmulateElection() with a distributed consensus configuration.
-  FLAGS_enable_leader_failure_detection = false;
-  FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
+  // Creates 'num_hashes' tablets with two replicas each.
+  Status CreateTable(int num_hashes) {
+    // Create the table.
+    client::sp::shared_ptr<KuduTable> table;
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    if (num_hashes > 1) {
+      RETURN_NOT_OK(table_creator->table_name(kTableName)
+          .schema(&schema_)
+          .set_range_partition_columns({ "key" })
+          .num_replicas(kNumReplicas)
+          .add_hash_partitions({ "key" }, num_hashes)
+          .Create());
+    } else {
+      RETURN_NOT_OK(table_creator->table_name(kTableName)
+          .schema(&schema_)
+          .set_range_partition_columns({ "key" })
+          .num_replicas(kNumReplicas)
+          .Create());
+    }
+    RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
 
-  // Allow creating table with even replication factor.
-  FLAGS_allow_unsafe_replication_factor = true;
+    RETURN_NOT_OK(CreateTabletServerMap(master_proxy_, client_messenger_, &ts_map_));
 
-  // Run a few more iters in slow-test mode.
-  OverrideFlagForSlowTests("num_election_test_loops", "10");
+    // Collect the TabletReplicas so we get direct access to RaftConsensus.
+    RETURN_NOT_OK(PrepareTabletReplicas(MonoDelta::FromSeconds(60), &tablet_replicas_));
+    CHECK_EQ(kNumReplicas * num_hashes, tablet_replicas_.size());
+    return Status::OK();
+  }
+  void TearDown() override {
+    ValueDeleter deleter(&ts_map_);
+    NO_FATALS(TsTabletManagerITest::TearDown());
+  }
 
-  // Create the table.
-  client::sp::shared_ptr<KuduTable> table;
-  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  ASSERT_OK(table_creator->table_name(kTableName)
-            .schema(&schema_)
-            .set_range_partition_columns({ "key" })
-            .num_replicas(kNumReplicas)
-            .Create());
-  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  Status TriggerElection(int min_term = 0, int* new_leader_idx = nullptr) {
+    int leader_idx = rand() % tablet_replicas_.size();
+    LOG(INFO) << "Electing peer " << leader_idx << "...";
+    RaftConsensus* con = CHECK_NOTNULL(tablet_replicas_[leader_idx]->consensus());
+    RETURN_NOT_OK(con->EmulateElection());
+    LOG(INFO) << "Waiting for servers to agree...";
+    RETURN_NOT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5), ts_map_,
+        tablet_replicas_[leader_idx]->tablet_id(), min_term));
+    if (new_leader_idx) {
+      *new_leader_idx = leader_idx;
+    }
+    return Status::OK();
+  }
 
-  // Build a TServerDetails map so we can check for convergence.
-  const auto& addr = cluster_->mini_master()->bound_rpc_addr();
-  shared_ptr<MasterServiceProxy> master_proxy(
-      new MasterServiceProxy(client_messenger_, addr, addr.host()));
+ protected:
+  shared_ptr<MasterServiceProxy> master_proxy_;
+  vector<scoped_refptr<TabletReplica>> tablet_replicas_;
+  itest::TabletServerMap ts_map_;
+};
 
-  itest::TabletServerMap ts_map;
-  ASSERT_OK(CreateTabletServerMap(master_proxy, client_messenger_, &ts_map));
-  ValueDeleter deleter(&ts_map);
+// Regression test for KUDU-2842: concurrent calls to GetTableLocations()
+// shouldn't lead to data races with the changes in reported state.
+TEST_F(LeadershipChangeReportingTest, TestConcurrentGetTableLocations) {
+  // KUDU-2842 requires there to be multiple tablets in a given report, so
+  // create multiple tablets.
+  int kNumTablets = 2;
+  ASSERT_OK(CreateTable(kNumTablets));
+  CountDownLatch latch(1);
+  thread t([&] {
+    master::GetTableLocationsRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    req.set_intern_ts_infos_in_response(true);
+    while (!latch.WaitFor(MonoDelta::FromMilliseconds(10))) {
+      master::GetTableLocationsResponsePB resp;
+      rpc::RpcController rpc;
+      // Note: we only really care about data races, rather than the responses.
+      ignore_result(master_proxy_->GetTableLocations(req, &resp, &rpc));
+    }
+  });
+  SCOPED_CLEANUP({
+    latch.CountDown();
+    NO_FATALS(t.join());
+  });
+  for (int i = 0; i < FLAGS_num_election_test_loops; i++) {
+    for (int t = 0; t < kNumTablets; t++) {
+      // Note: we only really care about data races, rather than the success of
+      // all the elections.
+      ignore_result(TriggerElection());
+    }
+    SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_heartbeat_interval_ms));
+  }
+}
 
-  // Collect the TabletReplicas so we get direct access to RaftConsensus.
-  vector<scoped_refptr<TabletReplica>> tablet_replicas;
-  ASSERT_OK(PrepareTabletReplicas(MonoDelta::FromSeconds(60), &tablet_replicas));
-  ASSERT_EQ(kNumReplicas, tablet_replicas.size());
-
+// Test that when the leader changes, the tablet manager gets notified and
+// includes that information in the next tablet report.
+TEST_F(LeadershipChangeReportingTest, TestUpdatedConsensusState) {
+  ASSERT_OK(CreateTable(1));
   // Stop heartbeating we don't race against the Master.
   DisableHeartbeatingToMaster();
 
@@ -320,13 +402,8 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   // TSTabletManager should acknowledge the role changes via tablet reports.
   for (int i = 0; i < FLAGS_num_election_test_loops; i++) {
     SCOPED_TRACE(Substitute("Iter: $0", i));
-    int new_leader_idx = rand() % 2;
-    LOG(INFO) << "Electing peer " << new_leader_idx << "...";
-    RaftConsensus* con = CHECK_NOTNULL(tablet_replicas[new_leader_idx]->consensus());
-    ASSERT_OK(con->EmulateElection());
-    LOG(INFO) << "Waiting for servers to agree...";
-    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5),
-                                    ts_map, tablet_replicas[0]->tablet_id(), i + 1));
+    int new_leader_idx;
+    ASSERT_OK(TriggerElection(i + 1, &new_leader_idx));
 
     // Now check that the tablet report reports the correct role for both servers.
     for (int replica = 0; replica < kNumReplicas; replica++) {
@@ -342,7 +419,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       const ReportedTabletPB& reported_tablet = report.updated_tablets(0);
       ASSERT_TRUE(reported_tablet.has_consensus_state());
 
-      string uuid = tablet_replicas[replica]->permanent_uuid();
+      string uuid = tablet_replicas_[replica]->permanent_uuid();
       RaftPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.consensus_state());
       if (replica == new_leader_idx) {
         ASSERT_EQ(RaftPeerPB::LEADER, role)

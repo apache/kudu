@@ -22,14 +22,22 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
+
+#include "kudu/gutil/strings/stringpiece.h"
+
+template <class X> struct GoodFastHash;
 
 using std::map;
 using std::string;
 using std::shared_ptr;
 using std::unique_ptr;
+using std::unordered_map;
+using std::vector;
 
 namespace kudu {
 
@@ -67,6 +75,34 @@ TEST(ComputeIfAbsentTest, TestComputeIfAbsentAndReturnAbsense) {
   auto result2 = ComputeIfAbsentReturnAbsense(&my_map, "key", [] { return "hello_world2"; });
   ASSERT_FALSE(result2.second);
   ASSERT_EQ(*result2.first, "hello_world");
+}
+
+namespace {
+// Simple struct to act as a container for a string. While not necessary per
+// se, this is more representative of the expected usage of
+// ComputePairIfAbsent* (i.e. pointing to internal state of more complex
+// objects).
+struct SimpleStruct {
+  string str;
+};
+} // anonymous namespace
+
+TEST(ComputePairIfAbsentTest, TestComputePairDestructState) {
+  unordered_map<StringPiece, int, GoodFastHash<StringPiece>> string_to_idx;
+  const string kBigKey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  string big_key = kBigKey;
+  vector<SimpleStruct> big_structs;
+  auto result = ComputePairIfAbsentReturnAbsense(&string_to_idx, big_key,
+      [&] () -> std::pair<StringPiece, int> {
+        int idx = big_structs.size();
+        big_structs.emplace_back(SimpleStruct({ big_key }));
+        return { big_structs.back().str, idx };
+      });
+  // Clear the original key state. This shouldn't have any effect on the map.
+  big_key.clear();
+  ASSERT_TRUE(result.second);
+  ASSERT_EQ(*result.first, FindOrDie(string_to_idx, kBigKey));
+  ASSERT_EQ(kBigKey, big_structs[*result.first].str);
 }
 
 TEST(FindPointeeOrNullTest, TestFindPointeeOrNull) {

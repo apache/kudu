@@ -4843,13 +4843,14 @@ Status CatalogManager::BuildLocationsForTablet(
       dimension = l_tablet.data().pb.dimension_label();
     }
     if (ts_infos_dict) {
-      int idx = *ComputeIfAbsent(
+      int idx = *ComputePairIfAbsent(
           &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
-          [&]() -> int {
+          [&]() -> pair<StringPiece, int> {
+            auto& ts_info_pbs = ts_infos_dict->ts_info_pbs;
             auto pb = make_tsinfo_pb();
-            int idx = ts_infos_dict->ts_info_pbs.size();
-            ts_infos_dict->ts_info_pbs.emplace_back(pb.release());
-            return idx;
+            int ts_info_idx = ts_info_pbs.size();
+            ts_info_pbs.emplace_back(pb.release());
+            return { ts_info_pbs.back()->permanent_uuid(), ts_info_idx };
           });
 
       auto* interned_replica_pb = locs_pb->add_interned_replicas();

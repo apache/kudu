@@ -875,20 +875,47 @@ void AppendValuesFromMap(const MapContainer& map_container,
 // MyValue* const value = result.first;
 // if (result.second) ....
 //
+// The ComputePair* variants expect a lambda that creates a pair<k, v>. This
+// can be useful if the key is a StringPiece pointing to external state to
+// avoid excess memory for the keys, while being safer in multi-threaded
+// contexts, e.g. in case the key goes out of scope before the container does.
+//
+// Example usage:
+//
+// map<StringPiece, int, GoodFastHash<StringPiece>> string_to_idx;
+// vector<unique_ptr<StringPB>> pbs;
+// auto result = ComputePairIfAbsentReturnAbsense(&string_to_idx, my_key,
+//     [&]() {
+//       unique_ptr<StringPB> s = new StringPB();
+//       s->set_string(my_key);
+//       int idx = pbs.size();
+//       pbs.emplace_back(s.release());
+//       return make_pair(StringPiece(pbs.back()->string()), idx);
+//     });
+template <class MapContainer, typename Function>
+std::pair<typename MapContainer::mapped_type* const, bool>
+ComputePairIfAbsentReturnAbsense(MapContainer* container,
+                                 const typename MapContainer::key_type& key,
+                                 Function compute_pair_func) {
+  typename MapContainer::iterator iter = container->find(key);
+  bool new_value = iter == container->end();
+  if (new_value) {
+    auto p = compute_pair_func();
+    std::pair<typename MapContainer::iterator, bool> result =
+        container->emplace(std::move(p.first), std::move(p.second));
+    DCHECK(result.second) << "duplicate key: " << key;
+    iter = result.first;
+  }
+  return std::make_pair(&iter->second, new_value);
+}
 template <class MapContainer, typename Function>
 std::pair<typename MapContainer::mapped_type* const, bool>
 ComputeIfAbsentReturnAbsense(MapContainer* container,
                              const typename MapContainer::key_type& key,
                              Function compute_func) {
-  typename MapContainer::iterator iter = container->find(key);
-  bool new_value = iter == container->end();
-  if (new_value) {
-    std::pair<typename MapContainer::iterator, bool> result =
-        container->emplace(key, compute_func());
-    DCHECK(result.second) << "duplicate key: " << key;
-    iter = result.first;
-  }
-  return std::make_pair(&iter->second, new_value);
+  return ComputePairIfAbsentReturnAbsense(container, key, [&key, &compute_func] {
+    return std::make_pair(key, compute_func());
+  });
 };
 
 // Like the above but doesn't return a pair, just returns a pointer to the value.
@@ -904,6 +931,14 @@ ComputeIfAbsent(MapContainer* container,
                 const typename MapContainer::key_type& key,
                 Function compute_func) {
   return ComputeIfAbsentReturnAbsense(container, key, compute_func).first;
+};
+
+template <class MapContainer, typename Function>
+typename MapContainer::mapped_type* const
+ComputePairIfAbsent(MapContainer* container,
+                    const typename MapContainer::key_type& key,
+                    Function compute_pair_func) {
+  return ComputePairIfAbsentReturnAbsense<MapContainer, Function>(container, key, compute_pair_func).first;
 };
 
 #endif  // UTIL_GTL_MAP_UTIL_H_
