@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/transactions/transaction_tracker.h"
+
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -29,11 +31,9 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
-#include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -64,8 +64,8 @@ class TransactionTrackerTest : public KuduTest {
   class NoOpTransactionState : public TransactionState {
    public:
     NoOpTransactionState() : TransactionState(nullptr) {}
-    virtual const google::protobuf::Message* request() const OVERRIDE { return &req_; }
-    virtual std::string ToString() const OVERRIDE { return "NoOpTransactionState"; }
+    const google::protobuf::Message* request() const override { return &req_; }
+    std::string ToString() const override { return "NoOpTransactionState"; }
    private:
     consensus::ReplicateMsg req_;
   };
@@ -76,18 +76,18 @@ class TransactionTrackerTest : public KuduTest {
         state_(state) {
     }
 
-    virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE {
+    void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override {
       replicate_msg->reset(new consensus::ReplicateMsg());
     }
-    virtual TransactionState* state() { return state_.get();  }
-    virtual const TransactionState* state() const { return state_.get();  }
+    TransactionState* state() override { return state_.get();  }
+    const TransactionState* state() const override { return state_.get();  }
 
-    virtual Status Prepare() OVERRIDE { return Status::OK(); }
-    virtual Status Start() OVERRIDE { return Status::OK(); }
-    virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE {
+    Status Prepare() override { return Status::OK(); }
+    Status Start() override { return Status::OK(); }
+    Status Apply(gscoped_ptr<consensus::CommitMsg>* /* commit_msg */) override {
       return Status::OK();
     }
-    virtual std::string ToString() const OVERRIDE {
+    std::string ToString() const override {
       return "NoOp";
     }
    private:
