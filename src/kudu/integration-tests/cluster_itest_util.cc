@@ -980,7 +980,7 @@ Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& ma
   return Status::OK();
 }
 
-Status WaitForNumTabletsOnTS(TServerDetails* ts,
+Status WaitForNumTabletsOnTS(const TServerDetails* ts,
                              int count,
                              const MonoDelta& timeout,
                              vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets,
@@ -1016,7 +1016,7 @@ Status WaitForNumTabletsOnTS(TServerDetails* ts,
   return Status::OK();
 }
 
-Status CheckIfTabletInState(TServerDetails* ts,
+Status CheckIfTabletInState(const TServerDetails* ts,
                             const std::string& tablet_id,
                             tablet::TabletStatePB expected_state,
                             const MonoDelta& timeout) {
@@ -1036,13 +1036,13 @@ Status CheckIfTabletInState(TServerDetails* ts,
   return Status::NotFound("Tablet " + tablet_id + " not found");
 }
 
-Status CheckIfTabletRunning(TServerDetails* ts,
+Status CheckIfTabletRunning(const TServerDetails* ts,
                             const std::string& tablet_id,
                             const MonoDelta& timeout) {
   return CheckIfTabletInState(ts, tablet_id, tablet::RUNNING, timeout);
 }
 
-Status WaitUntilTabletInState(TServerDetails* ts,
+Status WaitUntilTabletInState(const TServerDetails* ts,
                               const std::string& tablet_id,
                               tablet::TabletStatePB state,
                               const MonoDelta& timeout) {
@@ -1071,7 +1071,7 @@ Status WaitUntilTabletInState(TServerDetails* ts,
 }
 
 // Wait until the specified tablet is in RUNNING state.
-Status WaitUntilTabletRunning(TServerDetails* ts,
+Status WaitUntilTabletRunning(const TServerDetails* ts,
                               const std::string& tablet_id,
                               const MonoDelta& timeout) {
   return WaitUntilTabletInState(ts, tablet_id, tablet::RUNNING, timeout);

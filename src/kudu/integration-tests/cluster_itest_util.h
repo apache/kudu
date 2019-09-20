@@ -375,31 +375,31 @@ Status WaitForNumVotersInConfigOnMaster(
 // must also be in the specified state for the wait to be considered
 // successful.
 Status WaitForNumTabletsOnTS(
-    TServerDetails* ts,
+    const TServerDetails* ts,
     int count,
     const MonoDelta& timeout,
     std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets = nullptr,
     boost::optional<tablet::TabletStatePB> state = boost::none);
 
 // Check if the tablet is in the specified state.
-Status CheckIfTabletInState(TServerDetails* ts,
+Status CheckIfTabletInState(const TServerDetails* ts,
                             const std::string& tablet_id,
                             tablet::TabletStatePB expected_state,
                             const MonoDelta& timeout);
 
 // Check if the given tablet is RUNNING.
-Status CheckIfTabletRunning(TServerDetails* ts,
+Status CheckIfTabletRunning(const TServerDetails* ts,
                             const std::string& tablet_id,
                             const MonoDelta& timeout);
 
 // Wait until the specified replica is in the specified state.
-Status WaitUntilTabletInState(TServerDetails* ts,
+Status WaitUntilTabletInState(const TServerDetails* ts,
                               const std::string& tablet_id,
                               tablet::TabletStatePB state,
                               const MonoDelta& timeout);
 
 // Wait until the specified tablet is in RUNNING state.
-Status WaitUntilTabletRunning(TServerDetails* ts,
+Status WaitUntilTabletRunning(const TServerDetails* ts,
                               const std::string& tablet_id,
                               const MonoDelta& timeout);
 
