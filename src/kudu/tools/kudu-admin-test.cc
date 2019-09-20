@@ -165,6 +165,19 @@ static string ToolRunInfo(const Status& s, const string& out, const string& err)
 } while (0)
 
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
+ protected:
+  // Find a remaining node which will be picked for re-replication.
+  const TServerDetails*
+  FindNodeForReReplication(const TabletServerMap& active_tablet_servers) const {
+    vector<TServerDetails*> all_tservers;
+    AppendValuesFromMap(tablet_servers_, &all_tservers);
+    for (const auto *ts : all_tservers) {
+      if (!ContainsKey(active_tablet_servers, ts->uuid())) {
+        return ts;
+      }
+    }
+    return nullptr;
+  }
 };
 
 // Test config change while running a workload.
@@ -656,16 +669,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
                                           followers[1]->uuid(), };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, follower1_addr, peer_uuid_list));
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
@@ -748,16 +752,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
                                           followers[1]->uuid(), };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, follower1_addr, peer_uuid_list));
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
@@ -843,16 +838,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   cluster_->master()->Shutdown();
   ASSERT_OK(cluster_->master()->Restart());
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
@@ -949,16 +935,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   const vector<string> peer_uuid_list = { leader_ts->uuid() };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, leader_addr, peer_uuid_list));
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
@@ -1045,16 +1022,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
       cluster_->tablet_server_by_uuid(leader_ts->uuid()),
       "fault_crash_before_cmeta_flush", "1.0"));
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
   // Restart master to cleanup cache of dead servers from its list of candidate
   // servers to trigger placement of new replicas on healthy servers.
@@ -1161,16 +1129,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(1, leader_ts, tablet_id_, kTimeout));
   ASSERT_OK(cluster_->master()->Restart());
 
-  // Find a remaining node which will be picked for re-replication.
-  vector<TServerDetails*> all_tservers;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  TServerDetails* new_node = nullptr;
-  for (TServerDetails* ts : all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_node = ts;
-      break;
-    }
-  }
+  const TServerDetails* new_node = FindNodeForReReplication(active_tablet_servers);
   ASSERT_TRUE(new_node != nullptr);
 
   // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
