@@ -52,7 +52,17 @@ target_link_libraries(mini_chronyd
   kudu_test_util
   kudu_util)
 
-SET_KUDU_TEST_LINK_LIBS(clock mini_chronyd)
+set(MINI_CHRONYD_TEST_UTIL_SRCS test/mini_chronyd_test_util.cc)
+add_library(mini_chronyd_test_util ${MINI_CHRONYD_TEST_UTIL_SRCS})
+target_link_libraries(mini_chronyd_test_util
+  gutil
+  kudu_test_util
+  kudu_util
+  mini_cluster)
+
+SET_KUDU_TEST_LINK_LIBS(clock)
 ADD_KUDU_TEST(hybrid_clock-test PROCESSORS 3)
 ADD_KUDU_TEST(logical_clock-test)
+
+SET_KUDU_TEST_LINK_LIBS(clock mini_chronyd mini_chronyd_test_util)
 ADD_KUDU_TEST(test/mini_chronyd-test)
