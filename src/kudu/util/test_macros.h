@@ -26,8 +26,9 @@
 
 // Detect fatals in the surrounding scope. NO_FATALS() only checks for fatals
 // in the expression passed to it.
-#define NO_PENDING_FATALS() \
-  if (testing::Test::HasFatalFailure()) { return; }
+#define NO_PENDING_FATALS() do { \
+  if (testing::Test::HasFatalFailure()) { return; } \
+} while (0)
 
 #define ASSERT_OK(status) do { \
   const Status& _s = status;        \
