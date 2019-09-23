@@ -132,13 +132,6 @@ DEFINE_bool(raft_prepare_replacement_before_eviction, true,
 TAG_FLAG(raft_prepare_replacement_before_eviction, advanced);
 TAG_FLAG(raft_prepare_replacement_before_eviction, experimental);
 
-DEFINE_bool(raft_attempt_to_replace_replica_without_majority, false,
-            "When enabled, the replica replacement logic attempts to perform "
-            "desired Raft configuration changes even if the majority "
-            "of voter replicas is reported failed or offline. "
-            "Warning! This is only intended for testing.");
-TAG_FLAG(raft_attempt_to_replace_replica_without_majority, unsafe);
-
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
 // Metrics

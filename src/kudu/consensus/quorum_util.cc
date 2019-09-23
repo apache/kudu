@@ -433,8 +433,7 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
 // TODO(aserbin): add a test scenario for the leader replica's logic to cover
 //                the latter case.
 bool ShouldAddReplica(const RaftConfigPB& config,
-                      int replication_factor,
-                      MajorityHealthPolicy policy) {
+                      int replication_factor) {
   int num_voters_total = 0;
   int num_voters_healthy = 0;
   int num_voters_need_replacement = 0;
@@ -487,8 +486,7 @@ bool ShouldAddReplica(const RaftConfigPB& config,
   // be under-replicated, but it does not make much sense trying to add a new
   // replica if the configuration change cannot be committed.
   const bool should_add_replica = is_under_replicated &&
-      (num_voters_healthy >= MajoritySize(num_voters_total) ||
-       policy == MajorityHealthPolicy::IGNORE);
+      num_voters_healthy >= MajoritySize(num_voters_total);
 
   VLOG(2) << "decision: the config is" << (is_under_replicated ? " " : " not ")
           << "under-replicated; should" << (should_add_replica ? " " : " not ")
@@ -500,7 +498,6 @@ bool ShouldAddReplica(const RaftConfigPB& config,
 bool ShouldEvictReplica(const RaftConfigPB& config,
                         const string& leader_uuid,
                         int replication_factor,
-                        MajorityHealthPolicy policy,
                         string* uuid_to_evict) {
   if (leader_uuid.empty()) {
     // If there is no leader, we can't evict anybody.
@@ -727,8 +724,7 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   // least one non-voter replica and a majority of voter replicas are on-line
   // to commit the Raft configuration change.
   const bool should_evict_non_voter = need_to_evict_non_voter &&
-      (num_voters_healthy >= MajoritySize(num_voters_total) ||
-       policy == MajorityHealthPolicy::IGNORE);
+      num_voters_healthy >= MajoritySize(num_voters_total);
 
   bool need_to_evict_voter = false;
 
@@ -776,8 +772,7 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   const bool should_evict_voter = need_to_evict_voter &&
       (num_voters_total > replication_factor ||
        has_voter_failed_unrecoverable) &&
-      (num_voters_healthy >= MajoritySize(num_voters_total - 1) ||
-       policy == MajorityHealthPolicy::IGNORE);
+      num_voters_healthy >= MajoritySize(num_voters_total - 1);
 
   const bool should_evict = should_evict_non_voter || should_evict_voter;
   // When we have the same type of failures between voters and non-voters

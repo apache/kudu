@@ -284,7 +284,6 @@ TAG_FLAG(live_row_count_for_testing, hidden);
 TAG_FLAG(live_row_count_for_testing, runtime);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
-DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
 DECLARE_int64(tsk_rotation_seconds);
 
 METRIC_DEFINE_entity(table);
@@ -298,9 +297,7 @@ using google::protobuf::Map;
 using kudu::cfile::TypeEncodingInfo;
 using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::ConsensusStatePB;
-using kudu::consensus::GetConsensusRole;
 using kudu::consensus::IsRaftConfigMember;
-using kudu::consensus::MajorityHealthPolicy;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
@@ -4195,18 +4192,14 @@ Status CatalogManager::ProcessTabletReport(
                  !cstate.leader_uuid().empty() &&
                  cstate.leader_uuid() == ts_desc->permanent_uuid()) {
         const auto& config = cstate.committed_config();
-        const auto policy =
-            PREDICT_FALSE(FLAGS_raft_attempt_to_replace_replica_without_majority)
-            ? MajorityHealthPolicy::IGNORE : MajorityHealthPolicy::HONOR;
         string to_evict;
         if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
-            ShouldEvictReplica(config, cstate.leader_uuid(), replication_factor,
-                               policy, &to_evict)) {
+            ShouldEvictReplica(config, cstate.leader_uuid(), replication_factor, &to_evict)) {
           DCHECK(!to_evict.empty());
           rpcs.emplace_back(new AsyncEvictReplicaTask(
               master_, tablet, cstate, std::move(to_evict)));
         } else if (FLAGS_master_add_server_when_underreplicated &&
-                   ShouldAddReplica(config, replication_factor, policy)) {
+                   ShouldAddReplica(config, replication_factor)) {
           rpcs.emplace_back(new AsyncAddReplicaTask(
               master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
         }

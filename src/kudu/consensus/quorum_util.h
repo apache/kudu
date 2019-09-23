@@ -32,19 +32,6 @@ enum RaftConfigState {
   ACTIVE_CONFIG,
 };
 
-// Policy for attempted Raft configuration change when replacing replicas
-// (i.e. options for the Should{Add,Evict}Replica() functions).
-enum class MajorityHealthPolicy {
-  // While trying to replace a replica, attempt to change the Raft configuration
-  // only if the majority of voter replicas is reported as on-line/healthy
-  // (this applies to the resulting configuration).
-  HONOR,
-
-  // While trying to replace a replica, attempt to change the Raft configuration
-  // even if the majority of voter replicas is not reported as on-line/healthy.
-  IGNORE,
-};
-
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
 bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config);
 
@@ -120,22 +107,20 @@ std::string DiffRaftConfigs(const RaftConfigPB& old_config,
                             const RaftConfigPB& new_config);
 
 // Return 'true' iff the specified tablet configuration is under-replicated
-// given the 'replication_factor' and should add a replica. The decision is
-// based on the health information provided by the Raft configuration
-// in the 'config' parameter and the policy specified by the 'policy' parameter.
+// given the 'replication_factor' and a healthy majority exists. The decision
+// is based on the health information provided by the Raft configuration in the
+// 'config' parameter.
 bool ShouldAddReplica(const RaftConfigPB& config,
-                      int replication_factor,
-                      MajorityHealthPolicy policy);
+                      int replication_factor);
 
 // Check if the given Raft configuration contains at least one extra replica
 // which should (and can) be removed in accordance with the specified
-// replication factor, current Raft leader, and the given policy. If so,
-// then return 'true' and set the UUID of the best candidate for eviction
-// into the 'uuid_to_evict' out parameter. Otherwise, return 'false'.
+// replication factor and current Raft leader. If so, and if a healthy majority
+// exists, then return 'true' and set the UUID of the best candidate for
+// eviction into the 'uuid_to_evict' out parameter. Otherwise, return 'false'.
 bool ShouldEvictReplica(const RaftConfigPB& config,
                         const std::string& leader_uuid,
                         int replication_factor,
-                        MajorityHealthPolicy policy,
                         std::string* uuid_to_evict = nullptr);
 
 }  // namespace consensus

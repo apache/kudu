@@ -76,7 +76,6 @@ TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_bool(safe_time_advancement_without_writes);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
-DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
 
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
@@ -493,11 +492,9 @@ bool PeerMessageQueue::SafeToEvictUnlocked(const string& evict_uuid) const {
     VLOG(2) << LogPrefixUnlocked() << "Not evicting P $0 (only one voter would remain)";
     return false;
   }
-  // Unless the --raft_attempt_to_replace_replica_without_majority flag is set,
-  // don't evict anything if the remaining number of viable voters is not enough
-  // to form a majority of the remaining voters.
-  if (PREDICT_TRUE(!FLAGS_raft_attempt_to_replace_replica_without_majority) &&
-      remaining_viable_voters < MajoritySize(remaining_voters)) {
+  // Don't evict anything if the remaining number of viable voters is not enough
+  // to form a quorum.
+  if (remaining_viable_voters < MajoritySize(remaining_voters)) {
     VLOG(2) << LogPrefixUnlocked() << Substitute(
         "Not evicting P $0 (only $1/$2 remaining voters appear viable)",
         evict_uuid, remaining_viable_voters, remaining_voters);
