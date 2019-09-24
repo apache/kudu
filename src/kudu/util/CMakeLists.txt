@@ -150,6 +150,7 @@ set(UTIL_SRCS
   block_cache_metrics.cc
   bloom_filter.cc
   cache.cc
+  char_util.cc
   coding.cc
   condition_variable.cc
   cow_object.cc

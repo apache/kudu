@@ -87,6 +87,8 @@ bool ColumnTypeAttributes::EqualsForType(ColumnTypeAttributes other,
     case DECIMAL64:
     case DECIMAL128:
       return precision == other.precision && scale == other.scale;
+    case VARCHAR:
+      return length == other.length;
     default:
       return true; // true because unhandled types don't use ColumnTypeAttributes.
   }
@@ -98,6 +100,8 @@ string ColumnTypeAttributes::ToStringForType(DataType type) const {
     case DECIMAL64:
     case DECIMAL128:
       return Substitute("($0, $1)", precision, scale);
+    case VARCHAR:
+      return Substitute("($0)", length);
     default:
       return "";
   }

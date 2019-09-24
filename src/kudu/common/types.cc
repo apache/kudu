@@ -89,6 +89,7 @@ class TypeInfoResolver {
     AddMapping<DECIMAL64>();
     AddMapping<DECIMAL128>();
     AddMapping<IS_DELETED>();
+    AddMapping<VARCHAR>();
   }
 
   template<DataType type> void AddMapping() {

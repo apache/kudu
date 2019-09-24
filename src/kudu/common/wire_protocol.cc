@@ -228,6 +228,8 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
       type == DataType::DECIMAL128) {
     pb->mutable_type_attributes()->set_precision(col_schema.type_attributes().precision);
     pb->mutable_type_attributes()->set_scale(col_schema.type_attributes().scale);
+  } else if (type == DataType::VARCHAR) {
+    pb->mutable_type_attributes()->set_length(col_schema.type_attributes().length);
   }
   if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
     pb->set_encoding(col_schema.attributes().encoding);
@@ -298,6 +300,9 @@ Status ColumnSchemaFromPB(const ColumnSchemaPB& pb, boost::optional<ColumnSchema
     }
     if (typeAttributesPB.has_scale()) {
       type_attributes.scale = typeAttributesPB.scale();
+    }
+    if (typeAttributesPB.has_length()) {
+      type_attributes.length = typeAttributesPB.length();
     }
   }
 

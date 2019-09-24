@@ -1121,6 +1121,7 @@ TEST_F(TestColumnPredicate, TestLess) {
     ColumnSchema d128("d128", DECIMAL128);
     ColumnSchema string("string", STRING);
     ColumnSchema binary("binary", BINARY);
+    ColumnSchema varchar("varchar", VARCHAR);
 
     ASSERT_EQ(PredicateType::None,
               ColumnPredicate::Range(i8, nullptr, TypeTraits<INT8>::min_value())
@@ -1158,6 +1159,9 @@ TEST_F(TestColumnPredicate, TestLess) {
     ASSERT_EQ(PredicateType::None,
               ColumnPredicate::Range(binary, nullptr, TypeTraits<BINARY>::min_value())
                               .predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::Range(varchar, nullptr, TypeTraits<VARCHAR>::min_value())
+                              .predicate_type());
 }
 
 TEST_F(TestColumnPredicate, TestGreaterThanEquals) {
@@ -1173,6 +1177,7 @@ TEST_F(TestColumnPredicate, TestGreaterThanEquals) {
     ColumnSchema d128("d128", DECIMAL128);
     ColumnSchema string("string", STRING);
     ColumnSchema binary("binary", BINARY);
+    ColumnSchema varchar("varchar", VARCHAR);
 
     ASSERT_EQ(PredicateType::IsNotNull,
               ColumnPredicate::Range(i8, TypeTraits<INT8>::min_value(), nullptr)
@@ -1209,6 +1214,9 @@ TEST_F(TestColumnPredicate, TestGreaterThanEquals) {
                               .predicate_type());
     ASSERT_EQ(PredicateType::IsNotNull,
               ColumnPredicate::Range(binary, TypeTraits<BINARY>::min_value(), nullptr)
+                              .predicate_type());
+    ASSERT_EQ(PredicateType::IsNotNull,
+              ColumnPredicate::Range(varchar, TypeTraits<VARCHAR>::min_value(), nullptr)
                               .predicate_type());
 
     ASSERT_EQ(PredicateType::Equality,
@@ -1247,6 +1255,8 @@ TEST_F(TestColumnPredicate, TestGreaterThanEquals) {
               ColumnPredicate::Range(string, &s, nullptr).predicate_type());
     ASSERT_EQ(PredicateType::Range,
               ColumnPredicate::Range(binary, &s, nullptr).predicate_type());
+    ASSERT_EQ(PredicateType::Range,
+              ColumnPredicate::Range(varchar, &s, nullptr).predicate_type());
 }
 
 // Test the InList constructor.

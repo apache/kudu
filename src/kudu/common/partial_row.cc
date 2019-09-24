@@ -18,6 +18,7 @@
 #include "kudu/common/partial_row.h"
 
 #include <cstring>
+#include <ostream>
 #include <string>
 #include <utility>
 
@@ -31,6 +32,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/char_util.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/logging.h"
@@ -188,6 +190,10 @@ Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
       RETURN_NOT_OK(SetBinaryCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
       break;
     }
+    case VARCHAR: {
+      RETURN_NOT_OK(SetVarchar(column_idx, *reinterpret_cast<const Slice*>(val)));
+      break;
+    }
     case UNIXTIME_MICROS: {
       RETURN_NOT_OK(SetUnixTimeMicros(column_idx, *reinterpret_cast<const int64_t*>(val)));
       break;
@@ -218,11 +224,19 @@ void KuduPartialRow::DeallocateStringIfSet(int col_idx, const ColumnSchema& col)
   if (BitmapTest(owned_strings_bitmap_, col_idx)) {
     ContiguousRow row(schema_, row_data_);
     const Slice* dst;
-    if (col.type_info()->type() == BINARY) {
-      dst = schema_->ExtractColumnFromRow<BINARY>(row, col_idx);
-    } else {
-      CHECK(col.type_info()->type() == STRING);
-      dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
+    switch (col.type_info()->type()) {
+      case BINARY:
+        dst = schema_->ExtractColumnFromRow<BINARY>(row, col_idx);
+        break;
+      case VARCHAR:
+        dst = schema_->ExtractColumnFromRow<VARCHAR>(row, col_idx);
+        break;
+      case STRING:
+        dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
+        break;
+      default:
+        LOG(FATAL) << "Unexpected type " << col.type_info()->type();
+        break;
     }
     delete [] dst->data();
     BitmapClear(owned_strings_bitmap_, col_idx);
@@ -330,11 +344,20 @@ Status KuduPartialRow::SetBinary(const Slice& col_name, const Slice& val) {
 Status KuduPartialRow::SetString(const Slice& col_name, const Slice& val) {
   return SetStringCopy(col_name, val);
 }
+Status KuduPartialRow::SetVarchar(const Slice& col_name, const Slice& val) {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetVarchar(col_idx, val);
+}
+
 Status KuduPartialRow::SetBinary(int col_idx, const Slice& val) {
   return SetBinaryCopy(col_idx, val);
 }
 Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
   return SetStringCopy(col_idx, val);
+}
+Status KuduPartialRow::SetVarchar(int col_idx, const Slice& val) {
+  return SetSliceCopy<TypeTraits<VARCHAR> >(col_idx, val);
 }
 
 Status KuduPartialRow::SetBinaryCopy(const Slice& col_name, const Slice& val) {
@@ -365,24 +388,29 @@ Status KuduPartialRow::SetStringNoCopy(int col_idx, const Slice& val) {
 
 template<typename T>
 Status KuduPartialRow::SetSliceCopy(const Slice& col_name, const Slice& val) {
-  auto relocated = new uint8_t[val.size()];
-  memcpy(relocated, val.data(), val.size());
-  Slice relocated_val(relocated, val.size());
-  Status s = Set<T>(col_name, relocated_val, true);
-  if (!s.ok()) {
-    delete [] relocated;
-  }
-  return s;
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetSliceCopy<T>(col_idx, val);
 }
 
 template<typename T>
 Status KuduPartialRow::SetSliceCopy(int col_idx, const Slice& val) {
-  auto relocated = new uint8_t[val.size()];
-  memcpy(relocated, val.data(), val.size());
-  Slice relocated_val(relocated, val.size());
+  auto col = schema_->column(col_idx);
+  Slice relocated_val;
+  switch (T::type) {
+    case VARCHAR:
+      relocated_val = UTF8Truncate(val, col.type_attributes().length);
+      break;
+    case STRING:
+    case BINARY:
+      auto relocated = new uint8_t[val.size()];
+      memcpy(relocated, val.data(), val.size());
+      relocated_val = Slice(relocated, val.size());
+      break;
+  }
   Status s = Set<T>(col_idx, relocated_val, true);
   if (!s.ok()) {
-    delete [] relocated;
+    delete [] relocated_val.data();
   }
   return s;
 }
@@ -656,6 +684,11 @@ Status KuduPartialRow::GetString(const Slice& col_name, Slice* val) const {
 Status KuduPartialRow::GetBinary(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<BINARY> >(col_name, val);
 }
+Status KuduPartialRow::GetVarchar(const Slice& col_name, Slice* val) const {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return GetVarchar(col_idx, val);
+}
 
 Status KuduPartialRow::GetBool(int col_idx, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_idx, val);
@@ -715,6 +748,9 @@ Status KuduPartialRow::GetString(int col_idx, Slice* val) const {
 }
 Status KuduPartialRow::GetBinary(int col_idx, Slice* val) const {
   return Get<TypeTraits<BINARY> >(col_idx, val);
+}
+Status KuduPartialRow::GetVarchar(int col_idx, Slice* val) const {
+  return Get<TypeTraits<VARCHAR> >(col_idx, val);
 }
 
 template<typename T>

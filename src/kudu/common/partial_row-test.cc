@@ -43,7 +43,9 @@ class PartialRowTest : public KuduTest {
                 ColumnSchema("string_val", STRING, true),
                 ColumnSchema("binary_val", BINARY, true),
                 ColumnSchema("decimal_val", DECIMAL32, true, nullptr, nullptr,
-                             ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)) },
+                             ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)),
+                ColumnSchema("varchar_val", VARCHAR, true, nullptr, nullptr,
+                             ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
               1) {
     SeedRandom();
   }
@@ -129,6 +131,9 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.IsColumnSet(0));
   EXPECT_FALSE(row.IsColumnSet(1));
   EXPECT_FALSE(row.IsColumnSet(2));
+  EXPECT_FALSE(row.IsColumnSet(3));
+  EXPECT_FALSE(row.IsColumnSet(4));
+  EXPECT_FALSE(row.IsColumnSet(5));
   EXPECT_FALSE(row.IsKeySet());
   EXPECT_EQ("", row.ToString());
 
@@ -255,6 +260,24 @@ TEST_F(PartialRowTest, UnitTest) {
   // able to set string columns with SetBinary and vice versa.
   EXPECT_FALSE(row.SetBinaryCopy("string_val", "oops").ok());
   EXPECT_FALSE(row.SetStringCopy("binary_val", "oops").ok());
+
+  EXPECT_OK(row.Unset(4));
+
+  s = row.SetVarchar("varchar_val", "shortval");
+  EXPECT_TRUE(row.IsColumnSet(5));
+  EXPECT_EQ("varchar varchar_val=\"shortval\"", row.ToString());
+
+  s = row.SetVarchar("varchar_val", "shortval  value ");
+  EXPECT_EQ("varchar varchar_val=\"shortval  \"", row.ToString());
+
+  s = row.SetVarchar("varchar_val", "this value is too long");
+  EXPECT_EQ("varchar varchar_val=\"this value\"", row.ToString());
+
+  s = row.SetVarchar("varchar_val", "Árvíztűrő tükörfúrógép");
+  EXPECT_EQ("varchar varchar_val=\"Árvíztűrő \"", row.ToString());
+
+  s = row.SetVarchar("varchar_val", "123456789\xF0\x9F\xA6\x8C ABCDEF");
+  EXPECT_EQ("varchar varchar_val=\"123456789\xF0\x9F\xA6\x8C\"", row.ToString());
 }
 
 TEST_F(PartialRowTest, TestCopy) {

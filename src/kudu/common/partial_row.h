@@ -166,10 +166,23 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
+  /// @name Setters for varchar columns by name (copying).
+  ///
+  /// Set the varchar value for a column by name, copying the
+  /// specified data immediately.
+  ///
+  /// @param [in] col_name
+  ///   Name of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  Status SetVarchar(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+
   /// @name Setters for binary/string columns by index (copying).
   ///
-  /// Set the binary/string value for a column by index, copying the specified
-  /// data immediately.
+  /// Set the binary/string value for a column by index, copying
+  /// the specified data immediately.
   ///
   /// These setters are the same as the corresponding column-name-based setters,
   /// but with numeric column indexes. These are faster since they avoid
@@ -191,6 +204,24 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetBinary(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetString(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
+
+  /// @name Setter for varchar columns by index (copying).
+  ///
+  /// Set the varchar value for a column by index, copying
+  /// the specified data immediately.
+  ///
+  /// These setters are the same as the corresponding column-name-based setters,
+  /// but with numeric column indexes. These are faster since they avoid
+  /// hashmap lookups, so should be preferred in performance-sensitive code
+  /// (e.g. bulk loaders).
+  ///
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  Status SetVarchar(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   /// @name Setters for binary/string columns by name (copying).
   ///
@@ -406,9 +437,9 @@ class KUDU_EXPORT KuduPartialRow {
 #endif
   ///@}
 
-  /// @name Getters for string/binary column by column name.
+  /// @name Getters for string/binary/varchar column by column name.
   ///
-  /// Get the string/binary value for a column by its name.
+  /// Get the string/binary/varchar value for a column by its name.
   ///
   /// @param [in] col_name
   ///   Name of the column.
@@ -425,11 +456,12 @@ class KUDU_EXPORT KuduPartialRow {
   ///@{
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetVarchar(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Getters for string/binary column by column index.
+  /// @name Getters for string/binary/varchar column by column index.
   ///
-  /// Get the string/binary value for a column by its index.
+  /// Get the string/binary/varchar value for a column by its index.
   ///
   /// These methods are faster than their name-based counterparts
   /// since they use indices to avoid hashmap lookups, so index-based getters
@@ -450,6 +482,7 @@ class KUDU_EXPORT KuduPartialRow {
   ///@{
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetVarchar(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
   //------------------------------------------------------------

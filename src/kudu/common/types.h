@@ -20,8 +20,8 @@
 
 
 #include <cmath>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -37,7 +37,7 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/int128.h"
-#include "kudu/util/int128_util.h"
+#include "kudu/util/int128_util.h" // IWYU pragma: keep
 #include "kudu/util/slice.h"
 // IWYU pragma: no_include "kudu/util/status.h"
 
@@ -630,6 +630,19 @@ struct DataTypeTraits<IS_DELETED> : public DerivedTypeTraits<BOOL>{
   }
 };
 
+template<>
+struct DataTypeTraits<VARCHAR> : public DerivedTypeTraits<BINARY>{
+  static const char* name() {
+    return "varchar";
+  }
+  static void AppendDebugStringForValue(const void *val, std::string *str) {
+    const Slice *s = reinterpret_cast<const Slice *>(val);
+    str->push_back('"');
+    str->append(strings::Utf8SafeCEscape(s->ToString()));
+    str->push_back('"');
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -713,6 +726,7 @@ class Variant {
         numeric_.double_val = *static_cast<const double *>(value);
         break;
       case STRING: // Fallthrough intended.
+      case VARCHAR:
       case BINARY:
         {
           const Slice *str = static_cast<const Slice *>(value);
@@ -779,6 +793,7 @@ class Variant {
       case FLOAT:        return (&numeric_.float_val);
       case DOUBLE:       return (&numeric_.double_val);
       case STRING:
+      case VARCHAR:
       case BINARY:       return &vstr_;
       default: LOG(FATAL) << "Unknown data type: " << type_;
     }

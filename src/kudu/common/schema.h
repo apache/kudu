@@ -92,12 +92,20 @@ struct ColumnTypeAttributes {
  public:
   ColumnTypeAttributes()
       : precision(0),
-        scale(0) {
+        scale(0),
+        length(0) {
   }
 
   ColumnTypeAttributes(int8_t precision, int8_t scale)
       : precision(precision),
-        scale(scale) {
+        scale(scale),
+        length(0) {
+  }
+
+  explicit ColumnTypeAttributes(uint16_t length)
+      : precision(0),
+        scale(0),
+        length(length) {
   }
 
   // Does `other` represent equivalent attributes for `type`?
@@ -112,6 +120,12 @@ struct ColumnTypeAttributes {
 
   int8_t precision;
   int8_t scale;
+
+  // Maximum value of the length is 65,535 for compatibility reasons as it's
+  // used by VARCHAR type which can be set to a maximum of 65,535 in case of
+  // MySQL and less for other major RDBMS implementations. The length refers to
+  // the number of characters/symbols (not bytes).
+  uint16_t length;
 };
 
 // Class for storing column attributes such as compression and

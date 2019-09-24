@@ -56,6 +56,7 @@ enum DataType {
   DECIMAL64 = 16;
   DECIMAL128 = 17;
   IS_DELETED = 18; // virtual column; not a real data type
+  VARCHAR = 19;
 }
 
 enum EncodingType {
@@ -94,6 +95,8 @@ message ColumnTypeAttributesPB {
   // For decimal columns
   optional int32 precision = 1;
   optional int32 scale = 2;
+  // For varchar columns
+  optional int32 length = 3;
 }
 
 // TODO: Differentiate between the schema attributes
