@@ -138,6 +138,11 @@ DEFINE_int32(update_tablet_stats_interval_ms, 5000,
              "Should be greater than 'heartbeat_interval_ms'");
 TAG_FLAG(update_tablet_stats_interval_ms, advanced);
 
+DEFINE_int32(tablet_bootstrap_inject_latency_ms, 0,
+             "Injects latency into the tablet bootstrapping. "
+             "For use in tests only.");
+TAG_FLAG(tablet_bootstrap_inject_latency_ms, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
@@ -1067,6 +1072,12 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
 
   VLOG(1) << LogPrefix(tablet_id) << "Bootstrapping tablet";
   TRACE("Bootstrapping tablet");
+
+  if (FLAGS_tablet_bootstrap_inject_latency_ms > 0) {
+    LOG(WARNING) << "Injecting " << FLAGS_tablet_bootstrap_inject_latency_ms
+                     << "ms delay in tablet bootstrapping";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_bootstrap_inject_latency_ms));
+  }
 
   scoped_refptr<ConsensusMetadata> cmeta;
   Status s = cmeta_manager_->Load(replica->tablet_id(), &cmeta);

@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -33,14 +34,17 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/raft_consensus-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -56,15 +60,21 @@ using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::RaftPeerAttrsPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::REMOVE_PEER;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::itest::BulkChangeConfig;
 using kudu::itest::GetTableLocations;
 using kudu::itest::TServerDetails;
+using kudu::itest::GetConsensusState;
+using kudu::tserver::RaftConsensusITestBase;
 using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_int32(num_replicas);
+DECLARE_int32(num_tablet_servers);
 
 namespace kudu {
 
@@ -445,6 +455,148 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
                       /*replace=*/ false, /*promote=*/ true } });
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(), "only one change allowed per peer");
+}
+
+// KUDU-2800
+// Check re-replication during slow tablet replica bootstrap.
+class SlowTabletBootstrapTest : public RaftConsensusITestBase {
+ protected:
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  // Check that 'added_replica_uuid' was added to the consensus
+  // and 'removed_replica_uuid' was removed from consensus.
+  void ValidateConsensusStateChanged(const string& added_replica_uuid,
+                                     const string& removed_replica_uuid,
+                                     const MonoDelta& timeout) {
+    TServerDetails* leader = nullptr;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+    consensus::ConsensusStatePB cstate;
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, timeout,
+                                EXCLUDE_HEALTH_REPORT, &cstate));
+    ASSERT_TRUE(IsRaftConfigMember(added_replica_uuid, cstate.committed_config()));
+    ASSERT_FALSE(IsRaftConfigMember(removed_replica_uuid, cstate.committed_config()));
+  }
+  // Create and start cluster.
+  // Returns 'any_replica_sever' - UUID of first server with tablet replica,
+  // and 'no_replica_server' - UUID of server without tablet replica.
+  void SetUpCluster(string* any_replica_server,
+                    string* no_replica_server) {
+    vector<string> ts_flags {
+      // The default value 5 minutes is very long.
+      // So we set timeout 3 seconds in order to quickly
+      // remove non-responding replica from consensus
+      "--follower_unavailable_considered_failed_sec=3"
+    };
+
+    AddFlagsForLogRolls(&ts_flags);
+    FLAGS_num_tablet_servers = 4;
+    FLAGS_num_replicas = 3;
+    NO_FATALS(BuildAndStart(ts_flags, {}));
+
+    ASSERT_EQ(4, tablet_servers_.size());
+
+    // Extra sanity checks.
+    vector<string> replica_servers = GetServersWithReplica(tablet_id_);
+    ASSERT_EQ(3, replica_servers.size());
+    vector<string> no_replica_servers = GetServersWithoutReplica(tablet_id_);
+    ASSERT_EQ(1, no_replica_servers.size());
+    *any_replica_server = replica_servers.front();
+    *no_replica_server = no_replica_servers.front();
+  }
+};
+
+// Slow tablet replica is not evicted while bootstrapping
+// as long as there are no data modifications in the consensus.
+TEST_F(SlowTabletBootstrapTest, TestSlowBootstrap) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  string any_replica_server, no_replica_server;
+  NO_FATALS(SetUpCluster(&any_replica_server, &no_replica_server));
+
+  // Shutdown any tablet server with tablet's replica.
+  auto ts = cluster_->tablet_server_by_uuid(any_replica_server);
+  ASSERT_NE(nullptr, ts);
+
+  ts->mutable_flags()->emplace_back("--tablet_bootstrap_inject_latency_ms=4000");
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+  SleepFor(MonoDelta::FromSeconds(7));
+
+  ASSERT_EVENTUALLY([&]() {
+    ValidateConsensusStateChanged(any_replica_server, no_replica_server, kTimeout);
+  });
+}
+
+// If replica restarts after many data modifications,
+// it falls behind and is removed from consensus.
+TEST_F(SlowTabletBootstrapTest, TestFallBehind) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  string any_replica_server, no_replica_server;
+  NO_FATALS(SetUpCluster(&any_replica_server, &no_replica_server));
+
+  // Shutdown any tablet server with tablet's replica,
+  // add data, then restart and cause it to fall behind.
+  NO_FATALS(CauseSpecificFollowerToFallBehindLogGC(tablet_servers_,
+      any_replica_server, nullptr, nullptr,
+      BehindWalGcBehavior::SHUTDOWN_RESTART));
+
+  ASSERT_EVENTUALLY([&]() {
+    ValidateConsensusStateChanged(no_replica_server, any_replica_server, kTimeout);
+  });
+}
+
+// If there many data modifications during slow replica bootstrap,
+// it falls behind and is removed from consensus.
+TEST_F(SlowTabletBootstrapTest, TestFallBehindSlowBootstrap) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  string any_replica_server, no_replica_server;
+  NO_FATALS(SetUpCluster(&any_replica_server, &no_replica_server));
+
+  // Shutdown any tablet server with tablet replica.
+  auto ts = cluster_->tablet_server_by_uuid(any_replica_server);
+  ASSERT_NE(nullptr, ts);
+
+  // Inject delay into next tablet replica bootstrap.
+  // When replica finish bootstrapping, it will find that it was left behind
+  // and was removed from consensus.
+  ts->mutable_flags()->emplace_back("--tablet_bootstrap_inject_latency_ms=3000");
+
+  TServerDetails* replica = FindOrDie(tablet_servers_, any_replica_server);
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+
+  // Find a leader.
+  TServerDetails* leader = nullptr;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  ASSERT_NE(leader, nullptr);
+  ASSERT_NE(leader, replica);
+  int leader_index = cluster_->tablet_server_index_by_uuid(leader->uuid());
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.set_payload_bytes(128 * 1024); // Write ops of size 128KB.
+  workload.set_write_batch_size(1);
+  workload.set_num_write_threads(4);
+  workload.Setup();
+  workload.Start();
+
+  LOG(INFO) << "Waiting until we've written at least 4MB...";
+  while (workload.rows_inserted() < 8 * 4) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  LOG(INFO) << "Waiting for log GC on " << leader->uuid();
+  // Some WAL segments must exist, but wal segment 1 must not exist.
+  ASSERT_OK(inspect_->WaitForFilePatternInTabletWalDirOnTs(
+      leader_index, tablet_id_, { "wal-" }, { "wal-000000001" }));
+  LOG(INFO) << "Log GC complete on " << leader->uuid();
+
+  ASSERT_EVENTUALLY([&]() {
+    ValidateConsensusStateChanged(no_replica_server, any_replica_server, kTimeout);
+  });
 }
 
 } // namespace kudu
