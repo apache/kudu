@@ -281,6 +281,30 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetStringNoCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
+  /// @name [Advanced][Unstable] Setter for varchar columns by name (non-copying).
+  ///
+  /// Set the varchar value for a column by name, not copying the
+  /// specified data.
+  ///
+  /// This method expects the values to be truncated already and they only do a
+  /// basic validation that the data is not larger than the maximum column
+  /// length (as indicated by the schema) multiplied by 4, as that's the upper
+  /// limit if only 4-byte UTF8 characters are used. This is subject to change in
+  /// the future.
+  ///
+  /// @note The specified data must remain valid until the corresponding
+  ///   RPC calls are completed to be able to access error buffers,
+  ///   if any errors happened (the errors can be fetched using the
+  ///   KuduSession::GetPendingErrors() method).
+  ///
+  /// @param [in] col_name
+  ///   Name of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  Status SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+
   /// @name Setters for binary/string columns by index (non-copying).
   ///
   /// Set the binary/string value for a column by index, not copying the
@@ -306,6 +330,34 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetBinaryNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetStringNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
+
+  /// @name [Advanced][Unstable] Setter for varchar columns by index (non-copying).
+  ///
+  /// Set the varchar value for a column by index, not copying the specified data.
+  ///
+  /// This method expects the values to be truncated already and they only do a
+  /// basic validation that the data is not larger than the maximum column
+  /// length (as indicated by the schema) multiplied by 4, as that's the upper
+  /// limit if only 4-byte UTF8 characters are used. This is subject to change in
+  /// the future.
+  ///
+  /// This setter is the same as the corresponding column-name-based setter,
+  /// but with numeric column indexes. This is faster since it avoids
+  /// hashmap lookups, so should be preferred in performance-sensitive code
+  /// (e.g. bulk loaders).
+  ///
+  /// @note The specified data must remain valid until the corresponding
+  ///   RPC calls are completed to be able to access error buffers,
+  ///   if any errors happened (the errors can be fetched using the
+  ///   KuduSession::GetPendingErrors() method).
+  ///
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  ///
+  Status SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   /// Set column value to @c NULL; the column is identified by its name.
   ///

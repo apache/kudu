@@ -386,6 +386,22 @@ Status KuduPartialRow::SetStringNoCopy(int col_idx, const Slice& val) {
   return Set<TypeTraits<STRING> >(col_idx, val, false);
 }
 
+Status KuduPartialRow::SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice& val) {
+  int col_idx;
+  RETURN_NOT_OK(schema_->FindColumn(col_name, &col_idx));
+  return SetVarcharNoCopyUnsafe(col_idx, val);
+}
+
+Status KuduPartialRow::SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) {
+  auto col = schema_->column(col_idx);
+  if (val.size() > col.type_attributes().length * 4) {
+    return Status::InvalidArgument(
+        Substitute("Value too long, limit is $0 characters",
+                   col.type_attributes().length));
+  }
+  return Set<TypeTraits<VARCHAR> >(col_idx, val);
+}
+
 template<typename T>
 Status KuduPartialRow::SetSliceCopy(const Slice& col_name, const Slice& val) {
   int col_idx;

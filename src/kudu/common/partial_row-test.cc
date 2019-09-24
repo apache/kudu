@@ -278,6 +278,26 @@ TEST_F(PartialRowTest, UnitTest) {
 
   s = row.SetVarchar("varchar_val", "123456789\xF0\x9F\xA6\x8C ABCDEF");
   EXPECT_EQ("varchar varchar_val=\"123456789\xF0\x9F\xA6\x8C\"", row.ToString());
+
+  s = row.SetVarcharNoCopyUnsafe("varchar_val", "varchar");
+  EXPECT_EQ("varchar varchar_val=\"varchar\"", row.ToString());
+
+  std::string utf8_char_4byte = "\xf3\xa0\x87\xa1";
+  std::string test_string = utf8_char_4byte;
+  for (auto i = 0; i < 9; ++i) {
+    test_string += utf8_char_4byte;
+  }
+
+  std::string expected_string = "varchar varchar_val=\"";
+  expected_string += test_string + "\"";
+
+  s = row.SetVarcharNoCopyUnsafe("varchar_val", test_string);
+  EXPECT_EQ(expected_string, row.ToString());
+
+  test_string += utf8_char_4byte;
+
+  s = row.SetVarcharNoCopyUnsafe("varchar_val", test_string);
+  EXPECT_TRUE(s.IsInvalidArgument());
 }
 
 TEST_F(PartialRowTest, TestCopy) {
