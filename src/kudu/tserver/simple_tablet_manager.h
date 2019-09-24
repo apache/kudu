@@ -152,8 +152,7 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // Helper function to create Raft consensus and log
   // Consensus is yet to be started at the end of this
   // call.
-  Status SetupRaft(
-      std::function<void(const kudu::consensus::ElectionResult&)> edcb);
+  Status SetupRaft();
 
   // Initializes the RaftPeerPB for the local peer.
   // Guaranteed to include both uuid and last_seen_addr fields.

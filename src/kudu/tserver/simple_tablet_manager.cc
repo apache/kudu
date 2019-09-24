@@ -166,7 +166,7 @@ Status TSTabletManager::Load(FsManager *fs_manager) {
     }
   }
 
-  return SetupRaft(server_->opts().edcb);
+  return SetupRaft();
 }
 
 Status TSTabletManager::CreateNew(FsManager *fs_manager) {
@@ -185,7 +185,7 @@ Status TSTabletManager::CreateNew(FsManager *fs_manager) {
   RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(kSysCatalogTabletId, config, consensus::kMinimumTerm),
                         "Unable to persist consensus metadata for tablet " + kSysCatalogTabletId);
 
-  return SetupRaft(server_->opts().edcb);
+  return SetupRaft();
 }
 
 Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& options,
@@ -347,8 +347,7 @@ Status TSTabletManager::Start() {
   return Status::OK();
 }
 
-Status TSTabletManager::SetupRaft(
-    std::function<void(const kudu::consensus::ElectionResult&)> edcb) {
+Status TSTabletManager::SetupRaft() {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
   InitLocalRaftPeerPB();
@@ -362,9 +361,12 @@ Status TSTabletManager::SetupRaft(
                                       local_peer_pb_,
                                       cmeta_manager_,
                                       server_->raft_pool(),
-                                      std::move(edcb),
                                       &consensus));
   consensus_ = std::move(consensus);
+  consensus_->SetElectionDecisionCallback(server_->opts().edcb);
+  consensus_->SetTermAdvancementCallback(server_->opts().tacb);
+  consensus_->SetNoOpReceivedCallback(server_->opts().norcb);
+
   // set_state(INITIALIZED);
   // SetStatusMessage("Initialized. Waiting to start...");
 
