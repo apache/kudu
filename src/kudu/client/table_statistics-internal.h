@@ -17,12 +17,17 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
 namespace client {
+
+using std::string;
+using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
@@ -32,6 +37,13 @@ class KuduTableStatistics::Data {
   }
 
   ~Data() {
+  }
+
+  string ToString() const {
+    string display_string = "";
+    display_string += Substitute("on disk size: $0\n", on_disk_size_);
+    display_string += Substitute("live row count: $0\n", live_row_count_);
+    return display_string;
   }
 
   const uint64_t on_disk_size_;

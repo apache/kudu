@@ -885,12 +885,16 @@ KuduTableStatistics::~KuduTableStatistics() {
   delete data_;
 }
 
-int64_t KuduTableStatistics::on_disk_size() {
+int64_t KuduTableStatistics::on_disk_size() const {
   return data_->on_disk_size_;
 }
 
-int64_t KuduTableStatistics::live_row_count() {
+int64_t KuduTableStatistics::live_row_count() const {
   return data_->live_row_count_;
+}
+
+std::string KuduTableStatistics::ToString() const {
+  return data_->ToString();
 }
 
 ////////////////////////////////////////////////////////////

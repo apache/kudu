@@ -1653,6 +1653,25 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
   }
 }
 
+TEST_F(AdminCliTest, TestGetTableStatistics) {
+  vector<string> master_flags{ "--mock_table_metrics_for_testing=true",
+                               "--on_disk_size_for_testing=1024",
+                               "--live_row_count_for_testing=1000" };
+
+  NO_FATALS(BuildAndStart({}, master_flags));
+
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "table",
+    "statistics",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    kTableId
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+  ASSERT_STR_CONTAINS(stdout, "on disk size: 1024\n"
+                              "live row count: 1000\n");
+}
+
 TEST_F(AdminCliTest, TestDescribeTable) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;

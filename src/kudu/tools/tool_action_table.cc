@@ -68,6 +68,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTableStatistics;
 using kudu::client::KuduValue;
 using kudu::client::internal::ReplicaController;
 using std::cerr;
@@ -860,6 +861,22 @@ Status DeleteColumn(const RunnerContext& context) {
   return alterer->Alter();
 }
 
+Status GetTableStatistics(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  unique_ptr<KuduTableStatistics> statistics;
+  KuduTableStatistics *table_statistics;
+  RETURN_NOT_OK_PREPEND(client->GetTableStatistics(table_name, &table_statistics),
+                        "failed to get table statistics.");
+  statistics.reset(table_statistics);
+  cout << "TABLE " << table_name << endl;
+  cout << statistics->ToString() << endl;
+
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTableMode() {
@@ -1060,6 +1077,13 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kColumnNameArg, "Name of the table column to delete" })
       .Build();
 
+  unique_ptr<Action> statistics =
+      ActionBuilder("statistics", &GetTableStatistics)
+          .Description("Get table statistics")
+          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+          .AddRequiredParameter({ kTableNameArg, "Name of the table to get statistics" })
+          .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(add_range_partition))
@@ -1080,6 +1104,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(copy_table))
       .AddAction(std::move(set_extra_config))
       .AddAction(std::move(get_extra_configs))
+      .AddAction(std::move(statistics))
       .Build();
 }
 

@@ -1109,7 +1109,8 @@ TEST_F(ToolTest, TestModeHelp) {
         "scan.*Scan rows from a table",
         "copy.*Copy table data to another table",
         "set_extra_config.*Change a extra configuration value on a table",
-        "get_extra_configs.*Get the extra configuration properties for a table"
+        "get_extra_configs.*Get the extra configuration properties for a table",
+        "statistics.*Get table statistics"
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }

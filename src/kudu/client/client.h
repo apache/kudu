@@ -964,12 +964,17 @@ class KUDU_EXPORT KuduTableStatistics {
   /// @return The table's on disk size.
   ///
   /// @note This statistic is pre-replication.
-  int64_t on_disk_size();
+  int64_t on_disk_size() const;
 
   /// @return The table's live row count.
   ///
   /// @note This statistic is pre-replication.
-  int64_t live_row_count();
+  int64_t live_row_count() const;
+
+  /// Stringify this Statistics.
+  ///
+  /// @return A string describing this statistics
+  std::string ToString() const;
 
  private:
   class KUDU_NO_EXPORT Data;
