@@ -86,7 +86,7 @@ ThreadSafeRandom* g_rand = nullptr;
 
 #ifdef TCMALLOC_ENABLED
 // Total amount of memory released since the last GC. If this
-// is greater than GC_RELEASE_SIZE, this will trigger a tcmalloc gc.
+// is greater than kGcReleaseSize, this will trigger a tcmalloc gc.
 Atomic64 g_released_memory_since_gc;
 
 // Size, in bytes, that is considered a large value for Release() (or Consume() with

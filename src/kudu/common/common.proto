@@ -218,7 +218,7 @@ enum ExternalConsistencyMode {
 // - The earliest snapshot: this corresponds to the earliest kept undo records
 //   in the tablet, meaning the current state (Base) can be undone up to
 //   this snapshot.
-// - The latest snapshot: This corresponds to the instant beyond which no
+// - The latest snapshot: This corresponds to the instant beyond which
 //   no transaction will have an earlier timestamp. Usually this corresponds
 //   to whatever clock->Now() returns, but can be higher if the client propagates
 //   a timestamp (see below).
