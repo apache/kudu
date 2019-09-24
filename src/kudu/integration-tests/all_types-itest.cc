@@ -45,6 +45,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/char_util.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/slice.h"
@@ -255,6 +256,7 @@ struct ExpectedVals {
   string slice_content;
   Slice expected_slice_val;
   Slice expected_binary_val;
+  Slice expected_varchar_val;
   bool expected_bool_val;
   float expected_float_val;
   double expected_double_val;
@@ -284,6 +286,7 @@ class AllTypesItest : public KuduTest {
     builder.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
     builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
     builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
+    builder.AddColumn("varchar_val")->Type(KuduColumnSchema::VARCHAR)->Length(kMaxVarcharLength);
     builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
     builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
@@ -360,6 +363,7 @@ class AllTypesItest : public KuduTest {
     Slice slice_val(content);
     RETURN_NOT_OK(row->SetStringCopy("string_val", slice_val));
     RETURN_NOT_OK(row->SetBinaryCopy("binary_val", slice_val));
+    RETURN_NOT_OK(row->SetVarchar("varchar_val", slice_val));
     double double_val = int_val;
     RETURN_NOT_OK(row->SetDouble("double_val", double_val));
     RETURN_NOT_OK(row->SetFloat("float_val", double_val));
@@ -400,6 +404,7 @@ class AllTypesItest : public KuduTest {
     projection->push_back("timestamp_val");
     projection->push_back("string_val");
     projection->push_back("binary_val");
+    projection->push_back("varchar_val");
     projection->push_back("double_val");
     projection->push_back("float_val");
     projection->push_back("bool_val");
@@ -418,6 +423,7 @@ class AllTypesItest : public KuduTest {
     vals.expected_timestamp_val = expected_int_val;
     vals.slice_content = strings::Substitute("hello $0", expected_int_val);
     vals.expected_slice_val = Slice(vals.slice_content);
+    vals.expected_varchar_val = Slice(vals.slice_content);
     vals.expected_binary_val = Slice(vals.slice_content);
     vals.expected_bool_val = expected_int_val % 2;
     vals.expected_float_val = expected_int_val;
@@ -452,6 +458,9 @@ class AllTypesItest : public KuduTest {
     Slice binary_val;
     ASSERT_OK(row.GetBinary("binary_val", &binary_val));
     ASSERT_EQ(binary_val, vals.expected_binary_val);
+    Slice varchar_val;
+    ASSERT_OK(row.GetVarchar("varchar_val", &varchar_val));
+    ASSERT_EQ(varchar_val, vals.expected_varchar_val);
     bool bool_val;
     ASSERT_OK(row.GetBool("bool_val", &bool_val));
     ASSERT_EQ(bool_val, vals.expected_bool_val);
@@ -659,6 +668,9 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
               break;
             case KuduColumnSchema::BINARY:
               ASSERT_EQ(*reinterpret_cast<const Slice*>(row_data), vals.expected_binary_val);
+              break;
+            case KuduColumnSchema::VARCHAR:
+              ASSERT_EQ(*reinterpret_cast<const Slice*>(row_data), vals.expected_varchar_val);
               break;
             case KuduColumnSchema::BOOL:
               ASSERT_EQ(*reinterpret_cast<const bool*>(row_data), vals.expected_bool_val);

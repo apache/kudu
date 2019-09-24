@@ -47,13 +47,15 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type);
 
 class KuduColumnTypeAttributes::Data {
  public:
-  Data(int8_t precision, int8_t scale)
+  Data(int8_t precision, int8_t scale, uint16_t length)
       : precision(precision),
-        scale(scale) {
+        scale(scale),
+        length(length) {
   }
 
   int8_t precision;
   int8_t scale;
+  uint16_t length;
 };
 
 class KuduColumnSpec::Data {
@@ -75,6 +77,7 @@ class KuduColumnSpec::Data {
   boost::optional<KuduColumnSchema::DataType> type;
   boost::optional<int8_t> precision;
   boost::optional<int8_t> scale;
+  boost::optional<uint16_t> length;
   boost::optional<KuduColumnStorageAttributes::EncodingType> encoding;
   boost::optional<KuduColumnStorageAttributes::CompressionType> compression;
   boost::optional<int32_t> block_size;

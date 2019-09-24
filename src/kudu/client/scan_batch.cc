@@ -166,6 +166,10 @@ Status KuduScanBatch::RowPtr::GetBinary(const Slice& col_name, Slice* val) const
   return Get<TypeTraits<BINARY> >(col_name, val);
 }
 
+Status KuduScanBatch::RowPtr::GetVarchar(const Slice& col_name, Slice* val) const {
+  return Get<TypeTraits<VARCHAR> >(col_name, val);
+}
+
 Status KuduScanBatch::RowPtr::GetBool(int col_idx, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_idx, val);
 }
@@ -204,6 +208,10 @@ Status KuduScanBatch::RowPtr::GetString(int col_idx, Slice* val) const {
 
 Status KuduScanBatch::RowPtr::GetBinary(int col_idx, Slice* val) const {
   return Get<TypeTraits<BINARY> >(col_idx, val);
+}
+
+Status KuduScanBatch::RowPtr::GetVarchar(int col_idx, Slice* val) const {
+  return Get<TypeTraits<VARCHAR> >(col_idx, val);
 }
 
 template<typename T>
@@ -277,6 +285,9 @@ template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<BINARY> >(const Slice& col_name, Slice* val) const;
 
 template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<VARCHAR> >(const Slice& col_name, Slice* val) const;
+
+template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<BOOL> >(int col_idx, bool* val) const;
 
 template
@@ -308,6 +319,9 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<STRING> >(int col_idx, Slice* val) 
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<BINARY> >(int col_idx, Slice* val) const;
+
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<VARCHAR> >(int col_idx, Slice* val) const;
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL32> >(int col_idx, int32_t* val) const;

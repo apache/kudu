@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -26,10 +27,10 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
@@ -74,7 +75,19 @@ class PredicateTest : public KuduTest {
     {
       KuduSchemaBuilder builder;
       builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
-      builder.AddColumn("value")->Type(value_type);
+      switch (value_type) {
+        case KuduColumnSchema::VARCHAR:
+          builder.AddColumn("value")->Type(value_type)
+            ->Length(40);
+          break;
+        case KuduColumnSchema::DECIMAL:
+          builder.AddColumn("value")->Type(value_type)
+            ->Precision(kMaxDecimal128Precision)->Scale(2);
+          break;
+        default:
+          builder.AddColumn("value")->Type(value_type);
+          break;
+      }
       CHECK_OK(builder.Build(&schema));
     }
     unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
@@ -387,9 +400,8 @@ class PredicateTest : public KuduTest {
   }
 
   // Check string predicates against the specified table.
-  void CheckStringPredicates(shared_ptr<KuduTable> table) {
+  void CheckStringPredicates(const shared_ptr<KuduTable>& table, vector<string> values) {
 
-    vector<string> values = CreateStringValues();
     ASSERT_EQ(values.size() + 1, CountRows(table, {}));
 
     // Add some additional values to check against.
@@ -1118,8 +1130,16 @@ TEST_F(PredicateTest, TestDecimalPredicates) {
   ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
 }
 
-TEST_F(PredicateTest, TestStringPredicates) {
-  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::STRING);
+class ParameterizedPredicateTest : public PredicateTest,
+  public ::testing::WithParamInterface<KuduColumnSchema::DataType> {};
+
+INSTANTIATE_TEST_CASE_P(, ParameterizedPredicateTest,
+                        ::testing::Values(KuduColumnSchema::STRING,
+                                          KuduColumnSchema::BINARY,
+                                          KuduColumnSchema::VARCHAR));
+
+TEST_P(ParameterizedPredicateTest, TestIndirectDataPredicates) {
+  shared_ptr<KuduTable> table = CreateAndOpenTable(GetParam());
   shared_ptr<KuduSession> session = CreateSession();
 
   vector<string> values = CreateStringValues();
@@ -1127,7 +1147,20 @@ TEST_F(PredicateTest, TestStringPredicates) {
   for (const string& value : values) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
-      ASSERT_OK(insert->mutable_row()->SetStringNoCopy("value", value));
+      switch (GetParam()) {
+        case KuduColumnSchema::STRING:
+          ASSERT_OK(insert->mutable_row()->SetStringNoCopy("value", value));
+          break;
+        case KuduColumnSchema::BINARY:
+          ASSERT_OK(insert->mutable_row()->SetBinaryNoCopy("value", value));
+          break;
+        case KuduColumnSchema::VARCHAR:
+          ASSERT_OK(insert->mutable_row()->SetVarchar("value", value));
+          break;
+        default:
+          LOG(FATAL) << "Invalid type";
+          break;
+      }
       ASSERT_OK(session->Apply(insert.release()));
   }
   unique_ptr<KuduInsert> null_insert(table->NewInsert());
@@ -1136,28 +1169,7 @@ TEST_F(PredicateTest, TestStringPredicates) {
   ASSERT_OK(session->Apply(null_insert.release()));
   ASSERT_OK(session->Flush());
 
-  CheckStringPredicates(table);
-}
-
-TEST_F(PredicateTest, TestBinaryPredicates) {
-  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::BINARY);
-  shared_ptr<KuduSession> session = CreateSession();
-
-  vector<string> values = CreateStringValues();
-  int i = 0;
-  for (const string& value : values) {
-      unique_ptr<KuduInsert> insert(table->NewInsert());
-      ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
-      ASSERT_OK(insert->mutable_row()->SetBinaryNoCopy("value", value));
-      ASSERT_OK(session->Apply(insert.release()));
-  }
-  unique_ptr<KuduInsert> null_insert(table->NewInsert());
-  ASSERT_OK(null_insert->mutable_row()->SetInt64("key", i++));
-  ASSERT_OK(null_insert->mutable_row()->SetNull("value"));
-  ASSERT_OK(session->Apply(null_insert.release()));
-  ASSERT_OK(session->Flush());
-
-  CheckStringPredicates(table);
+  CheckStringPredicates(table, values);
 }
 
 } // namespace client

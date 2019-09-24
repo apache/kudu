@@ -251,9 +251,9 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 #endif
   ///@}
 
-  /// @name Getters for string/binary column by column name.
+  /// @name Getters for string/binary/varchar column by column name.
   ///
-  /// Get the string/binary value for a column by its name.
+  /// Get the string/binary/varchar value for a column by its name.
   ///
   /// @param [in] col_name
   ///   Name of the column.
@@ -270,11 +270,12 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///@{
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetVarchar(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Getters for string/binary column by column index.
+  /// @name Getters for string/binary/varchar column by column index.
   ///
-  /// Get the string/binary value for a column by its index.
+  /// Get the string/binary/varchar value for a column by its index.
   ///
   /// These methods are faster than their name-based counterparts
   /// since using indices avoids a hashmap lookup, so index-based getters
@@ -295,6 +296,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///@{
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetVarchar(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
   /// Get the column's row data.
