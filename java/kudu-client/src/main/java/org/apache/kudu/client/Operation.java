@@ -384,7 +384,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         ColumnSchema col = schema.getColumnByIndex(colIdx);
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
-          if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
+          if (col.getType() == Type.STRING || col.getType() == Type.BINARY ||
+              col.getType() == Type.VARCHAR) {
             ByteBuffer varLengthData = row.getVarLengthData().get(colIdx);
             varLengthData.reset();
             rows.putLong(indirectWrittenBytes);

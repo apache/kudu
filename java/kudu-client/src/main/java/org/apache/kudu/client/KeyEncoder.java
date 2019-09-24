@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -144,7 +145,8 @@ class KeyEncoder {
                                                     column.getName()));
     }
     final Type type = column.getType();
-    if (type == Type.STRING || type == Type.BINARY) {
+    if (type == Type.STRING || type == Type.BINARY ||
+        type == Type.VARCHAR) {
       encodeBinary(row.getVarLengthData().get(columnIdx), isLast, buf);
     } else {
       encodeSignedInt(row.getRowAlloc(),
@@ -335,6 +337,11 @@ class KeyEncoder {
       case BINARY: {
         byte[] binary = decodeBinaryColumn(buf, isLast);
         row.addBinary(idx, binary);
+        break;
+      }
+      case VARCHAR: {
+        byte[] binary = decodeBinaryColumn(buf, isLast);
+        row.addVarchar(idx, new String(binary, StandardCharsets.UTF_8));
         break;
       }
       case STRING: {

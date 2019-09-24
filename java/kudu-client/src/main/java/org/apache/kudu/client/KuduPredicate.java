@@ -413,7 +413,7 @@ public class KuduPredicate {
   public static KuduPredicate newComparisonPredicate(ColumnSchema column,
                                                      ComparisonOp op,
                                                      String value) {
-    checkColumn(column, Type.STRING);
+    checkColumn(column, Type.STRING, Type.VARCHAR);
 
     byte[] bytes = Bytes.fromString(value);
     if (op == ComparisonOp.LESS_EQUAL) {
@@ -495,6 +495,7 @@ public class KuduPredicate {
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
    *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
    *
@@ -598,7 +599,7 @@ public class KuduPredicate {
               column.getTypeAttributes().getPrecision()));
         }
     } else if (t instanceof String) {
-      checkColumn(column, Type.STRING);
+      checkColumn(column, Type.STRING, Type.VARCHAR);
       for (T value : values) {
         vals.add(Bytes.fromString((String) value));
       }
@@ -984,6 +985,7 @@ public class KuduPredicate {
       case DOUBLE:
         return Double.compare(Bytes.getDouble(a), Bytes.getDouble(b));
       case STRING:
+      case VARCHAR:
       case BINARY:
         return UnsignedBytes.lexicographicalComparator().compare(a, b);
       case DECIMAL128:
@@ -1036,6 +1038,7 @@ public class KuduPredicate {
         return m < n && Math.nextAfter(m, Double.POSITIVE_INFINITY) == n;
       }
       case STRING:
+      case VARCHAR:
       case BINARY: {
         if (a.length + 1 != b.length || b[a.length] != 0) {
           return false;
@@ -1153,6 +1156,7 @@ public class KuduPredicate {
       case UNIXTIME_MICROS: return TimestampUtil.timestampToString(Bytes.getLong(value));
       case FLOAT: return Float.toString(Bytes.getFloat(value));
       case DOUBLE: return Double.toString(Bytes.getDouble(value));
+      case VARCHAR:
       case STRING: {
         String v = Bytes.getString(value);
         StringBuilder sb = new StringBuilder(2 + v.length());

@@ -42,8 +42,8 @@ import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
 import org.apache.kudu.client.Upsert;
+import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DecimalUtil;
-import org.apache.kudu.util.StringUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -213,7 +213,9 @@ public abstract class ClientTestUtil {
             new ColumnSchema.ColumnSchemaBuilder("null", Type.STRING).nullable(true).build(),
             new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).build(),
             new ColumnSchema.ColumnSchemaBuilder("decimal", Type.DECIMAL)
-                .typeAttributes(DecimalUtil.typeAttributes(5, 3)).build());
+              .typeAttributes(DecimalUtil.typeAttributes(5, 3)).build(),
+            new ColumnSchema.ColumnSchemaBuilder("varchar", Type.VARCHAR)
+              .typeAttributes(CharUtil.typeAttributes(10)).build());
 
     return new Schema(columns);
   }
@@ -221,7 +223,7 @@ public abstract class ClientTestUtil {
   public static PartialRow getPartialRowWithAllTypes() {
     Schema schema = getSchemaWithAllTypes();
     // Ensure we aren't missing any types
-    assertEquals(13, schema.getColumnCount());
+    assertEquals(14, schema.getColumnCount());
 
     PartialRow row = schema.newPartialRow();
     row.addByte("int8", (byte) 42);
@@ -233,6 +235,7 @@ public abstract class ClientTestUtil {
     row.addFloat("float", 52.35F);
     row.addDouble("double", 53.35);
     row.addString("string", "fun with ütf\0");
+    row.addVarchar("varchar", "árvíztűrő tükörfúrógép");
     row.addBinary("binary-array", new byte[] { 0, 1, 2, 3, 4 });
     ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 });
     row.addBinary("binary-bytebuffer", binaryBuffer);
@@ -411,6 +414,21 @@ public abstract class ClientTestUtil {
     }
     session.close().join(timeoutMs);
     return table;
+  }
+
+  public static Schema createManyVarcharsSchema() {
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.VARCHAR)
+                  .typeAttributes(CharUtil.typeAttributes(10)).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.VARCHAR)
+                  .typeAttributes(CharUtil.typeAttributes(10)).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.VARCHAR)
+                  .typeAttributes(CharUtil.typeAttributes(10)).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.VARCHAR)
+                  .typeAttributes(CharUtil.typeAttributes(10)).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.VARCHAR)
+                  .typeAttributes(CharUtil.typeAttributes(10)).nullable(true).build());
+    return new Schema(columns);
   }
 
   public static Schema createManyStringsSchema() {

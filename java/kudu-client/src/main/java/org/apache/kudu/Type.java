@@ -48,7 +48,8 @@ public enum Type {
   FLOAT(DataType.FLOAT, "float"),
   DOUBLE(DataType.DOUBLE, "double"),
   UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros"),
-  DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal");
+  DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal"),
+  VARCHAR(DataType.VARCHAR, "varchar");
 
   private final ImmutableList<DataType> dataTypes;
   private final String name;
@@ -143,6 +144,7 @@ public enum Type {
     switch (type) {
       case STRING:
       case BINARY:
+      case VARCHAR:
         return 8 + 8; // offset then string length
       case BOOL:
       case INT8:
@@ -171,6 +173,7 @@ public enum Type {
     switch (type) {
       case STRING: return STRING;
       case BINARY: return BINARY;
+      case VARCHAR: return VARCHAR;
       case BOOL: return BOOL;
       case INT8: return INT8;
       case INT16: return INT16;

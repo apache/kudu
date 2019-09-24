@@ -398,9 +398,14 @@ public class RowResult {
    * @throws IndexOutOfBoundsException if the column doesn't exist
    */
   public String getString(int columnIndex) {
+    checkType(columnIndex, Type.STRING);
+    return getVarLengthData(columnIndex);
+  }
+
+  private String getVarLengthData(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    checkType(columnIndex, Type.STRING);
+    checkType(columnIndex, Type.STRING, Type.VARCHAR);
     // C++ puts a Slice in rowData which is 16 bytes long for simplicity, but we only support ints.
     long offset = getLongOrOffset(columnIndex);
     long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
@@ -409,6 +414,30 @@ public class RowResult {
     return Bytes.getString(indirectData.getRawArray(),
                            indirectData.getRawOffset() + (int)offset,
                            (int)length);
+  }
+
+  /**
+   * Get the specified column's varchar.
+   * @param columnIndex Column index in the schema
+   * @return a string
+   * @throws IllegalArgumentException if the column is null
+   * or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public String getVarchar(int columnIndex) {
+    checkType(columnIndex, Type.VARCHAR);
+    return getVarLengthData(columnIndex);
+  }
+
+  /**
+   * Get the specified column's varchar.
+   * @param columnName name of the column to get data for
+   * @return a string
+   * @throws IllegalArgumentException if the column doesn't exist, is null,
+   * or if the type doesn't match the column's type
+   */
+  public String getVarchar(String columnName) {
+    return getVarchar(this.schema.getColumnIndex(columnName));
   }
 
   /**
@@ -541,6 +570,7 @@ public class RowResult {
    *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
+   *  Type.VARCHAR -> java.lang.String
    *  Type.STRING -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
@@ -568,6 +598,7 @@ public class RowResult {
    *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
+   *  Type.VARCHAR -> java.lang.String
    *  Type.STRING -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
@@ -589,6 +620,7 @@ public class RowResult {
       case UNIXTIME_MICROS: return getTimestamp(columnIndex);
       case FLOAT: return getFloat(columnIndex);
       case DOUBLE: return getDouble(columnIndex);
+      case VARCHAR: return getVarchar(columnIndex);
       case STRING: return getString(columnIndex);
       case BINARY: return getBinaryCopy(columnIndex);
       case DECIMAL: return getDecimal(columnIndex);
@@ -721,6 +753,9 @@ public class RowResult {
           case UNIXTIME_MICROS: {
             buf.append(TimestampUtil.timestampToString(getTimestamp(i)));
           } break;
+          case VARCHAR:
+            buf.append(getVarchar(i));
+            break;
           case STRING:
             buf.append(getString(i));
             break;

@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,7 +31,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-import org.jboss.netty.util.CharsetUtil;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
@@ -634,6 +634,44 @@ public class PartialRow {
   }
 
   /**
+   * Add a VARCHAR for the specified column.
+   *
+   * Truncates val to the length of the column in characters.
+   *
+   * @param columnIndex Index of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist, is the wrong type
+   *         or the string is not UTF-8
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addVarchar(int columnIndex, String val) {
+    ColumnSchema column = schema.getColumnByIndex(columnIndex);
+    checkColumn(column, Type.VARCHAR);
+    checkNotFrozen();
+    int length = column.getTypeAttributes().getLength();
+    if (length < val.length()) {
+      val = val.substring(0, length);
+    }
+    byte[] bytes = Bytes.fromString(val);
+    addVarLengthData(columnIndex, bytes);
+  }
+
+  /**
+   * Add a VARCHAR for the specified column.
+   *
+   * Truncates val to the length of the column in characters.
+   *
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist, is the wrong type
+   *         or the string is not UTF-8
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addVarchar(String columnName, String val) {
+    addVarchar(schema.getColumnIndex(columnName), val);
+  }
+
+  /**
    * Get the specified column's string.
    * @param columnName name of the column to get data for
    * @return a string
@@ -655,7 +693,33 @@ public class PartialRow {
   public String getString(int columnIndex) {
     checkColumn(schema.getColumnByIndex(columnIndex), Type.STRING);
     checkValue(columnIndex);
-    return new String(getVarLengthData(columnIndex).array(), CharsetUtil.UTF_8);
+    return new String(getVarLengthData(columnIndex).array(), StandardCharsets.UTF_8);
+  }
+
+  /**
+   * Get the specified column's VARCHAR.
+   * @param columnName Name of the column to get the data for
+   * @return a VARCHAR
+   * @throws IllegalArgumentException if the column is null, is unset,
+   *         or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public String getVarchar(String columnName) {
+    return getVarchar(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's VARCHAR.
+   * @param columnIndex Column index in the schema
+   * @return a VARCHAR
+   * @throws IllegalArgumentException if the column is null, is unset,
+   *         or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public String getVarchar(int columnIndex) {
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.VARCHAR);
+    checkValue(columnIndex);
+    return new String(getVarLengthData(columnIndex).array(), StandardCharsets.UTF_8);
   }
 
   /**
@@ -905,6 +969,7 @@ public class PartialRow {
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
    *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
    *
@@ -932,6 +997,7 @@ public class PartialRow {
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
    *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[] or java.lang.ByteBuffer
    *  Type.DECIMAL -> java.math.BigDecimal
    *
@@ -960,6 +1026,7 @@ public class PartialRow {
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
    *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[] or java.lang.ByteBuffer
    *  Type.DECIMAL -> java.math.BigDecimal
    *
@@ -993,6 +1060,7 @@ public class PartialRow {
         case FLOAT: addFloat(columnIndex, (Float) val); break;
         case DOUBLE: addDouble(columnIndex, (Double) val); break;
         case STRING: addString(columnIndex, (String) val); break;
+        case VARCHAR: addVarchar(columnIndex, (String) val); break;
         case BINARY:
           if (val instanceof byte[]) {
             addBinary(columnIndex, (byte[]) val);
@@ -1027,6 +1095,7 @@ public class PartialRow {
    *  Type.FLOAT -> java.lang.Float
    *  Type.DOUBLE -> java.lang.Double
    *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
    *
@@ -1047,6 +1116,7 @@ public class PartialRow {
       case UNIXTIME_MICROS: return getTimestamp(columnIndex);
       case FLOAT: return getFloat(columnIndex);
       case DOUBLE: return getDouble(columnIndex);
+      case VARCHAR: return getVarchar(columnIndex);
       case STRING: return getString(columnIndex);
       case BINARY: return getBinaryCopy(columnIndex);
       case DECIMAL: return getDecimal(columnIndex);
@@ -1297,13 +1367,14 @@ public class PartialRow {
         sb.append(Bytes.getDecimal(rowAlloc, schema.getColumnOffset(idx),
             typeAttributes.getPrecision(), typeAttributes.getScale()));
         return;
+      case VARCHAR:
       case BINARY:
       case STRING:
         ByteBuffer value = getVarLengthData().get(idx).duplicate();
         value.reset(); // Make sure we start at the beginning.
         byte[] data = new byte[value.limit() - value.position()];
         value.get(data);
-        if (col.getType() == Type.STRING) {
+        if (col.getType() == Type.STRING || col.getType() == Type.VARCHAR) {
           sb.append('"');
           StringUtil.appendEscapedSQLString(Bytes.getString(data), sb);
           sb.append('"');
@@ -1357,6 +1428,9 @@ public class PartialRow {
       case BINARY:
         addBinary(index, AsyncKuduClient.EMPTY_ARRAY);
         break;
+      case VARCHAR:
+        addVarchar(index, "");
+        break;
       default:
         throw new RuntimeException("unreachable");
     }
@@ -1385,6 +1459,7 @@ public class PartialRow {
             getPositionInRowAllocAndSetBitSet(index), value.length);
         break;
       }
+      case VARCHAR:
       case STRING:
       case BINARY: {
         addVarLengthData(index, value);
@@ -1478,6 +1553,7 @@ public class PartialRow {
         Bytes.setBigDecimal(rowAlloc, existing.add(smallest), precision, offset);
         return true;
       }
+      case VARCHAR:
       case STRING:
       case BINARY: {
         ByteBuffer data = varLengthData.get(index);
@@ -1566,6 +1642,7 @@ public class PartialRow {
         int scale = typeAttributes.getScale();
         return Bytes.getDecimal(a.rowAlloc, offset, precision, scale)
             .equals(Bytes.getDecimal(b.rowAlloc, offset, precision, scale));
+      case VARCHAR:
       case STRING:
       case BINARY: {
         ByteBuffer aData = a.varLengthData.get(index).duplicate();
@@ -1653,6 +1730,7 @@ public class PartialRow {
         return val.add(smallestVal).equals(
                 Bytes.getDecimal(upper.rowAlloc, offset, precision, scale));
       }
+      case VARCHAR:
       case STRING:
       case BINARY: {
         // Check that b is 1 byte bigger than a, the extra byte is 0, and the other bytes are equal.

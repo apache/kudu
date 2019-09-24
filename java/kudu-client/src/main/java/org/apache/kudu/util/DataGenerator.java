@@ -108,6 +108,10 @@ public class DataGenerator {
           row.addDouble(i, random.nextDouble()); break;
         case DECIMAL:
           row.addDecimal(i, randomDecimal(col.getTypeAttributes(), random)); break;
+        case VARCHAR:
+          row.addVarchar(i, randomString(Math.min(col.getTypeAttributes().getLength(),
+                                                  stringLength), random));
+          break;
         case STRING:
           row.addString(i, randomString(stringLength, random)); break;
         case BINARY:

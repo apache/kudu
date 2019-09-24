@@ -139,6 +139,9 @@ public class ProtobufHelper {
     if (typeAttributes.hasScale()) {
       builder.setScale(typeAttributes.getScale());
     }
+    if (typeAttributes.hasLength()) {
+      builder.setLength(typeAttributes.getLength());
+    }
     return builder.build();
   }
 
@@ -172,6 +175,9 @@ public class ProtobufHelper {
     }
     if(pb.hasScale()) {
       builder.scale(pb.getScale());
+    }
+    if (pb.hasLength()) {
+      builder.length(pb.getLength());
     }
     return builder.build();
   }
@@ -270,6 +276,7 @@ public class ProtobufHelper {
       case INT64:
       case UNIXTIME_MICROS:
         return Bytes.fromLong((Long) value);
+      case VARCHAR:
       case STRING:
         return ((String) value).getBytes(UTF_8);
       case BINARY:
@@ -306,6 +313,7 @@ public class ProtobufHelper {
         return buf.getFloat();
       case DOUBLE:
         return buf.getDouble();
+      case VARCHAR:
       case STRING:
         return value.toStringUtf8();
       case BINARY:

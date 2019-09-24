@@ -75,6 +75,7 @@ public class TestRowResult {
     row.setNull(10);
     row.addTimestamp(11, new Timestamp(11));
     row.addDecimal(12, BigDecimal.valueOf(12345, 3));
+    row.addVarchar(13, "varcharval");
 
     KuduClient client = harness.getClient();
     KuduSession session = client.newSession();
@@ -143,6 +144,10 @@ public class TestRowResult {
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getObject(12));
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));
 
+      assertEquals("varcharval", rr.getVarchar(13));
+      assertEquals("varcharval", rr.getObject(13));
+      assertEquals("varcharval", rr.getVarchar(allTypesSchema.getColumnByIndex(13).getName()));
+
       // We test with the column name once since it's the same method for all types, unlike above.
       assertEquals(Type.INT8, rr.getColumnType(allTypesSchema.getColumnByIndex(0).getName()));
       assertEquals(Type.INT8, rr.getColumnType(0));
@@ -156,6 +161,7 @@ public class TestRowResult {
       assertEquals(Type.BINARY, rr.getColumnType(8));
       assertEquals(Type.UNIXTIME_MICROS, rr.getColumnType(11));
       assertEquals(Type.DECIMAL, rr.getColumnType(12));
+      assertEquals(Type.VARCHAR, rr.getColumnType(13));
     }
   }
 }

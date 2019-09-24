@@ -82,7 +82,8 @@ class KuduContextTest extends KuduTestSuite with Matchers {
           "c10_byte",
           "c11_decimal32",
           "c12_decimal64",
-          "c13_decimal128"
+          "c13_decimal128",
+          "c14_varchar"
         )
       )
       .map(r => r.toSeq)
@@ -106,6 +107,7 @@ class KuduContextTest extends KuduTestSuite with Matchers {
       assert(r.apply(11).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
       assert(r.apply(12).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
       assert(r.apply(13).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
+      assert(r.apply(14).asInstanceOf[String] == rows.apply(index)._3)
     })
   }
 

@@ -17,6 +17,7 @@
 package org.apache.kudu.spark.kudu
 
 import org.apache.kudu.Schema
+import org.apache.kudu.Type
 import org.apache.kudu.client.PartialRow
 import org.apache.kudu.client.RowResult
 import org.apache.spark.sql.Row
@@ -65,7 +66,14 @@ class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) 
       } else {
         schema.fields(sparkIdx).dataType match {
           case DataTypes.StringType =>
-            partialRow.addString(kuduIdx, row.getString(sparkIdx))
+            kuduSchema.getColumnByIndex(kuduIdx).getType match {
+              case Type.STRING =>
+                partialRow.addString(kuduIdx, row.getString(sparkIdx))
+              case Type.VARCHAR =>
+                partialRow.addVarchar(kuduIdx, row.getString(sparkIdx))
+              case t =>
+                throw new IllegalArgumentException(s"Invalid Kudu column type $t")
+            }
           case DataTypes.BinaryType =>
             partialRow.addBinary(kuduIdx, row.getAs[Array[Byte]](sparkIdx))
           case DataTypes.BooleanType =>

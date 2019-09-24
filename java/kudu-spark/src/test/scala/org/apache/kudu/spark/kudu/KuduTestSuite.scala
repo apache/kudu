@@ -30,6 +30,7 @@ import org.apache.kudu.client.KuduTable
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.KuduTestHarness
+import org.apache.kudu.util.CharUtil
 import org.apache.kudu.util.DecimalUtil
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.DataFrame
@@ -84,6 +85,10 @@ trait KuduTestSuite extends JUnitSuite {
             .precision(DecimalUtil.MAX_DECIMAL128_PRECISION)
             .build()
         )
+        .build(),
+      new ColumnSchemaBuilder("c14_varchar", Type.VARCHAR)
+        .typeAttributes(CharUtil.typeAttributes(CharUtil.MAX_VARCHAR_LENGTH))
+        .nullable(true)
         .build()
     )
     new Schema(columns.asJava)
@@ -181,9 +186,11 @@ trait KuduTestSuite extends JUnitSuite {
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {
         row.addString(2, i.toString)
+        row.addVarchar(14, i.toString)
         i.toString
       } else {
         row.setNull(2)
+        row.setNull(14)
         null
       }
 
@@ -216,6 +223,7 @@ trait KuduTestSuite extends JUnitSuite {
       row.addDecimal(11, BigDecimal.valueOf(i))
       row.addDecimal(12, BigDecimal.valueOf(i))
       row.addDecimal(13, BigDecimal.valueOf(i))
+      row.addVarchar(14, i.toString)
 
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {

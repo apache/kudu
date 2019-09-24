@@ -24,6 +24,7 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.test.ClientTestUtil.createManyVarcharsSchema;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithBinaryColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDecimalColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithTimestampColumns;
@@ -414,6 +415,62 @@ public class TestKuduClient {
     Collections.sort(rowStrings);
     assertArrayEquals(rowStrings.toArray(new String[0]),
                       expectedStrings.toArray(new String[0]));
+  }
+
+  /**
+   * Test inserting and retrieving VARCHAR columns.
+   */
+  @Test(timeout = 100000)
+  public void testVarchars() throws Exception {
+    Schema schema = createManyVarcharsSchema();
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addVarchar("key", String.format("key_%02d", i));
+      row.addVarchar("c2", "c2_" + i);
+      if (i % 2 == 1) {
+        row.addVarchar("c3", "c3_" + i);
+      }
+      row.addVarchar("c4", "c4_" + i);
+      // NOTE: we purposefully add the strings in a non-left-to-right
+      // order to verify that we still place them in the right position in
+      // the row.
+      row.addVarchar("c1", "c1_" + i);
+      session.apply(insert);
+      if (i % 50 == 0) {
+        session.flush();
+      }
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(100, rowStrings.size());
+    assertEquals(
+      "VARCHAR key(10)=key_03, VARCHAR c1(10)=c1_3, VARCHAR c2(10)=c2_3," +
+        " VARCHAR c3(10)=c3_3, VARCHAR c4(10)=c4_3",
+      rowStrings.get(3));
+    assertEquals(
+      "VARCHAR key(10)=key_04, VARCHAR c1(10)=c1_4, VARCHAR c2(10)=c2_4," +
+        " VARCHAR c3(10)=NULL, VARCHAR c4(10)=c4_4",
+      rowStrings.get(4));
+
+    KuduScanner scanner = client.newScannerBuilder(table).build();
+
+    assertTrue("Scanner should have returned row", scanner.hasMoreRows());
+
+    RowResultIterator rows = scanner.nextRows();
+    final RowResult next = rows.next();
+
+    // Do negative testing on string type.
+    try {
+      next.getInt("c2");
+      fail("IllegalArgumentException was not thrown when accessing " +
+             "a VARCHAR column with getInt");
+    } catch (IllegalArgumentException ignored) {}
   }
 
   /**

@@ -220,6 +220,8 @@ private class GeneratedRowIterator(
           row.addDecimal(
             i,
             new BigDecimal(BigInteger.valueOf(value), col.getTypeAttributes.getScale))
+        case Type.VARCHAR =>
+          row.addVarchar(i, String.valueOf(value))
         case Type.STRING =>
           row.addString(i, String.valueOf(value))
         case Type.BINARY =>

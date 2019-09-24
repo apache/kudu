@@ -110,6 +110,7 @@ object TableMetadata {
       .newBuilder()
       .setPrecision(attributes.getPrecision)
       .setScale(attributes.getScale)
+      .setLength(attributes.getLength)
       .build()
   }
 
@@ -215,6 +216,7 @@ object TableMetadata {
           new ColumnTypeAttributesBuilder()
             .precision(attributes.getPrecision)
             .scale(attributes.getScale)
+            .length(attributes.getLength)
             .build()
         )
       }
@@ -234,6 +236,7 @@ object TableMetadata {
       case Type.INT64 | Type.UNIXTIME_MICROS => row.getLong(columnName)
       case Type.FLOAT => row.getFloat(columnName)
       case Type.DOUBLE => row.getDouble(columnName)
+      case Type.VARCHAR => row.getVarchar(columnName)
       case Type.STRING => row.getString(columnName)
       case Type.BINARY => row.getBinary(columnName)
       case Type.DECIMAL => row.getDecimal(columnName)
@@ -252,6 +255,7 @@ object TableMetadata {
         row.addLong(columnName, value.asInstanceOf[Long])
       case Type.FLOAT => row.addFloat(columnName, value.asInstanceOf[Float])
       case Type.DOUBLE => row.addDouble(columnName, value.asInstanceOf[Double])
+      case Type.VARCHAR => row.addVarchar(columnName, value.asInstanceOf[String])
       case Type.STRING => row.addString(columnName, value.asInstanceOf[String])
       case Type.BINARY =>
         row.addBinary(columnName, value.asInstanceOf[Array[Byte]])
@@ -278,6 +282,8 @@ object TableMetadata {
         String.valueOf(value.asInstanceOf[Float])
       case Type.DOUBLE =>
         String.valueOf(value.asInstanceOf[Double])
+      case Type.VARCHAR =>
+        value.asInstanceOf[String]
       case Type.STRING =>
         value.asInstanceOf[String]
       case Type.BINARY =>
@@ -300,6 +306,7 @@ object TableMetadata {
       case Type.INT64 | Type.UNIXTIME_MICROS => value.toLong
       case Type.FLOAT => value.toFloat
       case Type.DOUBLE => value.toDouble
+      case Type.VARCHAR => value
       case Type.STRING => value
       case Type.BINARY => Base64.decodeBase64(value)
       case Type.DECIMAL => new BigDecimal(value) // TODO: Explicitly pass scale

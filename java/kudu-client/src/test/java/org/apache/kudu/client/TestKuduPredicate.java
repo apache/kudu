@@ -37,6 +37,7 @@ import org.junit.Test;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestKuduPredicate {
@@ -81,6 +82,12 @@ public class TestKuduPredicate {
   private static final ColumnSchema decimal128Col =
       new ColumnSchema.ColumnSchemaBuilder("decimal128", Type.DECIMAL)
           .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL128_PRECISION, 2))
+          .build();
+
+  private static final ColumnSchema varcharCol =
+      new ColumnSchema.ColumnSchemaBuilder("varchar", Type.VARCHAR)
+          .typeAttributes(CharUtil.typeAttributes(10))
+          .nullable(true)
           .build();
 
   @Rule
@@ -935,6 +942,13 @@ public class TestKuduPredicate {
                                 new byte[] { 0, 1, 2, 3, 4, 5, 6 },
                                 new byte[] { 10 }));
 
+    testMerge(KuduPredicate.newComparisonPredicate(varcharCol, GREATER_EQUAL, "bar"),
+              KuduPredicate.newComparisonPredicate(varcharCol, LESS, "foo"),
+              new KuduPredicate(RANGE,
+                                varcharCol,
+                                new byte[] {98, 97, 114},
+                                new byte[] {102, 111, 111}));
+
     byte[] bA = "a".getBytes(UTF_8);
     byte[] bB = "b".getBytes(UTF_8);
     byte[] bC = "c".getBytes(UTF_8);
@@ -966,6 +980,8 @@ public class TestKuduPredicate {
                         KuduPredicate.newComparisonPredicate(stringCol, LESS, "a\0"));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(binaryCol, LESS_EQUAL, new byte[] { (byte) 10 }),
                         KuduPredicate.newComparisonPredicate(binaryCol, LESS, new byte[] { (byte) 10, (byte) 0 }));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(varcharCol, LESS_EQUAL, "a"),
+                        KuduPredicate.newComparisonPredicate(varcharCol, LESS, "a\0"));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(byteCol, LESS_EQUAL, Byte.MAX_VALUE),
                         KuduPredicate.newIsNotNullPredicate(byteCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(shortCol, LESS_EQUAL, Short.MAX_VALUE),
@@ -1051,6 +1067,8 @@ public class TestKuduPredicate {
                         KuduPredicate.none(stringCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(binaryCol, LESS, new byte[] {}),
                         KuduPredicate.none(binaryCol));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(varcharCol, LESS, ""),
+                        KuduPredicate.none(varcharCol));
   }
 
   @Test
@@ -1080,6 +1098,8 @@ public class TestKuduPredicate {
                         KuduPredicate.newIsNotNullPredicate(stringCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(binaryCol, GREATER_EQUAL, new byte[] {}),
                         KuduPredicate.newIsNotNullPredicate(binaryCol));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(varcharCol, GREATER_EQUAL, ""),
+                        KuduPredicate.newIsNotNullPredicate(varcharCol));
 
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(byteCol, GREATER_EQUAL, Byte.MAX_VALUE),
                         KuduPredicate.newComparisonPredicate(byteCol, EQUAL, Byte.MAX_VALUE));
@@ -1126,6 +1146,9 @@ public class TestKuduPredicate {
     Assert.assertEquals(
         KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, (Object) new byte[] { (byte) 10 }),
         KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, new byte[] { (byte) 10 }));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, (Object) "a"),
+        KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, "a"));
   }
 
   @Test
@@ -1163,6 +1186,12 @@ public class TestKuduPredicate {
                         KuduPredicate.newIsNotNullPredicate(stringCol).toString());
     Assert.assertEquals("`string` IS NULL",
                         KuduPredicate.newIsNullPredicate(stringCol).toString());
+    Assert.assertEquals("`varchar` = \"my varchar\"",
+                        KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, "my varchar").toString());
+    Assert.assertEquals("`varchar` IS NOT NULL",
+                        KuduPredicate.newIsNotNullPredicate(varcharCol).toString());
+    Assert.assertEquals("`varchar` IS NULL",
+                        KuduPredicate.newIsNullPredicate(varcharCol).toString());
     // IS NULL predicate on non-nullable column = NONE predicate
     Assert.assertEquals("`int` NONE",
             KuduPredicate.newIsNullPredicate(intCol).toString());

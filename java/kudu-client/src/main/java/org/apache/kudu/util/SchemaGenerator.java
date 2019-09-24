@@ -126,6 +126,14 @@ public class SchemaGenerator {
       builder.typeAttributes(typeAttributes);
     }
 
+    if (type == Type.VARCHAR) {
+      int length = random.nextInt(
+        (CharUtil.MAX_VARCHAR_LENGTH - CharUtil.MIN_VARCHAR_LENGTH) + 1)
+        + CharUtil.MIN_VARCHAR_LENGTH;
+      typeAttributes = CharUtil.typeAttributes(length);
+      builder.typeAttributes(typeAttributes);
+    }
+
     // Sometimes set a column default value.
     if (random.nextFloat() <= defaultRate) {
       switch (type) {
@@ -153,6 +161,11 @@ public class SchemaGenerator {
           break;
         case DECIMAL:
           builder.defaultValue(randomDecimal(typeAttributes, random));
+          break;
+        case VARCHAR:
+          builder.defaultValue(randomString(Math.min(DEFAULT_BINARY_LENGTH,
+                                                     typeAttributes.getLength()),
+                                            random));
           break;
         case STRING:
           builder.defaultValue(randomString(DEFAULT_BINARY_LENGTH, random));
@@ -206,6 +219,7 @@ public class SchemaGenerator {
             Encoding.PLAIN_ENCODING,
             Encoding.BIT_SHUFFLE));
         break;
+      case VARCHAR:
       case STRING:
       case BINARY:
         validEncodings.retainAll(Arrays.asList(

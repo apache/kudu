@@ -21,15 +21,20 @@ import static org.junit.Assert.assertNotEquals;
 
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestColumnSchema {
 
   @Rule
   public RetryRule retryRule = new RetryRule();
+
+  @Rule
+  public ExpectedException expectedException = ExpectedException.none();
 
   @Test
   public void testToString() {
@@ -95,4 +100,19 @@ public class TestColumnSchema {
     ColumnSchema commentInt3 = new ColumnSchemaBuilder("col1", Type.INT32).comment("Test").build();
     assertNotEquals(commentInt1, commentInt3);
   }
+  @Test
+  public void testOutOfRangeVarchar() throws Exception {
+    expectedException.expect(IllegalArgumentException.class);
+    expectedException.expectMessage("VARCHAR's length must be set and between 1 and 65535");
+    new ColumnSchemaBuilder("col1", Type.VARCHAR)
+      .typeAttributes(CharUtil.typeAttributes(70000)).build();
+  }
+
+  @Test
+  public void testVarcharWithoutLength() throws Exception {
+    expectedException.expect(IllegalArgumentException.class);
+    expectedException.expectMessage("VARCHAR's length must be set and between 1 and 65535");
+    new ColumnSchemaBuilder("col1", Type.VARCHAR).build();
+  }
+
 }

@@ -32,12 +32,18 @@ public class ColumnTypeAttributes {
   private final boolean hasScale;
   private final int scale;
 
+  private final boolean hasLength;
+  private final int length;
+
   private ColumnTypeAttributes(boolean hasPrecision, int precision,
-                               boolean hasScale, int scale) {
+                               boolean hasScale, int scale,
+                               boolean hasLength, int length) {
     this.hasPrecision = hasPrecision;
     this.precision = precision;
     this.hasScale = hasScale;
     this.scale = scale;
+    this.hasLength = hasLength;
+    this.length = length;
   }
 
   /**
@@ -68,6 +74,20 @@ public class ColumnTypeAttributes {
     return scale;
   }
 
+  /**
+   * Returns true if the length is set;
+   */
+  public boolean hasLength() {
+    return hasLength;
+  }
+
+  /**
+   * Returns the length;
+   */
+  public int getLength() {
+    return length;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -91,13 +111,19 @@ public class ColumnTypeAttributes {
     if (scale != that.scale) {
       return false;
     }
+    if (hasLength != that.hasLength) {
+      return false;
+    }
+    if (length != that.length) {
+      return false;
+    }
 
     return true;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(hasPrecision, precision, hasScale, scale);
+    return Objects.hash(hasPrecision, precision, hasScale, scale, hasLength, length);
   }
 
   /**
@@ -110,6 +136,8 @@ public class ColumnTypeAttributes {
   public String toStringForType(Type type) {
     if (type == Type.DECIMAL) {
       return "(" + precision + ", " + scale + ")";
+    } else if (type == Type.VARCHAR) {
+      return "(" + length + ")";
     } else {
       return "";
     }
@@ -118,7 +146,8 @@ public class ColumnTypeAttributes {
   @Override
   public String toString() {
     return "hasPrecision: " + hasPrecision + ", precision: " + precision +
-        ", hasScale: " + hasScale + ", scale: " + scale;
+        ", hasScale: " + hasScale + ", scale: " + scale +
+        ", hasLength: " + hasLength + ", length: " + length;
   }
 
   /**
@@ -132,6 +161,8 @@ public class ColumnTypeAttributes {
     private int precision;
     private boolean hasScale;
     private int scale;
+    private boolean hasLength;
+    private int length;
 
     /**
      * Set the precision. Only used for Decimal columns.
@@ -151,12 +182,18 @@ public class ColumnTypeAttributes {
       return this;
     }
 
+    public ColumnTypeAttributesBuilder length(int length) {
+      this.hasLength = true;
+      this.length = length;
+      return this;
+    }
+
     /**
      * Builds a {@link ColumnTypeAttributes} using the passed parameters.
      * @return a new {@link ColumnTypeAttributes}
      */
     public ColumnTypeAttributes build() {
-      return new ColumnTypeAttributes(hasPrecision, precision, hasScale, scale);
+      return new ColumnTypeAttributes(hasPrecision, precision, hasScale, scale, hasLength, length);
     }
   }
 }

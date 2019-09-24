@@ -85,6 +85,8 @@ public class TestPartialRow {
     assertEquals(53.35, (double) partialRow.getObject("double"), 0.0);
     assertTrue(partialRow.getObject("string") instanceof String);
     assertEquals("fun with ütf\0", partialRow.getObject("string"));
+    assertTrue(partialRow.getObject("varchar") instanceof String);
+    assertEquals("árvíztűrő ", partialRow.getObject("varchar"));
     assertTrue(partialRow.getObject("binary-array") instanceof byte[]);
     assertArrayEquals(new byte[] { 0, 1, 2, 3, 4 }, partialRow.getBinaryCopy("binary-array"));
     assertTrue(partialRow.getObject("binary-bytebuffer") instanceof byte[]);
@@ -98,7 +100,7 @@ public class TestPartialRow {
   public void testAddObject() {
     Schema schema = getSchemaWithAllTypes();
     // Ensure we aren't missing any types
-    assertEquals(13, schema.getColumnCount());
+    assertEquals(14, schema.getColumnCount());
 
     PartialRow row = schema.newPartialRow();
     row.addObject("int8", (byte) 42);
@@ -110,6 +112,7 @@ public class TestPartialRow {
     row.addObject("float", 52.35F);
     row.addObject("double", 53.35);
     row.addObject("string", "fun with ütf\0");
+    row.addObject("varchar", "árvíztűrő tükörfúrógép");
     row.addObject("binary-array", new byte[] { 0, 1, 2, 3, 4 });
     ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 });
     row.addObject("binary-bytebuffer", binaryBuffer);
@@ -334,6 +337,12 @@ public class TestPartialRow {
             "string string=\"fun with ütf\\0\", binary binary-bytebuffer=[2, 3, 4], " +
             "decimal(5, 3) decimal=12.345)",
         row.toString());
+
+    row.addVarchar("varchar", "árvíztűrő tükörfúrógép");
+    assertEquals("(int8 int8=42, int32 int32=42, double double=52.35, " +
+        "string string=\"fun with ütf\\0\", binary binary-bytebuffer=[2, 3, 4], " +
+        "decimal(5, 3) decimal=12.345, varchar(10) varchar=\"árvíztűrő \")",
+      row.toString());
   }
 
   @Test
@@ -408,6 +417,12 @@ public class TestPartialRow {
     partialRow.addBinary(binaryIndex, new byte[] { 0, 1, 2, 3, 4 });
     assertTrue(partialRow.incrementColumn(binaryIndex));
     assertArrayEquals(new byte[] { 0, 1, 2, 3, 4, 0 }, partialRow.getBinaryCopy(binaryIndex));
+
+    // Varchar
+    int varcharIndex = getColumnIndex(partialRow, "varchar");
+    partialRow.addVarchar(varcharIndex, "hello");
+    assertTrue(partialRow.incrementColumn(varcharIndex));
+    assertEquals("hello\0", partialRow.getVarchar(varcharIndex));
   }
 
   @Test
@@ -425,6 +440,7 @@ public class TestPartialRow {
     assertEquals(-Float.MAX_VALUE, partialRow.getFloat("float"), 0.0f);
     assertEquals(-Double.MAX_VALUE, partialRow.getDouble("double"), 0.0);
     assertEquals("", partialRow.getString("string"));
+    assertEquals("", partialRow.getVarchar("varchar"));
     assertArrayEquals(new byte[0], partialRow.getBinaryCopy("binary-array"));
     assertArrayEquals(new byte[0], partialRow.getBinaryCopy("binary-bytebuffer"));
     assertEquals(BigDecimal.valueOf(-99999, 3), partialRow.getDecimal("decimal"));
@@ -450,6 +466,7 @@ public class TestPartialRow {
       case INT32: return partialRow.getInt(columnName);
       case INT64: return partialRow.getLong(columnName);
       case UNIXTIME_MICROS: return partialRow.getTimestamp(columnName);
+      case VARCHAR: return partialRow.getVarchar(columnName);
       case STRING: return partialRow.getString(columnName);
       case BINARY: return partialRow.getBinary(columnName);
       case FLOAT: return partialRow.getFloat(columnName);
@@ -471,6 +488,7 @@ public class TestPartialRow {
       case INT32: return partialRow.getInt(columnIndex);
       case INT64: return partialRow.getLong(columnIndex);
       case UNIXTIME_MICROS: return partialRow.getTimestamp(columnIndex);
+      case VARCHAR: return partialRow.getVarchar(columnIndex);
       case STRING: return partialRow.getString(columnIndex);
       case BINARY: return partialRow.getBinary(columnIndex);
       case FLOAT: return partialRow.getFloat(columnIndex);
@@ -489,6 +507,7 @@ public class TestPartialRow {
       case INT32: partialRow.addInt(columnName, 44); break;
       case INT64: partialRow.addLong(columnName, 45); break;
       case UNIXTIME_MICROS: partialRow.addTimestamp(columnName, new Timestamp(1234567890)); break;
+      case VARCHAR: partialRow.addVarchar(columnName, "fun with ütf\0"); break;
       case STRING: partialRow.addString(columnName, "fun with ütf\0"); break;
       case BINARY: partialRow.addBinary(columnName, new byte[] { 0, 1, 2, 3, 4 }); break;
       case FLOAT: partialRow.addFloat(columnName, 52.35F); break;
@@ -507,6 +526,7 @@ public class TestPartialRow {
       case INT32: partialRow.addInt(columnIndex, 44); break;
       case INT64: partialRow.addLong(columnIndex, 45); break;
       case UNIXTIME_MICROS: partialRow.addTimestamp(columnIndex, new Timestamp(1234567890)); break;
+      case VARCHAR: partialRow.addVarchar(columnIndex, "fun with ütf\0"); break;
       case STRING: partialRow.addString(columnIndex, "fun with ütf\0"); break;
       case BINARY: partialRow.addBinary(columnIndex, new byte[] { 0, 1, 2, 3, 4 }); break;
       case FLOAT: partialRow.addFloat(columnIndex, 52.35F); break;

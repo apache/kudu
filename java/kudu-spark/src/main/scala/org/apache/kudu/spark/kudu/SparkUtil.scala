@@ -52,6 +52,7 @@ object SparkUtil {
       case Type.UNIXTIME_MICROS => TimestampType
       case Type.FLOAT => FloatType
       case Type.DOUBLE => DoubleType
+      case Type.VARCHAR => StringType
       case Type.STRING => StringType
       case Type.BINARY => BinaryType
       case Type.DECIMAL => DecimalType(a.getPrecision, a.getScale)

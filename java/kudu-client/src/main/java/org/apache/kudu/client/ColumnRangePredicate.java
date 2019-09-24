@@ -97,6 +97,7 @@ public class ColumnRangePredicate {
         return KuduPredicate.newComparisonPredicate(column, op, Bytes.getFloat(bound));
       case DOUBLE:
         return KuduPredicate.newComparisonPredicate(column, op, Bytes.getDouble(bound));
+      case VARCHAR:
       case STRING:
         return KuduPredicate.newComparisonPredicate(column, op, Bytes.getString(bound));
       case BINARY:
@@ -185,7 +186,7 @@ public class ColumnRangePredicate {
    * @param lowerBound value for the lower bound
    */
   public void setLowerBound(String lowerBound) {
-    checkColumn(Type.STRING);
+    checkColumn(Type.STRING, Type.VARCHAR);
     setLowerBoundInternal(lowerBound.getBytes(UTF_8));
   }
 
@@ -282,7 +283,7 @@ public class ColumnRangePredicate {
    * @param upperBound value for the upper bound
    */
   public void setUpperBound(String upperBound) {
-    checkColumn(Type.STRING);
+    checkColumn(Type.STRING, Type.VARCHAR);
     setUpperBoundInternal(upperBound.getBytes(UTF_8));
   }
 

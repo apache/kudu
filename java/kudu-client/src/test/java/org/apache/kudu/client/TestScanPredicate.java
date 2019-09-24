@@ -35,6 +35,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestScanPredicate {
@@ -53,7 +54,16 @@ public class TestScanPredicate {
 
   private Schema createTableSchema(Type type) {
     ColumnSchema key = new ColumnSchema.ColumnSchemaBuilder("key", Type.INT64).key(true).build();
-    ColumnSchema val = new ColumnSchema.ColumnSchemaBuilder("value", type).nullable(true).build();
+    ColumnSchema val;
+    switch (type) {
+      case VARCHAR:
+        val = new ColumnSchema.ColumnSchemaBuilder("value", type)
+          .typeAttributes(CharUtil.typeAttributes(10)).nullable(true).build();
+        break;
+      default:
+        val = new ColumnSchema.ColumnSchemaBuilder("value", type).nullable(true).build();
+        break;
+    }
     return new Schema(ImmutableList.of(key, val));
   }
 
@@ -631,7 +641,16 @@ public class TestScanPredicate {
 
   @Test
   public void testStringPredicates() throws Exception {
-    Schema schema = createTableSchema(Type.STRING);
+    testVarlengthPredicates(Type.STRING);
+  }
+
+  @Test
+  public void testVarcharPredicates() throws Exception {
+    testVarlengthPredicates(Type.VARCHAR);
+  }
+
+  private void testVarlengthPredicates(Type type) throws Exception {
+    Schema schema = createTableSchema(type);
     client.createTable("string-table", schema, createTableOptions());
     KuduTable table = client.openTable("string-table");
 
@@ -643,7 +662,16 @@ public class TestScanPredicate {
     for (String value : values) {
       Insert insert = table.newInsert();
       insert.getRow().addLong("key", i++);
-      insert.getRow().addString("value", value);
+      switch (type) {
+        case VARCHAR:
+          insert.getRow().addVarchar("value", value);
+          break;
+        case STRING:
+          insert.getRow().addString("value", value);
+          break;
+        default:
+          throw new IllegalArgumentException("CHAR/VARCHAR/STRING expected");
+      }
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();

@@ -17,8 +17,12 @@
 
 package org.apache.kudu;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
+import org.apache.kudu.util.CharUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -254,6 +258,8 @@ public class ColumnSchema {
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   public static class ColumnSchemaBuilder {
+    public static final List<Type> TYPES_WITH_ATTRIBUTES = Arrays.asList(Type.DECIMAL,
+                                                                         Type.VARCHAR);
     private final String name;
     private final Type type;
     private boolean key = false;
@@ -377,7 +383,7 @@ public class ColumnSchema {
      * Set the column type attributes for this column.
      */
     public ColumnSchemaBuilder typeAttributes(ColumnTypeAttributes typeAttributes) {
-      if (type != Type.DECIMAL && typeAttributes != null) {
+      if (typeAttributes != null && !TYPES_WITH_ATTRIBUTES.contains(type)) {
         throw new IllegalArgumentException(
             "ColumnTypeAttributes are not used on " + type + " columns");
       }
@@ -414,10 +420,19 @@ public class ColumnSchema {
       if (wireType == null) {
         this.wireType = type.getDataType(typeAttributes);
       }
+      if (type == Type.VARCHAR) {
+        if (typeAttributes == null || !typeAttributes.hasLength()
+          || typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH
+          || typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
+          throw new IllegalArgumentException(
+            String.format("VARCHAR's length must be set and between %d and %d",
+                          CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
+        }
+      }
       return new ColumnSchema(name, type,
                               key, nullable, defaultValue,
                               desiredBlockSize, encoding, compressionAlgorithm,
                               typeAttributes, wireType, comment);
-    }
+     }
   }
 }
