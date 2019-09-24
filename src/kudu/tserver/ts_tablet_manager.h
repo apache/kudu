@@ -242,6 +242,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   void UpdateTabletStatsIfNecessary();
 
  private:
+  FRIEND_TEST(LeadershipChangeReportingTest, TestReportStatsDuringLeadershipChange);
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
   FRIEND_TEST(TsTabletManagerTest, TestTabletStatsReports);
   FRIEND_TEST(TsTabletManagerITest, TestTableStats);

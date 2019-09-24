@@ -1311,24 +1311,22 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
 
   // We cannot get consensus state information unless the TabletReplica is running.
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
-  if (consensus) {
-    auto include_health = FLAGS_raft_prepare_replacement_before_eviction ?
-                          INCLUDE_HEALTH_REPORT : EXCLUDE_HEALTH_REPORT;
-    ConsensusStatePB cstate;
-    Status s = consensus->ConsensusState(&cstate, include_health);
-    if (PREDICT_TRUE(s.ok())) {
-      *reported_tablet->mutable_consensus_state() = std::move(cstate);
-    }
+  if (!consensus) {
+    return;
   }
-
-  // First, the replica's state should be RUNNING already.
-  // Then fill in the replica's stats only when it's LEADER.
-  if (tablet::RUNNING == replica->state() &&
-      consensus::RaftPeerPB_Role_LEADER == consensus->role()) {
-    ReportedTabletStatsPB stats_pb = replica->GetTabletStats();
-    if (stats_pb.IsInitialized()) {
-      *reported_tablet->mutable_stats() = std::move(stats_pb);
+  auto include_health = FLAGS_raft_prepare_replacement_before_eviction ?
+                        INCLUDE_HEALTH_REPORT : EXCLUDE_HEALTH_REPORT;
+  ConsensusStatePB cstate;
+  Status s = consensus->ConsensusState(&cstate, include_health);
+  if (PREDICT_TRUE(s.ok())) {
+    // If we're the leader, report stats.
+    if (cstate.leader_uuid() == fs_manager_->uuid()) {
+      ReportedTabletStatsPB stats_pb = replica->GetTabletStats();
+      if (stats_pb.IsInitialized()) {
+        *reported_tablet->mutable_stats() = std::move(stats_pb);
+      }
     }
+    *reported_tablet->mutable_consensus_state() = std::move(cstate);
   }
 }
 

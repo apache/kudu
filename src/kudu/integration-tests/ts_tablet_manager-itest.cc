@@ -379,7 +379,7 @@ TEST_F(LeadershipChangeReportingTest, TestConcurrentGetTableLocations) {
   });
   SCOPED_CLEANUP({
     latch.CountDown();
-    NO_FATALS(t.join());
+    t.join();
   });
   for (int i = 0; i < FLAGS_num_election_test_loops; i++) {
     for (int t = 0; t < kNumTablets; t++) {
@@ -388,6 +388,45 @@ TEST_F(LeadershipChangeReportingTest, TestConcurrentGetTableLocations) {
       ignore_result(TriggerElection());
     }
     SleepFor(MonoDelta::FromMilliseconds(2 * FLAGS_heartbeat_interval_ms));
+  }
+}
+
+// Regression test for KUDU-2952, where a leadership change racing with the
+// creation of a tablet report could lead to a non-leader report with stats.
+TEST_F(LeadershipChangeReportingTest, TestReportStatsDuringLeadershipChange) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  ASSERT_OK(CreateTable(1));
+  // Stop heartbeating we don't race against the Master.
+  DisableHeartbeatingToMaster();
+
+  // Create a thread that just keeps triggering elections.
+  CountDownLatch latch(1);
+  thread t([&] {
+    while (!latch.WaitFor(MonoDelta::FromMilliseconds(1))) {
+      ignore_result(TriggerElection());
+    }
+  });
+  SCOPED_CLEANUP({
+    latch.CountDown(1);
+    t.join();
+  });
+
+  // Generate a bunch of reports and keep checking that only the leaders have
+  // stats.
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(10);
+  while (MonoTime::Now() < deadline) {
+    for (int t = 0; t < cluster_->num_tablet_servers(); t++) {
+      ReportedTabletPB reported_tablet;
+      MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+      mts->server()->tablet_manager()->CreateReportedTabletPB(tablet_replicas_[0],
+                                                              &reported_tablet);
+      // Only reports from leaders should have stats.
+      const string& reported_leader_uuid = reported_tablet.consensus_state().leader_uuid();
+      const string& mts_uuid = mts->uuid();
+      if (reported_tablet.has_stats()) {
+        ASSERT_EQ(reported_leader_uuid, mts_uuid);
+      }
+    }
   }
 }
 
