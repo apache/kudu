@@ -53,6 +53,7 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   std::function<void(const consensus::ElectionResult&)> edcb;
   std::function<void(int64_t)> tacb;
   std::function<void(const consensus::OpId id)> norcb;
+  bool disable_noop = false;
 
   bool IsDistributed() const;
 };

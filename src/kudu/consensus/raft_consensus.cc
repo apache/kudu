@@ -202,6 +202,7 @@ RaftConsensus::RaftConsensus(
       withhold_votes_until_(MonoTime::Min()),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
+      disable_noop_(false),
       shutdown_(false),
       update_calls_for_tests_(0) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
@@ -683,6 +684,10 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   queue_->RegisterObserver(this);
   RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
+
+  if (disable_noop_) {
+    return Status::OK();
+  }
 
   // Initiate a NO_OP transaction that is sent at the beginning of every term
   // change in raft.

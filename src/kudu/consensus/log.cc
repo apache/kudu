@@ -854,6 +854,13 @@ Status Log::WaitUntilAllFlushed() {
   return s.Wait();
 }
 
+Status Log::TruncateOpsAfter(int64_t index) {
+  // In base implementation, truncation is not needed
+  // as next_sequential_op_index_ is updated, as an alternative
+  // to actual trimming
+  return Status::OK();
+}
+
 Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
   CHECK_GE(retention_indexes.for_durability, 0);
 
