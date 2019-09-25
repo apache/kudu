@@ -32,8 +32,12 @@ class TimeService {
   TimeService() = default;
   virtual ~TimeService() = default;
 
-  // Initialize the NTP source, validating that it is available and
-  // properly synchronized.
+  // Initialize the NTP source, validating that it is available and properly
+  // synchronized: Status::OK() is returned in such case. If the source
+  // is not yet synchronized, then Status::ServiceUnavailable() is returned:
+  // a caller may call this method again to eventually get Status::OK().
+  // In case of other non-OK() return statuses, the caller should not invoke
+  // this method again.
   virtual Status Init() = 0;
 
   // Return the current wall time in microseconds since the Unix epoch in '*now_usec'.

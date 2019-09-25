@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 
-#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
@@ -33,22 +32,12 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
 DECLARE_bool(inject_unsync_time_errors);
-
-DEFINE_int32(ntp_initial_sync_wait_secs, 60,
-             "Amount of time in seconds to wait for NTP to synchronize the "
-             "clock at startup. A value of zero means Kudu will fail to start "
-             "if the clock is unsynchronized. This flag can prevent Kudu from "
-             "crashing if it starts before NTP can synchronize the clock.");
-TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
-TAG_FLAG(ntp_initial_sync_wait_secs, advanced);
 
 using std::string;
 using std::vector;
@@ -115,36 +104,6 @@ void TryRun(vector<string> cmd, vector<string>* log) {
 
 }
 
-Status WaitForNtp() {
-  int32_t wait_secs = FLAGS_ntp_initial_sync_wait_secs;
-  if (wait_secs <= 0) {
-    LOG(INFO) << Substitute("Not waiting for clock synchronization: "
-                            "--ntp_initial_sync_wait_secs=$0 is nonpositive",
-                            wait_secs);
-    return Status::OK();
-  }
-  LOG(INFO) << Substitute("Waiting up to --ntp_initial_sync_wait_secs=$0 "
-                          "seconds for the clock to synchronize", wait_secs);
-
-  // We previously relied on ntpd/chrony support tools to wait, but that
-  // approach doesn't work in environments where ntpd is unreachable but the
-  // clock is still synchronized (i.e. running inside a Linux container).
-  //
-  // Now we just interrogate the kernel directly.
-  Status s;
-  for (int i = 0; i < wait_secs; i++) {
-    timex timex;
-    s = CallAdjTime(&timex);
-    if (s.ok() || !s.IsServiceUnavailable()) {
-      return s;
-    }
-    SleepFor(MonoDelta::FromSeconds(1));
-  }
-
-  // Return the last failure.
-  return s.CloneAndPrepend("Timed out waiting for clock sync");
-}
-
 } // anonymous namespace
 
 void SystemNtp::DumpDiagnostics(vector<string>* log) const {
@@ -172,19 +131,9 @@ void SystemNtp::DumpDiagnostics(vector<string>* log) const {
   TryRun({"chronyc", "-n", "sources"}, log);
 }
 
-
 Status SystemNtp::Init() {
   timex timex;
-  Status s = CallAdjTime(&timex);
-  if (s.IsServiceUnavailable()) {
-    s = WaitForNtp().AndThen([&timex]() {
-          return CallAdjTime(&timex);
-        });
-  }
-  if (!s.ok()) {
-    DumpDiagnostics(/* log= */nullptr);
-    return s;
-  }
+  RETURN_NOT_OK(CallAdjTime(&timex));
 
   // Calculate the sleep skew adjustment according to the max tolerance of the clock.
   // Tolerance comes in parts per million but needs to be applied a scaling factor.
@@ -196,7 +145,6 @@ Status SystemNtp::Init() {
 
   return Status::OK();
 }
-
 
 Status SystemNtp::WalltimeWithError(uint64_t *now_usec,
                                     uint64_t *error_usec) {

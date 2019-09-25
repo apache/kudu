@@ -63,14 +63,22 @@ DEFINE_string(time_source, "system",
               "'system' or 'mock' (for tests only)");
 TAG_FLAG(time_source, experimental);
 DEFINE_validator(time_source, [](const char* /* flag_name */, const string& value) {
-    if (boost::iequals(value, "system") ||
-        boost::iequals(value, "mock")) {
-      return true;
-    }
-    LOG(ERROR) << "unknown value for 'time_source': '" << value << "'"
-               << " (expected one of 'system' or 'mock')";
-    return false;
-  });
+  if (boost::iequals(value, "system") ||
+      boost::iequals(value, "mock")) {
+    return true;
+  }
+  LOG(ERROR) << "unknown value for 'time_source': '" << value << "'"
+             << " (expected one of 'system' or 'mock')";
+  return false;
+});
+
+DEFINE_int32(ntp_initial_sync_wait_secs, 60,
+             "Amount of time in seconds to wait for clock synchronisation at "
+             "startup. A value of zero means Kudu will fail to start "
+             "if the clock is unsynchronized. This flag can prevent Kudu from "
+             "crashing if it starts before NTP can synchronize the clock.");
+TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
+TAG_FLAG(ntp_initial_sync_wait_secs, advanced);
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
@@ -126,7 +134,35 @@ Status HybridClock::Init() {
   } else {
     return Status::InvalidArgument("invalid NTP source", FLAGS_time_source);
   }
-  RETURN_NOT_OK(time_service_->Init());
+
+  const auto wait_s = FLAGS_ntp_initial_sync_wait_secs;
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(wait_s);
+  bool need_log = true;
+  Status s;
+  do {
+    s = time_service_->Init();
+    if (!s.IsServiceUnavailable()) {
+      break;
+    }
+    if (need_log) {
+      // Log about what's going on, just once.
+      if (wait_s > 0) {
+        LOG(INFO) << Substitute("waiting up to --ntp_initial_sync_wait_secs=$0 "
+                                "seconds for the clock to synchronize", wait_s);
+      } else {
+        LOG(INFO) << Substitute("not waiting for clock synchronization: "
+                                "--ntp_initial_sync_wait_secs=$0 is nonpositive",
+                                wait_s);
+      }
+      need_log = false;
+    }
+    SleepFor(MonoDelta::FromSeconds(1));
+  } while (MonoTime::Now() < deadline);
+
+  if (!s.ok()) {
+    time_service_->DumpDiagnostics(/* log= */nullptr);
+    return s.CloneAndPrepend("timed out waiting for clock synchronisation");
+  }
 
   state_ = kInitialized;
 
