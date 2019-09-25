@@ -330,6 +330,8 @@ string column_to_field_type(const ColumnSchema& column) {
     case DOUBLE: return "double";
     case STRING: return "string";
     case BINARY: return "binary";
+    case VARCHAR: return Substitute("varchar($0)",
+                                    column.type_attributes().length);
     case UNIXTIME_MICROS: return "timestamp";
     default: LOG(FATAL) << "unhandled column type: " << column.TypeToString();
   }

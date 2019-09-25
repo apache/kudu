@@ -203,6 +203,7 @@ class HmsCatalogTest : public KuduTest {
     b.AddColumn("decimal32_val", DataType::DECIMAL32);
     b.AddColumn("decimal64_val", DataType::DECIMAL64);
     b.AddColumn("decimal128_val", DataType::DECIMAL128);
+    b.AddColumn("varchar_val", DataType::VARCHAR);
     return b.Build();
   }
 
