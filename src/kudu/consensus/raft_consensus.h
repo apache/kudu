@@ -167,6 +167,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                        ThreadPool* raft_pool,
                        std::shared_ptr<RaftConsensus>* consensus_out);
 
+  void DisableNoOpEntries() { disable_noop_ = true; }
+
   // Starts running the Raft consensus algorithm.
   // Start() is not thread-safe. Calls to Start() should be externally
   // synchronized with calls accessing non-const members of this class.
@@ -934,6 +936,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   ElectionDecisionCallback edcb_;
   TermAdvancementCallback tacb_;
   NoOpReceivedCallback norcb_;
+
+  // this is not expected to change after a create of Raft.
+  bool disable_noop_;
 
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.

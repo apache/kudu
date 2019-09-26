@@ -126,8 +126,24 @@ void LogCache::Init(const OpId& preceding_op) {
 }
 
 void LogCache::TruncateOpsAfter(int64_t index) {
-  std::unique_lock<simple_spinlock> l(lock_);
-  TruncateOpsAfterUnlocked(index);
+  {
+    std::unique_lock<simple_spinlock> l(lock_);
+    TruncateOpsAfterUnlocked(index);
+  }
+
+  // In the base kuduraft implementation this is a no-op
+  // because trimming is handled by resetting the append index.
+  // In the MySQL case, we do actual trimming and this is
+  // implemented in the binlog wrapper.
+  // We don't append in async mode, so we cannot race with
+  // AsyncAppendReplicates, where an append has not finished,
+  // but the Truncate comes in.
+  Status log_status = log_->TruncateOpsAfter(index);
+
+  // We crash the server if Truncate fails, symmetric to
+  // what happenes when AsyncAppendReplicates fails.
+  CHECK_OK_PREPEND(log_status, Substitute("$0: cannot truncate ops after index $1",
+                           log_status.ToString(), index));
 }
 
 void LogCache::TruncateOpsAfterUnlocked(int64_t index) {

@@ -363,9 +363,18 @@ Status TSTabletManager::SetupRaft() {
                                       server_->raft_pool(),
                                       &consensus));
   consensus_ = std::move(consensus);
-  consensus_->SetElectionDecisionCallback(server_->opts().edcb);
-  consensus_->SetTermAdvancementCallback(server_->opts().tacb);
-  consensus_->SetNoOpReceivedCallback(server_->opts().norcb);
+  if (server_->opts().edcb) {
+    consensus_->SetElectionDecisionCallback(server_->opts().edcb);
+  }
+  if (server_->opts().tacb) {
+    consensus_->SetTermAdvancementCallback(server_->opts().tacb);
+  }
+  if (server_->opts().norcb) {
+    consensus_->SetNoOpReceivedCallback(server_->opts().norcb);
+  }
+  if (server_->opts().disable_noop) {
+    consensus_->DisableNoOpEntries();
+  }
 
   // set_state(INITIALIZED);
   // SetStatusMessage("Initialized. Waiting to start...");

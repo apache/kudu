@@ -138,6 +138,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // are flushed and fsynced (if fsync of log entries is enabled).
   virtual Status WaitUntilAllFlushed();
 
+  virtual Status TruncateOpsAfter(int64_t index);
+
   // Kick off an asynchronous task that pre-allocates a new
   // log-segment, setting 'allocation_status_'. To wait for the
   // result of the task, use allocation_status_.Get().
