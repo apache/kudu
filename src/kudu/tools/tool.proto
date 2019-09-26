@@ -326,3 +326,123 @@ message KsckCountSummaryPB {
   optional int32 tablets = 4;
   optional int32 replicas = 5;
 }
+
+message ColumnPB {
+  enum EncodingType {
+    AUTO_ENCODING = 0;
+    PLAIN_ENCODING = 1;
+    PREFIX_ENCODING = 2;
+    RLE = 3;
+    DICT_ENCODING = 4;
+    BIT_SHUFFLE = 5;
+  }
+  enum CompressionType {
+    DEFAULT_COMPRESSION = 0;
+    NO_COMPRESSION = 1;
+    SNAPPY = 2;
+    LZ4 = 3;
+    ZLIB = 4;
+  }
+  message ColumnAttributesPB {
+    // For decimal columns
+    optional int32 precision = 1;
+    optional int32 scale = 2;
+  }
+  optional string column_name = 1;
+  optional string column_type = 2;
+  optional bool is_nullable = 3;
+  // The default value takes the form of a literal string.
+  optional string default_value = 4;
+  optional string comment = 5;
+  optional EncodingType encoding = 6;
+  optional CompressionType compression = 7;
+  // Column's attribute, used for DECIMAL type column.
+  optional ColumnAttributesPB type_attributes = 8;
+  // The preferred block size for cfile blocks.
+  optional int32 cfile_block_size = 9;
+}
+
+message PartitionPB {
+  message RangePartitionPB {
+    message BoundPB {
+      enum Type {
+        UNKNOWN_BOUND = 0;
+        EXCLUSIVE = 1;
+        INCLUSIVE = 2;
+      }
+      // The type of range partition bound, "INCLUSIVE" or "EXCLUSIVE"
+      optional Type bound_type = 1;
+      // The start or end partition key values. Bounds value should be simply the
+      // exact string value for the bound.
+      repeated string bound_values = 2;
+    }
+    message RangeBoundPB {
+      // The lower bound.
+      optional BoundPB lower_bound = 1;
+      // The upper bound.
+      optional BoundPB upper_bound = 2;
+    }
+    message SplitValuePB {
+      // The split values of range partition keys. Split value should be simply the
+      // exact string value for the bound.
+      repeated string split_values = 1;
+    }
+
+    // Column names of columns included in the range. All columns must be
+    // a component of the primary key.
+    repeated string columns = 1;
+    // Range bound.
+    repeated RangeBoundPB range_bounds = 2;
+    // Range split.
+    repeated SplitValuePB range_splits = 3;
+  }
+
+  message HashPartitionPB {
+    // Column names of columns included in the hash. Every column must be
+    // a component of the primary key.
+    repeated string columns = 1;
+    // Number of buckets into which columns will be hashed. Must be at least 2.
+    optional int32 num_buckets = 2;
+    // Seed value for hash calculation. Administrators may set a seed value
+    // on a per-table basis in order to randomize the mapping of rows to
+    // buckets. Setting a seed provides some amount of protection against denial
+    // of service attacks when the hash bucket columns contain user provided
+    // input.
+    optional uint32 seed = 3;
+  }
+
+  // Hash partition message. Support zero or more hash partition levels .
+  repeated HashPartitionPB hash_partitions = 1;
+  // range partition message.
+  optional RangePartitionPB range_partition = 2;
+}
+
+message ExtraConfigPB {
+  map<string, string> configs = 1;
+}
+
+message SchemaPB {
+  // Representation of table's columns, include more than one column message.
+  repeated ColumnPB columns = 1;
+  // The table's primary keys.
+  repeated string key_column_names = 2;
+}
+
+// Create table protobuffer message. The JSON message provided by user
+// is converted to the PB. Used for creating a new table by kudu tool.
+message CreateTablePB {
+  optional string table_name = 1;
+  // Representation of a table's schema, include columns's message and
+  // primary keys.
+  optional SchemaPB schema = 2;
+  // The table partition message, include hash partition and range partition.
+  optional PartitionPB partition = 3;
+  //Number of tablet replica
+  optional int32 num_replicas = 4;
+  // The table's extra configuration properties.
+  optional ExtraConfigPB extra_configs = 5;
+  // The dimension label for tablets that were created during table creation. Used for
+  // dimension-specific placement of tablet replicas corresponding to the partitions of
+  // the newly created table.
+  optional string dimension_label = 6;
+}

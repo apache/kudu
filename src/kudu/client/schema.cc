@@ -43,6 +43,7 @@
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/string_case.h"
 
 DEFINE_bool(show_attributes, false,
             "Whether to show column attributes, including column encoding type, "
@@ -217,6 +218,56 @@ int8_t KuduColumnTypeAttributes::scale() const {
 
 uint16_t KuduColumnTypeAttributes::length() const {
   return data_->length;
+}
+
+Status KuduColumnStorageAttributes::StringToEncodingType(
+    const string& encoding,
+    KuduColumnStorageAttributes::EncodingType* type) {
+  Status s;
+  string encoding_uc;
+  ToUpperCase(encoding, &encoding_uc);
+  if (encoding_uc == "AUTO_ENCODING") {
+    *type = KuduColumnStorageAttributes::AUTO_ENCODING;
+  } else if (encoding_uc == "PLAIN_ENCODING") {
+    *type = KuduColumnStorageAttributes::PLAIN_ENCODING;
+  } else if (encoding_uc == "PREFIX_ENCODING") {
+    *type = KuduColumnStorageAttributes::PREFIX_ENCODING;
+  } else if (encoding_uc == "RLE") {
+    *type = KuduColumnStorageAttributes::RLE;
+  } else if (encoding_uc == "DICT_ENCODING") {
+    *type = KuduColumnStorageAttributes::DICT_ENCODING;
+  } else if (encoding_uc == "BIT_SHUFFLE") {
+    *type = KuduColumnStorageAttributes::BIT_SHUFFLE;
+  } else if (encoding_uc == "GROUP_VARINT") {
+    *type = KuduColumnStorageAttributes::GROUP_VARINT;
+  } else {
+    s = Status::InvalidArgument(Substitute(
+        "encoding type $0 is not supported", encoding));
+  }
+  return s;
+}
+
+Status KuduColumnStorageAttributes::StringToCompressionType(
+    const string& compression,
+    KuduColumnStorageAttributes::CompressionType* type) {
+  Status s;
+  string compression_uc;
+  ToUpperCase(compression, &compression_uc);
+  if (compression_uc == "DEFAULT_COMPRESSION") {
+    *type = KuduColumnStorageAttributes::DEFAULT_COMPRESSION;
+  } else if (compression_uc == "NO_COMPRESSION") {
+    *type = KuduColumnStorageAttributes::NO_COMPRESSION;
+  } else if (compression_uc == "SNAPPY") {
+    *type = KuduColumnStorageAttributes::SNAPPY;
+  } else if (compression_uc == "LZ4") {
+    *type = KuduColumnStorageAttributes::LZ4;
+  } else if (compression_uc == "ZLIB") {
+    *type = KuduColumnStorageAttributes::ZLIB;
+  } else {
+    s = Status::InvalidArgument(Substitute(
+        "compression type $0 is not supported", compression));
+  }
+  return s;
 }
 
 ////////////////////////////////////////////////////////////
@@ -631,6 +682,40 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
       return "VARCHAR";
   }
   LOG(FATAL) << "Unhandled type " << type;
+}
+
+ Status KuduColumnSchema::StringToDataType(
+      const string& type_str, KuduColumnSchema::DataType* type) {
+  Status s;
+  string type_uc;
+  ToUpperCase(type_str, &type_uc);
+  if (type_uc == "INT8") {
+    *type = INT8;
+  } else if (type_uc == "INT16") {
+    *type = INT16;
+  } else if (type_uc == "INT32") {
+    *type = INT32;
+  } else if (type_uc == "INT64") {
+    *type = INT64;
+  } else if (type_uc == "STRING") {
+    *type = STRING;
+  } else if (type_uc == "BOOL") {
+    *type = BOOL;
+  } else if (type_uc == "FLOAT") {
+    *type = FLOAT;
+  } else if (type_uc == "DOUBLE") {
+    *type = DOUBLE;
+  } else if (type_uc == "BINARY") {
+    *type = BINARY;
+  } else if (type_uc == "UNIXTIME_MICROS") {
+    *type = UNIXTIME_MICROS;
+  } else if (type_uc == "DECIMAL") {
+    *type = DECIMAL;
+  } else {
+    s = Status::InvalidArgument(Substitute(
+        "data type $0 is not supported", type_str));
+  }
+  return s;
 }
 
 KuduColumnSchema::KuduColumnSchema(const string &name,

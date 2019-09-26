@@ -184,6 +184,24 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
   /// @return String representation of the storage attributes.
   std::string ToString() const;
 
+  /// @param [in] encoding
+  ///   String representation of the column encoding type
+  /// @param [out] type
+  ///   Enum representation of the column encoding type,
+  ///   Converted from string format.
+  /// @return Operation result status.
+  static Status StringToEncodingType(const std::string& encoding,
+      EncodingType* type);
+
+  /// @param [in] compression
+  ///   String representation of the column compression type
+  /// @param [out] type
+  ///   Enum representation of the column compression type,
+  ///   Converted from string format.
+  /// @return Operation result status.
+  static Status StringToCompressionType(const std::string& compression,
+      CompressionType* type);
+
  private:
   EncodingType encoding_;
   CompressionType compression_;
@@ -214,6 +232,13 @@ class KUDU_EXPORT KuduColumnSchema {
   ///   Column data type.
   /// @return String representation of the column data type.
   static std::string DataTypeToString(DataType type);
+
+  /// @param [in] type_str
+  ///   String representation of the column data type
+  /// @param [out] type
+  ///   Enum representation of the column data type, Converted from string format.
+  /// @return Operation result status.
+  static Status StringToDataType(const std::string& type_str, DataType* type);
 
   /// Construct KuduColumnSchema object as a copy of another object.
   ///
