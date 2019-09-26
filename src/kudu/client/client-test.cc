@@ -4303,7 +4303,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
 
   LOG(INFO) << "Counting rows...";
   ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),
-                                                     KuduClient::FIRST_REPLICA,
+                                                     KuduClient::LEADER_ONLY,
                                                      KuduScanner::READ_LATEST,
                                                      kNoBound, kNoBound));
 }
