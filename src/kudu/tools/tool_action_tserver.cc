@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 
 #include "kudu/common/common.pb.h"
@@ -40,6 +41,10 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/status.h"
 
+DEFINE_bool(allow_missing_tserver, false, "If true, performs the action on the "
+    "tserver even if it has not been registered with the master and has no "
+    "existing tserver state records associated with it.");
+
 DECLARE_string(columns);
 
 using std::cout;
@@ -49,9 +54,12 @@ using std::vector;
 
 namespace kudu {
 
+using master::ChangeTServerStateRequestPB;
+using master::ChangeTServerStateResponsePB;
 using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
+using master::TServerStateChangePB;
 
 namespace tools {
 namespace {
@@ -60,6 +68,8 @@ const char* const kTServerAddressArg = "tserver_address";
 const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
     "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
     "to the default port.";
+const char* const kTServerIdArg = "tserver_uuid";
+const char* const kTServerIdDesc = "UUID of a Kudu Tablet Server";
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
@@ -161,6 +171,34 @@ Status TserverDumpMemTrackers(const RunnerContext& context) {
   return DumpMemTrackers(address, tserver::TabletServer::kDefaultPort);
 }
 
+Status TServerSetState(const RunnerContext& context, TServerStateChangePB::StateChange sc) {
+  ChangeTServerStateRequestPB req;
+  ChangeTServerStateResponsePB resp;
+  const string& tserver_uuid = FindOrDie(context.required_args, kTServerIdArg);
+  TServerStateChangePB* change = req.mutable_change();
+  change->set_uuid(tserver_uuid);
+  change->set_change(sc);
+  if (FLAGS_allow_missing_tserver) {
+    req.set_handle_missing_tserver(ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER);
+  }
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+  RETURN_NOT_OK((proxy.SyncRpc<ChangeTServerStateRequestPB, ChangeTServerStateResponsePB>(
+      req, &resp, "ChangeTServerState", &MasterServiceProxy::ChangeTServerStateAsync)));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status EnterMaintenance(const RunnerContext& context) {
+  return TServerSetState(context, TServerStateChangePB::ENTER_MAINTENANCE_MODE);
+}
+
+Status ExitMaintenance(const RunnerContext& context) {
+  return TServerSetState(context, TServerStateChangePB::EXIT_MAINTENANCE_MODE);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTServerMode() {
@@ -215,6 +253,30 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddOptionalParameter("timeout_ms")
       .Build();
 
+  unique_ptr<Action> enter_maintenance =
+      ActionBuilder("enter_maintenance", &EnterMaintenance)
+      .Description("Begin maintenance on the Tablet Server. While under "
+                   "maintenance, downtime of the Tablet Server will not lead "
+                   "to the immediate re-replication of its tablet replicas.")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
+      .AddOptionalParameter("allow_missing_tserver")
+      .Build();
+  // Note: --allow_missing_tserver doesn't make sense for exit_maintenance
+  // because if the tserver is missing, the non-existent tserver's state is
+  // already NONE and so exit_maintenance is a no-op.
+  unique_ptr<Action> exit_maintenance =
+      ActionBuilder("exit_maintenance", &ExitMaintenance)
+      .Description("End maintenance of the Tablet Server.")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTServerIdArg, kTServerIdDesc })
+      .Build();
+  unique_ptr<Mode> state = ModeBuilder("state")
+      .Description("Operate on the state of a Kudu Tablet Server")
+      .AddAction(std::move(enter_maintenance))
+      .AddAction(std::move(exit_maintenance))
+      .Build();
+
   return ModeBuilder("tserver")
       .Description("Operate on a Kudu Tablet Server")
       .AddAction(std::move(dump_memtrackers))
@@ -223,6 +285,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))
       .AddAction(std::move(list_tservers))
+      .AddMode(std::move(state))
       .Build();
 }
 

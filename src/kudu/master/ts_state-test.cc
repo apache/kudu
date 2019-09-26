@@ -108,7 +108,8 @@ class TServerStateTest : public KuduTest {
   // Sets the tserver state for the given tablet server to 'state'.
   Status SetTServerState(const string& tserver_uuid, TServerStatePB state) {
     return master_->ts_manager()->SetTServerState(
-        tserver_uuid, state, master_->catalog_manager()->sys_catalog());
+        tserver_uuid, state, ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER,
+        master_->catalog_manager()->sys_catalog());
   }
 
   // Pretends to be a tserver by sending a heartbeat to the master from the
@@ -317,6 +318,7 @@ TEST_F(TServerStateTest, MaintenanceModeTServerDoesntGetNewReplicas) {
 // Test to exercise the RPC endpoint to change the tserver state.
 TEST_F(TServerStateTest, TestRPCs) {
   ChangeTServerStateRequestPB req;
+  req.set_handle_missing_tserver(ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER);
   Status s;
   // Sends a state change RPC and ensures there's an error, matching the
   // input error string if provided.

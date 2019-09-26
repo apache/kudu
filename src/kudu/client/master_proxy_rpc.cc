@@ -50,6 +50,8 @@ namespace kudu {
 
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
+using master::ChangeTServerStateRequestPB;
+using master::ChangeTServerStateResponsePB;
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
 using master::DeleteTableRequestPB;
@@ -285,6 +287,7 @@ bool AsyncLeaderMasterRpc<ReqClass, RespClass>::RetryOrReconnectIfNecessary(
   return false;
 }
 
+template class AsyncLeaderMasterRpc<ChangeTServerStateRequestPB, ChangeTServerStateResponsePB>;
 template class AsyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>;
 template class AsyncLeaderMasterRpc<IsCreateTableDoneRequestPB, IsCreateTableDoneResponsePB>;
 template class AsyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>;

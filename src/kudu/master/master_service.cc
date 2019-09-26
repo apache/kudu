@@ -221,7 +221,7 @@ void MasterServiceImpl::ChangeTServerState(const ChangeTServerStateRequestPB* re
 
   // Set the appropriate state for the given tserver.
   s = server_->ts_manager()->SetTServerState(ts_uuid, to_state,
-      server_->catalog_manager()->sys_catalog());
+      req->handle_missing_tserver(), server_->catalog_manager()->sys_catalog());
   if (PREDICT_FALSE(!s.ok())) {
     rpc->RespondFailure(s);
     return;

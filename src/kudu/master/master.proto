@@ -858,6 +858,16 @@ message TServerStateChangePB {
 message ChangeTServerStateRequestPB {
   // TODO(awong): consider setting tserver state in batches.
   optional TServerStateChangePB change = 1;
+
+  enum HandleMissingTS {
+    UNKNOWN_HANDLING = 0;
+    ALLOW_MISSING_TSERVER = 1;
+    DONT_ALLOW_MISSING_TSERVER = 2;
+  }
+  // If set to ALLOW_MISSING_TSERVER, will allow setting the state of the
+  // tserver even if it hasn't been registered with the master and there is no
+  // existing state associated with that server.
+  optional HandleMissingTS handle_missing_tserver = 2 [default = DONT_ALLOW_MISSING_TSERVER];
 }
 
 message ChangeTServerStateResponsePB {

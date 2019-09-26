@@ -231,11 +231,20 @@ void TSManager::GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) c
 
 Status TSManager::SetTServerState(const string& ts_uuid,
                                   TServerStatePB ts_state,
+                                  ChangeTServerStateRequestPB::HandleMissingTS handle_missing_ts,
                                   SysCatalogTable* sys_catalog) {
   lock_guard<RWMutex> l(ts_state_lock_);
   auto existing_state = FindWithDefault(ts_state_by_uuid_, ts_uuid, TServerStatePB::NONE);
   if (existing_state == ts_state) {
     return Status::OK();
+  }
+  // If there is no existing state for the tserver, and the tserver hasn't yet
+  // been registered, return an error, as appropriate.
+  shared_ptr<TSDescriptor> ts_desc;
+  if (handle_missing_ts != ChangeTServerStateRequestPB::ALLOW_MISSING_TSERVER &&
+      existing_state == TServerStatePB::NONE && !LookupTSByUUID(ts_uuid, &ts_desc)) {
+    return Status::NotFound(Substitute("Requested tserver $0 has not been registered",
+                                       ts_uuid));
   }
   if (ts_state == TServerStatePB::NONE) {
     RETURN_NOT_OK_PREPEND(sys_catalog->RemoveTServerState(ts_uuid),
@@ -245,6 +254,8 @@ Status TSManager::SetTServerState(const string& ts_uuid,
     // may have been ignored while in maintenance mode are reprocessed. To do
     // so, request full tablet reports across all tablet servers.
     SetAllTServersNeedFullTabletReports();
+    LOG(INFO) << Substitute("Unset tserver state for $0 from $1",
+                            ts_uuid, TServerStatePB_Name(existing_state));
     return Status::OK();
   }
   SysTServerStateEntryPB pb;
@@ -253,6 +264,8 @@ Status TSManager::SetTServerState(const string& ts_uuid,
       Substitute("Failed to set tserver state for $0 to $1",
                  ts_uuid, TServerStatePB_Name(ts_state)));
   InsertOrUpdate(&ts_state_by_uuid_, ts_uuid, ts_state);
+  LOG(INFO) << Substitute("Set tserver state for $0 to $1",
+                          ts_uuid, TServerStatePB_Name(ts_state));
   return Status::OK();
 }
 

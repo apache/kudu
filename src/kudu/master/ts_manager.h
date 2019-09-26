@@ -105,6 +105,7 @@ class TSManager {
   // tablet servers must report back a full tablet reports.
   Status SetTServerState(const std::string& ts_uuid,
                          TServerStatePB ts_state,
+                         ChangeTServerStateRequestPB::HandleMissingTS handle_missing_ts,
                          SysCatalogTable* sys_catalog);
 
   // Return the tserver state for the given tablet server UUID, or NONE if one
