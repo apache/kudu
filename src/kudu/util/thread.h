@@ -50,7 +50,7 @@ class WebCallbackRegistry;
 // Utility to join on a thread, printing warning messages if it
 // takes too long. For example:
 //
-//   ThreadJoiner(&my_thread, "processing thread")
+//   ThreadJoiner(&my_thread)
 //     .warn_after_ms(1000)
 //     .warn_every_ms(5000)
 //     .Join();
@@ -204,11 +204,15 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
   void Join() { ThreadJoiner(this).Join(); }
 
-  // The thread ID assigned to this thread by the operating system. If the thread
-  // has not yet started running, returns INVALID_TID.
+  // A thread's OS-specific TID is assigned after it start running. However,
+  // in order to improve the performance of thread creation, the parent
+  // thread does not wait for the child thread to start running before
+  // Create() returns. Therefore, when the parent thread finishes Create(),
+  // the child thread may not have a OS-specific TID (because it has not
+  // actually started execution).
   //
-  // NOTE: this may block for a short amount of time if the thread has just been
-  // started.
+  // In order to get the correct tid, this method spins until the child
+  // thread gets the TID.
   int64_t tid() const {
     int64_t t = base::subtle::Acquire_Load(&tid_);
     if (t != PARENT_WAITING_TID) {
@@ -302,8 +306,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
   const std::string category_;
   const std::string name_;
 
-  // OS-specific thread ID. Once the constructor finishes StartThread(),
-  // guaranteed to be set either to a non-negative integer, or to INVALID_TID.
+  // OS-specific thread ID.
   //
   // The tid_ member goes through the following states:
   // 1. INVALID_TID: the thread has not been started, or has already exited.
@@ -346,17 +349,9 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // system ID. After functor_ terminates, unregisters with the ThreadMgr.
   // Always returns NULL.
   //
-  // SuperviseThread() notifies StartThread() when thread initialisation is
-  // completed via the tid_, which is set to the new thread's system ID.
-  // By that point in time SuperviseThread() has also taken a reference to
-  // the Thread object, allowing it to safely refer to it even after the
-  // caller drops its reference.
-  //
-  // Additionally, StartThread() notifies SuperviseThread() when the actual
-  // Thread object has been assigned (SuperviseThread() is spinning during
-  // this time). Without this, the new thread may reference the actual
-  // Thread object before it has been assigned by StartThread(). See
-  // KUDU-11 for more details.
+  // The arg parameter is a bare pointer of Thread object, but its reference
+  // count has already been incremented in StartThread(), so it is safe to
+  // refer to it even after the parent thread drop its reference.
   static void* SuperviseThread(void* arg);
 
   // Invoked when the user-supplied function finishes or in the case of an
