@@ -111,7 +111,7 @@ void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
 }
 
 TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
-  if (!AllowSlowTests()) return;
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   ExternalMiniClusterOptions opts;
   opts.enable_kerberos = true;
@@ -120,7 +120,7 @@ TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
   opts.mini_kdc_options.ticket_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
-  SmokeTestKerberizedCluster(std::move(opts));
+  NO_FATALS(SmokeTestKerberizedCluster(std::move(opts)));
 }
 
 TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
