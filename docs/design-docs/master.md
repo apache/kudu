@@ -134,7 +134,7 @@ This is the current control flow:
             assignment timeout period has passed, mark the tablet as "replaced":
             1. Delete the tablet if it ever reports in.
             2. Create a new tablet in its place, add that tablet to the
-               "create table" list.
+               "create tablet" list.
        - Else, if the tablet is new (just created by CreateTable in "preparing" state):
          - Add it to the "create tablet" list.
      - Now, for each tablet in the "create tablet" list:
