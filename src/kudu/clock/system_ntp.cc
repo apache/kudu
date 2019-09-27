@@ -21,6 +21,7 @@
 #include <sys/timex.h>
 
 #include <cerrno>
+#include <limits>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -106,6 +107,29 @@ void TryRun(vector<string> cmd, vector<string>* log) {
 
 } // anonymous namespace
 
+SystemNtp::SystemNtp()
+    : skew_ppm_(std::numeric_limits<int64_t>::max()) {
+}
+
+Status SystemNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
+  // Read the time. This will return an error if the clock is not synchronized.
+  timex tx;
+  RETURN_NOT_OK(CallAdjTime(&tx));
+
+  // Calculate the sleep skew adjustment according to the max tolerance of the clock.
+  // Tolerance comes in parts per million but needs to be applied a scaling factor.
+  skew_ppm_ = tx.tolerance / kAdjtimexScalingFactor;
+
+  if (tx.status & STA_NANO) {
+    tx.time.tv_usec /= 1000;
+  }
+  DCHECK_LE(tx.time.tv_usec, 1e6);
+
+  *now_usec = tx.time.tv_sec * kMicrosPerSec + tx.time.tv_usec;
+  *error_usec = tx.maxerror;
+  return Status::OK();
+}
+
 void SystemNtp::DumpDiagnostics(vector<string>* log) const {
   LOG_STRING(ERROR, log) << "Dumping NTP diagnostics";
   TryRun({"ntptime"}, log);
@@ -129,37 +153,6 @@ void SystemNtp::DumpDiagnostics(vector<string>* log) const {
 
   TryRun({"chronyc", "-n", "tracking"}, log);
   TryRun({"chronyc", "-n", "sources"}, log);
-}
-
-Status SystemNtp::Init() {
-  timex timex;
-  RETURN_NOT_OK(CallAdjTime(&timex));
-
-  // Calculate the sleep skew adjustment according to the max tolerance of the clock.
-  // Tolerance comes in parts per million but needs to be applied a scaling factor.
-  skew_ppm_ = timex.tolerance / kAdjtimexScalingFactor;
-
-  LOG(INFO) << "NTP initialized."
-            << " Skew: " << skew_ppm_ << "ppm"
-            << " Current error: " << timex.maxerror <<  "us";
-
-  return Status::OK();
-}
-
-Status SystemNtp::WalltimeWithError(uint64_t *now_usec,
-                                    uint64_t *error_usec) {
-  // Read the time. This will return an error if the clock is not synchronized.
-  timex tx;
-  RETURN_NOT_OK(CallAdjTime(&tx));
-
-  if (tx.status & STA_NANO) {
-    tx.time.tv_usec /= 1000;
-  }
-  DCHECK_LE(tx.time.tv_usec, 1e6);
-
-  *now_usec = tx.time.tv_sec * kMicrosPerSec + tx.time.tv_usec;
-  *error_usec = tx.maxerror;
-  return Status::OK();
 }
 
 } // namespace clock

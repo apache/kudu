@@ -32,7 +32,6 @@ namespace clock {
 class MockNtp : public TimeService {
  public:
   MockNtp() = default;
-  virtual ~MockNtp() = default;
 
   Status Init() override {
     return Status::OK();

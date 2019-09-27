@@ -158,13 +158,11 @@ class HybridClock : public Clock {
   }
 
  private:
-  friend class TestNtp;
-
   // Obtains the current wallclock time and maximum error in microseconds,
   // and checks if the clock is synchronized.
   //
   // On OS X, the error will always be 0.
-  kudu::Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec);
+  Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec);
 
   // Same as above, but exits with a FATAL if there is an error.
   void WalltimeWithErrorOrDie(uint64_t* now_usec, uint64_t* error_usec);

@@ -134,13 +134,19 @@ Status HybridClock::Init() {
   } else {
     return Status::InvalidArgument("invalid NTP source", FLAGS_time_source);
   }
+  RETURN_NOT_OK(time_service_->Init());
 
+  // Make sure the underlying clock service is available (e.g., for NTP-based
+  // clock make sure it's synchronized with its NTP source). If requested, wait
+  // up to the specified timeout for the clock to become ready to use.
   const auto wait_s = FLAGS_ntp_initial_sync_wait_secs;
   const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(wait_s);
   bool need_log = true;
   Status s;
+  uint64_t now_usec;
+  uint64_t error_usec;
   do {
-    s = time_service_->Init();
+    s = time_service_->WalltimeWithError(&now_usec, &error_usec);
     if (!s.IsServiceUnavailable()) {
       break;
     }
@@ -164,8 +170,10 @@ Status HybridClock::Init() {
     return s.CloneAndPrepend("timed out waiting for clock synchronisation");
   }
 
+  LOG(INFO) << Substitute("HybridClock initialized: "
+                          "now $0 us; error $1 us; skew $2 ppm",
+                          now_usec, error_usec, time_service_->skew_ppm());
   state_ = kInitialized;
-
   return Status::OK();
 }
 

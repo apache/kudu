@@ -32,19 +32,21 @@ class TimeService {
   TimeService() = default;
   virtual ~TimeService() = default;
 
-  // Initialize the NTP source, validating that it is available and properly
-  // synchronized: Status::OK() is returned in such case. If the source
-  // is not yet synchronized, then Status::ServiceUnavailable() is returned:
-  // a caller may call this method again to eventually get Status::OK().
-  // In case of other non-OK() return statuses, the caller should not invoke
-  // this method again.
+  // Initialize the clock source. No verification is performed on the
+  // synchronisation status of the clock. To verify the clock is synchronized
+  // and the time service is ready to use, make sure WalltimeWithError() returns
+  // Status::OK() after calling Init(). The Init() method it itself should be
+  // called only once.
   virtual Status Init() = 0;
 
   // Return the current wall time in microseconds since the Unix epoch in '*now_usec'.
   // The current maximum error bound in microseconds is returned in '*error_usec'.
+  // Neither of the output parameters can be null.
   //
-  // May return a bad Status if the NTP service has become unsynchronized or otherwise
-  // unavailable.
+  // May return a bad Status if the NTP service has become unsynchronized or
+  // otherwise unavailable. In case if the method returns ServiceUnavailable()
+  // after calling Init(), the caller may call this method again and eventually
+  // get Status::OK() if anticipating the clock synchronisation to happen soon.
   virtual Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) = 0;
 
   // Return the estimated max amount of clock skew as configured by this NTP service.
