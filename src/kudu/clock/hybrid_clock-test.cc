@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/clock/hybrid_clock.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -25,12 +27,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/time_service.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/atomic.h"
@@ -58,7 +58,7 @@ class HybridClockTest : public KuduTest {
       : clock_(new HybridClock) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(clock_->Init());
   }

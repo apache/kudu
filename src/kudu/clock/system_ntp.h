@@ -38,17 +38,17 @@ class SystemNtp : public TimeService {
  public:
   SystemNtp();
 
-  virtual Status Init() override {
+  Status Init() override {
     return Status::OK();
   }
 
-  virtual Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
+  Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
 
-  virtual int64_t skew_ppm() const override {
+  int64_t skew_ppm() const override {
     return skew_ppm_;
   }
 
-  virtual void DumpDiagnostics(std::vector<std::string>* log) const override;
+  void DumpDiagnostics(std::vector<std::string>* log) const override;
 
  private:
   // The scaling factor used to obtain ppms. From the adjtimex source:

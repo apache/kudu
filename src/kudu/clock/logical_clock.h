@@ -48,33 +48,33 @@ namespace clock {
 class LogicalClock : public Clock {
  public:
 
-  virtual Status Init() OVERRIDE { return Status::OK(); }
+  Status Init() override { return Status::OK(); }
 
-  virtual Timestamp Now() OVERRIDE;
+  Timestamp Now() override;
 
   // In the logical clock this call is equivalent to Now();
-  virtual Timestamp NowLatest() OVERRIDE;
+  Timestamp NowLatest() override;
 
-  virtual Status Update(const Timestamp& to_update) OVERRIDE;
+  Status Update(const Timestamp& to_update) override;
 
   // The Wait*() functions are not available for this clock.
-  virtual Status WaitUntilAfter(const Timestamp& then,
-                                const MonoTime& deadline) OVERRIDE;
-  virtual Status WaitUntilAfterLocally(const Timestamp& then,
-                                       const MonoTime& deadline) OVERRIDE;
+  Status WaitUntilAfter(const Timestamp& then,
+                        const MonoTime& deadline) override;
+  Status WaitUntilAfterLocally(const Timestamp& then,
+                               const MonoTime& deadline) override;
 
-  virtual bool IsAfter(Timestamp t) OVERRIDE;
+  bool IsAfter(Timestamp t) override;
 
-  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) OVERRIDE;
+  void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) override;
 
-  virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
+  std::string Stringify(Timestamp timestamp) override;
 
   // Used to get the timestamp without incrementing the logical component.
   // Mostly used for tests/metrics.
   uint64_t GetCurrentTime();
 
   // Logical clock doesn't support COMMIT_WAIT.
-  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE {
+  bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) override {
     return mode != COMMIT_WAIT;
   }
 

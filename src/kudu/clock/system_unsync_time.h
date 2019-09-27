@@ -34,11 +34,11 @@ class SystemUnsyncTime : public TimeService {
  public:
   SystemUnsyncTime() = default;
 
-  virtual Status Init() override;
+  Status Init() override;
 
-  virtual Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
+  Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
 
-  virtual int64_t skew_ppm() const override {
+  int64_t skew_ppm() const override {
     return 500; // Reasonable default value.
   }
 
