@@ -338,6 +338,13 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
       rpc->RespondFailure(s.CloneAndPrepend("Failed to process tablet report"));
       return;
     }
+    // If we previously needed a full tablet report for the tserver (e.g.
+    // because we need to recheck replica states after exiting from maintenance
+    // mode) and have just received a full report, mark that we no longer need
+    // a full tablet report.
+    if (!req->tablet_report().is_incremental()) {
+      ts_desc->UpdateNeedsFullTabletReport(false);
+    }
   }
 
   // 6. Only leaders sign CSR from tablet servers (if present).
@@ -365,6 +372,13 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     for (auto& key : tsk_public_keys) {
       resp->add_tsks()->Swap(&key);
     }
+  }
+
+  // 8. Check if we need a full tablet report (e.g. the tablet server just
+  //    exited maintenance mode and needs to check whether any replicas need to
+  //    be moved).
+  if (is_leader_master && ts_desc->needs_full_report()) {
+    resp->set_needs_full_tablet_report(true);
   }
 
   rpc->RespondSuccess();

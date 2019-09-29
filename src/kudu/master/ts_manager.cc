@@ -241,6 +241,10 @@ Status TSManager::SetTServerState(const string& ts_uuid,
     RETURN_NOT_OK_PREPEND(sys_catalog->RemoveTServerState(ts_uuid),
         Substitute("Failed to remove tserver state for $0", ts_uuid));
     ts_state_by_uuid_.erase(ts_uuid);
+    // If exiting maintenance mode, make sure that any replica failures that
+    // may have been ignored while in maintenance mode are reprocessed. To do
+    // so, request full tablet reports across all tablet servers.
+    SetAllTServersNeedFullTabletReports();
     return Status::OK();
   }
   SysTServerStateEntryPB pb;
@@ -267,6 +271,13 @@ Status TSManager::ReloadTServerStates(SysCatalogTable* sys_catalog) {
   ts_state_by_uuid_ = {};
   TServerStateLoader loader(this);
   return sys_catalog->VisitTServerStates(&loader);
+}
+
+void TSManager::SetAllTServersNeedFullTabletReports() {
+  lock_guard<rw_spinlock> l(lock_);
+  for (auto& id_and_desc : servers_by_id_) {
+    id_and_desc.second->UpdateNeedsFullTabletReport(true);
+  }
 }
 
 int TSManager::ClusterSkew() const {

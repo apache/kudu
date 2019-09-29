@@ -76,6 +76,7 @@ TSDescriptor::TSDescriptor(std::string perm_id)
     : permanent_uuid_(std::move(perm_id)),
       latest_seqno_(-1),
       last_heartbeat_(MonoTime::Now()),
+      needs_full_report_(false),
       recent_replica_creations_(0),
       last_replica_creations_decay_(MonoTime::Now()),
       num_live_replicas_(0) {
@@ -160,6 +161,16 @@ MonoDelta TSDescriptor::TimeSinceHeartbeat() const {
   MonoTime now(MonoTime::Now());
   shared_lock<rw_spinlock> l(lock_);
   return now - last_heartbeat_;
+}
+
+void TSDescriptor::UpdateNeedsFullTabletReport(bool needs_report) {
+  std::lock_guard<rw_spinlock> l(lock_);
+  needs_full_report_ = needs_report;
+}
+
+bool TSDescriptor::needs_full_report() const  {
+  shared_lock<rw_spinlock> l(lock_);
+  return needs_full_report_;
 }
 
 bool TSDescriptor::PresumedDead() const {

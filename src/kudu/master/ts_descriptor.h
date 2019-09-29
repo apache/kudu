@@ -78,6 +78,12 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Set the last-heartbeat time to now.
   void UpdateHeartbeatTime();
 
+  // Set whether a full tablet report is needed.
+  void UpdateNeedsFullTabletReport(bool needs_report);
+
+  // Whether a full tablet report is needed from this tablet server.
+  bool needs_full_report() const;
+
   // Return the amount of time since the last heartbeat received
   // from this TS.
   MonoDelta TimeSinceHeartbeat() const;
@@ -180,6 +186,9 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   // The last time a heartbeat was received for this node.
   MonoTime last_heartbeat_;
+
+  // Whether the tablet server needs to send a full report.
+  bool needs_full_report_;
 
   // The number of times this tablet server has recently been selected to create a
   // tablet replica. This value decays back to 0 over time.

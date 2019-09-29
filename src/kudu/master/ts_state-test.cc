@@ -238,7 +238,7 @@ TEST_F(TServerStateTest, TestConcurrentSetTServerState) {
   }
   // Spin up a bunch of threads that contend for setting the state for a
   // limited number of tablet servers.
-  Barrier b(kNumThreadsPerTServer * kNumTServers);
+  Barrier b(kNumThreadsPerTServer * kNumTServers + kNumTServers);
   for (int i = 0; i < kNumThreadsPerTServer; i++) {
     for (const auto& ts : tservers) {
       threads.emplace_back([&, ts] {
@@ -246,6 +246,13 @@ TEST_F(TServerStateTest, TestConcurrentSetTServerState) {
         CHECK_OK(SetTServerState(ts, PickRandomState()));
       });
     }
+  }
+  // Concurrently, register the servers.
+  for (const auto& ts : tservers) {
+    threads.emplace_back([&, ts] {
+      b.Wait();
+      CHECK_OK(SendHeartbeat(ts));
+    });
   }
   for (auto& t : threads) {
     t.join();

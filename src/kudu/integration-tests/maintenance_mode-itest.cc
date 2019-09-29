@@ -270,6 +270,17 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   SleepFor(kDurationForSomeHeartbeats);
   NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/false));
 
+  // Now set maintenance mode, bring the tablet server down, and then exit
+  // maintenance mode without bringing the tablet server back up. This should
+  // result in tablet copies.
+  ASSERT_OK(ChangeTServerState(maintenance_uuid, TServerStateChangePB::ENTER_MAINTENANCE_MODE));
+  NO_FATALS(maintenance_ts->Shutdown());
+  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, kNumTablets));
+  ASSERT_OK(ChangeTServerState(maintenance_uuid, TServerStateChangePB::EXIT_MAINTENANCE_MODE));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/true));
+  });
+
   // All the while, our workload should not have been interrupted. Assert
   // eventually to wait for the rows to converge.
   NO_FATALS(create_table.StopAndJoin());

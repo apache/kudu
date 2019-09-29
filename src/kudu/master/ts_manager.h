@@ -100,6 +100,9 @@ class TSManager {
   int GetCount() const;
 
   // Sets the tserver state for the given tserver, persisting it to disk.
+  //
+  // If removing a tserver from maintenance mode, this also sets that all
+  // tablet servers must report back a full tablet reports.
   Status SetTServerState(const std::string& ts_uuid,
                          TServerStatePB ts_state,
                          SysCatalogTable* sys_catalog);
@@ -124,9 +127,15 @@ class TSManager {
   // is not dead, not in maintenance mode).
   bool AvailableForPlacementUnlocked(const TSDescriptor& ts) const;
 
-  mutable rw_spinlock lock_;
+  // Sets that all registered tablet servers need to report back with a full
+  // tablet report. This may be necessary, e.g., after exiting maintenance mode
+  // to recheck any ignored failures.
+  void SetAllTServersNeedFullTabletReports();
 
   FunctionGaugeDetacher metric_detacher_;
+
+  // Protects 'servers_by_id_'.
+  mutable rw_spinlock lock_;
 
   // TODO(awong): add a map from HostPort to descriptor so we aren't forced to
   // know UUIDs up front, e.g. if specifying a given tablet server for
