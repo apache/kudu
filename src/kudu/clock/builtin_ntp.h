@@ -20,7 +20,6 @@
 #include <list>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "kudu/clock/time_service.h"
@@ -39,6 +38,10 @@ class Sockaddr;
 class Thread;
 
 namespace clock {
+
+namespace internal {
+struct RecordedResponse;
+} // namespace internal
 
 // This time service is based on a simplified NTP client implementation.
 // It's not RFC-compliant yet (RFC 5905). The most important missing pieces are:
@@ -84,7 +87,6 @@ class BuiltInNtp : public TimeService {
   class ServerState;
   struct NtpPacket;
   struct PendingRequest;
-  struct RecordedResponse;
 
   // Information on the computed walltime.
   struct WalltimeSnapshot {
@@ -100,20 +102,8 @@ class BuiltInNtp : public TimeService {
     bool is_synchronized;
   };
 
-  // Representation of time interval: the first pair component is the
-  // left/earlier point, the second is right/later point.
-  typedef  std::pair<int64_t, int64_t> Interval;
-
-  // A special interval meaning 'an empty interval'.
-  static const Interval kIntervalNone;
-
   // Upper estimate for a clock skew.
   static constexpr int kSkewPpm = 500;
-
-  // Build an intersection interval given the set of correctness intervals
-  // and reference local time.
-  static std::pair<int64_t, int64_t> FindIntersection(
-      const std::vector<RecordedResponse>& responses, int64_t reftime);
 
   // Implementation of Init().
   Status InitImpl();
@@ -154,11 +144,12 @@ class BuiltInNtp : public TimeService {
                                                 const NtpPacket& response);
 
   // Record and process response received from NTP server.
-  void RecordResponse(ServerState* from_server, const RecordedResponse& rr);
+  void RecordResponse(ServerState* from_server,
+                      const internal::RecordedResponse& rr);
 
   // Among all available responses, select the best ones to use in the clock
   // selection algorithm.
-  Status FilterResponses(std::vector<RecordedResponse>* filtered);
+  Status FilterResponses(std::vector<internal::RecordedResponse>* filtered);
 
   // Create NTP packet to send to a server.
   NtpPacket CreateClientPacket();

@@ -22,7 +22,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -36,6 +35,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/clock/builtin_ntp-internal.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -102,9 +102,11 @@ DEFINE_string(builtin_ntp_client_bind_address, "0.0.0.0",
               "using ephemeral ports (i.e. port 0)'.");
 TAG_FLAG(builtin_ntp_client_bind_address, experimental);
 
+using kudu::clock::internal::Interval;
+using kudu::clock::internal::kIntervalNone;
+using kudu::clock::internal::RecordedResponse;
 using std::deque;
 using std::lock_guard;
-using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -316,20 +318,6 @@ struct BuiltInNtp::PendingRequest {
   static_assert(sizeof(NtpPacket) == 48, "unexpected size of NtpPacket");
 };
 
-// A time measurement recorded after receiving a response from an NTP server.
-struct BuiltInNtp::RecordedResponse {
-  // The server which provided the response.
-  Sockaddr addr;
-  // The server's transmit timestamp.
-  uint64_t tx_timestamp;
-  // The time at which the response was recorded.
-  int64_t monotime;
-  // The calculated estimated offset between our monotime and the server's wall-clock time.
-  int64_t offset_us;
-  // The estimated maximum error between our time and the server's time.
-  int64_t error_us;
-};
-
 class BuiltInNtp::ServerState {
  public:
   explicit ServerState(HostPort host) :
@@ -486,8 +474,6 @@ class BuiltInNtp::ServerState {
   size_t o_pkt_total_num_;    // number of NTP requests sent
 };
 
-const BuiltInNtp::Interval BuiltInNtp::kIntervalNone = { -1, -1 };
-
 BuiltInNtp::BuiltInNtp()
     : rng_(GetRandomSeed32()) {
 }
@@ -560,55 +546,6 @@ void BuiltInNtp::DumpDiagnostics(vector<string>* log) const {
   StrAppend(&diag, "last_error=", last.error, "\n");
   StrAppend(&diag, "now_mono=", GetMonoTimeMicrosRaw(), "\n");
   LOG_STRING(INFO, log) << diag;
-}
-
-BuiltInNtp::Interval BuiltInNtp::FindIntersection(
-    const vector<RecordedResponse>& responses, int64_t reftime) {
-  vector<pair<int64_t, int>> interval_endpoints;
-  for (const auto& r : responses) {
-    int64_t wall = reftime + r.offset_us;
-    int64_t error = r.error_us + (reftime - r.monotime) * kSkewPpm / 1e6;
-    DCHECK_GE(reftime, r.monotime);
-    DCHECK_GE(error, 0);
-    interval_endpoints.emplace_back(wall - error, -1);
-    interval_endpoints.emplace_back(wall + error, 1);
-    VLOG(2) << Substitute("correctness interval ($0, $1) from $2",
-                          wall - error, wall + error, r.addr.ToString());
-  }
-
-  if (responses.size() == 1) {
-    // Short-circuiting the search since the algorithm below doesn't handle
-    // single interval.
-    CHECK_EQ(2, interval_endpoints.size());
-    return std::make_pair(interval_endpoints[0].first,
-                          interval_endpoints[1].first);
-  }
-
-  std::sort(interval_endpoints.begin(), interval_endpoints.end());
-
-  int best = 1; // for an intersection, at least 2 intervals are needed
-  int count_overlap = 0;
-  Interval best_interval = kIntervalNone;
-  for (int i = 1; i < interval_endpoints.size(); i++) {
-    const auto& cur = interval_endpoints[i - 1];
-    const auto& next = interval_endpoints[i];
-    count_overlap -= cur.second;
-    // TODO(aserbin): in the layouts like the following, which interval is
-    //                better to choose? Right now, the first is chosen,
-    //                but maybe it's better to randomize the choice to avoid
-    //                bias or simply choose some wider interval which covers
-    //                both intersections intervals?
-    //
-    // source A     :   <---->
-    // source B     :           <--->
-    // source C     :  <-------------->
-    // intersection :   <====>  <===>
-    if (count_overlap > best) {
-      best = count_overlap;
-      best_interval = std::make_pair(cur.first, next.first);
-    }
-  }
-  return best_interval;
 }
 
 Status BuiltInNtp::InitImpl() {
@@ -1031,7 +968,7 @@ Status BuiltInNtp::CombineClocks() {
   RETURN_NOT_OK(FilterResponses(&responses));
 
   const auto now = GetMonoTimeMicrosRaw();
-  const Interval best_interval = FindIntersection(responses, now);
+  const Interval best_interval = FindIntersection(responses, now, kSkewPpm);
   VLOG(2) << Substitute("intersection interval: ($0, $1)",
                         best_interval.first, best_interval.second);
   if (best_interval == kIntervalNone) {

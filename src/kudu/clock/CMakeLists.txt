@@ -17,6 +17,7 @@
 
 set(CLOCK_SRCS
   builtin_ntp.cc
+  builtin_ntp-internal.cc
   hybrid_clock.cc
   logical_clock.cc
   mock_ntp.cc

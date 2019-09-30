@@ -22,12 +22,14 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/builtin_ntp-internal.h"
 #include "kudu/clock/builtin_ntp.h"
 #include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/clock/test/mini_chronyd_test_util.h"
@@ -42,6 +44,10 @@ DECLARE_int32(ntp_initial_sync_wait_secs);
 DECLARE_string(builtin_ntp_servers);
 DECLARE_uint32(builtin_ntp_poll_interval_ms);
 
+using kudu::clock::internal::FindIntersection;
+using kudu::clock::internal::Interval;
+using kudu::clock::internal::RecordedResponse;
+using kudu::clock::internal::kIntervalNone;
 using std::back_inserter;
 using std::copy;
 using std::string;
@@ -50,6 +56,345 @@ using std::vector;
 
 namespace kudu {
 namespace clock {
+
+// Few scenarios for the intersection interval in case of a single NTP response.
+// Being a trivial case with regard to the intersection logic itself, it's
+// a good case to verify that the uncertainty of the intersection interval
+// widens in accordance with the skew of the clock when current time drifts
+// further away from the time when a sample of the reference clock was captured.
+TEST(TimeIntervalsTest, SingleResponse) {
+  // Zero clock skew: this is something theoretical, but anyways.
+  // In case of zero clock skew, regardless of the difference between the
+  // capture time and current time, the result error is not widening,
+  // and the result interval is drifting along with current time.
+  {
+    // Zero error.
+    {
+      const vector<RecordedResponse> responses = {
+        { 0, 1, 0, },
+      };
+
+      const auto res0 = FindIntersection(responses, 0, 0);
+      ASSERT_EQ(1, res0.first);
+      ASSERT_EQ(1, res0.second);
+
+      const auto res1 = FindIntersection(responses, 100, 0);
+      ASSERT_EQ(101, res1.first);
+      ASSERT_EQ(101, res1.second);
+    }
+
+    // Non-zero error.
+    {
+      const vector<RecordedResponse> responses = {
+        { 0, 10, 1, },
+      };
+
+      const auto res0 = FindIntersection(responses, 0, 0);
+      ASSERT_EQ(9, res0.first);
+      ASSERT_EQ(11, res0.second);
+
+      const auto res1 = FindIntersection(responses, 100, 0);
+      ASSERT_EQ(109, res1.first);
+      ASSERT_EQ(111, res1.second);
+    }
+  }
+
+  // Non-zero clock skew.
+  // In case of non-zero clock skew, the intersection interval is widening when
+  // current time drifts apart from the capture time. The error of a captured
+  // sample adds constant delta to the error of result intersection interval.
+  {
+    // Zero error.
+    {
+      {
+        const vector<RecordedResponse> responses = {
+          { 0, 10, 0, },
+        };
+
+        const auto res0 = FindIntersection(responses, 0, 1000000);
+        ASSERT_EQ(10, res0.first);
+        ASSERT_EQ(10, res0.second);
+
+        const auto res1 = FindIntersection(responses, 100, 1000000);
+        ASSERT_EQ(10, res1.first);
+        ASSERT_EQ(210, res1.second);
+
+        const auto res2 = FindIntersection(responses, 100, 2000000);
+        ASSERT_EQ(-90, res2.first);
+        ASSERT_EQ(310, res2.second);
+
+        const auto res3 = FindIntersection(responses, 200, 1000000);
+        ASSERT_EQ(10, res3.first);
+        ASSERT_EQ(410, res3.second);
+      }
+    }
+
+    // Non-zero error.
+    {
+      {
+        const vector<RecordedResponse> responses = {
+          { 0, 10, 1, },
+        };
+
+        const auto res0 = FindIntersection(responses, 0, 1000000);
+        ASSERT_EQ(9, res0.first);
+        ASSERT_EQ(11, res0.second);
+
+        const auto res1 = FindIntersection(responses, 100, 1000000);
+        ASSERT_EQ(9, res1.first);
+        ASSERT_EQ(211, res1.second);
+
+        const auto res2 = FindIntersection(responses, 50, 2000000);
+        ASSERT_EQ(-41, res2.first);
+        ASSERT_EQ(161, res2.second);
+      }
+    }
+  }
+}
+
+// A case where two samples of the reference clock were acquired.
+TEST(TimeIntervalsTest, TwoResponses) {
+  // The same interval: a single point at the time of sample capture.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 3, 0, },
+      { 0, 3, 0, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    ASSERT_EQ(3, res0.first);
+    ASSERT_EQ(3, res0.second);
+
+    const auto res1 = FindIntersection(responses, 1, 1000000);
+    // [3, 5] & [3, 5]
+    ASSERT_EQ(3, res1.first);
+    ASSERT_EQ(5, res1.second);
+  }
+
+  // Single intersection point: the edge.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 2, 1, },
+      { 0, 5, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [1, 3] & [3, 7]
+    ASSERT_EQ(3, res0.first);
+    ASSERT_EQ(3, res0.second);
+  }
+
+  // Embedded intervals with the same reported time but different errors.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 10, 1, },
+      { 0, 10, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [9, 11] & [8, 12]
+    ASSERT_EQ(9, res0.first);
+    ASSERT_EQ(11, res0.second);
+
+    const auto res1 = FindIntersection(responses, 5, 1000000);
+    // [9, 21] & [8, 22]
+    ASSERT_EQ(9, res1.first);
+    ASSERT_EQ(21, res1.second);
+  }
+
+  // Embedded intervals with the same reported time but different errors.
+  // The second interval represents a corner case of zero-error sample.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 10, 1, },
+      { 0, 10, 0, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [9, 11] & [10, 10]
+    ASSERT_EQ(10, res0.first);
+    ASSERT_EQ(10, res0.second);
+
+    const auto res1 = FindIntersection(responses, 5, 1000000);
+    // [9, 21] & [10, 20]
+    ASSERT_EQ(10, res1.first);
+    ASSERT_EQ(20, res1.second);
+  }
+
+  // Embedded intervals with different reported time.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 1, 1, },
+      { 0, 2, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [0, 2] & [0, 4]
+    ASSERT_EQ(0, res0.first);
+    ASSERT_EQ(2, res0.second);
+
+    const auto res1 = FindIntersection(responses, 10, 1000000);
+    // [0, 22] & [0, 24]
+    ASSERT_EQ(0, res1.first);
+    ASSERT_EQ(22, res1.second);
+  }
+
+  // Non-intersecting (as of time of capture) intervals.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 1, 1, },
+      { 0, 5, 1, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [0, 2] & [4, 6]
+    ASSERT_EQ(kIntervalNone, res0);
+
+    const auto res1 = FindIntersection(responses, 5, 1000000);
+    // [0, 12] & [4, 16]
+    ASSERT_EQ(4, res1.first);
+    ASSERT_EQ(12, res1.second);
+  }
+}
+
+// A case where three samples of the reference clock were acquired.
+TEST(TimeIntervalsTest, ThreeResponses) {
+  // The same interval: a single point at the time of sample capture.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 3, 0, },
+      { 0, 3, 0, },
+      { 0, 3, 0, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    ASSERT_EQ(3, res0.first);
+    ASSERT_EQ(3, res0.second);
+
+    const auto res1 = FindIntersection(responses, 1, 1000000);
+    // [3, 5] & [3, 5] & [3, 5]
+    ASSERT_EQ(3, res1.first);
+    ASSERT_EQ(5, res1.second);
+  }
+
+  // Non-intersecting (as of time of capture) intervals.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 1, 1, },
+      { 0, 4, 1, },
+      { 0, 7, 1, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [0, 2] & [3, 5] & [6, 8]
+    ASSERT_EQ(kIntervalNone, res0);
+
+    const auto res1 = FindIntersection(responses, 10, 1000000);
+    // [0, 22] & [3, 25] & [6, 28]
+    ASSERT_EQ(6, res1.first);
+    ASSERT_EQ(22, res1.second);
+  }
+
+  // Embedded intervals with the same reported time but different errors.
+  // The second interval represents a corner case of zero-error sample.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 10, 5, },
+      { 0, 10, 1, },
+      { 0, 10, 10, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [5, 15] & [9, 11] & [0, 20]
+    ASSERT_EQ(9, res0.first);
+    ASSERT_EQ(11, res0.second);
+
+    const auto res1 = FindIntersection(responses, 10, 1000000);
+    // [5, 35] & [9, 31] & [0, 40]
+    ASSERT_EQ(9, res1.first);
+    ASSERT_EQ(31, res1.second);
+  }
+
+  // Three 'chained' intervals that have a single intersection point at the time
+  // of samples capture.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 4, 2, },
+      { 0, 6, 2, },
+      { 0, 8, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [2, 6] & [4, 8] & [6, 10]
+    ASSERT_EQ(6, res0.first);
+    ASSERT_EQ(6, res0.second);
+
+    const auto res1 = FindIntersection(responses, 1, 1000000);
+    // [2, 8] & [4, 10] & [6, 12]
+    ASSERT_EQ(6, res1.first);
+    ASSERT_EQ(8, res1.second);
+  }
+
+  // Three 'chained' intervals without a single intersection point.
+  // As of now, the first intersection interval (the earlier) is chosen.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 3, 2, },
+      { 0, 6, 2, },
+      { 0, 9, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [1, 5] & [4, 8] & [7, 11]
+    ASSERT_EQ(4, res0.first);
+    ASSERT_EQ(5, res0.second);
+  }
+
+  // Two intersections: first two points, then two intervals. As of now,
+  // the first (the earlier) is chosen.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 3, 2, },
+      { 0, 6, 2, },
+      { 0, 9, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [1, 5] & [4, 8] & [7, 11]
+    ASSERT_EQ(4, res0.first);
+    ASSERT_EQ(5, res0.second);
+  }
+
+  // One interval contains two other (no boundary intesections), so the total
+  // is two intervals. The first (the earliest) one is chosen as the result.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 6, 6, },
+      { 0, 2, 1, },
+      { 0, 5, 1, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [0, 12] & [1, 3] & [4, 6]
+    ASSERT_EQ(1, res0.first);
+    ASSERT_EQ(3, res0.second);
+  }
+
+  // One interval contains two other, but with boundary intesection, there is
+  // one common point among all three intervals.
+  {
+    const vector<RecordedResponse> responses = {
+      { 0, 4, 4, },
+      { 0, 2, 2, },
+      { 0, 6, 2, },
+    };
+
+    const auto res0 = FindIntersection(responses, 0, 1000000);
+    // [0, 8] & [0, 4] & [4, 8]
+    ASSERT_EQ(4, res0.first);
+    ASSERT_EQ(4, res0.second);
+  }
+}
 
 #define WALLTIME_DIAG_FMT   "%" PRId64 " +/- %8" PRId64 " us"
 
