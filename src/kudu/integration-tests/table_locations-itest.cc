@@ -389,6 +389,7 @@ TEST_F(TableLocationsWithTSLocationTest, TestGetTSLocation) {
 }
 
 TEST_F(TableLocationsTest, GetTableLocationsBenchmark) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
   const int kNumSplits = FLAGS_benchmark_num_tablets - 1;
   const int kNumThreads = FLAGS_benchmark_num_threads;
   const auto kRuntime = MonoDelta::FromSeconds(FLAGS_benchmark_runtime_secs);
