@@ -278,7 +278,8 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
+                           nullptr, &fileset));
 
   unique_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
   ASSERT_OK(iter->Init(nullptr));
@@ -358,7 +359,8 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
+                           nullptr, &fileset));
 
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
@@ -391,7 +393,8 @@ TEST_F(TestCFileSet, TestRangeScan) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
+                           nullptr, &fileset));
 
   // Create iterator.
   unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
@@ -445,7 +448,8 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
+                           nullptr, &fileset));
 
   // Range scan where rows match on both ends
   DoTestRangeScan(fileset, 2000, 2010);
@@ -501,7 +505,8 @@ TEST_F(TestCFileSet, TestBloomFilterPredicates) {
                        &ret1_contain, &ret1_exclude, &ret2_contain, &ret2_exclude);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
+                           nullptr, &fileset));
 
   vector<ColumnPredicate::BloomFilterInner> bfs;
   // BloomFilter of column 0 contain.

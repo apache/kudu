@@ -88,7 +88,7 @@ using strings::Substitute;
 ////////////////////////////////////////////////////////////
 
 static Status OpenReader(FsManager* fs,
-                         shared_ptr<MemTracker> parent_mem_tracker,
+                         shared_ptr<MemTracker> cfile_reader_tracker,
                          const BlockId& block_id,
                          const IOContext* io_context,
                          unique_ptr<CFileReader>* new_reader) {
@@ -96,7 +96,7 @@ static Status OpenReader(FsManager* fs,
   RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
   ReaderOptions opts;
-  opts.parent_mem_tracker = std::move(parent_mem_tracker);
+  opts.parent_mem_tracker = std::move(cfile_reader_tracker);
   opts.io_context = io_context;
   return CFileReader::OpenNoInit(std::move(block),
                                  std::move(opts),
@@ -108,20 +108,24 @@ static Status OpenReader(FsManager* fs,
 ////////////////////////////////////////////////////////////
 
 CFileSet::CFileSet(shared_ptr<RowSetMetadata> rowset_metadata,
-                   shared_ptr<MemTracker> parent_mem_tracker)
+                   shared_ptr<MemTracker> bloomfile_tracker,
+                   shared_ptr<MemTracker> cfile_reader_tracker)
     : rowset_metadata_(std::move(rowset_metadata)),
-      parent_mem_tracker_(std::move(parent_mem_tracker)) {
+      bloomfile_tracker_(std::move(bloomfile_tracker)),
+      cfile_reader_tracker_(std::move(cfile_reader_tracker)) {
 }
 
 CFileSet::~CFileSet() {
 }
 
 Status CFileSet::Open(shared_ptr<RowSetMetadata> rowset_metadata,
-                      shared_ptr<MemTracker> parent_mem_tracker,
+                      shared_ptr<MemTracker> bloomfile_tracker,
+                      shared_ptr<MemTracker> cfile_reader_tracker,
                       const IOContext* io_context,
                       shared_ptr<CFileSet>* cfile_set) {
   shared_ptr<CFileSet> cfs(new CFileSet(std::move(rowset_metadata),
-                                        std::move(parent_mem_tracker)));
+                                        std::move(bloomfile_tracker),
+                                        std::move(cfile_reader_tracker)));
   RETURN_NOT_OK(cfs->DoOpen(io_context));
 
   cfile_set->swap(cfs);
@@ -140,7 +144,7 @@ Status CFileSet::DoOpen(const IOContext* io_context) {
 
     unique_ptr<CFileReader> reader;
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
-                             parent_mem_tracker_,
+                             cfile_reader_tracker_,
                              rowset_metadata_->column_data_block_for_col_id(col_id),
                              io_context,
                              &reader));
@@ -152,7 +156,7 @@ Status CFileSet::DoOpen(const IOContext* io_context) {
 
   if (rowset_metadata_->has_adhoc_index_block()) {
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
-                             parent_mem_tracker_,
+                             cfile_reader_tracker_,
                              rowset_metadata_->adhoc_index_block(),
                              io_context,
                              &ad_hoc_idx_reader_));
@@ -183,8 +187,8 @@ Status CFileSet::OpenBloomReader(const IOContext* io_context) {
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
   ReaderOptions opts;
-  opts.parent_mem_tracker = parent_mem_tracker_;
   opts.io_context = io_context;
+  opts.parent_mem_tracker = bloomfile_tracker_;
   Status s = BloomFileReader::OpenNoInit(std::move(block),
                                          std::move(opts),
                                          &bloom_reader_);

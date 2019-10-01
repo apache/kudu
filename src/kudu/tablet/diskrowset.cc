@@ -535,7 +535,8 @@ DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
 Status DiskRowSet::Open(const IOContext* io_context) {
   TRACE_EVENT0("tablet", "DiskRowSet::Open");
   RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
-                               mem_trackers_.tablet_tracker,
+                               mem_trackers_.bloomfile_tracker,
+                               mem_trackers_.cfile_reader_tracker,
                                io_context,
                                &base_data_));
 
@@ -607,7 +608,8 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
   // appropriate blocks to match the update.
   shared_ptr<CFileSet> new_base;
   RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
-                               mem_trackers_.tablet_tracker,
+                               mem_trackers_.bloomfile_tracker,
+                               mem_trackers_.cfile_reader_tracker,
                                io_context,
                                &new_base));
   {

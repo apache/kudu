@@ -30,6 +30,8 @@ struct TabletMemTrackers {
   // Intended for unit tests where the tracker hierarchy doesn't matter.
   TabletMemTrackers()
     : tablet_tracker(MemTracker::GetRootTracker()),
+      bloomfile_tracker(MemTracker::GetRootTracker()),
+      cfile_reader_tracker(MemTracker::GetRootTracker()),
       dms_tracker(MemTracker::GetRootTracker()) {
   }
 
@@ -38,13 +40,17 @@ struct TabletMemTrackers {
     : tablet_tracker(MemTracker::CreateTracker(
         -1,
         strings::Substitute("tablet-$0", tablet_id),
-        parent_mem_tracker)),
+        std::move(parent_mem_tracker))),
+      bloomfile_tracker(MemTracker::CreateTracker(-1, "BloomFileReaders", tablet_tracker)),
+      cfile_reader_tracker(MemTracker::CreateTracker(-1, "CFileReaders", tablet_tracker)),
       dms_tracker(MemTracker::CreateTracker(-1, "DeltaMemStores", tablet_tracker)) {
   }
 
   std::shared_ptr<MemTracker> tablet_tracker;
 
   // All of the below are children of tablet_tracker;
+  std::shared_ptr<MemTracker> bloomfile_tracker;
+  std::shared_ptr<MemTracker> cfile_reader_tracker;
   std::shared_ptr<MemTracker> dms_tracker;
 };
 
