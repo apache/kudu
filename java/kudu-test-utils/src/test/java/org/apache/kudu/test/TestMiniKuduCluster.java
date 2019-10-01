@@ -97,7 +97,7 @@ public class TestMiniKuduCluster {
     }
   }
 
-  @Test(timeout = 50000)
+  @Test(timeout = 100000)
   public void testHiveMetastoreIntegration() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
                                                       .numMasterServers(NUM_MASTERS)
