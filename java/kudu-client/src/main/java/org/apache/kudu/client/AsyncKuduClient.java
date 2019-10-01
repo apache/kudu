@@ -2006,13 +2006,14 @@ public class AsyncKuduClient implements AutoCloseable {
                                          fakeRpc)
                           .addCallbackDeferring(resp -> {
                             final List<KeyRange> ranges = Lists.newArrayList();
+                            LOG.debug("Key ranges for {}", table.getName());
                             for (Common.KeyRangePB pb : resp.getKeyRanges()) {
                               KeyRange newRange = new KeyRange(tablet,
                                                                pb.getStartPrimaryKey().toByteArray(),
                                                                pb.getStopPrimaryKey().toByteArray(),
                                                                pb.getSizeBytesEstimates());
                               ranges.add(newRange);
-                              LOG.debug("Add key range {}", newRange);
+                              LOG.debug(newRange.toString());
                             }
                             return Deferred.fromResult(ranges);
                           }));
