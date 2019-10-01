@@ -15,20 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// This file contains the configuration of the project hierarchy.
-// Mainly we just define what subprojects are in the build.
+package org.apache.kudu.subprocess;
 
-rootProject.name = "kudu-parent"
-include "kudu-backup"
-include "kudu-backup-common"
-include "kudu-backup-tools"
-include "kudu-client"
-include "kudu-client-tools"
-include "kudu-hive"
-include "kudu-jepsen"
-include "kudu-mapreduce"
-include "kudu-spark"
-include "kudu-spark-tools"
-include "kudu-subprocess"
-include "kudu-subprocess-echo"
-include "kudu-test-utils"
+import org.apache.yetus.audience.InterfaceAudience;
+
+/**
+ * Any runtime exception(s) thrown by a subprocess.
+ */
+@InterfaceAudience.Private
+public final class KuduSubprocessException extends RuntimeException {
+
+  /**
+   * Constructs a new runtime exception with the specified detail
+   * message and cause.
+   *
+   * @param  message the detail message
+   * @param  cause the cause
+   */
+  KuduSubprocessException(String message, Throwable cause) {
+    super(message, cause);
+  }
+}

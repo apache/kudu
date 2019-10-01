@@ -15,20 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// This file contains the configuration of the project hierarchy.
-// Mainly we just define what subprojects are in the build.
+apply from: "$rootDir/gradle/protobuf.gradle"
+apply from: "$rootDir/gradle/shadow.gradle"
 
-rootProject.name = "kudu-parent"
-include "kudu-backup"
-include "kudu-backup-common"
-include "kudu-backup-tools"
-include "kudu-client"
-include "kudu-client-tools"
-include "kudu-hive"
-include "kudu-jepsen"
-include "kudu-mapreduce"
-include "kudu-spark"
-include "kudu-spark-tools"
-include "kudu-subprocess"
-include "kudu-subprocess-echo"
-include "kudu-test-utils"
+dependencies {
+  // Note: We don't use the shaded version to avoid protobuf message type
+  // got shaded and causes incompatible bounds error for type casting.
+  compile (project(path: ":kudu-subprocess"))
+  compile libs.protobufJava
+  compile libs.protobufJavaUtil
+
+  optional libs.yetusAnnotations
+
+  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
+  testCompile project(path: ":kudu-subprocess", configuration: "test")
+  testCompile libs.junit
+  testCompile libs.log4j
+  testCompile libs.log4jSlf4jImpl
+}
+jar {
+  manifest {
+    attributes(
+      'Main-Class': 'org.apache.kudu.subprocess.echo.EchoSubprocessMain'
+    )
+  }
+}
