@@ -803,4 +803,58 @@ TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
     check(test, false);
   }
 }
+
+TEST_F(PartitionTest, TestVarcharRangePartitions) {
+  Schema schema({ ColumnSchema("c1", VARCHAR, false, nullptr, nullptr,
+                               ColumnStorageAttributes(), ColumnTypeAttributes(10)),
+                  ColumnSchema("c2", VARCHAR, false, nullptr, nullptr,
+                               ColumnStorageAttributes(), ColumnTypeAttributes(10)) },
+                  { ColumnId(0), ColumnId(1) }, 2);
+
+  PartitionSchemaPB schema_builder;
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  vector<vector<boost::optional<string>>> tests {
+    { string("a"), string("b"), string("a"), string("b\0", 2) },
+    { string("a"), boost::none, string("a"), string("\0", 1) },
+  };
+
+  auto check = [&] (const vector<boost::optional<string>>& test, bool lower_bound) {
+    CHECK_EQ(4, test.size());
+    KuduPartialRow bound(&schema);
+    if (test[0]) ASSERT_OK(bound.SetVarchar("c1", *test[0]));
+    if (test[1]) ASSERT_OK(bound.SetVarchar("c2", *test[1]));
+
+    vector<string> components;
+    partition_schema.AppendRangeDebugStringComponentsOrMin(bound, &components);
+    SCOPED_TRACE(JoinStrings(components, ", "));
+    SCOPED_TRACE(lower_bound ? "lower bound" : "upper bound");
+
+    if (lower_bound) {
+      ASSERT_OK(partition_schema.MakeLowerBoundRangePartitionKeyInclusive(&bound));
+    } else {
+      ASSERT_OK(partition_schema.MakeUpperBoundRangePartitionKeyExclusive(&bound));
+    }
+
+    Slice val;
+    if (test[2]) {
+      ASSERT_OK(bound.GetVarchar("c1", &val));
+      ASSERT_EQ(*test[2], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c1"));
+    }
+    if (test[3]) {
+      ASSERT_OK(bound.GetVarchar("c2", &val));
+      ASSERT_EQ(*test[3], val);
+    } else {
+      ASSERT_FALSE(bound.IsColumnSet("c2"));
+    }
+  };
+
+  for (const auto& test : tests) {
+    check(test, true);
+    check(test, false);
+  }
+}
 } // namespace kudu

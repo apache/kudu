@@ -1013,6 +1013,9 @@ namespace {
       case UNIXTIME_MICROS:
         RETURN_NOT_OK(row->SetInt64(idx, INT64_MIN + 1));
         break;
+      case VARCHAR:
+        RETURN_NOT_OK(row->SetVarchar(idx, Slice("\0", 1)));
+        break;
       case STRING:
         RETURN_NOT_OK(row->SetStringCopy(idx, Slice("\0", 1)));
         break;
@@ -1107,6 +1110,14 @@ namespace {
         string incremented = value.ToString();
         incremented.push_back('\0');
         RETURN_NOT_OK(row->SetBinaryCopy(idx, incremented));
+        break;
+      }
+      case VARCHAR: {
+        Slice value;
+        RETURN_NOT_OK(row->GetVarchar(idx, &value));
+        string incremented = value.ToString();
+        incremented.push_back('\0');
+        RETURN_NOT_OK(row->SetVarchar(idx, incremented));
         break;
       }
       case STRING: {

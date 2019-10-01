@@ -267,6 +267,7 @@ class PartitionSchema {
   friend class PartitionPruner;
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionStringBounds);
+  FRIEND_TEST(PartitionTest, TestVarcharRangePartitions);
 
   // Returns a text description of the encoded range key suitable for debug printing.
   std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;

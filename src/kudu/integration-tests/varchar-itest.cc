@@ -40,14 +40,18 @@ namespace client {
 
 using sp::shared_ptr;
 
-class VarcharItest : public ExternalMiniClusterITestBase {};
+class VarcharItest : public ExternalMiniClusterITestBase {
+ protected:
+  void SetUp() override {
+    NO_FATALS(StartCluster({}, {}, kNumServers));
+  }
 
-TEST_F(VarcharItest, TestCharVarcharTruncation) {
   const int kNumServers = 3;
   const int kNumTablets = 3;
   const char* const kTableName = "varchar-table";
-  NO_FATALS(StartCluster({}, {}, kNumServers));
+};
 
+TEST_F(VarcharItest, TestVarcharTruncation) {
   KuduSchemaBuilder builder;
   builder.AddColumn("key")->Type(KuduColumnSchema::INT64)
     ->NotNull()->PrimaryKey();
@@ -104,6 +108,58 @@ TEST_F(VarcharItest, TestInvalidLength) {
   KuduSchema schema;
   Status s = builder.Build(&schema);
   ASSERT_FALSE(s.ok());
+}
+
+TEST_F(VarcharItest, TestVarcharRangePartition) {
+  KuduSchemaBuilder builder;
+  builder.AddColumn("key")->Type(KuduColumnSchema::VARCHAR)
+    ->Length(10)->NotNull()->PrimaryKey();
+  builder.AddColumn("value")->Type(KuduColumnSchema::VARCHAR)
+    ->Length(10);
+  KuduSchema schema;
+  ASSERT_OK(builder.Build(&schema));
+
+  KuduPartialRow* lower_bound = schema.NewRow();
+  ASSERT_OK(lower_bound->SetVarchar("key", "bar"));
+  KuduPartialRow* upper_bound = schema.NewRow();
+  ASSERT_OK(upper_bound->SetVarchar("key", "foo"));
+
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+      .schema(&schema)
+      .num_replicas(kNumServers)
+      .set_range_partition_columns({ "key" })
+      .add_range_partition(lower_bound, upper_bound)
+      .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+  KuduInsert* insert = table->NewInsert();
+  KuduPartialRow* write = insert->mutable_row();
+
+  ASSERT_OK(write->SetVarchar("key", "baz"));
+  ASSERT_OK(write->SetVarchar("value", "foobar"));
+  ASSERT_OK(session->Apply(insert));
+  ASSERT_OK(session->Flush());
+
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetFaultTolerant());
+  ASSERT_OK(scanner.Open());
+  ASSERT_TRUE(scanner.HasMoreRows());
+  while (scanner.HasMoreRows()) {
+    KuduScanBatch batch;
+    ASSERT_OK(scanner.NextBatch(&batch));
+    for (const KuduScanBatch::RowPtr& read : batch) {
+      Slice key;
+      ASSERT_OK(read.GetVarchar("key", &key));
+      ASSERT_EQ("baz", key);
+      Slice value;
+      ASSERT_OK(read.GetVarchar("value", &value));
+      ASSERT_EQ("foobar", value);
+    }
+  }
 }
 
 } // namespace client
