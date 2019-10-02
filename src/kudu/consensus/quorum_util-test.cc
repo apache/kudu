@@ -46,7 +46,7 @@ constexpr auto U = RaftPeerPB::UNKNOWN_MEMBER_TYPE; // NOLINT(readability-identi
 constexpr auto V = RaftPeerPB::VOTER;               // NOLINT(readability-identifier-naming)
 
 // The various possible health statuses.
-constexpr auto kHealthStatuses = { '?', '-', 'x', '+' };
+const auto kHealthStatuses = { '?', '-', 'x', '+' };
 
 typedef std::pair<string, bool> Attr;
 
