@@ -219,8 +219,12 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
 
   // Create the table with three tablet servers and then add one so we're
   // guaranteed that the replicas are all on the first three servers.
+  // Restarting our only master may lead to network errors and timeouts, but
+  // that shouldn't matter w.r.t maintenance mode.
   TestWorkload create_table(cluster_.get());
   create_table.set_num_tablets(kNumTablets);
+  create_table.set_network_error_allowed(true);
+  create_table.set_timeout_allowed(true);
   create_table.Setup();
   create_table.Start();
   // Add a server so there's one we could move to after bringing down a
