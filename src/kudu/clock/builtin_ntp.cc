@@ -67,7 +67,7 @@ DEFINE_string(builtin_ntp_servers,
               "The NTP servers used by the built-in NTP client, in format "
               "<FQDN|IP>[:PORT]. These will only be used if the built-in NTP "
               "client is enabled.");
-TAG_FLAG(builtin_ntp_servers, experimental);
+TAG_FLAG(builtin_ntp_servers, evolving);
 
 // In the 'Best practices' section, RFC 4330 states that 15 seconds is the
 // minimum allowed polling interval.
@@ -81,8 +81,19 @@ TAG_FLAG(builtin_ntp_servers, experimental);
 DEFINE_uint32(builtin_ntp_poll_interval_ms, 16000,
               "The time between successive polls of a single NTP server "
               "(in milliseconds)");
-TAG_FLAG(builtin_ntp_poll_interval_ms, experimental);
+TAG_FLAG(builtin_ntp_poll_interval_ms, advanced);
+TAG_FLAG(builtin_ntp_poll_interval_ms, evolving);
 TAG_FLAG(builtin_ntp_poll_interval_ms, runtime);
+
+DEFINE_string(builtin_ntp_client_bind_address, "0.0.0.0",
+              "Local address to bind client UDP socket used to send and "
+              "receive NTP packets. The default value '0.0.0.0' is equivalent "
+              "to '0.0.0.0:0' meaning 'bind to all available IPv4 interfaces "
+              "using ephemeral ports (i.e. port 0)'. It might be useful "
+              "to customize this flag if getting through a firewall to "
+              "reach public NTP servers specified by --builtin_ntp_servers.");
+TAG_FLAG(builtin_ntp_client_bind_address, advanced);
+TAG_FLAG(builtin_ntp_client_bind_address, evolving);
 
 DEFINE_uint32(builtin_ntp_request_timeout_ms, 3000,
               "Timeout for requests sent to NTP servers (in milliseconds)");
@@ -94,13 +105,6 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
               "true time estimation (in seconds)");
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
-
-DEFINE_string(builtin_ntp_client_bind_address, "0.0.0.0",
-              "Local address to bind client UDP socket used to send and "
-              "receive NTP packets. The default value '0.0.0.0' is equivalent "
-              "to '0.0.0.0:0' meaning 'bind to all available IPv4 interfaces "
-              "using ephemeral ports (i.e. port 0)'.");
-TAG_FLAG(builtin_ntp_client_bind_address, experimental);
 
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;

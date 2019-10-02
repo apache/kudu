@@ -32,6 +32,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -62,7 +63,7 @@ TAG_FLAG(use_hybrid_clock, hidden);
 DEFINE_string(time_source, "system",
               "The clock source that HybridClock should use. Must be one of "
               "'system', 'builtin', or 'mock' (for tests only)");
-TAG_FLAG(time_source, experimental);
+TAG_FLAG(time_source, evolving);
 DEFINE_validator(time_source, [](const char* /* flag_name */, const string& value) {
   if (boost::iequals(value, "system") ||
       boost::iequals(value, "builtin") ||
@@ -79,8 +80,8 @@ DEFINE_int32(ntp_initial_sync_wait_secs, 60,
              "startup. A value of zero means Kudu will fail to start "
              "if the clock is unsynchronized. This flag can prevent Kudu from "
              "crashing if it starts before NTP can synchronize the clock.");
-TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
 TAG_FLAG(ntp_initial_sync_wait_secs, advanced);
+TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
