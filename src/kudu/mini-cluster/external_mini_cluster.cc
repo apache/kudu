@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -615,8 +616,10 @@ Status ExternalMiniCluster::AddTabletServer() {
     opts.perf_record_filename =
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
-  auto extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
+  vector<string> extra_flags;
   RETURN_NOT_OK(AddNtpFlags(&extra_flags));
+  auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
+  std::copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
   opts.extra_flags = extra_flags;
   opts.start_process_timeout = opts_.start_process_timeout;
   opts.rpc_bind_address = HostPort(bind_host, 0);
