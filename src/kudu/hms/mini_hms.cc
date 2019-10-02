@@ -158,13 +158,15 @@ Status MiniHms::Start() {
       { "HADOOP_OS_TYPE", "Linux" }
   };
 
-  if (!schema_initialized_) {
-    // Run the schematool to initialize the database.
+  // Run the schematool to initialize the database if not yet initialized.
+  // Instead of running slow 'schematool -dbType derby -info' to check whether
+  // the database has been created already, a faster way is to check whether
+  // Derby's database sub-directory exists.
+  if (!Env::Default()->FileExists(JoinPathSegments(data_root_, metadb_subdir_))) {
     RETURN_NOT_OK(Subprocess::Call({Substitute("$0/bin/schematool", hive_home),
                                     "-dbType", "derby", "-initSchema"}, "",
                                    nullptr, nullptr,
                                    env_vars));
-    schema_initialized_ = true;
   }
 
   // Start the HMS.
@@ -271,7 +273,7 @@ Status MiniHms::CreateHiveSite() const {
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
-    <value>jdbc:derby:$2/metadb;create=true</value>
+    <value>jdbc:derby:$2/$9;create=true</value>
   </property>
 
   <property>
@@ -383,7 +385,8 @@ Status MiniHms::CreateHiveSite() const {
                                          service_principal_,
                                          SaslProtection::name_of(protection_),
                                          JoinPathSegments(data_root_, "hive-log4j2.properties"),
-                                         sentry_properties);
+                                         sentry_properties,
+                                         metadb_subdir_);
 
   if (IsAuthorizationEnabled()) {
     // - hive.sentry.server

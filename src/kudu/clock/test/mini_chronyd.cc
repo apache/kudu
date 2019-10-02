@@ -184,15 +184,15 @@ Status MiniChronyd::Start() {
   VLOG(1) << "starting chronyd: " << options_.ToString();
 
   if (!Env::Default()->FileExists(options_.data_root)) {
-    VLOG(1) << "creating chronyd configuration file";
     RETURN_NOT_OK(Env::Default()->CreateDir(options_.data_root));
     // The chronyd's implementation puts strict requirements on the ownership
     // of the directories where the runtime data is stored. In some environments
     // (e.g., macOS), the group owner of the newly created directory might be
     // different from the user account's GID.
     RETURN_NOT_OK(CorrectOwnership(options_.data_root));
-    RETURN_NOT_OK(CreateConf());
   }
+  VLOG(1) << "creating chronyd configuration file";
+  RETURN_NOT_OK(CreateConf());
 
   // Start the chronyd in server-only mode, not detaching from terminal
   // since the Subprocess needs to have the process running in foreground

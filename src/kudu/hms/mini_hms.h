@@ -115,6 +115,8 @@ class MiniHms {
   uint16_t port_ = 0;
 
   std::string data_root_;
+  // Sub-directory under 'data_root_' where Derby keeps its database.
+  std::string metadb_subdir_ = "metadb";
 
   // Kerberos configuration
   std::string krb5_conf_;
@@ -130,9 +132,6 @@ class MiniHms {
 
   // Whether to enable the Kudu listener plugin.
   bool enable_kudu_plugin_ = true;
-
-  // Whether the Hive metastore schema has been initialized.
-  bool schema_initialized_ = false;
 };
 
 } // namespace hms
