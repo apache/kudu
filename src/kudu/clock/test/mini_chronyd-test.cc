@@ -59,8 +59,7 @@ TEST_F(MiniChronydTest, UnsynchronizedServer) {
     ASSERT_EQ(0, stats.ntp_packets_received);
   }
 
-  auto s = MiniChronyd::CheckNtpSource(
-      { HostPort(chrony->options().bindaddress, chrony->options().port) });
+  auto s = MiniChronyd::CheckNtpSource({ chrony->address() });
   ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(),
                       "failed measure clock offset from reference NTP servers");
@@ -82,8 +81,7 @@ TEST_F(MiniChronydTest, BasicSingleServerInstance) {
 
   // A chronyd that uses the system clock as a reference lock should present
   // itself as reliable NTP server.
-  const HostPort ntp_endpoint(chrony->options().bindaddress,
-                              chrony->options().port);
+  const HostPort ntp_endpoint(chrony->address());
   {
     // Make sure the server opens ports to listen and serve requests
     // from NTP clients.
@@ -129,8 +127,7 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
     options.index = idx;
     unique_ptr<MiniChronyd> chrony;
     ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    ntp_endpoints.emplace_back(chrony->options().bindaddress,
-                               chrony->options().port);
+    ntp_endpoints.emplace_back(chrony->address());
     servers.emplace_back(std::move(chrony));
   }
 
@@ -193,8 +190,7 @@ TEST_F(MiniChronydTest, MultiTierBasic) {
     options.index = idx;
     unique_ptr<MiniChronyd> chrony;
     ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    ntp_endpoints_0.emplace_back(chrony->options().bindaddress,
-                                 chrony->options().port);
+    ntp_endpoints_0.emplace_back(chrony->address());
     servers_0.emplace_back(std::move(chrony));
   }
 
@@ -205,15 +201,15 @@ TEST_F(MiniChronydTest, MultiTierBasic) {
     options.index = idx;
     options.local = false;
     for (const auto& ref : servers_0) {
+      const auto addr = ref->address();
       MiniChronydServerOptions server_options;
-      server_options.port = ref->options().port;
-      server_options.address = ref->options().bindaddress;
+      server_options.address = addr.host();
+      server_options.port = addr.port();
       options.servers.emplace_back(std::move(server_options));
     }
     unique_ptr<MiniChronyd> chrony;
     ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    ntp_endpoints_1.emplace_back(chrony->options().bindaddress,
-                                 chrony->options().port);
+    ntp_endpoints_1.emplace_back(chrony->address());
     servers_1.emplace_back(std::move(chrony));
   }
 

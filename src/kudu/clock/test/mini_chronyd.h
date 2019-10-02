@@ -188,11 +188,15 @@ class MiniChronyd {
 
   ~MiniChronyd();
 
-  // Return the options the underlying chronyd has been started with.
+  // Return the options which the underlying chronyd is given to start with.
   const MiniChronydOptions& options() const;
 
   // Get the PID of the chronyd process.
   pid_t pid() const;
+
+  // Get the IP address and port at which the underlying NTP server is listening
+  // for incoming requests. Should be called only when NTP server is started.
+  HostPort address() const;
 
   // Start the mini chronyd in server-only mode.
   Status Start() WARN_UNUSED_RESULT;

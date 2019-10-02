@@ -165,8 +165,7 @@ Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
     vector<string> ntp_endpoints;
     CHECK_EQ(opts_.num_ntp_servers, ntp_servers_.size());
     for (const auto& server : ntp_servers_) {
-      const auto& opt = server->options();
-      ntp_endpoints.emplace_back(HostPort(opt.bindaddress, opt.port).ToString());
+      ntp_endpoints.emplace_back(server->address().ToString());
     }
     // Point the built-in NTP client to the test NTP server running as a part
     // of the cluster.

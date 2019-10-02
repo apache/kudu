@@ -161,13 +161,21 @@ MiniChronyd::~MiniChronyd() {
 }
 
 const MiniChronydOptions& MiniChronyd::options() const {
-  CHECK(process_) << "must start the chronyd process first";
   return options_;
 }
 
 pid_t MiniChronyd::pid() const {
-  CHECK(process_) << "must start the chronyd process first";
+  CHECK(process_) << "must start chronyd process first";
   return process_->pid();
+}
+
+HostPort MiniChronyd::address() const {
+  CHECK(process_) << "must start chronyd process first";
+  // If the test NTP server is bound to the wildcard IP address,
+  // use the loopback IP address to communicate with the server.
+  return HostPort(options_.bindaddress == kWildcardIpAddr ? kLoopbackIpAddr
+                                                          : options_.bindaddress,
+                  options_.port);
 }
 
 Status MiniChronyd::Start() {

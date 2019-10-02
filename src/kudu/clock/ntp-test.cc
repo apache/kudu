@@ -583,9 +583,10 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     options.index = 3;
     options.local = false;
     for (const auto& server : sync_servers) {
+      const auto addr = server->address();
       MiniChronydServerOptions server_options;
-      server_options.address = server->options().bindaddress;
-      server_options.port = server->options().port;
+      server_options.address = addr.host();
+      server_options.port = addr.port();
       options.servers.emplace_back(std::move(server_options));
     }
 
