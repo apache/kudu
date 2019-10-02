@@ -134,9 +134,10 @@ class MaintenanceModeITest : public ExternalMiniClusterITestBase {
 
   // Return the number of failed replicas there are in the cluster, according
   // to the tablet leaders.
-  Status GetNumFailedReplicas(const unordered_map<string, TServerDetails*>& ts_map,
-                              int* num_replicas_failed) {
+  Status GetReplicaHealthCounts(const unordered_map<string, TServerDetails*>& ts_map,
+                                int* num_replicas_failed, int* num_replicas_healthy) {
     int num_failed = 0;
+    int num_healthy = 0;
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       ExternalTabletServer* tserver = cluster_->tablet_server(i);
       if (tserver->IsShutdown()) {
@@ -158,23 +159,36 @@ class MaintenanceModeITest : public ExternalMiniClusterITestBase {
         const auto& committed_config = consensus_state.committed_config();
         for (int p = 0; p < committed_config.peers_size(); p++) {
           const auto& peer = committed_config.peers(p);
-          if (peer.has_health_report() &&
-              peer.health_report().overall_health() == HealthReportPB::FAILED) {
-            num_failed++;
+          if (peer.has_health_report()) {
+            switch (peer.health_report().overall_health()) {
+              case HealthReportPB::FAILED:
+                num_failed++;
+                break;
+              case HealthReportPB::HEALTHY:
+                num_healthy++;
+                break;
+              default:
+                continue;
+            }
           }
         }
       }
     }
     *num_replicas_failed = num_failed;
+    *num_replicas_healthy = num_healthy;
     return Status::OK();
   }
 
-  void AssertEventuallyNumFailedReplicas(const unordered_map<string, TServerDetails*>& ts_map,
-                                         int expected_failed) {
+  // Asserts that the ts_map will eventually have the given number of failed and healthy replicas
+  // across the cluster.
+  void AssertEventuallyHealthCounts(const unordered_map<string, TServerDetails*>& ts_map,
+                                    int expected_failed, int expected_healthy) {
     ASSERT_EVENTUALLY([&] {
       int num_failed;
-      ASSERT_OK(GetNumFailedReplicas(ts_map, &num_failed));
+      int num_healthy;
+      ASSERT_OK(GetReplicaHealthCounts(ts_map, &num_failed, &num_healthy));
       ASSERT_EQ(expected_failed, num_failed);
+      ASSERT_EQ(expected_healthy, num_healthy);
     });
   }
 
@@ -216,6 +230,7 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   // receive heartbeats.
   SKIP_IF_SLOW_NOT_ALLOWED();
   const int kNumTablets = 6;
+  const int total_replicas = kNumTablets * 3;
 
   // Create the table with three tablet servers and then add one so we're
   // guaranteed that the replicas are all on the first three servers.
@@ -235,7 +250,7 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   const auto& ts_map = ts_map_and_deleter.first;
 
   // Do a sanity check that all our replicas are healthy.
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, 0));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, 0, total_replicas));
 
   // Put one of the servers in maintenance mode.
   ExternalTabletServer* maintenance_ts = cluster_->tablet_server(0);
@@ -253,7 +268,7 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   // Now wait a bit for this failure to make its way to the master. The failure
   // shouldn't have led to any re-replication.
   SleepFor(kDurationForSomeHeartbeats);
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, kNumTablets));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, kNumTablets, total_replicas - kNumTablets));
   NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/false));
 
   // Restarting the masters shouldn't lead to re-replication either, even
@@ -266,7 +281,7 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   // Now bring the server back up and wait for it to become healthy. It should
   // be able to do this without tablet copies.
   ASSERT_OK(maintenance_ts->Restart());
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, 0));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, 0, total_replicas));
 
   // Since our server is healthy, leaving maintenance mode shouldn't trigger
   // any re-replication either.
@@ -279,7 +294,7 @@ TEST_F(MaintenanceModeRF3ITest, TestFailedTServerInMaintenanceModeDoesntRereplic
   // result in tablet copies.
   ASSERT_OK(ChangeTServerState(maintenance_uuid, TServerStateChangePB::ENTER_MAINTENANCE_MODE));
   NO_FATALS(maintenance_ts->Shutdown());
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, kNumTablets));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, kNumTablets, total_replicas - kNumTablets));
   ASSERT_OK(ChangeTServerState(maintenance_uuid, TServerStateChangePB::EXIT_MAINTENANCE_MODE));
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/true));
@@ -408,6 +423,7 @@ TEST_F(MaintenanceModeRF5ITest, TestBackgroundFailureDuringMaintenanceMode) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   // Create some tables with RF=5.
   const int kNumTablets = 3;
+  const int total_replicas = kNumTablets * 5;
   TestWorkload create_table(cluster_.get());
   create_table.set_num_tablets(kNumTablets);
   create_table.set_num_replicas(5);
@@ -421,7 +437,7 @@ TEST_F(MaintenanceModeRF5ITest, TestBackgroundFailureDuringMaintenanceMode) {
   const auto& ts_map = ts_map_and_deleter.first;
 
   // Do a sanity check that all our replicas are healthy.
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, 0));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, 0, total_replicas));
 
   // Enter maintenance mode on a tserver and shut it down.
   ExternalTabletServer* maintenance_ts = cluster_->tablet_server(0);
@@ -431,7 +447,7 @@ TEST_F(MaintenanceModeRF5ITest, TestBackgroundFailureDuringMaintenanceMode) {
   SleepFor(kDurationForSomeHeartbeats);
 
   // Wait for the failure to be recognized by the other replicas.
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, kNumTablets));
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, kNumTablets, total_replicas - kNumTablets));
   NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/false));
 
   // Now kill another server. We should be able to see some copies.
@@ -439,7 +455,9 @@ TEST_F(MaintenanceModeRF5ITest, TestBackgroundFailureDuringMaintenanceMode) {
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(ExpectStartedTabletCopies(/*should_have_started*/true));
   });
-  NO_FATALS(AssertEventuallyNumFailedReplicas(ts_map, 0));
+  // Eventually we'll be left with just the unresponsive maintenance mode
+  // failed replicas.
+  NO_FATALS(AssertEventuallyHealthCounts(ts_map, kNumTablets, total_replicas - kNumTablets));
   // The previously empty tablet server should hold all the replicas that were
   // re-replicated.
   const TServerDetails* added_details = FindOrDie(ts_map, cluster_->tablet_server(5)->uuid());
@@ -452,11 +470,13 @@ TEST_F(MaintenanceModeRF5ITest, TestBackgroundFailureDuringMaintenanceMode) {
   // original tablets on the maintenance mode tserver should still exist.
   ASSERT_OK(ChangeTServerState(maintenance_uuid, TServerStateChangePB::EXIT_MAINTENANCE_MODE));
   ASSERT_OK(maintenance_ts->Restart());
-  SleepFor(kDurationForSomeHeartbeats);
   const TServerDetails* maintenance_details = FindOrDie(ts_map, maintenance_uuid);
   vector<string> mnt_tablet_ids;
-  ASSERT_OK(ListRunningTabletIds(maintenance_details, MonoDelta::FromSeconds(30), &mnt_tablet_ids));
-  ASSERT_EQ(kNumTablets, mnt_tablet_ids.size());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(ListRunningTabletIds(
+        maintenance_details, MonoDelta::FromSeconds(30), &mnt_tablet_ids));
+    ASSERT_EQ(kNumTablets, mnt_tablet_ids.size());
+  });
 
   // All the while, our workload should not have been interrupted. Assert
   // eventually to wait for the rows to converge.
