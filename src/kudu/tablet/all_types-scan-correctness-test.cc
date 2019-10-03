@@ -44,6 +44,7 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
 using std::unique_ptr;
@@ -189,9 +190,10 @@ struct NumTypeRowOps : public RowOpsBase {
   size_t cur;
 };
 
-// Calculates the number of values in the range [lower, upper) given a repeated, completely
-// non-null pattern with the specified cardinality and the specified number of rows.
-int ExpectedCount(int nrows, int cardinality, int lower_val, int upper_val) {
+// Calculates the number of values in the range [lower, upper) given a sequential, completely
+// non-null pattern that is repeated with the specified cardinality and the specified number
+// of rows.
+int ExpectedCountSequential(int nrows, int cardinality, int lower_val, int upper_val) {
   if (lower_val >= upper_val || lower_val >= cardinality) {
     return 0;
   }
@@ -216,6 +218,50 @@ int ExpectedCount(int nrows, int cardinality, int lower_val, int upper_val) {
   return (nrows / cardinality) * (upper - lower) + last_chunk_count;
 }
 
+// Calculates number of values in the range [lower_val, upper_val) for a repeating pattern
+// like [00111 00222 00333]. The value lies between range [0, cardinality) and
+// repeats every "cardinality" chunks where each chunk is "cardinality" rows.
+// E.g. nrows: 34, cardinality: 5, null_upper: 2, lower_val: 1, upper_val: 4
+// [-, -, 0, 0, 0, -, -, 1, 1, 1, -, -, 2, 2, 2, -, -, 3, 3, 3, -, -, 4, 4, 4, <-- stride
+//  -, -, 0, 0, 0, -, -, 1, 1]
+int ExpectedCountRepeating(int nrows, int cardinality, int null_upper, int lower_val,
+                           int upper_val) {
+
+  if (lower_val >= upper_val || lower_val >= cardinality || null_upper >= cardinality) {
+    return 0;
+  }
+  int lower = std::max(0, lower_val);
+  int upper = std::min(cardinality, upper_val);
+
+  // Each stride comprises of cardinality chunks and each chunk comprises of cardinality rows.
+  // For above example there is 1 full stride comprising of 25 (5 * 5) rows.
+  int strides = nrows / (cardinality * cardinality);
+  // For above example there are 3 full matching chunks in a full stride.
+  int matching_chunks_per_stride = upper - lower;
+  // Matching rows in a chunk where chunk itself is within lower and upper.
+  // For above example if value in chunk lies between lower and upper
+  // then there are 3 rows in each such matching chunk.
+  int matching_rows_per_chunk = cardinality - null_upper;
+
+  // For above example there is 1 full chunk in last partial stride.
+  int chunks_in_last_stride = (nrows % (cardinality * cardinality)) / cardinality;
+  int matching_chunks_in_last_stride = std::max(0, std::min(upper, chunks_in_last_stride) - lower);
+
+  // For above example there are 4 remainder rows [-, -, 1, 1], 2 of which are within range.
+  int remainder_rows = (nrows % (cardinality * cardinality)) % cardinality;
+  int remainder_matching_rows = std::max(0, remainder_rows - null_upper);
+  if (remainder_matching_rows > 0) {
+    int val_in_remainder_rows = chunks_in_last_stride;
+    if (!(val_in_remainder_rows >= lower && val_in_remainder_rows < upper)) {
+      remainder_matching_rows = 0;
+    }
+  }
+
+  return strides * matching_chunks_per_stride * matching_rows_per_chunk +
+      matching_chunks_in_last_stride * matching_rows_per_chunk +
+      remainder_matching_rows;
+}
+
 std::string TraceMsg(const std::string& test_name,  int expected, int actual) {
   std::ostringstream ss;
   ss << test_name << " Scan Results: " << expected << " expected, " << actual << " returned.";
@@ -236,11 +282,12 @@ public:
     KuduTabletTest::SetUp();
   }
 
-  // Adds a pattern of repeated values with the first "null_upper" of every "cardinality" rows
-  // being set to null.
+  // Adds a pattern of sequential values in every "cardinality" rows with the
+  // first "null_upper" being set to null. This pattern of sequential values is then
+  // repeated after every "cardinality" rows.
   // E.g. nrows: 9, cardinality: 5, null_upper: 2
   // [-, -, 2, 3, 4, -, -, 2, 3]
-  void FillTestTablet(int nrows, int cardinality, int null_upper) {
+  void FillTestTabletWithSequentialPattern(int nrows, int cardinality, int null_upper) {
     base_nrows_ = nrows;
     base_cardinality_ = cardinality;
     base_null_upper_ = null_upper;
@@ -257,6 +304,37 @@ public:
         rowops_.GenerateRow(i % cardinality, false, &row);
       }
       ASSERT_OK_FAST(writer.Insert(row));
+    }
+    ASSERT_OK(tablet()->Flush());
+  }
+
+  // Adds a pattern of repeating value for every "cardinality" rows with the
+  // first "null_upper" being set to null. The repeating value cycles from
+  // [0, cardinality) values after every "cardinality" rows. This helps test RLE.
+  // E.g. nrows: 34, cardinality: 5, null_upper: 2
+  // [-, -, 0, 0, 0, -, -, 1, 1, 1, -, -, 2, 2, 2, -, -, 3, 3, 3, -, -, 4, 4, 4, <-- stride
+  //  -, -, 0, 0, 0, -, -, 1, 1]
+  void FillTestTabletWithRepeatPattern(int nrows, int cardinality, int null_upper) {
+    base_nrows_ = nrows;
+    base_cardinality_ = cardinality;
+    base_null_upper_ = null_upper;
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    KuduPartialRow row(&client_schema_);
+    int val = 0;
+    for (int i = 0; i < nrows;) {
+      CHECK_OK(row.SetInt32(0, i));
+      // Populate the bottom of the repeating pattern with NULLs.
+      // Note: Non-positive null_upper will yield a completely non-NULL column.
+      if (i % cardinality < null_upper) {
+        rowops_.GenerateRow(-1, false, &row);
+      } else {
+        rowops_.GenerateRow(val, false, &row);
+      }
+      ASSERT_OK_FAST(writer.Insert(row));
+      i++;
+      if (i % cardinality == 0) {
+        val = (val + 1) % cardinality;
+      }
     }
     ASSERT_OK(tablet()->Flush());
   }
@@ -313,14 +391,83 @@ public:
     ASSERT_OK(SilentIterateToStringList(iter.get(), count));
   }
 
-  void RunTests() {
-    RunUnalteredTabletTests();
-    RunAlteredTabletTests();
+  void RunSequentialTests() {
+    RunUnalteredSequentialTabletTests();
+    RunAlteredSequentialTabletTests();
+  }
+
+  void RunRepeatingTests() {
+    RunUnalteredRepeatingTabletTests();
+  }
+
+  void RunUnalteredRepeatingTabletTests() {
+    int count = 0;
+    {
+      ScanSpec spec;
+      auto pred = rowops_.GenerateRangePredicate(schema_, kColA, kLower, kUpper);
+      spec.AddPredicate(pred);
+      LOG_TIMING(INFO, "Range") {
+        ScanWithSpec(schema_, spec, &count);
+      }
+      int expected_count = ExpectedCountRepeating(base_nrows_, base_cardinality_, base_null_upper_,
+                                                  kLower, kUpper);
+      SCOPED_TRACE(TraceMsg("Range", expected_count, count));
+      ASSERT_EQ(expected_count, count);
+    }
+
+    {
+      // MultiColumn Range scan
+      // This predicates two columns:
+      //   col_a: [0, upper_val)
+      //   col_b: [lower_val, cardinality)
+      // Since the two columns have identical data, the result will be:
+      //   AND:   [lower_val, upper_val)
+      ScanSpec spec;
+      ColumnPredicate pred_a = rowops_.GenerateRangePredicate(schema_, kColA, 0, kUpper);
+      spec.AddPredicate(pred_a);
+      ColumnPredicate pred_b = rowops_.GenerateRangePredicate(schema_, kColB, kLower,
+                                                              base_cardinality_);
+      spec.AddPredicate(pred_b);
+      LOG_TIMING(INFO, "MultiColumn Range") {
+        ScanWithSpec(schema_, spec, &count);
+      }
+      int expected_count = ExpectedCountRepeating(base_nrows_, base_cardinality_, base_null_upper_,
+                                                  kLower, kUpper);
+      SCOPED_TRACE(TraceMsg("MultiColumn Range", expected_count, count));
+      ASSERT_EQ(expected_count, count);
+    }
+
+    {
+      ScanSpec spec;
+      auto pred = ColumnPredicate::IsNotNull(schema_.column(kColB));
+      spec.AddPredicate(pred);
+      LOG_TIMING(INFO, "IsNotNull") {
+        ScanWithSpec(schema_, spec, &count);
+      }
+      int expected_count = ExpectedCountRepeating(base_nrows_, base_cardinality_, base_null_upper_,
+                                                  0, base_cardinality_);
+      SCOPED_TRACE(TraceMsg("IsNotNull", expected_count, count));
+      ASSERT_EQ(expected_count, count);
+    }
+
+    {
+      ScanSpec spec;
+      auto pred = ColumnPredicate::IsNull(schema_.column(kColB));
+      spec.AddPredicate(pred);
+      LOG_TIMING(INFO, "IsNull") {
+        ScanWithSpec(schema_, spec, &count);
+      }
+      int expected_count = base_nrows_ -
+          ExpectedCountRepeating(base_nrows_, base_cardinality_, base_null_upper_, 0,
+                                 base_cardinality_);
+      SCOPED_TRACE(TraceMsg("IsNull", expected_count, count));
+      ASSERT_EQ(expected_count, count);
+    }
   }
 
   // Runs queries on an un-altered table. Correctness is determined by comparing the number of rows
   // returned with the number of rows expected by each query.
-  void RunUnalteredTabletTests() {
+  void RunUnalteredSequentialTabletTests() {
     int lower_non_null = kLower;
     if (kLower < base_null_upper_) {
       lower_non_null = base_null_upper_;
@@ -332,7 +479,8 @@ public:
       auto pred = rowops_.GenerateRangePredicate(schema_, kColA, kLower, kUpper);
       spec.AddPredicate(pred);
       ScanWithSpec(schema_, spec, &count);
-      int expected_count = ExpectedCount(base_nrows_, base_cardinality_, lower_non_null, kUpper);
+      int expected_count =
+          ExpectedCountSequential(base_nrows_, base_cardinality_, lower_non_null, kUpper);
       SCOPED_TRACE(TraceMsg("Range", expected_count, count));
       ASSERT_EQ(expected_count, count);
     }
@@ -350,7 +498,8 @@ public:
                                                               base_cardinality_);
       spec.AddPredicate(pred_b);
       ScanWithSpec(schema_, spec, &count);
-      int expected_count = ExpectedCount(base_nrows_, base_cardinality_, lower_non_null, kUpper);
+      int expected_count =
+          ExpectedCountSequential(base_nrows_, base_cardinality_, lower_non_null, kUpper);
       SCOPED_TRACE(TraceMsg("MultiColumn Range", expected_count, count));
       ASSERT_EQ(expected_count, count);
     }
@@ -359,8 +508,8 @@ public:
       auto pred = ColumnPredicate::IsNotNull(schema_.column(kColB));
       spec.AddPredicate(pred);
       ScanWithSpec(schema_, spec, &count);
-      int expected_count = ExpectedCount(base_nrows_, base_cardinality_, base_null_upper_,
-          base_cardinality_);
+      int expected_count = ExpectedCountSequential(base_nrows_, base_cardinality_, base_null_upper_,
+                                                   base_cardinality_);
       SCOPED_TRACE(TraceMsg("IsNotNull", expected_count, count));
       ASSERT_EQ(expected_count, count);
     }
@@ -369,7 +518,8 @@ public:
       auto pred = ColumnPredicate::IsNull(schema_.column(kColB));
       spec.AddPredicate(pred);
       ScanWithSpec(schema_, spec, &count);
-      int expected_count = ExpectedCount(base_nrows_, base_cardinality_, 0, base_null_upper_);
+      int expected_count =
+          ExpectedCountSequential(base_nrows_, base_cardinality_, 0, base_null_upper_);
       SCOPED_TRACE(TraceMsg("IsNull", expected_count, count));
       ASSERT_EQ(expected_count, count);
     }
@@ -377,7 +527,7 @@ public:
 
   // Runs tests with an altered table. Queries are run with different read-defaults and are deemed
   // correct if they return the correct number of results.
-  void RunAlteredTabletTests() {
+  void RunAlteredSequentialTabletTests() {
     int lower_non_null = kLower;
     // Determine the lowest non-null value in the data range. Used in getting expected counts.
     if (kLower < base_null_upper_) {
@@ -403,10 +553,10 @@ public:
       spec.AddPredicate(pred_b);
       spec.AddPredicate(pred_c);
       ScanWithSpec(altered_schema_, spec, &count);
-      int base_expected_count = ExpectedCount(base_nrows_,
-                                              base_cardinality_,
-                                              lower_non_null,
-                                              kUpper);
+      int base_expected_count = ExpectedCountSequential(base_nrows_,
+                                                        base_cardinality_,
+                                                        lower_non_null,
+                                                        kUpper);
       // Since the new column has the same data as the base columns, IsNull with a Range predicate
       // should yield no rows from the added rows.
       int altered_expected_count = 0;
@@ -425,10 +575,10 @@ public:
       // Since the table has a null read-default on the added column, the IsNotNull predicate
       // should filter out all rows in the base data.
       int base_expected_count = 0;
-      int altered_expected_count = ExpectedCount(added_nrows_,
-                                                 base_cardinality_,
-                                                 lower_non_null,
-                                                 kUpper);
+      int altered_expected_count = ExpectedCountSequential(added_nrows_,
+                                                           base_cardinality_,
+                                                           lower_non_null,
+                                                           kUpper);
       int expected_count = base_expected_count + altered_expected_count;
       SCOPED_TRACE(TraceMsg("Null default, Range+IsNotNull", expected_count, count));
       ASSERT_EQ(expected_count, count);
@@ -445,10 +595,10 @@ public:
       // Since the added column has a null read-default, the base rows will be completely filtered.
       int base_expected_count = 0;
       // The added data will be predicated with [lower, upper).
-      int altered_expected_count = ExpectedCount(added_nrows_,
-                                                 base_cardinality_,
-                                                 lower_non_null,
-                                                 kUpper);
+      int altered_expected_count = ExpectedCountSequential(added_nrows_,
+                                                           base_cardinality_,
+                                                           lower_non_null,
+                                                           kUpper);
       int expected_count = base_expected_count + altered_expected_count;
       SCOPED_TRACE(TraceMsg("Null default, Range", expected_count, count));
       ASSERT_EQ(expected_count, count);
@@ -490,12 +640,14 @@ public:
       spec.AddPredicate(pred_b);
       spec.AddPredicate(pred_c);
       ScanWithSpec(altered_schema_, spec, &count);
-      int base_expected_count = ExpectedCount(base_nrows_, base_cardinality_, lower_non_null,
-                                              kUpper);
+      int base_expected_count =
+          ExpectedCountSequential(base_nrows_, base_cardinality_, lower_non_null,
+                                  kUpper);
       // Since the new column has the same data as the base columns, IsNotNull with a Range
       // predicate should yield the same rows as the Range query alone on the altered data.
-      int altered_expected_count = ExpectedCount(added_nrows_, base_cardinality_, lower_non_null,
-                                                 kUpper);
+      int altered_expected_count =
+          ExpectedCountSequential(added_nrows_, base_cardinality_, lower_non_null,
+                                  kUpper);
       int expected_count = base_expected_count + altered_expected_count;
       SCOPED_TRACE(TraceMsg("Non-null default, Range+IsNotNull", expected_count, count));
       ASSERT_EQ(expected_count, count);
@@ -516,11 +668,12 @@ public:
       }
       // Because the read_default is in range, the predicate on "val_c" will be satisfied
       // by base data, and all rows that satisfy "pred_b" will be returned.
-      int base_expected_count = ExpectedCount(base_nrows_, base_cardinality_, lower, kUpper);
-      int altered_expected_count = ExpectedCount(added_nrows_,
-                                                 base_cardinality_,
-                                                 lower_non_null,
-                                                 kUpper);
+      int base_expected_count =
+          ExpectedCountSequential(base_nrows_, base_cardinality_, lower, kUpper);
+      int altered_expected_count = ExpectedCountSequential(added_nrows_,
+                                                           base_cardinality_,
+                                                           lower_non_null,
+                                                           kUpper);
       int expected_count = base_expected_count + altered_expected_count;
       SCOPED_TRACE(TraceMsg("Non-null default, Range with Default", expected_count, count));
       ASSERT_EQ(expected_count, count);
@@ -542,10 +695,10 @@ public:
       // Because the read_default is out of range, the "pred_c" will not be satisfied by base data,
       // so all base rows will be filtered.
       int base_expected_count = 0;
-      int altered_expected_count = ExpectedCount(added_nrows_,
-                                                 base_cardinality_,
-                                                 default_plus_one,
-                                                 kUpper);
+      int altered_expected_count = ExpectedCountSequential(added_nrows_,
+                                                           base_cardinality_,
+                                                           default_plus_one,
+                                                           kUpper);
       int expected_count = base_expected_count + altered_expected_count;
       SCOPED_TRACE(TraceMsg("Non-null default, Range without Default", expected_count, count));
       ASSERT_EQ(expected_count, count);
@@ -599,22 +752,40 @@ typedef ::testing::Types<NumTypeRowOps<KeyTypeWrapper<INT8, BIT_SHUFFLE>>,
 
 TYPED_TEST_CASE(AllTypesScanCorrectnessTest, KeyTypes);
 
-TYPED_TEST(AllTypesScanCorrectnessTest, AllNonNull) {
+TYPED_TEST(AllTypesScanCorrectnessTest, AllNonNullSequential) {
   int null_upper = 0;
-  this->FillTestTablet(kNumBaseRows, kCardinality, null_upper);
-  this->RunTests();
+  this->FillTestTabletWithSequentialPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunSequentialTests();
 }
 
-TYPED_TEST(AllTypesScanCorrectnessTest, SomeNull) {
+TYPED_TEST(AllTypesScanCorrectnessTest, SomeNullSequential) {
   int null_upper = kUpper/2;
-  this->FillTestTablet(kNumBaseRows, kCardinality, null_upper);
-  this->RunTests();
+  this->FillTestTabletWithSequentialPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunSequentialTests();
 }
 
-TYPED_TEST(AllTypesScanCorrectnessTest, AllNull) {
+TYPED_TEST(AllTypesScanCorrectnessTest, AllNullSequential) {
   int null_upper = kCardinality;
-  this->FillTestTablet(kNumBaseRows, kCardinality, null_upper);
-  this->RunTests();
+  this->FillTestTabletWithSequentialPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunSequentialTests();
+}
+
+TYPED_TEST(AllTypesScanCorrectnessTest, AllNonNullRepeating) {
+  int null_upper = 0;
+  this->FillTestTabletWithRepeatPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunRepeatingTests();
+}
+
+TYPED_TEST(AllTypesScanCorrectnessTest, AllNullRepeating) {
+  int null_upper = kCardinality;
+  this->FillTestTabletWithRepeatPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunRepeatingTests();
+}
+
+TYPED_TEST(AllTypesScanCorrectnessTest, SomeNullRepeating) {
+  int null_upper = kUpper / 2;
+  this->FillTestTabletWithRepeatPattern(kNumBaseRows, kCardinality, null_upper);
+  this->RunRepeatingTests();
 }
 
 }  // namespace tablet
