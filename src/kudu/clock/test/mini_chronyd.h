@@ -29,7 +29,6 @@
 namespace kudu {
 
 class HostPort;
-class RWFile;
 class Subprocess;
 
 namespace clock {
@@ -249,7 +248,7 @@ class MiniChronyd {
                       std::string* out_stderr = nullptr) const WARN_UNUSED_RESULT;
 
   MiniChronydOptions options_;
-  std::unique_ptr<RWFile> cmd_socket_;
+  std::string cmd_socket_dir_;
   std::unique_ptr<Subprocess> process_;
 };
 

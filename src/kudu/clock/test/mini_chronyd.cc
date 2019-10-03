@@ -156,7 +156,14 @@ MiniChronyd::MiniChronyd(MiniChronydOptions options)
 
 MiniChronyd::~MiniChronyd() {
   if (process_) {
-    WARN_NOT_OK(Stop(), "unable to stop MiniChronyd");
+    WARN_NOT_OK(Stop(), "unable to stop chronyd");
+  }
+  if (!cmd_socket_dir_.empty()) {
+    // Remove the directory created for the command Unix domain socket. The
+    // directory should be empty if chronyd exited normally: it cleans up after
+    // itself on a clean exit.
+    WARN_NOT_OK(Env::Default()->DeleteDir(cmd_socket_dir_),
+                "unable to remove chronyd command socket directory");
   }
 }
 
@@ -390,14 +397,16 @@ $0
     // TODO(aserbin): use some synthetic mount point instead?
     string dir;
     RETURN_NOT_OK(Env::Default()->GetTestDirectory(&dir));
-    dir += Substitute("/$0.$1", Env::Default()->NowMicros(), getpid());
+    dir = JoinPathSegments(dir, Substitute("$0.$1", Env::Default()->NowMicros(),
+                                           getpid()));
     const auto s = Env::Default()->CreateDir(dir);
-    if (!s.IsAlreadyPresent() && !s.ok()) {
+    if (!s.ok() && !s.IsAlreadyPresent()) {
       return s;
     }
     RETURN_NOT_OK(CorrectOwnership(dir));
     options_.bindcmdaddress = Substitute("$0/chronyd.$1.sock",
                                          dir, options_.index);
+    cmd_socket_dir_ = std::move(dir);
   }
   string username;
   RETURN_NOT_OK(GetLoggedInUser(&username));
