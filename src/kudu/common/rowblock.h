@@ -214,9 +214,10 @@ class SelectionVectorView {
     DCHECK_LE(row_idx, sel_vec_->nrows() - row_offset_);
     return BitmapTest(sel_vec_->bitmap(), row_offset_ + row_idx);
   }
-  void ClearBits(size_t nrows) {
-    DCHECK_LE(nrows, sel_vec_->nrows() - row_offset_);
-    BitmapChangeBits(sel_vec_->mutable_bitmap(), row_offset_, nrows, false);
+  // Clear "nrows" bits from the supplied "offset" in the current view.
+  void ClearBits(size_t nrows, size_t offset = 0) {
+    DCHECK_LE(offset + nrows, sel_vec_->nrows() - row_offset_);
+    BitmapChangeBits(sel_vec_->mutable_bitmap(), row_offset_ + offset, nrows, false);
   }
  private:
   SelectionVector* sel_vec_;

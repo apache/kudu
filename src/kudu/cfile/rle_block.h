@@ -423,6 +423,55 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
+  Status CopyNextAndEval(size_t* n,
+                         ColumnMaterializationContext* ctx,
+                         SelectionVectorView* sel,
+                         ColumnDataView* dst) override {
+    DCHECK(parsed_);
+
+    DCHECK_LE(*n, dst->nrows());
+    DCHECK_EQ(dst->stride(), sizeof(CppType));
+
+    ctx->SetDecoderEvalSupported();
+    if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
+      *n = 0;
+      return Status::OK();
+    }
+
+    const size_t to_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
+    size_t remaining = to_fetch;
+    uint8_t* data_ptr = dst->data();
+    size_t row_offset = 0;
+    while (remaining > 0) {
+      CppType val = 0;
+      const size_t num_read = rle_decoder_.GetNextRun(&val, remaining);
+      DCHECK(num_read > 0);
+      DCHECK_LE(num_read, remaining);
+      if (ctx->pred()->EvaluateCell<IntType>(static_cast<const void*>(&val))) {
+        // Copy data for matching predicate
+        for (size_t row_idx = row_offset; row_idx < row_offset + num_read;
+             ++row_idx, data_ptr += kCppTypeSize) {
+          // Skip copying if the row has already been cleared.
+          if (!sel->TestBit(row_idx)) {
+            continue;
+          }
+          *(reinterpret_cast<CppType *>(data_ptr)) = val;
+        }
+      } else {
+        // Mark that the rows will not be returned.
+        sel->ClearBits(num_read, row_offset);
+        data_ptr += num_read * kCppTypeSize;
+      }
+      remaining -= num_read;
+      row_offset += num_read;
+    }
+
+    cur_idx_ += to_fetch;
+    *n = to_fetch;
+
+    return Status::OK();
+  }
+
   virtual bool HasNext() const OVERRIDE {
     return cur_idx_ < num_elems_;
   }
