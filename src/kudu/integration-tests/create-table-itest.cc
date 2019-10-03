@@ -140,15 +140,17 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   // The server that was up from the beginning should be left with only
   // one tablet, eventually, since the tablets which failed to get created
   // properly should get deleted.
-  vector<string> tablets;
-  int wait_iter = 0;
-  while (tablets.size() != 1 && wait_iter++ < 100) {
+  //
+  // Note that the tablet count can rise before it falls due to the server
+  // handling a mix of obsolete CreateTablet RPCs (see KUDU-2963 for more
+  // details). This test isn't terribly precise; we may catch the server with
+  // just one tablet during the "upswing", before reaching the steady state.
+  ASSERT_EVENTUALLY([&] {
+    vector<string> tablets = inspect_->ListTabletsWithDataOnTS(0);
     LOG(INFO) << "Waiting for only one tablet to be left on TS 0. Currently have: "
               << tablets;
-    SleepFor(MonoDelta::FromMilliseconds(100));
-    tablets = inspect_->ListTabletsWithDataOnTS(0);
-  }
-  ASSERT_EQ(1, tablets.size()) << "Tablets on TS0: " << tablets;
+    ASSERT_EQ(1, tablets.size()) << "Tablets on TS0: " << tablets;
+  });
 }
 
 // Regression test for KUDU-1317. Ensure that, when a table is created,
