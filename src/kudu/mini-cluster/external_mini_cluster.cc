@@ -116,7 +116,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3)),
-      num_ntp_servers(0) {
+      num_ntp_servers(UseSystemNtp() ? 0 : 1) {
 }
 
 ExternalMiniCluster::ExternalMiniCluster()

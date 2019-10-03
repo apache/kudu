@@ -87,6 +87,13 @@ class KuduTest : public ::testing::Test {
 // Returns true if slow tests are runtime-enabled.
 bool AllowSlowTests();
 
+// Returns true if tests should rely on the system clock synchronized by the
+// kernel NTP discipline. By default, test clusters should run their own
+// test NTP server and configure Kudu masters and tablet servers to use the
+// built-in NTP client as the clock source for HybridTime, where the built-in
+// NTP clients are pointed to the test cluster's dedicated NTP server.
+bool UseSystemNtp();
+
 // Override the given gflag to the new value, only in the case that
 // slow tests are enabled and the user hasn't otherwise overridden
 // it on the command line.

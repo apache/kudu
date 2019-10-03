@@ -73,7 +73,8 @@ using strings::Substitute;
 namespace kudu {
 
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
-static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
+static const char* const kSlowTestsEnvVar = "KUDU_ALLOW_SLOW_TESTS";
+static const char* const kUseSystemNtpEnvVar = "KUDU_USE_SYSTEM_NTP";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -169,8 +170,10 @@ void KuduTest::OverrideKrb5Environment() {
 // Test utility functions
 ///////////////////////////////////////////////////
 
-bool AllowSlowTests() {
-  char *e = getenv(kSlowTestsEnvVariable);
+namespace {
+// Get the value of an environment variable that has boolean semantics.
+bool GetBooleanEnvironmentVariable(const char* env_var_name) {
+  const char* const e = getenv(env_var_name);
   if ((e == nullptr) ||
       (strlen(e) == 0) ||
       (strcasecmp(e, "false") == 0) ||
@@ -183,8 +186,18 @@ bool AllowSlowTests() {
       (strcasecmp(e, "yes") == 0)) {
     return true;
   }
-  LOG(FATAL) << "Unrecognized value for " << kSlowTestsEnvVariable << ": " << e;
-  return false;
+  LOG(FATAL) << Substitute("$0: invalid value for environment variable $0",
+                           e, env_var_name);
+  return false;  // unreachable
+}
+} // anonymous namespace
+
+bool AllowSlowTests() {
+  return GetBooleanEnvironmentVariable(kSlowTestsEnvVar);
+}
+
+bool UseSystemNtp() {
+  return GetBooleanEnvironmentVariable(kUseSystemNtpEnvVar);
 }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,
