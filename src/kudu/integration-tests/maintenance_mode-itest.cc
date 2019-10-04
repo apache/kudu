@@ -93,7 +93,6 @@ class MaintenanceModeITest : public ExternalMiniClusterITestBase {
   void SetUpCluster(int num_tservers) {
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = num_tservers;
-    opts.extra_master_flags = { "--master_support_maintenance_mode=true" };
     opts.extra_tserver_flags = kTServerFlags;
     NO_FATALS(StartClusterWithOpts(std::move(opts)));
     const auto& addr = cluster_->master(0)->bound_rpc_addr();

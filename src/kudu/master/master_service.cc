@@ -94,12 +94,6 @@ DEFINE_bool(master_support_authz_tokens, true,
             "testing version compatibility in the client.");
 TAG_FLAG(master_support_authz_tokens, hidden);
 
-// TODO(awong): once maintenance mode is done, remove this.
-DEFINE_bool(master_support_maintenance_mode, false,
-            "Whether the master supports maintenance mode. Used for "
-            "testing while maintenance mode in progress.");
-TAG_FLAG(master_support_maintenance_mode, hidden);
-
 using boost::make_optional;
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -196,10 +190,6 @@ void MasterServiceImpl::ChangeTServerState(const ChangeTServerStateRequestPB* re
       rpc->RespondFailure(s);
     }
   });
-  if (PREDICT_FALSE(!FLAGS_master_support_maintenance_mode)) {
-    s = Status::NotSupported("maintenance mode is not supported");
-    return;
-  }
   if (!req->has_change()) {
     s = Status::InvalidArgument("request must contain tserver state change");
     return;

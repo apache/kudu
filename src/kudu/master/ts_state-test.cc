@@ -22,7 +22,6 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -48,8 +47,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-DECLARE_bool(master_support_maintenance_mode);
 
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::rpc::Messenger;
@@ -319,7 +316,6 @@ TEST_F(TServerStateTest, MaintenanceModeTServerDoesntGetNewReplicas) {
 
 // Test to exercise the RPC endpoint to change the tserver state.
 TEST_F(TServerStateTest, TestRPCs) {
-  FLAGS_master_support_maintenance_mode = true;
   ChangeTServerStateRequestPB req;
   Status s;
   // Sends a state change RPC and ensures there's an error, matching the
