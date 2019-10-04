@@ -1821,13 +1821,24 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
   // Send the call. This first call should attempt to init the corrupted
   // deltafiles and return with an error. Subsequent calls should see that the
   // previous call to init failed and should return an appropriate error.
-  req.set_batch_size_bytes(10000);
-  SCOPED_TRACE(SecureDebugString(req));
-  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-  SCOPED_TRACE(SecureDebugString(resp));
-  ASSERT_TRUE(resp.has_error());
-  ASSERT_EQ(resp.error().status().code(), AppStatusPB::CORRUPTION);
-  ASSERT_STR_CONTAINS(resp.error().status().message(), "failed to init CFileReader");
+  //
+  // It's possible for snapshot scans to be waiting in MVCC when the tablet
+  // fails. If that happens, the error will be slightly different.
+  {
+    req.set_batch_size_bytes(10000);
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    const auto& s = resp.error().status();
+    if (s.code() == AppStatusPB::CORRUPTION) {
+      ASSERT_STR_CONTAINS(s.message(), "failed to init CFileReader");
+    } else if (s.code() == AppStatusPB::ABORTED) {
+      ASSERT_STR_CONTAINS(s.message(), "MVCC is closed");
+    } else {
+      FAIL() << "Unexpected failure";
+    }
+  }
 
   // The tablet will end up transitioning to a failed state and yield "not
   // running" errors.
@@ -1837,8 +1848,14 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
     SCOPED_TRACE(SecureDebugString(req));
     ASSERT_TRUE(resp.has_error());
     SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_EQ(resp.error().status().code(), AppStatusPB::ILLEGAL_STATE);
-    ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING");
+    const auto& s = resp.error().status();
+    if (s.code() == AppStatusPB::ILLEGAL_STATE) {
+      ASSERT_STR_CONTAINS(s.message(), "Tablet not RUNNING");
+    } else if (s.code() == AppStatusPB::ABORTED) {
+      ASSERT_STR_CONTAINS(s.message(), "MVCC is closed");
+    } else {
+      FAIL() << "Unexpected failure";
+    }
   }
 }
 
