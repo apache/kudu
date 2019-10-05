@@ -29,6 +29,7 @@
 #include "kudu/clock/builtin_ntp.h"
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/system_ntp.h"
+#include "kudu/clock/system_unsync_time.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
@@ -40,10 +41,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
-
-#ifdef __APPLE__
-#include "kudu/clock/system_unsync_time.h"
-#endif
 
 using kudu::Status;
 using std::string;
@@ -60,13 +57,17 @@ DEFINE_bool(use_hybrid_clock, true,
             "implementation. This should be disabled for testing purposes only.");
 TAG_FLAG(use_hybrid_clock, hidden);
 
+// Use the 'system' time source by default in standard (non-test) environment.
+// This requires local machine clock to be NTP-synchronized.
 DEFINE_string(time_source, "system",
               "The time source that HybridClock should use. Must be one of "
-              "'system', 'builtin', or 'mock' ('mock' is for tests only)");
+              "'builtin', 'system', 'system_unsync', or 'mock' "
+              "('system_unsync' and 'mock' are for tests only)");
 TAG_FLAG(time_source, evolving);
 DEFINE_validator(time_source, [](const char* flag_name, const string& value) {
-  if (boost::iequals(value, "system") ||
-      boost::iequals(value, "builtin") ||
+  if (boost::iequals(value, "builtin") ||
+      boost::iequals(value, "system") ||
+      boost::iequals(value, "system_unsync") ||
       boost::iequals(value, "mock")) {
     return true;
   }
@@ -137,6 +138,8 @@ Status HybridClock::Init() {
 #else
     time_service_.reset(new clock::SystemUnsyncTime);
 #endif
+  } else if (boost::iequals(FLAGS_time_source, "system_unsync")) {
+    time_service_.reset(new clock::SystemUnsyncTime);
   } else if (boost::iequals(FLAGS_time_source, "builtin")) {
     time_service_.reset(new clock::BuiltInNtp);
   } else {

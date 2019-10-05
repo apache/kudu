@@ -38,6 +38,7 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest-spi.h>
 
@@ -65,6 +66,8 @@ DEFINE_string(test_leave_files, "on_failure",
 
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
+DECLARE_string(time_source);
+
 using boost::optional;
 using std::string;
 using std::vector;
@@ -74,7 +77,6 @@ namespace kudu {
 
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
 static const char* const kSlowTestsEnvVar = "KUDU_ALLOW_SLOW_TESTS";
-static const char* const kUseSystemNtpEnvVar = "KUDU_USE_SYSTEM_NTP";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -90,9 +92,9 @@ bool g_is_gtest = true;
 ///////////////////////////////////////////////////
 
 KuduTest::KuduTest()
-  : env_(Env::Default()),
-    flag_saver_(new google::FlagSaver()),
-    test_dir_(GetTestDataDirectory()) {
+    : env_(Env::Default()),
+      flag_saver_(new google::FlagSaver()),
+      test_dir_(GetTestDataDirectory()) {
   std::map<const char*, const char*> flags_for_tests = {
     // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
     // tests rely on cutting power to a machine or equivalent.
@@ -109,10 +111,16 @@ KuduTest::KuduTest()
     {"ipki_server_key_size", "1024"},
     {"ipki_ca_key_size", "1024"},
     {"tsk_num_rsa_bits", "512"},
+    // For a generic Kudu test, the local wall-clock time is good enough even
+    // if it's not synchronized by NTP. All test components are run at the same
+    // node, so there aren't multiple time sources to synchronize.
+    {"time_source", "system_unsync"},
   };
   for (const auto& e : flags_for_tests) {
     // We don't check for errors here, because we have some default flags that
-    // only apply to certain tests.
+    // only apply to certain tests. If a flag is defined in a library which
+    // the test binary isn't linked with, then SetCommandLineOptionWithMode()
+    // reports an error since the flag is unknown to the gflags runtime.
     google::SetCommandLineOptionWithMode(e.first, e.second, google::SET_FLAGS_DEFAULT);
   }
   // If the TEST_TMPDIR variable has been set, then glog will automatically use that
@@ -194,10 +202,6 @@ bool GetBooleanEnvironmentVariable(const char* env_var_name) {
 
 bool AllowSlowTests() {
   return GetBooleanEnvironmentVariable(kSlowTestsEnvVar);
-}
-
-bool UseSystemNtp() {
-  return GetBooleanEnvironmentVariable(kUseSystemNtpEnvVar);
 }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,

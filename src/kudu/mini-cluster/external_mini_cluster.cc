@@ -87,6 +87,7 @@ using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
+using std::copy;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -121,10 +122,9 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
 #if !defined(NO_CHRONY)
-      ,
-      num_ntp_servers(UseSystemNtp() ? 0 : 1)
-#endif
-    {
+      , num_ntp_servers(1)
+#endif // #if !defined(NO_CHRONY) ...
+{
 }
 
 ExternalMiniCluster::ExternalMiniCluster()
@@ -167,9 +167,11 @@ Status ExternalMiniCluster::HandleOptions() {
   return Status::OK();
 }
 
-#if !defined(NO_CHRONY)
-Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
+Status ExternalMiniCluster::AddTimeSourceFlags(std::vector<std::string>* flags) {
   DCHECK(flags);
+#if defined(NO_CHRONY)
+  flags->emplace_back("--time_source=system_unsync");
+#else
   if (opts_.num_ntp_servers > 0) {
     vector<string> ntp_endpoints;
     CHECK_EQ(opts_.num_ntp_servers, ntp_servers_.size());
@@ -190,10 +192,12 @@ Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
     // Switch the clock to use the built-in NTP client which clock is
     // synchronized with the test NTP server.
     flags->emplace_back("--time_source=builtin");
+  } else {
+    flags->emplace_back("--time_source=system_unsync");
   }
+#endif // #if defined(NO_CHRONY) ... else ...
   return Status::OK();
 }
-#endif // #if !defined(NO_CHRONY) ...
 
 Status ExternalMiniCluster::StartSentry() {
   sentry_->SetDataRoot(opts_.cluster_root);
@@ -515,7 +519,7 @@ Status ExternalMiniCluster::StartMasters() {
     }
   }
 
-  vector<string> flags = opts_.extra_master_flags;
+  vector<string> flags;
   flags.emplace_back("--rpc_reuseport=true");
   if (num_masters > 1) {
     flags.emplace_back(Substitute("--master_addresses=$0",
@@ -544,9 +548,11 @@ Status ExternalMiniCluster::StartMasters() {
     flags.emplace_back("--location_mapping_by_uuid");
 #   endif
   }
-#if !defined(NO_CHRONY)
-  RETURN_NOT_OK(AddNtpFlags(&flags));
-#endif
+  RETURN_NOT_OK(AddTimeSourceFlags(&flags));
+
+  // Add custom master flags.
+  copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),
+       std::back_inserter(flags));
 
   // Start the masters.
   const string& exe = GetBinaryPath(kMasterBinaryName);
@@ -630,11 +636,9 @@ Status ExternalMiniCluster::AddTabletServer() {
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
   vector<string> extra_flags;
-#if !defined(NO_CHRONY)
-  RETURN_NOT_OK(AddNtpFlags(&extra_flags));
-#endif
+  RETURN_NOT_OK(AddTimeSourceFlags(&extra_flags));
   auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
-  std::copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
+  copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
   opts.extra_flags = extra_flags;
   opts.start_process_timeout = opts_.start_process_timeout;
   opts.rpc_bind_address = HostPort(bind_host, 0);

@@ -353,6 +353,10 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
 
 #ifndef __APPLE__
 TEST_F(HybridClockTest, TestNtpDiagnostics) {
+  FLAGS_time_source = "system";
+  clock_.reset(new HybridClock);
+  ASSERT_OK(clock_->Init());
+
   vector<string> log;
   clock_->time_service()->DumpDiagnostics(&log);
   string s = JoinStrings(log, "\n");

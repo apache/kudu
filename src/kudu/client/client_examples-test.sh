@@ -162,6 +162,7 @@ mkdir -p "$BASE_DIR/master/logs"
   --log_dir="$BASE_DIR/master/logs" \
   --fs_wal_dir="$BASE_DIR/master/wals" \
   --fs_data_dirs="$BASE_DIR/master/data" \
+  --time_source=system_unsync \
   --webserver_interface=$LOCALHOST_IP \
   --webserver_port=0 \
   --rpc_bind_addresses=$LOCALHOST_IP:$MASTER_RPC_PORT &
@@ -178,6 +179,7 @@ mkdir -p "$BASE_DIR/ts/logs"
   --fs_data_dirs="$BASE_DIR/ts/data" \
   --rpc_bind_addresses=$LOCALHOST_IP:$TSERVER_RPC_PORT \
   --local_ip_for_outbound_sockets=$LOCALHOST_IP \
+  --time_source=system_unsync \
   --webserver_interface=$LOCALHOST_IP \
   --webserver_port=0 \
   --tserver_master_addrs=$LOCALHOST_IP:$MASTER_RPC_PORT &

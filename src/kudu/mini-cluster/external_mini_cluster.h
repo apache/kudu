@@ -432,9 +432,7 @@ class ExternalMiniCluster : public MiniCluster {
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
-#if !defined(NO_CHRONY)
-  Status AddNtpFlags(std::vector<std::string>* flags);
-#endif
+  Status AddTimeSourceFlags(std::vector<std::string>* flags);
 
   ExternalMiniClusterOptions opts_;
 

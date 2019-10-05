@@ -29,12 +29,14 @@ cat << EOF
 Usage:
 start_kudu.sh [flags]
 -h, --help         Print help
--m, --num-masters  Number of Kudu Master servers to start (default: 1)
+-m, --num-masters  Number of Kudu Masters to start (default: 1)
 -t, --num-tservers Number of Kudu Tablet Servers to start (default: 3)
 --rpc-master       RPC port of first Kudu Master; HTTP port is the next number.
                    Subsequent Masters will have following numbers
 --rpc-tserver      RPC port of first Kudu Tablet Server; HTTP port is the next
                    number. Subsequent Tablet Servers will have following numbers
+--time_source      Time source for Kudu Masters and Tablet Servers
+                   (default: system_unsync)
 -b, --builddir     Path to the Kudu build directory
 EOF
 }
@@ -43,6 +45,7 @@ NUM_MASTERS=1
 NUM_TSERVERS=3
 MASTER_RPC_PORT_BASE=8764
 TSERVER_RPC_PORT_BASE=9870
+TIME_SOURCE=system_unsync
 BUILDDIR="$PWD"
 echo $(readlink -f $(dirname $0))
 while (( "$#" )); do
@@ -65,6 +68,10 @@ while (( "$#" )); do
       ;;
     --rpc-tserver)
       TSERVER_RPC_PORT_BASE=$2
+      shift 2
+      ;;
+    --time_source)
+      TIME_SOURCE=$2
       shift 2
       ;;
     -b|--builddir)
@@ -138,6 +145,7 @@ function start_master() {
   ARGS="$ARGS --fs_wal_dir=$dir_wal"
   ARGS="$ARGS --log_dir=$dir_log"
   ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
   ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
@@ -155,6 +163,7 @@ function start_tserver() {
   ARGS="$ARGS --fs_wal_dir=$dir_wal"
   ARGS="$ARGS --log_dir=$dir_log"
   ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --time_source=$TIME_SOURCE"
   ARGS="$ARGS --webserver_port=$HTTP_PORT"
   ARGS="$ARGS --webserver_interface=$IP"
   ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
