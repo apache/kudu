@@ -49,7 +49,7 @@ TEST_F(MiniChronydTest, UnsynchronizedServer) {
   {
     MiniChronydOptions options;
     options.local = false;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
+    ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
   }
 
   // No client has talked to the NTP server yet.
@@ -77,7 +77,7 @@ TEST_F(MiniChronydTest, UnsynchronizedServer) {
 TEST_F(MiniChronydTest, BasicSingleServerInstance) {
   // Start chronyd at the specified port, making sure it's serving requests.
   unique_ptr<MiniChronyd> chrony;
-  ASSERT_OK(StartChronydAtAutoReservedPort(&chrony));
+  ASSERT_OK(StartChronydAtAutoReservedPort({}, &chrony));
 
   // A chronyd that uses the system clock as a reference lock should present
   // itself as reliable NTP server.
@@ -123,10 +123,12 @@ TEST_F(MiniChronydTest, BasicMultipleServerInstances) {
   vector<unique_ptr<MiniChronyd>> servers;
   vector<HostPort> ntp_endpoints;
   for (int idx = 0; idx < 5; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
     ntp_endpoints.emplace_back(chrony->address());
     servers.emplace_back(std::move(chrony));
   }
@@ -186,10 +188,12 @@ TEST_F(MiniChronydTest, MultiTierBasic) {
   vector<unique_ptr<MiniChronyd>> servers_0;
   vector<HostPort> ntp_endpoints_0;
   for (auto idx = 0; idx < 3; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
     ntp_endpoints_0.emplace_back(chrony->address());
     servers_0.emplace_back(std::move(chrony));
   }
@@ -197,18 +201,20 @@ TEST_F(MiniChronydTest, MultiTierBasic) {
   vector<unique_ptr<MiniChronyd>> servers_1;
   vector<HostPort> ntp_endpoints_1;
   for (auto idx = 3; idx < 5; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
-    options.local = false;
-    for (const auto& ref : servers_0) {
-      const auto addr = ref->address();
-      MiniChronydServerOptions server_options;
-      server_options.address = addr.host();
-      server_options.port = addr.port();
-      options.servers.emplace_back(std::move(server_options));
-    }
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      options.local = false;
+      for (const auto& ref : servers_0) {
+        const auto addr = ref->address();
+        MiniChronydServerOptions server_options;
+        server_options.address = addr.host();
+        server_options.port = addr.port();
+        options.servers.emplace_back(std::move(server_options));
+      }
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
     ntp_endpoints_1.emplace_back(chrony->address());
     servers_1.emplace_back(std::move(chrony));
   }

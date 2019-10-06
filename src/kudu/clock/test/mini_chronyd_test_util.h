@@ -28,15 +28,14 @@ namespace clock {
 class MiniChronyd;
 struct MiniChronydOptions;
 
-// Reserve a port and start chronyd, outputting the result chronyd object
-// wrapped into std::unique_ptr smart pointer. The 'options' parameter is
-// in-out: the bound port and address are output into the 'port' and
-// 'bindaddress' fields correspondingly. All other fields of the 'options'
-// parameter are untouched, and the only field affective the port reservation
-// process is the 'index' field.
+// Reserve a port and start chronyd NTP server using MiniChronyd with
+// MiniChronydOptions options specified by 'options' parameter. The only field
+// affecting the port reservation process is 'MiniChronydOptions::index' field.
+// The result MiniChronyd object is wrapped into std::unique_ptr smart pointer
+// and output into the 'chronyd' out parameter.
 Status StartChronydAtAutoReservedPort(
-    std::unique_ptr<MiniChronyd>* chronyd,
-    MiniChronydOptions* options = nullptr) WARN_UNUSED_RESULT;
+    MiniChronydOptions options,
+    std::unique_ptr<MiniChronyd>* chronyd) WARN_UNUSED_RESULT;
 
 } // namespace clock
 } // namespace kudu

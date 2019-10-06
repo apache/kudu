@@ -54,20 +54,13 @@ Status ReservePort(int index, unique_ptr<Socket>* socket,
 
 } // anonymous namespace
 
-Status StartChronydAtAutoReservedPort(unique_ptr<MiniChronyd>* chronyd,
-                                      MiniChronydOptions* options) {
-  MiniChronydOptions opts;
-  if (options) {
-    opts = *options;
-  }
+Status StartChronydAtAutoReservedPort(MiniChronydOptions options,
+                                      unique_ptr<MiniChronyd>* chronyd) {
   unique_ptr<Socket> socket;
-  RETURN_NOT_OK(ReservePort(opts.index, &socket, &opts.bindaddress, &opts.port));
-  chronyd->reset(new MiniChronyd(opts));
-  RETURN_NOT_OK((*chronyd)->Start());
-  if (options) {
-    *options = std::move(opts);
-  }
-  return Status::OK();
+  RETURN_NOT_OK(ReservePort(
+      options.index, &socket, &options.bindaddress, &options.port));
+  chronyd->reset(new MiniChronyd(std::move(options)));
+  return (*chronyd)->Start();
 }
 
 } // namespace clock

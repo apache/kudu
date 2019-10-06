@@ -461,11 +461,13 @@ TEST_F(BuiltinNtpWithMiniChronydTest, Basic) {
   vector<unique_ptr<MiniChronyd>> servers;
   vector<HostPort> servers_endpoints;
   for (auto idx = 0; idx < 3; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    servers_endpoints.emplace_back(options.bindaddress, options.port);
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
+    servers_endpoints.emplace_back(chrony->address());
     servers.emplace_back(std::move(chrony));
   }
 
@@ -504,11 +506,13 @@ TEST_F(BuiltinNtpWithMiniChronydTest, NoIntersectionIntervalAtStartup) {
   vector<HostPort> servers_endpoints;
   vector<unique_ptr<MiniChronyd>> servers;
   for (auto idx = 0; idx < 3; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    servers_endpoints.emplace_back(options.bindaddress, options.port);
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
+    servers_endpoints.emplace_back(chrony->address());
     servers.emplace_back(std::move(chrony));
   }
 
@@ -539,11 +543,13 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
   vector<unique_ptr<MiniChronyd>> sync_servers;
   vector<HostPort> sync_servers_refs;
   for (auto idx = 0; idx < 2; ++idx) {
-    MiniChronydOptions options;
-    options.index = idx;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    sync_servers_refs.emplace_back(options.bindaddress, options.port);
+    {
+      MiniChronydOptions options;
+      options.index = idx;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
+    sync_servers_refs.emplace_back(chrony->address());
     sync_servers.emplace_back(std::move(chrony));
   }
 
@@ -567,32 +573,35 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
   // Start a server without any true time reference: it has nothing to
   // synchronize with and stays unsynchronized.
   {
-    MiniChronydOptions options;
-    options.index = 2;
-    options.local = false;
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    unsync_servers_refs.emplace_back(options.bindaddress, options.port);
+    {
+      MiniChronydOptions options;
+      options.index = 2;
+      options.local = false;
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
+    unsync_servers_refs.emplace_back(chrony->address());
     unsync_servers.emplace_back(std::move(chrony));
   }
 
   // Another NTP server which uses those two synchronized, but far from each
   // other NTP servers. As the result, the new NTP server runs unsynchonized.
   {
-    MiniChronydOptions options;
-    options.index = 3;
-    options.local = false;
-    for (const auto& server : sync_servers) {
-      const auto addr = server->address();
-      MiniChronydServerOptions server_options;
-      server_options.address = addr.host();
-      server_options.port = addr.port();
-      options.servers.emplace_back(std::move(server_options));
-    }
-
     unique_ptr<MiniChronyd> chrony;
-    ASSERT_OK(StartChronydAtAutoReservedPort(&chrony, &options));
-    unsync_servers_refs.emplace_back(options.bindaddress, options.port);
+    {
+      MiniChronydOptions options;
+      options.index = 3;
+      options.local = false;
+      for (const auto& server : sync_servers) {
+        const auto addr = server->address();
+        MiniChronydServerOptions server_options;
+        server_options.address = addr.host();
+        server_options.port = addr.port();
+        options.servers.emplace_back(std::move(server_options));
+      }
+      ASSERT_OK(StartChronydAtAutoReservedPort(std::move(options), &chrony));
+    }
+    unsync_servers_refs.emplace_back(chrony->address());
     unsync_servers.emplace_back(std::move(chrony));
   }
 
