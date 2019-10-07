@@ -129,6 +129,7 @@ target_link_libraries(kudu
   kudu_client
   kudu_common
   kudu_fs
+  kudu_subprocess
   kudu_tools_rebalance
   kudu_util
   log
@@ -165,6 +166,7 @@ SET_KUDU_TEST_LINK_LIBS(
   itest_util
   ksck
   kudu_hms
+  kudu_subprocess
   kudu_tools_rebalance
   kudu_tools_test_util
   kudu_tools_util

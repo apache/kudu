@@ -38,8 +38,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/tools/tool.pb.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
@@ -56,16 +56,16 @@ DEFINE_validator(serialization, [](const char* /*n*/, const std::string& v) {
          boost::iequals(v, "json");
 });
 
-namespace kudu {
-
-namespace tools {
-
-using cluster::ExternalDaemon;
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
+using kudu::cluster::ExternalDaemon;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::subprocess::SubprocessProtocol;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
 
 namespace {
 
@@ -322,17 +322,17 @@ Status RunControlShell(const RunnerContext& /*context*/) {
   int ret;
   RETRY_ON_EINTR(ret, dup2(STDERR_FILENO, STDOUT_FILENO));
   PCHECK(ret == STDOUT_FILENO);
-  ControlShellProtocol::SerializationMode serde_mode;
+  SubprocessProtocol::SerializationMode serde_mode;
   if (boost::iequals(FLAGS_serialization, "json")) {
-    serde_mode = ControlShellProtocol::SerializationMode::JSON;
+    serde_mode = SubprocessProtocol::SerializationMode::JSON;
   } else {
     DCHECK(boost::iequals(FLAGS_serialization, "pb"));
-    serde_mode = ControlShellProtocol::SerializationMode::PB;
+    serde_mode = SubprocessProtocol::SerializationMode::PB;
   }
-  ControlShellProtocol protocol(serde_mode,
-                                ControlShellProtocol::CloseMode::NO_CLOSE_ON_DESTROY,
-                                STDIN_FILENO,
-                                new_stdout);
+  SubprocessProtocol protocol(serde_mode,
+                              SubprocessProtocol::CloseMode::NO_CLOSE_ON_DESTROY,
+                              STDIN_FILENO,
+                              new_stdout);
 
   // Run the shell loop, processing each message as it is received.
   unique_ptr<ExternalMiniCluster> cluster;

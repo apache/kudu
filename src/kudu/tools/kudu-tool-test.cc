@@ -99,6 +99,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet-harness.h"
@@ -108,7 +109,6 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/thrift/client.h"
 #include "kudu/tools/tool.pb.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -185,6 +185,7 @@ using kudu::master::MiniMaster;
 using kudu::master::TServerStatePB;
 using kudu::master::TSManager;
 using kudu::rpc::RpcController;
+using kudu::subprocess::SubprocessProtocol;
 using kudu::tablet::LocalTabletWriter;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletDataState;
@@ -4446,7 +4447,7 @@ TEST_F(ToolTest, TestHmsList) {
 // This test is parameterized on the serialization mode and Kerberos.
 class ControlShellToolTest :
     public ToolTest,
-    public ::testing::WithParamInterface<std::tuple<ControlShellProtocol::SerializationMode,
+    public ::testing::WithParamInterface<std::tuple<SubprocessProtocol::SerializationMode,
                                                     bool>> {
  public:
   virtual void SetUp() override {
@@ -4455,8 +4456,8 @@ class ControlShellToolTest :
     // Start the control shell.
     string mode;
     switch (serde_mode()) {
-      case ControlShellProtocol::SerializationMode::JSON: mode = "json"; break;
-      case ControlShellProtocol::SerializationMode::PB: mode = "pb"; break;
+      case SubprocessProtocol::SerializationMode::JSON: mode = "json"; break;
+      case SubprocessProtocol::SerializationMode::PB: mode = "pb"; break;
       default: LOG(FATAL) << "Unknown serialization mode";
     }
     shell_.reset(new Subprocess({
@@ -4470,10 +4471,10 @@ class ControlShellToolTest :
     ASSERT_OK(shell_->Start());
 
     // Start the protocol interface.
-    proto_.reset(new ControlShellProtocol(serde_mode(),
-                                          ControlShellProtocol::CloseMode::CLOSE_ON_DESTROY,
-                                          shell_->ReleaseChildStdoutFd(),
-                                          shell_->ReleaseChildStdinFd()));
+    proto_.reset(new SubprocessProtocol(serde_mode(),
+                                        SubprocessProtocol::CloseMode::CLOSE_ON_DESTROY,
+                                        shell_->ReleaseChildStdoutFd(),
+                                        shell_->ReleaseChildStdinFd()));
   }
 
   virtual void TearDown() override {
@@ -4500,7 +4501,7 @@ class ControlShellToolTest :
     return Status::OK();
   }
 
-  ControlShellProtocol::SerializationMode serde_mode() const {
+  SubprocessProtocol::SerializationMode serde_mode() const {
     return ::testing::get<0>(GetParam());
   }
 
@@ -4509,13 +4510,13 @@ class ControlShellToolTest :
   }
 
   unique_ptr<Subprocess> shell_;
-  unique_ptr<ControlShellProtocol> proto_;
+  unique_ptr<SubprocessProtocol> proto_;
 };
 
 INSTANTIATE_TEST_CASE_P(SerializationModes, ControlShellToolTest,
                         ::testing::Combine(::testing::Values(
-                            ControlShellProtocol::SerializationMode::PB,
-                            ControlShellProtocol::SerializationMode::JSON),
+                            SubprocessProtocol::SerializationMode::PB,
+                            SubprocessProtocol::SerializationMode::JSON),
                                            ::testing::Bool()));
 
 TEST_P(ControlShellToolTest, TestControlShell) {
