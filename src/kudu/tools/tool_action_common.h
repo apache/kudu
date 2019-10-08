@@ -252,7 +252,8 @@ class LeaderMasterProxy {
                  const boost::function<void(master::MasterServiceProxy*,
                                             const Req&, Resp*,
                                             rpc::RpcController*,
-                                            const rpc::ResponseCallback&)>& func);
+                                            const rpc::ResponseCallback&)>& func)
+      WARN_UNUSED_RESULT;
 
  private:
   client::sp::shared_ptr<client::KuduClient> client_;

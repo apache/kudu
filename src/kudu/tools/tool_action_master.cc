@@ -111,8 +111,8 @@ Status ListMasters(const RunnerContext& context) {
   ListMastersRequestPB req;
   ListMastersResponsePB resp;
 
-  proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
-      req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync);
+  RETURN_NOT_OK((proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
+      req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync)));
 
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
