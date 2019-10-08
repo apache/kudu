@@ -139,17 +139,28 @@ Sockaddr GetRemoteAddress(const struct sq_request_info* req) {
 }
 
 
-// Performs a step of SPNEGO authorization by parsing the HTTP Authorization header
-// 'authz_header' and running it through GSSAPI. If authentication fails or the header
-// is invalid, a bad Status will be returned (and the other out-parameters left untouched).
+// Performs a step of SPNEGO authorization by parsing the HTTP Authorization
+// header 'authz_header' and running it through GSSAPI.
 //
+// If authentication fails or the header is invalid, a bad Status will be
+// returned (and the other out-parameters left untouched). Otherwise, the
+// out-parameters will be written to, and the function will return either OK or
+// Incomplete depending on whether additional SPNEGO steps are required.
 Status RunSpnegoStep(const char* authz_header, string* resp_header,
                      string* authn_user) {
+  static const char* const kNegotiateStr = "WWW-Authenticate: Negotiate";
+  static const Status kIncomplete = Status::Incomplete("authn incomplete");
+
   VLOG(2) << "Handling Authorization header "
           << (authz_header ? KUDU_REDACT(authz_header) : "<null>");
 
+  if (!authz_header) {
+    *resp_header = kNegotiateStr;
+    return kIncomplete;
+  }
+
   string neg_token;
-  if (authz_header && !TryStripPrefixString(authz_header, "Negotiate ", &neg_token)) {
+  if (!TryStripPrefixString(authz_header, "Negotiate ", &neg_token)) {
     return Status::InvalidArgument("bad Negotiate header");
   }
 
@@ -160,9 +171,9 @@ Status RunSpnegoStep(const char* authz_header, string* resp_header,
   VLOG(2) << "SPNEGO step complete, response token: " << KUDU_REDACT(resp_token_b64);
 
   if (!resp_token_b64.empty()) {
-    *resp_header = Substitute("WWW-Authenticate: Negotiate $0", resp_token_b64);
+    *resp_header = Substitute("$0 $1", kNegotiateStr, resp_token_b64);
   }
-  return is_complete ? Status::OK() : Status::Incomplete("authn incomplete");
+  return is_complete ? Status::OK() : kIncomplete;
 }
 
 }  // anonymous namespace

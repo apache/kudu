@@ -234,6 +234,17 @@ TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
   EXPECT_STR_CONTAINS(buf_.ToString(), "Invalid token was supplied");
 }
 
+// Test that if no authorization header at all is provided, the response
+// contains an empty "WWW-Authenticate: Negotiate" header.
+TEST_F(SpnegoWebserverTest, TestNoAuthHeader) {
+  const string& url = strings::Substitute("http://$0/", addr_.ToString());
+  EasyCurl c;
+  c.set_return_headers(true);
+  ASSERT_EQ(c.FetchURL(url, &buf_).ToString(),
+            "Remote error: HTTP 401");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate\r\n");
+}
+
 // Test all single-bit-flips of a well-formed token, to make sure we don't
 // crash.
 //
