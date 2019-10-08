@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hms_catalog.h"
@@ -547,7 +549,10 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
                                           ListTabletServersResponsePB* resp,
                                           rpc::RpcContext* rpc) {
-  vector<std::shared_ptr<TSDescriptor> > descs;
+  TSManager* ts_manager = server_->ts_manager();
+  TServerStateMap states = req->include_states() ?
+      ts_manager->GetTServerStates() : TServerStateMap();
+  vector<std::shared_ptr<TSDescriptor>> descs;
   server_->ts_manager()->GetAllDescriptors(&descs);
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     ListTabletServersResponsePB::Entry* entry = resp->add_servers();
@@ -555,6 +560,27 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
     desc->GetRegistration(entry->mutable_registration());
     entry->set_millis_since_heartbeat(desc->TimeSinceHeartbeat().ToMilliseconds());
     if (desc->location()) entry->set_location(desc->location().get());
+
+    // If we need to return states, do so.
+    const auto& uuid = desc->permanent_uuid();
+    const auto state = FindWithDefault(states, uuid, TServerStatePB::NONE);
+    entry->set_state(state);
+    states.erase(uuid);
+  }
+  // If there are any states left (e.g. they don't correspond to a registered
+  // server), report them. Set a bogus seqno, since the servers have not
+  // registered.
+  for (const auto& ts_and_state : states) {
+    const auto& ts = ts_and_state.first;
+    const auto& state = ts_and_state.second;
+    ListTabletServersResponsePB::Entry* entry = resp->add_servers();
+    NodeInstancePB* instance = entry->mutable_instance_id();
+    instance->set_permanent_uuid(ts);
+    instance->set_instance_seqno(-1);
+    entry->set_millis_since_heartbeat(-1);
+    // Note: The state map should only track non-NONE states.
+    DCHECK_NE(TServerStatePB::NONE, state);
+    entry->set_state(state);
   }
   rpc->RespondSuccess();
 }

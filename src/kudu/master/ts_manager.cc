@@ -216,6 +216,11 @@ unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
   return uuids;
 }
 
+TServerStateMap TSManager::GetTServerStates() const {
+  shared_lock<RWMutex> tsl(ts_state_lock_);
+  return ts_state_by_uuid_;
+}
+
 void TSManager::GetDescriptorsAvailableForPlacement(TSDescriptorVector* descs) const {
   descs->clear();
   shared_lock<RWMutex> tsl(ts_state_lock_);

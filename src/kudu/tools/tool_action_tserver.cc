@@ -32,7 +32,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -100,11 +99,17 @@ Status ListTServers(const RunnerContext& context) {
   LeaderMasterProxy proxy;
   RETURN_NOT_OK(proxy.Init(context));
 
+  const vector<string> cols = strings::Split(FLAGS_columns, ",", strings::SkipEmpty());
   ListTabletServersRequestPB req;
+  for (const auto& col : cols) {
+    if (boost::iequals(col, "state")) {
+      req.set_include_states(true);
+    }
+  }
   ListTabletServersResponsePB resp;
 
-  proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync);
+  RETURN_NOT_OK((proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
+      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync)));
 
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
@@ -117,7 +122,7 @@ Status ListTServers(const RunnerContext& context) {
     return strings::Substitute("$0:$1", hostport.host(), hostport.port());
   };
 
-  for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
+  for (const auto& column : cols) {
     vector<string> values;
     if (boost::iequals(column, "uuid")) {
       for (const auto& server : servers) {
@@ -156,10 +161,14 @@ Status ListTServers(const RunnerContext& context) {
       for (const auto& server : servers) {
         values.emplace_back(StartTimeToString(server.registration()));
       }
+    } else if (boost::iequals(column, "state")) {
+      for (const auto& server : servers) {
+        values.emplace_back(TServerStatePB_Name(server.state()));
+      }
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }
-    table.AddColumn(column.ToString(), std::move(values));
+    table.AddColumn(column, std::move(values));
   }
 
   RETURN_NOT_OK(table.PrintTo(cout));
@@ -248,7 +257,7 @@ unique_ptr<Mode> BuildTServerMode() {
                             string("Comma-separated list of tserver info fields to "
                                    "include in output.\nPossible values: uuid, "
                                    "rpc-addresses, http-addresses, version, seqno, "
-                                   "heartbeat and start_time"))
+                                   "heartbeat, start_time, state"))
       .AddOptionalParameter("format")
       .AddOptionalParameter("timeout_ms")
       .Build();

@@ -2915,6 +2915,55 @@ TEST_F(ToolTest, TestTserverListLocationNotAssigned) {
   ASSERT_STR_CONTAINS(out, cluster_->tablet_server(0)->uuid() + ",<none>");
 }
 
+TEST_F(ToolTest, TestTServerListState) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  const string ts_uuid = cluster_->tablet_server(0)->uuid();
+
+  // First, set some tserver state.
+  NO_FATALS(RunActionStdoutNone(Substitute("tserver state enter_maintenance $0 $1",
+                                           master_addr, ts_uuid)));
+
+  // If the state isn't requested, we shouldn't see any.
+  string out;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid --format=csv", master_addr), &out));
+  ASSERT_STR_NOT_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
+
+  // If it is requested, we should see the state.
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
+  ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
+
+  // We should still see the state if the tserver hasn't been registered.
+  // "Unregister" the server by restarting the cluster and only bringing up the
+  // master, and verify that we still see the tserver in maintenance mode.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
+  ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
+
+  NO_FATALS(RunActionStdoutNone(Substitute("tserver state exit_maintenance $0 $1",
+                                           master_addr, ts_uuid)));
+
+  // Once removed, we should see none.
+  // Since the tserver hasn't registered, there should be no output at all.
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
+  ASSERT_EQ("", out);
+
+  // And once the tserver has registered, we should see no state. Assert
+  // eventually to give the tserver some time to register.
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(RunActionStdoutString(
+          Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "NONE"));
+  });
+}
+
 TEST_F(ToolTest, TestMasterList) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = 0;

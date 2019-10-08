@@ -805,6 +805,11 @@ message HiveMetastoreConfig {
 // ============================================================================
 
 message ListTabletServersRequestPB {
+  // Whether or not to include the tserver states.
+  // Note: this may include states of tservers that haven't been registered and
+  // thus don't have a complete response Entries. In such cases, the Entries
+  // will be returned with bogus info w.r.t registration and heartbeating.
+  optional bool include_states = 1;
 }
 
 message ListTabletServersResponsePB {
@@ -815,6 +820,7 @@ message ListTabletServersResponsePB {
     optional ServerRegistrationPB registration = 2;
     optional int32 millis_since_heartbeat = 3;
     optional string location = 4;
+    optional TServerStatePB state = 5;
   }
   repeated Entry servers = 2;
 }

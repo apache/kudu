@@ -41,6 +41,8 @@ namespace master {
 class LocationCache;
 class SysCatalogTable;
 
+typedef std::unordered_map<std::string, TServerStatePB> TServerStateMap;
+
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
 //
@@ -95,6 +97,9 @@ class TSManager {
   // counting towards under-replication (e.g. because they're in maintenance
   // mode).
   std::unordered_set<std::string> GetUuidsToIgnoreForUnderreplication() const;
+
+  // Return the tablet server states for each tablet server UUID.
+  TServerStateMap GetTServerStates() const;
 
   // Get the TS count.
   int GetCount() const;
@@ -151,7 +156,7 @@ class TSManager {
 
   // Maps from the UUIDs of tablet servers to their tserver state, if any.
   // Note: the states don't necessarily belong to registered tablet servers.
-  std::unordered_map<std::string, TServerStatePB> ts_state_by_uuid_;
+  TServerStateMap ts_state_by_uuid_;
 
   LocationCache* location_cache_;
 
