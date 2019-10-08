@@ -89,6 +89,23 @@ using strings::Substitute;
 
 namespace master {
 
+namespace {
+struct TServerStateInfo {
+  // The stringified version of the state.
+  string state;
+
+  // A human-readable version of the time the tablet server was put into this
+  // state.
+  string time_entered_state;
+
+  // The current status of the tserver (e.g. "Live", "Dead").
+  string status;
+
+  // A link to the tserver's web UI, if one exists.
+  string webserver;
+};
+} // anonymous namespace
+
 MasterPathHandlers::~MasterPathHandlers() {
 }
 
@@ -119,30 +136,75 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
   output->Set("live_tservers", EasyJson::kArray);
   output->Set("dead_tservers", EasyJson::kArray);
   map<string, array<int, 2>> version_counts;
+  map<string, TServerStateInfo> ts_state_infos;
+  // Pull out the tserver states so we can collect information about the
+  // relevant tservers as we go.
+  for (const auto& uuid_and_state_with_timestamp : master_->ts_manager()->GetTServerStates()) {
+    const auto& ts_uuid = uuid_and_state_with_timestamp.first;
+    const auto& state_with_timestamp = uuid_and_state_with_timestamp.second;
+    const string timestamp_secs = TimestampAsString(state_with_timestamp.second);
+    InsertOrDie(&ts_state_infos, ts_uuid,
+        { TServerStatePB_Name(state_with_timestamp.first), timestamp_secs, "Not registered" });
+  }
+  // Process the registered tservers.
   for (const auto& desc : descs) {
-    string ts_key = desc->PresumedDead() ? "dead_tservers" : "live_tservers";
+    const string& ts_uuid = desc->permanent_uuid();
+    string ts_key;
+    auto* ts_state_info = FindOrNull(ts_state_infos, ts_uuid);
+    bool presumed_dead = desc->PresumedDead();
+    if (presumed_dead) {
+      ts_key = "dead_tservers";
+      if (ts_state_info) {
+        ts_state_info->status = "Dead";
+      }
+    } else {
+      ts_key = "live_tservers";
+      if (ts_state_info) {
+        ts_state_info->status = "Live";
+      }
+    }
     EasyJson ts_json = (*output)[ts_key].PushBack(EasyJson::kObject);
 
     ServerRegistrationPB reg;
     desc->GetRegistration(&reg);
-    ts_json["uuid"] = desc->permanent_uuid();
+    ts_json["uuid"] = ts_uuid;
     if (!reg.http_addresses().empty()) {
-      ts_json["target"] = Substitute("$0://$1:$2/",
-                                     reg.https_enabled() ? "https" : "http",
-                                     reg.http_addresses(0).host(),
-                                     reg.http_addresses(0).port());
+      string webserver = Substitute("$0://$1:$2/",
+                                    reg.https_enabled() ? "https" : "http",
+                                    reg.http_addresses(0).host(),
+                                    reg.http_addresses(0).port());
+      if (ts_state_info) {
+        ts_state_info->webserver = webserver;
+      }
+      ts_json["target"] = webserver;
     }
     ts_json["time_since_hb"] = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     ts_json["start_time"] = StartTimeToString(reg);
     reg.clear_start_time();  // Clear 'start_time' before dumping to string.
     ts_json["registration"] = pb_util::SecureShortDebugString(reg);
     ts_json["location"] = desc->location().get_value_or("<none>");
-    version_counts[reg.software_version()][desc->PresumedDead() ? 1 : 0]++;
-    has_no_live_ts &= desc->PresumedDead();
-    has_no_dead_ts &= !desc->PresumedDead();
+    version_counts[reg.software_version()][presumed_dead ? 1 : 0]++;
+    has_no_live_ts &= presumed_dead;
+    has_no_dead_ts &= !presumed_dead;
   }
   (*output)["has_no_live_ts"] = has_no_live_ts;
   (*output)["has_no_dead_ts"] = has_no_dead_ts;
+  (*output)["has_no_ts_states"] = ts_state_infos.empty();
+
+  output->Set("tserver_states", EasyJson::kArray);
+  for (const auto& uuid_and_state_info : ts_state_infos) {
+    const auto& uuid = uuid_and_state_info.first;
+    const auto& ts_state_info = uuid_and_state_info.second;
+    EasyJson state_json = (*output)["tserver_states"].PushBack(EasyJson::kObject);
+    state_json["uuid"] = uuid;
+    const string& webserver = ts_state_info.webserver;
+    if (!webserver.empty()) {
+      state_json["target"] = webserver;
+    }
+    state_json["state"] = ts_state_info.state;
+    state_json["time_entered_state"] = ts_state_info.time_entered_state;
+    state_json["status"] = ts_state_info.status;
+  }
 
   output->Set("version_counts", EasyJson::kArray);
   for (const auto& entry : version_counts) {
@@ -204,14 +266,12 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
     std::string str_create_time;
     if (l.data().pb.has_create_timestamp()) {
-      StringAppendStrftime(&str_create_time, "%Y-%m-%d %H:%M:%S %Z",
-          l.data().pb.create_timestamp(), true);
+      str_create_time = TimestampAsString(l.data().pb.create_timestamp());
     }
     table_json["create time"] = EscapeForHtmlToString(str_create_time);
     std::string str_alter_time;
     if (l.data().pb.has_alter_timestamp()) {
-      StringAppendStrftime(&str_alter_time, "%Y-%m-%d %H:%M:%S %Z",
-          l.data().pb.alter_timestamp(), true);
+      str_alter_time = TimestampAsString(l.data().pb.alter_timestamp());
     }
     table_json["alter time"] = EscapeForHtmlToString(str_alter_time);
   }

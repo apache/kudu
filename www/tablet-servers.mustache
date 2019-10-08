@@ -40,6 +40,27 @@ under the License.
     </tbody>
   </table>
   <h3>Registrations</h3>
+  {{^has_no_ts_states}}
+  <h4>Tablet Server States</h4>
+  <table class='table table-striped'>
+    <thead><tr>
+      <th>UUID</th>
+      <th>State</th>
+      <th>Time entered state</th>
+      <th>Status</th>
+    </tr></thead>
+    <tbody>
+    {{#tserver_states}}
+    <tr>
+      <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
+      <td>{{state}}</td>
+      <td>{{time_entered_state}}</td>
+      <td>{{status}}</td>
+    </tr>
+    {{/tserver_states}}
+    </tbody>
+  </table>
+  {{/has_no_ts_states}}
   {{^has_no_live_ts}}
   <h4>Live Tablet Servers</h4>
   <table class='table table-striped'>

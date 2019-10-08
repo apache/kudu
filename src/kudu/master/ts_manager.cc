@@ -17,6 +17,8 @@
 
 #include "kudu/master/ts_manager.h"
 
+#include <time.h>
+
 #include <algorithm>
 #include <limits>
 #include <mutex>
@@ -80,7 +82,8 @@ class TServerStateLoader : public TServerStateVisitor {
       return Status::OK();
     }
     DCHECK_NE(TServerStatePB::NONE, state);
-    InsertOrDie(&ts_manager_->ts_state_by_uuid_, tserver_id, state);
+    int64_t timestamp = metadata.has_timestamp_secs() ? metadata.timestamp_secs() : -1;
+    InsertOrDie(&ts_manager_->ts_state_by_uuid_, tserver_id, { state, timestamp });
     return Status::OK();
   }
 
@@ -208,9 +211,9 @@ unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
   unordered_set<string> uuids;
   shared_lock<RWMutex> tsl(ts_state_lock_);
   uuids.reserve(ts_state_by_uuid_.size());
-  for (const auto& ts_and_state : ts_state_by_uuid_) {
-    if (ts_and_state.second == TServerStatePB::MAINTENANCE_MODE) {
-      uuids.emplace(ts_and_state.first);
+  for (const auto& ts_and_state_timestamp : ts_state_by_uuid_) {
+    if (ts_and_state_timestamp.second.first == TServerStatePB::MAINTENANCE_MODE) {
+      uuids.emplace(ts_and_state_timestamp.first);
     }
   }
   return uuids;
@@ -239,7 +242,8 @@ Status TSManager::SetTServerState(const string& ts_uuid,
                                   ChangeTServerStateRequestPB::HandleMissingTS handle_missing_ts,
                                   SysCatalogTable* sys_catalog) {
   lock_guard<RWMutex> l(ts_state_lock_);
-  auto existing_state = FindWithDefault(ts_state_by_uuid_, ts_uuid, TServerStatePB::NONE);
+  auto existing_state = FindWithDefault(
+      ts_state_by_uuid_, ts_uuid, { TServerStatePB::NONE, -1 }).first;
   if (existing_state == ts_state) {
     return Status::OK();
   }
@@ -265,18 +269,20 @@ Status TSManager::SetTServerState(const string& ts_uuid,
   }
   SysTServerStateEntryPB pb;
   pb.set_state(ts_state);
+  int64_t timestamp = time(nullptr);
+  pb.set_timestamp_secs(timestamp);
   RETURN_NOT_OK_PREPEND(sys_catalog->WriteTServerState(ts_uuid, pb),
       Substitute("Failed to set tserver state for $0 to $1",
                  ts_uuid, TServerStatePB_Name(ts_state)));
-  InsertOrUpdate(&ts_state_by_uuid_, ts_uuid, ts_state);
   LOG(INFO) << Substitute("Set tserver state for $0 to $1",
                           ts_uuid, TServerStatePB_Name(ts_state));
+  InsertOrUpdate(&ts_state_by_uuid_, ts_uuid, { ts_state, timestamp });
   return Status::OK();
 }
 
 TServerStatePB TSManager::GetTServerStateUnlocked(const string& ts_uuid) const {
   ts_state_lock_.AssertAcquired();
-  return FindWithDefault(ts_state_by_uuid_, ts_uuid, TServerStatePB::NONE);
+  return FindWithDefault(ts_state_by_uuid_, ts_uuid, { TServerStatePB::NONE, -1 }).first;
 }
 
 TServerStatePB TSManager::GetTServerState(const string& ts_uuid) const {

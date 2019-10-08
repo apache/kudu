@@ -563,24 +563,23 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
 
     // If we need to return states, do so.
     const auto& uuid = desc->permanent_uuid();
-    const auto state = FindWithDefault(states, uuid, TServerStatePB::NONE);
-    entry->set_state(state);
+    entry->set_state(FindWithDefault(states, uuid, { TServerStatePB::NONE, -1 }).first);
     states.erase(uuid);
   }
   // If there are any states left (e.g. they don't correspond to a registered
   // server), report them. Set a bogus seqno, since the servers have not
   // registered.
-  for (const auto& ts_and_state : states) {
-    const auto& ts = ts_and_state.first;
-    const auto& state = ts_and_state.second;
+  for (const auto& ts_and_state_timestamp : states) {
+    const auto& ts = ts_and_state_timestamp.first;
+    const auto& state_and_timestamp = ts_and_state_timestamp.second;
     ListTabletServersResponsePB::Entry* entry = resp->add_servers();
     NodeInstancePB* instance = entry->mutable_instance_id();
     instance->set_permanent_uuid(ts);
     instance->set_instance_seqno(-1);
     entry->set_millis_since_heartbeat(-1);
     // Note: The state map should only track non-NONE states.
-    DCHECK_NE(TServerStatePB::NONE, state);
-    entry->set_state(state);
+    DCHECK_NE(TServerStatePB::NONE, state_and_timestamp.first);
+    entry->set_state(state_and_timestamp.first);
   }
   rpc->RespondSuccess();
 }

@@ -201,8 +201,12 @@ void StringAppendStrftime(std::string* dst,
   StringAppendStrftime(dst, format, &tm);
 }
 
-std::string LocalTimeAsString() {
+std::string TimestampAsString(time_t timestamp_secs) {
   std::string ret;
-  StringAppendStrftime(&ret, "%Y-%m-%d %H:%M:%S %Z", time(nullptr), true);
+  StringAppendStrftime(&ret, "%Y-%m-%d %H:%M:%S %Z", timestamp_secs, true);
   return ret;
+}
+
+std::string LocalTimeAsString() {
+  return TimestampAsString(time(nullptr));
 }

@@ -45,6 +45,10 @@ void StringAppendStrftime(std::string* dst,
                           time_t when,
                           bool local);
 
+// Return the given timestamp (in seconds since the epoch) as a string suitable
+// for user display in the current timezone.
+std::string TimestampAsString(time_t timestamp_secs);
+
 // Return the local time as a string suitable for user display.
 std::string LocalTimeAsString();
 

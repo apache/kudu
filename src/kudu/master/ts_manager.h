@@ -16,10 +16,12 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -41,7 +43,7 @@ namespace master {
 class LocationCache;
 class SysCatalogTable;
 
-typedef std::unordered_map<std::string, TServerStatePB> TServerStateMap;
+typedef std::unordered_map<std::string, std::pair<TServerStatePB, int64_t>> TServerStateMap;
 
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
@@ -154,8 +156,9 @@ class TSManager {
   // be taken, 'ts_state_lock_' must be taken first.
   mutable RWMutex ts_state_lock_;
 
-  // Maps from the UUIDs of tablet servers to their tserver state, if any.
-  // Note: the states don't necessarily belong to registered tablet servers.
+  // Maps from the UUIDs of tablet servers to a pair containing the tserver
+  // state and the time at which it was set, if any. Note: the states don't
+  // necessarily belong to registered tablet servers.
   TServerStateMap ts_state_by_uuid_;
 
   LocationCache* location_cache_;

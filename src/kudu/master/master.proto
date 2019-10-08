@@ -227,8 +227,10 @@ message SysNotificationLogEventIdPB {
 // The on-disk entry in the sys.catalog table to represent the existence of
 // on-going tserver state (e.g. maintenance mode).
 message SysTServerStateEntryPB {
-  // TODO(awong): consider adding a timestamp here.
   optional TServerStatePB state = 1;
+
+  // Timestamp, in seconds since the epoch, at which this state was set.
+  optional int64 timestamp_secs = 2;
 }
 
 ////////////////////////////////////////////////////////////
