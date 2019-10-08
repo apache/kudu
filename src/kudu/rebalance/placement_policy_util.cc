@@ -277,7 +277,7 @@ Status BuildTabletsPlacementInfo(
       if (!is_target_replica_present && !move_info.ts_uuid_to.empty()) {
         ++LookupOrEmplace(&replica_num_by_ts_id, move_info.ts_uuid_to, 0);
 
-        // Populate ClusterLocationInfo::tablet_location_info.
+        // Populate TabletsPlacementInfo::tablet_location_info.
         auto& count_by_location = LookupOrEmplace(&tablet_location_info,
                                                   tablet_id,
                                                   unordered_map<string, int>());
@@ -320,7 +320,7 @@ Status BuildTabletsPlacementInfo(
         ++replica_count;
       }
 
-      // Populate ClusterLocationInfo::tablet_location_info.
+      // Populate TabletsPlacementInfo::tablet_location_info.
       auto& count_by_location = LookupOrEmplace(&tablet_location_info,
                                                 tablet_id,
                                                 unordered_map<string, int>());
