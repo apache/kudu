@@ -543,4 +543,47 @@ TEST_F(TestRle, TestSkip) {
 
   encoder.Flush();
 }
+
+// RLE encoding groups values and decides whether to run-length encode or simply bit-pack
+// (literal encoding). This test verifies correctness of the RLE decoding when literal
+// encoding is used irrespective of the size of the group and the number of values encoded.
+template <typename IntType>
+class TestRleLiteralGetNextRun : public KuduTest {
+ public:
+  void RunTest() {
+    const auto num_bytes_per_val = sizeof(IntType);
+    const auto bit_width = 8 * num_bytes_per_val;
+
+    // Test with number of values that are not necessarily multiple of the group size (8).
+    auto max_num_vals = std::min<uint64_t>(1024, std::numeric_limits<IntType>::max());
+    for (auto num_vals = 1; num_vals <= max_num_vals; num_vals++) {
+      faststring buffer(num_vals * num_bytes_per_val);
+      RleEncoder<IntType> encoder(&buffer, bit_width);
+
+      // Use non-repeated pattern of integers so that literal encoding is used.
+      for (auto i = 0; i < num_vals; i++) {
+        encoder.Put(i, 1);
+      }
+      encoder.Flush();
+
+      RleDecoder<IntType> decoder(buffer.data(), encoder.len(), bit_width);
+      IntType val = 0;
+      for (auto i = 0; i < num_vals; i++) {
+        size_t len = decoder.GetNextRun(&val, num_vals);
+        ASSERT_EQ(1, len);
+        ASSERT_EQ(i, val);
+      }
+      // Read one beyond to verify no value is returned.
+      ASSERT_EQ(0, decoder.GetNextRun(&val, num_vals));
+    }
+  }
+};
+
+typedef ::testing::Types<int8_t, int16_t, int32_t, int64_t> IntDataTypes;
+TYPED_TEST_CASE(TestRleLiteralGetNextRun, IntDataTypes);
+
+TYPED_TEST(TestRleLiteralGetNextRun, RleGetNextRunIntDataTypes) {
+  this->RunTest();
+}
+
 } // namespace kudu
