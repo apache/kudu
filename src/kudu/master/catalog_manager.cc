@@ -2972,13 +2972,6 @@ Status CatalogManager::TableNameExists(const string& table_name, bool* exists) {
   return Status::OK();
 }
 
-void CatalogManager::NotifyTabletDeleteSuccess(const string& permanent_uuid,
-                                               const string& tablet_id) {
-  // TODO: Clean up the stale deleted tablet data once all relevant tablet
-  // servers have responded that they have removed the remnants of the deleted
-  // tablet.
-}
-
 namespace {
 
 // Returns true if 'report' for 'tablet' should cause it to transition to RUNNING.
@@ -3256,9 +3249,9 @@ Status RetryingTSRpcTask::Run() {
 
 void RetryingTSRpcTask::RpcCallback() {
   if (!rpc_.status().ok()) {
-    LOG(WARNING) << Substitute("TS $0: $1 RPC failed for tablet $2: $3",
-                               target_ts_desc_->ToString(), type_name(),
-                               tablet_id(), rpc_.status().ToString());
+    KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("TS $0: $1 RPC failed for tablet $2: $3",
+                                                target_ts_desc_->ToString(), type_name(),
+                                                tablet_id(), rpc_.status().ToString());
   } else if (state() != kStateAborted) {
     HandleResponse(attempt_); // Modifies state_.
   }
@@ -3292,8 +3285,8 @@ bool RetryingTSRpcTask::RescheduleWithBackoffDelay() {
     MarkFailed();
     return false;
   }
-  LOG(INFO) << Substitute("Scheduling retry of $0 with a delay of $1 ms (attempt = $2)",
-                          description(), delay_millis, attempt_);
+  VLOG(1) << Substitute("Scheduling retry of $0 with a delay of $1 ms (attempt = $2)",
+                        description(), delay_millis, attempt_);
   master_->messenger()->ScheduleOnReactor(
       boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
       MonoDelta::FromMilliseconds(delay_millis));
@@ -3311,8 +3304,8 @@ void RetryingTSRpcTask::RunDelayedTask(const Status& status) {
   string desc = description();  // Save in case we need to log after deletion.
   Status s = Run();             // May delete this.
   if (!s.ok()) {
-    LOG(WARNING) << Substitute("Async tablet task $0 failed: $1",
-                               desc, s.ToString());
+    KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("Async tablet task $0 failed: $1",
+                                                desc, s.ToString());
   }
 }
 
@@ -3402,7 +3395,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     req_.set_dimension_label(tablet_lock.data().pb.dimension_label());
   }
 
-  string type_name() const override { return "Create Tablet"; }
+  string type_name() const override { return "CreateTablet"; }
 
   string description() const override {
     return "CreateTablet RPC for tablet " + tablet_id_ + " on TS " + permanent_uuid_;
@@ -3422,15 +3415,17 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
             target_ts_desc_->ToString(), s.ToString());
         MarkComplete();
       } else {
-        LOG(WARNING) << Substitute("CreateTablet RPC for tablet $0 on TS $1 failed: $2",
-                                   tablet_id_, target_ts_desc_->ToString(), s.ToString());
+        KLOG_EVERY_N_SECS(WARNING, 1) <<
+            Substitute("CreateTablet RPC for tablet $0 on TS $1 failed: $2",
+                       tablet_id_, target_ts_desc_->ToString(), s.ToString());
       }
     }
   }
 
   bool SendRequest(int attempt) override {
-    VLOG(1) << Substitute("Send create tablet request to $0 (attempt = $1): $2",
-                          target_ts_desc_->ToString(), attempt, SecureDebugString(req_));
+    VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                          type_name(), target_ts_desc_->ToString(), attempt,
+                          SecureDebugString(req_));
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
                                  boost::bind(&AsyncCreateReplica::RpcCallback, this));
     return true;
@@ -3458,7 +3453,9 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
             std::move(cas_config_opid_index_less_or_equal)),
         reason_(std::move(reason)) {}
 
-  string type_name() const override { return "Delete Tablet"; }
+  string type_name() const override {
+    return Substitute("DeleteTablet:$0", TabletDataState_Name(delete_type_));
+  }
 
   string description() const override {
     return tablet_id_ + " Delete Tablet RPC for TS=" + permanent_uuid_;
@@ -3487,13 +3484,13 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
           MarkComplete();
           break;
         default:
-          LOG(WARNING) << Substitute("TS $0: delete failed for tablet $1 "
-              "with error code $2: $3", target_ts_desc_->ToString(), tablet_id_,
-              TabletServerErrorPB::Code_Name(code), status.ToString());
+          KLOG_EVERY_N_SECS(WARNING, 1) <<
+              Substitute("TS $0: delete failed for tablet $1 with error code $2: $3",
+                         target_ts_desc_->ToString(), tablet_id_,
+                         TabletServerErrorPB::Code_Name(code), status.ToString());
           break;
       }
     } else {
-      master_->catalog_manager()->NotifyTabletDeleteSuccess(permanent_uuid_, tablet_id_);
       if (table_) {
         LOG(INFO) << Substitute("TS $0: tablet $1 (table $2) successfully deleted",
                                 target_ts_desc_->ToString(), tablet_id_, table_->ToString());
@@ -3517,9 +3514,9 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal_);
     }
 
-    LOG(INFO) << Substitute("Sending DeleteTablet($0) for tablet $1 on $2 ($3)",
-                            TabletDataState_Name(delete_type_), tablet_id_,
-                            target_ts_desc_->ToString(), reason_);
+    VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                          type_name(), target_ts_desc_->ToString(), attempt,
+                          SecureDebugString(req));
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
                                  boost::bind(&AsyncDeleteReplica::RpcCallback, this));
     return true;
@@ -3549,7 +3546,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
       tablet_(std::move(tablet)) {
   }
 
-  string type_name() const override { return "Alter Table"; }
+  string type_name() const override { return "AlterTable"; }
 
   string description() const override {
     return tablet_->ToString() + " Alter Table RPC";
@@ -3573,9 +3570,10 @@ class AsyncAlterTable : public RetryingTSRpcTask {
           MarkComplete();
           break;
         default:
-          LOG(WARNING) << Substitute("TS $0: alter failed for tablet $1: $2",
-                                     target_ts_desc_->ToString(), tablet_->ToString(),
-                                     status.ToString());
+          KLOG_EVERY_N_SECS(WARNING, 1) <<
+              Substitute("TS $0: alter failed for tablet $1: $2",
+                         target_ts_desc_->ToString(), tablet_->ToString(),
+                         status.ToString());
           break;
       }
     } else {
@@ -3602,8 +3600,9 @@ class AsyncAlterTable : public RetryingTSRpcTask {
 
     l.Unlock();
 
-    VLOG(1) << Substitute("Sending alter table request to $0 (attempt $1): $2",
-                          target_ts_desc_->ToString(), attempt, SecureDebugString(req));
+    VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                          type_name(), target_ts_desc_->ToString(), attempt,
+                          SecureDebugString(req));
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
                                 boost::bind(&AsyncAlterTable::RpcCallback, this));
     return true;
@@ -3676,10 +3675,11 @@ void AsyncChangeConfigTask::HandleResponse(int attempt) {
       MarkFailed();
       break;
     default:
-      LOG_WITH_PREFIX(INFO) << Substitute("$0 failed with leader $1 "
-          "due to error $2; will retry: $3",
-          type_name(), target_ts_desc_->ToString(),
-          TabletServerErrorPB::Code_Name(resp_.error().code()), status.ToString());
+      KLOG_EVERY_N_SECS(WARNING, 1) << LogPrefix() <<
+          Substitute("$0 failed with leader $1 due to error $2; will retry: $3",
+                     type_name(), target_ts_desc_->ToString(),
+                     TabletServerErrorPB::Code_Name(resp_.error().code()),
+                     status.ToString());
       break;
   }
 }
@@ -3743,9 +3743,6 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   if (!CheckOpIdIndex()) {
     return false;
   }
-
-  LOG(INFO) << Substitute("Sending $0 on tablet $1 (attempt $2)",
-                          type_name(), tablet_->id(), attempt);
 
   Status s;
   shared_ptr<TSDescriptor> extra_replica;
@@ -3833,8 +3830,9 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   CHECK_GT(peer_reg.rpc_addresses_size(), 0);
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
   peer->set_member_type(member_type_);
-  VLOG(1) << Substitute("Sending $0 request to $1: $2",
-                        type_name(), target_ts_desc_->ToString(), SecureDebugString(req));
+  VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                        type_name(), target_ts_desc_->ToString(), attempt,
+                        SecureDebugString(req));
   consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
                                       boost::bind(&AsyncAddReplicaTask::RpcCallback, this));
   return true;
@@ -3876,9 +3874,6 @@ bool AsyncEvictReplicaTask::SendRequest(int attempt) {
     return false;
   }
 
-  LOG(INFO) << Substitute("Sending $0 on tablet $1 (attempt $2)",
-                          type_name(), tablet_->id(), attempt);
-
   consensus::ChangeConfigRequestPB req;
   req.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req.set_tablet_id(tablet_->id());
@@ -3886,8 +3881,9 @@ bool AsyncEvictReplicaTask::SendRequest(int attempt) {
   req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(peer_uuid_to_evict_);
-  VLOG(1) << Substitute("Sending $0 request to $1: $2",
-                        type_name(), target_ts_desc_->ToString(), SecureDebugString(req));
+  VLOG(1) << Substitute("Sending $0 request to $1 (attempt $2): $3",
+                        type_name(), target_ts_desc_->ToString(), attempt,
+                        SecureDebugString(req));
   consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
                                       boost::bind(&AsyncEvictReplicaTask::RpcCallback, this));
   return true;

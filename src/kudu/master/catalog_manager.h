@@ -726,10 +726,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // NOTE: This should only be used by tests
   Status TableNameExists(const std::string& table_name, bool* exists);
 
-  // Let the catalog manager know that the the given tablet server successfully
-  // deleted the specified tablet.
-  void NotifyTabletDeleteSuccess(const std::string& permanent_uuid, const std::string& tablet_id);
-
   // Used by ConsensusService to retrieve the TabletReplica for a system
   // table specified by 'tablet_id'.
   //
