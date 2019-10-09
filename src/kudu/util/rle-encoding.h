@@ -318,8 +318,11 @@ inline size_t RleDecoder<T>::GetNextRun(T* val, size_t max_run) {
     } else {
       DCHECK(literal_count_ > 0);
       if (ret == 0) {
-        bool has_more = bit_reader_.GetValue(bit_width_, val);
-        DCHECK(has_more);
+        bool result = bit_reader_.GetValue(bit_width_, val);
+        if (PREDICT_FALSE(!result)) {
+          return ret;
+        }
+
         literal_count_--;
         ret++;
         rem--;
@@ -327,7 +330,10 @@ inline size_t RleDecoder<T>::GetNextRun(T* val, size_t max_run) {
 
       while (literal_count_ > 0) {
         bool result = bit_reader_.GetValue(bit_width_, &current_value_);
-        DCHECK(result);
+        if (PREDICT_FALSE(!result)) {
+          return ret;
+        }
+
         if (current_value_ != *val || rem == 0) {
           bit_reader_.Rewind(bit_width_);
           return ret;
