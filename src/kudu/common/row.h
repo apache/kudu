@@ -133,8 +133,8 @@ inline Status CopyRow(const RowType1 &src_row, RowType2 *dst_row, ArenaType *dst
 //    In this case the default value of the projection column will be used.
 //
 // Example:
-//  RowProjector projector.
-//  projector.Init(base_schema, projection);
+//  RowProjector projector(&base_schema, &projection);
+//  projector.Init();
 //  projector.ProjectRow(row_a, &row_b, &row_b_arena);
 class RowProjector {
  public:
@@ -299,7 +299,7 @@ class DeltaProjector {
   }
 
  private:
-  friend class ::kudu::Schema;
+  friend class Schema;
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     base_cols_mapping_[proj_col_idx] = base_col_idx;
@@ -378,7 +378,6 @@ inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
   }
   return Status::OK();
 }
-
 
 class ContiguousRowHelper {
  public:
