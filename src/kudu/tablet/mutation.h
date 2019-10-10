@@ -94,16 +94,12 @@ class Mutation {
     *list = this;
   }
 
-  // O(n) algorithm to reverse the order of a linked list of
-  // mutations.
+  // O(n) algorithm to reverse the order of a linked list of mutations.
   static void ReverseMutationList(Mutation** list);
 
  private:
   friend class MSRow;
   friend class MemRowSet;
-
-  template<bool ATOMIC>
-  void DoAppendToList(Mutation **list);
 
   // The transaction ID which made this mutation. If this transaction is not
   // committed in the snapshot of the reader, this mutation should be ignored.
