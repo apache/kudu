@@ -67,17 +67,19 @@ in `master`.
   have to perform this step because SSH access is behind a firewall. The steps
   are as follows:
   1. Ensure your public SSH key is in `~gerrit/.ssh/authorized_keys` on gerrit.cloudera.org
-  2. From behind the firewall, `ssh gerrit.cloudera.org` to log in.
-  3. Change to the gerrit user, `sudo su gerrit`
-  4. Back up the existing replication configuration file by executing
+  2. From behind the firewall, `ssh gerrit@gerrit.cloudera.org` to log in.
+  3. Back up the existing replication configuration file by executing
      `cp ~/etc/replication.config ~/etc/replication.config.bak.`date '+%Y%m%d.%H%M%S'``
-  5. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
-  6. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
+  4. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
+  5. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
      dev@impala.apache.org) indicating that you are going to restart Gerrit
      (link:https://s.apache.org/2Wj7[example]). It is best to do the restart at
      some time of day when you don't expect many people to be using the system,
      since Gerrit can take a few minutes to restart.
-  7: Restart Gerrit, `~/bin/gerrit.sh restart`
+  6. Restart Gerrit: `~/bin/gerrit.sh restart`
+  7. Make sure Gerrit has been successfully restarted: after a few minutes,
+     try to open the link:https://gerrit.cloudera.org/#/admin/projects[project list]
+     page in your favorite browser.
 
 . As needed, patches can be cherry-picked to the new branch.
 
