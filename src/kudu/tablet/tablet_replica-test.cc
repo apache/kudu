@@ -388,9 +388,9 @@ class TabletReplicaTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;
-  gscoped_ptr<ThreadPool> prepare_pool_;
-  gscoped_ptr<ThreadPool> apply_pool_;
-  gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<ThreadPool> prepare_pool_;
+  unique_ptr<ThreadPool> apply_pool_;
+  unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<DnsResolver> dns_resolver_;
 
   scoped_refptr<ConsensusMetadataManager> cmeta_manager_;

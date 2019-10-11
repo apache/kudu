@@ -40,7 +40,6 @@
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -710,7 +709,7 @@ Status DataDirManager::Open() {
     const string data_dir = instance->dir();
 
     // Create a per-dir thread pool.
-    gscoped_ptr<ThreadPool> pool;
+    unique_ptr<ThreadPool> pool;
     RETURN_NOT_OK(ThreadPoolBuilder(Substitute("data dir $0", i))
                   .set_max_threads(1)
                   .set_trace_metric_prefix("data dirs")

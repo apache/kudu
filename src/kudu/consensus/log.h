@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CONSENSUS_LOG_H_
-#define KUDU_CONSENSUS_LOG_H_
+#pragma once
 
 #include <atomic>
 #include <cstddef>
@@ -350,7 +348,7 @@ class Log : public RefCountedThreadSafe<Log> {
   uint32_t schema_version_;
 
   // The currently active segment being written.
-  gscoped_ptr<WritableLogSegment> active_segment_;
+  std::unique_ptr<WritableLogSegment> active_segment_;
 
   // The current (active) segment sequence number.
   uint64_t active_segment_sequence_number_;
@@ -389,7 +387,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Thread writing to the log
   gscoped_ptr<AppendThread> append_thread_;
 
-  gscoped_ptr<ThreadPool> allocation_pool_;
+  std::unique_ptr<ThreadPool> allocation_pool_;
 
   // If true, sync on all appends.
   bool force_sync_all_;
@@ -565,4 +563,3 @@ class Log::LogFaultHooks {
 
 }  // namespace log
 }  // namespace kudu
-#endif /* KUDU_CONSENSUS_LOG_H_ */

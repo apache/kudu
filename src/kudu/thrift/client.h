@@ -28,7 +28,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -123,7 +122,7 @@ class HaClient {
   Status Reconnect();
 
   // Background thread which executes calls to the Thrift service.
-  gscoped_ptr<ThreadPool> threadpool_;
+  std::unique_ptr<ThreadPool> threadpool_;
 
   // Client options.
   std::vector<HostPort> addresses_;

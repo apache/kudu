@@ -16,9 +16,7 @@
 // under the License.
 //
 // Ksck, a tool to run a Kudu System Check.
-
-#ifndef KUDU_TOOLS_KSCK_H
-#define KUDU_TOOLS_KSCK_H
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -36,7 +34,6 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h" // IWYU pragma: keep
@@ -482,7 +479,7 @@ class KsckCluster {
   MasterList masters_;
   TSMap tablet_servers_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
-  gscoped_ptr<ThreadPool> pool_;
+  std::unique_ptr<ThreadPool> pool_;
 
   std::vector<std::string> table_filters_;
   std::vector<std::string> tablet_id_filters_;
@@ -614,7 +611,7 @@ class Ksck {
       int table_num_replicas);
 
   const std::shared_ptr<KsckCluster> cluster_;
-  gscoped_ptr<ThreadPool> pool_;
+  std::unique_ptr<ThreadPool> pool_;
 
   bool check_replica_count_ = true;
   std::vector<std::string> table_filters_;
@@ -633,4 +630,3 @@ class Ksck {
 } // namespace tools
 } // namespace kudu
 
-#endif // KUDU_TOOLS_KSCK_H

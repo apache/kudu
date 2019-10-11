@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -97,7 +96,7 @@ class DnsResolver {
   bool GetCachedAddresses(const HostPort& hostport,
                           std::vector<Sockaddr>* addresses);
 
-  gscoped_ptr<ThreadPool> pool_;
+  std::unique_ptr<ThreadPool> pool_;
   std::unique_ptr<HostRecordCache> cache_;
 
   DISALLOW_COPY_AND_ASSIGN(DnsResolver);

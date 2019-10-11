@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -28,7 +29,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -393,13 +393,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   TSTabletManagerStatePB state_;
 
   // Thread pool used to run tablet copy operations.
-  gscoped_ptr<ThreadPool> tablet_copy_pool_;
+  std::unique_ptr<ThreadPool> tablet_copy_pool_;
 
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
-  gscoped_ptr<ThreadPool> open_tablet_pool_;
+  std::unique_ptr<ThreadPool> open_tablet_pool_;
 
   // Thread pool used to delete tablets asynchronously.
-  gscoped_ptr<ThreadPool> delete_tablet_pool_;
+  std::unique_ptr<ThreadPool> delete_tablet_pool_;
 
   FunctionGaugeDetacher metric_detacher_;
 
