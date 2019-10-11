@@ -919,9 +919,8 @@ void BuiltInNtp::RecordResponse(ServerState* from_server,
   //                  dispersion of samples increasing as described in
   //                  https://tools.ietf.org/html/rfc5905 A.5.2. clock_filter()
   const auto s = CombineClocks();
-  if (!s.ok()) {
-    KLOG_EVERY_N_SECS(INFO, 60)
-        << Substitute("combining reference clocks failed: $0", s.ToString());
+  if (!s.ok() && VLOG_IS_ON(1)) {
+    VLOG(1) << Substitute("combining clocks failed: $0", s.ToString());
   }
 }
 
@@ -1027,15 +1026,12 @@ Status BuiltInNtp::CombineClocks() {
     // Extra sanity check to make sure walltime doesn't go back.
     std::lock_guard<rw_spinlock> l(last_computed_lock_);
     if (last_computed_.wall > compute_wall) {
-      auto msg = Substitute("walltime would move into past: "
-                            "current walltime $0, last walltime $1, "
-                            "current mono $2, last mono $3, "
-                            "current error $4, last error $5",
-                            compute_wall, last_computed_.wall,
-                            now, last_computed_.mono,
-                            compute_error, last_computed_.error);
-      VLOG(1) << msg;
-      return Status::IllegalState(msg);
+      return Status::IllegalState(Substitute(
+          "walltime would move into past: "
+          "current walltime $0, last walltime $1, "
+          "current mono $2, last mono $3, current error $4, last error $5",
+          compute_wall, last_computed_.wall,
+          now, last_computed_.mono, compute_error, last_computed_.error));
     }
     last_computed_.is_synchronized = true;
     last_computed_.mono = now;
