@@ -123,10 +123,9 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_metrics(ThreadPoolMetrics metrics) {
   return *this;
 }
 
-Status ThreadPoolBuilder::Build(gscoped_ptr<ThreadPool>* pool) const {
+Status ThreadPoolBuilder::Build(unique_ptr<ThreadPool>* pool) const {
   pool->reset(new ThreadPool(*this));
-  RETURN_NOT_OK((*pool)->Init());
-  return Status::OK();
+  return (*pool)->Init();
 }
 
 ////////////////////////////////////////////////////////

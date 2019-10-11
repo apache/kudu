@@ -1085,12 +1085,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Random number generator used for selecting replica locations.
   ThreadSafeRandom rng_;
 
-  gscoped_ptr<SysCatalogTable> sys_catalog_;
+  std::unique_ptr<SysCatalogTable> sys_catalog_;
 
   // Background thread, used to execute the catalog manager tasks
   // like the assignment and cleaner
   friend class CatalogManagerBgTasks;
-  gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
+  std::unique_ptr<CatalogManagerBgTasks> background_tasks_;
 
   std::unique_ptr<hms::HmsCatalog> hms_catalog_;
   std::unique_ptr<HmsNotificationLogListenerTask> hms_notification_log_listener_;
@@ -1111,7 +1111,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   State state_;
 
   // Singleton pool that serializes invocations of ElectedAsLeaderCb().
-  gscoped_ptr<ThreadPool> leader_election_pool_;
+  std::unique_ptr<ThreadPool> leader_election_pool_;
 
   // This field is updated when a node becomes leader master,
   // waits for all outstanding uncommitted metadata (table and tablet metadata)

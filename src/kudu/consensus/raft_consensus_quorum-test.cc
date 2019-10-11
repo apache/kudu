@@ -579,7 +579,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   vector<shared_ptr<MemTracker>> parent_mem_trackers_;
   vector<FsManager*> fs_managers_;
   vector<scoped_refptr<Log> > logs_;
-  gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<ThreadPool> raft_pool_;
   vector<scoped_refptr<ConsensusMetadataManager>> cmeta_managers_;
   gscoped_ptr<TestPeerMapManager> peers_;
   vector<TestTransactionFactory*> txn_factories_;

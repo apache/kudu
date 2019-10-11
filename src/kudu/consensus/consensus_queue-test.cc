@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -62,6 +63,7 @@ DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 
 using kudu::consensus::HealthReportPB;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -228,7 +230,7 @@ class ConsensusQueueTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<log::Log> log_;
-  gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   scoped_refptr<clock::Clock> clock_;

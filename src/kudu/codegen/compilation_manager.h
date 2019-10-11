@@ -14,11 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CODEGEN_COMPILATION_MANAGER_H
-#define KUDU_CODEGEN_COMPILATION_MANAGER_H
+#pragma once
 
 #include <cstdint>
+#include <memory>
 
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/code_cache.h"
@@ -95,7 +94,7 @@ class CompilationManager {
 
   CodeGenerator generator_;
   CodeCache cache_;
-  gscoped_ptr<ThreadPool> pool_;
+  std::unique_ptr<ThreadPool> pool_;
 
   AtomicInt<int64_t> hit_counter_;
   AtomicInt<int64_t> query_counter_;
@@ -108,4 +107,3 @@ class CompilationManager {
 } // namespace codegen
 } // namespace kudu
 
-#endif

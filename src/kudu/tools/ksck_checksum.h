@@ -28,7 +28,6 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/util/countdown_latch.h"
@@ -259,7 +258,7 @@ class KsckChecksumManager : public std::enable_shared_from_this<KsckChecksumMana
 
   // A threadpool for running tasks that find additional tablets that can
   // be checksummed based on available slots on tablet servers.
-  gscoped_ptr<ThreadPool> find_tablets_to_checksum_pool_;
+  std::unique_ptr<ThreadPool> find_tablets_to_checksum_pool_;
 
   std::atomic<int64_t> rows_summed_;
   std::atomic<int64_t> disk_bytes_summed_;

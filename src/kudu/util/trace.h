@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_TRACE_H
-#define KUDU_UTIL_TRACE_H
+#pragma once
 
 #include <iosfwd>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -224,7 +224,7 @@ class Trace : public RefCountedThreadSafe<Trace> {
 
   void MetricsToJSON(JsonWriter* jw) const;
 
-  gscoped_ptr<ThreadSafeArena> arena_;
+  std::unique_ptr<ThreadSafeArena> arena_;
 
   // Lock protecting the entries linked list.
   mutable simple_spinlock lock_;
@@ -289,4 +289,3 @@ class ScopedTraceLatencyCounter {
 };
 
 } // namespace kudu
-#endif /* KUDU_UTIL_TRACE_H */

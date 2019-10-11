@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_THREAD_POOL_H
-#define KUDU_UTIL_THREAD_POOL_H
+#pragma once
 
 #include <deque>
 #include <iosfwd>
@@ -28,7 +27,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -128,7 +126,7 @@ class ThreadPoolBuilder {
   ThreadPoolBuilder& set_metrics(ThreadPoolMetrics metrics);
 
   // Instantiate a new ThreadPool with the existing builder arguments.
-  Status Build(gscoped_ptr<ThreadPool>* pool) const;
+  Status Build(std::unique_ptr<ThreadPool>* pool) const;
 
  private:
   friend class ThreadPool;
@@ -168,7 +166,7 @@ class ThreadPoolBuilder {
 //    static void Func(int n) { ... }
 //    class Task : public Runnable { ... }
 //
-//    gscoped_ptr<ThreadPool> thread_pool;
+//    unique_ptr<ThreadPool> thread_pool;
 //    CHECK_OK(
 //        ThreadPoolBuilder("my_pool")
 //            .set_min_threads(0)
@@ -502,4 +500,3 @@ class ThreadPoolToken {
 };
 
 } // namespace kudu
-#endif

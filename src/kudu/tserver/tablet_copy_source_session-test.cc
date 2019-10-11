@@ -258,9 +258,9 @@ class TabletCopyTest : public KuduTabletTest {
 
   MetricRegistry metric_registry_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
-  gscoped_ptr<ThreadPool> prepare_pool_;
-  gscoped_ptr<ThreadPool> apply_pool_;
-  gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<ThreadPool> prepare_pool_;
+  unique_ptr<ThreadPool> apply_pool_;
+  unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<TabletReplica> tablet_replica_;
   scoped_refptr<TabletCopySourceSession> session_;

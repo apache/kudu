@@ -29,7 +29,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/shared_ptr.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
@@ -97,7 +96,7 @@ class TableScanner {
   std::string table_name_;
   boost::optional<client::sp::shared_ptr<kudu::client::KuduClient>> dst_client_;
   boost::optional<std::string> dst_table_name_;
-  gscoped_ptr<ThreadPool> thread_pool_;
+  std::unique_ptr<ThreadPool> thread_pool_;
 
   // Protects output to 'out_' so that rows don't get interleaved.
   Mutex output_lock_;

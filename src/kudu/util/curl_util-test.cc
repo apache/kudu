@@ -17,9 +17,10 @@
 
 #include "kudu/util/curl_util.h"
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
@@ -41,7 +42,7 @@ TEST(CurlUtilTest, TestTimeout) {
 
 TEST(CurlUtilTest, NonSharedObjectsBetweenThreads) {
   const int kThreadCount = 8;
-  gscoped_ptr<ThreadPool> pool;
+  std::unique_ptr<ThreadPool> pool;
   ThreadPoolBuilder("curl-util-test")
       .set_min_threads(kThreadCount)
       .set_max_threads(kThreadCount)

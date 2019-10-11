@@ -165,7 +165,7 @@ class ConsensusPeersTest : public KuduTest {
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
-  gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
   LogOptions options_;

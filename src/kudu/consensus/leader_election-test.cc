@@ -59,6 +59,7 @@ namespace consensus {
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -147,7 +148,7 @@ class LeaderElectionTest : public KuduTest {
   RaftConfigPB config_;
   ProxyMap proxies_;
   gscoped_ptr<PeerProxyFactory> proxy_factory_;
-  gscoped_ptr<ThreadPool> pool_;
+  unique_ptr<ThreadPool> pool_;
 
   CountDownLatch latch_;
   gscoped_ptr<ElectionResult> result_;

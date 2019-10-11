@@ -30,7 +30,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -343,7 +342,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   OpMapTy ops_; // Registered operations.
   Mutex lock_;
   scoped_refptr<kudu::Thread> monitor_thread_;
-  gscoped_ptr<ThreadPool> thread_pool_;
+  std::unique_ptr<ThreadPool> thread_pool_;
   ConditionVariable cond_;
   bool shutdown_;
   int32_t polling_interval_ms_;
