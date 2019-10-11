@@ -94,7 +94,7 @@ ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest
 ADD_KUDU_TEST(master_replication-itest)
 ADD_KUDU_TEST(master_sentry-itest RUN_SERIAL true NUM_SHARDS 8 PROCESSORS 4)
 ADD_KUDU_TEST(master-stress-test RUN_SERIAL true NUM_SHARDS 3)
-if (TCMALLOC_ENABLED)
+if(${KUDU_TCMALLOC_AVAILABLE})
   ADD_KUDU_TEST(memory_gc-itest)
 endif()
 ADD_KUDU_TEST(multidir_cluster-itest)
