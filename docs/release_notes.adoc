@@ -31,35 +31,195 @@
 [[rn_1.11.0_upgrade_notes]]
 == Upgrade Notes
 
-* Flume 1.8+ requires Java 8 at runtime even though the Kudu Flume integration
-  is Java 7 compatible. Flume 1.9 is the default dependency version as of
-  Kudu 1.9.0.
-
-* Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration
-  is Java 7 compatible. Hadoop 3.2 is the default dependency version as of
-  Kudu 1.9.0.
-
-[[rn_1.11.0_obsoletions]]
-== Obsoletions
-
-
-[[rn_1.11.0_deprecations]]
-== Deprecations
-
-* Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
-  the next major release.
+* Since link:https://issues.apache.org/jira/browse/KUDU-2625[KUDU-2625] is
+  addressed, tablet servers now reject individual write operations which
+  violate schema constraints in a batch of write operations. In prior versions
+  the behavior was to reject the whole batch of write operations if a violation
+  of the schema constraints is detected even for a single row. It's recommended
+  to revise applications which relied on the behavior mentioned above
+  upon upgrading to Kudu 1.11.0.
 
 [[rn_1.11.0_new_features]]
 == New features
 
+* Kudu now supports putting tablet servers into maintenance. While in this
+  mode, the tablet server's replicas will not be re-replicated if it fails.
+  Only upon exiting maintenance will re-replication be triggered for any
+  remaining under-replicated tablets. The `kudu tserver state enter_maintenance`
+  and `kudu tserver state exit_maintenance` tools are added to orchestrate
+  tablet server maintenance, and the `kudu tserver list` tool is amended with
+  a "state" column option to display current state of each tablet server
+  (see link:https://issues.apache.org/jira/browse/KUDU-2069[KUDU-2069]).
+
+* Kudu now has a built-in NTP client which maintains the internal wallclock
+  time used for generation of HybridTime timestamps. When enabled, system clock
+  synchronization for nodes running Kudu is no longer necessary. This is useful
+  for containerized deployments and in other cases when it's troublesome
+  to maintain properly configured system NTP service at each node of a Kudu
+  cluster. The list of NTP servers to synchronize against is specified with the
+  `--builtin_ntp_servers` flag. By default, Kudu masters and tablet servers use
+  public servers hosted by the NTP Pool project. To use the built-in NTP
+  client, set `--time_source=builtin` and reconfigure `--builtin_ntp_servers`
+  if necessary
+  (see link:https://issues.apache.org/jira/browse/KUDU-2935[KUDU-2935]).
+
+* Aggregated table statistics are now available to Kudu clients via
+  `KuduClient.getTableStatistics()` and `KuduTable.getTableStatistics()`
+  methods in the Kudu Java client and `KuduClient.GetTableStatistics()`
+  in the Kudu {cpp} client. This allows for various query optimizations.
+  For example, Spark now uses it to perform join optimizations.
+  The statistics are available via the API of both {cpp} and Java Kudu clients.
+  In addition, per-table statistics are available via `kudu table statistics`
+  CLI tool. The statistics are also available via master's Web UI at
+  `master:8051/metrics` and `master:8051/table?id=<uuid>` URIs
+  (see link:https://issues.apache.org/jira/browse/KUDU-2797[KUDU-2797] and
+   link:https://issues.apache.org/jira/browse/KUDU-2921[KUDU-2921]).
+
+* The `kudu` CLI tool now supports altering table columns. Use the newly
+  introduced sub-commands such as `kudu table column_set_default`,
+  `kudu table column_remove_default`, `kudu table column_set_compression`,
+  `kudu table column_set_encoding`, and `kudu table column_set_block_size`
+  to alter a column of the specified table.
+
+* The `kudu` CLI tool now supports dropping table columns. Use the newly
+  introduced `kudu table delete_column` sub-command to drop a column of the
+  specified table.
+
+* The `kudu` CLI tool now supports getting and setting extra
+  configuration properties for a table. Use `kudu table get_extra_configs`
+  and `kudu table set_extra_config` sub-commands to perform the corresponding
+  operations
+  (see link:https://issues.apache.org/jira/browse/KUDU-2514[KUDU-2514]).
+
+* The `kudu` CLI tool now supports creating and dropping range partitions
+  for a table. Use `kudu table add_range_partition` and
+  `kudu table drop_range_partition` sub-commands to perform the corresponding
+  operations
+  (see link:https://issues.apache.org/jira/browse/KUDU-2881[KUDU-2881]).
 
 [[rn_1.11.0_improvements]]
 == Optimizations and improvements
 
+* The `kudu fs dump uuid` CLI tool is now significantly faster and consumes
+  significantly less IO.
+
+* The memory consumed by CFileReaders and BloomFileReaders is factored out and
+  accounted separately by the tablet server memory tracking. The stats are
+  available via Web UI as "CFileReaders" and "BloomFileReaders" entries.
+
+* `KuduScanBatch::const_iterator` in Kudu {cpp} client now supports
+  `operator->()`
+  (see link:https://issues.apache.org/jira/browse/KUDU-1561[KUDU-1561]).
+
+* Master server Web UI now supports sorting the list of tables by the columns
+  of "Table Name", "Create Time", and "Last Alter Time".
+
+* Tablet servers now expand a tablet's data directory group with available
+  healthy directories when all directories of the group are full
+  (see link:https://issues.apache.org/jira/browse/KUDU-2907[KUDU-2907]).
+
+* For scan operations run with `CLOSEST_REPLICA` selection mode, the Kudu Java
+  client now picks a random available replica in case no replica is located at
+  the same node with the client that initiated the scan operation. This helps
+  to spread the load generated by multiple scan requests to the same tablet
+  among all available replicas. In prior releases, all such scan requests might
+  end up fetching data from the same tablet replica
+  (see link:https://issues.apache.org/jira/browse/KUDU-2348[KUDU-2348]).
+
+* The serialization of in-memory rows to Kudu's wire format has been optimized
+  to be more CPU efficient
+  (see link:https://issues.apache.org/jira/browse/KUDU-2847[KUDU-2847]).
+
+* Tablet servers and masters can now aggregate metrics by the same attribute.
+  For example, it's now possible to fetch aggregated metrics from a tablet
+  server by retrieving data from URLs of form
+  `http://<host>:<port>/metrics?merge_rules=tablet|table|table_name`
+
+* Introduced Docker image for Python Kudu client
+  (see link:https://issues.apache.org/jira/browse/KUDU-2849[KUDU-2849]).
+
+* Tablet servers now consider available disk space when choosing a set of data
+  directories for a tablet's data directory group, and when deciding in which
+  data directory a new block should be written
+  (see link:https://issues.apache.org/jira/browse/KUDU-2901[KUDU-2901]).
+
+* Added a quick-start example of using Apache Spark to load, query, and modify
+  a real data set stored in Kudu.
+
+* Added a quick-start example of using Apache Nifi to ingest data into Kudu.
+
+* Tablet servers now reject individual write operations which violate schema
+  constraints in a batch of write operations received from a client. The
+  previous behavior was to reject the whole batch of write operations
+  if a violation of the schema constraints is detected even for a single row
+  (see link:https://issues.apache.org/jira/browse/KUDU-2625[KUDU-2625]).
+
+* Tablet replicas can now be optionally placed in accordance with a
+  dimension-based placement policy. To specify a dimension label for a table,
+  use the `KuduTableCreator::dimension_label()` and
+  `CreateTableOptions.setDimensionLabel()` methods of the {cpp} and Java Kudu
+  clients. To add a partition with a dimension label, use the
+  `KuduTableAlterer::AddRangePartitionWithDimension()` and
+  `AlterTableOptions.addRangePartition()` methods of the {cpp} and Java Kudu
+  clients
+  (see link:https://issues.apache.org/jira/browse/KUDU-2823[KUDU-2823]).
+
+* Kudu RPC now enables TCP keepalive for all outbound connections for faster
+  detection of no-longer-reachable nodes
+  (see link:https://issues.apache.org/jira/browse/KUDU-2192[KUDU-2192]).
+
+* The `kudu table scan` and `kudu table copy` CLI tools now fail gracefully
+  rather than crashing upon hitting an error
+  (see link:https://issues.apache.org/jira/browse/KUDU-2851[KUDU-2851]).
+
+* Optimized decoding of deltas' timestamps
+  (see link:https://issues.apache.org/jira/browse/KUDU-2867[KUDU-2867]).
+
+* Optimized the initialization of DeltaMemStore for the case when no matching
+  deltas are present
+  (see link:https://issues.apache.org/jira/browse/KUDU-2381[KUDU-2381]).
+
+* Improved the rehydration of scan tokens. Now a scan token created
+  before renaming a column can be used even after the column has been renamed.
+
+* The memory reserved by tcmalloc is now released to OS periodically to avoid
+  potential OOM issues in the case of read-only workloads
+  (see link:https://issues.apache.org/jira/browse/KUDU-2836[KUDU-2836]).
+
+* Optimized evaluation of predicates on columns of primitive types and
+  `NULL`/`NOT NULL` predicates to leverage SIMD instructions
+  (see link:https://issues.apache.org/jira/browse/KUDU-2846[KUDU-2846]).
 
 [[rn_1.11.0_fixed_issues]]
 == Fixed Issues
 
+* Fixed an issue that would cause frequent leader elections in case when
+  persisting Raft transactions to the WAL took longer than the leader
+  election timeout. The issue was contributing to election storms
+  (see link:https://issues.apache.org/jira/browse/KUDU-2947[KUDU-2947]).
+
+* Fixed a tablet server crash in cases where blocks were not removed due to IO
+  error. This issue may have surfaced after recovering from a disk failure
+  (see link:https://issues.apache.org/jira/browse/KUDU-2635[KUDU-2635]).
+
+* Fixed a crash in master and tablet server by validating the size of default
+  values when de-serializing `ColumnSchemaPB`
+  (see link:https://issues.apache.org/jira/browse/KUDU-2622[KUDU-2622]).
+
+* Fixed RPC negotiation failure in the case when TLS v1.3 is supported at
+  both the client and the server side. This is a temporary workaround before
+  the connection negotiation code is properly updated to support 1.5-RTT
+  handshake used in TLS v1.3. The issue affected Linux distributions shipped
+  or updated with OpenSSL version 1.0.2 and newer
+  (see link:https://issues.apache.org/jira/browse/KUDU-2871[KUDU-2871]).
+
+* Fixed a race between `GetTabletLocations()` and tablet report processing.
+  The race could crash the Kudu master
+  (see link:https://issues.apache.org/jira/browse/KUDU-2842[KUDU-2842]).
+
+* Fixed a bug in `AlterSchemaTransactionState::ToString()` that led to a crash
+  of tablet server when removing a tablet replica with a pending `AlterSchema`
+  transaction.
 
 [[rn_1.11.0_wire_compatibility]]
 == Wire Protocol compatibility
@@ -81,10 +241,6 @@ on wire compatibility between Kudu 1.11 and versions earlier than 1.3:
   clients older than Kudu 1.3 will be unable to connect.
 * If a Kudu 1.11 cluster is configured with authentication and encryption set to "optional"
   or "disabled", older clients will still be able to connect.
-
-[[rn_1.11.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.11.0
-
 
 [[rn_1.11.0_client_compatibility]]
 === Client Library Compatibility
@@ -111,6 +267,19 @@ documentation.
 
 [[rn_1.11.0_contributors]]
 == Contributors
+Kudu 1.11 includes contributions from 24 people, including 8 first-time
+contributors:
+
+* Hannah Nguyen
+* lingbin
+* Ritwik Yadav
+* Scott Reynolds
+* Volodymyr Verovkin
+* Xiaokai Wang
+* Xin He
+* Yao Wang
+
+Thank you for your help in making Kudu even better!
 
 [[resources_and_next_steps]]
 == Resources
@@ -128,4 +297,3 @@ For full installation details, see link:installation.html[Kudu Installation].
 - link:quickstart.html[Kudu Quickstart]
 - link:installation.html[Installing Kudu]
 - link:configuration.html[Configuring Kudu]
-
