@@ -1,0 +1,56 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This protobuf definition file actually requires protobuf3 despite using
+// protobuf2 syntax.
+syntax = "proto2";
+package kudu.subprocess;
+
+option java_package = "org.apache.kudu.subprocess";
+
+import "google/protobuf/any.proto";
+import "kudu/common/wire_protocol.proto";
+
+// EchoResponsePB simply echoes the data in EchoRequestPB as a response.
+message EchoRequestPB {
+  required string data = 1;
+}
+message EchoResponsePB {
+  required string data = 1;
+}
+
+// Request sent to the subprocess.
+message SubprocessRequestPB {
+  // A sequence number that uniquely identifies a call to the subprocess. This
+  // number is sent back in the Response and allows to match it to the original
+  // Request.
+  optional int64 id = 1;
+
+  // The request.
+  optional google.protobuf.Any request = 3;
+}
+
+// Sent by the subprocess in response to a request.
+message SubprocessResponsePB {
+  optional int64 id = 1;
+
+  // Only set if there was some kind of subprocess-side error.
+  optional AppStatusPB error = 2;
+
+  // The subprocess response. Only set for requests that actually expect a response.
+  optional google.protobuf.Any response = 3;
+}
