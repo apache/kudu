@@ -88,6 +88,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -142,6 +143,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
@@ -3334,6 +3336,12 @@ Status RetryingTSRpcTask::ResetTSProxy() {
   // This assumes that TSDescriptors are never deleted by the master,
   // so the task need not take ownership of the returned pointer.
   target_ts_desc_ = ts_desc.get();
+
+  // We may be called by a reactor thread, and creating proxies may trigger DNS
+  // resolution.
+  //
+  // TODO(adar): make the DNS resolution asynchronous.
+  ThreadRestrictions::ScopedAllowWait allow_wait;
 
   shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
   RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));

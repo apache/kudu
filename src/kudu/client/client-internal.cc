@@ -648,7 +648,9 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     HostPort hp;
     Status s = hp.ParseString(master_server_addr, master::Master::kDefaultPort);
     if (s.ok()) {
-      // TODO(todd): Do address resolution asynchronously as well.
+      // TODO(todd): Until address resolution is done asynchronously, we need
+      // to allow waiting as some callers may be reactor threads.
+      ThreadRestrictions::ScopedAllowWait allow_wait;
       s = dns_resolver_->ResolveAddresses(hp, &addrs);
     }
     if (!s.ok()) {
