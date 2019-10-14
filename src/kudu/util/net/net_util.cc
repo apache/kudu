@@ -54,6 +54,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
 
 // Mac OS 10.9 does not appear to define HOST_NAME_MAX in unistd.h
@@ -91,6 +92,7 @@ Status GetAddrInfo(const string& hostname,
                    const addrinfo& hints,
                    const string& op_description,
                    AddrInfo* info) {
+  ThreadRestrictions::AssertWaitAllowed();
   addrinfo* res = nullptr;
   const int rc = getaddrinfo(hostname.c_str(), nullptr, &hints, &res);
   const int err = errno; // preserving the errno from the getaddrinfo() call
