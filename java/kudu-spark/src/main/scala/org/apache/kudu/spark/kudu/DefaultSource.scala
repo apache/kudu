@@ -268,8 +268,10 @@ class KuduRelation(
       table.getTableStatistics().getOnDiskSize
     } catch {
       case e: Exception =>
-        log.warn("Error while getting table statistic from master, maybe the current" +
-          " master doesn't support the rpc, please check the version.", e)
+        log.warn(
+          "Error while getting table statistic from master, maybe the current" +
+            " master doesn't support the rpc, please check the version.",
+          e)
         super.sizeInBytes
     }
   }

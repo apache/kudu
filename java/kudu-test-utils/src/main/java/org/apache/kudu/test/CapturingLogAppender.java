@@ -19,6 +19,7 @@ package org.apache.kudu.test;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Random;
+import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Throwables;
 import org.apache.logging.log4j.core.LogEvent;
@@ -42,6 +43,11 @@ public class CapturingLogAppender extends AbstractAppender {
       .withPattern("%d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n")
       .build();
 
+  // The caller should detach the logger before calling getAppendedText().
+  // Nevertheless, for some reason it is still possible for additional
+  // append() calls to happen _after_ the logger is detached, which may race
+  // with getAppendedText().
+  @GuardedBy("this")
   private StringBuilder appended = new StringBuilder();
 
   public CapturingLogAppender() {
@@ -57,7 +63,7 @@ public class CapturingLogAppender extends AbstractAppender {
   }
 
   @Override
-  public void append(LogEvent event) {
+  public synchronized void append(LogEvent event) {
     appended.append(getLayout().toSerializable(event));
     if (event.getThrown() != null) {
       appended.append(Throwables.getStackTraceAsString(event.getThrown()));
@@ -68,7 +74,7 @@ public class CapturingLogAppender extends AbstractAppender {
   /**
    * @return all of the appended messages captured thus far, joined together.
    */
-  public String getAppendedText() {
+  public synchronized String getAppendedText() {
     return appended.toString();
   }
 
