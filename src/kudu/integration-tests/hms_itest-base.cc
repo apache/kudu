@@ -86,6 +86,7 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
   b.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
   b.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
   b.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
+  b.AddColumn("date_val")->Type(KuduColumnSchema::DATE);
   b.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
   b.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
   b.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);

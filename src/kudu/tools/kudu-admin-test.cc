@@ -1783,6 +1783,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       ->Compression(KuduColumnStorageAttributes::CompressionType::ZLIB)
       ->Default(KuduValue::FromInt(123));
     builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
+    builder.AddColumn("date_val")->Type(KuduColumnSchema::DATE);
     builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING)
       ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
       ->Default(KuduValue::CopyString(Slice("hello")));
@@ -1845,6 +1846,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       "    int32_val INT32 NULLABLE,\n"
       "    int64_val INT64 NULLABLE,\n"
       "    timestamp_val UNIXTIME_MICROS NULLABLE,\n"
+      "    date_val DATE NULLABLE,\n"
       "    string_val STRING NULLABLE,\n"
       "    bool_val BOOL NULLABLE,\n"
       "    float_val FLOAT NULLABLE,\n"
@@ -1885,6 +1887,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       "    int32_val INT32 NULLABLE BIT_SHUFFLE LZ4 - -,\n"
       "    int64_val INT64 NULLABLE AUTO_ENCODING ZLIB 123 123,\n"
       "    timestamp_val UNIXTIME_MICROS NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    date_val DATE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
       "    string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION \"hello\" \"hello\",\n"
       "    bool_val BOOL NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION false false,\n"
       "    float_val FLOAT NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"

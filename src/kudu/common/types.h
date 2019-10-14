@@ -547,12 +547,12 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   }
 };
 
-static const char* kDateFormat = "%Y-%m-%dT%H:%M:%S";
-static const char* kDateMicrosAndTzFormat = "%s.%06dZ";
 
 template<>
 struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
-  static const int US_TO_S = 1000L * 1000L;
+  static const int kMicrosInSecond = 1000L * 1000L;
+  constexpr static const char* kDateFormat = "%Y-%m-%dT%H:%M:%S";
+  constexpr static const char* kDateMicrosAndTzFormat = "%s.%06dZ";
 
   static const char* name() {
     return "unixtime_micros";
@@ -560,13 +560,13 @@ struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
 
   static void AppendDebugStringForValue(const void* val, std::string* str) {
     int64_t timestamp_micros = *reinterpret_cast<const int64_t *>(val);
-    time_t secs_since_epoch = timestamp_micros / US_TO_S;
+    time_t secs_since_epoch = timestamp_micros / kMicrosInSecond;
     // If the time is negative we need to take into account that any microseconds
     // will actually decrease the time in seconds by one.
-    int remaining_micros = timestamp_micros % US_TO_S;
+    int remaining_micros = static_cast<int>(timestamp_micros % kMicrosInSecond);
     if (remaining_micros < 0) {
       secs_since_epoch--;
-      remaining_micros = US_TO_S - std::abs(remaining_micros);
+      remaining_micros = kMicrosInSecond - std::abs(remaining_micros);
     }
     struct tm tm_info;
     gmtime_r(&secs_since_epoch, &tm_info);
@@ -575,6 +575,31 @@ struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
     char time[34];
     snprintf(time, sizeof(time), kDateMicrosAndTzFormat, time_up_to_secs, remaining_micros);
     str->append(time);
+  }
+};
+
+template<>
+struct DataTypeTraits<DATE> : public DerivedTypeTraits<INT32>{
+  static constexpr int32_t kMinValue = -719162; // mktime(0001-01-01)
+  static constexpr int32_t kMaxValue = 2932896; // mktime(9999-12-31)
+  typedef int32_t cpp_type;
+
+  static const char* name() {
+    return "date";
+  }
+
+  static void AppendDebugStringForValue(const void* val, std::string* str);
+
+  static const cpp_type* min_value() {
+    static int32_t value = kMinValue;
+    return &value;
+  }
+  static const cpp_type* max_value() {
+    static int32_t value = kMaxValue;
+    return &value;
+  }
+  static bool IsValidValue(int32_t val) {
+    return val >= kMinValue && val <= kMaxValue;
   }
 };
 
@@ -700,6 +725,7 @@ class Variant {
       case UINT16:
         numeric_.u16 = *static_cast<const uint16_t *>(value);
         break;
+      case DATE:
       case DECIMAL32:
       case INT32:
         numeric_.i32 = *static_cast<const int32_t *>(value);
@@ -781,6 +807,7 @@ class Variant {
       case UINT8:        return &(numeric_.u8);
       case INT16:        return &(numeric_.i16);
       case UINT16:       return &(numeric_.u16);
+      case DATE:
       case DECIMAL32:
       case INT32:        return &(numeric_.i32);
       case UINT32:       return &(numeric_.u32);

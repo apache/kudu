@@ -66,6 +66,9 @@ void WriteValueToColumn(const client::KuduSchema& schema,
     case client::KuduColumnSchema::UNIXTIME_MICROS:
       CHECK_OK(row->SetUnixTimeMicros(col_idx, value));
       break;
+    case client::KuduColumnSchema::DATE:
+      CHECK_OK(row->SetDate(col_idx, value));
+      break;
     case client::KuduColumnSchema::DECIMAL:
       CHECK_OK(row->SetUnscaledDecimal(col_idx, value));
       break;

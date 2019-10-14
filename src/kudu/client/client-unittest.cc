@@ -267,6 +267,7 @@ TEST(ClientUnitTest, TestKuduSchemaToString) {
   b2.AddColumn("k1")->Type(KuduColumnSchema::INT32)->NotNull();
   b2.AddColumn("k2")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
   b2.AddColumn("k3")->Type(KuduColumnSchema::INT8)->NotNull();
+  b2.AddColumn("date_val")->Type(KuduColumnSchema::DATE)->NotNull();
   b2.AddColumn("dec_val")->Type(KuduColumnSchema::DECIMAL)->Nullable()->Precision(9)->Scale(2);
   b2.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
   b2.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
@@ -279,6 +280,7 @@ TEST(ClientUnitTest, TestKuduSchemaToString) {
                         "    k1 INT32 NOT NULL,\n"
                         "    k2 UNIXTIME_MICROS NOT NULL,\n"
                         "    k3 INT8 NOT NULL,\n"
+                        "    date_val DATE NOT NULL,\n"
                         "    dec_val DECIMAL(9, 2) NULLABLE,\n"
                         "    int_val INT32 NOT NULL,\n"
                         "    string_val STRING NULLABLE,\n"

@@ -333,6 +333,7 @@ string column_to_field_type(const ColumnSchema& column) {
     case VARCHAR: return Substitute("varchar($0)",
                                     column.type_attributes().length);
     case UNIXTIME_MICROS: return "timestamp";
+    case DATE: return "date";
     default: LOG(FATAL) << "unhandled column type: " << column.TypeToString();
   }
   __builtin_unreachable();

@@ -676,6 +676,12 @@ class RowBuilder {
     Advance();
   }
 
+  void AddDate(int32_t days_since_unix_epoch) {
+    CheckNextType(DATE);
+    *reinterpret_cast<int32_t *>(&buf_[byte_idx_]) = days_since_unix_epoch;
+    Advance();
+  }
+
   void AddUint64(uint64_t val) {
     CheckNextType(UINT64);
     *reinterpret_cast<uint64_t *>(&buf_[byte_idx_]) = val;

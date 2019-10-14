@@ -467,6 +467,9 @@ Status GenerateRowData(Generator* gen, KuduPartialRow* row,
       case UNIXTIME_MICROS:
         RETURN_NOT_OK(row->SetUnixTimeMicros(idx, gen->Next<int64_t>()));
         break;
+      case DATE:
+        RETURN_NOT_OK(row->SetDate(idx, gen->Next<int32_t>()));
+        break;
       case FLOAT:
         RETURN_NOT_OK(row->SetFloat(idx, gen->Next<float>()));
         break;

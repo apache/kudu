@@ -144,6 +144,10 @@ Status KuduScanBatch::RowPtr::GetUnixTimeMicros(const Slice& col_name, int64_t* 
   return Get<TypeTraits<UNIXTIME_MICROS> >(col_name, val);
 }
 
+Status KuduScanBatch::RowPtr::GetDate(const Slice& col_name, int32_t* days_since_unix_epoch) const {
+  return Get<TypeTraits<DATE> >(col_name, days_since_unix_epoch);
+}
+
 Status KuduScanBatch::RowPtr::GetFloat(const Slice& col_name, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -192,6 +196,10 @@ Status KuduScanBatch::RowPtr::GetInt64(int col_idx, int64_t* val) const {
 
 Status KuduScanBatch::RowPtr::GetUnixTimeMicros(int col_idx, int64_t* val) const {
   return Get<TypeTraits<UNIXTIME_MICROS> >(col_idx, val);
+}
+
+Status KuduScanBatch::RowPtr::GetDate(int col_idx, int32_t* days_since_unix_epoch) const {
+  return Get<TypeTraits<DATE> >(col_idx, days_since_unix_epoch);
 }
 
 Status KuduScanBatch::RowPtr::GetFloat(int col_idx, float* val) const {
@@ -273,6 +281,9 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<UNIXTIME_MICROS> >(
     const Slice& col_name, int64_t* val) const;
 
 template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DATE> >(const Slice& col_name, int32_t* val) const;
+
+template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<FLOAT> >(const Slice& col_name, float* val) const;
 
 template
@@ -307,6 +318,9 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<INT128> >(int col_idx, int128_t* va
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<UNIXTIME_MICROS> >(int col_idx, int64_t* val) const;
+
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DATE> >(int col_idx, int32_t* val) const;
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<FLOAT> >(int col_idx, float* val) const;

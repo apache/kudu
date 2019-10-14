@@ -57,6 +57,7 @@ enum DataType {
   DECIMAL128 = 17;
   IS_DELETED = 18; // virtual column; not a real data type
   VARCHAR = 19;
+  DATE = 20;
 }
 
 enum EncodingType {

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
@@ -1013,6 +1014,9 @@ namespace {
       case UNIXTIME_MICROS:
         RETURN_NOT_OK(row->SetInt64(idx, INT64_MIN + 1));
         break;
+      case DATE:
+        RETURN_NOT_OK(row->SetDate(idx, DataTypeTraits<DATE>::kMinValue + 1));
+        break;
       case VARCHAR:
         RETURN_NOT_OK(row->SetVarchar(idx, Slice("\0", 1)));
         break;
@@ -1087,6 +1091,16 @@ namespace {
         RETURN_NOT_OK(row->GetUnixTimeMicros(idx, &value));
         if (value < INT64_MAX) {
           RETURN_NOT_OK(row->SetUnixTimeMicros(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case DATE: {
+        int32_t value;
+        RETURN_NOT_OK(row->GetDate(idx, &value));
+        if (value < DataTypeTraits<DATE>::kMaxValue) {
+          RETURN_NOT_OK(row->SetDate(idx, value + 1));
         } else {
           *success = false;
         }

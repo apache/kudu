@@ -126,6 +126,7 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type,
     case KuduColumnSchema::INT32: return kudu::INT32;
     case KuduColumnSchema::INT64: return kudu::INT64;
     case KuduColumnSchema::UNIXTIME_MICROS: return kudu::UNIXTIME_MICROS;
+    case KuduColumnSchema::DATE: return kudu::DATE;
     case KuduColumnSchema::FLOAT: return kudu::FLOAT;
     case KuduColumnSchema::DOUBLE: return kudu::DOUBLE;
     case KuduColumnSchema::VARCHAR: return kudu::VARCHAR;
@@ -153,6 +154,7 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::INT32: return KuduColumnSchema::INT32;
     case kudu::INT64: return KuduColumnSchema::INT64;
     case kudu::UNIXTIME_MICROS: return KuduColumnSchema::UNIXTIME_MICROS;
+    case kudu::DATE: return KuduColumnSchema::DATE;
     case kudu::FLOAT: return KuduColumnSchema::FLOAT;
     case kudu::DOUBLE: return KuduColumnSchema::DOUBLE;
     case kudu::VARCHAR: return KuduColumnSchema::VARCHAR;
@@ -679,6 +681,8 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
       return "BINARY";
     case UNIXTIME_MICROS:
       return "UNIXTIME_MICROS";
+    case DATE:
+      return "DATE";
     case DECIMAL:
       return "DECIMAL";
     case VARCHAR:

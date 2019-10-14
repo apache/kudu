@@ -17,10 +17,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -738,6 +740,26 @@ TEST_F(PredicateTest, TestTimestampPredicates) {
   ASSERT_OK(session->Flush());
 
   CheckIntPredicates<int64_t>(table);
+}
+
+TEST_F(PredicateTest, TestDatePredicates) {
+  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::DATE);
+  shared_ptr<KuduSession> session = CreateSession();
+
+  int i = 0;
+  for (int32_t value : CreateIntValues<int32_t>()) {
+      unique_ptr<KuduInsert> insert(table->NewInsert());
+      ASSERT_OK(insert->mutable_row()->SetInt64("key", i++));
+      ASSERT_OK(insert->mutable_row()->SetDate("value", value));
+      ASSERT_OK(session->Apply(insert.release()));
+  }
+  unique_ptr<KuduInsert> null_insert(table->NewInsert());
+  ASSERT_OK(null_insert->mutable_row()->SetInt64("key", i++));
+  ASSERT_OK(null_insert->mutable_row()->SetNull("value"));
+  ASSERT_OK(session->Apply(null_insert.release()));
+  ASSERT_OK(session->Flush());
+
+  CheckIntPredicates<int32_t>(table);
 }
 
 TEST_F(PredicateTest, TestFloatPredicates) {

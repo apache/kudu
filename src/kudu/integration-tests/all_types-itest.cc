@@ -20,6 +20,7 @@
 #include <functional>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -247,12 +248,88 @@ struct IntKeysTestSetup {
   int rows_per_tablet_;
 };
 
+struct DateKeysTestSetup {
+
+  DateKeysTestSetup()
+   : min_value(DataTypeTraits<DATE>::kMinValue),
+     max_rows_(DataTypeTraits<DATE>::kMaxValue - min_value),
+     increment_(max_rows_ / kNumTablets),
+     rows_per_tablet_(std::min(increment_, FLAGS_num_rows_per_tablet)) {
+  }
+
+  void AddKeyColumnsToSchema(KuduSchemaBuilder* builder) const {
+    auto column_spec = builder->AddColumn("key");
+    column_spec->Type(KuduColumnSchema::DATE)
+        ->NotNull()->PrimaryKey();
+  }
+
+  vector<const KuduPartialRow*> GenerateSplitRows(const KuduSchema& schema) const {
+    vector<int> splits;
+    splits.reserve(kNumTablets - 1);
+    for (int64_t i = 1; i < kNumTablets; i++) {
+      splits.push_back(min_value + i * increment_);
+    }
+    vector<const KuduPartialRow*> rows;
+    for (int val : splits) {
+      KuduPartialRow* row = schema.NewRow();
+      CHECK_OK(row->SetDate(0, val));
+      rows.push_back(row);
+    }
+    return rows;
+  }
+
+  Status GenerateRowKey(KuduInsert* insert, int split_idx, int row_idx) const {
+    int val = min_value + (split_idx * increment_) + row_idx;
+    return insert->mutable_row()->SetDate(0, val);
+  }
+
+  Status VerifyIntRowKey(int val, int split_idx, int row_idx) const {
+    int expected = min_value + (split_idx * increment_) + row_idx;
+    if (val != expected) {
+      return Status::Corruption(strings::Substitute("Keys didn't match. Expected: $0 Got: $1",
+                                                    expected, val));
+    }
+    return Status::OK();
+  }
+
+  Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
+    int val;
+    RETURN_NOT_OK(result.GetDate(0, &val));
+    return VerifyIntRowKey(val, split_idx, row_idx);
+  }
+
+  Status VerifyRowKeyRaw(const uint8_t* raw_key, int split_idx, int row_idx) const {
+    int val = UnalignedLoad<int32_t>(raw_key);
+    return VerifyIntRowKey(val, split_idx, row_idx);
+  }
+
+  int GetRowsPerTablet() const {
+    return rows_per_tablet_;
+  }
+
+  int GetMaxRows() const {
+    return max_rows_;
+  }
+
+  vector<string> GetKeyColumns() const {
+    vector<string> key_col;
+    key_col.emplace_back("key");
+    return key_col;
+  }
+
+  int min_value;
+  int max_rows_;
+  int increment_;
+  int rows_per_tablet_;
+};
+
 struct ExpectedVals {
   int8_t expected_int8_val;
   int16_t expected_int16_val;
   int32_t expected_int32_val;
   int64_t expected_int64_val;
   int64_t expected_timestamp_val;
+  int32_t expected_date_val;
   string slice_content;
   Slice expected_slice_val;
   Slice expected_binary_val;
@@ -285,6 +362,7 @@ class AllTypesItest : public KuduTest {
     builder.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
     builder.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
     builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
+    builder.AddColumn("date_val")->Type(KuduColumnSchema::DATE);
     builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
     builder.AddColumn("varchar_val")->Type(KuduColumnSchema::VARCHAR)->Length(kMaxVarcharLength);
     builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
@@ -359,6 +437,7 @@ class AllTypesItest : public KuduTest {
     RETURN_NOT_OK(row->SetInt32("int32_val", int_val));
     RETURN_NOT_OK(row->SetInt64("int64_val", int_val));
     RETURN_NOT_OK(row->SetUnixTimeMicros("timestamp_val", int_val));
+    RETURN_NOT_OK(row->SetDate("date_val", int_val));
     string content = strings::Substitute("hello $0", int_val);
     Slice slice_val(content);
     RETURN_NOT_OK(row->SetStringCopy("string_val", slice_val));
@@ -402,6 +481,7 @@ class AllTypesItest : public KuduTest {
     projection->push_back("int32_val");
     projection->push_back("int64_val");
     projection->push_back("timestamp_val");
+    projection->push_back("date_val");
     projection->push_back("string_val");
     projection->push_back("binary_val");
     projection->push_back("varchar_val");
@@ -421,6 +501,7 @@ class AllTypesItest : public KuduTest {
     vals.expected_int32_val = static_cast<int32_t>(expected_int_val);
     vals.expected_int64_val = expected_int_val;
     vals.expected_timestamp_val = expected_int_val;
+    vals.expected_date_val = static_cast<int32_t>(expected_int_val);
     vals.slice_content = strings::Substitute("hello $0", expected_int_val);
     vals.expected_slice_val = Slice(vals.slice_content);
     vals.expected_varchar_val = Slice(vals.slice_content);
@@ -452,6 +533,9 @@ class AllTypesItest : public KuduTest {
     int64_t timestamp_val;
     ASSERT_OK(row.GetUnixTimeMicros("timestamp_val", &timestamp_val));
     ASSERT_EQ(timestamp_val, vals.expected_timestamp_val);
+    int32_t date_val;
+    ASSERT_OK(row.GetDate("date_val", &date_val));
+    ASSERT_EQ(date_val, vals.expected_date_val);
     Slice string_val;
     ASSERT_OK(row.GetString("string_val", &string_val));
     ASSERT_EQ(string_val, vals.expected_slice_val);
@@ -567,6 +651,7 @@ typedef ::testing::Types<IntKeysTestSetup<KeyTypeWrapper<INT8> >,
                          IntKeysTestSetup<KeyTypeWrapper<DECIMAL64> >,
                          IntKeysTestSetup<KeyTypeWrapper<DECIMAL128> >,
                          IntKeysTestSetup<KeyTypeWrapper<UNIXTIME_MICROS> >,
+                         DateKeysTestSetup,
                          SliceKeysTestSetup<KeyTypeWrapper<STRING> >,
                          SliceKeysTestSetup<KeyTypeWrapper<BINARY> >
                          > KeyTypes;
@@ -662,6 +747,9 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
               break;
             case KuduColumnSchema::UNIXTIME_MICROS:
               ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data), vals.expected_timestamp_val);
+              break;
+            case KuduColumnSchema::DATE:
+              ASSERT_EQ(*reinterpret_cast<const int32_t*>(row_data), vals.expected_date_val);
               break;
             case KuduColumnSchema::STRING:
               ASSERT_EQ(*reinterpret_cast<const Slice*>(row_data), vals.expected_slice_val);

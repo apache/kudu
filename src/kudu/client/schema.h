@@ -224,7 +224,8 @@ class KUDU_EXPORT KuduColumnSchema {
     UNIXTIME_MICROS = 9,
     DECIMAL = 10,
     VARCHAR = 11,
-    TIMESTAMP = UNIXTIME_MICROS //!< deprecated, use UNIXTIME_MICROS
+    TIMESTAMP = UNIXTIME_MICROS, //!< deprecated, use UNIXTIME_MICROS
+    DATE = 12
   };
 
   /// @param [in] type

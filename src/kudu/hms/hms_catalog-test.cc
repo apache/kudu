@@ -195,6 +195,7 @@ class HmsCatalogTest : public KuduTest {
     b.AddColumn("int32_val", DataType::INT32);
     b.AddColumn("int64_val", DataType::INT64);
     b.AddColumn("timestamp_val", DataType::UNIXTIME_MICROS);
+    b.AddColumn("date_val", DataType::DATE);
     b.AddColumn("string_val", DataType::STRING);
     b.AddColumn("bool_val", DataType::BOOL);
     b.AddColumn("float_val", DataType::FLOAT);

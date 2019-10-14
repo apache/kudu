@@ -21,6 +21,8 @@
 #include <unordered_map>
 
 #include "kudu/gutil/singleton.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/logging.h"
 
 using std::string;
@@ -29,8 +31,10 @@ using std::unordered_map;
 
 namespace kudu {
 
+using strings::Substitute;
+
 template<typename TypeTraitsClass>
-TypeInfo::TypeInfo(TypeTraitsClass t)
+TypeInfo::TypeInfo(TypeTraitsClass /*t*/)
   : type_(TypeTraitsClass::type),
     physical_type_(TypeTraitsClass::physical_type),
     name_(TypeTraitsClass::name()),
@@ -79,6 +83,7 @@ class TypeInfoResolver {
     AddMapping<UINT64>();
     AddMapping<INT64>();
     AddMapping<UNIXTIME_MICROS>();
+    AddMapping<DATE>();
     AddMapping<STRING>();
     AddMapping<BOOL>();
     AddMapping<FLOAT>();
@@ -107,6 +112,19 @@ class TypeInfoResolver {
 
 const TypeInfo* GetTypeInfo(DataType type) {
   return Singleton<TypeInfoResolver>::get()->GetTypeInfo(type);
+}
+
+void DataTypeTraits<DATE>::AppendDebugStringForValue(const void* val, string* str) {
+  constexpr static const char* kDateFormat = "%F"; // the ISO 8601 date format
+  static constexpr time_t kSecondsInDay = 24 * 60 * 60;
+
+  int32_t days_since_unix_epoch = *reinterpret_cast<const int32_t*>(val);
+  if (IsValidValue(days_since_unix_epoch)) {
+    time_t seconds = static_cast<time_t>(days_since_unix_epoch) * kSecondsInDay;
+    StringAppendStrftime(str, kDateFormat, seconds, false);
+  } else {
+    str->append(Substitute("value $0 out of range for DATE type", days_since_unix_epoch));
+  }
 }
 
 } // namespace kudu

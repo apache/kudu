@@ -128,6 +128,7 @@ Status KuduValue::Data::CheckTypeAndGetPointer(const string& col_name,
     case kudu::INT16:
     case kudu::INT32:
     case kudu::INT64:
+    case kudu::DATE:
     case kudu::UNIXTIME_MICROS:
       RETURN_NOT_OK(CheckAndPointToInt(col_name, ti->size(), val_void));
       break;

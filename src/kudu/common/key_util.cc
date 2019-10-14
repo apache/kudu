@@ -17,7 +17,6 @@
 
 #include "kudu/common/key_util.h"
 
-#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -358,6 +357,7 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
     HANDLE_TYPE(INT8);
     HANDLE_TYPE(INT16);
     HANDLE_TYPE(INT32);
+    HANDLE_TYPE(DATE);
     HANDLE_TYPE(UNIXTIME_MICROS);
     HANDLE_TYPE(INT64);
     HANDLE_TYPE(INT128);
@@ -388,6 +388,7 @@ bool TryDecrementCell(const ColumnSchema &col, void *cell_ptr) {
     HANDLE_TYPE(INT8);
     HANDLE_TYPE(INT16);
     HANDLE_TYPE(INT32);
+    HANDLE_TYPE(DATE);
     HANDLE_TYPE(UNIXTIME_MICROS);
     HANDLE_TYPE(INT64);
     HANDLE_TYPE(INT128);

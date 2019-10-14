@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
+#include "kudu/common/types.h"
+
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
 #include <vector>
@@ -25,7 +28,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
-#include "kudu/common/types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
@@ -40,7 +42,31 @@ using std::vector;
 
 namespace kudu {
 
-class TestTypes : public KuduTest {};
+class TestTypes : public KuduTest {
+ protected:
+  static void TestDateToString(const string& expected, int32_t date) {
+    const TypeInfo* info = GetTypeInfo(DATE);
+    string result;
+    info->AppendDebugStringForValue(&date, &result);
+    ASSERT_EQ(expected, result);
+  }
+};
+
+TEST_F(TestTypes, TestDatePrinting) {
+  TestDateToString("1-01-01", *DataTypeTraits<DATE>::min_value());
+  TestDateToString("9999-12-31", *DataTypeTraits<DATE>::max_value());
+  TestDateToString("1970-01-01", 0);
+  TestDateToString("1942-08-16", -10000);
+  TestDateToString("1997-05-19", 10000);
+  TestDateToString("value -2147483648 out of range for DATE type",
+                   std::numeric_limits<int32_t>::min());
+  TestDateToString("value 2147483647 out of range for DATE type",
+                   std::numeric_limits<int32_t>::max());
+  TestDateToString("value -719163 out of range for DATE type",
+                   *DataTypeTraits<DATE>::min_value() - 1);
+  TestDateToString("value 2932897 out of range for DATE type",
+                   *DataTypeTraits<DATE>::max_value() + 1);
+}
 
 TEST_F(TestTypes, TestTimestampPrinting) {
   const TypeInfo* info = GetTypeInfo(UNIXTIME_MICROS);

@@ -273,6 +273,7 @@ Status LocateRow(const RunnerContext& context) {
       case KuduColumnSchema::INT16:
       case KuduColumnSchema::INT32:
       case KuduColumnSchema::INT64:
+      case KuduColumnSchema::DATE:
       case KuduColumnSchema::UNIXTIME_MICROS: {
         int64_t value;
         RETURN_NOT_OK_PREPEND(
@@ -563,6 +564,14 @@ Status ConvertToKuduPartialRow(
         RETURN_NOT_OK(range_bound_partial_row->SetInt64(col_name, value));
         break;
       }
+      case KuduColumnSchema::DATE: {
+        int32_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt32(values[i], /*field=*/nullptr, &value),
+            error_msg);
+        RETURN_NOT_OK(range_bound_partial_row->SetDate(col_name, value));
+        break;
+      }
       case KuduColumnSchema::UNIXTIME_MICROS: {
         int64_t value;
         RETURN_NOT_OK_PREPEND(
@@ -715,6 +724,7 @@ Status ParseValueOfType(const string& default_value,
     case KuduColumnSchema::DataType::INT16:
     case KuduColumnSchema::DataType::INT32:
     case KuduColumnSchema::DataType::INT64:
+    case KuduColumnSchema::DataType::DATE:
     case KuduColumnSchema::DataType::UNIXTIME_MICROS: {
       int64_t int_value;
       RETURN_NOT_OK_PREPEND(
