@@ -64,6 +64,8 @@ class ConnectToMasterResponsePB;
 class CreateTableRequestPB;
 class CreateTableResponsePB;
 class GetTableSchemaResponsePB;
+class ListTabletServersRequestPB;
+class ListTabletServersResponsePB;
 class MasterServiceProxy;
 class TableIdentifierPB;
 } // namespace master
@@ -168,6 +170,11 @@ class KuduClient::Data {
   bool IsLocalHostPort(const HostPort& hp) const;
 
   bool IsTabletServerLocal(const internal::RemoteTabletServer& rts) const;
+
+  Status ListTabletServers(KuduClient* client,
+                           const MonoTime& deadline,
+                           const master::ListTabletServersRequestPB& req,
+                           master::ListTabletServersResponsePB* resp) const;
 
   // Returns a non-failed replica of the specified tablet based on the provided
   // selection criteria and tablet server blacklist.

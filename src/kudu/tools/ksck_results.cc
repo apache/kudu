@@ -202,6 +202,13 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
     }
   }
 
+  // Then, on any special tablet server states.
+  if (sections & PrintSections::TSERVER_STATES &&
+      !ts_states.empty()) {
+    RETURN_NOT_OK(PrintTServerStatesTable(ts_states, out));
+    out << endl;
+  }
+
   // Then, on the health of the tablet servers.
   if (sections & PrintSections::TSERVER_SUMMARIES) {
     std::sort(cluster_status.tserver_summaries.begin(),
@@ -405,6 +412,17 @@ Status PrintFlagTable(ServerType type,
                         ServerCsv(num_servers, flag.second)});
   }
   return flags_table.PrintTo(out);
+}
+
+Status PrintTServerStatesTable(const KsckTServerStateMap& ts_states, ostream& out) {
+  out << "Tablet Server States" << endl;
+  // We expect tserver states to be relatively uncommon, so print one per row.
+  DataTable table({"Server", "State"});
+  for (const auto& id_and_state : ts_states) {
+    table.AddRow({ id_and_state.first,
+                   TServerStatePB_Name(id_and_state.second) });
+  }
+  return table.PrintTo(out);
 }
 
 Status PrintVersionTable(const KsckVersionToServersMap& version_summaries,
@@ -682,7 +700,7 @@ Status PrintTotalCounts(const KsckResults& results, std::ostream& out) {
 }
 
 void ServerHealthSummaryToPb(const ServerHealthSummary& summary,
-                                 ServerHealthSummaryPB* pb) {
+                             ServerHealthSummaryPB* pb) {
   switch (summary.health) {
     case ServerHealth::HEALTHY:
       pb->set_health(ServerHealthSummaryPB_ServerHealth_HEALTHY);

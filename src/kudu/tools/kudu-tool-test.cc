@@ -2935,6 +2935,18 @@ TEST_F(ToolTest, TestTServerListState) {
         Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
   ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
 
+  // Ksck should show a table showing the state.
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster ksck $0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, Substitute(
+         "Tablet Server States\n"
+         "              Server              |      State\n"
+         "----------------------------------+------------------\n"
+         " $0 | MAINTENANCE_MODE", ts_uuid));
+  }
+
   // We should still see the state if the tserver hasn't been registered.
   // "Unregister" the server by restarting the cluster and only bringing up the
   // master, and verify that we still see the tserver in maintenance mode.
@@ -2944,6 +2956,16 @@ TEST_F(ToolTest, TestTServerListState) {
   NO_FATALS(RunActionStdoutString(
         Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
   ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "MAINTENANCE_MODE"));
+  {
+    string out;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("cluster ksck $0", master_addr), &out));
+    ASSERT_STR_CONTAINS(out, Substitute(
+         "Tablet Server States\n"
+         "              Server              |      State\n"
+         "----------------------------------+------------------\n"
+         " $0 | MAINTENANCE_MODE", ts_uuid));
+  }
 
   NO_FATALS(RunActionStdoutNone(Substitute("tserver state exit_maintenance $0 $1",
                                            master_addr, ts_uuid)));
@@ -2962,6 +2984,10 @@ TEST_F(ToolTest, TestTServerListState) {
           Substitute("tserver list $0 --columns=uuid,state --format=csv", master_addr), &out));
     ASSERT_STR_CONTAINS(out, Substitute("$0,$1", ts_uuid, "NONE"));
   });
+  // Ksck should also report that there aren't special tablet server states.
+  NO_FATALS(RunActionStdoutString(
+      Substitute("cluster ksck $0", master_addr), &out));
+  ASSERT_STR_NOT_CONTAINS(out, "Tablet Server States");
 }
 
 TEST_F(ToolTest, TestMasterList) {

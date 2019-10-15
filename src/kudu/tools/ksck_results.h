@@ -26,6 +26,7 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "kudu/master/master.pb.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
 #include "kudu/util/status.h"
@@ -79,15 +80,16 @@ struct PrintSections {
   enum Values {
     NONE = 0,
     MASTER_SUMMARIES = 1 << 0,
-    TSERVER_SUMMARIES = 1 << 1,
-    VERSION_SUMMARIES = 1 << 2,
-    TABLET_SUMMARIES = 1 << 3,
-    TABLE_SUMMARIES = 1 << 4,
-    CHECKSUM_RESULTS = 1 << 5,
-    TOTAL_COUNT = 1 << 6,
+    TSERVER_STATES = 1 << 1,
+    TSERVER_SUMMARIES = 1 << 2,
+    VERSION_SUMMARIES = 1 << 3,
+    TABLET_SUMMARIES = 1 << 4,
+    TABLE_SUMMARIES = 1 << 5,
+    CHECKSUM_RESULTS = 1 << 6,
+    TOTAL_COUNT = 1 << 7,
 
     // Print all sections above.
-    ALL_SECTIONS = 0b01111111
+    ALL_SECTIONS = 0b011111111
   };
 };
 
@@ -102,6 +104,8 @@ typedef std::unordered_map<std::string, std::string> KsckFlagTagsMap;
 
 // Convenience map version -> servers.
 typedef std::map<std::string, std::vector<std::string>> KsckVersionToServersMap;
+
+typedef std::map<std::string, master::TServerStatePB> KsckTServerStateMap;
 
 // Container for all the results of a series of ksck checks.
 struct KsckResults {
@@ -126,6 +130,9 @@ struct KsckResults {
   KsckFlagTagsMap master_flag_tags_map;
   KsckFlagToServersMap tserver_flag_to_servers_map;
   KsckFlagTagsMap tserver_flag_tags_map;
+
+  // Any special states that the tablet servers may be in.
+  KsckTServerStateMap ts_states;
 
   // Collected results of the checksum scan.
   KsckChecksumResults checksum_results;
@@ -157,6 +164,9 @@ Status PrintFlagTable(cluster_summary::ServerType type,
                       const KsckFlagToServersMap& flag_to_servers_map,
                       const KsckFlagTagsMap& flag_tags_map,
                       std::ostream& out);
+
+Status PrintTServerStatesTable(const KsckTServerStateMap& ts_states,
+                               std::ostream& out);
 
 // Print a summary of the Kudu versions running across all servers from which
 // information could be fetched. Servers are grouped by version to make the

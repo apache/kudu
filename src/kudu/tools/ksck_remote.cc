@@ -31,6 +31,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/schema.h"
@@ -47,6 +48,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rpc/messenger.h"
@@ -57,6 +59,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_checksum.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -79,9 +82,11 @@ using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
-using kudu::client::KuduTabletServer;
 using kudu::client::internal::ReplicaController;
 using kudu::cluster_summary::ServerHealth;
+using kudu::master::ListTabletServersRequestPB;
+using kudu::master::ListTabletServersResponsePB;
+using kudu::master::TServerStatePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -494,21 +499,38 @@ Status RemoteKsckCluster::Build(const vector<string>& master_addresses,
 }
 
 Status RemoteKsckCluster::RetrieveTabletServers() {
-  vector<KuduTabletServer*> servers;
-  ElementDeleter deleter(&servers);
-  RETURN_NOT_OK(client_->ListTabletServers(&servers));
+  // Request that the tablet server states also be reported. This may include
+  // information about tablet servers that have not yet registered with the
+  // Masters.
+  ListTabletServersRequestPB req;
+  req.set_include_states(true);
+  ListTabletServersResponsePB resp;
+  RETURN_NOT_OK(client_->data_->ListTabletServers(
+      client_.get(), MonoTime::Now() + client_->default_admin_operation_timeout(), req, &resp));
 
   TSMap tablet_servers;
-  for (const auto* s : servers) {
-    auto ts = std::make_shared<RemoteKsckTabletServer>(
-        s->uuid(),
-        HostPort(s->hostname(), s->port()),
-        messenger_,
-        s->location());
+  KsckTServerStateMap ts_states;
+  for (int i = 0; i < resp.servers_size(); i++) {
+    const auto& ts_pb = resp.servers(i);
+    const auto& uuid = ts_pb.instance_id().permanent_uuid();
+    if (ts_pb.has_state() && ts_pb.state() != TServerStatePB::NONE) {
+      // We don't expect updates, but it's straightforward to handle, so let's
+      // update instead of die just in case.
+      EmplaceOrUpdate(&ts_states, uuid, ts_pb.state());
+    }
+    // If there's no registration for the tablet server, all we can really get
+    // is the state, so move on.
+    if (!ts_pb.has_registration()) {
+      continue;
+    }
+    HostPort hp;
+    RETURN_NOT_OK(HostPortFromPB(ts_pb.registration().rpc_addresses(0), &hp));
+    auto ts = std::make_shared<RemoteKsckTabletServer>(uuid, hp, messenger_, ts_pb.location());
     RETURN_NOT_OK(ts->Init());
-    InsertOrDie(&tablet_servers, ts->uuid(), ts);
+    EmplaceOrUpdate(&tablet_servers, uuid, std::move(ts));
   }
-  tablet_servers_.swap(tablet_servers);
+  tablet_servers_ = std::move(tablet_servers);
+  ts_states_ = std::move(ts_states);
   return Status::OK();
 }
 
