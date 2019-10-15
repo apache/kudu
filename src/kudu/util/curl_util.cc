@@ -21,6 +21,8 @@
 #include <cstdint>
 #include <mutex>
 #include <ostream>
+#include <string>
+#include <vector>
 
 #include <curl/curl.h>
 #include <glog/logging.h>
@@ -29,6 +31,9 @@
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/scoped_cleanup.h"
+
+using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -74,21 +79,21 @@ EasyCurl::~EasyCurl() {
   curl_easy_cleanup(curl_);
 }
 
-Status EasyCurl::FetchURL(const std::string& url, faststring* dst,
-                          const std::vector<std::string>& headers) {
+Status EasyCurl::FetchURL(const string& url, faststring* dst,
+                          const vector<string>& headers) {
   return DoRequest(url, nullptr, dst, headers);
 }
 
-Status EasyCurl::PostToURL(const std::string& url,
-                           const std::string& post_data,
+Status EasyCurl::PostToURL(const string& url,
+                           const string& post_data,
                            faststring* dst) {
   return DoRequest(url, &post_data, dst);
 }
 
-Status EasyCurl::DoRequest(const std::string& url,
-                           const std::string* post_data,
+Status EasyCurl::DoRequest(const string& url,
+                           const string* post_data,
                            faststring* dst,
-                           const std::vector<std::string>& headers) {
+                           const vector<string>& headers) {
   CHECK_NOTNULL(dst)->clear();
 
   if (!verify_peer_) {
@@ -133,6 +138,15 @@ Status EasyCurl::DoRequest(const std::string& url,
   if (post_data) {
     RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_POSTFIELDS,
                                                   post_data->c_str())));
+  }
+
+  // Done after CURLOPT_POSTFIELDS in case that resets the method (the docs[1]
+  // are unclear on whether that happens).
+  //
+  // 1. https://curl.haxx.se/libcurl/c/CURLOPT_POSTFIELDS.html
+  if (!custom_method_.empty()) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST,
+                                                  custom_method_.c_str())));
   }
 
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY)));

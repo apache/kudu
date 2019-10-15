@@ -110,6 +110,14 @@ class WebserverTest : public KuduTest {
     url_ = Substitute("http://$0", addr_.ToString());
   }
 
+  void RunTestOptions() {
+    curl_.set_custom_method("OPTIONS");
+    curl_.set_return_headers(true);
+    ASSERT_OK(curl_.FetchURL(url_, &buf_));
+    ASSERT_STR_CONTAINS(buf_.ToString(),
+                        "Allow: GET, POST, HEAD, OPTIONS, PROPFIND, MKCOL");
+  }
+
  protected:
   virtual void MaybeSetupSpnego(WebserverOptions* /*opts*/) {}
 
@@ -285,6 +293,12 @@ TEST_F(SpnegoWebserverTest, TestTruncatedTokens) {
   } while (!token.empty());
 }
 
+// Tests that even if we don't provide adequate authentication information in
+// an OPTIONS request, the server still honors it.
+TEST_F(SpnegoWebserverTest, TestAuthNotRequiredForOptions) {
+  NO_FATALS(RunTestOptions());
+}
+
 TEST_F(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
@@ -447,6 +461,11 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_OK(env_->CreateDir(Substitute("$0/dir", static_dir_)));
   s = curl_.FetchURL(Substitute("$0/dir/", url_), &buf_);
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
+}
+
+// Test that HTTP OPTIONS requests are permitted.
+TEST_F(WebserverTest, TestHttpOptions) {
+  NO_FATALS(RunTestOptions());
 }
 
 class WebserverAdvertisedAddressesTest : public KuduTest {
