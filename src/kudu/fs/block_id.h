@@ -101,6 +101,6 @@ struct BlockIdEqual {
 };
 
 typedef std::unordered_set<BlockId, BlockIdHash, BlockIdEqual> BlockIdSet;
-
+typedef std::vector<BlockId> BlockIdContainer;
 } // namespace kudu
 #endif /* KUDU_FS_BLOCK_ID_H */

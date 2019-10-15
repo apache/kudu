@@ -56,7 +56,7 @@ Status RowSetMetadata::CreateNew(TabletMetadata* tablet_metadata,
   return Status::OK();
 }
 
-void RowSetMetadata::AddOrphanedBlocks(const vector<BlockId>& blocks) {
+void RowSetMetadata::AddOrphanedBlocks(const BlockIdContainer& blocks) {
   tablet_metadata_->AddOrphanedBlocks(blocks);
 }
 
@@ -203,7 +203,7 @@ Status RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
 }
 
 void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
-                                  vector<BlockId>* removed) {
+                                  BlockIdContainer* removed) {
   removed->clear();
   {
     std::lock_guard<LockType> l(lock_);
@@ -298,8 +298,8 @@ int64_t RowSetMetadata::live_row_count() const {
   return live_row_count_;
 }
 
-vector<BlockId> RowSetMetadata::GetAllBlocks() {
-  vector<BlockId> blocks;
+BlockIdContainer RowSetMetadata::GetAllBlocks() {
+  BlockIdContainer blocks;
   std::lock_guard<LockType> l(lock_);
   if (!adhoc_index_block_.IsNull()) {
     blocks.push_back(adhoc_index_block_);

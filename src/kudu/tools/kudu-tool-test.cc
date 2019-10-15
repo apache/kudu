@@ -1198,7 +1198,7 @@ TEST_F(ToolTest, TestFsCheck) {
 
   // Create a local replica, flush some rows a few times, and collect all
   // of the created block IDs.
-  vector<BlockId> block_ids;
+  BlockIdContainer block_ids;
   {
     TabletHarness::Options opts(kTestDir);
     opts.tablet_id = kTabletId;
@@ -1235,8 +1235,11 @@ TEST_F(ToolTest, TestFsCheck) {
     ASSERT_OK(fs.Open(&report));
     std::shared_ptr<BlockDeletionTransaction> deletion_transaction =
         fs.block_manager()->NewDeletionTransaction();
-    for (int i = 0; i < block_ids.size(); i += 2) {
-      deletion_transaction->AddDeletedBlock(block_ids[i]);
+    int index = 0;
+    for (const auto& block_id : block_ids) {
+      if (index++ % 2 == 0) {
+        deletion_transaction->AddDeletedBlock(block_id);
+      }
     }
     deletion_transaction->CommitDeletedBlocks(&missing_ids);
   }

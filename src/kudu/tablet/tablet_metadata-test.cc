@@ -18,28 +18,41 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+
+DEFINE_int64(test_row_set_count, 1000, "");
+DEFINE_int64(test_block_count_per_rs, 1000, "");
+
+using std::map;
+using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -181,6 +194,31 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   TabletSuperBlockPB superblock_pb;
   ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
   ASSERT_GE(final_size, superblock_pb.ByteSize());
+}
+
+TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {
+  auto tablet_meta = harness_->tablet()->metadata();
+  RowSetMetadataVector rs_metas;
+  for (int i = 0; i < FLAGS_test_row_set_count; ++i) {
+    unique_ptr<RowSetMetadata> meta;
+    ASSERT_OK(RowSetMetadata::CreateNew(tablet_meta, i, &meta));
+
+    map<ColumnId, BlockId> block_by_column;
+    for (int j = 0; j < FLAGS_test_block_count_per_rs; ++j) {
+      block_by_column[ColumnId(j)] = BlockId(j);
+    }
+    meta->SetColumnDataBlocks(block_by_column);
+    rs_metas.emplace_back(shared_ptr<RowSetMetadata>(meta.release()));
+  }
+  tablet_meta->UpdateAndFlush(RowSetMetadataIds(), rs_metas, TabletMetadata::kNoMrsFlushed);
+
+  for (int i = 0; i < 10; ++i) {
+    BlockIdContainer block_ids;
+    LOG_TIMING(INFO, "collecting BlockIds") {
+      block_ids = tablet_meta->CollectBlockIds();
+    }
+    LOG(INFO) << "block_ids size: " << block_ids.size();
+  }
 }
 
 } // namespace tablet

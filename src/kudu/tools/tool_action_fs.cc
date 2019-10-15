@@ -140,14 +140,14 @@ Status Check(const RunnerContext& /*context*/) {
   }
 
   // Get the "live" block IDs (i.e. those referenced by a tablet).
-  vector<BlockId> live_block_ids;
+  BlockIdContainer live_block_ids;
   unordered_map<BlockId, string, BlockIdHash, BlockIdEqual> live_block_id_to_tablet;
   vector<string> tablet_ids;
   RETURN_NOT_OK(fs_manager.ListTabletIds(&tablet_ids));
   for (const auto& t : tablet_ids) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, t, &meta));
-    vector<BlockId> tablet_live_block_ids = meta->CollectBlockIds();
+    BlockIdContainer tablet_live_block_ids = meta->CollectBlockIds();
     live_block_ids.insert(live_block_ids.end(),
                           tablet_live_block_ids.begin(),
                           tablet_live_block_ids.end());

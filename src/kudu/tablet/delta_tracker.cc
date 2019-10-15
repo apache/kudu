@@ -367,7 +367,7 @@ Status DeltaTracker::CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& 
                                          &new_stores, type),
                         "Unable to open delta blocks");
 
-  vector<BlockId> removed_blocks;
+  BlockIdContainer removed_blocks;
   rowset_metadata_->CommitUpdate(update, &removed_blocks);
   rowset_metadata_->AddOrphanedBlocks(removed_blocks);
   // Once we successfully commit to the rowset metadata, let's ensure we update

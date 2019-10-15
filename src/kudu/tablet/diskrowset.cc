@@ -601,7 +601,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
   // Prepare the changes to the metadata.
   RowSetMetadataUpdate update;
   compaction->CreateMetadataUpdate(&update);
-  vector<BlockId> removed_blocks;
+  BlockIdContainer removed_blocks;
   rowset_metadata_->CommitUpdate(update, &removed_blocks);
 
   // Now that the metadata has been updated, open a new cfile set with the
