@@ -27,7 +27,8 @@ METRIC_DEFINE_gauge_int64(table, on_disk_size, "Table Size On Disk",
     "including metadata.");
 METRIC_DEFINE_gauge_int64(table, live_row_count, "Table Live Row count",
     kudu::MetricUnit::kRows,
-    "Pre-replication aggregated number of live rows in this table.");
+    "Pre-replication aggregated number of live rows in this table. "
+    "When the table doesn't support live row counting, -1 will be returned.");
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 

@@ -5573,7 +5573,12 @@ void TableInfo::UpdateMetrics(const tablet::ReportedTabletStatsPB& old_stats,
                               const tablet::ReportedTabletStatsPB& new_stats) {
   if (metrics_) {
     metrics_->on_disk_size->IncrementBy(new_stats.on_disk_size() - old_stats.on_disk_size());
-    metrics_->live_row_count->IncrementBy(new_stats.live_row_count() - old_stats.live_row_count());
+    if (new_stats.live_row_count() >= 0) {
+      metrics_->live_row_count->IncrementBy(
+          new_stats.live_row_count() - old_stats.live_row_count());
+    } else {
+      metrics_->live_row_count->set_value(-1);
+    }
   }
 }
 
