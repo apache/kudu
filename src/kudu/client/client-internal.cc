@@ -99,6 +99,8 @@ using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
 using master::IsCreateTableDoneResponsePB;
+using master::ListTabletServersResponsePB;
+using master::ListTabletServersRequestPB;
 using master::MasterFeatures;
 using master::MasterServiceProxy;
 using master::TableIdentifierPB;
@@ -444,6 +446,23 @@ bool KuduClient::Data::IsTabletServerLocal(const RemoteTabletServer& rts) const 
     if (IsLocalHostPort(hp)) return true;
   }
   return false;
+}
+
+Status KuduClient::Data::ListTabletServers(KuduClient* client,
+                                           const MonoTime& deadline,
+                                           const ListTabletServersRequestPB& req,
+                                           ListTabletServersResponsePB* resp) const {
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB> rpc(
+      deadline, client, BackoffType::EXPONENTIAL, req, resp,
+      &MasterServiceProxy::ListTabletServersAsync, "ListTabletServers",
+      sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  RETURN_NOT_OK(sync.Wait());
+  if (resp->has_error()) {
+    return StatusFromPB(resp->error().status());
+  }
+  return Status::OK();
 }
 
 void KuduClient::Data::StoreAuthzToken(const string& table_id,

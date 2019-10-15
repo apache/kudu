@@ -449,18 +449,8 @@ Status KuduClient::GetTableSchema(const string& table_name,
 Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) {
   ListTabletServersRequestPB req;
   ListTabletServersResponsePB resp;
-
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Synchronizer sync;
-  AsyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB> rpc(
-      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
-      &MasterServiceProxy::ListTabletServersAsync, "ListTabletServers",
-      sync.AsStatusCallback(), {});
-  rpc.SendRpc();
-  RETURN_NOT_OK(sync.Wait());
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
+  RETURN_NOT_OK(data_->ListTabletServers(this, deadline, req, &resp));
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
     HostPort hp;

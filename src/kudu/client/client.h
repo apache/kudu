@@ -65,6 +65,7 @@ class KuduTable;
 
 namespace tools {
 class LeaderMasterProxy;
+class RemoteKsckCluster;
 } // namespace tools
 
 namespace client {
@@ -612,6 +613,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class kudu::AuthzTokenTest;
   friend class kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
+  friend class tools::RemoteKsckCluster;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(ClientTest, TestCacheAuthzTokens);

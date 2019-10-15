@@ -420,6 +420,9 @@ void Ksck::set_print_sections(const std::vector<std::string>& sections) {
     if (section_upper == "MASTER_SUMMARIES") {
       print_sections_flags_ |= PrintSections::MASTER_SUMMARIES;
     }
+    if (section_upper == "TSERVER_STATES") {
+      print_sections_flags_ |= PrintSections::TSERVER_STATES;
+    }
     if (section_upper == "TSERVER_SUMMARIES") {
       print_sections_flags_ |= PrintSections::TSERVER_SUMMARIES;
     }
@@ -460,6 +463,10 @@ Status Ksck::Run() {
   s = FetchTableAndTabletInfo();
   PUSH_PREPEND_NOT_OK(s, results_.error_messages, fetch_prefix);
   RETURN_NOT_OK_PREPEND(s, fetch_prefix);
+
+  // In getting table and tablet info, we should have also received info about
+  // the tablet servers, including any special states they might be in.
+  results_.ts_states = cluster_->ts_states();
 
   PUSH_PREPEND_NOT_OK(FetchInfoFromTabletServers(), results_.error_messages,
                       "error fetching info from tablet servers");

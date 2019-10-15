@@ -437,6 +437,10 @@ class KsckCluster {
     return tablet_servers_;
   }
 
+  const KsckTServerStateMap& ts_states() const {
+    return ts_states_;
+  }
+
   const std::vector<std::shared_ptr<KsckTable>>& tables() const {
     return tables_;
   }
@@ -478,6 +482,7 @@ class KsckCluster {
   KsckCluster() : filtered_tables_count_(0), filtered_tablets_count_(0) {}
   MasterList masters_;
   TSMap tablet_servers_;
+  KsckTServerStateMap ts_states_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
   std::unique_ptr<ThreadPool> pool_;
 
