@@ -67,12 +67,20 @@ class MemoryGcITest : public ExternalMiniClusterITestBase {
 TEST_F(MemoryGcITest, TestPeriodicGc) {
   vector<string> ts_flags;
   // Set GC interval seconeds short enough, so the test case could compelte sooner.
-  ts_flags.emplace_back("--gc_tcmalloc_memory_interval_seconds=1");
+  ts_flags.emplace_back("--gc_tcmalloc_memory_interval_seconds=5");
 
   ExternalMiniClusterOptions opts;
   opts.extra_tserver_flags = std::move(ts_flags);
   opts.num_tablet_servers = 3;
   NO_FATALS(StartClusterWithOpts(opts));
+
+  // Enable tcmalloc memory GC periodically for tserver-1, and disabled for tserver-0 and tserver-2.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "gc_tcmalloc_memory_interval_seconds", "0"));
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(1),
+                              "gc_tcmalloc_memory_interval_seconds", "1"));
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(2),
+                              "gc_tcmalloc_memory_interval_seconds", "0"));
 
   // Write some data for scan later.
   {
@@ -84,18 +92,10 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
     workload.Setup();
     workload.Start();
     ASSERT_EVENTUALLY([&]() {
-      ASSERT_GE(workload.rows_inserted(), 10000);
+      ASSERT_GE(workload.rows_inserted(), 1000000);
     });
     workload.StopAndJoin();
   }
-
-  // Limit max overhead memory usage of tserver-1, and no limit for tserver-0 and tserver-2.
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
-                              "tcmalloc_max_free_bytes_percentage", "100"));
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(1),
-                              "tcmalloc_max_free_bytes_percentage", "10"));
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(2),
-                              "tcmalloc_max_free_bytes_percentage", "100"));
 
   // Start scan, then more memory will be allocated by tcmalloc.
   {
@@ -108,11 +108,11 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
       NO_FATALS(
         double ratio;
         GetOverheadRatio(cluster_->tablet_server(0), &ratio);
-        ASSERT_GE(ratio, 0.1);
+        ASSERT_GE(ratio, 0.1) << "tserver-0";
         GetOverheadRatio(cluster_->tablet_server(1), &ratio);
-        ASSERT_LE(ratio, 0.1);
+        ASSERT_LE(ratio, 0.1) << "tserver-1";
         GetOverheadRatio(cluster_->tablet_server(2), &ratio);
-        ASSERT_GE(ratio, 0.1);
+        ASSERT_GE(ratio, 0.1) << "tserver-2";
       );
     });
     workload.StopAndJoin();
