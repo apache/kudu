@@ -18,6 +18,7 @@
 #define KUDU_UTIL_CURL_UTIL_H
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -77,6 +78,11 @@ class EasyCurl {
     verbose_ = v;
   }
 
+  // Overrides curl's HTTP method handling with a custom method string.
+  void set_custom_method(std::string m) {
+    custom_method_ = std::move(m);
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -85,6 +91,8 @@ class EasyCurl {
                    faststring* dst,
                    const std::vector<std::string>& headers = {});
   CURL* curl_;
+
+  std::string custom_method_;
 
   // Whether to verify the server certificate.
   bool verify_peer_ = true;
