@@ -277,16 +277,20 @@ Status HybridClock::Update(const Timestamp& to_update) {
 
   uint64_t to_update_physical = GetPhysicalValueMicros(to_update);
   uint64_t now_physical = GetPhysicalValueMicros(now);
+  DCHECK_GE(to_update_physical, now_physical);
 
-  // we won't update our clock if to_update is more than 'max_clock_sync_error_usec'
-  // into the future as it might have been corrupted or originated from an out-of-sync
-  // server.
-  if ((to_update_physical - now_physical) > FLAGS_max_clock_sync_error_usec) {
-    return Status::InvalidArgument("Tried to update clock beyond the max. error.");
+  // Don't update our clock if 'to_update' is more than
+  // '--max_clock_sync_error_usec' into the future as it might have been
+  // corrupted or originated from an out-of-sync server.
+  if (to_update_physical - now_physical > FLAGS_max_clock_sync_error_usec) {
+    return Status::InvalidArgument(Substitute(
+        "tried to update clock beyond the error threshold of $0us: "
+        "now $1, to_update $2 (now_physical $3, to_update_physical $4)",
+        FLAGS_max_clock_sync_error_usec,
+        now.ToUint64(), to_update.ToUint64(), now_physical, to_update_physical));
   }
 
-  // Our next timestamp must be higher than the one that we are updating
-  // from.
+  // Our next timestamp must be higher than the one that we are updating from.
   next_timestamp_ = to_update.value() + 1;
   return Status::OK();
 }
