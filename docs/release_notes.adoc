@@ -39,6 +39,14 @@
   to revise applications which relied on the behavior mentioned above
   upon upgrading to Kudu 1.11.0.
 
+[[rn_1.11.0_deprecations]]
+== Deprecations
+
+* The Kudu Flume integration is deprecated and may be removed in the
+  next minor release. The integration will be moved to the Apache Flume
+  project going forward.
+  (see link:https://issues.apache.org/jira/browse/FLUME-3345[FLUME-3345]).
+
 [[rn_1.11.0_new_features]]
 == New features
 
