@@ -26,6 +26,7 @@ releases] prior to conducting the release management activity. Pay attention to
 the link:https://www.apache.org/legal/resolved.html[3rd-party license policy],
 making sure the release doesn't include anything from the
 link:https://www.apache.org/legal/resolved.html#category-x[Category X].
+The command-line snippets in this document are for `bash` (Bourne-again shell).
 To edit or update this document, edit `RELEASING.adoc` in `master`.
 
 == Stating Intent to Release
@@ -71,11 +72,13 @@ To edit or update this document, edit `RELEASING.adoc` in `master`.
   configuration. Cloudera hosts the Gerrit server and a Cloudera employee will
   have to perform this step because SSH access is behind a firewall. The steps
   are as follows:
-  1. Ensure your public SSH key is in `~gerrit/.ssh/authorized_keys` on gerrit.cloudera.org
+  1. Ensure your public SSH key is in `~gerrit/.ssh/authorized_keys` on
+     gerrit.cloudera.org
   2. From behind the firewall, `ssh gerrit@gerrit.cloudera.org` to log in.
   3. Back up the existing replication configuration file by executing
      `cp ~/etc/replication.config ~/etc/replication.config.bak.`date '+%Y%m%d.%H%M%S'``
-  4. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
+  4. Edit `etc/replication.config` to add a line for the new branch, such as
+     `branch-1.x.y`
   5. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
      dev@impala.apache.org) indicating that you are going to restart Gerrit
      (link:https://s.apache.org/2Wj7[example]). It is best to do the restart at
@@ -88,23 +91,53 @@ To edit or update this document, edit `RELEASING.adoc` in `master`.
 
 . As needed, patches can be cherry-picked to the new branch.
 
-== Updating Versions In Master
+== Updating Versions in Master
 
-. Check out the `master` branch and bump the version in `version.txt`.
+. Check out the `master` branch and bump the version in `version.txt`. Don't
+  update `kudu-version` in `examples/java/java-example/pom.xml` yet: it should
+  be updated later on when release artifacts are published (see below).
 
 . Commit and push that change to Gerrit.
 
-. Notify dev@kudu.apache.org that the new branch is available.
+. Notify dev@kudu.apache.org that the new branch is available (see
+  link:https://lists.apache.org/thread.html/de58960366583943391c00bd6b75dbd1fab3bc9067af05dd7b817a90@%3Cdev.kudu.apache.org%3E[here]
+  for an example).
 
-
-== Preparing A Release Candidate
+== Preparing a Release Candidate
 
 . Before building a release candidate, make sure you have followed the
-Apache committer guide for setting up your GPG keys
-(link:https://www.apache.org/dev/new-committers-guide.html#set-up-security-and-pgp-keys[here]).
+  Apache committer guide for
+  link:https://www.apache.org/dev/new-committers-guide.html#set-up-security-and-pgp-keys[
+  setting up your GPG keys]. In addition to the link:http://pgp.mit.edu/[MIT
+  PGP public key server] referenced in the committer guide, consider adding
+  your keys to one of link:http://pool.sks-keyservers.net:11371[SKS OpenPGP
+  keyservers] or link:http://keyserver.ubuntu.com:11371[Ubuntu OpenPGP
+  keyserver]. The MIT keyserver sometimes is not available, and it takes some
+  time to propagate key updates anyways: the latter two servers are used by the
+  link:https://repository.apache.org[Apache Maven repo server] to verify the
+  signature of the uploaded maven artifacts as of October 2019.
+
+. If building and signing on a remote/shared machine, consider
+  link:https://wiki.gnupg.org/AgentForwarding[forwarding GPG agent via SSH].
+  That means you can keep your secret keys on a local machine even when signing
+  the artifacts to be released
+  (works even for a hardware token like a smartcard, etc.).
+
+. Out of the Kudu git workspace, checkout the
+  link:https://dist.apache.org/repos/dist/release/kudu/[release SVN repository].
+  Later on, the officially released and signed artifacts will be put into
+  this repository. At this point, just add your PGP key to the `KEYS` file
+  (if it's not there yet), making it available for the signature verification:
++
+----
+svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
+cd kudu-dist-release
+(gpg --list-sigs <your-email-address> && gpg --armor --export <your-email-address>) >> KEYS
+svn commit --username=<your_apache_username> -m "Adding my key to the KEYS file"
+----
 
 . When close to building a release candidate, try building a source tarball
-(on a supported platform):
+  (on a supported platform):
 +
 ----
   ./build-support/build_source_release.py
@@ -112,16 +145,25 @@ Apache committer guide for setting up your GPG keys
 
 . Fix any issues it finds, such as RAT.
 
+. Make sure `kudu-binary` JAR artifact can be successfully built both on Linux
+  and macOS:
++
+----
+  ./build-support/mini-cluster/build_mini_cluster_binaries.sh
+----
+
 . Test the full Java build. This will sign and build everything without
   deploying any artifacts:
 +
 ----
   # Run a gpg-agent if you don't normally.
   gpg-agent --daemon
+  # List keys with identifiers in the traditional 8-character key ID format.
+  # Take a note of the identifier of the key you want to use for signing.
+  gpg --list-secret-keys --keyid-format=short
   cd java
-  gradle clean install -PforceSigning
+  ./gradlew clean install -PforceSigning -Psigning.gnupg.keyName=<8-character-pgp-key-id>
 ----
-+
 
 . Create a new version update commit which removes the -SNAPSHOT suffix (same
   process as above).
@@ -142,17 +184,18 @@ Apache committer guide for setting up your GPG keys
 
 . Build a source tarball against the RC branch.
 
-. Create a new folder containing the
-  link:https://dist.apache.org/repos/dist/dev/kudu/[dev Subversion (SVN)
-  repository]. Copy the artifacts to this folder and commit.
+. Out of the Kudu git workspace, checkout the
+  link:https://dist.apache.org/repos/dist/dev/kudu/[dev Subversion (SVN) repository].
+  Create a new sub-directory named correspondingly. Copy the artifacts to this
+  sub-directory and commit.
 +
 ----
   svn co --depth=immediates https://dist.apache.org/repos/dist/dev/kudu/ kudu-dev-release
   cd kudu-dev-release
   mkdir 1.x.y-RC1
-  cp <path_to_kudu>/build/apache-kudu-1.x.y.tar.* 1.x.y-RC1
-  svn add 1.x.y-RC1/*
-  svn commit -m "Adding Kudu 1.x.y RC1"
+  cp <path_to_kudu_git_workspace>/build/apache-kudu-1.x.y.tar.* 1.x.y-RC1
+  svn add 1.x.y-RC1
+  svn commit --username=<your_apache_username> -m "Adding Kudu 1.x.y RC1"
 ----
 
 . Create a Maven staging repository for the release candidate Java artifacts.
@@ -161,7 +204,15 @@ Apache committer guide for setting up your GPG keys
   # Run a gpg-agent if you don't normally
   gpg-agent --daemon
   cd java
-  gradle clean uploadArchives -PmavenUsername='<APACHE-LDAP-USERNAME>' -PmavenPassword='<APACHE-LDAP-PASSWORD>'
+  # Turn off bash history: this is to avoid exposing the credentials
+  # via .bash_history file.
+  set +o history
+  ./gradlew clean uploadArchives \
+      -Psigning.gnupg.keyName=<8-character-pgp-key-id> \
+      -PmavenUsername='<APACHE-LDAP-USERNAME>' \
+      -PmavenPassword='<APACHE-LDAP-PASSWORD>'
+  # Turn on bash history.
+  set -o history
 ----
 
 . Build and deploy new binary test JARs for the RC on macOS and Linux. Build
@@ -171,13 +222,22 @@ Apache committer guide for setting up your GPG keys
   need to build on an old version of macOS).
 +
 ----
-  # Build a binary JAR for the local operating system. The resulting JAR
-  # is output into the build/mini-cluster directory.
+  # Build a binary JAR for the local operating system. Make sure the thirdparty
+  # components were built to match the source code that the RC is being built
+  # with. It's a good idea to clone the Kudu git repo into a dedicated
+  # workspace, rebuilding the thirdparty compoments from scratch for particular
+  # release. The resulting JAR is output into the build/mini-cluster directory.
   ./build-support/mini-cluster/build_mini_cluster_binaries.sh
   # Sign and publish all matching kudu-binary artifacts from the
   # build/mini-cluster directory to the Maven staging repository that hosts
   # the Java artifacts of the Apache Kudu project (see above).
-  ./build-support/mini-cluster/publish_mini_cluster_binaries.sh -a=deploy -u='<APACHE-LDAP-USERNAME>' -p='<APACHE-LDAP-PASSWORD>'
+  # Turn off bash history: this is to avoid exposing the credentials persisted
+  # in .bash_history file.
+  set +o history
+  ./build-support/mini-cluster/publish_mini_cluster_binaries.sh -a=deploy \
+      -u='<APACHE-LDAP-USERNAME>' -p='<APACHE-LDAP-PASSWORD>'
+  # Turn bash history back on.
+  set -o history
 ----
 +
 NOTE: If the binary test JAR artifacts are deployed by the same person and from the
@@ -192,34 +252,22 @@ of the JAR file to sign and publish.
 
 . Close the Maven staging repository (or repositories).
 +
-The Maven staging repositories used for the Java and the binary test JAR
-artifacts must be closed in order to be accessible to people testing the RC.
-Go to the link:https://repository.apache.org/\#stagingRepositories[staging
-repository] and look for ‘orgapachekudu-####’ in the staging repositories list.
-You can check the ‘content’ tab at the bottom to make sure you have all of the
-expected stuff (client, various integrations, etc). Hit the checkbox next to
-your new staging repo(s) and hit “close”. Enter something similar to “Apache
-Kudu 1.x.y-RC1” into the description box and confirm. Wait a minute or two and
-hit refresh, and each closed staging repo should now have a URL shown in its
-summary tab, for example
-`https://repository.apache.org/content/repositories/orgapachekudu-1005`
-
-. Create a new folder containing the
-  link:https://dist.apache.org/repos/dist/release/kudu/[release SVN
-  repository]. For a release to be made official, it must eventually be put in
-  this repository. Add your PGP key to the KEYS file:
-+
-----
-svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
-cd kudu-dist-release
-(gpg --list-sigs <your-email-address> && gpg --armor --export <your-email-address>) >> KEYS
-svn commit -m "Adding my key to the KEYS file"
-----
+Go to the link:https://repository.apache.org/[repository manager] and log
+into the repository server using your Apache credentials. Make sure to enable
+Adobe Flash in your browser for this Web site. Now, go the
+link:https://repository.apache.org/\#stagingRepositories[staging repository]
+and look for ‘orgapachekudu-####’ in the staging repositories list. You can
+check the `Content` tab at the bottom to make sure you have all of the
+expected stuff (client, various integrations, etc.). Hit the checkbox next to
+your new staging repo and hit `Close`. Enter something similar to
+"Apache Kudu 1.x.y-RC1" into the description box and confirm. Wait a minute
+or two and hit `Refresh`, and your staging repo should now have a URL shown
+in its summary tab
+(e.g. `https://repository.apache.org/content/repositories/orgapachekudu-1005`)
 
 == Initiating a Vote for an RC
 
-. Send an email to dev@kudu.apache.org to start the RC process, using
-  this
+. Send an email to dev@kudu.apache.org to start the RC process, using this
   link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
   as a template.
 
@@ -237,42 +285,46 @@ svn commit -m "Adding my key to the KEYS file"
 
 == Release
 
-. Create a new folder in the release repository for the new release and copy
-  the files from the dev repository.
+. For a release to be made official, the result release candidate must be put
+  in the release SVN repository. Create a new sub-directory in the release SVN
+  repository for the new release and copy the files from the dev repository:
 +
 ----
   cd kudu-dist-release
   mkdir 1.x.y
   cp <path_to_kudu-dev-release>/1.x.y-RC1/* 1.x.y
   svn add 1.x.y
-  svn commit -m "Adding files for Kudu 1.x.y"
+  svn commit --username=<your_apache_username> -m "Adding files for Kudu 1.x.y"
 ----
 
-. In the Kudu git repo, create a signed tag from the RC’s tag, and push it to the
+. In the Kudu git repo, create a signed tag from the RC's tag, verify the
+  signature has been applied and verifiable, and push it to the
   Apache Git repository:
 +
 ----
-  git tag -s 1.x.y -m 'Release Apache Kudu 1.x.y' 1.x.y-RC1
+  gpg --list-secret-keys --keyid-format=short
+  git tag -u <gpg_key_id> -m 'Release Apache Kudu 1.x.y' 1.x.y 1.x.y-RC1
+  git tag -v 1.x.y
   git push apache 1.x.y
 ----
 
 . Release the staged Java artifacts. Select the release candidate staging
   repository in link:https://repository.apache.org/#stagingRepositories[Nexus],
-  and click 'Release'. You should shortly be able to see the artifacts in
+  and click `Release`. You should shortly be able to see the artifacts in
   link:https://search.maven.org/search?q=g:org.apache.kudu[Maven Central].
 
 . Release the Python artifacts. You will need to setup an account on link:https://PyPi.org[PyPi.org]
   and ask to be added to the kudu-python PyPi project if you have not done this before.
 +
 ----
-# Prepare and sign the python source distribution.
-cd python
-rm -rf dist/*
-python setup.py sdist
-gpg --detach-sign -a dist/kudu-python-1.x.y.tar.gz
-# Upload the distribution to PyPi using twine.
-pip install twine
-twine upload dist/*
+  # Prepare and sign the python source distribution.
+  cd python
+  rm -rf dist/*
+  python setup.py sdist
+  gpg --detach-sign -a dist/kudu-python-1.x.y.tar.gz
+  # Upload the distribution to PyPi using twine.
+  pip install twine
+  twine upload dist/*
 ----
 Note: You can upload to the test PyPi by adding
 `--repository-url https://test.pypi.org/legacy/` to the twine command.
@@ -285,7 +337,7 @@ Note: You can upload to the test PyPi by adding
   folders there, copy an `index.md` file from the previous release and modify it
   accordingly. Make sure the download page meets the current
   link:https://www.apache.org/dev/release-download-pages.html[criteria]. Base
-  it off the latest release which has the highest chance to comform the
+  it off the latest release which has the highest chance to conform to the
   requirements, but double-check the release pages document as the criteria
   keep changing and the announcement will be rejected if our release page
   doesn't meet the criteria.
