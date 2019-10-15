@@ -144,7 +144,8 @@ class Webserver : public WebCallbackRegistry {
   sq_callback_result_t RunPathHandler(
       const PathHandler& handler,
       struct sq_connection* connection,
-      struct sq_request_info* request_info);
+      struct sq_request_info* request_info,
+      PrerenderedWebResponse* resp);
 
   // Callback to funnel mongoose logs through glog.
   static int LogMessageCallbackStatic(const struct sq_connection* connection,
@@ -157,6 +158,17 @@ class Webserver : public WebCallbackRegistry {
   // string (that is, "key1=value1&key2=value2.."). If no value is given for a
   // key, it is entered into the map as (key, "").
   void BuildArgumentMap(const std::string& args, ArgumentMap* output);
+
+  // Sends a response back thru 'connection'.
+  //
+  // If 'mode' is STYLED, includes page styling elements like CSS, navigation bar, etc.
+  enum class StyleMode {
+    STYLED,
+    UNSTYLED,
+  };
+  void SendResponse(struct sq_connection* connection,
+                    PrerenderedWebResponse* resp,
+                    StyleMode mode = StyleMode::UNSTYLED);
 
   const WebserverOptions opts_;
 

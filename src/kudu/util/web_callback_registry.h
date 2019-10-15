@@ -30,6 +30,7 @@ namespace kudu {
 enum class HttpStatusCode {
   Ok, // 200
   BadRequest, // 400
+  AuthenticationRequired, // 401
   NotFound, // 404
   LengthRequired, // 411
   RequestEntityTooLarge, // 413
@@ -68,25 +69,25 @@ class WebCallbackRegistry {
   // A response to an HTTP request whose body is rendered by template.
   struct WebResponse {
     // Determines the status code of the HTTP response.
-    HttpStatusCode status_code;
+    HttpStatusCode status_code = HttpStatusCode::Ok;
 
     // Additional headers added to the HTTP response.
     HttpResponseHeaders response_headers;
 
     // A JSON object to be rendered to HTML by a mustache template.
-    EasyJson* output;
+    EasyJson output;
   };
 
   // A response to an HTTP request.
   struct PrerenderedWebResponse {
     // Determines the status code of the HTTP response.
-    HttpStatusCode status_code;
+    HttpStatusCode status_code = HttpStatusCode::Ok;
 
     // Additional headers added to the HTTP response.
     HttpResponseHeaders response_headers;
 
     // The fully-rendered HTML response body.
-    std::ostringstream* output;
+    std::ostringstream output;
   };
 
   // A function that handles an HTTP request where the response body will be rendered

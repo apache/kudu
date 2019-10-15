@@ -384,7 +384,7 @@ void ThreadMgr::PrintThreadDescriptorRow(const ThreadDescriptor& desc,
 void ThreadMgr::ThreadPathHandler(
     const WebCallbackRegistry::WebRequest& req,
     WebCallbackRegistry::PrerenderedWebResponse* resp) const {
-  ostringstream& output = *(resp->output);
+  ostringstream& output = resp->output;
   vector<ThreadDescriptor> descriptors_to_print;
   const auto category_name = req.parsed_args.find("group");
   if (category_name != req.parsed_args.end()) {

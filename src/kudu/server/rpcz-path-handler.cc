@@ -64,7 +64,7 @@ void RpczPathHandler(const shared_ptr<Messenger>& messenger,
     messenger->rpcz_store()->DumpPB(dump_req, &sampled_rpcs);
   }
 
-  JsonWriter writer(resp->output, JsonWriter::PRETTY);
+  JsonWriter writer(&resp->output, JsonWriter::PRETTY);
   writer.StartObject();
   writer.String("running");
   writer.Protobuf(running_rpcs);

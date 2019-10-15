@@ -156,12 +156,14 @@ Status EasyCurl::DoRequest(const string& url,
         timeout_.ToMilliseconds())));
   }
   RETURN_NOT_OK(TranslateError(curl_easy_perform(curl_)));
-  long rc; // NOLINT(*) curl wants a long
-  RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &rc)));
-  if (rc != 200) {
-    return Status::RemoteError(strings::Substitute("HTTP $0", rc));
-  }
+  long val; // NOLINT(*) curl wants a long
+  RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_NUM_CONNECTS, &val)));
+  num_connects_ = val;
 
+  RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &val)));
+  if (val != 200) {
+    return Status::RemoteError(strings::Substitute("HTTP $0", val));
+  }
   return Status::OK();
 }
 

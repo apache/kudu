@@ -80,15 +80,15 @@ static void PprofCmdLineHandler(const Webserver::WebRequest& /*req*/,
   string executable_path;
   Env* env = Env::Default();
   WARN_NOT_OK(env->GetExecutablePath(&executable_path), "Failed to get executable path");
-  *resp->output << executable_path;
+  resp->output << executable_path;
 }
 
 // pprof asks for the url /pprof/heap to get heap information. This should be implemented
 // by calling HeapProfileStart(filename), continue to do work, and then, some number of
 // seconds later, call GetHeapProfile() followed by HeapProfilerStop().
-static void PprofHeapHandler(const Webserver::WebRequest& req,
+static void PprofHeapHandler(const Webserver::WebRequest& /*req*/,
                              Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
 #ifndef TCMALLOC_ENABLED
   *output << "%warn Heap profiling is not available without tcmalloc.\n";
 #else
@@ -125,7 +125,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req,
 // and then, XX seconds later, calling ProfilerStop().
 static void PprofCpuProfileHandler(const Webserver::WebRequest& req,
                                    Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
 #ifndef TCMALLOC_ENABLED
   *output << "%warn CPU profiling is not available without tcmalloc.\n";
 #else
@@ -155,11 +155,11 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req,
 static void PprofGrowthHandler(const Webserver::WebRequest& /*req*/,
                                Webserver::PrerenderedWebResponse* resp) {
 #ifndef TCMALLOC_ENABLED
-  *resp->output << "%warn Growth profiling is not available without tcmalloc.\n";
+  resp->output << "%warn Growth profiling is not available without tcmalloc.\n";
 #else
   string heap_growth_stack;
   MallocExtension::instance()->GetHeapGrowthStacks(&heap_growth_stack);
-  *resp->output << heap_growth_stack;
+  resp->output << heap_growth_stack;
 #endif
 }
 
@@ -180,7 +180,7 @@ static void PprofContentionHandler(const Webserver::WebRequest& req,
   StopSynchronizationProfiling();
   FlushSynchronizationProfile(&profile, &discarded_samples);
 
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
   *output << "--- contention:" << endl;
   *output << "sampling period = 1" << endl;
   *output << "cycles/second = " << static_cast<int64_t>(base::CyclesPerSecond()) << endl;
@@ -220,7 +220,7 @@ static void PprofSymbolHandler(const Webserver::WebRequest& req,
   if (req.request_method == "GET") {
     // Per the above comment, pprof doesn't expect to know the actual number of symbols.
     // Any non-zero value indicates that we support symbol lookup.
-    *resp->output << "num_symbols: 1";
+    resp->output << "num_symbols: 1";
     return;
   }
 
@@ -242,7 +242,7 @@ static void PprofSymbolHandler(const Webserver::WebRequest& req,
     }
     char symbol_buf[1024];
     if (google::Symbolize(reinterpret_cast<void*>(addr), symbol_buf, sizeof(symbol_buf))) {
-      *resp->output << p << "\t" << symbol_buf << std::endl;
+      resp->output << p << "\t" << symbol_buf << std::endl;
     } else {
       missing_symbols++;
     }

@@ -72,6 +72,7 @@ using mustache::RenderTemplate;
 using std::ostringstream;
 using std::stringstream;
 using std::string;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -102,6 +103,8 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
       return "200 OK";
     case kudu::HttpStatusCode::BadRequest:
       return "400 Bad Request";
+    case kudu::HttpStatusCode::AuthenticationRequired:
+      return "401 Authentication Required";
     case kudu::HttpStatusCode::NotFound:
       return "404 Not Found";
     case kudu::HttpStatusCode::LengthRequired:
@@ -114,19 +117,6 @@ string HttpStatusCodeToString(kudu::HttpStatusCode code) {
       return "503 Service Unavailable";
   }
   LOG(FATAL) << "Unexpected HTTP response code";
-}
-
-void SendPlainResponse(struct sq_connection* connection,
-                       const string& response_code_line,
-                       const string& content,
-                       const vector<string>& header_lines) {
-  sq_printf(connection, "HTTP/1.1 %s\r\n", response_code_line.c_str());
-  for (const auto& h : header_lines) {
-    sq_printf(connection, "%s\r\n", h.c_str());
-  }
-  sq_printf(connection, "Content-Type: text/plain\r\n");
-  sq_printf(connection, "Content-Length: %zd\r\n\r\n", content.size());
-  sq_printf(connection, "%s", content.c_str());
 }
 
 // Return the address of the remote user from the squeasel request info.
@@ -146,16 +136,18 @@ Sockaddr GetRemoteAddress(const struct sq_request_info* req) {
 // returned (and the other out-parameters left untouched). Otherwise, the
 // out-parameters will be written to, and the function will return either OK or
 // Incomplete depending on whether additional SPNEGO steps are required.
-Status RunSpnegoStep(const char* authz_header, string* resp_header,
+Status RunSpnegoStep(const char* authz_header,
+                     WebCallbackRegistry::HttpResponseHeaders* resp_headers,
                      string* authn_user) {
-  static const char* const kNegotiateStr = "WWW-Authenticate: Negotiate";
+  static const char* const kNegotiateHdrName = "WWW-Authenticate";
+  static const char* const kNegotiateHdrValue = "Negotiate";
   static const Status kIncomplete = Status::Incomplete("authn incomplete");
 
   VLOG(2) << "Handling Authorization header "
           << (authz_header ? KUDU_REDACT(authz_header) : "<null>");
 
   if (!authz_header) {
-    *resp_header = kNegotiateStr;
+    EmplaceOrDie(resp_headers, kNegotiateHdrName, kNegotiateHdrValue);
     return kIncomplete;
   }
 
@@ -171,7 +163,8 @@ Status RunSpnegoStep(const char* authz_header, string* resp_header,
   VLOG(2) << "SPNEGO step complete, response token: " << KUDU_REDACT(resp_token_b64);
 
   if (!resp_token_b64.empty()) {
-    *resp_header = Substitute("$0 $1", kNegotiateStr, resp_token_b64);
+    EmplaceOrDie(resp_headers, kNegotiateHdrName,
+                 Substitute("$0 $1", kNegotiateHdrValue, resp_token_b64));
   }
   return is_complete ? Status::OK() : kIncomplete;
 }
@@ -192,7 +185,7 @@ Webserver::~Webserver() {
 
 void Webserver::RootHandler(const Webserver::WebRequest& /* args */,
                             Webserver::WebResponse* resp) {
-  EasyJson path_handlers = resp->output->Set("path_handlers", EasyJson::kArray);
+  EasyJson path_handlers = resp->output.Set("path_handlers", EasyJson::kArray);
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
       EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
@@ -200,7 +193,7 @@ void Webserver::RootHandler(const Webserver::WebRequest& /* args */,
       path_handler["alias"] = handler.second->alias();
     }
   }
-  (*resp->output)["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
+  resp->output["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
@@ -325,6 +318,9 @@ Status Webserver::Start() {
   // Num threads
   options.emplace_back("num_threads");
   options.push_back(std::to_string(opts_.num_worker_threads));
+
+  options.emplace_back("enable_keep_alive");
+  options.emplace_back("yes");
 
   // mongoose ignores SIGCHLD and we need it to run kinit. This means that since
   // mongoose does not reap its own children CGI programs must be avoided.
@@ -465,14 +461,17 @@ sq_callback_result_t Webserver::BeginRequestCallback(
     return SQ_CONTINUE_HANDLING;
   }
 
+  // The last SPNEGO step in a successful authentication may include a response
+  // header (e.g. when using mutual authentication).
+  PrerenderedWebResponse resp;
   if (opts_.require_spnego) {
     const char* authz_header = sq_get_header(connection, "Authorization");
-    string resp_header, authn_princ;
-    Status s = RunSpnegoStep(authz_header, &resp_header, &authn_princ);
+    string authn_princ;
+    Status s = RunSpnegoStep(authz_header, &resp.response_headers, &authn_princ);
     if (s.IsIncomplete()) {
-      SendPlainResponse(connection, "401 Authentication Required",
-                         "Must authenticate with SPNEGO.",
-                         { resp_header });
+      resp.output << "Must authenticate with SPNEGO.";
+      resp.status_code = HttpStatusCode::AuthenticationRequired;
+      SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
     if (s.ok() && authn_princ.empty()) {
@@ -488,10 +487,11 @@ sq_callback_result_t Webserver::BeginRequestCallback(
       LOG(WARNING) << "Failed to authenticate request from "
                    << GetRemoteAddress(request_info).ToString()
                    << " via SPNEGO: " << s.ToString();
-      const char* http_status = s.IsNotAuthorized() ? "401 Authentication Required" :
-          "500 Internal Server Error";
-
-      SendPlainResponse(connection, http_status, s.ToString(), {});
+      resp.output << s.ToString();
+      resp.status_code = s.IsNotAuthorized() ?
+                           HttpStatusCode::AuthenticationRequired :
+                           HttpStatusCode::InternalServerError;
+      SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
 
@@ -500,51 +500,6 @@ sq_callback_result_t Webserver::BeginRequestCallback(
     }
 
     request_info->remote_user = strdup(authn_princ.c_str());
-
-    // NOTE: According to the SPNEGO RFC (https://tools.ietf.org/html/rfc4559) it
-    // is possible that a non-empty token will be returned along with the HTTP 200
-    // response:
-    //
-    //     A status code 200 status response can also carry a "WWW-Authenticate"
-    //     response header containing the final leg of an authentication.  In
-    //     this case, the gssapi-data will be present.  Before using the
-    //     contents of the response, the gssapi-data should be processed by
-    //     gss_init_security_context to determine the state of the security
-    //     context.  If this function indicates success, the response can be
-    //     used by the application.  Otherwise, an appropriate action, based on
-    //     the authentication status, should be taken.
-    //
-    //     For example, the authentication could have failed on the final leg if
-    //     mutual authentication was requested and the server was not able to
-    //     prove its identity.  In this case, the returned results are suspect.
-    //     It is not always possible to mutually authenticate the server before
-    //     the HTTP operation.  POST methods are in this category.
-    //
-    // In fact, from inspecting the MIT krb5 source code, it appears that this
-    // only happens when the client requests mutual authentication by passing
-    // 'GSS_C_MUTUAL_FLAG' when establishing its side of the protocol. In practice,
-    // this seems to be widely unimplemented:
-    //
-    // - curl has some source code to support GSS_C_MUTUAL_FLAG, but in order to
-    //   enable it, you have to modify a FALSE constant to TRUE and recompile curl.
-    //   In fact, it was broken for all of 2015 without anyone noticing (see curl
-    //   commit 73f1096335d468b5be7c3cc99045479c3314f433)
-    //
-    // - Chrome doesn't support mutual auth at all -- see DelegationTypeToFlag(...)
-    //   in src/net/http/http_auth_gssapi_posix.cc.
-    //
-    // In practice, users depend on TLS to authenticate the server, and SPNEGO
-    // is used to authenticate the client.
-    //
-    // Given this, and because actually sending back the token on an OK response
-    // would require significant code restructuring (eg buffering the header until
-    // after the response handler has run) we just ignore any response token, but
-    // log a periodic warning just in case it turns out we're wrong about the above.
-    if (!resp_header.empty()) {
-      KLOG_EVERY_N_SECS(WARNING, 5) << "ignoring SPNEGO token on HTTP 200 response "
-                                    << "for user " << authn_princ << " at host "
-                                    << GetRemoteAddress(request_info).ToString();
-    }
   }
 
   PathHandler* handler;
@@ -556,24 +511,26 @@ sq_callback_result_t Webserver::BeginRequestCallback(
       // to the default handler which will serve files.
       if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
         VLOG(2) << "HTTP File access: " << request_info->uri;
+        // TODO(adar): if using SPNEGO, do we need to somehow send the
+        // authentication response header here?
         return SQ_CONTINUE_HANDLING;
       }
-      sq_printf(connection,
-                "HTTP/1.1 %s\r\nContent-Type: text/plain\r\n\r\n",
-                HttpStatusCodeToString(HttpStatusCode::NotFound).c_str());
-      sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
+      resp.output << Substitute("No handler for URI $0\r\n\r\n", request_info->uri);
+      resp.status_code = HttpStatusCode::NotFound;
+      SendResponse(connection, &resp);
       return SQ_HANDLED_OK;
     }
     handler = it->second;
   }
 
-  return RunPathHandler(*handler, connection, request_info);
+  return RunPathHandler(*handler, connection, request_info, &resp);
 }
 
 sq_callback_result_t Webserver::RunPathHandler(
     const PathHandler& handler,
     struct sq_connection* connection,
-    struct sq_request_info* request_info) {
+    struct sq_request_info* request_info,
+    PrerenderedWebResponse* resp) {
   // Should we render with css styles?
   bool use_style = true;
 
@@ -588,18 +545,16 @@ sq_callback_result_t Webserver::RunPathHandler(
     int32_t content_len = 0;
     if (content_len_str == nullptr ||
         !safe_strto32(content_len_str, &content_len)) {
-      sq_printf(connection,
-                "HTTP/1.1 %s\r\n",
-                HttpStatusCodeToString(HttpStatusCode::LengthRequired).c_str());
+      resp->status_code = HttpStatusCode::LengthRequired;
+      SendResponse(connection, resp);
       return SQ_HANDLED_CLOSE_CONNECTION;
     }
     if (content_len > FLAGS_webserver_max_post_length_bytes) {
       // TODO(wdb): for this and other HTTP requests, we should log the
       // remote IP, etc.
       LOG(WARNING) << "Rejected POST with content length " << content_len;
-      sq_printf(connection,
-                "HTTP/1.1 %s\r\n",
-                HttpStatusCodeToString(HttpStatusCode::RequestEntityTooLarge).c_str());
+      resp->status_code = HttpStatusCode::RequestEntityTooLarge;
+      SendResponse(connection, resp);
       return SQ_HANDLED_CLOSE_CONNECTION;
     }
 
@@ -611,9 +566,8 @@ sq_callback_result_t Webserver::RunPathHandler(
         LOG(WARNING) << "error reading POST data: expected "
                      << content_len << " bytes but only read "
                      << req.post_data.size();
-        sq_printf(connection,
-                  "HTTP/1.1 %s\r\n",
-                  HttpStatusCodeToString(HttpStatusCode::InternalServerError).c_str());
+        resp->status_code = HttpStatusCode::InternalServerError;
+        SendResponse(connection, resp);
         return SQ_HANDLED_CLOSE_CONNECTION;
       }
 
@@ -626,37 +580,47 @@ sq_callback_result_t Webserver::RunPathHandler(
     use_style = false;
   }
 
-  ostringstream content;
-  PrerenderedWebResponse resp { HttpStatusCode::Ok, HttpResponseHeaders{}, &content };
   // Enable or disable redaction from the web UI based on the setting of --redact.
   // This affects operations like default value and scan predicate pretty printing.
   if (kudu::g_should_redact == kudu::RedactContext::ALL) {
-    handler.callback()(req, &resp);
+    handler.callback()(req, resp);
   } else {
     ScopedDisableRedaction s;
-    handler.callback()(req, &resp);
+    handler.callback()(req, resp);
   }
 
-  string full_content;
-  if (use_style) {
-    stringstream output;
-    RenderMainTemplate(content.str(), &output);
-    full_content = output.str();
-  } else {
-    full_content = content.str();
+  SendResponse(connection, resp, use_style ? StyleMode::STYLED : StyleMode::UNSTYLED);
+  return SQ_HANDLED_OK;
+}
+
+void Webserver::SendResponse(struct sq_connection* connection,
+                             PrerenderedWebResponse* resp,
+                             StyleMode mode) {
+  // If styling was requested, rerender and replace the prerendered output.
+  if (mode == StyleMode::STYLED) {
+    stringstream ss;
+    RenderMainTemplate(resp->output.str(), &ss);
+    resp->output.str(ss.str());
   }
 
-  // Check if the gzip compression is accepted by the caller. If so, compress the content.
+  // Check if gzip compression is accepted by the caller. If so, compress the
+  // content and replace the prerendered output.
   const char* accept_encoding_str = sq_get_header(connection, "Accept-Encoding");
   bool is_compressed = false;
   vector<string> encodings = strings::Split(accept_encoding_str, ",");
   for (string& encoding : encodings) {
     StripWhiteSpace(&encoding);
     if (encoding == "gzip") {
+      // Don't bother compressing empty content.
+      string uncompressed = resp->output.str();
+      if (uncompressed.empty()) {
+        break;
+      }
+
       ostringstream oss;
-      Status s = zlib::Compress(Slice(full_content), &oss);
+      Status s = zlib::Compress(uncompressed, &oss);
       if (s.ok()) {
-        full_content = oss.str();
+        resp->output.str(oss.str());
         is_compressed = true;
       } else {
         LOG(WARNING) << "Could not compress output: " << s.ToString();
@@ -665,42 +629,61 @@ sq_callback_result_t Webserver::RunPathHandler(
     }
   }
 
-  ostringstream headers_stream;
-  headers_stream << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp.status_code));
-  headers_stream << Substitute("Content-Type: $0\r\n", use_style ? "text/html" : "text/plain");
-  headers_stream << Substitute("Content-Length: $0\r\n", full_content.length());
-  if (is_compressed) headers_stream << "Content-Encoding: gzip\r\n";
-  headers_stream << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
-  std::unordered_set<string> invalid_headers{"Content-Type", "Content-Length", "X-Frame-Options"};
-  for (const auto& entry : resp.response_headers) {
-    // It's forbidden to override the above headers.
-    if (ContainsKey(invalid_headers, entry.first)) {
-      LOG(FATAL) << "Reserved header " << entry.first << " was overridden "
-          "by handler for " << handler.alias();
-    }
-    headers_stream << Substitute("$0: $1\r\n", entry.first, entry.second);
-  }
-  headers_stream << "\r\n";
-  string headers = headers_stream.str();
+  // We've deferred constructing the content for as long as possible; we must
+  // do so now so that we can determine the content length.
+  string body = resp->output.str();
 
-  // Make sure to use sq_write for printing the body; sq_printf truncates at 8KB.
-  sq_write(connection, headers.c_str(), headers.length());
-  sq_write(connection, full_content.c_str(), full_content.length());
-  return SQ_HANDLED_OK;
+  // Buffers up the headers and content as follows:
+  //
+  // <header 1>
+  // <header 2>
+  // ...
+  // <header N>
+  // <body>
+  ostringstream oss;
+
+  // Write the headers to the buffer first, then write the body.
+  oss << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp->status_code));
+  oss << Substitute("Content-Type: $0\r\n",
+                    mode == StyleMode::STYLED ? "text/html" : "text/plain");
+  oss << Substitute("Content-Length: $0\r\n", body.length());
+  if (is_compressed) oss << "Content-Encoding: gzip\r\n";
+  oss << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
+  static const unordered_set<string> kInvalidHeaders = {
+    "Content-Length",
+    "Content-Type",
+    "X-Frame-Options"
+  };
+  for (const auto& entry : resp->response_headers) {
+    // It's forbidden to override the above headers.
+    if (ContainsKey(kInvalidHeaders, entry.first)) {
+      LOG(FATAL) << Substitute("Reserved header $0 was overridden by handler",
+                               entry.first);
+    }
+    oss << Substitute("$0: $1\r\n", entry.first, entry.second);
+  }
+  oss << "\r\n";
+  oss << body;
+
+  // Send the buffered response to Squeasel in one go to avoid the latency hit
+  // of Nagle's algorithm + delayed TCP acknowledgements.
+  //
+  // Make sure to use sq_write; sq_printf truncates at 8KB.
+  string complete_response = oss.str();
+  sq_write(connection, complete_response.c_str(), complete_response.length());
 }
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
   string render_path = (path == "/") ? "/home" : path;
   auto wrapped_cb = [=](const WebRequest& args, PrerenderedWebResponse* rendered_resp) {
-    EasyJson ej;
-    WebResponse resp { HttpStatusCode::Ok, HttpResponseHeaders{}, &ej };
+    WebResponse resp;
     callback(args, &resp);
     stringstream out;
-    Render(render_path, ej, is_styled, &out);
+    Render(render_path, resp.output, is_styled, &out);
     rendered_resp->status_code = resp.status_code;
     rendered_resp->response_headers = std::move(resp.response_headers);
-    *rendered_resp->output << out.rdbuf();
+    rendered_resp->output << out.rdbuf();
   };
   RegisterPrerenderedPathHandler(path, alias, wrapped_cb, is_styled, is_on_nav_bar);
 }

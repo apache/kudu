@@ -94,6 +94,7 @@ class WebserverTest : public KuduTest {
     WebserverOptions opts;
     opts.port = 0;
     opts.doc_root = static_dir_;
+    opts.enable_doc_root = enable_doc_root();
     if (use_ssl()) SetSslOptions(&opts);
     if (use_htpasswd()) SetHTPasswdOptions(&opts);
     MaybeSetupSpnego(&opts);
@@ -122,6 +123,7 @@ class WebserverTest : public KuduTest {
   virtual void MaybeSetupSpnego(WebserverOptions* /*opts*/) {}
 
   // Overridden by subclasses.
+  virtual bool enable_doc_root() const { return true; }
   virtual bool use_ssl() const { return false; }
   virtual bool use_htpasswd() const { return false; }
 
@@ -463,9 +465,28 @@ TEST_F(WebserverTest, TestStaticFiles) {
   ASSERT_EQ("Remote error: HTTP 403", s.ToString());
 }
 
+class DisabledDocRootWebserverTest : public WebserverTest {
+ protected:
+  bool enable_doc_root() const override { return false; }
+};
+
+TEST_F(DisabledDocRootWebserverTest, TestHandlerNotFound) {
+  Status s = curl_.FetchURL(Substitute("$0/foo", url_), &buf_);
+  ASSERT_EQ("Remote error: HTTP 404", s.ToString());
+  ASSERT_STR_CONTAINS(buf_.ToString(), "No handler for URI /foo");
+}
+
 // Test that HTTP OPTIONS requests are permitted.
 TEST_F(WebserverTest, TestHttpOptions) {
   NO_FATALS(RunTestOptions());
+}
+
+// Test that we're able to reuse connections for subsequent fetches.
+TEST_F(WebserverTest, TestConnectionReuse) {
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_EQ(1, curl_.num_connects());
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_EQ(0, curl_.num_connects());
 }
 
 class WebserverAdvertisedAddressesTest : public KuduTest {

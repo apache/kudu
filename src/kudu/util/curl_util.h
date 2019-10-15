@@ -83,6 +83,11 @@ class EasyCurl {
     custom_method_ = std::move(m);
   }
 
+  // Returns the number of new connections created to achieve the previous transfer.
+  int num_connects() const {
+    return num_connects_;
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -105,6 +110,8 @@ class EasyCurl {
   bool verbose_ = false;
 
   MonoDelta timeout_;
+
+  int num_connects_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };

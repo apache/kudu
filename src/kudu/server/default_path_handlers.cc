@@ -113,7 +113,7 @@ struct Tags {
 // Writes the last FLAGS_web_log_bytes of the INFO logfile to a webpage
 // Note to get best performance, set GLOG_logbuflevel=-1 to prevent log buffering
 static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
-  EasyJson* output = resp->output;
+  EasyJson* output = &resp->output;
   (*output)["raw"] = (req.parsed_args.find("raw") != req.parsed_args.end());
   string logfile;
   GetFullLogFilename(google::INFO, &logfile);
@@ -141,7 +141,7 @@ static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse
 // escaped if in the raw text mode, e.g. "/varz?raw".
 static void FlagsHandler(const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -156,7 +156,7 @@ static void FlagsHandler(const Webserver::WebRequest& req,
 // Prints out the current stack trace of all threads in the process.
 static void StacksHandler(const Webserver::WebRequest& /*req*/,
                           Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
 
   StackTraceSnapshot snap;
   auto start = MonoTime::Now();
@@ -189,7 +189,7 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
 // Registered to handle "/memz", and prints out memory allocation statistics.
 static void MemUsageHandler(const Webserver::WebRequest& req,
                             Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -210,7 +210,7 @@ static void MemUsageHandler(const Webserver::WebRequest& req,
 // Registered to handle "/mem-trackers", and prints out memory tracker information.
 static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
                                Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+  ostringstream* output = &resp->output;
   int64_t current_consumption = process_memory::CurrentConsumption();
   int64_t hard_limit = process_memory::HardLimit();
   *output << "<h1>Process memory usage</h1>\n";
@@ -269,7 +269,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
 
 static void ConfigurationHandler(const Webserver::WebRequest& /* req */,
                                  Webserver::WebResponse* resp) {
-  EasyJson* output = resp->output;
+  EasyJson* output = &resp->output;
   EasyJson security_configs = output->Set("security_configs", EasyJson::kArray);
 
   EasyJson rpc_encryption = security_configs.PushBack(EasyJson::kObject);
@@ -370,7 +370,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     resp->status_code = HttpStatusCode::BadRequest;
     WARN_NOT_OK(Status::InvalidArgument(""), "The parameter of 'attributes' is wrong");
   } else {
-    JsonWriter writer(resp->output, json_mode);
+    JsonWriter writer(&resp->output, json_mode);
     WARN_NOT_OK(metrics->WriteAsJson(&writer, opts), "Couldn't write JSON metrics over HTTP");
   }
 }
