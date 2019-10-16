@@ -136,6 +136,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/url-coding.h"
 
+DECLARE_bool(fs_data_dirs_consider_available_space);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(show_values);
 DECLARE_bool(show_attributes);
@@ -4942,6 +4943,11 @@ TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
     LOG(INFO) << "Skipping test, only log block manager is supported";
     return;
   }
+
+  // Disable the available space heuristic as it can interfere with the desired
+  // test invariant below (that the newly created table write to the newly added
+  // data directory).
+  FLAGS_fs_data_dirs_consider_available_space = false;
 
   // Start a cluster whose tserver has multiple data directories.
   InternalMiniClusterOptions opts;
