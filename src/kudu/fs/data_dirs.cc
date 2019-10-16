@@ -95,6 +95,12 @@ DEFINE_bool(fs_lock_data_dirs, true,
 TAG_FLAG(fs_lock_data_dirs, unsafe);
 TAG_FLAG(fs_lock_data_dirs, evolving);
 
+DEFINE_bool(fs_data_dirs_consider_available_space, true,
+            "Whether to consider available space when selecting a data "
+            "directory during tablet or data block creation.");
+TAG_FLAG(fs_data_dirs_consider_available_space, runtime);
+TAG_FLAG(fs_data_dirs_consider_available_space, evolving);
+
 METRIC_DEFINE_gauge_uint64(server, data_dirs_failed,
                            "Data Directories Failed",
                            kudu::MetricUnit::kDataDirectories,
@@ -1011,9 +1017,11 @@ Status DataDirManager::GetDirForBlock(const CreateBlockOptions& opts, DataDir** 
     return Status::OK();
   }
   // Pick two randomly and select the one with more space.
-  shuffle(candidate_dirs.begin(), candidate_dirs.end(), default_random_engine(rng_.Next()));
-  *dir = (candidate_dirs[0]->available_bytes() > candidate_dirs[1]->available_bytes()) ?
-          candidate_dirs[0] : candidate_dirs[1];
+  shuffle(candidate_dirs.begin(), candidate_dirs.end(),
+          default_random_engine(rng_.Next()));
+  *dir = PREDICT_TRUE(FLAGS_fs_data_dirs_consider_available_space) &&
+         candidate_dirs[0]->available_bytes() > candidate_dirs[1]->available_bytes() ?
+           candidate_dirs[0] : candidate_dirs[1];
   return Status::OK();
 }
 
@@ -1130,7 +1138,8 @@ void DataDirManager::GetDirsForGroupUnlocked(int target_size,
       int tablets_in_first = FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[0]).size();
       int tablets_in_second = FindOrDie(tablets_by_uuid_idx_map_, candidate_indices[1]).size();
       int selected_index = 0;
-      if (tablets_in_first == tablets_in_second) {
+      if (tablets_in_first == tablets_in_second &&
+          PREDICT_TRUE(FLAGS_fs_data_dirs_consider_available_space)) {
         int64_t space_in_first = FindOrDie(data_dir_by_uuid_idx_,
                                            candidate_indices[0])->available_bytes();
         int64_t space_in_second = FindOrDie(data_dir_by_uuid_idx_,
