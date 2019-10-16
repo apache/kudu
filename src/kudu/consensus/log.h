@@ -300,7 +300,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Writes serialized contents of 'entry' to the log. Called inside
   // AppenderThread.
-  Status DoAppend(LogEntryBatch* entry_batch);
+  Status WriteBatch(LogEntryBatch* entry_batch);
 
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
   void UpdateFooterForBatch(LogEntryBatch* batch);
