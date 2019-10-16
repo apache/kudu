@@ -5487,7 +5487,6 @@ TEST_F(AuthzTServerChecksumTest, TestAuthorizeChecksum) {
     "--checksum_scan"
   };
   ASSERT_OK(RunKuduTool(checksum_args));
-
 }
 
 // Regression test for KUDU-2851.
@@ -5512,7 +5511,6 @@ TEST_F(ToolTest, TestFailedTableScan) {
   ASSERT_TRUE(s.IsRuntimeError());
   SCOPED_TRACE(stderr);
   ASSERT_STR_CONTAINS(stderr, "Timed out");
-
 }
 
 TEST_F(ToolTest, TestFailedTableCopy) {
@@ -5541,7 +5539,26 @@ TEST_F(ToolTest, TestFailedTableCopy) {
   ASSERT_TRUE(s.IsRuntimeError());
   SCOPED_TRACE(stderr);
   ASSERT_STR_CONTAINS(stderr, "Timed out");
+}
 
+TEST_F(ToolTest, TestGetTableStatisticsLiveRowCountNotSupported) {
+  ExternalMiniClusterOptions opts;
+  opts.extra_master_flags = { "--mock_table_metrics_for_testing=true",
+                              "--live_row_count_for_testing=-1" };
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Create an empty table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("table statistics $0 $1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 TestWorkload::kDefaultTableName),
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, "live row count: -1");
 }
 
 } // namespace tools

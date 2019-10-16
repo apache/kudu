@@ -31,7 +31,7 @@ using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
-  Data(uint64_t on_disk_size, uint64_t live_row_count)
+  Data(int64_t on_disk_size, int64_t live_row_count)
       : on_disk_size_(on_disk_size),
         live_row_count_(live_row_count) {
   }
@@ -46,8 +46,8 @@ class KuduTableStatistics::Data {
     return display_string;
   }
 
-  const uint64_t on_disk_size_;
-  const uint64_t live_row_count_;
+  const int64_t on_disk_size_;
+  const int64_t live_row_count_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);
