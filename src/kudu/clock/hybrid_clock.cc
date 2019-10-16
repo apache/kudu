@@ -151,6 +151,7 @@ Status HybridClock::Init() {
   Status s;
   uint64_t now_usec;
   uint64_t error_usec;
+  int poll_backoff_ms = 1;
   do {
     s = time_service_->WalltimeWithError(&now_usec, &error_usec);
     if (!s.IsServiceUnavailable()) {
@@ -168,7 +169,8 @@ Status HybridClock::Init() {
       }
       need_log = false;
     }
-    SleepFor(MonoDelta::FromSeconds(1));
+    SleepFor(MonoDelta::FromMilliseconds(poll_backoff_ms));
+    poll_backoff_ms = std::min(2 * poll_backoff_ms, 1000);
   } while (MonoTime::Now() < deadline);
 
   if (!s.ok()) {
