@@ -553,8 +553,8 @@ message GetTableStatisticsResponsePB {
   optional MasterErrorPB error = 1;
 
   // The table statistics from table metrics.
-  optional uint64 on_disk_size = 2;
-  optional uint64 live_row_count = 3;
+  optional int64 on_disk_size = 2;
+  optional int64 live_row_count = 3;
 }
 
 message GetTableLocationsRequestPB {
