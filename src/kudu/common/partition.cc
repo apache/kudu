@@ -198,7 +198,8 @@ void PartitionSchema::ToPB(PartitionSchemaPB* pb) const {
   SetColumnIdentifiers(range_schema_.column_ids, pb->mutable_range_schema()->mutable_columns());
 }
 
-Status PartitionSchema::EncodeKey(const KuduPartialRow& row, string* buf) const {
+template<typename Row>
+Status PartitionSchema::EncodeKeyImpl(const Row& row, string* buf) const {
   const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
 
   for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
@@ -210,16 +211,12 @@ Status PartitionSchema::EncodeKey(const KuduPartialRow& row, string* buf) const 
   return EncodeColumns(row, range_schema_.column_ids, buf);
 }
 
+Status PartitionSchema::EncodeKey(const KuduPartialRow& row, string* buf) const {
+  return EncodeKeyImpl(row, buf);
+}
+
 Status PartitionSchema::EncodeKey(const ConstContiguousRow& row, string* buf) const {
-  const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
-
-  for (const HashBucketSchema& hash_bucket_schema : hash_bucket_schemas_) {
-    int32_t bucket;
-    RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
-    hash_encoder.Encode(&bucket, buf);
-  }
-
-  return EncodeColumns(row, range_schema_.column_ids, buf);
+  return EncodeKeyImpl(row, buf);
 }
 
 Status PartitionSchema::EncodeRangeKey(const KuduPartialRow& row,
