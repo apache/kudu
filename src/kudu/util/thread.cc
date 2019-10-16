@@ -28,7 +28,6 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -50,6 +49,7 @@
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
@@ -66,8 +66,8 @@
 
 using boost::bind;
 using boost::mem_fn;
-using std::map;
 using std::ostringstream;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -200,6 +200,12 @@ class ThreadMgr {
     const string& category() const { return category_; }
     int64_t thread_id() const { return thread_id_; }
 
+    struct Comparator {
+      bool operator()(const ThreadDescriptor& rhs, const ThreadDescriptor& lhs) const {
+        return rhs.name() < lhs.name();
+      }
+    };
+
    private:
     string name_;
     string category_;
@@ -241,9 +247,9 @@ class ThreadMgr {
 
   // Webpage callback; prints all threads by category.
   void ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
-                         WebCallbackRegistry::PrerenderedWebResponse* resp) const;
-  void PrintThreadDescriptorRow(const ThreadDescriptor& desc,
-                                ostringstream* output) const;
+                         WebCallbackRegistry::WebResponse* resp) const;
+  void SummarizeThreadDescriptor(const ThreadDescriptor& desc,
+                                 EasyJson* output) const;
 };
 
 void ThreadMgr::SetThreadName(const string& name, int64_t tid) {
@@ -295,11 +301,11 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
         Bind(&GetInVoluntaryContextSwitches)));
 
   if (web) {
-    WebCallbackRegistry::PrerenderedPathHandlerCallback thread_callback =
-        bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
-    DCHECK_NOTNULL(web)->RegisterPrerenderedPathHandler("/threadz", "Threads", thread_callback,
-                                                        true /* is_styled*/,
-                                                        true /* is_on_nav_bar */);
+    auto thread_callback = bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler),
+                                      this, _1, _2);
+    DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", "Threads", thread_callback,
+                                             /* is_styled= */ true,
+                                             /* is_on_nav_bar= */ true);
   }
   return Status::OK();
 }
@@ -367,84 +373,81 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
   ANNOTATE_IGNORE_READS_AND_WRITES_END();
 }
 
-void ThreadMgr::PrintThreadDescriptorRow(const ThreadDescriptor& desc,
-                                         ostringstream* output) const {
+void ThreadMgr::SummarizeThreadDescriptor(const ThreadDescriptor& desc,
+                                          EasyJson* output) const {
   ThreadStats stats;
   Status status = GetThreadStats(desc.thread_id(), &stats);
   if (!status.ok()) {
     KLOG_EVERY_N(INFO, 100) << "Could not get per-thread statistics: "
                             << status.ToString();
   }
-  (*output) << "<tr><td>" << desc.name() << "</td><td>"
-            << (static_cast<double>(stats.user_ns) / 1e9) << "</td><td>"
-            << (static_cast<double>(stats.kernel_ns) / 1e9) << "</td><td>"
-            << (static_cast<double>(stats.iowait_ns) / 1e9) << "</td></tr>";
+  EasyJson thr = output->PushBack(EasyJson::kObject);
+  thr["thread_name"] = desc.name();
+  thr["user_sec"] = static_cast<double>(stats.user_ns) / 1e9;
+  thr["kernel_sec"] = static_cast<double>(stats.kernel_ns) / 1e9;
+  thr["iowait_sec"] = static_cast<double>(stats.iowait_ns) / 1e9;
 }
 
-void ThreadMgr::ThreadPathHandler(
-    const WebCallbackRegistry::WebRequest& req,
-    WebCallbackRegistry::PrerenderedWebResponse* resp) const {
-  ostringstream& output = resp->output;
-  vector<ThreadDescriptor> descriptors_to_print;
-  const auto category_name = req.parsed_args.find("group");
-  if (category_name != req.parsed_args.end()) {
-    const auto& group = category_name->second;
-    const auto& group_esc = EscapeForHtmlToString(group);
-    output << "<h2>Thread Group: " << group_esc << "</h2>";
-    if (group != "all") {
+void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
+                                  WebCallbackRegistry::WebResponse* resp) const {
+  EasyJson& output = resp->output;
+  const auto* category_name = FindOrNull(req.parsed_args, "group");
+  if (category_name) {
+    // List all threads belonging to the desired thread group.
+    bool requested_all = *category_name == "all";
+    EasyJson rtg = output.Set("requested_thread_group", EasyJson::kObject);
+    rtg["group_name"] = EscapeForHtmlToString(*category_name);
+    rtg["requested_all"] = requested_all;
+
+    // The critical section is as short as possible so as to minimize the delay
+    // imposed on new threads that acquire the lock in write mode.
+    vector<ThreadDescriptor> descriptors_to_print;
+    if (!requested_all) {
       shared_lock<decltype(lock_)> l(lock_);
-      const auto it = thread_categories_.find(group);
-      if (it == thread_categories_.end()) {
-        output << "Thread group '" << group_esc << "' not found";
+      const auto* category = FindOrNull(thread_categories_, *category_name);
+      if (!category) {
         return;
       }
-      for (const auto& elem : it->second) {
-        descriptors_to_print.push_back(elem.second);
+      for (const auto& elem : *category) {
+        descriptors_to_print.emplace_back(elem.second);
       }
-      output << "<h3>" << it->first << " : " << it->second.size() << "</h3>";
     } else {
       shared_lock<decltype(lock_)> l(lock_);
       for (const auto& category : thread_categories_) {
         for (const auto& elem : category.second) {
-          descriptors_to_print.push_back(elem.second);
+          descriptors_to_print.emplace_back(elem.second);
         }
       }
-      output << "<h3>All Threads : </h3>";
     }
-    output << "<table class='table table-hover table-border'>"
-              "<thead><tr><th>Thread name</th><th>Cumulative User CPU(s)</th>"
-              "<th>Cumulative Kernel CPU(s)</th>"
-              "<th>Cumulative IO-wait(s)</th></tr></thead>"
-              "<tbody>\n";
-    // Sort the entries in the table by the name of a thread.
-    // TODO(aserbin): use "mustache + fancy table" instead.
-    std::sort(descriptors_to_print.begin(), descriptors_to_print.end(),
-              [](const ThreadDescriptor& lhs, const ThreadDescriptor& rhs) {
-                return lhs.name() < rhs.name();
-              });
+
+    EasyJson found = rtg.Set("found", EasyJson::kObject);
+    EasyJson threads = found.Set("threads", EasyJson::kArray);
     for (const auto& desc : descriptors_to_print) {
-      PrintThreadDescriptorRow(desc, &output);
+      SummarizeThreadDescriptor(desc, &threads);
     }
-    output << "</tbody></table>";
   } else {
-    // Using the tree map (std::map) to have the list of the thread categories
-    // at the '/threadz' page sorted alphabetically.
-    // TODO(aserbin): use "mustache + fancy table" instead.
-    map<string, size_t> thread_categories_info;
+    // List all thread groups and the number of threads running in each.
+    vector<pair<string, size_t>> thread_categories_info;
+    uint64_t running;
     {
+      // See comment above regarding short critical sections.
       shared_lock<decltype(lock_)> l(lock_);
-      output << "<h2>Thread Groups</h2>"
-                "<h4>" << threads_running_metric_ << " thread(s) running"
-                "<a href='/threadz?group=all'><h3>All Threads</h3>";
+      running = threads_running_metric_;
+      thread_categories_info.reserve(thread_categories_.size());
       for (const auto& category : thread_categories_) {
-        thread_categories_info.emplace(category.first, category.second.size());
+        thread_categories_info.emplace_back(category.first, category.second.size());
       }
     }
+
+    output["total_threads_running"] = running;
+    EasyJson groups = output.Set("groups", EasyJson::kArray);
     for (const auto& elem : thread_categories_info) {
       string category_arg;
       UrlEncode(elem.first, &category_arg);
-      output << "<a href='/threadz?group=" << category_arg << "'><h3>"
-             << elem.first << " : " << elem.second << "</h3></a>";
+      EasyJson g = groups.PushBack(EasyJson::kObject);
+      g["encoded_group_name"] = category_arg;
+      g["group_name"] = elem.first;
+      g["threads_running"] = elem.second;
     }
   }
 }

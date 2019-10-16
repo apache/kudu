@@ -17,8 +17,6 @@
 #ifndef KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
 #define KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
 
-#include <string>
-
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/status.h"
@@ -54,11 +52,9 @@ class TabletServerPathHandlers {
   void HandleConsensusStatusPage(const Webserver::WebRequest& req,
                                  Webserver::WebResponse* resp);
   void HandleDashboardsPage(const Webserver::WebRequest& req,
-                            Webserver::PrerenderedWebResponse* resp);
+                            Webserver::WebResponse* resp);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                     Webserver::WebResponse* resp);
-  std::string GetDashboardLine(const std::string& link,
-                               const std::string& text, const std::string& desc);
 
   TabletServer* tserver_;
 

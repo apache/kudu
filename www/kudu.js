@@ -67,8 +67,21 @@ function bytesSorter(left, right) {
   return 0;
 }
 
+// A comparison function for floating point numbers.
+function floatsSorter(left, right) {
+  left_float = parseFloat(left)
+  right_float = parseFloat(right)
+  if (left_float < right_float) {
+    return -1;
+  }
+  if (left_float > right_float) {
+    return 1;
+  }
+  return 0;
+}
+
 // Converts numeric strings to numbers and then compares them.
-function compareNumericStrings(left, right) {
+function numericStringsSorter(left, right) {
   left_num = parseInt(left, 10);
   right_num = parseInt(right, 10);
   if (left_num < right_num) {
@@ -103,32 +116,32 @@ function timesSorter(left, right) {
   }
 
   // Year.
-  var ret = compareNumericStrings(left.substr(0, 4), right.substr(0, 4));
+  var ret = numericStringsSorter(left.substr(0, 4), right.substr(0, 4));
   if (ret != 0) {
     return ret;
   }
   // Month.
-  ret = compareNumericStrings(left.substr(5, 2), right.substr(5, 2));
+  ret = numericStringsSorter(left.substr(5, 2), right.substr(5, 2));
   if (ret != 0) {
     return ret;
   }
   // Day.
-  ret = compareNumericStrings(left.substr(8, 2), right.substr(8, 2));
+  ret = numericStringsSorter(left.substr(8, 2), right.substr(8, 2));
   if (ret != 0) {
     return ret;
   }
   // Hour.
-  ret = compareNumericStrings(left.substr(11, 2), right.substr(11, 2));
+  ret = numericStringsSorter(left.substr(11, 2), right.substr(11, 2));
   if (ret != 0) {
     return ret;
   }
   // Minute.
-  ret = compareNumericStrings(left.substr(14, 2), right.substr(14, 2));
+  ret = numericStringsSorter(left.substr(14, 2), right.substr(14, 2));
   if (ret != 0) {
     return ret;
   }
   // Second.
-  ret = compareNumericStrings(left.substr(17, 2), right.substr(17, 2));
+  ret = numericStringsSorter(left.substr(17, 2), right.substr(17, 2));
   if (ret != 0) {
     return ret;
   }

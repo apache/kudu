@@ -47,7 +47,10 @@ There are no tablet replicas.
     {{#replicas}}
       <tr>
         <td>{{table_name}}</td>
-        <td>{{{id_or_link}}}</td>
+        <td>
+          {{#link}}<a href="{{url}}">{{id}}</a>{{/link}}
+          {{^link}}{{id}}{{/link}}
+        </td>
         <td>{{partition}}</td>
         <td>{{state}}</td>
         <td>{{n_bytes}}</td>
@@ -90,7 +93,10 @@ There are no tablet replicas.
     {{#replicas}}
       <tr>
         <td>{{table_name}}</td>
-        <td>{{{id_or_link}}}</td>
+        <td>
+          {{#link}}<a href="{{url}}">{{id}}</a>{{/link}}
+          {{^link}}{{id}}{{/link}}
+        </td>
         <td>{{partition}}</td>
         <td>{{state}}</td>
         <td>{{n_bytes}}</td>

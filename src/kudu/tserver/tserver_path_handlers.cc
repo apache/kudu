@@ -104,12 +104,6 @@ bool CompareByMemberType(const RaftPeerPB& a, const RaftPeerPB& b) {
   return a.member_type() < b.member_type();
 }
 
-string TabletLink(const string& id) {
-  return Substitute("<a href=\"/tablet?id=$0\">$1</a>",
-                    UrlEncodeToString(id),
-                    EscapeForHtmlToString(id));
-}
-
 bool IsTombstoned(const scoped_refptr<TabletReplica>& replica) {
   return replica->data_state() == tablet::TABLET_DATA_TOMBSTONED;
 }
@@ -225,7 +219,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/log-anchors", "",
     boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/dashboards", "Dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
@@ -342,15 +336,15 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
     EasyJson details_json = replicas_json->Set("replicas", EasyJson::kArray);
     for (const scoped_refptr<TabletReplica>& replica : replicas) {
       EasyJson replica_json = details_json.PushBack(EasyJson::kObject);
-      const auto* tablet = replica->tablet();
       const auto& tmeta = replica->tablet_metadata();
       TabletStatusPB status;
       replica->GetTabletStatusPB(&status);
       replica_json["table_name"] = status.table_name();
-      if (tablet != nullptr) {
-        replica_json["id_or_link"] = TabletLink(status.tablet_id());
-      } else {
-        replica_json["id_or_link"] = status.tablet_id();
+      replica_json["id"] = status.tablet_id();
+      if (replica->tablet() != nullptr) {
+        EasyJson link_json = replica_json.Set("link", EasyJson::kObject);
+        link_json["id"] = status.tablet_id();
+        link_json["url"] = Substitute("/tablet?id=$0", UrlEncodeToString(status.tablet_id()));
       }
       replica_json["partition"] =
           tmeta->partition_schema().PartitionDebugString(tmeta->partition(),
@@ -588,29 +582,7 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*re
 }
 
 void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& /*req*/,
-                                                    Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = &resp->output;
-  *output << "<h3>Dashboards</h3>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Dashboard</th><th>Description</th></tr></thead>\n";
-  *output << "  <tbody\n";
-  *output << GetDashboardLine("scans", "Scans", "List of currently running and recently "
-                                                "completed scans.");
-  *output << GetDashboardLine("transactions", "Transactions", "List of transactions that are "
-                                                              "currently running.");
-  *output << GetDashboardLine("maintenance-manager", "Maintenance Manager",
-                              "List of operations that are currently running and those "
-                              "that are registered.");
-  *output << "</tbody></table>\n";
-}
-
-string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
-                                                  const std::string& text,
-                                                  const std::string& desc) {
-  return Substitute("  <tr><td><a href=\"$0\">$1</a></td><td>$2</td></tr>\n",
-                    EscapeForHtmlToString(link),
-                    EscapeForHtmlToString(text),
-                    EscapeForHtmlToString(desc));
+                                                    Webserver::WebResponse* /*resp*/) {
 }
 
 void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
