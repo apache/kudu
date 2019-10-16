@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -31,6 +32,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
@@ -41,59 +43,223 @@
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 
 class CompressionCodec;
 class FsManager;
-class MetricEntity;
-class ThreadPool;
 class WritableFile;
-struct WritableFileOptions;
 
 namespace log {
 
-struct LogEntryBatchLogicalSize;
-struct LogMetrics;
-struct RetentionIndexes;
 class LogEntryBatch;
+class LogFaultHooks;
 class LogIndex;
 class LogReader;
+struct LogEntryBatchLogicalSize;
+struct RetentionIndexes;
+
+// Context used by the various classes that operate on the Log.
+struct LogContext {
+  const std::string tablet_id;
+  const std::string log_dir;
+
+  scoped_refptr<MetricEntity> metric_entity;
+  std::unique_ptr<LogMetrics> metrics;
+  FsManager* fs_manager;
+
+  std::string LogPrefix() const;
+};
 
 typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQueue;
+
+// State of segment allocation.
+enum SegmentAllocationState {
+  kAllocationNotStarted, // No segment allocation requested
+  kAllocationInProgress, // Next segment allocation started
+  kAllocationFinished // Next segment ready
+};
+
+// Encapsulates the logic around allocating log segments.
+//
+// Methods of this class are not threadsafe, unless otherwise mentioned.
+// It is expected that segment allocation is driven through a single thread
+// (presumably the append thread, as operations are written).
+class SegmentAllocator {
+ public:
+  // Creates a new SegmentAllocator. The allocator isn't usable until Init() is
+  // called. 'opts' and 'ctx' are options and various context variables that
+  // are relevant for the Log for which we are allocating segments. 'schema'
+  // and 'schema_version' define the initial schema for the Log.
+  // 'reader_replace_last_segment' is a functor that should be called upon
+  // closing a segment to make the segment readable by the Log's reader.
+  // 'reader_add_segment' is a functor that should be called upon initializing
+  // a new segment to make the segment readable by the Log's reader.
+  SegmentAllocator(const LogOptions* opts,
+                   const LogContext* ctx,
+                   Schema schema,
+                   uint32_t schema_version,
+                   std::function<Status(scoped_refptr<ReadableLogSegment>)>
+                       reader_replace_last_segment,
+                   std::function<Status(scoped_refptr<ReadableLogSegment>)>
+                       reader_add_segment);
+
+  // Sets the currently active segment number, starts the threadpool, and
+  // synchronously allocates an active segment.
+  Status Init(uint64_t sequence_number);
+
+  // Checks whether it's time to allocate (e.g. the current segment is full)
+  // and/or roll over (e.g. a previous pre-allocation has finished), and does
+  // so as appropriate.
+  //
+  // 'write_size_bytes' is the expected size of the next write; if the active
+  // segment would go above the max segment size, a new segment is allocated.
+  Status AllocateOrRollOverIfNecessary(uint32_t write_size_bytes);
+
+  // Fsyncs the currently active segment to disk.
+  Status Sync();
+
+  // Syncs the current segment and writes out the footer.
+  Status CloseCurrentSegment();
+
+  // Update the footer based on the written 'batch', e.g. to track the
+  // last-written OpId.
+  void UpdateFooterForBatch(const LogEntryBatch& batch);
+
+  // Shuts down the allocator threadpool. Note that this _doesn't_ close the
+  // current active segment.
+  void StopAllocationThread();
+
+  uint64_t active_segment_sequence_number = 0;
+
+  std::string LogPrefix() const { return ctx_->LogPrefix(); }
+
+ private:
+  friend class Log;
+  friend class LogTest;
+  FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
+  FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
+  SegmentAllocationState allocation_state() {
+    shared_lock<RWMutex> l(allocation_lock_);
+    return allocation_state_;
+  }
+
+  // This is not thread-safe. It is up to the caller to ensure this does not
+  // interfere with the append thread's attempts to switch log segments.
+  Status AllocateSegmentAndRollOver();
+
+  // Returns a readable segment pointing at the most recently closed segment.
+  Status GetClosedSegment(scoped_refptr<ReadableLogSegment>* readable_segment);
+
+  void SetSchemaForNextSegment(Schema schema, uint32_t version);
+
+  // Schedules a task to allocate a new log segment.
+  // Must be called when the allocation_lock_ is held.
+  Status AsyncAllocateSegmentUnlocked();
+
+  // Task to be put onto the allocation_pool_ that allocates segments.
+  void AllocationTask();
+
+  // Creates a temporary file, populating 'next_segment_file_' and
+  // 'next_segment_path_', and pre-allocating 'max_segment_size_' bytes if
+  // pre-allocation is enabled.
+  Status AllocateNewSegment();
+
+  // Swaps in the next segment file as the new active segment.
+  Status SwitchToAllocatedSegment();
+
+  // Waits for any on-going allocation to complete and rolls over onto the
+  // allocated segment, swapping out the previous active segment (if one
+  // existed).
+  Status RollOver();
+
+  // Function call that replaces the last segment in the Log's log reader with
+  // the input readable log segment.
+  const std::function<Status(scoped_refptr<ReadableLogSegment>)> reader_replace_last_segment_;
+
+  // Function call that adds the input segment to the Log's log reader.
+  const std::function<Status(scoped_refptr<ReadableLogSegment>)> reader_add_segment_;
+
+  // Hooks used to inject faults into the allocator.
+  std::shared_ptr<LogFaultHooks> hooks_;
+
+  // Descriptors for the segment file that should be used as the next active
+  // segment.
+  std::shared_ptr<WritableFile> next_segment_file_;
+  std::string next_segment_path_;
+
+  // Contains state shared by various Log-related classs.
+  const LogOptions* opts_;
+  const LogContext* ctx_;
+
+  // The maximum segment size, in bytes.
+  uint64_t max_segment_size_;
+
+  // The codec used to compress entries, or nullptr if not configured.
+  const CompressionCodec* codec_ = nullptr;
+
+  // The schema and schema version to be used for the next segment.
+  mutable rw_spinlock schema_lock_;
+  Schema schema_;
+  uint32_t schema_version_;
+
+  // Whether fsyncing has been disabled.
+  // This is used to disable fsync during bootstrap.
+  bool sync_disabled_;
+
+  // A footer being prepared for the current segment.
+  // When the segment is closed, it will be written.
+  LogSegmentFooterPB footer_;
+
+  // The currently active segment being written.
+  std::unique_ptr<WritableLogSegment> active_segment_;
+
+  // Protects allocation_state_;
+  mutable RWMutex allocation_lock_;
+  SegmentAllocationState allocation_state_ = kAllocationNotStarted;
+
+  // Single-threaded threadpool on which to allocate segments.
+  std::unique_ptr<ThreadPool> allocation_pool_;
+  Promise<Status> allocation_status_;
+};
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
 // storage for the consensus state machine.
 //
-// Log uses group commit to improve write throughput and latency
-// without compromising ordering and durability guarantees. A single background
-// thread per Log instance is responsible for accumulating pending writes
-// and flushing them to the log.
+// Log uses group commit to improve write throughput and latency without
+// compromising ordering and durability guarantees. A single background thread
+// (in AppendThread) per Log instance is responsible for accumulating pending
+// writes and writing them to disk.
 //
-// This class is thread-safe unless otherwise noted.
+// A separate background thread (in SegmentAllocator) per Log instance is
+// responsible for synchronously allocating or asynchronously pre-allocating
+// segment files as written entries fill up segments.
+//
+// The public interface of this class is thread-safe unless otherwise noted.
 //
 // Note: The Log needs to be Close()d before any log-writing class is
 // destroyed, otherwise the Log might hold references to these classes
 // to execute the callbacks after each write.
 class Log : public RefCountedThreadSafe<Log> {
  public:
-  class LogFaultHooks;
 
   static const Status kLogShutdownStatus;
   static const uint64_t kInitialLogSegmentSequenceNumber;
 
   // Opens or continues a log and sets 'log' to the newly built Log.
   // After a successful Open() the Log is ready to receive entries.
-  static Status Open(const LogOptions &options,
+  static Status Open(LogOptions options,
                      FsManager *fs_manager,
                      const std::string& tablet_id,
-                     const Schema& schema,
+                     Schema schema,
                      uint32_t schema_version,
                      const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
@@ -102,6 +268,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
+  // This is not thread-safe.
   Status Append(LogEntryPB* entry);
 
   // Append the given set of replicate messages, asynchronously.
@@ -119,14 +286,6 @@ class Log : public RefCountedThreadSafe<Log> {
   // Blocks the current thread until all the entries in the log queue
   // are flushed and fsynced (if fsync of log entries is enabled).
   Status WaitUntilAllFlushed();
-
-  // Kick off an asynchronous task that pre-allocates a new
-  // log-segment, setting 'allocation_status_'. To wait for the
-  // result of the task, use allocation_status_.Get().
-  Status AsyncAllocateSegment();
-
-  // The closure submitted to allocation_pool_ to allocate a new segment.
-  void SegmentAllocationTask();
 
   // Syncs all state and closes the log.
   Status Close();
@@ -149,24 +308,26 @@ class Log : public RefCountedThreadSafe<Log> {
   std::shared_ptr<LogReader> reader() const { return reader_; }
 
   void SetMaxSegmentSizeForTests(uint64_t max_segment_size) {
-    max_segment_size_ = max_segment_size;
+    segment_allocator_.max_segment_size_ = max_segment_size;
   }
 
+  // This is not thread-safe.
   void DisableSync() {
-    sync_disabled_ = true;
+    segment_allocator_.sync_disabled_ = true;
   }
 
   // If we previous called DisableSync(), we should restore the
   // default behavior and then call Sync() which will perform the
   // actual syncing if required.
+  // This is not thread-safe.
   Status ReEnableSyncIfRequired() {
-    sync_disabled_ = false;
-    return Sync();
+    segment_allocator_.sync_disabled_ = false;
+    return segment_allocator_.Sync();
   }
 
   // Get ID of tablet.
   const std::string& tablet_id() const {
-    return tablet_id_;
+    return ctx_.tablet_id;
   }
 
   // Runs the garbage collector on the set of previous segments. Segments that
@@ -212,7 +373,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
-    return active_segment_->path();
+    return segment_allocator_.active_segment_->path();
   }
 
   // Return true if the append thread is currently active.
@@ -225,20 +386,18 @@ class Log : public RefCountedThreadSafe<Log> {
   // This is not thread-safe. Used in test only.
   Status AllocateSegmentAndRollOver();
 
-  // Returns this Log's FsManager.
-  FsManager* GetFsManager();
-
-  void SetLogFaultHooksForTests(const std::shared_ptr<LogFaultHooks> &hooks) {
-    log_hooks_ = hooks;
+  void SetLogFaultHooksForTests(const std::shared_ptr<LogFaultHooks>& hooks) {
+    segment_allocator_.hooks_ = hooks;
   }
 
   // Set the schema for the _next_ log segment.
   //
   // This method is thread-safe.
-  void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
+  void SetSchemaForNextLogSegment(Schema schema, uint32_t version);
  private:
   friend class LogTest;
   friend class LogTestBase;
+  friend class SegmentAllocator;
   FRIEND_TEST(LogTestOptionalCompression, TestMultipleEntriesInABatch);
   FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
@@ -253,22 +412,10 @@ class Log : public RefCountedThreadSafe<Log> {
     kLogClosed
   };
 
-  // State of segment (pre-) allocation.
-  enum SegmentAllocationState {
-    kAllocationNotStarted, // No segment allocation requested
-    kAllocationInProgress, // Next segment allocation started
-    kAllocationFinished // Next segment ready
-  };
-
-  Log(LogOptions options, FsManager* fs_manager, std::string log_path,
-      std::string tablet_id, const Schema& schema, uint32_t schema_version,
-      scoped_refptr<MetricEntity> metric_entity);
+  Log(LogOptions options, LogContext ctx, Schema schema, uint32_t schema_version);
 
   // Initializes a new one or continues an existing log.
   Status Init();
-
-  // Make segments roll over.
-  Status RollOver();
 
   // Sets that the current active segment is idle.
   void SetActiveSegmentIdle();
@@ -282,26 +429,7 @@ class Log : public RefCountedThreadSafe<Log> {
   Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch,
                      const StatusCallback& callback);
 
-  // Writes the footer and closes the current segment.
-  Status CloseCurrentSegment();
-
-  // Sets 'out' to a newly created temporary file (see
-  // Env::NewTempWritableFile()) for a placeholder segment. Sets
-  // 'result_path' to the fully qualified path to the unique filename
-  // created for the segment.
-  Status CreatePlaceholderSegment(const WritableFileOptions& opts,
-                                  std::string* result_path,
-                                  std::shared_ptr<WritableFile>* out);
-
-  // Creates a new WAL segment on disk, writes the next_segment_header_ to
-  // disk as the header, and sets active_segment_ to point to this new segment.
-  Status SwitchToAllocatedSegment();
-
-  // Preallocates the space for a new segment.
-  Status PreAllocateNewSegment();
-
-  // Writes serialized contents of 'entry' to the log. Called inside
-  // AppenderThread.
+  // Writes serialized contents of 'entry' to the log. This is not thread-safe.
   Status WriteBatch(LogEntryBatch* entry_batch);
 
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
@@ -314,8 +442,11 @@ class Log : public RefCountedThreadSafe<Log> {
                              int64_t start_offset);
 
   // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
-  // being written to, by the same segment once properly closed.
-  Status ReplaceSegmentInReaderUnlocked();
+  // being written to, with the same segment once properly closed.
+  Status ReplaceSegmentInReader(const scoped_refptr<ReadableLogSegment>& segment);
+
+  // Adds the given segment to 'log_reader_'.
+  Status AddEmptySegmentInReader(const scoped_refptr<ReadableLogSegment>& segment);
 
   Status Sync();
 
@@ -327,43 +458,16 @@ class Log : public RefCountedThreadSafe<Log> {
     return &entry_batch_queue_;
   }
 
-  const SegmentAllocationState allocation_state() {
-    shared_lock<RWMutex> l(allocation_lock_);
-    return allocation_state_;
-  }
-
   std::string LogPrefix() const;
 
   LogOptions options_;
-  FsManager *fs_manager_;
+  LogContext ctx_;
   std::string log_dir_;
 
-  // The ID of the tablet this log is dedicated to.
-  std::string tablet_id_;
-
-  // Lock to protect modifications to schema_ and schema_version_.
-  mutable rw_spinlock schema_lock_;
-
-  // The current schema of the tablet this log is dedicated to.
-  Schema schema_;
-  // The schema version
-  uint32_t schema_version_;
-
-  // The currently active segment being written.
-  std::unique_ptr<WritableLogSegment> active_segment_;
-
-  // The current (active) segment sequence number.
-  uint64_t active_segment_sequence_number_;
-
-  // The writable file for the next allocated segment
-  std::shared_ptr<WritableFile> next_segment_file_;
-
-  // The path for the next allocated segment.
-  std::string next_segment_path_;
-
   // Lock to protect mutations to log_state_ and other shared state variables.
+  // Generally this is used to ensure adding and removing segments from the log
+  // reader is threadsafe.
   mutable percpu_rwlock state_lock_;
-
   LogState log_state_;
 
   // A reader for the previous segments that were not yet GC'd.
@@ -375,48 +479,22 @@ class Log : public RefCountedThreadSafe<Log> {
   // of the operation in the log.
   scoped_refptr<LogIndex> log_index_;
 
-  // A footer being prepared for the current segment.
-  // When the segment is closed, it will be written.
-  LogSegmentFooterPB footer_builder_;
-
   // The maximum segment size, in bytes.
   uint64_t max_segment_size_;
 
-  // The queue used to communicate between the threads appending operations
-  // and the thread which actually appends them to the log.
+  // The queue used to communicate between the threads appending operations to
+  // the log and the thread which actually writing the operations them to disk.
   LogEntryBatchQueue entry_batch_queue_;
 
   // Thread writing to the log
-  gscoped_ptr<AppendThread> append_thread_;
+  std::unique_ptr<AppendThread> append_thread_;
 
-  std::unique_ptr<ThreadPool> allocation_pool_;
-
-  // If true, sync on all appends.
-  bool force_sync_all_;
-
-  // If true, ignore the 'force_sync_all_' flag above.
-  // This is used to disable fsync during bootstrap.
-  bool sync_disabled_;
-
-  // The status of the most recent log-allocation action.
-  Promise<Status> allocation_status_;
+  SegmentAllocator segment_allocator_;
 
   // Protects the active segment as it is going idle, in case other threads
   // attempt to switch segments concurrently. This shouldn't happen in
   // production, but may happen if AllocateSegmentAndRollOver() is called.
   mutable rw_spinlock segment_idle_lock_;
-
-  // Read-write lock to protect 'allocation_state_'.
-  mutable RWMutex allocation_lock_;
-  SegmentAllocationState allocation_state_;
-
-  // The codec used to compress entries, or nullptr if not configured.
-  const CompressionCodec* codec_;
-
-  scoped_refptr<MetricEntity> metric_entity_;
-  gscoped_ptr<LogMetrics> metrics_;
-
-  std::shared_ptr<LogFaultHooks> log_hooks_;
 
   // The cached on-disk size of the log, used to track its size even if it has been closed.
   std::atomic<int64_t> on_disk_size_;
@@ -465,6 +543,7 @@ class LogEntryBatch {
   friend class Log;
   friend struct LogEntryBatchLogicalSize;
   friend class MultiThreadedLogTest;
+  friend class SegmentAllocator;
 
   LogEntryBatch(LogEntryTypePB type,
                 std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
@@ -548,7 +627,7 @@ struct LogEntryBatchLogicalSize {
   }
 };
 
-class Log::LogFaultHooks {
+class LogFaultHooks {
  public:
 
   // Executed immediately before returning from Log::Sync() at *ALL*

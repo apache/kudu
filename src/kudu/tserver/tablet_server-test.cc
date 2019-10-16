@@ -3658,7 +3658,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ASSERT_FALSE(resp.has_more_results());
 }
 
-class DelayFsyncLogHook : public log::Log::LogFaultHooks {
+class DelayFsyncLogHook : public log::LogFaultHooks {
  public:
   DelayFsyncLogHook() : log_latch1_(1), test_latch1_(1) {}
 

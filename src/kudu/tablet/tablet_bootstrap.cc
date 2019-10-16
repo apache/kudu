@@ -1482,7 +1482,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
   if (!tx_state.error()) {
     // If the alter completed successfully, update the log segment header. Note
     // that our new log isn't hooked up to the tablet yet.
-    log_->SetSchemaForNextLogSegment(schema, tx_state.schema_version());
+    log_->SetSchemaForNextLogSegment(std::move(schema), tx_state.schema_version());
   }
 
   return AppendCommitMsg(commit_msg);
