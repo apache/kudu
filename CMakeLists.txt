@@ -491,11 +491,11 @@ endif()
 if (GOLD_VERSION)
   # Older versions of the gold linker are vulnerable to a bug [1] which
   # prevents weak symbols from being overridden properly. This leads to
-  # omitting of Kudu's tcmalloc dependency.
+  # omitting of Kudu's tcmalloc dependency if using dynamic linking.
   #
   # How we handle this situation depends on other factors:
   # - If gold is optional, we won't use it.
-  # - If gold is required, we'll either:
+  # - If gold is required and we're using dynamic linking, we'll either:
   #   - Raise an error in RELEASE builds (we shouldn't release such a product), or
   #   - Drop tcmalloc in all other builds.
   #
@@ -505,13 +505,13 @@ if (GOLD_VERSION)
   endif()
   if (MUST_USE_GOLD)
     message("Using hard-wired gold linker (version ${GOLD_VERSION})")
-    if (KUDU_BUGGY_GOLD)
-      if ("${KUDU_LINK}" STREQUAL "d" AND
-          "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
+    if (KUDU_BUGGY_GOLD AND "${KUDU_LINK}" STREQUAL "d")
+      if ("${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
         message(SEND_ERROR "Configured to use buggy gold with dynamic linking "
           "in a RELEASE build; this would cause tcmalloc symbols to get dropped")
       endif()
       message("Hard-wired gold linker is buggy, dropping tcmalloc dependency")
+      set(GOLD_INCOMPATIBLE_WITH_TCMALLOC 1)
     endif()
   elseif (NOT KUDU_BUGGY_GOLD)
     # The Gold linker must be manually enabled.
@@ -1126,7 +1126,7 @@ ADD_THIRDPARTY_LIB(krb5
 ## earlier comment).
 if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
-    NOT ("${KUDU_BUGGY_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
+    NOT "${GOLD_INCOMPATIBLE_WITH_TCMALLOC}")
   find_package(GPerf REQUIRED)
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
