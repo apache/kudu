@@ -31,6 +31,8 @@ import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.util.DecimalUtil
+import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.junit.After
 import org.junit.Before
@@ -228,5 +230,17 @@ trait KuduTestSuite extends JUnitSuite {
       (i, i, s, ts)
     }
     rows
+  }
+
+  /**
+   * Assuming that the only part of the logical plan is a Kudu scan, this
+   * function extracts the KuduRelation from the passed DataFrame for
+   * testing purposes.
+   */
+  def kuduRelationFromDataFrame(dataFrame: DataFrame) = {
+    val logicalPlan = dataFrame.queryExecution.logical
+    val logicalRelation = logicalPlan.asInstanceOf[LogicalRelation]
+    val baseRelation = logicalRelation.relation
+    baseRelation.asInstanceOf[KuduRelation]
   }
 }
