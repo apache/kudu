@@ -92,7 +92,7 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
     workload.Setup();
     workload.Start();
     ASSERT_EVENTUALLY([&]() {
-      ASSERT_GE(workload.rows_inserted(), 1000000);
+      ASSERT_GE(workload.rows_inserted(), 100000);
     });
     workload.StopAndJoin();
   }
