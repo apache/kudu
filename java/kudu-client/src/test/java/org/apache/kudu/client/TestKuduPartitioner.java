@@ -184,7 +184,7 @@ public class TestKuduPartitioner {
       assertTrue(ex.getMessage().startsWith("cannot complete before timeout"));
     }
     long elapsed = System.currentTimeMillis() - now;
-    long upperBound = timeoutMs * 2; // Add 100% to avoid flakiness.
+    long upperBound = timeoutMs * 2L; // Add 100% to avoid flakiness.
     assertTrue(String.format("Elapsed time %d exceeded upper bound %d", elapsed, upperBound),
                elapsed <= upperBound);
   }
