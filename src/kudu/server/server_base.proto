@@ -44,9 +44,14 @@ message ServerStatusPB {
 message GetFlagsRequestPB {
   // Whether to return all flags, or only flags with non-default values.
   optional bool all_flags = 1;
+
   // A list of flag tags. Flags that match at least one tag are returned. If
   // no tags are specified, all flags match.
   repeated string tags = 2;
+
+  // A list of flags. Flags that in this list are returned. If flags are specified,
+  // will ignore 'all_flags'. If not, all flags match.
+  repeated string flags = 3;
 }
 
 message GetFlagsResponsePB {

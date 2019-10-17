@@ -225,6 +225,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .Description("Get the gflags for a Kudu Tablet Server")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddOptionalParameter("all_flags")
+      .AddOptionalParameter("flags")
       .AddOptionalParameter("flag_tags")
       .Build();
 

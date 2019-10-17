@@ -5234,6 +5234,36 @@ TEST_F(ToolTest, TestGetFlags) {
     ASSERT_STR_CONTAINS(out, "help,false,true");
     ASSERT_STR_NOT_MATCHES(out, "logemaillevel,*");
     ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
+
+    // Check that we get flags with -flags.
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+        Substitute("$0 get_flags $1 -format=csv -flags=fs_wal_dir,logemaillevel",
+                   daemon_type, daemon_addr),
+        &out));
+    ASSERT_STR_NOT_MATCHES(out, "help*");
+    ASSERT_STR_CONTAINS(out, "logemaillevel,999,true");
+    ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
+
+    // Check -flags will ignore -all_flags.
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+        Substitute("$0 get_flags $1 -format=csv -all_flags -flags=logemaillevel",
+                   daemon_type, daemon_addr),
+        &out));
+    ASSERT_STR_NOT_MATCHES(out, "help*");
+    ASSERT_STR_CONTAINS(out, "logemaillevel,999,true");
+    ASSERT_STR_NOT_MATCHES(out, "fs_wal_dir*");
+
+    // Check -flag_tags filter to matching tags with -flags.
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+        Substitute("$0 get_flags $1 -format=csv -flags=logemaillevel -flag_tags=stable",
+                   daemon_type, daemon_addr),
+        &out));
+    ASSERT_STR_NOT_MATCHES(out, "help*");
+    ASSERT_STR_NOT_MATCHES(out, "logemaillevel,*");
+    ASSERT_STR_NOT_MATCHES(out, "fs_wal_dir*");
   }
 }
 

@@ -79,12 +79,19 @@ void GenericServiceImpl::GetFlags(const GetFlagsRequestPB* req,
                                   GetFlagsResponsePB* resp,
                                   rpc::RpcContext* rpc) {
   // If no tags were specified, return all flags that have non-default values.
+  // If flags were specified, will ignore 'all_flags'.
   // If tags were specified, also filter flags that don't match any tag.
   bool all_flags = req->all_flags();
+  unordered_set<string> flags(req->flags().begin(), req->flags().end());
   for (const auto& entry : GetFlagsMap()) {
-    if (entry.second.is_default && !all_flags) {
+    if (entry.second.is_default && !all_flags && flags.empty()) {
       continue;
     }
+
+    if (!flags.empty() && !ContainsKey(flags, entry.first)) {
+      continue;
+    }
+
     unordered_set<string> tags;
     GetFlagTags(entry.first, &tags);
     bool matches = req->tags().empty();

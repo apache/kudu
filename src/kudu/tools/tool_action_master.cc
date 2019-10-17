@@ -337,6 +337,7 @@ unique_ptr<Mode> BuildMasterMode() {
         .Description("Get the gflags for a Kudu Master")
         .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
         .AddOptionalParameter("all_flags")
+        .AddOptionalParameter("flags")
         .AddOptionalParameter("flag_tags")
         .Build();
     builder.AddAction(std::move(get_flags));

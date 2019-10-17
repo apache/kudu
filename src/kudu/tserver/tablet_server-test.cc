@@ -339,6 +339,72 @@ TEST_F(TabletServerTest, TestGetFlags) {
             return flag.name() == "logemaillevel";
           }));
   }
+
+  // Check that we get flags with -flags.
+  {
+    RpcController controller;
+    req.Clear();
+    req.add_flags("log_dir");
+    req.add_flags("logemaillevel");
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                return flag.name() == "log_dir";
+                            }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "help";
+                             }));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                return flag.name() == "logemaillevel";
+                            }));
+  }
+
+  // Check -flags will ignore -all_flags.
+  {
+    RpcController controller;
+    req.Clear();
+    req.set_all_flags(true);
+    req.add_flags("logemaillevel");
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "log_dir";
+                             }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "help";
+                             }));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                return flag.name() == "logemaillevel";
+                            }));
+  }
+
+  // Check -flag_tags filter to matching tags with -flags.
+  {
+    RpcController controller;
+    req.Clear();
+    req.add_flags("logemaillevel");
+    req.add_tags("stable");
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "log_dir";
+                             }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "help";
+                             }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                                 return flag.name() == "logemaillevel";
+                             }));
+  }
 }
 
 TEST_F(TabletServerTest, TestSetFlags) {

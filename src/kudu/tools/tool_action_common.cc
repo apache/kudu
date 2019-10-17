@@ -118,6 +118,9 @@ DEFINE_string(flag_tags, "", "Comma-separated list of tags used to restrict whic
                              "flags are returned. An empty value matches all tags");
 DEFINE_bool(all_flags, false, "Whether to return all flags, or only flags that "
                               "were explicitly set.");
+DEFINE_string(flags, "", "Comma-separated list of flags used to restrict which "
+                         "flags are returned. An empty value means no restriction. "
+                         "If non-empty, all_flags is ignored.");
 DEFINE_string(tables, "", "Tables to include (comma-separated list of table names)"
                           "If not specified, includes all tables.");
 
@@ -412,6 +415,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 Status GetServerFlags(const string& address,
                       uint16_t default_port,
                       bool all_flags,
+                      const string& flags_to_get,
                       const string& flag_tags,
                       vector<server::GetFlagsResponsePB_Flag>* flags) {
   unique_ptr<GenericServiceProxy> proxy;
@@ -426,6 +430,10 @@ Status GetServerFlags(const string& address,
   for (StringPiece tag : strings::Split(flag_tags, ",", strings::SkipEmpty())) {
     req.add_tags(tag.as_string());
   }
+  for (StringPiece flag: strings::Split(flags_to_get, ",", strings::SkipEmpty())) {
+    req.add_flags(flag.as_string());
+  }
+
   RETURN_NOT_OK(proxy->GetFlags(req, &resp, &rpc));
 
   flags->clear();
@@ -435,7 +443,8 @@ Status GetServerFlags(const string& address,
 
 Status PrintServerFlags(const string& address, uint16_t default_port) {
   vector<server::GetFlagsResponsePB_Flag> flags;
-  RETURN_NOT_OK(GetServerFlags(address, default_port, FLAGS_all_flags, FLAGS_flag_tags, &flags));
+  RETURN_NOT_OK(GetServerFlags(address, default_port, FLAGS_all_flags,
+      FLAGS_flags, FLAGS_flag_tags, &flags));
 
   std::sort(flags.begin(), flags.end(),
       [](const GetFlagsResponsePB::Flag& left,
