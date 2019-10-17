@@ -34,6 +34,7 @@
 #include <glog/logging.h>
 
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -205,15 +206,9 @@ Status Ksck::CheckMasterHealth() {
         }
 
         // Fetch the flags information.
-        // Failing to gather flags is only a warning.
-        s = master->FetchUnusualFlags();
-        if (!s.ok()) {
-          std::lock_guard<simple_spinlock> lock(master_summaries_lock);
-          results_.warning_messages.emplace_back(s.CloneAndPrepend(Substitute(
-              "unable to get flag information for master $0 ($1)",
-              master->uuid(),
-              master->address())));
-        }
+        // Flag retrieval is not supported by older versions; failure is tracked in
+        // CheckMasterUnusualFlags().
+        ignore_result(master->FetchUnusualFlags());
     }));
   }
   pool_->Wait();
@@ -376,16 +371,9 @@ Status Ksck::FetchInfoFromTabletServers() {
       }
 
       // Fetch the flags information.
-      // Failing to gather flags is only a warning since fetching the flags
-      // is not supported in older versions.
-      s = ts->FetchUnusualFlags();
-      if (!s.ok()) {
-        std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
-        results_.warning_messages.emplace_back(s.CloneAndPrepend(Substitute(
-            "unable to get flag information for tablet server $0 ($1)",
-            ts->uuid(),
-            ts->address())));
-      }
+      // Flag retrieval is not supported by older versions; failure is tracked in
+      // CheckTabletServerUnusualFlags().
+      ignore_result(ts->FetchUnusualFlags());
     }));
   }
   pool_->Wait();

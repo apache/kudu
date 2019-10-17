@@ -83,12 +83,15 @@ namespace tools {
 
 class MockKsckMaster : public KsckMaster {
  public:
-  explicit MockKsckMaster(const string& address, const string& uuid)
+  explicit MockKsckMaster(const string& address, const string& uuid, bool is_get_flags_available)
       : KsckMaster(address),
-        fetch_info_status_(Status::OK()) {
+        fetch_info_status_(Status::OK()),
+        is_get_flags_available_(is_get_flags_available) {
     uuid_ = uuid;
     version_ = "mock-version";
-    flags_ = GetFlagsResponsePB{};
+    if (is_get_flags_available_) {
+      flags_ = GetFlagsResponsePB{};
+    }
   }
 
   Status Init() override {
@@ -109,8 +112,12 @@ class MockKsckMaster : public KsckMaster {
   }
 
   Status FetchUnusualFlags() override {
-    flags_state_ = KsckFetchState::FETCHED;
-    return Status::OK();
+    if (is_get_flags_available_) {
+      flags_state_ = KsckFetchState::FETCHED;
+      return Status::OK();
+    }
+    flags_state_ = KsckFetchState::FETCH_FAILED;
+    return Status::RemoteError("GetFlags not available");
   }
 
   // Public because the unit tests mutate these variables directly.
@@ -120,17 +127,22 @@ class MockKsckMaster : public KsckMaster {
   using KsckMaster::cstate_;
   using KsckMaster::flags_;
   using KsckMaster::version_;
+ private:
+  const bool is_get_flags_available_;
 };
 
 class MockKsckTabletServer : public KsckTabletServer {
  public:
-  explicit MockKsckTabletServer(const string& uuid)
+  explicit MockKsckTabletServer(const string& uuid, bool is_get_flags_available)
       : KsckTabletServer(uuid),
         fetch_info_status_(Status::OK()),
         fetch_info_health_(ServerHealth::HEALTHY),
-        address_("<mock>") {
+        address_("<mock>"),
+        is_get_flags_available_(is_get_flags_available) {
     version_ = "mock-version";
-    flags_ = GetFlagsResponsePB{};
+    if (is_get_flags_available_) {
+      flags_ = GetFlagsResponsePB{};
+    }
   }
 
   Status FetchInfo(ServerHealth* health) override {
@@ -150,8 +162,12 @@ class MockKsckTabletServer : public KsckTabletServer {
   }
 
   Status FetchUnusualFlags() override {
-    flags_state_ = KsckFetchState::FETCHED;
-    return Status::OK();
+    if (is_get_flags_available_) {
+      flags_state_ = KsckFetchState::FETCHED;
+      return Status::OK();
+    }
+    flags_state_ = KsckFetchState::FETCH_FAILED;
+    return Status::RemoteError("GetFlags not available");
   }
 
   void FetchCurrentTimestampAsync() override {}
@@ -189,6 +205,7 @@ class MockKsckTabletServer : public KsckTabletServer {
 
  private:
   const string address_;
+  const bool is_get_flags_available_;
 };
 
 class MockKsckCluster : public KsckCluster {
@@ -230,7 +247,9 @@ class KsckTest : public KuduTest {
       : cluster_(new MockKsckCluster()),
         ksck_(new Ksck(cluster_, &err_stream_)) {
     FLAGS_color = "never";
+  }
 
+  void SetUp() override {
     // Set up the master consensus state.
     consensus::ConsensusStatePB cstate;
     cstate.set_current_term(0);
@@ -244,7 +263,7 @@ class KsckTest : public KuduTest {
     for (int i = 0; i < 3; i++) {
       const string uuid = Substitute("master-id-$0", i);
       const string addr = Substitute("master-$0", i);
-      shared_ptr<MockKsckMaster> master = std::make_shared<MockKsckMaster>(addr, uuid);
+      auto master = std::make_shared<MockKsckMaster>(addr, uuid, IsGetFlagsAvailable());
       master->cstate_ = cstate;
       cluster_->masters_.push_back(master);
     }
@@ -252,7 +271,7 @@ class KsckTest : public KuduTest {
     KsckCluster::TSMap tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
-      shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(name));
+      auto ts = std::make_shared<MockKsckTabletServer>(name, IsGetFlagsAvailable());
       InsertOrDie(&tablet_servers, ts->uuid(), ts);
     }
     cluster_->tablet_servers_.swap(tablet_servers);
@@ -425,6 +444,10 @@ class KsckTest : public KuduTest {
     return json_stream.str();
   }
 
+  virtual bool IsGetFlagsAvailable() const {
+    return true;
+  }
+
   shared_ptr<MockKsckCluster> cluster_;
   shared_ptr<Ksck> ksck_;
   // This is used as a stack. First the unit test is responsible to create a plan to follow, that
@@ -435,6 +458,13 @@ class KsckTest : public KuduTest {
   vector<string> assignment_plan_;
 
   std::ostringstream err_stream_;
+};
+
+class GetFlagsUnavailableKsckTest : public KsckTest {
+ protected:
+  bool IsGetFlagsAvailable() const override {
+    return false;
+  }
 };
 
 // Helpful macros for checking JSON fields vs. expected values.
@@ -887,6 +917,12 @@ void CheckJsonStringVsKsckResults(const string& json,
   CheckJsonVsErrors(r, "errors", results.error_messages);
 }
 
+void CheckMessageNotPresent(const vector<Status>& messages, const string& msg) {
+  for (const auto& status : messages) {
+    ASSERT_STR_NOT_CONTAINS(status.ToString(), msg);
+  }
+}
+
 TEST_F(KsckTest, TestServersOk) {
   ASSERT_OK(RunKsck());
   const string err_string = err_stream_.str();
@@ -1076,6 +1112,14 @@ TEST_F(KsckTest, TestMasterFlagCheck) {
       " hidden_unsafe_flag | 1     | hidden,unsafe | master-1");
 }
 
+TEST_F(GetFlagsUnavailableKsckTest, TestMasterFlagsUnavailable) {
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_TRUE(ksck_->CheckMasterUnusualFlags().IsIncomplete());
+
+  static const string flags_msg = "unable to get flag information for master";
+  CheckMessageNotPresent(ksck_->results().warning_messages, flags_msg);
+}
+
 TEST_F(KsckTest, TestWrongUUIDTabletServer) {
   CreateOneTableOneTablet();
 
@@ -1200,6 +1244,14 @@ TEST_F(KsckTest, TestTserverFlagCheck) {
       " hidden_flag        | 2     | hidden        | <mock>\n"
       " hidden_unsafe_flag | 0     | hidden,unsafe | <mock>, and 1 other server(s)\n"
       " hidden_unsafe_flag | 1     | hidden,unsafe | <mock>");
+}
+
+TEST_F(GetFlagsUnavailableKsckTest, TestTserverFlagsUnavailable) {
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_TRUE(ksck_->CheckTabletServerUnusualFlags().IsIncomplete());
+
+  static const string flags_msg = "unable to get flag information for tablet server";
+  CheckMessageNotPresent(ksck_->results().warning_messages, flags_msg);
 }
 
 TEST_F(KsckTest, TestOneTableCheck) {
@@ -1613,7 +1665,7 @@ TEST_F(KsckTest, TestChecksumWithAllPeersUnhealthy) {
   const char* const new_uuid = "new";
   EmplaceOrDie(&cluster_->tablet_servers_,
                new_uuid,
-               std::make_shared<MockKsckTabletServer>(new_uuid));
+               std::make_shared<MockKsckTabletServer>(new_uuid, IsGetFlagsAvailable()));
 
   // The checksum should fail for tablet because none of its replicas are
   // available to provide a timestamp.
