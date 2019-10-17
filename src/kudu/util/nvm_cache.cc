@@ -68,13 +68,6 @@ DEFINE_string(nvm_cache_path, "/pmem",
               "The path at which the NVM cache will try to allocate its memory. "
               "This can be a tmpfs or ramfs for testing purposes.");
 
-DEFINE_int32(nvm_cache_allocation_retry_count, 0,
-             "The number of times that the NVM cache will retry attempts to allocate "
-             "memory for new entries. In between attempts, a cache entry will be "
-             "evicted.");
-TAG_FLAG(nvm_cache_allocation_retry_count, advanced);
-TAG_FLAG(nvm_cache_allocation_retry_count, experimental);
-
 DEFINE_bool(nvm_cache_simulate_allocation_failure, false,
             "If true, the NVM cache will inject failures in calls to memkind_malloc "
             "for testing.");
@@ -305,7 +298,7 @@ class NvmLRUCache {
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
   size_t Invalidate(const Cache::InvalidationControl& ctl);
-  void* AllocateAndRetry(size_t size);
+  void* Allocate(size_t size);
 
  private:
   void NvmLRU_Remove(LRUHandle* e);
@@ -388,37 +381,9 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
   CALL_MEMKIND(memkind_free, vmp_, e);
 }
 
-// Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
-// has been exceeded.
-void *NvmLRUCache::AllocateAndRetry(size_t size) {
-  void *tmp;
-  // There may be times that an allocation fails. With NVM we have
-  // a fixed size to allocate from. If we cannot allocate the size
-  // that was asked for, we will remove entries from the cache and
-  // retry up to the configured number of retries. If this fails, we
-  // return nullptr, which will cause the caller to not insert anything
-  // into the cache.
-  LRUHandle *to_remove_head = nullptr;
-  tmp = MemkindMalloc(size);
-
-  if (tmp == nullptr) {
-    std::unique_lock<MutexType> l(mutex_);
-
-    int retries_remaining = FLAGS_nvm_cache_allocation_retry_count;
-    while (tmp == nullptr && retries_remaining-- > 0 && lru_.next != &lru_) {
-      EvictOldestUnlocked(&to_remove_head);
-
-      // Unlock while allocating memory.
-      l.unlock();
-      tmp = MemkindMalloc(size);
-      l.lock();
-    }
-  }
-
-  // we free the entries here outside of mutex for
-  // performance reasons
-  FreeLRUEntries(to_remove_head);
-  return tmp;
+// Allocate NVM memory.
+void* NvmLRUCache::Allocate(size_t size) {
+  return MemkindMalloc(size);
 }
 
 void NvmLRUCache::NvmLRU_Remove(LRUHandle* e) {
@@ -687,7 +652,7 @@ class ShardedLRUCache : public Cache {
     // shards.
     for (NvmLRUCache* cache : shards_) {
       UniquePendingHandle ph(static_cast<PendingHandle*>(
-          cache->AllocateAndRetry(sizeof(LRUHandle) + key_len + val_len)),
+          cache->Allocate(sizeof(LRUHandle) + key_len + val_len)),
           Cache::PendingHandleDeleter(this));
       if (ph) {
         LRUHandle* handle = reinterpret_cast<LRUHandle*>(ph.get());
