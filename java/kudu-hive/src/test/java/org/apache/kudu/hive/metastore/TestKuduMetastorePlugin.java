@@ -91,6 +91,13 @@ public class TestKuduMetastorePlugin {
     // and fail without this system property. However, the Gradle tests don't need it.
     System.setProperty(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, warehouseDir.toString());
 
+    Path warehouseExternalDir = hiveTestDir.resolve("external-warehouse");
+    // NOTE: We use the string value for backwards compatibility.
+    // Once upgraded to Hive 3+ we should use
+    // `MetastoreConf.ConfVars.WAREHOUSE_EXTERNAL.getVarname()`.
+    metastoreConf.set("metastore.warehouse.external.dir", warehouseExternalDir.toString());
+    System.setProperty("metastore.warehouse.external.dir", warehouseExternalDir.toString());
+
     // Set the metastore connection url.
     Path metadb = hiveTestDir.resolve("metadb");
     metastoreConf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,
@@ -138,9 +145,8 @@ public class TestKuduMetastorePlugin {
     StorageDescriptor sd = new StorageDescriptor();
     sd.addToCols(new FieldSchema("a", "bigint", ""));
     sd.setSerdeInfo(new SerDeInfo());
-    sd.setLocation(String.format("%s/%s/%s",
-                                 clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
-                                 table.getDbName(), table.getTableName()));
+    // Unset the location to ensure the default location defined by hive will be used.
+    sd.unsetLocation();
     table.setSd(sd);
     table.setPartitionKeys(Lists.<FieldSchema>newArrayList());
 
@@ -228,15 +234,22 @@ public class TestKuduMetastorePlugin {
     // Test altering a Kudu (or a legacy) table.
     Table table = newTable("table");
     client.createTable(table, masterContext());
+    // Get the table from the HMS in case any translation occurred.
+    table = client.getTable(table.getDbName(), table.getTableName());
     Table legacyTable = newLegacyTable("legacy_table");
     client.createTable(legacyTable, masterContext());
+    // Get the table from the HMS in case any translation occurred.
+    legacyTable = client.getTable(legacyTable.getDbName(), legacyTable.getTableName());
     try {
       // Check that altering the table succeeds.
       client.alter_table(table.getDbName(), table.getTableName(), table);
 
       // Try to alter the Kudu table with a different table ID.
+      Table newTable = table.deepCopy();
+      newTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
+          UUID.randomUUID().toString());
       try {
-        client.alter_table(table.getDbName(), table.getTableName(), newTable(table.getTableName()));
+        client.alter_table(table.getDbName(), table.getTableName(), newTable);
         fail();
       } catch (TException e) {
         assertTrue(e.getMessage().contains("Kudu table ID does not match the existing HMS entry"));
@@ -247,7 +260,7 @@ public class TestKuduMetastorePlugin {
       EnvironmentContext noCheckIdCtx = new EnvironmentContext(
           ImmutableMap.of(KuduMetastorePlugin.KUDU_CHECK_ID_KEY, "false"));
       client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
-          newTable(table.getTableName()), noCheckIdCtx);
+          newTable, noCheckIdCtx);
       // Alter back for more testing below.
       client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(), table,
           noCheckIdCtx);
@@ -267,6 +280,11 @@ public class TestKuduMetastorePlugin {
       try {
         Table alteredTable = table.deepCopy();
         alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
@@ -296,6 +314,11 @@ public class TestKuduMetastorePlugin {
       {
         Table alteredTable = table.deepCopy();
         alteredTable.setTableType(TableType.MANAGED_TABLE.toString());
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
         client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
@@ -429,6 +452,8 @@ public class TestKuduMetastorePlugin {
     // Test creating a legacy Kudu table without context succeeds.
     Table table = newLegacyTable("legacy_table");
     client.createTable(table);
+    // Get the table from the HMS in case any translation occurred.
+    table = client.getTable(table.getDbName(), table.getTableName());
 
     // Check that altering legacy table's schema succeeds.
     {
