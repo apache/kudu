@@ -499,11 +499,10 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
                                        Arena* arena) const {
   ContiguousRow cont_row(row->schema(), row->row_data_);
   for (int i = 0; i < range_schema_.column_ids.size(); i++) {
-
     if (encoded_key->empty()) {
       // This can happen when decoding partition start and end keys, since they
       // are truncated to simulate absolute upper and lower bounds.
-      continue;
+      break;
     }
 
     int32_t column_idx = row->schema()->find_column_by_id(range_schema_.column_ids[i]);
