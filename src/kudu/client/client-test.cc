@@ -28,6 +28,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -75,7 +76,9 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -104,6 +107,8 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -177,6 +182,7 @@ using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -6374,6 +6380,126 @@ TEST_F(ClientWithLocationTest, LocationCacheMetricsOnClientConnectToCluster) {
   ASSERT_EQ(queries_before + kIterNum, queries_after);
   const auto hits_after = counter_hits->value();
   ASSERT_EQ(hits_before + kIterNum, hits_after);
+}
+
+// Regression test for KUDU-2980.
+TEST_F(ClientTest, TestProjectionPredicatesFuzz) {
+  const int kNumColumns = 20;
+  const int kNumPKColumns = kNumColumns / 2;
+  const char* const kTableName = "test";
+
+  // Create a schema with half of the columns in the primary key.
+  //
+  // Use a smattering of different physical data types to increase the
+  // likelihood of a size transition between primary key components.
+  KuduSchemaBuilder b;
+  vector<string> pk_col_names;
+  vector<string> all_col_names;
+  KuduColumnSchema::DataType data_type = KuduColumnSchema::STRING;
+  for (int i = 0; i < kNumColumns; i++) {
+    string col_name = std::to_string(i);
+    b.AddColumn(col_name)->Type(data_type)->NotNull();
+    if (i < kNumPKColumns) {
+      pk_col_names.emplace_back(col_name);
+    }
+    all_col_names.emplace_back(std::move(col_name));
+
+    // Rotate to next data type.
+    switch (data_type) {
+      case KuduColumnSchema::INT8: data_type = KuduColumnSchema::INT16; break;
+      case KuduColumnSchema::INT16: data_type = KuduColumnSchema::INT32; break;
+      case KuduColumnSchema::INT32: data_type = KuduColumnSchema::INT64; break;
+      case KuduColumnSchema::INT64: data_type = KuduColumnSchema::STRING; break;
+      case KuduColumnSchema::STRING: data_type = KuduColumnSchema::INT8; break;
+      default: LOG(FATAL) << "Unexpected data type " << data_type;
+    }
+  }
+  b.SetPrimaryKey(pk_col_names);
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+
+  // Create and open the table. We don't care about replication or partitioning.
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                          .schema(&schema)
+                          .set_range_partition_columns({})
+                          .num_replicas(1)
+                          .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  unique_ptr<KuduScanner> scanner;
+  scanner.reset(new KuduScanner(table.get()));
+
+  // Pick a random selection of columns to project.
+  //
+  // Done before inserting data so the projection can be used to determine the
+  // expected scan results.
+  Random rng(SeedRandom());
+  vector<string> projected_col_names =
+      SelectRandomSubset<vector<string>, string, Random>(all_col_names, 0, &rng);
+  std::random_shuffle(projected_col_names.begin(), projected_col_names.end());
+  ASSERT_OK(scanner->SetProjectedColumnNames(projected_col_names));
+
+  // Insert some rows with randomized keys, flushing the tablet periodically.
+  const int kNumRows = 20;
+  shared_ptr<KuduSession> session = client_->NewSession();
+  vector<string> expected_rows;
+  for (int i = 0; i < kNumRows; i++) {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    GenerateDataForRow(schema, &rng, row);
+
+    // Store a copy of the row for later, to compare with the scan results.
+    //
+    // The copy should look like KuduScanBatch::RowPtr::ToString() and must
+    // conform to the projection schema.
+    ConstContiguousRow ccr(row->schema(), row->row_data_);
+    string row_str = "(";
+    row_str += JoinMapped(projected_col_names, [&](const string& col_name) {
+        int col_idx = row->schema()->find_column(col_name);
+        const auto& col = row->schema()->column(col_idx);
+        DCHECK_NE(Schema::kColumnNotFound, col_idx);
+        string cell;
+        col.DebugCellAppend(ccr.cell(col_idx), &cell);
+        return cell;
+      }, ", ");
+    row_str += ")";
+    expected_rows.emplace_back(std::move(row_str));
+
+    ASSERT_OK(session->Apply(insert.release()));
+
+    // Leave one row in the tablet's MRS so that the scan includes one rowset
+    // without bounds. This affects the behavior of FT scans.
+    if (i < kNumRows - 1 && rng.OneIn(2)) {
+      NO_FATALS(FlushTablet(GetFirstTabletId(table.get())));
+    }
+  }
+
+  // Pick a random selection of columns for predicates.
+  //
+  // We use NOT NULL predicates so as to tickle the server-side code for dealing
+  // with predicates without actually affecting the scan results.
+  vector<string> predicate_col_names =
+      SelectRandomSubset<vector<string>, string, Random>(all_col_names, 0, &rng);
+  for (const auto& col_name : predicate_col_names) {
+    unique_ptr<KuduPredicate> pred(table->NewIsNotNullPredicate(col_name));
+    ASSERT_OK(scanner->AddConjunctPredicate(pred.release()));
+  }
+
+  // Use a fault tolerant scan half the time.
+  if (rng.OneIn(2)) {
+    ASSERT_OK(scanner->SetFaultTolerant());
+  }
+
+  // Perform the scan and verify the results.
+  //
+  // We ignore result ordering because although FT scans will produce rows
+  // sorted by primary keys, regular scans will not.
+  vector<string> rows;
+  ASSERT_OK(ScanToStrings(scanner.get(), &rows));
+  ASSERT_EQ(unordered_set<string>(expected_rows.begin(), expected_rows.end()),
+            unordered_set<string>(rows.begin(), rows.end())) << rows;
 }
 
 } // namespace client

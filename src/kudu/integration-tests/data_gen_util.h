@@ -44,4 +44,9 @@ template<class RNG>
 void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
                         RNG* random, KuduPartialRow* row);
 
+// Like the above but randomly generates the entire key.
+template<class RNG>
+void GenerateDataForRow(const client::KuduSchema& schema,
+                        RNG* random, KuduPartialRow* row);
+
 } // namespace kudu

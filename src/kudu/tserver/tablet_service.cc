@@ -55,6 +55,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -2177,19 +2178,6 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     }
   }
 
-  // When doing an ordered scan, we need to include the key columns to be able to encode
-  // the last row key for the scan response.
-  if (scan_pb.order_mode() == kudu::ORDERED &&
-      projection.num_key_columns() != tablet_schema.num_key_columns()) {
-    for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
-      const ColumnSchema &col = tablet_schema.column(i);
-      if (projection.find_column(col.name()) == -1 &&
-          !ContainsKey(missing_col_names, col.name())) {
-        missing_cols->push_back(col);
-        InsertOrDie(&missing_col_names, col.name());
-      }
-    }
-  }
   // Then any encoded key range predicates.
   RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
 
@@ -2308,9 +2296,9 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
 
-  // Missing columns will contain the columns that are not mentioned in the client
-  // projection but are actually needed for the scan, such as columns referred to by
-  // predicates or key columns (if this is an ORDERED scan).
+  // Missing columns will contain the columns that are not mentioned in the
+  // client projection but are actually needed for the scan, such as columns
+  // referred to by predicates.
   vector<ColumnSchema> missing_cols;
   s = SetupScanSpec(scan_pb, tablet_schema, projection, &missing_cols, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
@@ -2332,15 +2320,43 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   gscoped_ptr<Schema> orig_projection(new Schema(projection));
   scanner->set_client_projection_schema(std::move(orig_projection));
 
-  // Build a new projection with the projection columns and the missing columns. Make
-  // sure to set whether the column is a key column appropriately.
+  // Build a new projection with the projection columns and the missing columns,
+  // annotating each column as a key column appropriately.
+  //
+  // Note: the projection is a consistent schema (i.e. no duplicate columns).
+  // However, it has some different semantics as compared to the tablet schema:
+  // - It might not contain all of the columns in the tablet.
+  // - It might contain extra columns not found in the tablet schema. Virtual
+  //   columns are permitted, while others will cause the scan to fail later,
+  //   when the tablet validates the projection.
+  // - It doesn't know which of its columns are key columns. That's fine for
+  //   an UNORDERED scan, but we'll need to fix this for an ORDERED scan, which
+  //   requires all key columns in tablet schema order.
   SchemaBuilder projection_builder;
-  vector<ColumnSchema> projection_columns = projection.columns();
-  for (const ColumnSchema& col : missing_cols) {
-    projection_columns.push_back(col);
-  }
-  for (const ColumnSchema& col : projection_columns) {
-    CHECK_OK(projection_builder.AddColumn(col, tablet_schema.is_key_column(col.name())));
+  if (scan_pb.order_mode() == ORDERED) {
+    for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
+      const auto& col = tablet_schema.column(i);
+      // CHECK_OK is safe because the tablet schema has no duplicate columns.
+      CHECK_OK(projection_builder.AddColumn(col, /* is_key= */ true));
+    }
+    for (int i = 0; i < projection.num_columns(); i++) {
+      const auto& col = projection.column(i);
+      // Any key columns in the projection will be ignored.
+      ignore_result(projection_builder.AddColumn(col, /* is_key= */ false));
+    }
+    for (const ColumnSchema& col : missing_cols) {
+      // Any key columns in 'missing_cols' will be ignored.
+      ignore_result(projection_builder.AddColumn(col, /* is_key= */ false));
+    }
+  } else {
+    projection_builder.Reset(projection);
+    for (const ColumnSchema& col : missing_cols) {
+      // CHECK_OK is safe because the builder's columns (from the projection)
+      // and the missing columns are disjoint sets.
+      //
+      // UNORDERED scans don't need to know which columns are part of the key.
+      CHECK_OK(projection_builder.AddColumn(col, /* is_key= */ false));
+    }
   }
   projection = projection_builder.BuildWithoutIds();
 
