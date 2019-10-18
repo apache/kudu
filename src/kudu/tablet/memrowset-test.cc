@@ -823,7 +823,7 @@ TEST_F(TestMemRowSet, TestCountLiveRows) {
                               MemTracker::GetRootTracker(), &mrs));
 
   const auto CheckLiveRowsCount = [&](int64_t expect) {
-    int64_t count = 0;
+    uint64_t count = 0;
     ASSERT_OK(mrs->CountLiveRows(&count));
     ASSERT_EQ(expect, count);
   };

@@ -18,8 +18,11 @@
 #define KUDU_MASTER_TABLE_METRICS_H
 
 #include <cstdint>
+#include <string>
+#include <unordered_set>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 
 namespace kudu {
@@ -42,8 +45,18 @@ namespace master {
 struct TableMetrics {
   explicit TableMetrics(const scoped_refptr<MetricEntity>& entity);
 
-  scoped_refptr<AtomicGauge<int64_t>> on_disk_size;
-  scoped_refptr<AtomicGauge<int64_t>> live_row_count;
+  scoped_refptr<AtomicGauge<uint64_t>> on_disk_size;
+  scoped_refptr<AtomicGauge<uint64_t>> live_row_count;
+
+  void AddTabletNoLiveRowCount(const std::string& tablet_id);
+  void DeleteTabletNoLiveRowCount(const std::string& tablet_id);
+  bool ContainsTabletNoLiveRowCount(const std::string& tablet_id) const;
+  bool TableSupportsLiveRowCount() const;
+
+ private:
+  mutable simple_spinlock lock_;
+  // IDs of tablets which do not support reporting live row count.
+  std::unordered_set<std::string> tablet_ids_no_live_row_count_;
 };
 
 } // namespace master

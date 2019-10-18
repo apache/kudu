@@ -230,9 +230,9 @@ Status DuplicatingRowSet::CountRows(const IOContext* io_context, rowid_t *count)
   return Status::OK();
 }
 
-Status DuplicatingRowSet::CountLiveRows(int64_t* count) const {
+Status DuplicatingRowSet::CountLiveRows(uint64_t* count) const {
   for (const shared_ptr<RowSet>& rs : old_rowsets_) {
-    int64_t tmp = 0;
+    uint64_t tmp = 0;
     RETURN_NOT_OK(rs->CountLiveRows(&tmp));
     *count += tmp;
   }

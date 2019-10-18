@@ -415,7 +415,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     while (running_insert_count_.count() > 0) {
       num_rowsets_ts->SetValue(tablet()->num_rowsets());
       memrowset_size_ts->SetValue(tablet()->MemRowSetSize() / 1024.0);
-      int64_t num_live_rows;
+      uint64_t num_live_rows;
       ignore_result(tablet()->CountLiveRows(&num_live_rows));
       num_live_rows_ts->SetValue(num_live_rows);
 

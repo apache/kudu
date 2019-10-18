@@ -1333,7 +1333,7 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
     // If we're the leader, report stats.
     if (cstate.leader_uuid() == fs_manager_->uuid()) {
       ReportedTabletStatsPB stats_pb = replica->GetTabletStats();
-      if (stats_pb.IsInitialized()) {
+      if (stats_pb.has_on_disk_size() || stats_pb.has_live_row_count()) {
         *reported_tablet->mutable_stats() = std::move(stats_pb);
       }
     }

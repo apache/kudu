@@ -16,19 +16,22 @@
 // under the License.
 #include "kudu/master/table_metrics.h"
 
+#include <mutex>
+
+#include "kudu/gutil/map-util.h"
 
 namespace kudu {
 namespace master {
 
 // Table-specific stats.
-METRIC_DEFINE_gauge_int64(table, on_disk_size, "Table Size On Disk",
+METRIC_DEFINE_gauge_uint64(table, on_disk_size, "Table Size On Disk",
     kudu::MetricUnit::kBytes,
     "Pre-replication aggregated disk space used by all tablets in this table, "
     "including metadata.");
-METRIC_DEFINE_gauge_int64(table, live_row_count, "Table Live Row count",
+METRIC_DEFINE_gauge_uint64(table, live_row_count, "Table Live Row count",
     kudu::MetricUnit::kRows,
     "Pre-replication aggregated number of live rows in this table. "
-    "When the table doesn't support live row counting, -1 will be returned.");
+    "Only accurate if all tablets in the table support live row counting.");
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 
@@ -37,6 +40,26 @@ TableMetrics::TableMetrics(const scoped_refptr<MetricEntity>& entity)
     GINIT(live_row_count) {
 }
 #undef GINIT
+
+void TableMetrics::AddTabletNoLiveRowCount(const std::string& tablet_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  InsertIfNotPresent(&tablet_ids_no_live_row_count_, tablet_id);
+}
+
+void TableMetrics::DeleteTabletNoLiveRowCount(const std::string& tablet_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  tablet_ids_no_live_row_count_.erase(tablet_id);
+}
+
+bool TableMetrics::ContainsTabletNoLiveRowCount(const std::string& tablet_id) const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return ContainsKey(tablet_ids_no_live_row_count_, tablet_id);
+}
+
+bool TableMetrics::TableSupportsLiveRowCount() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return tablet_ids_no_live_row_count_.empty();
+}
 
 } // namespace master
 } // namespace kudu

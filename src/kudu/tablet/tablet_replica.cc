@@ -89,11 +89,9 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
 METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
                            kudu::MetricUnit::kState,
                            "State of this tablet.");
-METRIC_DEFINE_gauge_int64(tablet, live_row_count, "Tablet Live Row Count",
-                          kudu::MetricUnit::kRows,
-                          "Number of live rows in this tablet, excludes deleted rows. "
-                          "When the tablet doesn't support live row counting, -1 will "
-                          "be returned.");
+METRIC_DEFINE_gauge_uint64(tablet, live_row_count, "Tablet Live Row Count",
+                           kudu::MetricUnit::kRows,
+                           "Number of live rows in this tablet, excludes deleted rows.");
 
 namespace kudu {
 namespace tablet {
@@ -209,9 +207,14 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
         METRIC_state.InstantiateFunctionGauge(
             tablet_->GetMetricEntity(), Bind(&TabletReplica::StateName, Unretained(this)))
             ->AutoDetach(&metric_detacher_);
-        METRIC_live_row_count.InstantiateFunctionGauge(
-            tablet_->GetMetricEntity(), Bind(&TabletReplica::CountLiveRows, Unretained(this)))
-            ->AutoDetach(&metric_detacher_);
+        if (tablet_->metadata()->supports_live_row_count()) {
+          METRIC_live_row_count.InstantiateFunctionGauge(
+              tablet_->GetMetricEntity(),
+              Bind(&TabletReplica::CountLiveRowsNoFail, Unretained(this)))
+              ->AutoDetach(&metric_detacher_);
+        } else {
+          METRIC_live_row_count.InstantiateInvalid(tablet_->GetMetricEntity(), 0);
+        }
       }
       txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
@@ -805,18 +808,24 @@ size_t TabletReplica::OnDiskSize() const {
   return ret;
 }
 
-int64_t TabletReplica::CountLiveRows() const {
-  int64_t ret = -1;
+Status TabletReplica::CountLiveRows(uint64_t* live_row_count) const {
   shared_ptr<Tablet> tablet;
   {
     std::lock_guard<simple_spinlock> l(lock_);
     tablet = tablet_;
   }
 
-  if (tablet) {
-    ignore_result(tablet->CountLiveRows(&ret));
+  if (!tablet) {
+    return Status::IllegalState("The tablet is shutdown.");
   }
-  return ret;
+
+  return tablet->CountLiveRows(live_row_count);
+}
+
+uint64_t TabletReplica::CountLiveRowsNoFail() const {
+  uint64_t live_row_count = 0;
+  ignore_result(CountLiveRows(&live_row_count));
+  return live_row_count;
 }
 
 void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
@@ -827,7 +836,11 @@ void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
 
   ReportedTabletStatsPB pb;
   pb.set_on_disk_size(OnDiskSize());
-  pb.set_live_row_count(CountLiveRows());
+  uint64_t live_row_count;
+  Status s = CountLiveRows(&live_row_count);
+  if (s.ok()) {
+    pb.set_live_row_count(live_row_count);
+  }
 
   // We cannot hold 'lock_' while calling RaftConsensus::role() because
   // it may invoke TabletReplica::StartFollowerTransaction() and lead to

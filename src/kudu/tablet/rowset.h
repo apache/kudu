@@ -164,7 +164,7 @@ class RowSet {
   virtual Status CountRows(const fs::IOContext* io_context, rowid_t *count) const = 0;
 
   // Count the number of live rows in this rowset.
-  virtual Status CountLiveRows(int64_t* count) const = 0;
+  virtual Status CountLiveRows(uint64_t* count) const = 0;
 
   // Return the bounds for this RowSet. 'min_encoded_key' and 'max_encoded_key'
   // are set to the first and last encoded keys for this RowSet.
@@ -409,7 +409,7 @@ class DuplicatingRowSet : public RowSet {
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const OVERRIDE;
 
-  virtual Status CountLiveRows(int64_t* count) const OVERRIDE;
+  virtual Status CountLiveRows(uint64_t* count) const OVERRIDE;
 
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;

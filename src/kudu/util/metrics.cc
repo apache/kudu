@@ -674,11 +674,13 @@ StringGauge::StringGauge(const GaugePrototype<string>* proto,
 
 scoped_refptr<Metric> StringGauge::snapshot() const {
   std::lock_guard<simple_spinlock> l(lock_);
-  scoped_refptr<Metric> m
-    = new StringGauge(down_cast<const GaugePrototype<string>*>(prototype_),
-                      value_,
-                      unique_values_);
-  return m;
+  auto p = new StringGauge(down_cast<const GaugePrototype<string>*>(prototype_),
+                           value_,
+                           unique_values_);
+  p->m_epoch_.store(m_epoch_);
+  p->invalid_for_merge_ = invalid_for_merge_;
+  p->retire_time_ = retire_time_;
+  return scoped_refptr<Metric>(p);
 }
 
 string StringGauge::value() const {
@@ -712,8 +714,12 @@ void StringGauge::MergeFrom(const scoped_refptr<Metric>& other) {
   if (PREDICT_FALSE(this == other.get())) {
     return;
   }
-  UpdateModificationEpoch();
 
+  if (InvalidateIfNeededInMerge(other)) {
+    return;
+  }
+
+  UpdateModificationEpoch();
   scoped_refptr<StringGauge> other_ptr = down_cast<StringGauge*>(other.get());
   auto other_values = other_ptr->unique_values();
 
@@ -732,9 +738,11 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 
 scoped_refptr<Metric> MeanGauge::snapshot() const {
   std::lock_guard<simple_spinlock> l(lock_);
-  scoped_refptr<Metric> m
-    = new MeanGauge(down_cast<const GaugePrototype<double>*>(prototype_));
-  return m;
+  auto p = new MeanGauge(down_cast<const GaugePrototype<double>*>(prototype_));
+  p->m_epoch_.store(m_epoch_);
+  p->invalid_for_merge_ = invalid_for_merge_;
+  p->retire_time_ = retire_time_;
+  return scoped_refptr<Metric>(p);
 }
 
 double MeanGauge::value() const {
@@ -764,6 +772,11 @@ void MeanGauge::MergeFrom(const scoped_refptr<Metric>& other) {
     return;
   }
 
+  if (InvalidateIfNeededInMerge(other)) {
+    return;
+  }
+
+  UpdateModificationEpoch();
   scoped_refptr<MeanGauge> other_ptr = down_cast<MeanGauge*>(other.get());
   std::lock_guard<simple_spinlock> l(lock_);
   total_sum_ += other_ptr->total_sum();

@@ -411,8 +411,9 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   output->Set("partition",
               tmeta->partition_schema().PartitionDebugString(tmeta->partition(), schema));
   output->Set("on_disk_size", HumanReadableNumBytes::ToString(replica->OnDiskSize()));
-  int64_t live_row_count = replica->CountLiveRows();
-  if (live_row_count >= 0) {
+  uint64_t live_row_count;
+  Status s = replica->CountLiveRows(&live_row_count);
+  if (s.ok()) {
     output->Set("tablet_live_row_count", live_row_count);
   } else {
     output->Set("tablet_live_row_count", "N/A");

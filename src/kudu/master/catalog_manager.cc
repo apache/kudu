@@ -2934,14 +2934,16 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
                                           &table, &l));
 
-  int64_t on_disk_size = table->GetMetrics()->on_disk_size->value();
-  int64_t live_row_count = table->GetMetrics()->live_row_count->value();
-  if (FLAGS_mock_table_metrics_for_testing) {
-    on_disk_size = FLAGS_on_disk_size_for_testing;
-    live_row_count = FLAGS_live_row_count_for_testing;
+  if (PREDICT_FALSE(FLAGS_mock_table_metrics_for_testing)) {
+    resp->set_on_disk_size(FLAGS_on_disk_size_for_testing);
+    resp->set_live_row_count(FLAGS_live_row_count_for_testing);
+  } else {
+    resp->set_on_disk_size(table->GetMetrics()->on_disk_size->value());
+    if (table->GetMetrics()->TableSupportsLiveRowCount()) {
+      resp->set_live_row_count(table->GetMetrics()->live_row_count->value());
+    }
   }
-  resp->set_on_disk_size(on_disk_size);
-  resp->set_live_row_count(live_row_count);
+
   return Status::OK();
 }
 
@@ -4243,11 +4245,11 @@ Status CatalogManager::ProcessTabletReport(
 
     // 10. Process the report's tablet statistics.
     if (report.has_stats() && report.has_consensus_state()) {
-      DCHECK(ts_desc->permanent_uuid() == report.consensus_state().leader_uuid());
+      DCHECK_EQ(ts_desc->permanent_uuid(), report.consensus_state().leader_uuid());
 
       // Now the tserver only reports the LEADER replicas its own.
       // First, update table's stats.
-      tablet->table()->UpdateMetrics(tablet->GetStats(), report.stats());
+      tablet->table()->UpdateMetrics(tablet_id, tablet->GetStats(), report.stats());
       // Then, update tablet's stats.
       tablet->UpdateStats(report.stats());
     }
@@ -5417,8 +5419,8 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
     const auto& lower_bound = tablet->metadata().state().pb.partition().partition_key_start();
     CHECK(EraseKeyReturnValuePtr(&tablet_map_, lower_bound) != nullptr);
     DecrementSchemaVersionCountUnlocked(tablet->reported_schema_version());
-    // Update the table metrics for the deleted tablets.
-    UpdateMetrics(tablet->GetStats(), ReportedTabletStatsPB());
+    // Remove the table metrics for the deleted tablets.
+    RemoveMetrics(tablet->id(), tablet->GetStats());
   }
   for (const auto& tablet : tablets_to_add) {
     TabletInfo* old = nullptr;
@@ -5569,15 +5571,35 @@ void TableInfo::UnregisterMetrics() {
   }
 }
 
-void TableInfo::UpdateMetrics(const tablet::ReportedTabletStatsPB& old_stats,
+void TableInfo::UpdateMetrics(const string& tablet_id,
+                              const tablet::ReportedTabletStatsPB& old_stats,
                               const tablet::ReportedTabletStatsPB& new_stats) {
   if (metrics_) {
-    metrics_->on_disk_size->IncrementBy(new_stats.on_disk_size() - old_stats.on_disk_size());
-    if (new_stats.live_row_count() >= 0) {
+    metrics_->on_disk_size->IncrementBy(
+        static_cast<int64_t>(new_stats.on_disk_size())
+        - static_cast<int64_t>(old_stats.on_disk_size()));
+    if (new_stats.has_live_row_count()) {
+      DCHECK(!metrics_->ContainsTabletNoLiveRowCount(tablet_id));
       metrics_->live_row_count->IncrementBy(
-          new_stats.live_row_count() - old_stats.live_row_count());
+          static_cast<int64_t>(new_stats.live_row_count())
+          - static_cast<int64_t>(old_stats.live_row_count()));
+    } else if (!old_stats.has_on_disk_size()) {
+      // The new reported stat doesn't support 'live_row_count' and
+      // this is the first report stat of the tablet.
+      metrics_->AddTabletNoLiveRowCount(tablet_id);
+    }
+  }
+}
+
+void TableInfo::RemoveMetrics(const string& tablet_id,
+                              const tablet::ReportedTabletStatsPB& old_stats) {
+  if (metrics_) {
+    metrics_->on_disk_size->IncrementBy(-static_cast<int64_t>(old_stats.on_disk_size()));
+    if (old_stats.has_live_row_count()) {
+      DCHECK(!metrics_->ContainsTabletNoLiveRowCount(tablet_id));
+      metrics_->live_row_count->IncrementBy(-static_cast<int64_t>(old_stats.live_row_count()));
     } else {
-      metrics_->live_row_count->set_value(-1);
+      metrics_->DeleteTabletNoLiveRowCount(tablet_id);
     }
   }
 }

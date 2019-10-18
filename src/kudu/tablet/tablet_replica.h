@@ -300,9 +300,13 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Return the total on-disk size of this tablet replica, in bytes.
   size_t OnDiskSize() const;
 
-  // Return the number of live rows of this tablet replica.
-  // -1 will be returned if the tablet doesn't support live row counting.
-  int64_t CountLiveRows() const;
+  // Counts the number of live rows in this tablet replica.
+  //
+  // Returns a bad Status on failure.
+  Status CountLiveRows(uint64_t* live_row_count) const;
+
+  // Like CountLiveRows but returns 0 on failure.
+  uint64_t CountLiveRowsNoFail() const;
 
   // Update the tablet stats.
   // When the replica's stats change and it's the LEADER, it is added to
