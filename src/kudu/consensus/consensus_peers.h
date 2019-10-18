@@ -79,12 +79,14 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // status-only requests.
   Status SignalRequest(bool even_if_queue_empty = false);
 
-  // Synchronously starts a leader election on this peer.
+  // Starts a leader election on this peer.
+  //
   // This method is ad hoc, using this instance's PeerProxy to send the
   // StartElection request.
+  //
   // The StartElection RPC does not count as the single outstanding request
   // that this class tracks.
-  Status StartElection();
+  void StartElection();
 
   const RaftPeerPB& peer_pb() const { return peer_pb_; }
 
@@ -204,23 +206,25 @@ class PeerProxy {
   virtual ~PeerProxy() {}
 
   // Sends a request, asynchronously, to a remote peer.
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
+  virtual void UpdateAsync(const ConsensusRequestPB& request,
                            ConsensusResponsePB* response,
                            rpc::RpcController* controller,
                            const rpc::ResponseCallback& callback) = 0;
 
-  // Sends a RequestConsensusVote to a remote peer.
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+  // Asks a peer to vote for a candidate.
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB& request,
                                          VoteResponsePB* response,
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) = 0;
 
-  virtual Status StartElection(const RunLeaderElectionRequestPB* request,
-                               RunLeaderElectionResponsePB* response,
-                               rpc::RpcController* controller) = 0;
+  // Instructs a peer to kick off an election to elect itself leader.
+  virtual void StartElectionAsync(const RunLeaderElectionRequestPB& request,
+                                  RunLeaderElectionResponsePB* response,
+                                  rpc::RpcController* controller,
+                                  const rpc::ResponseCallback& callback) = 0;
 
   // Instructs a peer to begin a tablet copy session.
-  virtual void StartTabletCopyAsync(const StartTabletCopyRequestPB* /*request*/,
+  virtual void StartTabletCopyAsync(const StartTabletCopyRequestPB& /*request*/,
                                     StartTabletCopyResponsePB* /*response*/,
                                     rpc::RpcController* /*controller*/,
                                     const rpc::ResponseCallback& /*callback*/) {
@@ -250,21 +254,22 @@ class RpcPeerProxy : public PeerProxy {
   RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
 
-  void UpdateAsync(const ConsensusRequestPB* request,
+  void UpdateAsync(const ConsensusRequestPB& request,
                    ConsensusResponsePB* response,
                    rpc::RpcController* controller,
                    const rpc::ResponseCallback& callback) override;
 
-  void RequestConsensusVoteAsync(const VoteRequestPB* request,
+  void RequestConsensusVoteAsync(const VoteRequestPB& request,
                                  VoteResponsePB* response,
                                  rpc::RpcController* controller,
                                  const rpc::ResponseCallback& callback) override;
 
-  Status StartElection(const RunLeaderElectionRequestPB* request,
-                       RunLeaderElectionResponsePB* response,
-                       rpc::RpcController* controller) override;
+  void StartElectionAsync(const RunLeaderElectionRequestPB& request,
+                          RunLeaderElectionResponsePB* response,
+                          rpc::RpcController* controller,
+                          const rpc::ResponseCallback& callback) override;
 
-  void StartTabletCopyAsync(const StartTabletCopyRequestPB* request,
+  void StartTabletCopyAsync(const StartTabletCopyRequestPB& request,
                             StartTabletCopyResponsePB* response,
                             rpc::RpcController* controller,
                             const rpc::ResponseCallback& callback) override;

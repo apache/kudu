@@ -285,7 +285,7 @@ void LeaderElection::Run() {
     state->request.set_dest_uuid(voter_uuid);
 
     state->proxy->RequestConsensusVoteAsync(
-        &state->request,
+        state->request,
         &state->response,
         &state->rpc,
         // We use gutil Bind() for the refcounting and boost::bind to adapt the

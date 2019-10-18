@@ -150,7 +150,7 @@ class TestPeerProxy : public PeerProxy {
  protected:
   // Register the RPC callback in order to call later.
   // We currently only support one request of each method being in flight at a time.
-  virtual void RegisterCallback(Method method, const rpc::ResponseCallback& callback) {
+  void RegisterCallback(Method method, const rpc::ResponseCallback& callback) {
     std::lock_guard<simple_spinlock> lock(lock_);
     InsertOrDie(&callbacks_, method, callback);
   }
@@ -170,7 +170,7 @@ class TestPeerProxy : public PeerProxy {
     ignore_result(pool_->SubmitFunc(callback));
   }
 
-  virtual void RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
+  void RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
     RegisterCallback(method, callback);
     Respond(method);
   }
@@ -200,7 +200,7 @@ class DelayablePeerProxy : public TestPeerProxy {
     latch_.Reset(1); // Reset for the next time.
   }
 
-  virtual void RespondUnlessDelayed(Method method) {
+  void RespondUnlessDelayed(Method method) {
     {
       std::lock_guard<simple_spinlock> l(lock_);
       if (delay_response_) {
@@ -212,31 +212,32 @@ class DelayablePeerProxy : public TestPeerProxy {
     TestPeerProxy::Respond(method);
   }
 
-  virtual void Respond(Method method) OVERRIDE {
+  void Respond(Method method) override {
     latch_.Wait();   // Wait until strictly after peer would have responded.
     return TestPeerProxy::Respond(method);
   }
 
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           rpc::RpcController* controller,
-                           const rpc::ResponseCallback& callback) OVERRIDE {
+  void UpdateAsync(const ConsensusRequestPB& request,
+                   ConsensusResponsePB* response,
+                   rpc::RpcController* controller,
+                   const rpc::ResponseCallback& callback) override {
     RegisterCallback(kUpdate, callback);
     return proxy_->UpdateAsync(request, response, controller,
                                boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
                                            this, kUpdate));
   }
 
-  virtual Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
-                               RunLeaderElectionResponsePB* /*response*/,
-                               rpc::RpcController* /*controller*/) override {
-    return Status::OK();
+  void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
+                          RunLeaderElectionResponsePB* /*response*/,
+                          rpc::RpcController* /*controller*/,
+                          const rpc::ResponseCallback& callback) override {
+    callback();
   }
 
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                         VoteResponsePB* response,
-                                         rpc::RpcController* controller,
-                                         const rpc::ResponseCallback& callback) OVERRIDE {
+  void RequestConsensusVoteAsync(const VoteRequestPB& request,
+                                 VoteResponsePB* response,
+                                 rpc::RpcController* controller,
+                                 const rpc::ResponseCallback& callback) override {
     RegisterCallback(kRequestVote, callback);
     return proxy_->RequestConsensusVoteAsync(request, response, controller,
                                              boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
@@ -262,25 +263,21 @@ class MockedPeerProxy : public TestPeerProxy {
     update_count_(0) {
   }
 
-  virtual void set_update_response(const ConsensusResponsePB& update_response) {
+  void set_update_response(const ConsensusResponsePB& update_response) {
     CHECK(update_response.IsInitialized()) << pb_util::SecureShortDebugString(update_response);
-    {
-      std::lock_guard<simple_spinlock> l(lock_);
-      update_response_ = update_response;
-    }
+    std::lock_guard<simple_spinlock> l(lock_);
+    update_response_ = update_response;
   }
 
-  virtual void set_vote_response(const VoteResponsePB& vote_response) {
-    {
-      std::lock_guard<simple_spinlock> l(lock_);
-      vote_response_ = vote_response;
-    }
+  void set_vote_response(const VoteResponsePB& vote_response) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    vote_response_ = vote_response;
   }
 
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           rpc::RpcController* controller,
-                           const rpc::ResponseCallback& callback) OVERRIDE {
+  void UpdateAsync(const ConsensusRequestPB& /*request*/,
+                   ConsensusResponsePB* response,
+                   rpc::RpcController* /*controller*/,
+                   const rpc::ResponseCallback& callback) override {
     {
       std::lock_guard<simple_spinlock> l(lock_);
       update_count_++;
@@ -289,18 +286,19 @@ class MockedPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                         VoteResponsePB* response,
-                                         rpc::RpcController* controller,
-                                         const rpc::ResponseCallback& callback) OVERRIDE {
+  void RequestConsensusVoteAsync(const VoteRequestPB& /*request*/,
+                                 VoteResponsePB* response,
+                                 rpc::RpcController* /*controller*/,
+                                 const rpc::ResponseCallback& callback) override {
     *response = vote_response_;
     return RegisterCallbackAndRespond(kRequestVote, callback);
   }
 
-  Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
-                     RunLeaderElectionResponsePB* /*response*/,
-                     rpc::RpcController* /*controller*/) override {
-    return Status::OK();
+  void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
+                          RunLeaderElectionResponsePB* /*response*/,
+                          rpc::RpcController* /*controller*/,
+                          const rpc::ResponseCallback& callback) override {
+    callback();
   }
 
   // Return the number of times that UpdateAsync() has been called.
@@ -326,24 +324,24 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     last_received_.CopyFrom(MinimumOpId());
   }
 
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           rpc::RpcController* controller,
-                           const rpc::ResponseCallback& callback) OVERRIDE {
+  void UpdateAsync(const ConsensusRequestPB& request,
+                   ConsensusResponsePB* response,
+                   rpc::RpcController* /*controller*/,
+                   const rpc::ResponseCallback& callback) override {
 
     response->Clear();
     {
       std::lock_guard<simple_spinlock> lock(lock_);
-      if (OpIdLessThan(last_received_, request->preceding_id())) {
+      if (OpIdLessThan(last_received_, request.preceding_id())) {
         ConsensusErrorPB* error = response->mutable_status()->mutable_error();
         error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
         StatusToPB(Status::IllegalState(""), error->mutable_status());
-      } else if (request->ops_size() > 0) {
-        last_received_.CopyFrom(request->ops(request->ops_size() - 1).id());
+      } else if (request.ops_size() > 0) {
+        last_received_.CopyFrom(request.ops(request.ops_size() - 1).id());
       }
 
       response->set_responder_uuid(peer_pb_.permanent_uuid());
-      response->set_responder_term(request->caller_term());
+      response->set_responder_term(request.caller_term());
       response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
       response->mutable_status()->mutable_last_received_current_leader()->CopyFrom(last_received_);
       // We set the last committed index to be the same index as the last received. While
@@ -354,20 +352,21 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
-  virtual Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
-                             RunLeaderElectionResponsePB* /*response*/,
-                             rpc::RpcController* /*controller*/) override {
-    return Status::OK();
+  void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
+                          RunLeaderElectionResponsePB* /*response*/,
+                          rpc::RpcController* /*controller*/,
+                          const rpc::ResponseCallback& callback) override {
+    callback();
   }
 
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                         VoteResponsePB* response,
-                                         rpc::RpcController* /*controller*/,
-                                         const rpc::ResponseCallback& callback) OVERRIDE {
+  void RequestConsensusVoteAsync(const VoteRequestPB& request,
+                                 VoteResponsePB* response,
+                                 rpc::RpcController* /*controller*/,
+                                 const rpc::ResponseCallback& callback) override {
     {
       std::lock_guard<simple_spinlock> lock(lock_);
       response->set_responder_uuid(peer_pb_.permanent_uuid());
-      response->set_responder_term(request->candidate_term());
+      response->set_responder_term(request.candidate_term());
       response->set_vote_granted(true);
     }
     return RegisterCallbackAndRespond(kRequestVote, callback);
@@ -473,25 +472,26 @@ class LocalTestPeerProxy : public TestPeerProxy {
         peers_(peers),
         miss_comm_(false) {}
 
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           rpc::RpcController* controller,
-                           const rpc::ResponseCallback& callback) OVERRIDE {
+  void UpdateAsync(const ConsensusRequestPB& request,
+                   ConsensusResponsePB* response,
+                   rpc::RpcController* /*controller*/,
+                   const rpc::ResponseCallback& callback) override {
     RegisterCallback(kUpdate, callback);
     CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
                                            this, request, response)));
   }
 
-  Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
-                       RunLeaderElectionResponsePB* /*response*/,
-                       rpc::RpcController* /*controller*/) override {
-    return Status::OK();
+  void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
+                          RunLeaderElectionResponsePB* /*response*/,
+                          rpc::RpcController* /*controller*/,
+                          const rpc::ResponseCallback& callback) override {
+    callback();
   }
 
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                         VoteResponsePB* response,
-                                         rpc::RpcController* /*controller*/,
-                                         const rpc::ResponseCallback& callback) OVERRIDE {
+  void RequestConsensusVoteAsync(const VoteRequestPB& request,
+                                 VoteResponsePB* response,
+                                 rpc::RpcController* /*controller*/,
+                                 const rpc::ResponseCallback& callback) override {
     RegisterCallback(kRequestVote, callback);
     CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
                                            this, request, response)));
@@ -505,7 +505,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
   }
 
   template<class Request, class Response>
-  void RespondOrMissResponse(Request* request,
+  void RespondOrMissResponse(const Request& request,
                              const Response& response_temp,
                              Response* final_response,
                              Method method) {
@@ -517,7 +517,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
       miss_comm_ = false;
     }
     if (PREDICT_FALSE(miss_comm_copy)) {
-      VLOG(2) << this << ": injecting fault on " << pb_util::SecureShortDebugString(*request);
+      VLOG(2) << this << ": injecting fault on " << pb_util::SecureShortDebugString(request);
       SetResponseError(Status::IOError("Artificial error caused by communication "
           "failure injection."), final_response);
     } else {
@@ -526,12 +526,12 @@ class LocalTestPeerProxy : public TestPeerProxy {
     Respond(method);
   }
 
-  void SendUpdateRequest(const ConsensusRequestPB* request,
+  void SendUpdateRequest(const ConsensusRequestPB& request,
                          ConsensusResponsePB* response) {
     // Copy the request and the response for the other peer so that ownership
     // remains as close to the dist. impl. as possible.
     ConsensusRequestPB other_peer_req;
-    other_peer_req.CopyFrom(*request);
+    other_peer_req.CopyFrom(request);
 
     // Give the other peer a clean response object to write to.
     ConsensusResponsePB other_peer_resp;
@@ -558,13 +558,13 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
 
 
-  void SendVoteRequest(const VoteRequestPB* request,
+  void SendVoteRequest(const VoteRequestPB& request,
                        VoteResponsePB* response) {
 
     // Copy the request and the response for the other peer so that ownership
     // remains as close to the dist. impl. as possible.
     VoteRequestPB other_peer_req;
-    other_peer_req.CopyFrom(*request);
+    other_peer_req.CopyFrom(request);
     VoteResponsePB other_peer_resp;
     other_peer_resp.CopyFrom(*response);
 

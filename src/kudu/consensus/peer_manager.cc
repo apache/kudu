@@ -116,7 +116,8 @@ Status PeerManager::StartElection(const std::string& uuid) {
   if (!peer) {
     return Status::NotFound("unknown peer");
   }
-  return peer->StartElection();
+  peer->StartElection();
+  return Status::OK();
 }
 
 void PeerManager::Close() {
