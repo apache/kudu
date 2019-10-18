@@ -26,6 +26,7 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -1167,12 +1168,13 @@ MaterializingIterator::MaterializingIterator(unique_ptr<ColumnwiseIterator> iter
 Status MaterializingIterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(iter_->Init(spec));
 
-  int32_t num_columns = schema().num_columns();
+  const int32_t num_columns = schema().num_columns();
   col_idx_predicates_.clear();
   non_predicate_column_indexes_.clear();
 
-  if (spec != nullptr && !disallow_pushdown_for_tests_) {
+  if (PREDICT_FALSE(!disallow_pushdown_for_tests_) && spec != nullptr) {
     col_idx_predicates_.reserve(spec->predicates().size());
+    DCHECK_GE(num_columns, spec->predicates().size());
     non_predicate_column_indexes_.reserve(num_columns - spec->predicates().size());
 
     for (const auto& col_pred : spec->predicates()) {
@@ -1185,7 +1187,7 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
       col_idx_predicates_.emplace_back(col_idx, col_pred.second);
     }
 
-    for (int32_t col_idx = 0; col_idx < schema().num_columns(); col_idx++) {
+    for (int32_t col_idx = 0; col_idx < num_columns; col_idx++) {
       if (!ContainsKey(spec->predicates(), schema().column(col_idx).name())) {
         non_predicate_column_indexes_.emplace_back(col_idx);
       }
@@ -1195,10 +1197,9 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
     // scan spec so higher layers don't repeat our work.
     spec->RemovePredicates();
   } else {
-    non_predicate_column_indexes_.reserve(num_columns);
-    for (int32_t col_idx = 0; col_idx < num_columns; col_idx++) {
-      non_predicate_column_indexes_.emplace_back(col_idx);
-    }
+    non_predicate_column_indexes_.resize(num_columns);
+    std::iota(non_predicate_column_indexes_.begin(),
+              non_predicate_column_indexes_.end(), 0);
   }
 
   // Sort the predicates by selectivity so that the most selective are evaluated

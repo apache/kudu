@@ -90,12 +90,24 @@ void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
   }
 }
 
+template <class RNG>
+void GenerateDataForRow(const client::KuduSchema& schema,
+                        RNG* random, KuduPartialRow* row) {
+  GenerateDataForRow(schema, random->Next64(), random, row);
+}
+
 // Explicit specialization for callers outside this compilation unit.
 template
 void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
                         Random* random, KuduPartialRow* row);
 template
 void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
+                        ThreadSafeRandom* random, KuduPartialRow* row);
+template
+void GenerateDataForRow(const client::KuduSchema& schema,
+                        Random* random, KuduPartialRow* row);
+template
+void GenerateDataForRow(const client::KuduSchema& schema,
                         ThreadSafeRandom* random, KuduPartialRow* row);
 
 } // namespace kudu

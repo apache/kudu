@@ -49,7 +49,8 @@ T SelectRandomElement(const Container& c, Rand* r) {
   return rand_list[0];
 }
 
-// Returns a randomly-selected subset from the container.
+// Returns a randomly-selected subset from the container. The subset will
+// include at least 'min_to_return' results, but may contain more.
 //
 // The results are not stored in a randomized order: the order of results will
 // match their order in the input collection.

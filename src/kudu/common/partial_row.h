@@ -42,6 +42,7 @@
 namespace kudu {
 class ColumnSchema;
 namespace client {
+class ClientTest_TestProjectionPredicatesFuzz_Test;
 class KuduWriteOperation;
 template<typename KeyTypeWrapper> struct SliceKeysTestSetup;// IWYU pragma: keep
 template<typename KeyTypeWrapper> struct IntKeysTestSetup;  // IWYU pragma: keep
@@ -595,6 +596,7 @@ class KUDU_EXPORT KuduPartialRow {
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct tablet::SliceTypeRowOps;
   template<typename KeyTypeWrapper> friend struct tablet::NumTypeRowOps;
+  FRIEND_TEST(client::ClientTest, TestProjectionPredicatesFuzz);
   FRIEND_TEST(KeyUtilTest, TestIncrementInt128PrimaryKey);
   FRIEND_TEST(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning);
   FRIEND_TEST(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning);
