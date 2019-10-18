@@ -61,8 +61,6 @@ struct KeyEncoderTraits<Type,
                           >::value
                         >::type
                        > {
-  static const DataType key_type = Type;
-
  private:
   typedef typename DataTypeTraits<Type>::cpp_type cpp_type;
   typedef typename MathLimits<cpp_type>::UnsignedType unsigned_cpp_type;
@@ -122,9 +120,6 @@ struct KeyEncoderTraits<Type,
 
 template<typename Buffer>
 struct KeyEncoderTraits<BINARY, Buffer> {
-
-  static const DataType key_type = BINARY;
-
   static void Encode(const void* key, Buffer* dst) {
     Encode(*reinterpret_cast<const Slice*>(key), dst);
   }
