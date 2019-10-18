@@ -59,7 +59,6 @@ class LogBlock;
 class LogBlockContainer;
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
-
 struct LogBlockManagerMetrics;
 } // namespace internal
 
@@ -296,21 +295,20 @@ class LogBlockManager : public BlockManager {
   // use), false otherwise.
   bool TryUseBlockId(const BlockId& block_id);
 
-  // Adds a LogBlock to in-memory data structures.
+  // Creates and adds a LogBlock to in-memory data structures.
   //
   // Returns the created LogBlock if it was successfully added or nullptr if a
   // block with that ID was already present.
-  LogBlockRefPtr AddLogBlock(
+  LogBlockRefPtr CreateAndAddLogBlock(
       LogBlockContainerRefPtr container,
       const BlockId& block_id,
       int64_t offset,
       int64_t length);
 
-  // Unlocked variant of AddLogBlock() for an already-constructed LogBlock object.
-  // Must hold 'lock_'.
+  // Adds a LogBlock for an already-constructed LogBlock object.
   //
   // Returns true if the LogBlock was successfully added, false if it was already present.
-  bool AddLogBlockUnlocked(LogBlockRefPtr lb);
+  bool AddLogBlock(LogBlockRefPtr lb);
 
   // Removes the given set of LogBlocks from in-memory data structures, and
   // appends the block deletion metadata to record the on-disk deletion.
@@ -323,12 +321,12 @@ class LogBlockManager : public BlockManager {
                          std::vector<LogBlockRefPtr>* log_blocks,
                          std::vector<BlockId>* deleted);
 
-  // Removes a LogBlock from in-memory data structures. Must hold 'lock_'.
+  // Removes a LogBlock from in-memory data structures.
   // The 'lb' out parameter will be set with the successfully deleted LogBlock.
   //
   // Returns an error of LogBlock cannot be successfully removed.
-  Status RemoveLogBlockUnlocked(const BlockId& block_id,
-                                LogBlockRefPtr* lb);
+  Status RemoveLogBlock(const BlockId& block_id,
+                        LogBlockRefPtr* lb);
 
   // Repairs any inconsistencies for 'dir' described in 'report'.
   //
@@ -408,7 +406,25 @@ class LogBlockManager : public BlockManager {
   // interesting (e.g. LogBlocks).
   std::shared_ptr<MemTracker> mem_tracker_;
 
-  // Protects the block map, container structures, and 'dirty_dirs'.
+  // Block IDs container used to prevent collisions when creating new anonymous blocks.
+  struct ManagedBlockShard {
+    // Protects 'blocks_by_block_id' and 'open_block_ids'.
+    std::unique_ptr<simple_spinlock> lock;
+
+    // Maps block IDs to blocks that are now readable, either because they
+    // already existed on disk when the block manager was opened, or because
+    // they're WritableBlocks that were closed.
+    std::unique_ptr<BlockMap> blocks_by_block_id;
+
+    // Contains block IDs for WritableBlocks that are still open for writing.
+    // When a WritableBlock is closed, its ID is moved to 'blocks_by_block_id'.
+    BlockIdSet open_block_ids;
+  };
+
+  // Sharding block IDs containers.
+  std::vector<ManagedBlockShard> managed_block_shards_;
+
+  // Protects 'all_containers_by_name_', 'available_containers_by_data_dir_' and 'dirty_dirs'.
   mutable simple_spinlock lock_;
 
   // Maps a data directory to an upper bound on the number of blocks that a
@@ -418,18 +434,6 @@ class LogBlockManager : public BlockManager {
 
   // Manages files opened for reading.
   FileCache<RWFile> file_cache_;
-
-  // Maps block IDs to blocks that are now readable, either because they
-  // already existed on disk when the block manager was opened, or because
-  // they're WritableBlocks that were closed.
-  BlockMap blocks_by_block_id_;
-
-  // Contains block IDs for WritableBlocks that are still open for writing.
-  // When a WritableBlock is closed, its ID is moved to blocks_by_block_id.
-  //
-  // Together with blocks_by_block_id's keys, used to prevent collisions
-  // when creating new anonymous blocks.
-  BlockIdSet open_block_ids_;
 
   // Holds (and owns) all containers loaded from disk.
   std::unordered_map<std::string,

@@ -1714,7 +1714,7 @@ void LogWritableBlock::DoClose() {
     container_->FinalizeBlock(block_offset_, block_length_);
   }
 
-  LogBlockRefPtr lb = container_->block_manager()->AddLogBlock(
+  LogBlockRefPtr lb = container_->block_manager()->CreateAndAddLogBlock(
       container_, block_id_, block_offset_, block_length_);
   CHECK(lb);
   container_->BlockCreated(lb);
@@ -1857,6 +1857,8 @@ size_t LogReadableBlock::memory_footprint() const {
 // LogBlockManager
 ////////////////////////////////////////////////////////////
 
+static const uint64_t kBlockMapChunk = 1 << 4;
+static const uint64_t kBlockMapMask = kBlockMapChunk - 1;
 const char* LogBlockManager::kContainerMetadataFileSuffix = ".metadata";
 const char* LogBlockManager::kContainerDataFileSuffix = ".data";
 
@@ -1880,13 +1882,18 @@ LogBlockManager::LogBlockManager(Env* env,
                                            opts_.parent_mem_tracker)),
     file_cache_("lbm", env, GetFileCacheCapacityForBlockManager(env),
                 opts_.metric_entity),
-    blocks_by_block_id_(10,
-                        BlockMap::hasher(),
-                        BlockMap::key_equal(),
-                        BlockAllocator(mem_tracker_)),
     buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1) {
-  blocks_by_block_id_.set_deleted_key(BlockId());
+  managed_block_shards_.resize(kBlockMapChunk);
+  for (auto& mb : managed_block_shards_) {
+    mb.lock = std::unique_ptr<simple_spinlock>(new simple_spinlock());
+    mb.blocks_by_block_id
+        = std::unique_ptr<BlockMap>(new BlockMap(10,
+                                                 BlockMap::hasher(),
+                                                 BlockMap::key_equal(),
+                                                 BlockAllocator(mem_tracker_)));
+    mb.blocks_by_block_id->set_deleted_key(BlockId());
+  }
 
   // HACK: when running in a test environment, we often instantiate many
   // LogBlockManagers in the same process, eg corresponding to different
@@ -1908,14 +1915,18 @@ LogBlockManager::LogBlockManager(Env* env,
 LogBlockManager::~LogBlockManager() {
   // Release all of the memory accounted by the blocks.
   int64_t mem = 0;
-  for (const auto& entry : blocks_by_block_id_) {
-    mem += kudu_malloc_usable_size(entry.second.get());
+  for (const auto& mb : managed_block_shards_) {
+    for (const auto& entry : *mb.blocks_by_block_id) {
+      mem += kudu_malloc_usable_size(entry.second.get());
+    }
   }
   mem_tracker_->Release(mem);
 
   // A LogBlock's destructor depends on its container, so all LogBlocks must be
   // destroyed before their containers.
-  blocks_by_block_id_.clear();
+  for (auto& mb : managed_block_shards_) {
+    mb.blocks_by_block_id->clear();
+  }
 
   // Containers may have outstanding tasks running on data directories; wait
   // for them to complete before destroying the containers.
@@ -2053,8 +2064,9 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
                                   unique_ptr<ReadableBlock>* block) {
   LogBlockRefPtr lb;
   {
-    std::lock_guard<simple_spinlock> l(lock_);
-    lb = FindPtrOrNull(blocks_by_block_id_, block_id);
+    int index = block_id.id() & kBlockMapMask;
+    std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+    lb = FindPtrOrNull(*managed_block_shards_[index].blocks_by_block_id, block_id);
   }
   if (!lb) {
     return Status::NotFound("Can't find block", block_id.ToString());
@@ -2078,9 +2090,12 @@ shared_ptr<BlockDeletionTransaction> LogBlockManager::NewDeletionTransaction() {
 }
 
 Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  block_ids->assign(open_block_ids_.begin(), open_block_ids_.end());
-  AppendKeysFromMap(blocks_by_block_id_, block_ids);
+  block_ids->clear();
+  for (const auto& mb : managed_block_shards_) {
+    std::lock_guard<simple_spinlock> l(*mb.lock);
+    AppendKeysFromMap(*mb.blocks_by_block_id, block_ids);
+    block_ids->insert(block_ids->end(), mb.open_block_ids.begin(), mb.open_block_ids.end());
+  }
   return Status::OK();
 }
 
@@ -2208,35 +2223,37 @@ bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
     return false;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
-  if (ContainsKey(blocks_by_block_id_, block_id)) {
+  int index = block_id.id() & kBlockMapMask;
+  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  if (ContainsKey(*managed_block_shards_[index].blocks_by_block_id, block_id)) {
     return false;
   }
-  return InsertIfNotPresent(&open_block_ids_, block_id);
+
+  return InsertIfNotPresent(&managed_block_shards_[index].open_block_ids, block_id);
 }
 
-LogBlockRefPtr LogBlockManager::AddLogBlock(
+LogBlockRefPtr LogBlockManager::CreateAndAddLogBlock(
     LogBlockContainerRefPtr container,
     const BlockId& block_id,
     int64_t offset,
     int64_t length) {
-  std::lock_guard<simple_spinlock> l(lock_);
   LogBlockRefPtr lb(new LogBlock(std::move(container), block_id, offset, length));
   mem_tracker_->Consume(kudu_malloc_usable_size(lb.get()));
 
-  if (AddLogBlockUnlocked(lb)) {
+  if (AddLogBlock(lb)) {
     return lb;
   }
   return nullptr;
 }
 
-bool LogBlockManager::AddLogBlockUnlocked(LogBlockRefPtr lb) {
-  DCHECK(lock_.is_locked());
-
+bool LogBlockManager::AddLogBlock(LogBlockRefPtr lb) {
   // InsertIfNotPresent doesn't use move semantics, so instead we just
   // insert an empty scoped_refptr and assign into it down below rather
   // than using the utility function.
-  LogBlockRefPtr* entry_ptr = &blocks_by_block_id_[lb->block_id()];
+  int index = lb->block_id().id() & kBlockMapMask;
+  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  auto& blocks_by_block_id = *managed_block_shards_[index].blocks_by_block_id;
+  LogBlockRefPtr* entry_ptr = &blocks_by_block_id[lb->block_id()];
   if (*entry_ptr) {
     // Already have an entry for this block ID.
     return false;
@@ -2245,9 +2262,9 @@ bool LogBlockManager::AddLogBlockUnlocked(LogBlockRefPtr lb) {
   VLOG(2) << Substitute("Added block: id $0, offset $1, length $2",
                         lb->block_id().ToString(), lb->offset(), lb->length());
 
-  // There may already be an entry in open_block_ids_ (e.g. we just finished
+  // There may already be an entry in open_block_ids_arr_ (e.g. we just finished
   // writing out a block).
-  open_block_ids_.erase(lb->block_id());
+  managed_block_shards_[index].open_block_ids.erase(lb->block_id());
   if (metrics()) {
     metrics()->blocks_under_management->Increment();
     metrics()->bytes_under_management->IncrementBy(lb->length());
@@ -2263,21 +2280,18 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
   Status first_failure;
   vector<LogBlockRefPtr> lbs;
   int64_t malloc_space = 0, blocks_length = 0;
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    for (const auto& block_id : block_ids) {
-      LogBlockRefPtr lb;
-      Status s = RemoveLogBlockUnlocked(block_id, &lb);
-      // If we get NotFound, then the block was already deleted.
-      if (!s.ok() && !s.IsNotFound()) {
-        if (first_failure.ok()) first_failure = s;
-      } else if (s.ok()) {
-        malloc_space += kudu_malloc_usable_size(lb.get());
-        blocks_length += lb->length();
-        lbs.emplace_back(std::move(lb));
-      } else {
-        deleted->emplace_back(block_id);
-      }
+  for (const auto& block_id : block_ids) {
+    LogBlockRefPtr lb;
+    Status s = RemoveLogBlock(block_id, &lb);
+    // If we get NotFound, then the block was already deleted.
+    if (!s.ok() && !s.IsNotFound()) {
+      if (first_failure.ok()) first_failure = s;
+    } else if (s.ok()) {
+      malloc_space += kudu_malloc_usable_size(lb.get());
+      blocks_length += lb->length();
+      lbs.emplace_back(std::move(lb));
+    } else {
+      deleted->emplace_back(block_id);
     }
   }
 
@@ -2322,10 +2336,14 @@ Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
   return first_failure;
 }
 
-Status LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id,
-                                               LogBlockRefPtr* lb) {
-  auto it = blocks_by_block_id_.find(block_id);
-  if (it == blocks_by_block_id_.end()) {
+Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
+                                       LogBlockRefPtr* lb) {
+  int index = block_id.id() & kBlockMapMask;
+  std::lock_guard<simple_spinlock> l(*managed_block_shards_[index].lock);
+  auto& blocks_by_block_id = managed_block_shards_[index].blocks_by_block_id;
+
+  auto it = blocks_by_block_id->find(block_id);
+  if (it == blocks_by_block_id->end()) {
     return Status::NotFound("Can't find block", block_id.ToString());
   }
 
@@ -2345,7 +2363,7 @@ Status LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id,
     }
   }
   *lb = std::move(it->second);
-  blocks_by_block_id_.erase(it);
+  blocks_by_block_id->erase(it);
 
   VLOG(2) << Substitute("Removed block: id $0, offset $1, length $2",
                         (*lb)->block_id().ToString(), (*lb)->offset(), (*lb)->length());
@@ -2582,29 +2600,23 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
 
     next_block_id_.StoreMax(max_block_id + 1);
 
-    // Under the lock, merge this map into the main block map and add
-    // the container.
-    {
-      std::lock_guard<simple_spinlock> l(lock_);
-      // To avoid cacheline contention during startup, we aggregate all of the
-      // memory in a local and add it to the mem-tracker in a single increment
-      // at the end of this loop.
-      int64_t mem_usage = 0;
-      for (UntrackedBlockMap::value_type& e : live_blocks) {
-        int block_mem = kudu_malloc_usable_size(e.second.get());
-        if (!AddLogBlockUnlocked(std::move(e.second))) {
-          // TODO(adar): track as an inconsistency?
-          LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
-                     << " which already is alive from another container when "
-                     << " processing container " << container->ToString();
-        }
-        mem_usage += block_mem;
+    int64_t mem_usage = 0;
+    for (UntrackedBlockMap::value_type& e : live_blocks) {
+      int block_mem = kudu_malloc_usable_size(e.second.get());
+      if (!AddLogBlock(std::move(e.second))) {
+        // TODO(adar): track as an inconsistency?
+        LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
+                   << " which already is alive from another container when "
+                   << " processing container " << container->ToString();
       }
-
-      mem_tracker_->Consume(mem_usage);
-      AddNewContainerUnlocked(container);
-      MakeContainerAvailableUnlocked(std::move(container));
+      mem_usage += block_mem;
     }
+
+    mem_tracker_->Consume(mem_usage);
+
+    std::lock_guard<simple_spinlock> l(lock_);
+    AddNewContainerUnlocked(container);
+    MakeContainerAvailableUnlocked(std::move(container));
   }
 
   // Like the rest of Open(), repairs are performed per data directory to take

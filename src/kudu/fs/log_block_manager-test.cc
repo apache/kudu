@@ -79,6 +79,7 @@ DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
+DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int64(block_manager_max_open_files);
 DECLARE_int64(log_container_max_blocks);
 DECLARE_string(block_manager_preflush_control);
@@ -122,10 +123,13 @@ class LogBlockManagerTest : public KuduTest {
   }
 
  protected:
-  LogBlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity) {
+  LogBlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
+                                      std::vector<std::string> test_data_dirs = {}) {
+    PrepareDataDirs(&test_data_dirs);
+
     if (!dd_manager_) {
       // Ensure the directory manager is initialized.
-      CHECK_OK(DataDirManager::CreateNewForTests(env_, { test_dir_ },
+      CHECK_OK(DataDirManager::CreateNewForTests(env_, test_data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
     BlockManagerOptions opts;
@@ -135,18 +139,30 @@ class LogBlockManagerTest : public KuduTest {
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,
-                            FsReport* report = nullptr) {
+                            FsReport* report = nullptr,
+                            std::vector<std::string> test_data_dirs = {},
+                            bool force = false) {
+    PrepareDataDirs(&test_data_dirs);
+
     // The directory manager must outlive the block manager. Destroy the block
     // manager first to enforce this.
     bm_.reset();
 
-    // Re-open the directory manager first to clear any in-memory maps.
-    RETURN_NOT_OK(DataDirManager::OpenExistingForTests(env_, { test_dir_ },
-        DataDirManagerOptions(), &dd_manager_));
+    if (force) {
+      // Ensure the directory manager is initialized.
+      CHECK_OK(DataDirManager::CreateNewForTests(env_, test_data_dirs,
+          DataDirManagerOptions(), &dd_manager_));
+      RETURN_NOT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+      RETURN_NOT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    } else {
+      // Re-open the directory manager first to clear any in-memory maps.
+      RETURN_NOT_OK(DataDirManager::OpenExistingForTests(env_, test_data_dirs,
+                                                         DataDirManagerOptions(), &dd_manager_));
+      RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+    }
 
-    bm_.reset(CreateBlockManager(metric_entity));
+    bm_.reset(CreateBlockManager(metric_entity, test_data_dirs));
     RETURN_NOT_OK(bm_->Open(report));
-    RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
     return Status::OK();
   }
 
@@ -255,6 +271,16 @@ class LogBlockManagerTest : public KuduTest {
         break;
     }
   }
+  void PrepareDataDirs(std::vector<std::string>* test_data_dirs) {
+    if (test_data_dirs->empty()) {
+      *test_data_dirs = { test_dir_ };
+    }
+    for (const auto& test_data_dir : *test_data_dirs) {
+      Status s = Env::Default()->CreateDir(test_data_dir);
+      CHECK(s.IsAlreadyPresent() || s.ok())
+          << "Could not create directory " << test_data_dir << ": " << s.ToString();
+    }
+  }
 };
 
 static void CheckGaugeMetric(const scoped_refptr<MetricEntity>& entity,
@@ -262,24 +288,24 @@ static void CheckGaugeMetric(const scoped_refptr<MetricEntity>& entity,
   AtomicGauge<uint64_t>* gauge = down_cast<AtomicGauge<uint64_t>*>(
       entity->FindOrNull(*prototype).get());
   DCHECK(gauge);
-  ASSERT_EQ(expected_value, gauge->value());
+  ASSERT_EQ(expected_value, gauge->value()) << prototype->name();
 }
 
 static void CheckCounterMetric(const scoped_refptr<MetricEntity>& entity,
                                int expected_value, const MetricPrototype* prototype) {
   Counter* counter = down_cast<Counter*>(entity->FindOrNull(*prototype).get());
   DCHECK(counter);
-  ASSERT_EQ(expected_value, counter->value());
+  ASSERT_EQ(expected_value, counter->value()) << prototype->name();
 }
 
 static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
                             const vector<std::pair<int, const MetricPrototype*>> gauge_values,
                             const vector<std::pair<int, const MetricPrototype*>> counter_values) {
   for (const auto& gauge_value : gauge_values) {
-    CheckGaugeMetric(entity, gauge_value.first, gauge_value.second);
+    NO_FATALS(CheckGaugeMetric(entity, gauge_value.first, gauge_value.second));
   }
   for (const auto& counter_value: counter_values) {
-    CheckCounterMetric(entity, counter_value.first, counter_value.second);
+    NO_FATALS(CheckCounterMetric(entity, counter_value.first, counter_value.second));
   }
 }
 
@@ -971,7 +997,6 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 // times the startup of the LBM.
 //
 // This is simplistic in several ways compared to a typical workload:
-// - only one data directory (typical servers have several)
 // - minimal number of containers, each of which is entirely full
 //   (typical workloads end up writing to several containers at once
 //    due to concurrent write operations such as multiple MM threads
@@ -980,6 +1005,15 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 //
 // However it still can be used to micro-optimize the startup process.
 TEST_F(LogBlockManagerTest, StartupBenchmark) {
+  const int kTestDataDirCount = 8;
+  FLAGS_fs_target_data_dirs_per_tablet = kTestDataDirCount;
+  std::vector<std::string> test_dirs;
+  for (int i = 0; i < kTestDataDirCount; ++i) {
+    test_dirs.emplace_back(test_dir_ + "/" + std::to_string(i));
+  }
+  // Re-open block manager to place data on multiple data directories.
+  ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs, /* force= */ true));
+
   // Disable preflushing since this can slow down our writes. In particular,
   // since we write such small blocks in this test, each block will likely
   // begin on the same 4KB page as the prior one we wrote, and due to the
@@ -1004,7 +1038,7 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
   }
   for (int i = 0; i < 10; i++) {
     LOG_TIMING(INFO, "reopening block manager") {
-      ASSERT_OK(ReopenBlockManager());
+      ASSERT_OK(ReopenBlockManager(nullptr, nullptr, test_dirs));
     }
   }
 }
