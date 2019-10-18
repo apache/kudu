@@ -1195,7 +1195,7 @@ TEST_F(TestCompaction, TestCountLiveRowsOfMemRowSetFlush) {
   NO_FATALS(UpdateRows(mrs.get(), 80, 0, 1));
   NO_FATALS(DeleteRows(mrs.get(), 50));
   NO_FATALS(InsertRows(mrs.get(), 10, 0));
-  int64_t count = 0;
+  uint64_t count = 0;
   ASSERT_OK(mrs->CountLiveRows(&count));
   ASSERT_EQ(100 - 50 + 10, count);
 
@@ -1250,7 +1250,7 @@ TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
   std::random_shuffle(all_rss.begin(), all_rss.end());
   NO_FATALS(CompactAndReopenNoRoll(all_rss, schema_, &result));
 
-  int64_t count = 0;
+  uint64_t count = 0;
   ASSERT_OK(result->CountLiveRows(&count));
   ASSERT_EQ((100 - 50 + 10) * 3, count);
 }

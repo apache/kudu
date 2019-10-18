@@ -370,7 +370,7 @@ class DiskRowSet : public RowSet {
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final override;
 
   // Count the number of live rows in this DRS.
-  virtual Status CountLiveRows(int64_t* count) const override;
+  virtual Status CountLiveRows(uint64_t* count) const override;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,

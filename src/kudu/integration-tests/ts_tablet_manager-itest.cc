@@ -755,6 +755,7 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
     NO_FATALS(GetLeaderMasterAndRun(live_row_count, [&] (
       TableInfo* table_info, int64_t live_row_count) {
         ASSERT_EVENTUALLY([&] () {
+          ASSERT_TRUE(table_info->GetMetrics()->TableSupportsLiveRowCount());
           ASSERT_EQ(live_row_count, table_info->GetMetrics()->live_row_count->value());
         });
       }));
@@ -838,6 +839,7 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
         ASSERT_STR_NOT_CONTAINS(metric_attrs_str, kTableName);
         ASSERT_STR_CONTAINS(metric_attrs_str, kNewTableName);
         ASSERT_EQ(table->id(), table_info->metric_entity_->id());
+        ASSERT_TRUE(table_info->GetMetrics()->TableSupportsLiveRowCount());
         ASSERT_EQ(live_row_count, table_info->GetMetrics()->live_row_count->value());
       }));
   }

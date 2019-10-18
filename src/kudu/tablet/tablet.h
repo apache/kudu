@@ -348,7 +348,7 @@ class Tablet {
   Status CountRows(uint64_t *count) const;
 
   // Count the number of live rows in this tablet.
-  Status CountLiveRows(int64_t* count) const;
+  Status CountLiveRows(uint64_t* count) const;
 
   // Verbosely dump this entire tablet to the logs. This is only
   // really useful when debugging unit tests failures where the tablet

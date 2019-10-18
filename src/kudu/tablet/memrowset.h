@@ -255,9 +255,8 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
-  virtual Status CountLiveRows(int64_t* count) const override {
+  virtual Status CountLiveRows(uint64_t* count) const override {
     *count = live_row_count_.Load();
-    DCHECK_GE(*count, 0);
     return Status::OK();
   }
 
@@ -459,7 +458,7 @@ class MemRowSet : public RowSet,
   std::atomic<bool> has_been_compacted_;
 
   // Number of live rows in this MRS.
-  AtomicInt<int64_t> live_row_count_;
+  AtomicInt<uint64_t> live_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(MemRowSet);
 };

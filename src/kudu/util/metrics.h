@@ -731,7 +731,7 @@ class Metric : public RefCountedThreadSafe<Metric> {
   virtual bool IsUntouched() const = 0;
 
   // Return true if this metric has changed in or after the given metrics epoch.
-  bool ModifiedInOrAfterEpoch(int64_t epoch) {
+  bool ModifiedInOrAfterEpoch(int64_t epoch) const {
     return m_epoch_ >= epoch;
   }
 
@@ -756,8 +756,6 @@ class Metric : public RefCountedThreadSafe<Metric> {
   explicit Metric(const MetricPrototype* prototype);
   virtual ~Metric();
 
-  const MetricPrototype* const prototype_;
-
   void UpdateModificationEpoch() {
     // If we have some upper bound, we need to invalidate it. We use a 'test-and-set'
     // here to avoid contending on writes to this cacheline.
@@ -772,12 +770,42 @@ class Metric : public RefCountedThreadSafe<Metric> {
     m_epoch_ = -1;
   }
 
+  // Causes this metric to be skipped during a merge..
+  void InvalidateForMerge() {
+    invalid_for_merge_ = true;
+  }
+
+  // Returns whether the merge of 'other' into this metric should be prohibited. If true,
+  // also ensures that this metric is invalidated.
+  bool InvalidateIfNeededInMerge(const scoped_refptr<Metric>& other) {
+    if (invalid_for_merge_) {
+      DCHECK_EQ(m_epoch_, -1);
+      return true;
+    }
+    if (other->invalid_for_merge_) {
+      InvalidateEpoch();
+      invalid_for_merge_ = true;
+      return true;
+    }
+    return false;
+  }
+
+  const MetricPrototype* const prototype_;
+
   // The last metrics epoch in which this metric was modified.
   // We use epochs instead of timestamps since we can ensure that epochs
   // only change rarely. Thus this member is read-mostly and doesn't cause
   // cacheline bouncing between metrics writers. We also don't need to read
   // the system clock, which is more expensive compared to reading 'g_epoch_'.
   std::atomic<int64_t> m_epoch_;
+
+  // Whether this metric is invalid for merge.
+  bool invalid_for_merge_ = false;
+
+  // The time at which we should retire this metric if it is still un-referenced outside
+  // of the metrics subsystem. If this metric is not due for retirement, this member is
+  // uninitialized.
+  MonoTime retire_time_;
 
  private:
   void UpdateModificationEpochSlowPath();
@@ -787,11 +815,6 @@ class Metric : public RefCountedThreadSafe<Metric> {
   template<typename T>
   friend class GaugePrototype;
   FRIEND_TEST(MetricsTest, TestDumpOnlyChanged);
-
-  // The time at which we should retire this metric if it is still un-referenced outside
-  // of the metrics subsystem. If this metric is not due for retirement, this member is
-  // uninitialized.
-  MonoTime retire_time_;
 
   // See 'current_epoch()'.
   static std::atomic<int64_t> g_epoch_;
@@ -920,6 +943,16 @@ class GaugePrototype : public MetricPrototype {
     return gauge;
   }
 
+  // Instantiate a "manual" gauge and hide it, and it will
+  // invalidate the result when merge with other metric.
+  scoped_refptr<AtomicGauge<T> > InstantiateInvalid(
+      const scoped_refptr<MetricEntity>& entity,
+      const T& initial_value) const {
+    auto gauge = InstantiateHidden(entity, initial_value);
+    gauge->InvalidateForMerge();
+    return gauge;
+  }
+
   virtual MetricType::Type type() const OVERRIDE {
     if (args_.flags_ & EXPOSE_AS_COUNTER) {
       return MetricType::kCounter;
@@ -1011,9 +1044,11 @@ class AtomicGauge : public Gauge {
       value_(initial_value) {
   }
   scoped_refptr<Metric> snapshot() const override {
-    scoped_refptr<Metric> m = new AtomicGauge(down_cast<const GaugePrototype<T>*>(prototype_),
-                                              value());
-    return m;
+    auto p = new AtomicGauge(down_cast<const GaugePrototype<T>*>(prototype_), value());
+    p->m_epoch_.store(m_epoch_);
+    p->invalid_for_merge_ = invalid_for_merge_;
+    p->retire_time_ = retire_time_;
+    return scoped_refptr<Metric>(p);
   }
   T value() const {
     return static_cast<T>(value_.Load(kMemOrderRelease));
@@ -1039,9 +1074,15 @@ class AtomicGauge : public Gauge {
     return false;
   }
   void MergeFrom(const scoped_refptr<Metric>& other) override {
-    if (PREDICT_TRUE(this != other.get())) {
-      IncrementBy(down_cast<AtomicGauge<T>*>(other.get())->value());
+    if (PREDICT_FALSE(this == other.get())) {
+      return;
     }
+
+    if (InvalidateIfNeededInMerge(other)) {
+      return;
+    }
+
+    IncrementBy(down_cast<AtomicGauge<T>*>(other.get())->value());
   }
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
@@ -1114,13 +1155,16 @@ template <typename T>
 class FunctionGauge : public Gauge {
  public:
   scoped_refptr<Metric> snapshot() const override {
-    scoped_refptr<Metric> m = new FunctionGauge(down_cast<const GaugePrototype<T>*>(prototype_),
-                                                Callback<T()>(function_));
+    auto p = new FunctionGauge(down_cast<const GaugePrototype<T>*>(prototype_),
+                               Callback<T()>(function_));
     // The bounded function is associated with another MetricEntity instance, here we don't know
     // when it release, it's not safe to keep the function as a member, so it's needed to
     // call DetachToCurrentValue() to make it safe.
-    down_cast<FunctionGauge<T>*>(m.get())->DetachToCurrentValue();
-    return m;
+    p->DetachToCurrentValue();
+    p->m_epoch_.store(m_epoch_);
+    p->invalid_for_merge_ = invalid_for_merge_;
+    p->retire_time_ = retire_time_;
+    return scoped_refptr<Metric>(p);
   }
 
   T value() const {
@@ -1174,9 +1218,13 @@ class FunctionGauge : public Gauge {
 
   // value() will be constant after MergeFrom()
   void MergeFrom(const scoped_refptr<Metric>& other) override {
-    if (PREDICT_TRUE(this != other.get())) {
-      DetachToConstant(value() + down_cast<FunctionGauge<T>*>(other.get())->value());
+    if (PREDICT_FALSE(this == other.get())) {
+      return;
     }
+
+    // It's not needed to check whether a FunctionGauge is InvalidateIfNeededInMerge
+    // or not, because it's always 'touched' after constructing.
+    DetachToConstant(value() + down_cast<FunctionGauge<T>*>(other.get())->value());
   }
 
  private:
@@ -1221,9 +1269,12 @@ class CounterPrototype : public MetricPrototype {
 class Counter : public Metric {
  public:
   scoped_refptr<Metric> snapshot() const override {
-    scoped_refptr<Metric> m = new Counter(down_cast<const CounterPrototype*>(prototype_));
-    down_cast<Counter*>(m.get())->IncrementBy(value());
-    return m;
+    auto p = new Counter(down_cast<const CounterPrototype*>(prototype_));
+    p->IncrementBy(value());
+    p->m_epoch_.store(m_epoch_);
+    p->invalid_for_merge_ = invalid_for_merge_;
+    p->retire_time_ = retire_time_;
+    return scoped_refptr<Metric>(p);
   }
   int64_t value() const;
   void Increment();
@@ -1236,9 +1287,15 @@ class Counter : public Metric {
   }
 
   void MergeFrom(const scoped_refptr<Metric>& other) override {
-    if (PREDICT_TRUE(this != other.get())) {
-      IncrementBy(down_cast<Counter*>(other.get())->value());
+    if (PREDICT_FALSE(this == other.get())) {
+      return;
     }
+
+    if (InvalidateIfNeededInMerge(other)) {
+      return;
+    }
+
+    IncrementBy(down_cast<Counter *>(other.get())->value());
   }
 
  private:
@@ -1272,9 +1329,11 @@ class HistogramPrototype : public MetricPrototype {
 class Histogram : public Metric {
  public:
   scoped_refptr<Metric> snapshot() const override {
-    scoped_refptr<Metric> m = new Histogram(down_cast<const HistogramPrototype*>(prototype_),
-                                              *histogram_);
-    return m;
+    auto p = new Histogram(down_cast<const HistogramPrototype*>(prototype_), *histogram_);
+    p->m_epoch_.store(m_epoch_);
+    p->invalid_for_merge_ = invalid_for_merge_;
+    p->retire_time_ = retire_time_;
+    return scoped_refptr<Metric>(p);
   }
 
   // Increment the histogram for the given value.
@@ -1310,9 +1369,16 @@ class Histogram : public Metric {
   }
 
   void MergeFrom(const scoped_refptr<Metric>& other) override {
-    if (PREDICT_TRUE(this != other.get())) {
-      histogram_->MergeFrom(*(down_cast<Histogram*>(other.get())->histogram()));
+    if (PREDICT_FALSE(this == other.get())) {
+      return;
     }
+
+    if (InvalidateIfNeededInMerge(other)) {
+      return;
+    }
+
+    UpdateModificationEpoch();
+    histogram_->MergeFrom(*(down_cast<Histogram*>(other.get())->histogram()));
   }
 
  private:

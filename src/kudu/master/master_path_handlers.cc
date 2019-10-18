@@ -42,7 +42,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
@@ -494,9 +493,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     // But the value of disk size will never be negative.
     (*output)["table_disk_size"] =
         HumanReadableNumBytes::ToString(table_metrics->on_disk_size->value());
-    int64 live_row_count = table_metrics->live_row_count->value();
-    if (live_row_count >= 0) {
-      (*output)["table_live_row_count"] = live_row_count;
+    if (table_metrics->TableSupportsLiveRowCount()) {
+      (*output)["table_live_row_count"] = table_metrics->live_row_count->value();
     } else {
       (*output)["table_live_row_count"] = "N/A";
     }

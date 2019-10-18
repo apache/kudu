@@ -322,9 +322,14 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Unregister metrics for the table.
   void UnregisterMetrics();
 
-  // Update the metrics.
-  void UpdateMetrics(const tablet::ReportedTabletStatsPB& old_stats,
+  // Update stats belonging to 'tablet_id' in the table's metrics.
+  void UpdateMetrics(const std::string& tablet_id,
+                     const tablet::ReportedTabletStatsPB& old_stats,
                      const tablet::ReportedTabletStatsPB& new_stats);
+
+  // Remove stats belonging to 'tablet_id' from table metrics.
+  void RemoveMetrics(const std::string& tablet_id,
+                     const tablet::ReportedTabletStatsPB& old_stats);
 
   // Update the attributes of the metrics.
   void UpdateMetricsAttrs(const std::string& new_table_name);

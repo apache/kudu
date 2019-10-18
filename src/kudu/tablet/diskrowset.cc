@@ -756,9 +756,9 @@ Status DiskRowSet::CountRows(const IOContext* io_context, rowid_t *count) const 
   return Status::OK();
 }
 
-Status DiskRowSet::CountLiveRows(int64_t* count) const {
+Status DiskRowSet::CountLiveRows(uint64_t* count) const {
+  DCHECK_GE(rowset_metadata_->live_row_count(), delta_tracker_->CountDeletedRows());
   *count = rowset_metadata_->live_row_count() - delta_tracker_->CountDeletedRows();
-  DCHECK_GE(*count, 0);
   return Status::OK();
 }
 

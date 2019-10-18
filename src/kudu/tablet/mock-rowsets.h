@@ -70,7 +70,7 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status CountLiveRows(int64_t* /*count*/) const OVERRIDE {
+  virtual Status CountLiveRows(uint64_t* /*count*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

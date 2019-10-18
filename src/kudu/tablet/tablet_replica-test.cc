@@ -84,7 +84,7 @@ DECLARE_int32(flush_threshold_mb);
 
 METRIC_DECLARE_entity(tablet);
 
-METRIC_DECLARE_gauge_int64(live_row_count);
+METRIC_DECLARE_gauge_uint64(live_row_count);
 
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -780,7 +780,7 @@ TEST_F(TabletReplicaTest, TestLiveRowCountMetric) {
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
   auto live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
-      tablet_replica_->tablet()->GetMetricEntity(), Callback<int64_t(void)>());
+      tablet_replica_->tablet()->GetMetricEntity(), Callback<uint64_t(void)>());
   ASSERT_EQ(0, live_row_count->value());
 
   // Insert some rows.

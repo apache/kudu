@@ -100,7 +100,7 @@ public:
   }
 
   void CheckLiveRowsCount(int64_t expect) {
-    int64_t count = 0;
+    uint64_t count = 0;
     ASSERT_OK(this->tablet()->CountLiveRows(&count));
     ASSERT_EQ(expect, count);
   }
@@ -915,7 +915,7 @@ TYPED_TEST(TestTablet, TestCountLiveRowsAfterShutdown) {
   NO_FATALS(this->tablet()->Shutdown());
 
   // Call the CountLiveRows().
-  int64_t count = 0;
+  uint64_t count = 0;
   ASSERT_TRUE(tablet->CountLiveRows(&count).IsRuntimeError());
 }
 

@@ -1881,7 +1881,7 @@ Status Tablet::CountRows(uint64_t *count) const {
   return Status::OK();
 }
 
-Status Tablet::CountLiveRows(int64_t* count) const {
+Status Tablet::CountLiveRows(uint64_t* count) const {
   if (!metadata_->supports_live_row_count()) {
     return Status::NotSupported("This tablet doesn't support live row counting");
   }
@@ -1892,8 +1892,8 @@ Status Tablet::CountLiveRows(int64_t* count) const {
     return Status::RuntimeError("The tablet has been shut down");
   }
 
-  int64_t ret = 0;
-  int64_t tmp = 0;
+  uint64_t ret = 0;
+  uint64_t tmp = 0;
   RETURN_NOT_OK(comps->memrowset->CountLiveRows(&ret));
   for (const shared_ptr<RowSet>& rowset : comps->rowsets->all_rowsets()) {
     RETURN_NOT_OK(rowset->CountLiveRows(&tmp));
