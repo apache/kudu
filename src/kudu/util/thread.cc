@@ -427,7 +427,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     }
   } else {
     // List all thread groups and the number of threads running in each.
-    vector<pair<string, size_t>> thread_categories_info;
+    vector<pair<string, uint64_t>> thread_categories_info;
     uint64_t running;
     {
       // See comment above regarding short critical sections.
