@@ -37,6 +37,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.util.ByteVec;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.Pair;
 
@@ -327,6 +328,11 @@ class KeyEncoder {
       case INT16:
         row.addShort(idx, (short) (buf.getShort() ^ Short.MIN_VALUE));
         break;
+      case DATE: {
+        int days = buf.getInt() ^ Integer.MIN_VALUE;
+        row.addDate(idx, DateUtil.epochDaysToSqlDate(days));
+        break;
+      }
       case INT32:
         row.addInt(idx, buf.getInt() ^ Integer.MIN_VALUE);
         break;

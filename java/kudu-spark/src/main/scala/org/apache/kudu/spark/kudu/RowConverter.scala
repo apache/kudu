@@ -93,6 +93,8 @@ class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) 
             partialRow.addDouble(kuduIdx, row.getDouble(sparkIdx))
           case DataTypes.TimestampType =>
             partialRow.addTimestamp(kuduIdx, row.getTimestamp(sparkIdx))
+          case DataTypes.DateType =>
+            partialRow.addDate(kuduIdx, row.getDate(sparkIdx))
           case DecimalType() =>
             partialRow.addDecimal(kuduIdx, row.getDecimal(sparkIdx))
           case t =>

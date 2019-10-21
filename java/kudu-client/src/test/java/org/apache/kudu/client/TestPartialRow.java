@@ -28,7 +28,9 @@ import static org.junit.Assert.fail;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -37,6 +39,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.util.DateUtil;
 
 public class TestPartialRow {
 
@@ -52,6 +55,7 @@ public class TestPartialRow {
     assertEquals(44, partialRow.getInt("int32"));
     assertEquals(45, partialRow.getLong("int64"));
     assertEquals(new Timestamp(1234567890), partialRow.getTimestamp("timestamp"));
+    assertEquals(Date.valueOf(LocalDate.ofEpochDay(0)), partialRow.getDate("date"));
     assertEquals(52.35F, partialRow.getFloat("float"), 0.0f);
     assertEquals(53.35, partialRow.getDouble("double"), 0.0);
     assertEquals("fun with ütf\0", partialRow.getString("string"));
@@ -84,6 +88,8 @@ public class TestPartialRow {
     assertEquals((long) 45, partialRow.getObject("int64"));
     assertTrue(partialRow.getObject("timestamp") instanceof Timestamp);
     assertEquals(new Timestamp(1234567890), partialRow.getObject("timestamp"));
+    assertTrue(partialRow.getObject("date") instanceof Date);
+    assertEquals(Date.valueOf(LocalDate.ofEpochDay(0)), partialRow.getObject("date"));
     assertTrue(partialRow.getObject("float") instanceof Float);
     assertEquals(52.35F, (float) partialRow.getObject("float"), 0.0f);
     assertTrue(partialRow.getObject("double") instanceof Double);
@@ -108,7 +114,7 @@ public class TestPartialRow {
   public void testAddObject() {
     Schema schema = getSchemaWithAllTypes();
     // Ensure we aren't missing any types
-    assertEquals(14, schema.getColumnCount());
+    assertEquals(15, schema.getColumnCount());
 
     PartialRow row = schema.newPartialRow();
     row.addObject("int8", (byte) 42);
@@ -116,6 +122,7 @@ public class TestPartialRow {
     row.addObject("int32", 44);
     row.addObject("int64", 45L);
     row.addObject("timestamp", new Timestamp(1234567890));
+    row.addObject("date", Date.valueOf(LocalDate.ofEpochDay(0)));
     row.addObject("bool", true);
     row.addObject("float", 52.35F);
     row.addObject("double", 53.35);
@@ -310,6 +317,13 @@ public class TestPartialRow {
     assertEquals("22.200", decimal.toString());
   }
 
+  @Test(expected = IllegalArgumentException.class)
+  public void testAddDateOutOfRange() {
+    PartialRow partialRow = getPartialRowWithAllTypes();
+    Date d = Date.valueOf(LocalDate.of(10000, 1, 1));
+    partialRow.addDate("date", d);
+  }
+
   @Test
   public void testToString() {
     Schema schema = getSchemaWithAllTypes();
@@ -350,8 +364,12 @@ public class TestPartialRow {
     assertEquals("(int8 int8=42, int32 int32=42, double double=52.35, " +
         "string string=\"fun with ütf\\0\", binary binary-bytebuffer=[2, 3, 4], " +
         "decimal(5, 3) decimal=12.345, varchar(10) varchar=\"árvíztűrő \")",
-
         row.toString());
+
+    PartialRow row2 = schema.newPartialRow();
+    assertEquals("()", row2.toString());
+    row2.addDate("date", Date.valueOf(LocalDate.ofEpochDay(0)));
+    assertEquals("(date date=1970-01-01)", row2.toString());
   }
 
   @Test
@@ -432,6 +450,14 @@ public class TestPartialRow {
     partialRow.addVarchar(varcharIndex, "hello");
     assertTrue(partialRow.incrementColumn(varcharIndex));
     assertEquals("hello\0", partialRow.getVarchar(varcharIndex));
+
+    // Date
+    int dateIndex = getColumnIndex(partialRow, "date");
+    partialRow.addDate(dateIndex, DateUtil.epochDaysToSqlDate(DateUtil.MAX_DATE_VALUE - 1));
+    assertTrue(partialRow.incrementColumn(dateIndex));
+    Date maxDate = DateUtil.epochDaysToSqlDate(DateUtil.MAX_DATE_VALUE);
+    assertEquals(maxDate, partialRow.getDate(dateIndex));
+    assertFalse(partialRow.incrementColumn(dateIndex));
   }
 
   @Test
@@ -446,6 +472,7 @@ public class TestPartialRow {
     assertEquals(Integer.MIN_VALUE, partialRow.getInt("int32"));
     assertEquals(Long.MIN_VALUE, partialRow.getLong("int64"));
     assertEquals(Long.MIN_VALUE, partialRow.getLong("timestamp"));
+    assertEquals(DateUtil.epochDaysToSqlDate(DateUtil.MIN_DATE_VALUE), partialRow.getDate("date"));
     assertEquals(-Float.MAX_VALUE, partialRow.getFloat("float"), 0.0f);
     assertEquals(-Double.MAX_VALUE, partialRow.getDouble("double"), 0.0);
     assertEquals("", partialRow.getString("string"));
@@ -474,6 +501,7 @@ public class TestPartialRow {
       case INT16: return partialRow.getShort(columnName);
       case INT32: return partialRow.getInt(columnName);
       case INT64: return partialRow.getLong(columnName);
+      case DATE: return partialRow.getDate(columnName);
       case UNIXTIME_MICROS: return partialRow.getTimestamp(columnName);
       case VARCHAR: return partialRow.getVarchar(columnName);
       case STRING: return partialRow.getString(columnName);
@@ -496,6 +524,7 @@ public class TestPartialRow {
       case INT16: return partialRow.getShort(columnIndex);
       case INT32: return partialRow.getInt(columnIndex);
       case INT64: return partialRow.getLong(columnIndex);
+      case DATE: return partialRow.getDate(columnIndex);
       case UNIXTIME_MICROS: return partialRow.getTimestamp(columnIndex);
       case VARCHAR: return partialRow.getVarchar(columnIndex);
       case STRING: return partialRow.getString(columnIndex);
@@ -547,6 +576,9 @@ public class TestPartialRow {
       case DECIMAL:
         partialRow.addDecimal(columnName, BigDecimal.valueOf(12345, 3));
         break;
+      case DATE:
+        partialRow.addDate(columnName, new Date(0));
+        break;
       default:
         throw new UnsupportedOperationException();
     }
@@ -589,6 +621,9 @@ public class TestPartialRow {
         break;
       case DECIMAL:
         partialRow.addDecimal(columnIndex, BigDecimal.valueOf(12345, 3));
+        break;
+      case DATE:
+        partialRow.addDate(columnIndex, new Date(0));
         break;
       default:
         throw new UnsupportedOperationException();

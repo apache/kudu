@@ -22,6 +22,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.sql.Date;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -37,6 +38,7 @@ import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 @InterfaceAudience.Private
@@ -271,6 +273,8 @@ public class ProtobufHelper {
         return new byte[] {(Byte) value};
       case INT16:
         return Bytes.fromShort((Short) value);
+      case DATE:
+        return Bytes.fromInt(DateUtil.sqlDateToEpochDays((Date) value));
       case INT32:
         return Bytes.fromInt((Integer) value);
       case INT64:
@@ -304,6 +308,8 @@ public class ProtobufHelper {
         return buf.get();
       case INT16:
         return buf.getShort();
+      case DATE:
+        return DateUtil.epochDaysToSqlDate(buf.getInt());
       case INT32:
         return buf.getInt();
       case INT64:

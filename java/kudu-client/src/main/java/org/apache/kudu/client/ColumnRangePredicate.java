@@ -89,6 +89,7 @@ public class ColumnRangePredicate {
       case INT16:
         return KuduPredicate.newComparisonPredicate(column, op, Bytes.getShort(bound));
       case INT32:
+      case DATE:
         return KuduPredicate.newComparisonPredicate(column, op, Bytes.getInt(bound));
       case INT64:
       case UNIXTIME_MICROS:

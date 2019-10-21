@@ -35,6 +35,7 @@ import org.apache.kudu.WireProtocol.RowOperationsPB;
 import org.apache.kudu.client.Operation.ChangeType;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.tserver.Tserver.WriteRequestPBOrBuilder;
+import org.apache.kudu.util.DateUtil;
 
 /**
  * Unit tests for Operation
@@ -139,6 +140,7 @@ public class TestOperation {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.UNIXTIME_MICROS).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c5", Type.STRING).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c6", Type.BINARY).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c7", Type.DATE).key(true).build());
     return new Schema(columns);
   }
 
@@ -155,10 +157,11 @@ public class TestOperation {
     row.addLong("c4", 5);
     row.addString("c5", "c5_val");
     row.addBinary("c6", Bytes.fromString("c6_val"));
+    row.addDate("c7", DateUtil.epochDaysToSqlDate(0));
 
     assertEquals("(int8 c0=1, int16 c1=2, int32 c2=3, int64 c3=4, " +
                  "unixtime_micros c4=1970-01-01T00:00:00.000005Z, string c5=\"c5_val\", " +
-                 "binary c6=\"c6_val\")",
+                 "binary c6=\"c6_val\", date c7=1970-01-01)",
                  insert.getRow().stringifyRowKey());
 
     // Test an incomplete row key.

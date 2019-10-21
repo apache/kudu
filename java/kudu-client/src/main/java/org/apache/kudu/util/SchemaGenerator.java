@@ -18,6 +18,7 @@
 package org.apache.kudu.util;
 
 import static org.apache.kudu.util.DataGenerator.randomBinary;
+import static org.apache.kudu.util.DataGenerator.randomDate;
 import static org.apache.kudu.util.DataGenerator.randomDecimal;
 import static org.apache.kudu.util.DataGenerator.randomString;
 
@@ -149,6 +150,9 @@ public class SchemaGenerator {
         case INT32:
           builder.defaultValue(random.nextInt());
           break;
+        case DATE:
+          builder.defaultValue(randomDate(random));
+          break;
         case INT64:
         case UNIXTIME_MICROS:
           builder.defaultValue(random.nextLong());
@@ -204,6 +208,7 @@ public class SchemaGenerator {
       case INT16:
       case INT32:
       case INT64:
+      case DATE:
       case UNIXTIME_MICROS:
         validEncodings.retainAll(Arrays.asList(
             Encoding.AUTO_ENCODING,

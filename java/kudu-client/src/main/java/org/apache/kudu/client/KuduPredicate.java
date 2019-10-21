@@ -22,7 +22,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -44,6 +46,7 @@ import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.TimestampUtil;
 
@@ -166,7 +169,8 @@ public class KuduPredicate {
   public static KuduPredicate newComparisonPredicate(ColumnSchema column,
                                                      ComparisonOp op,
                                                      long value) {
-    checkColumn(column, Type.INT8, Type.INT16, Type.INT32, Type.INT64, Type.UNIXTIME_MICROS);
+    checkColumn(column, Type.INT8, Type.INT16, Type.INT32, Type.INT64, Type.UNIXTIME_MICROS,
+        Type.DATE);
     long minValue = minIntValue(column.getType());
     long maxValue = maxIntValue(column.getType());
     Preconditions.checkArgument(value <= maxValue && value >= minValue,
@@ -202,6 +206,7 @@ public class KuduPredicate {
         bytes = Bytes.fromShort((short) value);
         break;
       }
+      case DATE:
       case INT32: {
         bytes = Bytes.fromInt((int) value);
         break;
@@ -312,6 +317,20 @@ public class KuduPredicate {
     checkColumn(column, Type.UNIXTIME_MICROS);
     long micros = TimestampUtil.timestampToMicros(value);
     return newComparisonPredicate(column, op, micros);
+  }
+
+  /**
+   * Creates a new comparison predicate on a date column.
+   * @param column the column schema
+   * @param op the comparison operation
+   * @param value the value to compare against
+   */
+  public static KuduPredicate newComparisonPredicate(ColumnSchema column,
+                                                     ComparisonOp op,
+                                                     Date value) {
+    checkColumn(column, Type.DATE);
+    int days = DateUtil.sqlDateToEpochDays(value);
+    return newComparisonPredicate(column, op, days);
   }
 
   /**
@@ -573,7 +592,7 @@ public class KuduPredicate {
         vals.add(Bytes.fromShort((Short) value));
       }
     } else if (t instanceof Integer) {
-      checkColumn(column, Type.INT32);
+      checkColumn(column, Type.INT32, Type.DATE);
       for (T value : values) {
         vals.add(Bytes.fromInt((Integer) value));
       }
@@ -974,6 +993,7 @@ public class KuduPredicate {
       case INT16:
         return Short.compare(Bytes.getShort(a), Bytes.getShort(b));
       case INT32:
+      case DATE:
       case DECIMAL32:
         return Integer.compare(Bytes.getInt(a), Bytes.getInt(b));
       case INT64:
@@ -1015,6 +1035,7 @@ public class KuduPredicate {
         return m < n && m + 1 == n;
       }
       case INT32:
+      case DATE:
       case DECIMAL32: {
         int m = Bytes.getInt(a);
         int n = Bytes.getInt(b);
@@ -1153,6 +1174,7 @@ public class KuduPredicate {
       case INT16: return Short.toString(Bytes.getShort(value));
       case INT32: return Integer.toString(Bytes.getInt(value));
       case INT64: return Long.toString(Bytes.getLong(value));
+      case DATE: return DateUtil.epochDaysToDateString(Bytes.getInt(value));
       case UNIXTIME_MICROS: return TimestampUtil.timestampToString(Bytes.getLong(value));
       case FLOAT: return Float.toString(Bytes.getFloat(value));
       case DOUBLE: return Double.toString(Bytes.getDouble(value));

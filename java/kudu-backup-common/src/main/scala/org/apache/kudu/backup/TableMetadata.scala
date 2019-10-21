@@ -18,6 +18,7 @@
 package org.apache.kudu.backup
 
 import java.math.BigDecimal
+import java.sql.Date
 import java.util
 
 import com.google.protobuf.ByteString
@@ -32,6 +33,7 @@ import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
 import org.apache.kudu.client.PartialRow
 import org.apache.kudu.client.PartitionSchema
+import org.apache.kudu.util.DateUtil
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
@@ -241,6 +243,7 @@ object TableMetadata {
       case Type.STRING => row.getString(columnName)
       case Type.BINARY => row.getBinary(columnName)
       case Type.DECIMAL => row.getDecimal(columnName)
+      case Type.DATE => row.getDate(columnName)
       case _ =>
         throw new IllegalArgumentException(s"Unsupported column type: $colType")
     }
@@ -262,11 +265,15 @@ object TableMetadata {
         row.addBinary(columnName, value.asInstanceOf[Array[Byte]])
       case Type.DECIMAL =>
         row.addDecimal(columnName, value.asInstanceOf[BigDecimal])
+      case Type.DATE => row.addDate(columnName, value.asInstanceOf[Date])
       case _ =>
         throw new IllegalArgumentException(s"Unsupported column type: $colType")
     }
   }
 
+  /**
+   * Returns the string value of serialized value according to the type of column.
+   */
   private def valueToString(value: Any, colType: Type): String = {
     colType match {
       case Type.BOOL =>
@@ -293,6 +300,8 @@ object TableMetadata {
         value
           .asInstanceOf[BigDecimal]
           .toString // TODO: Explicitly control print format
+      case Type.DATE =>
+        value.asInstanceOf[Date].toString()
       case _ =>
         throw new IllegalArgumentException(s"Unsupported column type: $colType")
     }
@@ -311,6 +320,7 @@ object TableMetadata {
       case Type.STRING => value
       case Type.BINARY => Base64.decodeBase64(value)
       case Type.DECIMAL => new BigDecimal(value) // TODO: Explicitly pass scale
+      case Type.DATE => Date.valueOf(value)
       case _ =>
         throw new IllegalArgumentException(s"Unsupported column type: $colType")
     }

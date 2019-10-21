@@ -50,6 +50,7 @@ object SparkUtil {
       case Type.INT32 => IntegerType
       case Type.INT64 => LongType
       case Type.UNIXTIME_MICROS => TimestampType
+      case Type.DATE => DateType
       case Type.FLOAT => FloatType
       case Type.DOUBLE => DoubleType
       case Type.VARCHAR => StringType
@@ -71,6 +72,7 @@ object SparkUtil {
     case DataTypes.BooleanType => Type.BOOL
     case DataTypes.StringType => Type.STRING
     case DataTypes.TimestampType => Type.UNIXTIME_MICROS
+    case DataTypes.DateType => Type.DATE
     case DataTypes.ByteType => Type.INT8
     case DataTypes.ShortType => Type.INT16
     case DataTypes.IntegerType => Type.INT32

@@ -27,6 +27,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Date;
 import java.sql.Timestamp;
 
 import org.junit.Before;
@@ -77,6 +78,7 @@ public class TestRowResult {
     row.addTimestamp(11, new Timestamp(11));
     row.addDecimal(12, BigDecimal.valueOf(12345, 3));
     row.addVarchar(13, "varcharval");
+    row.addDate(14, new Date(0));
 
     KuduClient client = harness.getClient();
     KuduSession session = client.newSession();
@@ -155,6 +157,10 @@ public class TestRowResult {
       assertEquals("varcharval",
           rr.getVarchar(allTypesSchema.getColumnByIndex(13).getName()));
 
+      assertEquals(new Date(0), rr.getDate(14));
+      assertEquals(new Date(0), rr.getObject(14));
+      assertEquals(new Date(0), rr.getDate(allTypesSchema.getColumnByIndex(14).getName()));
+
       // We test with the column name once since it's the same method for all types, unlike above.
       assertEquals(Type.INT8, rr.getColumnType(allTypesSchema.getColumnByIndex(0).getName()));
       assertEquals(Type.INT8, rr.getColumnType(0));
@@ -169,6 +175,7 @@ public class TestRowResult {
       assertEquals(Type.UNIXTIME_MICROS, rr.getColumnType(11));
       assertEquals(Type.DECIMAL, rr.getColumnType(12));
       assertEquals(Type.VARCHAR, rr.getColumnType(13));
+      assertEquals(Type.DATE, rr.getColumnType(14));
     }
   }
 }

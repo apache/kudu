@@ -27,6 +27,7 @@ import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
 import static org.apache.kudu.test.ClientTestUtil.createManyVarcharsSchema;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithBinaryColumns;
+import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDateColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithDecimalColumns;
 import static org.apache.kudu.test.ClientTestUtil.createSchemaWithTimestampColumns;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
@@ -46,6 +47,8 @@ import java.io.Closeable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -74,6 +77,7 @@ import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.KuduTestHarness.LocationConfig;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 import org.apache.kudu.test.RandomUtils;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.TimestampUtil;
 
@@ -641,6 +645,49 @@ public class TestKuduClient {
           TimestampUtil.timestampToString(timestamps.get(i))));
       if (i % 2 == 1) {
         expectedRow.append(TimestampUtil.timestampToString(timestamps.get(i)));
+      } else {
+        expectedRow.append("NULL");
+      }
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+  }
+
+  /**
+   * Test inserting and retrieving date columns.
+   */
+  @Test(timeout = 100000)
+  public void testDateColumns() throws Exception {
+    Schema schema = createSchemaWithDateColumns();
+    client.createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+
+    List<Integer> dates = new ArrayList<>();
+
+    KuduSession session = client.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      dates.add(i);
+      Date date = DateUtil.epochDaysToSqlDate(i);
+      row.addDate("key", date);
+      if (i % 2 == 1) {
+        row.addDate("c1", date);
+      }
+      session.apply(insert);
+      if (i % 50 == 0) {
+        session.flush();
+      }
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(100, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      String sdate = DateUtil.epochDaysToDateString(dates.get(i));
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append(String.format("DATE key=%s, DATE c1=", sdate));
+      if (i % 2 == 1) {
+        expectedRow.append(sdate);
       } else {
         expectedRow.append("NULL");
       }

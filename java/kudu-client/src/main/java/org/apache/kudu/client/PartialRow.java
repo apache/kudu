@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,6 +37,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.StringUtil;
 import org.apache.kudu.util.TimestampUtil;
@@ -610,6 +612,64 @@ public class PartialRow {
   }
 
   /**
+   * Add a sql.Date for the specified column.
+   *
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the value doesn't match the column's type
+   * @throws IllegalStateException if the row was already applied
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public void addDate(int columnIndex, Date val) {
+    checkNotFrozen();
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.DATE);
+    int days = DateUtil.sqlDateToEpochDays(val);
+    Bytes.setInt(rowAlloc, days, getPositionInRowAllocAndSetBitSet(columnIndex));
+  }
+
+  /**
+   * Add a Date for the specified column.
+   *
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist
+   * or if the value doesn't match the column's type
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addDate(String columnName, Date val) {
+    addDate(schema.getColumnIndex(columnName), val);
+  }
+
+  /**
+   * Get the specified column's Date.
+   *
+   * @param columnName name of the column to get data for
+   * @return a Date
+   * @throws IllegalArgumentException if the column doesn't exist,
+   * is null, is unset, or the type doesn't match the column's type
+   */
+  public Date getDate(String columnName) {
+    return getDate(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's Date.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a Date
+   * @throws IllegalArgumentException if the column is null, is unset,
+   * or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Date getDate(int columnIndex) {
+    checkColumnExists(schema.getColumnByIndex(columnIndex));
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.DATE);
+    checkValue(columnIndex);
+    int days = Bytes.getInt(rowAlloc, schema.getColumnOffset(columnIndex));
+    return DateUtil.epochDaysToSqlDate(days);
+  }
+
+  /**
    * Add a String for the specified column.
    * @param columnIndex the column's index in the schema
    * @param val value to add
@@ -1001,6 +1061,7 @@ public class PartialRow {
    *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[] or java.lang.ByteBuffer
    *  Type.DECIMAL -> java.math.BigDecimal
+   *  Type.DATE -> java.sql.Date
    *
    * @param columnIndex column index in the schema
    * @param val the value to add as an Object
@@ -1051,6 +1112,9 @@ public class PartialRow {
         case VARCHAR:
           addVarchar(columnIndex, (String) val);
           break;
+        case DATE:
+          addDate(columnIndex, (Date) val);
+          break;
         case BINARY:
           if (val instanceof byte[]) {
             addBinary(columnIndex, (byte[]) val);
@@ -1090,6 +1154,7 @@ public class PartialRow {
    *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
+   *  Type.DATE -> java.sql.Date
    *
    * @param columnName name of the column in the schema
    * @return the column's value as an Object, null if the column value is null or unset
@@ -1135,6 +1200,7 @@ public class PartialRow {
       case INT16: return getShort(columnIndex);
       case INT32: return getInt(columnIndex);
       case INT64: return getLong(columnIndex);
+      case DATE: return getDate(columnIndex);
       case UNIXTIME_MICROS: return getTimestamp(columnIndex);
       case FLOAT: return getFloat(columnIndex);
       case DOUBLE: return getDouble(columnIndex);
@@ -1374,6 +1440,10 @@ public class PartialRow {
       case INT64:
         sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
         return;
+      case DATE:
+        sb.append(DateUtil.epochDaysToDateString(
+            Bytes.getInt(rowAlloc, schema.getColumnOffset(idx))));
+        return;
       case UNIXTIME_MICROS:
         sb.append(TimestampUtil.timestampToString(
             Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
@@ -1429,6 +1499,9 @@ public class PartialRow {
       case INT32:
         addInt(index, Integer.MIN_VALUE);
         break;
+      case DATE:
+        addDate(index, DateUtil.epochDaysToSqlDate(DateUtil.MIN_DATE_VALUE));
+        break;
       case INT64:
       case UNIXTIME_MICROS:
         addLong(index, Long.MIN_VALUE);
@@ -1472,6 +1545,7 @@ public class PartialRow {
       case INT16:
       case INT32:
       case INT64:
+      case DATE:
       case UNIXTIME_MICROS:
       case FLOAT:
       case DOUBLE:
@@ -1531,6 +1605,14 @@ public class PartialRow {
       case INT32: {
         int existing = Bytes.getInt(rowAlloc, offset);
         if (existing == Integer.MAX_VALUE) {
+          return false;
+        }
+        Bytes.setInt(rowAlloc, existing + 1, offset);
+        return true;
+      }
+      case DATE: {
+        int existing = Bytes.getInt(rowAlloc, offset);
+        if (existing == DateUtil.MAX_DATE_VALUE) {
           return false;
         }
         Bytes.setInt(rowAlloc, existing + 1, offset);
@@ -1648,6 +1730,7 @@ public class PartialRow {
         return a.rowAlloc[offset] == b.rowAlloc[offset];
       case INT16:
         return Bytes.getShort(a.rowAlloc, offset) == Bytes.getShort(b.rowAlloc, offset);
+      case DATE:
       case INT32:
         return Bytes.getInt(a.rowAlloc, offset) == Bytes.getInt(b.rowAlloc, offset);
       case INT64:
@@ -1724,6 +1807,10 @@ public class PartialRow {
       case INT32: {
         int val = Bytes.getInt(lower.rowAlloc, offset);
         return val != Integer.MAX_VALUE && val + 1 == Bytes.getInt(upper.rowAlloc, offset);
+      }
+      case DATE: {
+        int val = Bytes.getInt(lower.rowAlloc, offset);
+        return val != DateUtil.MAX_DATE_VALUE && val + 1 == Bytes.getInt(upper.rowAlloc, offset);
       }
       case INT64:
       case UNIXTIME_MICROS: {

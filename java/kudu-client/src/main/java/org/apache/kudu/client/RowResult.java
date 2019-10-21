@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -30,6 +31,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.Slice;
 import org.apache.kudu.util.TimestampUtil;
 
@@ -132,7 +134,7 @@ public class RowResult {
   public int getInt(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    checkType(columnIndex, Type.INT32);
+    checkType(columnIndex, Type.INT32, Type.DATE);
     return Bytes.getInt(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
@@ -370,6 +372,35 @@ public class RowResult {
   }
 
   /**
+   * Get the specified column's Date.
+   *
+   * @param columnName name of the column to get data for
+   * @return a Date
+   * @throws IllegalArgumentException if the column doesn't exist,
+   * is null, is unset, or the type doesn't match the column's type
+   */
+  public Date getDate(String columnName) {
+    return getDate(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's Date.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a Date
+   * @throws IllegalArgumentException if the column is null, is unset,
+   * or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Date getDate(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    checkType(columnIndex, Type.DATE);
+    int days = getInt(columnIndex);
+    return DateUtil.epochDaysToSqlDate(days);
+  }
+
+  /**
    * Get the schema used for this scanner's column projection.
    * @return a column projection as a schema.
    */
@@ -602,6 +633,7 @@ public class RowResult {
    *  Type.STRING -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
+   *  Type.Date -> java.sql.Date
    *
    * @param columnIndex Column index in the schema
    * @return the column's value as an Object, null if the value is null
@@ -619,6 +651,7 @@ public class RowResult {
       case INT16: return getShort(columnIndex);
       case INT32: return getInt(columnIndex);
       case INT64: return getLong(columnIndex);
+      case DATE: return getDate(columnIndex);
       case UNIXTIME_MICROS: return getTimestamp(columnIndex);
       case FLOAT: return getFloat(columnIndex);
       case DOUBLE: return getDouble(columnIndex);
@@ -751,6 +784,9 @@ public class RowResult {
             break;
           case INT64:
             buf.append(getLong(i));
+            break;
+          case DATE:
+            buf.append(DateUtil.epochDaysToDateString(getInt(i)));
             break;
           case UNIXTIME_MICROS: {
             buf.append(TimestampUtil.timestampToString(getTimestamp(i)));

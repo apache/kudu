@@ -23,8 +23,10 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets.UTF_8
+import java.sql.Date
 import java.sql.Timestamp
 
+import org.apache.kudu.util.DateUtil
 import org.apache.kudu.util.TimestampUtil
 import org.apache.spark.sql.functions.decode
 import org.junit.Test
@@ -85,7 +87,8 @@ class KuduContextTest extends KuduTestSuite with Matchers {
           "c11_decimal32",
           "c12_decimal64",
           "c13_decimal128",
-          "c14_varchar"
+          "c14_varchar",
+          "c15_date"
         )
       )
       .map(r => r.toSeq)
@@ -110,6 +113,7 @@ class KuduContextTest extends KuduTestSuite with Matchers {
       assert(r.apply(12).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
       assert(r.apply(13).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
       assert(r.apply(14).asInstanceOf[String] == rows.apply(index)._3)
+      assert(r.apply(15).asInstanceOf[Date] == DateUtil.epochDaysToSqlDate(rows.apply(index)._2))
     })
   }
 

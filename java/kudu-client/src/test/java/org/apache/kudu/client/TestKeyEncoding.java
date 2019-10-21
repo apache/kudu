@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -396,6 +397,7 @@ public class TestKeyEncoding {
           .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL128_PRECISION, 0)),
         new ColumnSchemaBuilder("varchar", Type.VARCHAR).key(true)
           .typeAttributes(CharUtil.typeAttributes(10)),
+        new ColumnSchemaBuilder("date", Type.DATE).key(true),
         new ColumnSchemaBuilder("bool", Type.BOOL),       // not primary key type
         new ColumnSchemaBuilder("float", Type.FLOAT),     // not primary key type
         new ColumnSchemaBuilder("double", Type.DOUBLE));  // not primary key type
@@ -417,9 +419,10 @@ public class TestKeyEncoding {
     row.addDecimal(8, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64));
     row.addDecimal(9, new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128));
     row.addVarchar(10, "varchar bar");
-    row.addBoolean(11, true);
-    row.addFloat(12, 7.8f);
-    row.addDouble(13, 9.9);
+    row.addDate(11, new Date(0));
+    row.addBoolean(12, true);
+    row.addFloat(13, 7.8f);
+    row.addDouble(14, 9.9);
     session.apply(insert);
     session.close();
 
@@ -442,9 +445,10 @@ public class TestKeyEncoding {
       assertTrue(new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128)
           .compareTo(rr.getDecimal(9)) == 0);
       assertEquals("varchar ba", rr.getVarchar(10));
-      assertTrue(rr.getBoolean(11));
-      assertEquals(7.8f, rr.getFloat(12), .001f);
-      assertEquals(9.9, rr.getDouble(13), .001);
+      assertEquals(0, rr.getInt(11));
+      assertTrue(rr.getBoolean(12));
+      assertEquals(7.8f, rr.getFloat(13), .001f);
+      assertEquals(9.9, rr.getDouble(14), .001);
     }
   }
 }

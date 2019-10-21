@@ -31,6 +31,7 @@ import org.apache.kudu.spark.kudu.RowConverter
 import org.apache.kudu.spark.kudu.SparkUtil
 import org.apache.kudu.spark.tools.DistributedDataGeneratorOptions._
 import org.apache.kudu.util.DataGenerator
+import org.apache.kudu.util.DateUtil
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.util.LongAccumulator
@@ -213,6 +214,8 @@ private class GeneratedRowIterator(
           row.addLong(i, value)
         case Type.UNIXTIME_MICROS =>
           row.addLong(i, value)
+        case Type.DATE =>
+          row.addDate(i, DateUtil.epochDaysToSqlDate(value.toInt))
         case Type.FLOAT =>
           row.addFloat(i, value.toFloat)
         case Type.DOUBLE =>

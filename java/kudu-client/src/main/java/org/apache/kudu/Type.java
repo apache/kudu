@@ -49,7 +49,8 @@ public enum Type {
   DOUBLE(DataType.DOUBLE, "double"),
   UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros"),
   DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal"),
-  VARCHAR(DataType.VARCHAR, "varchar");
+  VARCHAR(DataType.VARCHAR, "varchar"),
+  DATE(DataType.DATE, "date");
 
   private final ImmutableList<DataType> dataTypes;
   private final String name;
@@ -77,6 +78,7 @@ public enum Type {
    * @return A DataType
    * @deprecated use {@link #getDataType(ColumnTypeAttributes)}
    */
+  @Deprecated
   public DataType getDataType() {
     if (this == DECIMAL) {
       throw new IllegalStateException("Please use the newer getDataType(ColumnTypeAttributes) " +
@@ -110,6 +112,7 @@ public enum Type {
    * @return A size
    * @deprecated use {@link #getSize(ColumnTypeAttributes)}
    */
+  @Deprecated
   public int getSize() {
     if (this == DECIMAL) {
       throw new IllegalStateException("Please use the newer getSize(ColumnTypeAttributes) " +
@@ -153,6 +156,7 @@ public enum Type {
       case INT16:
         return Shorts.BYTES;
       case INT32:
+      case DATE:
       case FLOAT:
         return Ints.BYTES;
       case INT64:
@@ -194,6 +198,8 @@ public enum Type {
         return FLOAT;
       case DOUBLE:
         return DOUBLE;
+      case DATE:
+        return DATE;
       case DECIMAL32:
       case DECIMAL64:
       case DECIMAL128:
