@@ -35,6 +35,12 @@ namespace security {
 // pick up credentials from test cases or any other daemon.
 static const std::string kKrb5CCName = "MEMORY:kudu";
 
+// Parses the given Kerberos principal into service name, hostname, and realm.
+Status Krb5ParseName(const std::string& principal,
+                     std::string* service_name,
+                     std::string* hostname,
+                     std::string* realm);
+
 // Initializes Kerberos for a server. In particular, this processes
 // the '--keytab_file' command line flag.
 // 'raw_principal' is the principal to Kinit with after calling GetConfiguredPrincipal()

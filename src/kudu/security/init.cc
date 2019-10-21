@@ -452,6 +452,24 @@ boost::optional<string> GetLoggedInUsernameFromKeytab() {
   return g_kinit_ctx->username_str();
 }
 
+Status Krb5ParseName(const string& principal, string* service_name,
+                     string* hostname, string* realm) {
+  krb5_principal princ;
+  KRB5_RETURN_NOT_OK_PREPEND(krb5_parse_name(g_krb5_ctx, principal.c_str(), &princ),
+      "could not parse principal");
+  SCOPED_CLEANUP({
+      krb5_free_principal(g_krb5_ctx, princ);
+    });
+  if (princ->length != 2) {
+    return Status::InvalidArgument(Substitute("$0: principal should include "
+                                              "service name, hostname and realm", principal));
+  }
+  realm->assign(princ->realm.data, princ->realm.length);
+  service_name->assign(princ->data[0].data, princ->data[0].length);
+  hostname->assign(princ->data[1].data, princ->data[1].length);
+  return Status::OK();
+}
+
 Status InitKerberosForServer(const std::string& raw_principal, const std::string& keytab_file,
     const std::string& krb5ccname, bool disable_krb5_replay_cache) {
   if (keytab_file.empty()) return Status::OK();
