@@ -96,9 +96,13 @@ int64_t GetFileCacheCapacityForBlockManager(Env* env) {
       rlimit = std::min(rlimit, buf_val);
     }
 
-    // Callers of this function expect a signed 64-bit integer, so we need to
-    // cap rlimit just in case it's too large.
-    return std::min((2 * rlimit) / 5, static_cast<uint64_t>(kint64max));
+    // Callers of this function expect a signed 64-bit integer, and rlimit
+    // is an uint64_t type, so we need to avoid overflow.
+    // The percentage we currently use is 40% by default, and although in fact
+    // 40% of any value of the `uint64_t` type must be less than `kint64max`,
+    // but the percentage may be adjusted in the future, such as to 60%, so to
+    // prevent accidental overflow, we cap rlimit here.
+    return std::min((rlimit / 5) * 2, static_cast<uint64_t>(kint64max));
   }
   LOG_IF(FATAL, FLAGS_block_manager_max_open_files > rlimit) <<
       Substitute(
