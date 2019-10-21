@@ -436,6 +436,22 @@ rule of thumb is 1 GiB per 50 columns.
 If your Spark resources drastically outscale the Kudu cluster you may want to limit the
 number of concurrent tasks allowed to run on restore.
 
+===== Backups on Kudu 1.9 and earlier
+
+If your Kudu cluster is version 1.9 or earlier you can still use the backup tool
+introduced in Kudu 1.10 to backup your tables. However, because the incremental
+backup feature requires server side changes, you are limited to full backups only.
+The process to backup tables is the same as documented above, but you will need to
+download and use the kudu-backup jar from a Kudu 1.10+ release. Before running
+the backup job you should adjust the configuration of your servers by setting
+`--tablet_history_max_age_sec=604800`. This is the new default value in Kudu 1.10+
+to ensure long running backup jobs can complete successfully and consistently.
+Additionally, when running the backup you need to pass `--forceFull` to disable
+the incremental backup feature. Now each time the job is run a full backup will be taken.
+
+NOTE: Taking full backups on a regular basis is far more resource and time intensive
+than incremental backups. It is recommended to upgrade to Kudu 1.10+ soon as possible.
+
 [[physical_backup]]
 === Physical backups of an entire node
 
