@@ -288,6 +288,9 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     bool FindNextMove(Rebalancer::ReplicaMove* move);
 
+    // Update the helper containers once a move operation has been scheduled.
+    void UpdateOnMoveScheduled(Rebalancer::ReplicaMove move);
+
     // Moves yet to schedule.
     MovesToSchedule moves_to_schedule_;
   };

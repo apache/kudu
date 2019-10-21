@@ -779,7 +779,6 @@ bool RebalancerTool::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
     return true;
   }
 
-  DCHECK(!s.ok());
   // The source replica is not found in the tablet's consensus config
   // or the tablet does not exit anymore. The replica might already
   // moved because of some other concurrent activity, e.g.
@@ -830,7 +829,6 @@ bool RebalancerTool::AlgoBasedRunner::UpdateMovesInProgressStatus(
       it = scheduled_moves_.erase(it);
       continue;
     }
-    DCHECK(s.ok());
     if (is_complete) {
       // The move has completed (success or failure): update the stats on the
       // pending operations per server.
@@ -1034,10 +1032,8 @@ void RebalancerTool::AlgoBasedRunner::UpdateOnMoveScheduled(
     bool is_success) {
   if (is_success) {
     Rebalancer::ReplicaMove move_info = { tablet_uuid, src_ts_uuid, dst_ts_uuid };
-    scheduled_moves_.emplace(tablet_uuid, std::move(move_info));
     // Only one replica of a tablet can be moved at a time.
-    // TODO(aserbin): clarify on duplicates
-    //DCHECK(ins.second);
+    EmplaceOrDie(&scheduled_moves_, tablet_uuid, std::move(move_info));
   }
   UpdateOnMoveScheduledImpl(idx, src_ts_uuid, is_success, &src_op_indices_);
   UpdateOnMoveScheduledImpl(idx, dst_ts_uuid, is_success, &dst_op_indices_);
@@ -1164,25 +1160,9 @@ bool RebalancerTool::PolicyFixer::ScheduleNextMove(bool* has_errors,
     *has_errors = true;
     return false;
   }
-
-  // Remove the element from moves_to_schedule_.
-  bool erased = false;
-  auto range = moves_to_schedule_.equal_range(move_info.ts_uuid_from);
-  for (auto it = range.first; it != range.second; ++it) {
-    if (move_info.tablet_uuid == it->second.tablet_uuid) {
-      moves_to_schedule_.erase(it);
-      erased = true;
-      break;
-    }
-  }
-  CHECK(erased) << Substitute("T $0 P $1: move information not found",
-                              move_info.tablet_uuid, move_info.ts_uuid_from);
   LOG(INFO) << Substitute("tablet $0: '$1' -> '?' move scheduled",
                           move_info.tablet_uuid, move_info.ts_uuid_from);
-  // Add information on scheduled move into the scheduled_moves_.
-  // Only one replica of a tablet can be moved at a time.
-  auto tablet_uuid = move_info.tablet_uuid;
-  EmplaceOrDie(&scheduled_moves_, std::move(tablet_uuid), std::move(move_info));
+  UpdateOnMoveScheduled(std::move(move_info));
   return true;
 }
 
@@ -1215,7 +1195,6 @@ bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
       it = scheduled_moves_.erase(it);
       continue;
     }
-    DCHECK(s.ok());
     if (is_complete) {
       // The replacement has completed (success or failure): update the stats
       // on the pending operations per server.
@@ -1297,18 +1276,54 @@ Status RebalancerTool::PolicyFixer::GetNextMovesImpl(
 
 bool RebalancerTool::PolicyFixer::FindNextMove(Rebalancer::ReplicaMove* move) {
   DCHECK(move);
-  // TODO(aserbin): use pessimistic /2 limit for max_moves_per_servers_
-  // since the desitnation servers for the move of the replica marked with
+  // use pessimistic /2 limit for max_moves_per_server_ since the
+  // desitnation servers for the move of the replica marked with
   // the REPLACE attribute is not known.
 
   // Load the least loaded (in terms of scheduled moves) tablet servers first.
-  for (const auto& elem : ts_per_op_count_) {
-    const auto& ts_uuid = elem.second;
+  for (auto it = ts_per_op_count_.begin(); it != ts_per_op_count_.end() &&
+       it->first <= max_moves_per_server_ / 2; ++it) {
+    const auto& ts_uuid = it->second;
     if (FindCopy(moves_to_schedule_, ts_uuid, move)) {
       return true;
     }
   }
   return false;
+}
+
+void RebalancerTool::PolicyFixer::UpdateOnMoveScheduled(Rebalancer::ReplicaMove move) {
+  const auto tablet_uuid = move.tablet_uuid;
+  const auto ts_uuid = move.ts_uuid_from;
+
+  // Add information on scheduled move into the scheduled_moves_.
+  // Only one replica of a tablet can be moved at a time.
+  EmplaceOrDie(&scheduled_moves_, tablet_uuid, std::move(move));
+
+  // Remove the element from moves_to_schedule_.
+  bool erased = false;
+  auto range = moves_to_schedule_.equal_range(ts_uuid);
+  for (auto it = range.first; it != range.second; ++it) {
+    if (tablet_uuid == it->second.tablet_uuid) {
+      moves_to_schedule_.erase(it);
+      erased = true;
+      break;
+    }
+  }
+  CHECK(erased) << Substitute("T $0 P $1: move information not found", tablet_uuid, ts_uuid);
+
+  // Update helper containers.
+  const auto op_count = op_count_per_ts_[ts_uuid]++;
+  const auto op_range = ts_per_op_count_.equal_range(op_count);
+  bool ts_op_count_updated = false;
+  for (auto it = op_range.first; it != op_range.second; ++it) {
+    if (it->second == ts_uuid) {
+      ts_per_op_count_.erase(it);
+      ts_per_op_count_.emplace(op_count + 1, ts_uuid);
+      ts_op_count_updated = true;
+      break;
+    }
+  }
+  DCHECK(ts_op_count_updated);
 }
 
 } // namespace tools
