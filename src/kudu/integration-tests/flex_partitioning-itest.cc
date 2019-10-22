@@ -44,11 +44,11 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/tools/data_gen_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -340,7 +340,7 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
   for (const auto& bound : bounds) {
     for (int32_t i = bound.first[0]; i < bound.second[0]; i++) {
       gscoped_ptr<KuduInsert> insert(table_->NewInsert());
-      tools::GenerateDataForRow(table_->schema(), i, &random_, insert->mutable_row());
+      GenerateDataForRow(table_->schema(), i, &random_, insert->mutable_row());
       inserted_rows_.emplace_back(new KuduPartialRow(*insert->mutable_row()));
       RETURN_NOT_OK(session->Apply(insert.release()));
       count++;

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/data_gen_util.h"
+#include "kudu/integration-tests/data_gen_util.h"
 
 #include <ostream>
 
@@ -28,7 +28,6 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace tools {
 
 void WriteValueToColumn(const client::KuduSchema& schema,
                         int col_idx,
@@ -99,5 +98,4 @@ template
 void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
                         ThreadSafeRandom* random, KuduPartialRow* row);
 
-} // namespace tools
 } // namespace kudu
