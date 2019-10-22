@@ -41,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
+#include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/integration-tests/hms_itest-base.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -50,7 +51,6 @@
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/thrift/client.h"
-#include "kudu/tools/data_gen_util.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
@@ -84,7 +84,6 @@ using kudu::master::GetTablePrivilege;
 using kudu::sentry::SentryClient;
 using kudu::tablet::WritePrivileges;
 using kudu::tablet::WritePrivilegeType;
-using kudu::tools::GenerateDataForRow;
 using sentry::TSentryGrantOption;
 using std::pair;
 using std::string;

@@ -32,8 +32,8 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/mini-cluster/mini_cluster.h"
-#include "kudu/tools/data_gen_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -150,7 +150,7 @@ void TestWorkload::WriteThread() {
         if (write_pattern_ == UPDATE_ONE_ROW) {
           gscoped_ptr<KuduUpdate> update(table->NewUpdate());
           KuduPartialRow* row = update->mutable_row();
-          tools::GenerateDataForRow(schema_, 0, &rng_, row);
+          GenerateDataForRow(schema_, 0, &rng_, row);
           CHECK_OK(session->Apply(update.release()));
         } else {
           gscoped_ptr<KuduInsert> insert(table->NewInsert());
@@ -166,7 +166,7 @@ void TestWorkload::WriteThread() {
           }
           keys.push_back(key);
 
-          tools::GenerateDataForRow(schema_, key, &rng_, row);
+          GenerateDataForRow(schema_, key, &rng_, row);
           if (payload_bytes_) {
             // Note: overriding payload_bytes_ requires the "simple" schema.
             std::string test_payload(payload_bytes_.get(), '0');
@@ -194,7 +194,7 @@ void TestWorkload::WriteThread() {
       for (auto key : keys) {
         gscoped_ptr<KuduDelete> op(table->NewDelete());
         KuduPartialRow* row = op->mutable_row();
-        tools::WriteValueToColumn(schema_, 0, key, row);
+        WriteValueToColumn(schema_, 0, key, row);
         CHECK_OK(session->Apply(op.release()));
         deleted++;
       }
@@ -340,7 +340,7 @@ void TestWorkload::Setup() {
     std::unique_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();
     Random r(rng_.Next32());
-    tools::GenerateDataForRow(schema_, 0, &r, row);
+    GenerateDataForRow(schema_, 0, &r, row);
     CHECK_OK(session->Apply(insert.release()));
     rows_inserted_.Store(1);
   }

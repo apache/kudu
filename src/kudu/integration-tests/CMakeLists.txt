@@ -23,6 +23,7 @@ endif()
 set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
+  data_gen_util.cc
   external_mini_cluster-itest-base.cc
   hms_itest-base.cc
   internal_mini_cluster-itest-base.cc
