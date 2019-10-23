@@ -22,7 +22,5 @@
 ########################################################################
 
 # Killing Kudu master and tablet servers
-
-kill -9 `pgrep kudu-tserver`
-kill -9 `pgrep kudu-master`
-ps -eo args | egrep "kudu-(master|tserver)"
+pkill -9 -u $(id -u) -x kudu-tserver
+pkill -9 -u $(id -u) -x kudu-master

@@ -28,15 +28,20 @@ function usage() {
 cat << EOF
 Usage:
 start_kudu.sh [flags]
--h, --help       help
--m, --master     RPC port of kudu master server (HTTP port is next number)
--t, --tserver    RPC port of first kudu tablet server (other servers
-                 will have following numbers)
--b, --builddir   path to the kudu build directory
+-h, --help         Print help
+-m, --num-masters  Number of Kudu Master servers to start (default: 1)
+-t, --num-tservers Number of Kudu Tablet Servers to start (default: 3)
+--rpc-master       RPC port of first Kudu Master; HTTP port is the next number.
+                   Subsequent Masters will have following numbers
+--rpc-tserver      RPC port of first Kudu Tablet Server; HTTP port is the next
+                   number. Subsequent Tablet Servers will have following numbers
+-b, --builddir     Path to the Kudu build directory
 EOF
 }
 
-MASTER_RPC_PORT=8764
+NUM_MASTERS=1
+NUM_TSERVERS=3
+MASTER_RPC_PORT_BASE=8764
 TSERVER_RPC_PORT_BASE=9870
 BUILDDIR="$PWD"
 echo $(readlink -f $(dirname $0))
@@ -46,11 +51,19 @@ while (( "$#" )); do
       usage
       exit 1
       ;;
-    -m|--master)
-      MASTER_RPC_PORT=$2
+    -m|--num-masters)
+      NUM_MASTERS=$2
       shift 2
       ;;
-    -t|--tserver)
+    -t|--num-tservers)
+      NUM_TSERVERS=$2
+      shift 2
+      ;;
+    --rpc-master)
+      MASTER_RPC_PORT_BASE=$2
+      shift 2
+      ;;
+    --rpc-tserver)
       TSERVER_RPC_PORT_BASE=$2
       shift 2
       ;;
@@ -87,7 +100,7 @@ IP=127.0.0.1
 [ ! -x "$KUDUTSERVER" ] && { echo "Cannot find $KUDUTSERVER executable";  exit 1; }
 
 
-# Common steps before starting master or tablet server
+# Common steps before starting masters or tablet servers
 
 # 1) Create "data", "wal" and "log" directories for a server before start
 
@@ -115,16 +128,20 @@ pids=()
 # Start master server function
 
 function start_master() {
-  create_dirs_and_set_vars master
-  set_port_vars_and_print master $1 $2
-  "$KUDUMASTER" \
-    --fs_data_dirs="$dir_data" \
-    --fs_wal_dir="$dir_wal" \
-    --log_dir="$dir_log" \
-    --rpc_bind_addresses=$IP:$RPC_PORT \
-    --webserver_port=$HTTP_PORT \
-    --webserver_interface=$IP \
-    --webserver_doc_root="$WEBSERVER_DOC_ROOT" &
+  create_dirs_and_set_vars $1
+  set_port_vars_and_print $1 $2 $3
+  ARGS="$KUDUMASTER"
+  if [ $NUM_MASTERS -gt 1 ]; then
+    ARGS="$ARGS --master_addresses=$MASTER_ADDRESSES"
+  fi
+  ARGS="$ARGS --fs_data_dirs=$dir_data"
+  ARGS="$ARGS --fs_wal_dir=$dir_wal"
+  ARGS="$ARGS --log_dir=$dir_log"
+  ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --webserver_port=$HTTP_PORT"
+  ARGS="$ARGS --webserver_interface=$IP"
+  ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  $ARGS &
   pids+=($!)
 }
 
@@ -133,30 +150,42 @@ function start_master() {
 function start_tserver() {
   create_dirs_and_set_vars $1
   set_port_vars_and_print $1 $2 $3
-  MASTER_RPC_PORT=$4
-  "$KUDUTSERVER" \
-    --fs_data_dirs="$dir_data" \
-    --fs_wal_dir="$dir_wal" \
-    --log_dir="$dir_log" \
-    --rpc_bind_addresses=$IP:$RPC_PORT \
-    --webserver_port=$HTTP_PORT \
-    --webserver_interface=$IP \
-    --webserver_doc_root="$WEBSERVER_DOC_ROOT" \
-    --tserver_master_addrs=$IP:$MASTER_RPC_PORT &
+  ARGS="$KUDUTSERVER"
+  ARGS="$ARGS --fs_data_dirs=$dir_data"
+  ARGS="$ARGS --fs_wal_dir=$dir_wal"
+  ARGS="$ARGS --log_dir=$dir_log"
+  ARGS="$ARGS --rpc_bind_addresses=$IP:$RPC_PORT"
+  ARGS="$ARGS --webserver_port=$HTTP_PORT"
+  ARGS="$ARGS --webserver_interface=$IP"
+  ARGS="$ARGS --webserver_doc_root=$WEBSERVER_DOC_ROOT"
+  ARGS="$ARGS --tserver_master_addrs=$4"
+  $ARGS &
   pids+=($!)
 }
 
+# Precompute the comma-separated list of master addresses.
+MASTER_ADDRESSES=
+for i in $(seq 0 $((NUM_MASTERS - 1))); do
+  MASTER_RPC_PORT=$((MASTER_RPC_PORT_BASE + $i * 2))
+  ADDR=$IP:$MASTER_RPC_PORT
+  if [ $i -ne 0 ]; then
+    MASTER_ADDRESSES="${MASTER_ADDRESSES},"
+  fi
+  MASTER_ADDRESSES="${MASTER_ADDRESSES}${ADDR}"
+done
 
-# Start master server
-MASTER_HTTP_PORT=$(($MASTER_RPC_PORT + 1))
-start_master $MASTER_RPC_PORT $MASTER_HTTP_PORT
+# Start masters
+for i in $(seq 0 $((NUM_MASTERS - 1))); do
+  MASTER_RPC_PORT=$((MASTER_RPC_PORT_BASE + $i * 2))
+  MASTER_HTTP_PORT=$((MASTER_RPC_PORT + 1))
+  start_master master-$i $MASTER_RPC_PORT $MASTER_HTTP_PORT
+done
 
-# Start tablet servers
-for i in 0 1 2
-do
+# Start tservers
+for i in $(seq 0 $((NUM_TSERVERS - 1))); do
   TSERVER_RPC_PORT=$((TSERVER_RPC_PORT_BASE + $i * 2))
-  TSERVER_HTTP_PORT=$((TSERVER_RPC_PORT_BASE + $i * 2 + 1))
-  start_tserver tserver-$i $TSERVER_RPC_PORT $TSERVER_HTTP_PORT $MASTER_RPC_PORT
+  TSERVER_HTTP_PORT=$((TSERVER_RPC_PORT + 1))
+  start_tserver tserver-$i $TSERVER_RPC_PORT $TSERVER_HTTP_PORT $MASTER_ADDRESSES
 done
 
 # Show status of started processes
