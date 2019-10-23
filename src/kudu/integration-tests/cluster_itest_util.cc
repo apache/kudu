@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <ostream>
+#include <set>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
@@ -39,6 +41,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -642,19 +645,103 @@ Status FindTabletLeader(const TabletServerMap& tablet_servers,
                                      s.ToString()));
 }
 
+// Fills the out parameter "followers" with the tablet servers hosting the "tablet_id".
+// Non-empty "tablet_servers" is expected to include all the tablet servers and not subset
+// of tablet servers that host the "tablet_id".
+// Returns an error if the tablet servers do not have consensus or cannot be reached.
 Status FindTabletFollowers(const TabletServerMap& tablet_servers,
                            const string& tablet_id,
                            const MonoDelta& timeout,
                            vector<TServerDetails*>* followers) {
-  vector<TServerDetails*> tservers;
-  AppendValuesFromMap(tablet_servers, &tservers);
-  TServerDetails* leader;
-  RETURN_NOT_OK(FindTabletLeader(tablet_servers, tablet_id, timeout, &leader));
-  for (TServerDetails* ts : tservers) {
-    if (ts->uuid() != leader->uuid()) {
-      followers->push_back(ts);
+  DCHECK(!tablet_servers.empty());
+
+  // Sorted sets allow for set intersection needed below.
+  // uuids of all supplied tablet servers.
+  std::set<string> tablet_server_uuids;
+  // uuids of the tablet server peers that host the specified tablet_id.
+  std::set<string> peer_uuids;
+  // uuid of the leader tablet server hosting the specified tablet_id.
+  string leader_uuid;
+  const MonoTime start = MonoTime::Now();
+  const MonoTime deadline = MonoTime::Now() + timeout;
+  bool no_leader_or_peers_found = false;
+  for (const auto& entry : tablet_servers) {
+    const auto now = MonoTime::Now();
+    if (now > deadline) {
+      return Status::TimedOut(Substitute("Unable to find followers for tablet $0 after $1.",
+                                         tablet_id, (now - start).ToString()));
+    }
+    const auto& tserver_uuid = entry.first;
+    const auto* tserver = entry.second;
+    tablet_server_uuids.emplace(tserver_uuid);
+
+    const MonoDelta remaining_timeout = deadline - now;
+    ConsensusStatePB cstate;
+    Status s = GetConsensusState(tserver, tablet_id, remaining_timeout, EXCLUDE_HEALTH_REPORT,
+                                 &cstate);
+    if (!s.ok()) {
+      // Failure could be due to tablet server not hosting the tablet which is okay or other issue.
+      // If all the tablet servers return error then the failure is reported back. See below.
+      continue;
+    }
+    // At this point tablet server does host the tablet but it's possible there is no leader
+    // or peers are unknown.
+    if (cstate.committed_config().peers_size() == 0 || !cstate.has_leader_uuid()) {
+      no_leader_or_peers_found = true;
+      continue;
+    }
+
+    std::set<string> curr_peer_uuids;
+    for (const auto& peer : cstate.committed_config().peers()) {
+      curr_peer_uuids.emplace(peer.permanent_uuid());
+    }
+    DCHECK(!curr_peer_uuids.empty());
+    DCHECK(!cstate.leader_uuid().empty());
+    if (!leader_uuid.empty()) {
+      DCHECK(!peer_uuids.empty());
+      // Sanity checking that tablet servers with the specified tablet are reporting
+      // the same leader and set of peers.
+      if (leader_uuid != cstate.leader_uuid()) {
+        return Status::IllegalState(Substitute(
+            "Leader $0 reported by tablet server $1 for tablet $2 doesn't match with leader $3 "
+            "reported by other tablet servers.", cstate.leader_uuid(), tserver_uuid, tablet_id,
+            leader_uuid));
+      }
+      if (peer_uuids != curr_peer_uuids) {
+        return Status::IllegalState(Substitute(
+            "Peers reported by tablet server $0 for tablet $1 don't match with peers reported by "
+            "other tablet servers.", tserver_uuid, tablet_id));
+      }
+    } else {
+      DCHECK(peer_uuids.empty());
+      leader_uuid = cstate.leader_uuid();
+      peer_uuids.swap(curr_peer_uuids);
     }
   }
+
+  // Unable to get leader and peer information from multiple supplied tablet servers.
+  if (leader_uuid.empty()) {
+    DCHECK(peer_uuids.empty());
+
+    return no_leader_or_peers_found ?
+           Status::IllegalState(
+               Substitute("No leader or peers found for tablet $0.", tablet_id)) :
+           Status::NotFound(
+               Substitute("No tablet server found with tablet $0 or tablet servers not reachable.",
+                          tablet_id));
+  }
+
+  if (peer_uuids != STLSetIntersection(peer_uuids, tablet_server_uuids)) {
+    return Status::InvalidArgument(Substitute(
+        "Not all peers reported by tablet servers are part of the supplied tablet servers."));
+  }
+
+  for (const auto& tserver_uuid : peer_uuids) {
+    if (tserver_uuid != leader_uuid) {
+      followers->emplace_back(FindOrDie(tablet_servers, tserver_uuid));
+    }
+  }
+
   return Status::OK();
 }
 

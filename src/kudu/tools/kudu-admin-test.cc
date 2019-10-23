@@ -180,6 +180,48 @@ class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
   }
 };
 
+TEST_F(AdminCliTest, TestFindTabletFollowers) {
+  FLAGS_num_tablet_servers = 5;
+  FLAGS_num_replicas = 3;
+
+  NO_FATALS(BuildAndStart());
+
+  TServerDetails* leader;
+  const auto timeout = MonoDelta::FromSeconds(30);
+  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id_, timeout, &leader));
+  vector<TServerDetails*> followers;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(tablet_servers_, tablet_id_, timeout, &followers));
+  });
+  ASSERT_EQ(FLAGS_num_replicas - 1, followers.size());
+  for (const auto& follower : followers) {
+    ASSERT_NE(leader->uuid(), follower->uuid());
+  }
+}
+
+TEST_F(AdminCliTest, TestFindTabletFollowersWithIncompleteTabletServers) {
+  FLAGS_num_tablet_servers = 5;
+  FLAGS_num_replicas = 3;
+
+  NO_FATALS(BuildAndStart());
+
+  TServerDetails* leader;
+  const auto timeout = MonoDelta::FromSeconds(30);
+  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id_, timeout, &leader));
+
+  // Incomplete tablet servers that contains only the leader tablet server.
+  TabletServerMap incomplete_tablet_servers;
+  InsertOrDie(&incomplete_tablet_servers, leader->uuid(), leader);
+  vector<TServerDetails*> followers;
+  ASSERT_EVENTUALLY([&] {
+    Status s = FindTabletFollowers(incomplete_tablet_servers, tablet_id_, timeout, &followers);
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        "Not all peers reported by tablet servers are part of the supplied tablet servers");
+  });
+}
+
 // Test config change while running a workload.
 // 1. Instantiate external mini cluster with 3 TS.
 // 2. Create table with 2 replicas.
@@ -479,7 +521,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   TServerDetails* leader_ts;
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id, kTimeout, &leader_ts));
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id, kTimeout, &followers));
+  });
   OpId opid;
   ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout, &opid));
 
@@ -569,7 +613,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
 
   // Shut down servers follower1 and follower2,
   // so that we can force new config on remaining leader.
@@ -652,7 +698,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
 
   // Shut down leader and prepare 2-node config.
   cluster_->tablet_server_by_uuid(leader_ts->uuid())->Shutdown();
@@ -734,7 +782,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
   ASSERT_EQ(followers.size(), 4);
   cluster_->tablet_server_by_uuid(followers[2]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(followers[3]->uuid())->Shutdown();
@@ -811,7 +861,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
   ASSERT_EQ(followers.size(), 2);
 
   // Shut down servers follower1 and follower2,
@@ -897,7 +949,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
 
   // Shut down servers follower1 and follower2,
   // so that leader can't replicate future config change ops.
@@ -994,7 +1048,9 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  });
 
   // Shut down servers follower1 and follower2,
   // so that leader can't replicate future config change ops.

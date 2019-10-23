@@ -302,7 +302,9 @@ TEST_F(TimestampAdvancementITest, Kudu2463Test) {
   TServerDetails* leader;
   ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(ts_map_, tablet_id, kTimeout, &followers));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletFollowers(ts_map_, tablet_id, kTimeout, &followers));
+  });
   ASSERT_FALSE(followers.empty());
   for (int i = 0; i < 20; i++) {
     RaftPeerPB::MemberType type = i % 2 == 0 ? RaftPeerPB::NON_VOTER : RaftPeerPB::VOTER;
