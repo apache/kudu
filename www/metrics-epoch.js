@@ -48,9 +48,11 @@ function urlParams() {
 }
 
 function makeMetricsUri(url_params) {
-  var BASE_METRICS_URI = "/jsonmetricz";
+  var BASE_METRICS_URI = "/metrics";
 
-  url_params['detailed_metrics'] = '*';
+  url_params['compact'] = 'true';
+  url_params['include_raw_histograms'] = 'true';
+  url_params['include_schema'] = 'true';
 
   var components = [];
   for (var key in url_params) {
@@ -132,78 +134,82 @@ function updateCharts(json, error) {
   var delta_time = now - last_update;
   var extra = {};
 
-  json['metrics'].forEach(function(m) {
-    var extra = m;
-    var name = m['name'];
-    var type = m['type'];
-    var unit = m['unit'];
-    var label = m['description'];
+  json.forEach(function(e) {
+    var entity_type = e['type'];
+    var entity_id = e['id'];
+    e["metrics"].forEach(function(m) {
+      var extra = m;
+      var name = entity_type + "_" + entity_id + "_" + m['name'];
+      var type = m['type'];
+      var unit = m['unit'];
+      var label = m['description'];
 
-    var data =  { 'time': now / 1000 };
+      var data =  { 'time': now / 1000 };
 
-    var first_run = false;
-    if (!(name in charts)) {
-      first_run = true;
-      last_value[name] = 0;
-    }
+      var first_run = false;
+      if (!(name in charts)) {
+        first_run = true;
+        last_value[name] = 0;
+      }
 
-    // For counters, we display a rate
-    if (type == "counter") {
-      label += "<br>(shown: rate in " + unit + " / second)";
-      var cur_value = m['value'];
-      if (first_run) {
-        last_value[name] = cur_value;
-        // display value is 0 to start
+      // For counters, we display a rate
+      if (type == "counter") {
+        label += "<br>(shown: rate in " + unit + " / second)";
+        var cur_value = m['value'];
+        if (first_run) {
+          last_value[name] = cur_value;
+          // display value is 0 to start
+        } else {
+          var delta_value = cur_value - last_value[name];
+          last_value[name] = cur_value;
+          var rate = delta_value / delta_time * 1000;
+
+          data['y'] = rate;
+        }
+
+        // For charts, we simply display the value.
+      } else if (type == "gauge") {
+        data['y'] = m['value'];
+
+      } else if (type == "histogram") {
+        // For histograms, we display a heat map
+
+        if (first_run) {
+          last_value[name] = {};
+        }
+
+        var values = m['values'];
+        var counts = m['counts'];
+        if (! values) { values = []; }
+        if (! counts) { counts = []; }
+        var hist = {};
+        var prev = last_value[name];
+        for (var i = 0; i < values.length; i++) {
+          var value = values[i];
+          var count = counts[i];
+          hist[value] = count;
+        }
+        last_value[name] = $.extend({}, hist);
+
+        for (value in hist) {
+          if (value in prev) {
+            hist[value] -= prev[value];
+          }
+        }
+        data['histogram'] = hist;
       } else {
-        var delta_value = cur_value - last_value[name];
-        last_value[name] = cur_value;
-        var rate = delta_value / delta_time * 1000;
-
-        data['y'] = rate;
-      }
-
-    // For charts, we simply display the value.
-    } else if (type == "gauge") {
-      data['y'] = m['value'];
-
-    } else if (type == "histogram") {
-      // For histograms, we display a heat map
-
-      if (first_run) {
-        last_value[name] = {};
-      }
-
-      var values = m['values'];
-      var counts = m['counts'];
-      if (! values) { values = []; }
-      if (! counts) { counts = []; }
-      var hist = {};
-      var prev = last_value[name];
-      for (var i = 0; i < values.length; i++) {
-        var value = values[i];
-        var count = counts[i];
-        hist[value] = count;
-      }
-      last_value[name] = $.extend({}, hist);
-
-      for (value in hist) {
-        if (value in prev) {
-          hist[value] -= prev[value];
+        // For non-special-cased stuff just print the value field as well, if available.
+        if ("value" in m) {
+          data['y'] = m['value'];
         }
       }
-      data['histogram'] = hist;
-    } else {
-      // For non-special-cased stuff just print the value field as well, if available.
-      if ("value" in m) {
-        data['y'] = m['value'];
-      }
-    }
 
-    if (first_run) {
-      createChart(name, label, type, data, extra);
-    } else {
-      charts[name].push([data]);
-    }
+      if (first_run) {
+        createChart(name, label, type, data, extra);
+      } else {
+        charts[name].push([data]);
+      }
+    });
   });
 
   last_update = now;
