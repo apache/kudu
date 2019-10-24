@@ -107,6 +107,9 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // has finished, advancing MVCC safe time as appropriate.
   virtual void FinishConsensusOnlyRound(consensus::ConsensusRound* round) override;
 
+  virtual Status StartConsensusOnlyRound(
+      const scoped_refptr<consensus::ConsensusRound>& round) override;
+
   std::shared_ptr<consensus::RaftConsensus> shared_consensus() const {
     shared_lock<RWMutex> l(lock_);
     return consensus_;

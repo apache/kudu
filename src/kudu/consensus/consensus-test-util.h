@@ -722,6 +722,10 @@ class TestTransactionFactory : public ConsensusRoundHandler {
     return Status::OK();
   }
 
+  Status StartConsensusOnlyRound(const scoped_refptr<ConsensusRound>& round) override {
+    return Status::OK();
+  }
+
   void FinishConsensusOnlyRound(ConsensusRound* /*round*/) override {}
 
   void ReplicateAsync(ConsensusRound* round) {

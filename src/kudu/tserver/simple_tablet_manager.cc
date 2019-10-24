@@ -442,6 +442,13 @@ string TSTabletManager::LogPrefix() const {
   return LogPrefix(kSysCatalogTabletId);
 }
 
+Status TSTabletManager::StartConsensusOnlyRound(
+      const scoped_refptr<consensus::ConsensusRound>& round) {
+  // this is currently a no-op but other implementations
+  // can provide their own version
+  return Status::OK();
+}
+
 Status TSTabletManager::StartFollowerTransaction(const scoped_refptr<ConsensusRound>& round) {
   // THIS IS CURRENTLY A NO-OP
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();

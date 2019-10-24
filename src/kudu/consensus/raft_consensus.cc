@@ -2229,17 +2229,26 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
-  StdStatusCallback client_cb = std::bind(&RaftConsensus::MarkDirtyOnSuccess,
-                                          this,
-                                          string("Replicated consensus-only round"),
-                                          &DoNothingStatusCB,
-                                          std::placeholders::_1);
-  round->SetConsensusReplicatedCallback(std::bind(
-      &RaftConsensus::NonTxRoundReplicationFinished,
-      this,
-      round.get(),
-      std::move(client_cb),
-      std::placeholders::_1));
+  RETURN_NOT_OK(round_handler_->StartConsensusOnlyRound(round));
+
+  // Using disable_noop_ mode as a proxy for special NORCB handling
+  // When in disable_noop_ mode, the SetConsensusReplicatedCallback
+  // will be enqueued in the MySQL plugin.
+  // In this case we should not enqueue NonTxRoundReplicationFinished
+  // below, as it also does unsupported things, e.g. enqueing a CommitMsg
+  if (!disable_noop_) {
+    StdStatusCallback client_cb = std::bind(&RaftConsensus::MarkDirtyOnSuccess,
+                                            this,
+                                            string("Replicated consensus-only round"),
+                                            &DoNothingStatusCB,
+                                            std::placeholders::_1);
+    round->SetConsensusReplicatedCallback(std::bind(
+        &RaftConsensus::NonTxRoundReplicationFinished,
+        this,
+        round.get(),
+        std::move(client_cb),
+        std::placeholders::_1));
+  }
   return AddPendingOperationUnlocked(round);
 }
 
