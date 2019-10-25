@@ -12,9 +12,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-============================================================
-The Catalog Manager and System Tables
-============================================================
+# The Catalog Manager and System Tables
+
 
 The Catalog Manager keeps track of the Kudu tables and tablets defined by the
 user in the cluster.
@@ -46,31 +45,29 @@ The catalog manager maintains 3 hash-maps for looking up info in the sys table:
 The TableInfo has a map [tablet-start-key] -> TabletInfo used to provide
 the tablets locations to the user based on a key-range request.
 
-
-Table Creation
---------------
+## Table Creation
 
 The below corresponds to the code in CatalogManager::CreateTable().
 
 1. Client -> Master request: Create "table X" with N tablets and schema S.
 2. Master: CatalogManager::CreateTable():
-   a. Validate user request (e.g. ensure a valid schema).
-   b. Verify that the table name is not already taken.
+   1. Validate user request (e.g. ensure a valid schema).
+   2. Verify that the table name is not already taken.
       TODO: What about old, deleted tables?
-   c. Add (in-memory) the new TableInfo (in "preparing" state).
-   d. Add (in-memory) the TabletInfo based on the user-provided pre-split-keys
+   3. Add (in-memory) the new TableInfo (in "preparing" state).
+   4. Add (in-memory) the TabletInfo based on the user-provided pre-split-keys
       field (in "preparing" state).
-   e. Write the tablets info to "sys.catalog"
+   5. Write the tablets info to "sys.catalog"
       (The Master process is killed if the write fails).
       - Master begins writing to disk.
       - Note: If the Master crashes or restarts here or at any time previous to
         this point, the table will not exist when the Master comes back online.
-   f. Write the table info to "sys.catalog" with the "running" state
+   6. Write the table info to "sys.catalog" with the "running" state
       (The Master process is killed if the write fails).
       - Master completes writing to disk.
       - After this point, the table will exist and be re-created as necessary
         at startup time after a crash or process restart.
-   g. Commit the "running" state to memory, which allows clients to see the table.
+   7. Commit the "running" state to memory, which allows clients to see the table.
 3. Master -> Client response: The table has been created with some ID, i.e. "xyz"
    (or, in case something went wrong, an error message).
 
@@ -79,8 +76,7 @@ the cluster is shut down, when it starts back up the table will still exist.
 However, the tablets are not yet created (see Table Assignment, below).
 
 
-Table Deletion
---------------
+## Table Deletion
 
 When the user sends a DeleteTable request for table T, table T is marked as
 deleted by writing a "deleted" flag in the state field in T's record in the
@@ -105,8 +101,7 @@ successfully completes, the Master will send a new DeleteTablet request at the
 time that the next heartbeat is received from the tablet that is to be deleted.
 
 
-Table Assignment (Tablet Creation)
-----------------------------------
+## Table Assignment (Tablet Creation)
 
 Once a table is created, the tablets must be created on a set of replicas. In
 order to do that, the master has to select the replicas and associate them to
@@ -167,8 +162,7 @@ process (see CatalogManagerBgTasksThread above), the tablet will be marked as
 running and committed to disk, completing the assignment process.
 
 
-Alter Table
------------
+## Alter Table
 
 When the user sends an alter request, which may contain changes to the schema,
 table name or attributes, the Master will send a set of AlterTable() RPCs to
@@ -183,9 +177,8 @@ When the Master first comes online after being restarted, a full tablet report
 will be requested from each TS, and the tablet schema version sent on the next
 heartbeat will be used to determine if a given TS needs an AlterTable() call.
 
-============================================================
-Heartbeats and TSManager
-============================================================
+
+# Heartbeats and TSManager
 
 Heartbeats are sent by the TS to the master. Per master.proto, a
 heartbeat contains:
@@ -203,8 +196,7 @@ changed, or if the master responded to a previous heartbeat with
 "needs a full tablet report" (see "Handling heartbeats" below for an
 explanation of when this response will be sent).
 
-Handling heartbeats
--------------------
+## Handling heartbeats
 
 Upon receiving a heartbeat from a TS, the master will:
 
@@ -226,8 +218,7 @@ the TS requesting a full tablet report.
 
 5) Send a success respond to the TS.
 
-TSManager
----------
+## TSManager
 
 TSManager provides in-memory storage for information sent by the
 tablet server to the master (tablet servers that have been heard from,
@@ -235,8 +226,7 @@ heartbeats, tablet reports, etc...). The information is stored in a
 map, where the key is the permanent uuid of a tablet server and the
 value is (a pointer to) a TSDescriptor.
 
-IPKI: Internal Root Certificate Authority (CA) Information
-----------------------------------------------------------
+# IPKI: Internal Root Certificate Authority (CA) Information
 
 Besides tables' metadata, the system table contains the root CA certificate
 and corresponding private key when Kudu is configured to use its own IPKI
@@ -254,8 +244,7 @@ information is present in the system table. If the internal root CA information
 is already present in the system table, the leader master loads that
 information into memory and uses it appropriately.
 
-IPKI: TSK (Token Signing Keys)
-------------------------------
+## IPKI: TSK (Token Signing Keys)
 
 The system table contains entries with TSKs used for authn/authz token signing.
 The leader master generates and stores those in the system table. Upon start-up
