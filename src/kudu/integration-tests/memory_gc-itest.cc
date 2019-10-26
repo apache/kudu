@@ -29,6 +29,7 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -66,15 +67,18 @@ class MemoryGcITest : public ExternalMiniClusterITestBase {
 
 TEST_F(MemoryGcITest, TestPeriodicGc) {
   vector<string> ts_flags;
-  // Set GC interval seconeds short enough, so the test case could compelte sooner.
+  // Set GC interval seconds short enough, so the test case could complete sooner.
   ts_flags.emplace_back("--gc_tcmalloc_memory_interval_seconds=5");
+  // Disable tcmalloc memory GC by memory tracker, but periodical tcmalloc memory
+  // GC is still enabled.
+  ts_flags.emplace_back("--disable_tcmalloc_gc_by_memory_tracker_for_testing=true");
 
   ExternalMiniClusterOptions opts;
   opts.extra_tserver_flags = std::move(ts_flags);
   opts.num_tablet_servers = 3;
   NO_FATALS(StartClusterWithOpts(opts));
 
-  // Enable tcmalloc memory GC periodically for tserver-1, and disabled for tserver-0 and tserver-2.
+  // Disable periodical tcmalloc memory GC for tserver-0 and tserver-2.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
                               "gc_tcmalloc_memory_interval_seconds", "0"));
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(1),
@@ -85,6 +89,7 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
   // Write some data for scan later.
   {
     TestWorkload workload(cluster_.get());
+    workload.set_num_tablets(60);
     workload.set_num_replicas(1);
     workload.set_num_write_threads(4);
     workload.set_write_batch_size(10);
@@ -92,7 +97,7 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
     workload.Setup();
     workload.Start();
     ASSERT_EVENTUALLY([&]() {
-      ASSERT_GE(workload.rows_inserted(), 100000);
+      ASSERT_GE(workload.rows_inserted(), 30000);
     });
     workload.StopAndJoin();
   }
@@ -101,22 +106,26 @@ TEST_F(MemoryGcITest, TestPeriodicGc) {
   {
     TestWorkload workload(cluster_.get());
     workload.set_num_write_threads(0);
-    workload.set_num_read_threads(4);
+    workload.set_num_read_threads(8);
     workload.Setup();
     workload.Start();
-    ASSERT_EVENTUALLY([&]() {
-      NO_FATALS(
-        double ratio;
-        GetOverheadRatio(cluster_->tablet_server(0), &ratio);
-        ASSERT_GE(ratio, 0.1) << "tserver-0";
-        GetOverheadRatio(cluster_->tablet_server(1), &ratio);
-        ASSERT_LE(ratio, 0.1) << "tserver-1";
-        GetOverheadRatio(cluster_->tablet_server(2), &ratio);
-        ASSERT_GE(ratio, 0.1) << "tserver-2";
-      );
-    });
+    // Sleep a long time to ensure memory consumed more.
+    SleepFor(MonoDelta::FromSeconds(8));
     workload.StopAndJoin();
   }
+
+  // Check result.
+  ASSERT_EVENTUALLY([&]() {
+    NO_FATALS(
+      double ratio;
+      GetOverheadRatio(cluster_->tablet_server(0), &ratio);
+      ASSERT_GE(ratio, 0.1) << "tserver-0";
+      GetOverheadRatio(cluster_->tablet_server(1), &ratio);
+      ASSERT_LE(ratio, 0.1) << "tserver-1";
+      GetOverheadRatio(cluster_->tablet_server(2), &ratio);
+      ASSERT_GE(ratio, 0.1) << "tserver-2";
+    );
+  });
 }
 
 } // namespace kudu

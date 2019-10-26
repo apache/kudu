@@ -66,6 +66,10 @@ DEFINE_int32(memory_limit_warn_threshold_percentage, 98,
 TAG_FLAG(memory_limit_warn_threshold_percentage, advanced);
 
 #ifdef TCMALLOC_ENABLED
+DEFINE_bool(disable_tcmalloc_gc_by_memory_tracker_for_testing, false,
+            "For testing only! Whether to disable tcmalloc GC by memory tracker.");
+TAG_FLAG(disable_tcmalloc_gc_by_memory_tracker_for_testing, hidden);
+
 DEFINE_int32(tcmalloc_max_free_bytes_percentage, 10,
              "Maximum percentage of the RSS that tcmalloc is allowed to use for "
              "reserved but unallocated memory.");
@@ -276,7 +280,8 @@ void MaybeGCAfterRelease(int64_t released_bytes) {
 #ifdef TCMALLOC_ENABLED
   int64_t now_released = base::subtle::NoBarrier_AtomicIncrement(
       &g_released_memory_since_gc, released_bytes);
-  if (PREDICT_FALSE(now_released > kGcReleaseSize)) {
+  if (PREDICT_FALSE(now_released > kGcReleaseSize
+      && !FLAGS_disable_tcmalloc_gc_by_memory_tracker_for_testing)) {
     base::subtle::NoBarrier_Store(&g_released_memory_since_gc, 0);
     GcTcmalloc();
   }
