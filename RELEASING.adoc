@@ -19,9 +19,11 @@
 
 == Overview
 
-This document gives the steps required to perform a Kudu release, and is a resource
-for Kudu release managers. To edit or update this document, edit `RELEASING.adoc`
-in `master`.
+This document gives the steps required to perform a Kudu release, and is a
+resource for Kudu release managers. Make sure to read and understand the
+link:http://www.apache.org/legal/release-policy.html[ASF policy on software
+releases] prior to conducting the release management activity. To edit or
+update this document, edit `RELEASING.adoc` in `master`.
 
 == Stating Intent to Release
 
@@ -180,7 +182,9 @@ svn commit -m "Adding my key to the KEYS file"
   link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNduoQM0ktuZc1eW1XeXCcXhvPGftJ%3DLRB8Er5c2dZptvw%40mail.gmail.com%3E[example]
   as a template.
 
-. Reminder that voting on a release requires a Majority Approval by the PMC.
+. Reminder that voting on a release requires a
+  link:https://www.apache.org/foundation/glossary.html#MajorityApproval[Majority Approval]
+  by the PMC.
 
 . Cycle through as many RCs as required.
 
