@@ -112,9 +112,9 @@ class KUDU_EXPORT KuduColumnTypeAttributes {
   uint16_t length() const;
 
  private:
-  friend KuduColumnSchema;
-  friend KuduColumnSpec;
-  friend KuduSchema;
+  friend class KuduColumnSchema;
+  friend class KuduColumnSpec;
+  friend class KuduSchema;
 
   KuduColumnTypeAttributes(int8_t precision, int8_t scale, uint16_t length);
 
