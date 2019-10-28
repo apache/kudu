@@ -435,7 +435,7 @@ Status FsManager::Open(FsReport* report) {
   if (FLAGS_enable_data_block_fsync) {
     // Files/directories created by the directory manager in the fs roots have
     // been synchronized, so now is a good time to sync the roots themselves.
-    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_dirs),
+    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_files),
                 "could not sync newly created fs roots");
   }
 
