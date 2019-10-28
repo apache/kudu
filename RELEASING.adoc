@@ -36,7 +36,7 @@ update this document, edit `RELEASING.adoc` in `master`.
 
 == Creating the Branch
 
-. Create a new branch from master:
+. Create a new branch from `master`:
 +
 ----
   git checkout master
@@ -122,6 +122,13 @@ Apache committer guide for setting up your GPG keys
 
 . Create a new version update commit which removes the -SNAPSHOT suffix (same
   process as above).
+
+. In the newly created branch `branch-1.x.y` of the project git repo, update
+  version-related information under the `examples` sub-directory (e.g.,
+  `kudu-version` in `examples/java/java-example/pom.xml`, `version` in
+  `examples/java/insert-loadgen/pom.xml`, etc.).
+  The idea is making all examples use the artifacts of the newly released
+  `1.x.y` version of Kudu.
 
 . When ready, create a new lightweight tag and push it to the Apache Git repository.
 +
@@ -273,3 +280,9 @@ Note: You can upload to the test PyPi by adding
 
 . Update the version number on the branch you released from back to a SNAPSHOT
   for the next patch release, such as `1.6.1-SNAPSHOT` after the `1.6.0` release.
+
+. In the `master` branch of the project git repo, update version-related
+  information under the `examples` sub-directory to make all examples using the
+  fresh artifacts of latest released version.  This should be done only after
+  publishing the officially released artifacts, so they are available while
+  building the examples.
