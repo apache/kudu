@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_WEBSERVER_H
-#define KUDU_UTIL_WEBSERVER_H
+
+#pragma once
 
 #include <iosfwd>
 #include <map>
@@ -112,6 +112,9 @@ class Webserver : public WebCallbackRegistry {
     PrerenderedPathHandlerCallback callback_;
   };
 
+  // Add any necessary Knox-related variables to 'json' based on the headers in 'args'.
+  static void AddKnoxVariables(const WebRequest& req, EasyJson* json);
+
   bool static_pages_available() const;
 
   // Build the string to pass to mongoose specifying where to bind.
@@ -126,8 +129,11 @@ class Webserver : public WebCallbackRegistry {
   bool MustacheTemplateAvailable(const std::string& path) const;
 
   // Renders the main HTML template with the pre-rendered string 'content'
-  // in the main body of the page, into 'output'.
-  void RenderMainTemplate(const std::string& content, std::stringstream* output);
+  // in the main body of the page into 'output'. Additional state specific to
+  // the HTTP request that may affect rendering is available in 'req' if needed.
+  void RenderMainTemplate(const WebRequest& req,
+                          const std::string& content,
+                          std::stringstream* output);
 
   // Renders the template corresponding to 'path' (if available), using
   // fields in 'ej'.
@@ -161,6 +167,9 @@ class Webserver : public WebCallbackRegistry {
 
   // Sends a response back thru 'connection'.
   //
+  // 'req' may be null if we're early enough in processing that we haven't
+  // parsed the request yet (e.g. an early error out).
+  //
   // If 'mode' is STYLED, includes page styling elements like CSS, navigation bar, etc.
   enum class StyleMode {
     STYLED,
@@ -168,6 +177,7 @@ class Webserver : public WebCallbackRegistry {
   };
   void SendResponse(struct sq_connection* connection,
                     PrerenderedWebResponse* resp,
+                    const WebRequest* req = nullptr,
                     StyleMode mode = StyleMode::UNSTYLED);
 
   const WebserverOptions opts_;
@@ -197,5 +207,3 @@ class Webserver : public WebCallbackRegistry {
 };
 
 } // namespace kudu
-
-#endif // KUDU_UTIL_WEBSERVER_H

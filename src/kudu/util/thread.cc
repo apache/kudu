@@ -443,7 +443,16 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     EasyJson groups = output.Set("groups", EasyJson::kArray);
     for (const auto& elem : thread_categories_info) {
       string category_arg;
-      UrlEncode(elem.first, &category_arg);
+      if (WebCallbackRegistry::IsProxiedViaKnox(req)) {
+        // Knox encodes query parameter values when it rewrites HTTP responses.
+        // If we also encoded, we'd end up with broken URLs. For example, we'd
+        // encode the query parameter 'group=service pool' to
+        // 'group=service%20pool', then Knox would encode it again to
+        // 'group=service%2520pool'.
+        category_arg = elem.first;
+      } else {
+        UrlEncode(elem.first, &category_arg);
+      }
       EasyJson g = groups.PushBack(EasyJson::kObject);
       g["encoded_group_name"] = category_arg;
       g["group_name"] = elem.first;

@@ -45,7 +45,7 @@ under the License.
     {{#columns}}
       <tr>
         <th>
-          {{#is_key}}<img src="key.png" width=12 height=6 />&nbsp;&nbsp;{{/is_key}}{{name}}
+          {{#is_key}}<img src="{{base_url}}/key.png" width=12 height=6 />&nbsp;&nbsp;{{/is_key}}{{name}}
         </th>
         <td>{{id}}</a></td>
         <td>{{type}}</td>
@@ -62,13 +62,13 @@ under the License.
   <h2>Other Tablet Info Pages</h2>
   <ul>
     <li>
-      <a href="tablet-rowsetlayout-svg?id={{tablet_id}}">Rowset Layout Diagram</a>
+      <a href="{{base_url}}/tablet-rowsetlayout-svg?id={{tablet_id}}">Rowset Layout Diagram</a>
     </li>
     <li>
-      <a href="tablet-consensus-status?id={{tablet_id}}">Consensus Status</a>
+      <a href="{{base_url}}/tablet-consensus-status?id={{tablet_id}}">Consensus Status</a>
     </li>
     <li>
-      <a href="log-anchors?id={{tablet_id}}">Tablet Log Anchors</a>
+      <a href="{{base_url}}/log-anchors?id={{tablet_id}}">Tablet Log Anchors</a>
     </li>
   </ul>
 {{/error}}

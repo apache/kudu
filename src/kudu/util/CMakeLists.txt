@@ -231,6 +231,7 @@ set(UTIL_SRCS
   url-coding.cc
   version_info.cc
   version_util.cc
+  web_callback_registry.cc
   website_util.cc
   yamlreader.cc
   zlib.cc

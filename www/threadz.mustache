@@ -48,7 +48,7 @@ under the License.
 {{^requested_thread_group}}
 <h2>Thread Groups</h2>
 <h4>{{total_threads_running}} thread(s) running</h4>
-<a href='/threadz?group=all'><h3>All Threads</h3></a>
+<a href='{{base_url}}/threadz?group=all'><h3>All Threads</h3></a>
 <table class='table table-hover' data-sort-name='group' data-toggle='table'>
   <thead>
     <tr>
@@ -59,7 +59,7 @@ under the License.
   <tbody>
     {{#groups}}
     <tr>
-      <td><a href='/threadz?group={{encoded_group_name}}'>{{group_name}}</a></td>
+      <td><a href='{{base_url}}/threadz?group={{encoded_group_name}}'>{{group_name}}</a></td>
       <td>{{threads_running}}</td>
     </tr>
     {{/groups}}

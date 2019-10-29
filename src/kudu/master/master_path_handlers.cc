@@ -168,7 +168,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
     desc->GetRegistration(&reg);
     ts_json["uuid"] = ts_uuid;
     if (!reg.http_addresses().empty()) {
-      string webserver = Substitute("$0://$1:$2/",
+      string webserver = Substitute("$0://$1:$2",
                                     reg.https_enabled() ? "https" : "http",
                                     reg.http_addresses(0).host(),
                                     reg.http_addresses(0).port());
@@ -567,7 +567,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
     ServerRegistrationPB reg = master.registration();
     master_json["uuid"] = master.instance_id().permanent_uuid();
     if (!reg.http_addresses().empty()) {
-      master_json["target"] = Substitute("$0://$1:$2/",
+      master_json["target"] = Substitute("$0://$1:$2",
                                          reg.https_enabled() ? "https" : "http",
                                          reg.http_addresses(0).host(),
                                          reg.http_addresses(0).port());

@@ -645,7 +645,7 @@ build_mustache() {
   mkdir -p $MUSTACHE_BDIR
   pushd $MUSTACHE_BDIR
   # We add $PREFIX/include for boost and $PREFIX_COMMON/include for rapidjson.
-  ${CXX:-g++} $EXTRA_CXXFLAGS -I$PREFIX/include -I$PREFIX_COMMON/include -O3 -DNDEBUG -fPIC -c "$MUSTACHE_SOURCE/mustache.cc"
+  ${CXX:-g++} -std=c++11 $EXTRA_CXXFLAGS -I$PREFIX/include -I$PREFIX_COMMON/include -O3 -DNDEBUG -fPIC -c "$MUSTACHE_SOURCE/mustache.cc"
   ar rs libmustache.a mustache.o
   cp libmustache.a $PREFIX/lib/
   cp $MUSTACHE_SOURCE/mustache.h $PREFIX/include/

@@ -35,7 +35,7 @@ under the License.
   <tbody>
     {{#scans}}
     <tr>
-      <td><a href="/tablet?id={{tablet_id}}"><samp>{{tablet_id}}</samp></a></td>
+      <td><a href="{{base_url}}/tablet?id={{tablet_id}}"><samp>{{tablet_id}}</samp></a></td>
       <td><samp>{{scanner_id}}</samp></td>
       <td>{{state}}</td>
       {{! The query string is pre-formatted HTML, so don't escape it (triple-brace). }}

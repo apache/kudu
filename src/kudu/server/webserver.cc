@@ -58,6 +58,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 #include "kudu/util/zlib.h"
@@ -137,7 +138,7 @@ Sockaddr GetRemoteAddress(const struct sq_request_info* req) {
 // out-parameters will be written to, and the function will return either OK or
 // Incomplete depending on whether additional SPNEGO steps are required.
 Status RunSpnegoStep(const char* authz_header,
-                     WebCallbackRegistry::HttpResponseHeaders* resp_headers,
+                     WebCallbackRegistry::ArgumentMap* resp_headers,
                      string* authn_user) {
   static const char* const kNegotiateHdrName = "WWW-Authenticate";
   static const char* const kNegotiateHdrValue = "Negotiate";
@@ -531,13 +532,19 @@ sq_callback_result_t Webserver::RunPathHandler(
     struct sq_connection* connection,
     struct sq_request_info* request_info,
     PrerenderedWebResponse* resp) {
-  // Should we render with css styles?
-  bool use_style = true;
-
   WebRequest req;
   if (request_info->query_string != nullptr) {
     req.query_string = request_info->query_string;
     BuildArgumentMap(request_info->query_string, &req.parsed_args);
+  }
+  for (int i = 0; i < request_info->num_headers; i++) {
+    const auto& h = request_info->http_headers[i];
+    string key = h.name;
+
+    // Canonicalize header names to lower case so that we needn't worry about
+    // doing case-insensitive comparisons throughout.
+    ToLowerCase(&key);
+    req.request_headers[key] = h.value;
   }
   req.request_method = request_info->request_method;
   if (req.request_method == "POST") {
@@ -576,10 +583,6 @@ sq_callback_result_t Webserver::RunPathHandler(
     }
   }
 
-  if (!handler.is_styled() || ContainsKey(req.parsed_args, "raw")) {
-    use_style = false;
-  }
-
   // Enable or disable redaction from the web UI based on the setting of --redact.
   // This affects operations like default value and scan predicate pretty printing.
   if (kudu::g_should_redact == kudu::RedactContext::ALL) {
@@ -589,17 +592,22 @@ sq_callback_result_t Webserver::RunPathHandler(
     handler.callback()(req, resp);
   }
 
-  SendResponse(connection, resp, use_style ? StyleMode::STYLED : StyleMode::UNSTYLED);
+  // Should we render with css styles?
+  StyleMode use_style = handler.is_styled() && !ContainsKey(req.parsed_args, "raw") ?
+                        StyleMode::STYLED : StyleMode::UNSTYLED;
+  SendResponse(connection, resp, &req, use_style);
   return SQ_HANDLED_OK;
 }
 
 void Webserver::SendResponse(struct sq_connection* connection,
                              PrerenderedWebResponse* resp,
+                             const WebRequest* req,
                              StyleMode mode) {
   // If styling was requested, rerender and replace the prerendered output.
   if (mode == StyleMode::STYLED) {
+    DCHECK(req);
     stringstream ss;
-    RenderMainTemplate(resp->output.str(), &ss);
+    RenderMainTemplate(*req, resp->output.str(), &ss);
     resp->output.str(ss.str());
   }
 
@@ -673,13 +681,22 @@ void Webserver::SendResponse(struct sq_connection* connection,
   sq_write(connection, complete_response.c_str(), complete_response.length());
 }
 
+void Webserver::AddKnoxVariables(const WebRequest& req, EasyJson* json) {
+  if (WebCallbackRegistry::IsProxiedViaKnox(req)) {
+    (*json)["base_url"] = "/KNOX-BASE";
+  } else {
+    (*json)["base_url"] = "";
+  }
+}
+
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
   string render_path = (path == "/") ? "/home" : path;
-  auto wrapped_cb = [=](const WebRequest& args, PrerenderedWebResponse* rendered_resp) {
+  auto wrapped_cb = [=](const WebRequest& req, PrerenderedWebResponse* rendered_resp) {
     WebResponse resp;
-    callback(args, &resp);
+    callback(req, &resp);
     stringstream out;
+    AddKnoxVariables(req, &resp.output);
     Render(render_path, resp.output, is_styled, &out);
     rendered_resp->status_code = resp.status_code;
     rendered_resp->response_headers = std::move(resp.response_headers);
@@ -711,39 +728,40 @@ static const char* const kMainTemplate = R"(
   <head>
     <title>Kudu</title>
     <meta charset='utf-8'/>
-    <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />
-    <link href='/bootstrap/css/bootstrap-table.min.css' rel='stylesheet' media='screen' />
-    <script src='/jquery-3.2.1.min.js' defer></script>
-    <script src='/bootstrap/js/bootstrap.min.js' defer></script>
-    <script src='/bootstrap/js/bootstrap-table.min.js' defer></script>
-    <script src='/kudu.js' defer></script>
-    <link href='/kudu.css' rel='stylesheet' />
+    <link href='{{base_url}}/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen'/>
+    <link href='{{base_url}}/bootstrap/css/bootstrap-table.min.css' rel='stylesheet' media='screen'/>
+    <script src='{{base_url}}/jquery-3.2.1.min.js' defer></script>
+    <script src='{{base_url}}/bootstrap/js/bootstrap.min.js' defer></script>
+    <script src='{{base_url}}/bootstrap/js/bootstrap-table.min.js' defer></script>
+    <script src='{{base_url}}/kudu.js' defer></script>
+    <link href='{{base_url}}/kudu.css' rel='stylesheet'/>
+    <link rel='icon' href='{{base_url}}/favicon.ico'>
   </head>
   <body>
 
     <nav class="navbar navbar-default">
       <div class="container-fluid">
         <div class="navbar-header">
-          <a class="navbar-brand" style="padding-top: 5px;" href="/">
-            <img src="/logo.png" width='61' height='45' alt="Kudu" />
+          <a class="navbar-brand" style="padding-top: 5px;" href="{{base_url}}/">
+            <img src="{{base_url}}/logo.png" width='61' height='45' alt="Kudu"/>
           </a>
         </div>
         <div id="navbar" class="navbar-collapse collapse">
           <ul class="nav navbar-nav">
            {{#path_handlers}}
-            <li><a class="nav-link"href="{{path}}">{{alias}}</a></li>
+            <li><a class="nav-link" href="{{base_url}}{{path}}">{{alias}}</a></li>
            {{/path_handlers}}
           </ul>
         </div><!--/.nav-collapse -->
       </div><!--/.container-fluid -->
     </nav>
-      {{^static_pages_available}}
-      <div style="color: red">
-        <strong>Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root
-        flag to fix page styling.</strong>
-      </div>
-      {{/static_pages_available}}
-      {{{content}}}
+    {{^static_pages_available}}
+    <div style="color: red">
+      <strong>Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root
+      flag to fix page styling.</strong>
+    </div>
+    {{/static_pages_available}}
+    {{{content}}}
     </div>
     {{#footer_html}}
     <footer class="footer"><div class="container text-muted">
@@ -754,10 +772,13 @@ static const char* const kMainTemplate = R"(
 </html>
 )";
 
-void Webserver::RenderMainTemplate(const string& content, stringstream* output) {
+void Webserver::RenderMainTemplate(
+    const WebRequest& req, const string& content, stringstream* output) {
   EasyJson ej;
   ej["static_pages_available"] = static_pages_available();
   ej["content"] = content;
+  AddKnoxVariables(req, &ej);
+
   {
     shared_lock<RWMutex> l(lock_);
     ej["footer_html"] = footer_html_;

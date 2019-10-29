@@ -95,7 +95,7 @@ under the License.
     <tbody>
     {{#dead_tservers}}
       <tr>
-        <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
+        <td>{{#target}}<a href="{{.}}{{base_url}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
         <td>{{time_since_hb}}</td>
         <td><pre><code>{{registration}}</code></pre></td>
       </tr>

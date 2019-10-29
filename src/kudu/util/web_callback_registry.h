@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_WEB_CALLBACK_REGISTRY_H
-#define KUDU_UTIL_WEB_CALLBACK_REGISTRY_H
 
-#include <iosfwd>
+#pragma once
+
+#include <sstream>
 #include <string>
 #include <unordered_map>
 
@@ -54,6 +54,9 @@ class WebCallbackRegistry {
     // The query string, parsed into key/value argument pairs.
     ArgumentMap parsed_args;
 
+    // The HTTP request headers.
+    ArgumentMap request_headers;
+
     // The raw query string passed in the URL. May be empty.
     std::string query_string;
 
@@ -64,15 +67,13 @@ class WebCallbackRegistry {
     std::string post_data;
   };
 
-  typedef std::unordered_map<std::string, std::string> HttpResponseHeaders;
-
   // A response to an HTTP request whose body is rendered by template.
   struct WebResponse {
     // Determines the status code of the HTTP response.
     HttpStatusCode status_code = HttpStatusCode::Ok;
 
     // Additional headers added to the HTTP response.
-    HttpResponseHeaders response_headers;
+    ArgumentMap response_headers;
 
     // A JSON object to be rendered to HTML by a mustache template.
     EasyJson output;
@@ -84,7 +85,7 @@ class WebCallbackRegistry {
     HttpStatusCode status_code = HttpStatusCode::Ok;
 
     // Additional headers added to the HTTP response.
-    HttpResponseHeaders response_headers;
+    ArgumentMap response_headers;
 
     // The fully-rendered HTML response body.
     std::ostringstream output;
@@ -123,8 +124,9 @@ class WebCallbackRegistry {
                                               const PrerenderedPathHandlerCallback& callback,
                                               bool is_styled,
                                               bool is_on_nav_bar) = 0;
+
+  // Returns true if 'req' was proxied via Knox, false otherwise.
+  static bool IsProxiedViaKnox(const WebRequest& req);
 };
 
 } // namespace kudu
-
-#endif /* KUDU_UTIL_WEB_CALLBACK_REGISTRY_H */

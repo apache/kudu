@@ -343,8 +343,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
       replica_json["id"] = status.tablet_id();
       if (replica->tablet() != nullptr) {
         EasyJson link_json = replica_json.Set("link", EasyJson::kObject);
-        link_json["id"] = status.tablet_id();
-        link_json["url"] = Substitute("/tablet?id=$0", UrlEncodeToString(status.tablet_id()));
+        link_json["url"] = Substitute("/tablet?id=$0", status.tablet_id());
       }
       replica_json["partition"] =
           tmeta->partition_schema().PartitionDebugString(tmeta->partition(),

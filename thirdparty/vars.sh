@@ -108,7 +108,7 @@ SQUEASEL_SOURCE=$TP_SOURCE_DIR/$SQUEASEL_NAME
 #  export NAME=mustache-$(git rev-parse HEAD)
 #  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
 #  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
-MUSTACHE_VERSION=87a592e8aa04497764c533acd6e887618ca7b8a8
+MUSTACHE_VERSION=b290952d8eb93d085214d8c8c9eab8559df9f606
 MUSTACHE_NAME=mustache-$MUSTACHE_VERSION
 MUSTACHE_SOURCE=$TP_SOURCE_DIR/$MUSTACHE_NAME
 

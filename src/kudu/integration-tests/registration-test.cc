@@ -396,7 +396,7 @@ TEST_F(RegistrationTest, TestExposeHttpsURLs) {
   // dealing with figuring out what the hostname should be, just
   // use a more permissive regex which doesn't check the host.
   string expected_url_regex = strings::Substitute(
-      "https://[a-zA-Z0-9.-]+:$0/", opts->port);
+      "https://[a-zA-Z0-9.-]+:$0", opts->port);
 
   // Need "eventually" here because the tserver may take a few seconds
   // to re-register while starting up.

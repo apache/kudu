@@ -54,7 +54,7 @@ add_dependencies(itest_util
   kudu-tserver)
 
 # Tests
-SET_KUDU_TEST_LINK_LIBS(itest_util)
+SET_KUDU_TEST_LINK_LIBS(itest_util gumbo-parser gumbo-query)
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)
@@ -131,6 +131,7 @@ ADD_KUDU_TEST(ts_recovery-itest PROCESSORS 4)
 ADD_KUDU_TEST(ts_sentry-itest NUM_SHARDS 2)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
+ADD_KUDU_TEST(webserver-crawl-itest LABELS no_dist_test)
 ADD_KUDU_TEST(webserver-stress-itest RUN_SERIAL true)
 ADD_KUDU_TEST(write_throttling-itest)
 
