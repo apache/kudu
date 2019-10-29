@@ -334,12 +334,14 @@ The common flags that will be used when restoring are:
 
 * `--rootPath`: The root path to the backup data. Accepts any Spark-compatible path.
 ** See <<backup_directory>> for the directory structure used in the `rootPath`.
-* `--kuduMasterAddresses`: Comma-separated addresses of Kudu masters. Default: localhost
+* `--kuduMasterAddresses`: Comma-separated addresses of Kudu masters. Default: `localhost`
+* `--createTables`: If set to `true`, the restore process creates the tables.
+  Set to `false` if the target tables already exist.  Default: `true`.
 * `--tableSuffix`: If set, the suffix to add to the restored table names.
-  Only used when createTables is true.
+  Only used when `createTables` is `true`.
 * `--timestampMs`: A UNIX timestamp in milliseconds that defines the latest time
   to use when selecting restore candidates. Default: `System.currentTimeMillis()`
-* `<table>...`:  A list of tables to be backed up.
+* `<table>...`:  A list of tables to restore.
 
 Note: You can see the full list of job options at anytime by passing the `--help` flag.
 
