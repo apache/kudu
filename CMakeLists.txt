@@ -1209,6 +1209,20 @@ ADD_THIRDPARTY_LIB(yaml
   STATIC_LIB "${YAML_STATIC_LIB}"
   SHARED_LIB "${YAML_SHARED_LIB}")
 
+## gumbo-parser
+find_package(GumboParser REQUIRED)
+include_directories(SYSTEM ${GUMBO_PARSER_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(gumbo-parser
+  STATIC_LIB "${GUMBO_PARSER_STATIC_LIB}"
+  SHARED_LIB "${GUMBO_PARSER_SHARED_LIB}")
+
+## gumbo-query
+find_package(GumboQuery REQUIRED)
+include_directories(SYSTEM ${GUMBO_QUERY_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(gumbo-query
+  STATIC_LIB "${GUMBO_QUERY_STATIC_LIB}"
+  SHARED_LIB "${GUMBO_QUERY_SHARED_LIB}")
+
 ## Boost
 
 # We use a custom cmake module and not cmake's FindBoost.

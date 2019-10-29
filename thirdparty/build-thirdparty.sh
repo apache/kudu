@@ -101,6 +101,8 @@ else
       "sentry")       F_SENTRY=1 ;;
       "yaml")         F_YAML=1 ;;
       "chrony")       F_CHRONY=1 ;;
+      "gumbo-parser") F_GUMBO_PARSER=1 ;;
+      "gumbo-query")  F_GUMBO_QUERY=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -376,6 +378,15 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_YAML" ]; then
   build_yaml
 fi
 
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GUMBO_PARSER" ]; then
+  # Although it's a C library its tests are written in C++.
+  build_gumbo_parser
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GUMBO_QUERY" ]; then
+  build_gumbo_query
+fi
+
 restore_env
 
 # If we're on macOS best to exit here, otherwise single dependency builds will try to
@@ -554,6 +565,15 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_YAML" ]; then
   build_yaml
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_GUMBO_PARSER" ]; then
+  # Although it's a C library its tests are written in C++.
+  build_gumbo_parser
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_GUMBO_QUERY" ]; then
+  build_gumbo_query
 fi
 
 restore_env

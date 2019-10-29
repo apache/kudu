@@ -689,3 +689,13 @@ NOTE: build-time dependency
 thirdparty/src/chrony-*/: GPLv2 license (https://www.gnu.org/licenses/gpl.html)
 Source: https://chrony.tuxfamily.org/
 NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/src/gumbo-parser-*/: Apache 2.0 license
+Source: https://github.com/google/gumbo-parser
+NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/src/gumbo-query-*/: MIT license
+Source: https://github.com/lazytiger/gumbo-query
+NOTE: build-time dependency

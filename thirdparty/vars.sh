@@ -238,3 +238,25 @@ YAML_SOURCE=$TP_SOURCE_DIR/$YAML_NAME
 CHRONY_VERSION=3.5
 CHRONY_NAME=chrony-$CHRONY_VERSION
 CHRONY_SOURCE=$TP_SOURCE_DIR/$CHRONY_NAME
+
+# Hash of the gumbo-parser git revision to use.
+# (from https://github.com/google/gumbo-parser)
+#
+# To re-build this tarball use the following in the sparsepp repo:
+#  export NAME=gumbo-parser-$(git rev-parse HEAD)
+#  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
+#  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
+GUMBO_PARSER_VERSION=aa91b27b02c0c80c482e24348a457ed7c3c088e0
+GUMBO_PARSER_NAME=gumbo-parser-$GUMBO_PARSER_VERSION
+GUMBO_PARSER_SOURCE=$TP_SOURCE_DIR/$GUMBO_PARSER_NAME
+
+# Hash of the gumbo-query git revision to use.
+# (from https://github.com/lazytiger/gumbo-query)
+#
+# To re-build this tarball use the following in the sparsepp repo:
+#  export NAME=gumbo-query-$(git rev-parse HEAD)
+#  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
+#  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
+GUMBO_QUERY_VERSION=c9f10880b645afccf4fbcd11d2f62a7c01222d2e
+GUMBO_QUERY_NAME=gumbo-query-$GUMBO_QUERY_VERSION
+GUMBO_QUERY_SOURCE=$TP_SOURCE_DIR/$GUMBO_QUERY_NAME

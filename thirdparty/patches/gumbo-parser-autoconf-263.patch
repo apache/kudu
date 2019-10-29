@@ -1,0 +1,28 @@
+commit 36c07df
+Author: Adar Dembo <adar@cloudera.com>
+Date:   Tue Oct 29 10:13:37 2019 -0700
+
+    Allow building gumbo-parser with autoconf 2.63
+    
+    This is found on CentOS 6.6.
+
+diff --git a/configure.ac b/configure.ac
+index 32dc9b9..c0fb407 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1,7 +1,7 @@
+ #                                               -*- Autoconf -*-
+ # Process this file with autoconf to produce a configure script.
+ 
+-AC_PREREQ([2.65])
++AC_PREREQ([2.63])
+ AC_INIT([gumbo], [0.10.1], [jonathan.d.tang@gmail.com])
+ AC_CONFIG_MACRO_DIR([m4])
+ AC_CONFIG_SRCDIR([src/parser.c])
+diff --git a/m4/created b/m4/created
+new file mode 100644
+index 0000000..5159d8b
+--- /dev/null
++++ b/m4/created
+@@ -0,0 +1 @@
++# This file exists so that the m4 directory can exist in the git repo.

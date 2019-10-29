@@ -1,0 +1,330 @@
+commit 510d242
+Author: Adar Dembo <adar@cloudera.com>
+Date:   Mon Oct 28 17:12:33 2019 -0700
+
+    encapsulate all classes in gq namespace
+
+diff --git a/src/Document.cpp b/src/Document.cpp
+index 2b200e0..cb9c7bb 100644
+--- a/src/Document.cpp
++++ b/src/Document.cpp
+@@ -15,6 +15,8 @@
+ 
+ #include "Document.h"
+ 
++namespace gq {
++
+ CDocument::CDocument()
+ {
+ 	mpOutput = NULL;
+@@ -51,5 +53,7 @@ void CDocument::reset()
+ 	}
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+ 
+diff --git a/src/Document.h b/src/Document.h
+index 92b44d1..d406f01 100644
+--- a/src/Document.h
++++ b/src/Document.h
+@@ -20,6 +20,8 @@
+ #include <string>
+ #include "Selection.h"
+ 
++namespace gq {
++
+ class CDocument: public CObject
+ {
+ 	public:
+@@ -41,6 +43,8 @@ class CDocument: public CObject
+ 		GumboOutput* mpOutput;
+ };
+ 
++} // namespace gq
++
+ #endif /* DOCUMENT_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Node.cpp b/src/Node.cpp
+index 917db80..b7676d6 100644
+--- a/src/Node.cpp
++++ b/src/Node.cpp
+@@ -17,6 +17,8 @@
+ #include "Selection.h"
+ #include "QueryUtil.h"
+ 
++namespace gq {
++
+ CNode::CNode(GumboNode* apNode)
+ {
+ 	mpNode = apNode;
+@@ -164,4 +166,7 @@ CSelection CNode::find(std::string aSelector)
+ 	CSelection c(mpNode);
+ 	return c.find(aSelector);
+ }
++
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Node.h b/src/Node.h
+index b0a41e4..dc3b805 100644
+--- a/src/Node.h
++++ b/src/Node.h
+@@ -19,6 +19,8 @@
+ #include <gumbo.h>
+ #include <string>
+ 
++namespace gq {
++
+ class CSelection;
+ 
+ class CNode
+@@ -66,6 +68,8 @@ class CNode
+ 		GumboNode* mpNode;
+ };
+ 
++} // namespace gq
++
+ #endif /* NODE_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Object.cpp b/src/Object.cpp
+index 7a0c33b..d3a21f1 100644
+--- a/src/Object.cpp
++++ b/src/Object.cpp
+@@ -15,6 +15,8 @@
+ 
+ #include "Object.h"
+ 
++namespace gq {
++
+ CObject::CObject()
+ {
+ 	mReferences = 1;
+@@ -55,5 +57,7 @@ unsigned int CObject::references()
+ 	return mReferences;
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+ 
+diff --git a/src/Object.h b/src/Object.h
+index 40aaf32..1152dc7 100644
+--- a/src/Object.h
++++ b/src/Object.h
+@@ -16,6 +16,8 @@
+ #ifndef OBJECT_H_
+ #define OBJECT_H_
+ 
++namespace gq {
++
+ class CObject
+ {
+ 	public:
+@@ -37,6 +39,8 @@ class CObject
+ 		int mReferences;
+ };
+ 
++} // namespace gq
++
+ #endif /* OBJECT_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Parser.cpp b/src/Parser.cpp
+index bea39b0..092857c 100644
+--- a/src/Parser.cpp
++++ b/src/Parser.cpp
+@@ -17,6 +17,8 @@
+ #include "Selector.h"
+ #include "QueryUtil.h"
+ 
++namespace gq {
++
+ CParser::CParser(std::string aInput)
+ {
+ 	mInput = aInput;
+@@ -980,5 +982,7 @@ std::string CParser::error(std::string message)
+ 	return ret;
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+ 
+diff --git a/src/Parser.h b/src/Parser.h
+index dd42060..31b3a62 100644
+--- a/src/Parser.h
++++ b/src/Parser.h
+@@ -20,6 +20,8 @@
+ #include <gumbo.h>
+ #include "Selector.h"
+ 
++namespace gq {
++
+ class CParser
+ {
+ 	private:
+@@ -85,6 +87,8 @@ class CParser
+ 		size_t mOffset;
+ };
+ 
++} // namespace gq
++
+ #endif /* PARSER_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/QueryUtil.cpp b/src/QueryUtil.cpp
+index 037907c..4205b01 100644
+--- a/src/QueryUtil.cpp
++++ b/src/QueryUtil.cpp
+@@ -15,6 +15,8 @@
+ 
+ #include "QueryUtil.h"
+ 
++namespace gq {
++
+ std::string CQueryUtil::tolower(std::string s)
+ {
+ 	for (unsigned int i = 0; i < s.size(); i++)
+@@ -110,4 +112,6 @@ void CQueryUtil::writeNodeText(GumboNode* apNode, std::string& aText)
+ 	}
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/QueryUtil.h b/src/QueryUtil.h
+index d51ac71..eafc5c6 100644
+--- a/src/QueryUtil.h
++++ b/src/QueryUtil.h
+@@ -20,6 +20,8 @@
+ #include <string>
+ #include <vector>
+ 
++namespace gq {
++
+ class CQueryUtil
+ {
+ 	public:
+@@ -42,6 +44,8 @@ class CQueryUtil
+ 
+ };
+ 
++} // namespace gq
++
+ #endif /* QUERYUTIL_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Selection.cpp b/src/Selection.cpp
+index 1b728e0..7ce447e 100644
+--- a/src/Selection.cpp
++++ b/src/Selection.cpp
+@@ -18,6 +18,8 @@
+ #include "QueryUtil.h"
+ #include "Node.h"
+ 
++namespace gq {
++
+ CSelection::CSelection(GumboNode* apNode)
+ {
+ 	mNodes.push_back(apNode);
+@@ -61,5 +63,7 @@ size_t CSelection::nodeNum()
+ 	return mNodes.size();
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+ 
+diff --git a/src/Selection.h b/src/Selection.h
+index e661113..9b86992 100644
+--- a/src/Selection.h
++++ b/src/Selection.h
+@@ -21,6 +21,8 @@
+ #include <string>
+ #include <gumbo.h>
+ 
++namespace gq {
++
+ class CNode;
+ 
+ class CSelection: public CObject
+@@ -47,6 +49,8 @@ class CSelection: public CObject
+ 		std::vector<GumboNode*> mNodes;
+ };
+ 
++} // namespace gq
++
+ #endif /* SELECTION_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/src/Selector.cpp b/src/Selector.cpp
+index e79d68a..8a298ae 100644
+--- a/src/Selector.cpp
++++ b/src/Selector.cpp
+@@ -16,6 +16,8 @@
+ #include "Selector.h"
+ #include "QueryUtil.h"
+ 
++namespace gq {
++
+ bool CSelector::match(GumboNode* apNode)
+ {
+ 	switch (mOp)
+@@ -428,5 +430,7 @@ bool CTextSelector::match(GumboNode* apNode)
+ 	return text.find(mValue) != std::string::npos;
+ }
+ 
++} // namespace gq
++
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+ 
+diff --git a/src/Selector.h b/src/Selector.h
+index ee8d188..ac020a9 100644
+--- a/src/Selector.h
++++ b/src/Selector.h
+@@ -21,6 +21,8 @@
+ #include <vector>
+ #include "Object.h"
+ 
++namespace gq {
++
+ class CSelector: public CObject
+ {
+ 
+@@ -273,6 +275,8 @@ class CTextSelector: public CSelector
+ 		TOperator mOp;
+ };
+ 
++} // namespace gq
++
+ #endif /* SELECTOR_H_ */
+ 
+ /* vim: set ts=4 sw=4 sts=4 tw=100 noet: */
+diff --git a/test/ID.cpp b/test/ID.cpp
+index dc84da1..872df38 100644
+--- a/test/ID.cpp
++++ b/test/ID.cpp
+@@ -9,16 +9,16 @@
+ #include "Document.h"
+ #include "Node.h"
+ 
+- using std::string;
++using std::string;
+ 
+ int main(int argc, char * argv[])
+ {
+ 	string page(file_str("test_page.html"));
+ 
+-	CDocument doc;
++	gq::CDocument doc;
+ 	doc.parse(page.c_str());
+ 
+-	CSelection c = doc.find("#start-of-content");
++	gq::CSelection c = doc.find("#start-of-content");
+ 	if(c.nodeNum() > 0)
+ 		return 0;
+ 	return 1;

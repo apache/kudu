@@ -435,5 +435,20 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/chrony-no-superuser.patch" \
  "patch -p1 < $TP_DIR/patches/chrony-reuseport.patch"
 
+GUMBO_PARSER_PATCHLEVEL=1
+fetch_and_patch \
+ $GUMBO_PARSER_NAME.tar.gz \
+ $GUMBO_PARSER_SOURCE \
+ $GUMBO_PARSER_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/gumbo-parser-autoconf-263.patch" \
+ "autoreconf -fvi"
+
+GUMBO_QUERY_PATCHLEVEL=1
+fetch_and_patch \
+ $GUMBO_QUERY_NAME.tar.gz \
+ $GUMBO_QUERY_SOURCE \
+ $GUMBO_QUERY_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/gumbo-query-namespace.patch"
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
