@@ -343,7 +343,6 @@ class FsManager {
   static const char *kDataDirName;
   static const char *kTabletMetadataDirName;
   static const char *kWalDirName;
-  static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
   static const char *kInstanceMetadataMagicNumber;
   static const char *kTabletSuperBlockMagicNumber;
