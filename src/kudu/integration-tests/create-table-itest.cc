@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -23,11 +24,11 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
-#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -40,6 +41,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
@@ -55,6 +57,10 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
+
+namespace kudu {
+class HostPort;
+}  // namespace kudu
 
 using std::multimap;
 using std::set;
@@ -76,12 +82,22 @@ const char* const kTableName = "test-table";
 class CreateTableITest : public ExternalMiniClusterITestBase {
 };
 
+Status GetNumCreateTabletRPCs(const HostPort& http_hp, int64_t* num_rpcs) {
+  return itest::GetInt64Metric(
+      http_hp,
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet,
+      "total_count",
+      num_rpcs);
+}
+
 // Regression test for an issue seen when we fail to create a majority of the
 // replicas in a tablet. Previously, we'd still consider the tablet "RUNNING"
 // on the master and finish the table creation, even though that tablet would
 // be stuck forever with its minority never able to elect a leader.
 TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
-  const int kNumReplicas = 3;
+  constexpr int kNumReplicas = 3;
   vector<string> ts_flags;
   vector<string> master_flags;
   master_flags.emplace_back("--tablet_creation_timeout_ms=1000");
@@ -99,7 +115,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
             .set_range_partition_columns({ "key" })
-            .num_replicas(3)
+            .num_replicas(kNumReplicas)
             .wait(false)
             .Create());
 
@@ -107,13 +123,8 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   int64_t num_create_attempts = 0;
   while (num_create_attempts < 3) {
     SleepFor(MonoDelta::FromMilliseconds(100));
-    ASSERT_OK(itest::GetInt64Metric(
-        cluster_->tablet_server(0)->bound_http_hostport(),
-        &METRIC_ENTITY_server,
-        "kudu.tabletserver",
-        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet,
-        "total_count",
-        &num_create_attempts));
+    ASSERT_OK(GetNumCreateTabletRPCs(cluster_->tablet_server(0)->bound_http_hostport(),
+                                     &num_create_attempts));
     LOG(INFO) << "Waiting for the master to retry creating the tablet 3 times... "
               << num_create_attempts << " RPCs seen so far";
 
@@ -130,27 +141,51 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
 
   // We should eventually finish the table creation we started earlier.
-  bool in_progress = false;
-  while (in_progress) {
-    LOG(INFO) << "Waiting for the master to successfully create the table...";
-    ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
-    SleepFor(MonoDelta::FromMilliseconds(100));
-  }
-
-  // The server that was up from the beginning should be left with only
-  // one tablet, eventually, since the tablets which failed to get created
-  // properly should get deleted.
-  //
-  // Note that the tablet count can rise before it falls due to the server
-  // handling a mix of obsolete CreateTablet RPCs (see KUDU-2963 for more
-  // details). This test isn't terribly precise; we may catch the server with
-  // just one tablet during the "upswing", before reaching the steady state.
   ASSERT_EVENTUALLY([&] {
-    vector<string> tablets = inspect_->ListTabletsWithDataOnTS(0);
-    LOG(INFO) << "Waiting for only one tablet to be left on TS 0. Currently have: "
-              << tablets;
-    ASSERT_EQ(1, tablets.size()) << "Tablets on TS0: " << tablets;
+    bool in_progress = true;
+    ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
+    ASSERT_FALSE(in_progress);
   });
+
+  // At this point, table has been successfully created. All the tablet servers should be left
+  // with only one tablet, eventually, since the tablets which failed to get created properly
+  // should get deleted. It's possible there are some delete tablet RPCs still inflight and
+  // not processed yet.
+
+  // map of tablet id and count of replicas found.
+  std::unordered_map<string, int> tablet_num_replica_map;
+  ASSERT_EVENTUALLY([&] {
+    tablet_num_replica_map.clear();
+    for (int i = 0; i < kNumReplicas; i++) {
+      for (const auto& tablet_id : inspect_->ListTabletsWithDataOnTS(i))  {
+        tablet_num_replica_map[tablet_id]++;
+      }
+    }
+    LOG(INFO) << strings::Substitute(
+        "Waiting for only one tablet to be left with $0 replicas. Currently have: $1 tablet(s)",
+        kNumReplicas, tablet_num_replica_map.size());
+    ASSERT_EQ(1, tablet_num_replica_map.size());
+    // Assertion failure on the line above won't execute lines below under ASSERT_EVENTUALLY.
+    // So only one entry is present in the map at this point.
+    const auto num_replicas_found = tablet_num_replica_map.begin()->second;
+    ASSERT_EQ(kNumReplicas, num_replicas_found);
+  });
+
+  // Verify no additional create tablet RPCs are being serviced.
+  std::array<int64_t, kNumReplicas> num_create_attempts_arr{};
+  for (int i = 0; i < kNumReplicas; i++) {
+    ASSERT_OK(GetNumCreateTabletRPCs(cluster_->tablet_server(i)->bound_http_hostport(),
+                                     &num_create_attempts_arr[i]));
+  }
+  for (int repeat_count = 0; repeat_count < 10; repeat_count++) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    for (int i = 0; i < kNumReplicas; i++) {
+      int64_t num_rpcs = 0;
+      ASSERT_OK(GetNumCreateTabletRPCs(cluster_->tablet_server(i)->bound_http_hostport(),
+                                       &num_rpcs));
+      ASSERT_EQ(num_create_attempts_arr[i], num_rpcs);
+    }
+  }
 }
 
 // Regression test for KUDU-1317. Ensure that, when a table is created,
