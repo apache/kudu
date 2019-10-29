@@ -5574,7 +5574,8 @@ TEST_F(ToolTest, TestFailedTableCopy) {
 TEST_F(ToolTest, TestGetTableStatisticsLiveRowCountNotSupported) {
   ExternalMiniClusterOptions opts;
   opts.extra_master_flags = { "--mock_table_metrics_for_testing=true",
-                              "--live_row_count_for_testing=-1" };
+                              "--live_row_count_for_testing=99",
+                              "--catalog_manager_support_live_row_count=false" };
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   // Create an empty table.
@@ -5588,7 +5589,7 @@ TEST_F(ToolTest, TestGetTableStatisticsLiveRowCountNotSupported) {
                  cluster_->master()->bound_rpc_addr().ToString(),
                  TestWorkload::kDefaultTableName),
       &stdout));
-  ASSERT_STR_CONTAINS(stdout, "live row count: -1");
+  ASSERT_STR_CONTAINS(stdout, "live row count: N/A");
 }
 
 } // namespace tools

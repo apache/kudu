@@ -17,6 +17,7 @@
 
 #include "kudu/client/client.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <memory>
@@ -602,7 +603,7 @@ Status KuduClient::GetTableStatistics(const string& table_name,
   }
   unique_ptr<KuduTableStatistics> table_statistics(new KuduTableStatistics);
   table_statistics->data_ = new KuduTableStatistics::Data(resp.on_disk_size(),
-      resp.live_row_count());
+      resp.has_live_row_count() ? boost::optional<int64_t>(resp.live_row_count()) : boost::none);
 
   *statistics = table_statistics.release();
   return Status::OK();
@@ -880,7 +881,7 @@ int64_t KuduTableStatistics::on_disk_size() const {
 }
 
 int64_t KuduTableStatistics::live_row_count() const {
-  return data_->live_row_count_;
+  return data_->live_row_count_ ? *data_->live_row_count_ : -1;
 }
 
 std::string KuduTableStatistics::ToString() const {

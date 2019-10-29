@@ -119,6 +119,7 @@
 #include "kudu/util/thread_restrictions.h"
 
 DECLARE_bool(allow_unsafe_replication_factor);
+DECLARE_bool(catalog_manager_support_live_row_count);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
@@ -795,13 +796,22 @@ TEST_F(ClientTest, TestGetTableStatistics) {
   FLAGS_mock_table_metrics_for_testing = true;
   FLAGS_on_disk_size_for_testing = 1024;
   FLAGS_live_row_count_for_testing = 1000;
-  {
+  const auto GetTableStatistics = [&] () {
     KuduTableStatistics *table_statistics;
     ASSERT_OK(client_->GetTableStatistics(kTableName, &table_statistics));
     statistics.reset(table_statistics);
-  }
+  };
+
+  // Master supports live row count.
+  NO_FATALS(GetTableStatistics());
   ASSERT_EQ(FLAGS_on_disk_size_for_testing, statistics->on_disk_size());
   ASSERT_EQ(FLAGS_live_row_count_for_testing, statistics->live_row_count());
+  // Master doesn't support live row count.
+  FLAGS_catalog_manager_support_live_row_count = false;
+  NO_FATALS(GetTableStatistics());
+  ASSERT_EQ(FLAGS_on_disk_size_for_testing, statistics->on_disk_size());
+  ASSERT_EQ(-1, statistics->live_row_count());
+  ASSERT_NE(-1, FLAGS_live_row_count_for_testing);
 }
 
 TEST_F(ClientTest, TestBadTable) {

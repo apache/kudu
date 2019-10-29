@@ -275,6 +275,11 @@ DEFINE_bool(mock_table_metrics_for_testing, false,
 TAG_FLAG(mock_table_metrics_for_testing, hidden);
 TAG_FLAG(mock_table_metrics_for_testing, runtime);
 
+DEFINE_bool(catalog_manager_support_live_row_count, true,
+            "Whether to enable mock live row count statistic for tables. For testing only");
+TAG_FLAG(catalog_manager_support_live_row_count, hidden);
+TAG_FLAG(catalog_manager_support_live_row_count, runtime);
+
 DEFINE_int64(on_disk_size_for_testing, 0,
              "Mock the on disk size of metrics for testing.");
 TAG_FLAG(on_disk_size_for_testing, hidden);
@@ -2936,7 +2941,9 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
 
   if (PREDICT_FALSE(FLAGS_mock_table_metrics_for_testing)) {
     resp->set_on_disk_size(FLAGS_on_disk_size_for_testing);
-    resp->set_live_row_count(FLAGS_live_row_count_for_testing);
+    if (FLAGS_catalog_manager_support_live_row_count) {
+      resp->set_live_row_count(FLAGS_live_row_count_for_testing);
+    }
   } else {
     resp->set_on_disk_size(table->GetMetrics()->on_disk_size->value());
     if (table->GetMetrics()->TableSupportsLiveRowCount()) {

@@ -969,6 +969,7 @@ class KUDU_EXPORT KuduTableStatistics {
   int64_t on_disk_size() const;
 
   /// @return The table's live row count.
+  ///  -1 is returned if the table doesn't support live_row_count.
   ///
   /// @note This statistic is pre-replication.
   int64_t live_row_count() const;

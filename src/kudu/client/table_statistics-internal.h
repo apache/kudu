@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <string>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,23 +33,23 @@ using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
-  Data(int64_t on_disk_size, int64_t live_row_count)
+  Data(int64_t on_disk_size, boost::optional<int64_t> live_row_count)
       : on_disk_size_(on_disk_size),
-        live_row_count_(live_row_count) {
+        live_row_count_(std::move(live_row_count)) {
   }
 
   ~Data() {
   }
 
   string ToString() const {
-    string display_string = "";
-    display_string += Substitute("on disk size: $0\n", on_disk_size_);
-    display_string += Substitute("live row count: $0\n", live_row_count_);
-    return display_string;
+    return Substitute("on disk size: $0\n"
+                      "live row count: $1\n",
+                      on_disk_size_,
+                      live_row_count_ ? std::to_string(*live_row_count_) : "N/A");
   }
 
   const int64_t on_disk_size_;
-  const int64_t live_row_count_;
+  const boost::optional<int64_t> live_row_count_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);
