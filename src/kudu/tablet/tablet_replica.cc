@@ -176,7 +176,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     std::lock_guard<simple_spinlock> state_change_guard(state_change_lock_);
 
     scoped_refptr<MetricEntity> metric_entity;
-    gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
+    unique_ptr<PeerProxyFactory> peer_proxy_factory;
     scoped_refptr<TimeManager> time_manager;
     {
       std::lock_guard<simple_spinlock> l(lock_);

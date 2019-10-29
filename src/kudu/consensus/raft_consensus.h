@@ -145,7 +145,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Start() is not thread-safe. Calls to Start() should be externally
   // synchronized with calls accessing non-const members of this class.
   Status Start(const ConsensusBootstrapInfo& info,
-               gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
+               std::unique_ptr<PeerProxyFactory> peer_proxy_factory,
                scoped_refptr<log::Log> log,
                scoped_refptr<TimeManager> time_manager,
                ConsensusRoundHandler* round_handler,
@@ -834,7 +834,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   scoped_refptr<log::Log> log_;
   scoped_refptr<TimeManager> time_manager_;
-  gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
+  std::unique_ptr<PeerProxyFactory> peer_proxy_factory_;
 
   // When we receive a message from a remote peer telling us to start a
   // transaction, or finish a round, we use this handler to handle it.

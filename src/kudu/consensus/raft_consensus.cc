@@ -220,7 +220,7 @@ Status RaftConsensus::Create(ConsensusOptions options,
 }
 
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
-                            gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
+                            unique_ptr<PeerProxyFactory> peer_proxy_factory,
                             scoped_refptr<log::Log> log,
                             scoped_refptr<TimeManager> time_manager,
                             ConsensusRoundHandler* round_handler,

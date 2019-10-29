@@ -162,6 +162,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   }
 
  private:
+  friend class RaftConsensusQuorumTest;
   friend class RefCountedThreadSafe<ConsensusMetadata>;
   friend class ConsensusMetadataManager;
 

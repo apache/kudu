@@ -60,7 +60,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -147,13 +146,9 @@ class RaftConsensusQuorumTest : public KuduTest {
       opts.parent_mem_tracker = parent_mem_tracker;
       opts.wal_root = test_path;
       opts.data_roots = { test_path };
-      gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
+      unique_ptr<FsManager> fs_manager(new FsManager(env_, opts));
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
       RETURN_NOT_OK(fs_manager->Open());
-
-      scoped_refptr<ConsensusMetadataManager> cmeta_manager(
-          new ConsensusMetadataManager(fs_manager.get()));
-      cmeta_managers_.push_back(cmeta_manager);
 
       scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(LogOptions(),
@@ -164,7 +159,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                               nullptr,
                               &log));
       logs_.emplace_back(std::move(log));
-      fs_managers_.push_back(fs_manager.release());
+      fs_managers_.push_back(std::move(fs_manager));
     }
     return Status::OK();
   }
@@ -184,18 +179,21 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status BuildPeers() {
-    CHECK_EQ(config_.peers_size(), cmeta_managers_.size());
     CHECK_EQ(config_.peers_size(), fs_managers_.size());
     for (int i = 0; i < config_.peers_size(); i++) {
-      RETURN_NOT_OK(cmeta_managers_[i]->Create(kTestTablet, config_, kMinimumTerm));
+      FsManager* fs = fs_managers_[i].get();
+      scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+          new ConsensusMetadataManager(fs));
+
+      RETURN_NOT_OK(cmeta_manager->Create(kTestTablet, config_, kMinimumTerm));
 
       RaftPeerPB* local_peer_pb;
-      RETURN_NOT_OK(GetRaftConfigMember(&config_, fs_managers_[i]->uuid(), &local_peer_pb));
+      RETURN_NOT_OK(GetRaftConfigMember(&config_, fs->uuid(), &local_peer_pb));
 
       shared_ptr<RaftConsensus> peer;
       RETURN_NOT_OK(RaftConsensus::Create(options_,
                                           config_.peers(i),
-                                          cmeta_managers_[i],
+                                          std::move(cmeta_manager),
                                           raft_pool_.get(),
                                           &peer));
       peers_->AddPeer(config_.peers(i).permanent_uuid(), peer);
@@ -211,18 +209,21 @@ class RaftConsensusQuorumTest : public KuduTest {
       shared_ptr<RaftConsensus> peer;
       RETURN_NOT_OK(peers_->GetPeerByIdx(i, &peer));
 
-      gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(peers_.get()));
-      scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
-      auto txn_factory = new TestTransactionFactory(logs_[i].get());
+      unique_ptr<PeerProxyFactory> proxy_factory(
+          new LocalTestPeerProxyFactory(peers_.get()));
+      scoped_refptr<TimeManager> time_manager(
+          new TimeManager(clock_, Timestamp::kMin));
+      unique_ptr<TestTransactionFactory> txn_factory(
+          new TestTransactionFactory(logs_[i].get()));
       txn_factory->SetConsensus(peer.get());
-      txn_factories_.push_back(txn_factory);
+      txn_factories_.emplace_back(std::move(txn_factory));
 
       RETURN_NOT_OK(peer->Start(
           boot_info,
           std::move(proxy_factory),
           logs_[i],
           time_manager,
-          txn_factory,
+          txn_factories_.back().get(),
           metric_entity_,
           Bind(&DoNothing)));
     }
@@ -274,9 +275,9 @@ class RaftConsensusQuorumTest : public KuduTest {
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
 
     // Use a latch in place of a Transaction callback.
-    gscoped_ptr<Synchronizer> sync(new Synchronizer());
+    unique_ptr<Synchronizer> sync(new Synchronizer());
     *round = peer->NewRound(std::move(msg), sync->AsStdStatusCallback());
-    InsertOrDie(&syncs_, round->get(), sync.release());
+    EmplaceOrDie(&syncs_, round->get(), std::move(sync));
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();
@@ -429,7 +430,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     ASSERT_OK(log->WaitUntilAllFlushed());
     log->Close();
     shared_ptr<LogReader> log_reader;
-    ASSERT_OK(log::LogReader::Open(fs_managers_[idx],
+    ASSERT_OK(log::LogReader::Open(fs_managers_[idx].get(),
                                    scoped_refptr<log::LogIndex>(),
                                    kTestTablet,
                                    metric_entity_.get(),
@@ -450,7 +451,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   void VerifyLogs(int leader_idx, int first_replica_idx, int last_replica_idx) {
     // Wait for in-flight transactions to be done. We're destroying the
     // peers next and leader transactions won't be able to commit anymore.
-    for (TestTransactionFactory* factory : txn_factories_) {
+    for (const auto& factory : txn_factories_) {
       factory->WaitDone();
     }
 
@@ -543,8 +544,9 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   // Read the ConsensusMetadata for the given peer from disk.
   scoped_refptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
+    FsManager* fs = fs_managers_[peer_index].get();
     scoped_refptr<ConsensusMetadata> cmeta;
-    CHECK_OK(cmeta_managers_[peer_index]->Load(kTestTablet, &cmeta));
+    CHECK_OK(ConsensusMetadata::Load(fs, kTestTablet, fs->uuid(), &cmeta));
     return cmeta;
   }
 
@@ -564,12 +566,6 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   ~RaftConsensusQuorumTest() {
     peers_->Clear();
-    STLDeleteElements(&txn_factories_);
-    // We need to clear the logs before deleting the fs_managers_ or we'll
-    // get a SIGSEGV when closing the logs.
-    logs_.clear();
-    STLDeleteElements(&fs_managers_);
-    STLDeleteValues(&syncs_);
   }
 
  protected:
@@ -577,17 +573,16 @@ class RaftConsensusQuorumTest : public KuduTest {
   RaftConfigPB config_;
   OpId initial_id_;
   vector<shared_ptr<MemTracker>> parent_mem_trackers_;
-  vector<FsManager*> fs_managers_;
+  vector<unique_ptr<FsManager>> fs_managers_;
   vector<scoped_refptr<Log> > logs_;
   unique_ptr<ThreadPool> raft_pool_;
-  vector<scoped_refptr<ConsensusMetadataManager>> cmeta_managers_;
-  gscoped_ptr<TestPeerMapManager> peers_;
-  vector<TestTransactionFactory*> txn_factories_;
+  unique_ptr<TestPeerMapManager> peers_;
+  vector<unique_ptr<TestTransactionFactory>> txn_factories_;
   scoped_refptr<clock::Clock> clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
-  std::unordered_map<ConsensusRound*, Synchronizer*> syncs_;
+  std::unordered_map<ConsensusRound*, unique_ptr<Synchronizer>> syncs_;
 };
 
 // Tests Replicate/Commit a single message through the leader.
