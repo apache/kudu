@@ -199,3 +199,8 @@ to communicate only the most important known issues.
 
 * NVM-based cache doesn't work reliably on RH6/CentOS6
   (see link:https://issues.apache.org/jira/browse/KUDU-2978[KUDU-2978]).
+
+* When upgrading a Kudu cluster to 1.11.0 version with existing pre-1.11.0
+  tables, the `live_row_count` and `on_disk_size` metrics might produce
+  inconsistent readings in some scenarios
+  (see link:https://issues.apache.org/jira/browse/KUDU-2986[KUDU-2986]).
