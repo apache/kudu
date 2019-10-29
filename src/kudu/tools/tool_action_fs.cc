@@ -50,7 +50,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -74,6 +73,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 DECLARE_bool(force);
 DECLARE_bool(print_meta);
@@ -489,11 +489,6 @@ const char* ToString(FieldGroup group) {
     case FieldGroup::kCFile: return "cfile";
     default: LOG(FATAL) << "unhandled field group (this is a bug)";
   }
-}
-
-// Transforms an ASCII string to lowercase.
-void ToLowerCase(string* string) {
-  std::transform(string->begin(), string->end(), string->begin(), ascii_tolower);
 }
 
 // Parses a field name and returns the corresponding enum variant.

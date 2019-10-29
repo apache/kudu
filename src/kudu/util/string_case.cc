@@ -17,18 +17,21 @@
 
 #include "kudu/util/string_case.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <ostream>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/strings/ascii_ctype.h"
+
 namespace kudu {
 
 using std::string;
 
-void SnakeToCamelCase(const std::string &snake_case,
-                      std::string *camel_case) {
+void SnakeToCamelCase(const std::string& snake_case,
+                      std::string* camel_case) {
   DCHECK_NE(camel_case, &snake_case) << "Does not support in-place operation";
   camel_case->clear();
   camel_case->reserve(snake_case.size());
@@ -49,18 +52,25 @@ void SnakeToCamelCase(const std::string &snake_case,
   }
 }
 
-void ToUpperCase(const std::string &string,
-                 std::string *out) {
+void ToUpperCase(const std::string& string,
+                 std::string* out) {
   if (out != &string) {
     *out = string;
   }
 
-  for (char& c : *out) {
-    c = toupper(c);
-  }
+  std::transform(out->begin(), out->end(), out->begin(), ascii_toupper);
 }
 
-void Capitalize(string *word) {
+void ToLowerCase(const std::string& string,
+                 std::string* out) {
+  if (out != &string) {
+    *out = string;
+  }
+
+  std::transform(out->begin(), out->end(), out->begin(), ascii_tolower);
+}
+
+void Capitalize(string* word) {
   uint32_t size = word->size();
   if (size == 0) {
     return;
