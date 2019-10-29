@@ -57,6 +57,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs.pb.h"
@@ -121,6 +122,7 @@ using google::protobuf::util::MessageDifferencer;
 using kudu::clock::Clock;
 using kudu::clock::HybridClock;
 using kudu::consensus::ConsensusStatePB;
+using kudu::fs::BlockManager;
 using kudu::fs::CreateCorruptBlock;
 using kudu::fs::DataDirManager;
 using kudu::pb_util::SecureDebugString;
@@ -706,7 +708,7 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
 }
 
 INSTANTIATE_TEST_CASE_P(BlockManager, TabletServerDiskSpaceTest,
-    ::testing::Values("log", "file"));
+    ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 enum class ErrorType {
   DISK_FAILURE,
