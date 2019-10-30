@@ -1,0 +1,8 @@
+<map id="include/kudu/util/status.h" name="include/kudu/util/status.h">
+<area shape="rect" id="node2" href="$client_8h_source.html" title="include/kudu/client\l/client.h" alt="" coords="34,259,165,300"/>
+<area shape="rect" id="node3" href="$scan__batch_8h_source.html" title="include/kudu/client\l/scan_batch.h" alt="" coords="46,80,177,121"/>
+<area shape="rect" id="node5" href="$schema_8h_source.html" title="include/kudu/client\l/schema.h" alt="" coords="189,169,320,211"/>
+<area shape="rect" id="node6" href="$partial__row_8h_source.html" title="include/kudu/common\l/partial_row.h" alt="" coords="322,80,472,121"/>
+<area shape="rect" id="node4" href="$row__result_8h_source.html" title="include/kudu/client\l/row_result.h" alt="" coords="34,169,165,211"/>
+<area shape="rect" id="node7" href="$write__op_8h_source.html" title="include/kudu/client\l/write_op.h" alt="" coords="344,169,474,211"/>
+</map>
