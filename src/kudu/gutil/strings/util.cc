@@ -1024,7 +1024,7 @@ void InsertString(string *const s,
 //  (returns string::npos = -1 if n <= 0)
 //------------------------------------------------------------------------
 int FindNth(StringPiece s, char c, int n) {
-  size_t pos = string::npos;
+  int pos = -1;
 
   for ( int i = 0; i < n; ++i ) {
     pos = s.find_first_of(c, pos + 1);

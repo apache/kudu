@@ -19,6 +19,8 @@
 
 #include "kudu/gutil/strings/util.h"
 
+#include <limits>
+
 #include <gtest/gtest.h>
 
 namespace kudu {
@@ -54,6 +56,14 @@ TEST(StringUtilTest, MatchPatternTest) {
   // recursion depth).
   EXPECT_TRUE(MatchPattern("Hello" ,
                            "He********************************o")) ;
+}
+
+TEST(StringUtilTest, FindNthTest) {
+  EXPECT_EQ(-1, FindNth("aabbcc", 'b', 0));
+  EXPECT_EQ(2, FindNth("aabbcc", 'b', 1));
+  EXPECT_EQ(3, FindNth("aabbcc", 'b', 2));
+  EXPECT_EQ(-1, FindNth("aabbcc", 'b', 3));
+  EXPECT_EQ(-1, FindNth("aabbcc", 'b', std::numeric_limits<int>::max()));
 }
 
 } // namespace kudu
