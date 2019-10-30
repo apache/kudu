@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-[[hive_metastore]]
 = Using the Hive Metastore with Kudu
 
 :author: Kudu Team
@@ -27,6 +26,9 @@
 :backend: html5
 :sectlinks:
 :experimental:
+
+[[hive_metastore]]
+## Overview
 
 Kudu has an optional feature which allows it to integrate its own catalog with
 the Hive Metastore (HMS). The HMS is the de-facto standard catalog and metadata
@@ -87,6 +89,7 @@ multiple Kudu tables exist whose names only differ by case, the Kudu master(s)
 will fail to start up. Be sure to rename such conflicting tables before
 enabling the Hive Metastore integration.
 
+[[metadata_sync]]
 ### Metadata Synchronization
 When the Hive Metastore integration is enabled, Kudu will automatically
 synchronize metadata changes to Kudu tables between Kudu and the HMS. As such,
@@ -108,10 +111,10 @@ those stored in Kudu. Additionally, multiple external tables may refer to the
 same underlying Kudu table. Thus, since external tables may not map one-to-one
 with Kudu tables, the Hive Metastore integration and tooling will only
 automatically synchronize metadata for internal tables. See the
-<<kudu_impala_integration.adoc#using-apache-kudu-with-apache-impala,Kudu Impala
-integration documentation>> for more
-information about table types in Impala
+<<kudu_impala_integration.adoc#kudu_impala,Kudu Impala integration documentation>>
+for more information about table types in Impala
 
+[[enabling-the-hive-metastore-integration]]
 ## Enabling the Hive Metastore Integration
 
 WARNING: Before enabling the Hive Metastore integration on an existing cluster,

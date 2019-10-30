@@ -151,6 +151,7 @@ to only those users who are able to successfully authenticate via Kerberos.
 Unauthenticated users on the same network as the Kudu servers will be unable
 to access the cluster.
 
+[[fine_grained_authz]]
 == Fine-Grained Authorization
 
 As of Kudu 1.10.0, Kudu can be configured to enforce fine-grained authorization

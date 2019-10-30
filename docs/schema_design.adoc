@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-[[schema_design]]
 = Apache Kudu Schema Design
 :author: Kudu Team
 :imagesdir: ./images
@@ -26,6 +25,9 @@
 :backend: html5
 :sectlinks:
 :experimental:
+
+[[schema_design]]
+== Overview
 
 Kudu tables have a structured data model similar to tables in a traditional
 RDBMS. Schema design is critical for achieving the best performance and
