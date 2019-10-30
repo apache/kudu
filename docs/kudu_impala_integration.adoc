@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-[[kudu_impala]]
 = Using Apache Kudu with Apache Impala
 :author: Kudu Team
 :imagesdir: ./images
@@ -27,9 +26,12 @@
 :sectlinks:
 :experimental:
 
+[[kudu_impala]]
+== Overview
+
 Kudu has tight integration with Apache Impala, allowing you to use Impala
 to insert, query, update, and delete data from Kudu tablets using Impala's SQL
-syntax, as an alternative to using the link:installation.html#view_api[Kudu APIs]
+syntax, as an alternative to using the <<developing.adoc#view_api,Kudu APIs>>
 to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
 existing or new applications written in any language, framework, or business intelligence
 tool to your Kudu data, using Impala as the broker.
@@ -772,7 +774,7 @@ The examples above have only explored a fraction of what you can do with Impala 
 - Read the link:https://impala.apache.org/impala-docs.html[Impala documentation].
 - View the link:https://impala.apache.org/docs/build/html/topics/impala_langref.html[Impala SQL reference].
 - Read about Impala internals or learn how to contribute to Impala on the link:https://cwiki.apache.org/confluence/display/IMPALA/Impala+Home[Impala Wiki].
-- Read about the native link:installation.html#view_api[Kudu APIs].
+- Read about the native <<developing.adoc#view_api,Kudu APIs>>.
 
 === Known Issues and Limitations
 
