@@ -656,7 +656,7 @@ class KUDU_EXPORT KuduTabletServer {
   uint16_t port() const;
 
   /// @cond PRIVATE_API
-  ///
+
   /// Private API.
   ///
   /// @return The location of the tablet server.
@@ -2531,6 +2531,7 @@ class KUDU_EXPORT KuduScanTokenBuilder {
   Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
 
   /// @cond PRIVATE_API
+
   /// @copydoc KuduScanner::SetDiffScan
   Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp)
       WARN_UNUSED_RESULT KUDU_NO_EXPORT;
