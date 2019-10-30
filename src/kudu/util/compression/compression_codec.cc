@@ -134,7 +134,7 @@ class SnappyCodec : public CompressionCodec {
 
   Status Uncompress(const Slice& compressed,
                     uint8_t *uncompressed,
-                    size_t uncompressed_length) const OVERRIDE {
+                    size_t /*uncompressed_length*/) const OVERRIDE {
     bool success = snappy::RawUncompress(reinterpret_cast<const char *>(compressed.data()),
                                          compressed.size(), reinterpret_cast<char *>(uncompressed));
     return success ? Status::OK() : Status::Corruption("unable to uncompress the buffer");
@@ -157,9 +157,9 @@ class Lz4Codec : public CompressionCodec {
 
   Status Compress(const Slice& input,
                   uint8_t *compressed, size_t *compressed_length) const OVERRIDE {
-    int n = LZ4_compress(reinterpret_cast<const char *>(input.data()),
-                         reinterpret_cast<char *>(compressed), input.size());
-    *compressed_length = n;
+    *compressed_length = LZ4_compress(reinterpret_cast<const char *>(input.data()),
+                                      reinterpret_cast<char *>(compressed),
+                                      input.size());
     return Status::OK();
   }
 
@@ -178,9 +178,10 @@ class Lz4Codec : public CompressionCodec {
   Status Uncompress(const Slice& compressed,
                     uint8_t *uncompressed,
                     size_t uncompressed_length) const OVERRIDE {
-    int n = LZ4_decompress_fast(reinterpret_cast<const char *>(compressed.data()),
-                                reinterpret_cast<char *>(uncompressed), uncompressed_length);
-    if (n != compressed.size()) {
+    int n = LZ4_decompress_safe(reinterpret_cast<const char *>(compressed.data()),
+                                reinterpret_cast<char *>(uncompressed),
+                                compressed.size(), uncompressed_length);
+    if (n != uncompressed_length) {
       return Status::Corruption(
         StringPrintf("unable to uncompress the buffer. error near %d, buffer", -n),
                      KUDU_REDACT(compressed.ToDebugString(100)));
