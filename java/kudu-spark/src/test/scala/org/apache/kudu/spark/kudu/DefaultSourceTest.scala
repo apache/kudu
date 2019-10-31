@@ -20,6 +20,7 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.StructField
@@ -335,6 +336,42 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.updateRows(updateDF, tableName)
     assertEquals(updatesBefore + updatesApplied, kuduContext.numUpdates.value)
     deleteRow(100)
+  }
+
+  @Test
+  def testWriteWithSink() {
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    val baseDF = df.limit(1) // Filter down to just the first row.
+
+    // Change the c2 string to abc and upsert.
+    val upsertDF = baseDF.withColumn("c2_s", lit("abc"))
+    upsertDF.write
+      .format("kudu")
+      .option("kudu.master", harness.getMasterAddressesAsString)
+      .option("kudu.table", tableName)
+      // Default kudu.operation is upsert.
+      .mode(SaveMode.Append)
+      .save()
+
+    // Change the key and insert.
+    val insertDF = df
+      .limit(1)
+      .withColumn("key", df("key").plus(100))
+      .withColumn("c2_s", lit("def"))
+    insertDF.write
+      .format("kudu")
+      .option("kudu.master", harness.getMasterAddressesAsString)
+      .option("kudu.table", tableName)
+      .option("kudu.operation", "insert")
+      .mode(SaveMode.Append)
+      .save()
+
+    // Read the data back.
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("abc", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
   }
 
   @Test
