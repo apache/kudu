@@ -1011,6 +1011,8 @@ class ConsensusRoundHandler {
 
   virtual Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& context) = 0;
 
+  virtual Status StartConsensusOnlyRound(const scoped_refptr<ConsensusRound>& context) = 0;
+
   // Consensus-only rounds complete when non-transaction ops finish
   // replication. This can be used to trigger callbacks, akin to an Apply() for
   // transaction ops.
