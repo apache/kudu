@@ -387,7 +387,7 @@ the following reasons.
 #### What operating systems does Kudu support?
 
 Linux is required to run Kudu. See the [installation
-guide](docs/installation.html#_prerequisites_and_requirements) for details. OSX
+guide](docs/installation.html#prerequisites_and_requirements) for details. OSX
 is supported as a development platform in Kudu 0.6.0 and newer. The Java client
 can be used on any JVM 7+ platform.
 

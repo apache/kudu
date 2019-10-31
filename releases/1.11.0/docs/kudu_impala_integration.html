@@ -2,7 +2,7 @@
 title: Using Apache Kudu with Apache Impala
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-10-14 21:39:21 PDT'
+last_updated: 'Last updated 2019-10-30 17:13:22 PDT'
 ---
 <!--
 
@@ -25,12 +25,13 @@ limitations under the License.
     <div class="col-md-9">
 
 <h1>Using Apache Kudu with Apache Impala</h1>
-      <div id="preamble">
+      <div class="sect1">
+<h2 id="kudu_impala"><a class="link" href="#kudu_impala">Overview</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Kudu has tight integration with Apache Impala, allowing you to use Impala
 to insert, query, update, and delete data from Kudu tablets using Impala&#8217;s SQL
-syntax, as an alternative to using the <a href="installation.html#view_api">Kudu APIs</a>
+syntax, as an alternative to using the <a href="developing.html#view_api">Kudu APIs</a>
 to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
 existing or new applications written in any language, framework, or business intelligence
 tool to your Kudu data, using Impala as the broker.</p>
@@ -1058,7 +1059,7 @@ data.</p>
 <p>Read about Impala internals or learn how to contribute to Impala on the <a href="https://cwiki.apache.org/confluence/display/IMPALA/Impala+Home">Impala Wiki</a>.</p>
 </li>
 <li>
-<p>Read about the native <a href="installation.html#view_api">Kudu APIs</a>.</p>
+<p>Read about the native <a href="developing.html#view_api">Kudu APIs</a>.</p>
 </li>
 </ul>
 </div>
@@ -1137,6 +1138,7 @@ for large tables.</p>
       <li>
 <span class="active-toc">Using Impala with Kudu</span>
             <ul class="sectlevel1">
+<li><a href="#kudu_impala">Overview</a></li>
 <li><a href="#_requirements">Requirements</a></li>
 <li><a href="#_configuration">Configuration</a></li>
 <li><a href="#_using_the_impala_shell">Using the Impala Shell</a>

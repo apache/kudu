@@ -2,7 +2,7 @@
 title: Installing Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-10-14 21:39:21 PDT'
+last_updated: 'Last updated 2019-10-30 17:13:22 PDT'
 ---
 <!--
 
@@ -34,7 +34,7 @@ cluster follow the steps below to build Kudu from source.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_prerequisites_and_requirements"><a class="link" href="#_prerequisites_and_requirements">Prerequisites and Requirements</a></h2>
+<h2 id="prerequisites_and_requirements"><a class="link" href="#prerequisites_and_requirements">Prerequisites and Requirements</a></h2>
 <div class="sectionbody">
 <div class="ulist">
 <div class="title">Hardware</div>
@@ -131,7 +131,7 @@ durability levels.</p>
 <div class="title">Java</div>
 <ul>
 <li>
-<p>JDK 7 or JDK 8 is required to build Kudu, but a JRE is not required at runtime
+<p>JDK 8 is required to build Kudu, but a JRE is not required at runtime
 except for tests.</p>
 </li>
 </ul>
@@ -914,26 +914,13 @@ Other libraries and headers are internal to Kudu and have no stability guarantee
 <div class="title">Requirements</div>
 <ul>
 <li>
-<p>JDK 7 or JDK 8</p>
+<p>JDK 8</p>
 </li>
 </ul>
 </div>
-<div class="admonitionblock warning">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-warning" title="Warning"></i>
-</td>
-<td class="content">
-Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in
-the next major release.
-</td>
-</tr>
-</table>
-</div>
 <div class="paragraph">
-<p>To build the Java client, clone the Kudu Git
-repository, change to the <code>java</code> directory, and issue the following command:</p>
+<p>To build the Java client, clone the Kudu Git repository, change to the <code>java</code>
+directory, and issue the following command:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -941,45 +928,8 @@ repository, change to the <code>java</code> directory, and issue the following c
 </div>
 </div>
 <div class="paragraph">
-<p>For more information about building the Java API, as well as Eclipse integration,
-see <code>java/README.md</code>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="view_api"><a class="link" href="#view_api">View API Documentation</a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<div class="title">C++ API Documentation</div>
-<p>You can view the <a href="../cpp-client-api/index.html">C++ client API
-documentation</a> online. Alternatively, after
-<a href="installation.html#build_from_source">building Kudu from source</a>, you can
-additionally build the <code>doxygen</code> target (e.g., run <code>make doxygen</code> if using
-make) and use the locally generated API documentation by opening
-<code>docs/doxygen/client_api/html/index.html</code> file in your favorite Web browser.</p>
-</div>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-note" title="Note"></i>
-</td>
-<td class="content">
-In order to build the <code>doxygen</code> target, it&#8217;s necessary to have
-doxygen with Dot (graphviz) support installed at your build machine. If
-you installed doxygen after building Kudu from source, you will need to run
-<code>cmake</code> again to pick up the doxygen location and generate appropriate
-targets.
-</td>
-</tr>
-</table>
-</div>
-<div class="paragraph">
-<div class="title">Java API Documentation</div>
-<p>You can view the <a href="../apidocs/index.html">Java API documentation</a> online.
-Alternatively, after <a href="installation.html#build_java_client">building the Java
-client</a>, Java API documentation is available in
-<code>java/kudu-client/target/apidocs/index.html</code>.</p>
+<p>For more information on building the Java parts of the Kudu project, as well
+as Eclipse integration, see <code>java/README.md</code>.</p>
 </div>
 </div>
 </div>
@@ -1129,7 +1079,7 @@ $ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 300</code
       <li>
 <span class="active-toc">Installation Guide</span>
             <ul class="sectlevel1">
-<li><a href="#_prerequisites_and_requirements">Prerequisites and Requirements</a></li>
+<li><a href="#prerequisites_and_requirements">Prerequisites and Requirements</a></li>
 <li><a href="#build_from_source">Build From Source</a>
 <ul class="sectlevel2">
 <li><a href="#rhel_from_source">RHEL or CentOS</a></li>
@@ -1140,7 +1090,6 @@ $ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 300</code
 </li>
 <li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
 <li><a href="#build_java_client">Build the Java Client</a></li>
-<li><a href="#view_api">View API Documentation</a></li>
 <li><a href="#upgrade">Upgrade from a Previous Version of Kudu</a></li>
 <li><a href="#next_steps">Next Steps</a></li>
 </ul> 
