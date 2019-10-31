@@ -36,3 +36,6 @@ gem 'jekyll-feed'
 # Used for 'site_tool proof'.
 # Pin to an old version which doesn't require ruby 2.0.
 gem 'html-proofer', '~> 2.6.4'
+
+gem 'fileutils', '~> 1.0.2'
+gem 'date', '~> 1.0.0'
