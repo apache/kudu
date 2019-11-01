@@ -388,12 +388,25 @@ Status ServerNegotiation::InitSaslServer() {
   unsigned secflags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
+
+  const char* server_fqdn = helper_.server_fqdn();
+  // If not explicitly set, use the host's FQDN here.
+  // SASL handles this itself if we pass null, but in a buggy way[1] that fails
+  // if the FQDN is >64 characters.
+  //
+  // [1] https://github.com/cyrusimap/cyrus-sasl/issues/583
+  string default_server_fqdn;
+  if (!server_fqdn) {
+    RETURN_NOT_OK_PREPEND(GetFQDN(&default_server_fqdn), "could not determine own FQDN");
+    server_fqdn = default_server_fqdn.c_str();
+  }
+
   RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
       return sasl_server_new(
           // Registered name of the service using SASL. Required.
           sasl_proto_name_.c_str(),
           // The fully qualified domain name of this server.
-          helper_.server_fqdn(),
+          server_fqdn,
           // Permits multiple user realms on server. NULL == use default.
           nullptr,
           // Local and remote IP address strings. We don't use any mechanisms
