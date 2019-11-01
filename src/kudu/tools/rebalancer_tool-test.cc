@@ -473,6 +473,7 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
           tserver_unresponsive_ms_, created_tables_names));
     } else {
       ASSERT_OK(CreateTablesExcludingLocations(empty_locations,
+                                               kTableNamePattern,
                                                created_tables_names));
     }
   }
@@ -481,8 +482,13 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
   // tablet servers in the specified locations. This is similar to
   // CreateUnbalancedTables() but the set of tablet servers to avoid is defined
   // by the set of the specified locations.
+  //
+  // Note: 'table_name_pattern' is used to describe the table names created by this
+  // function. Each call to this function can create different batch of tables with
+  // this parameter set.
   Status CreateTablesExcludingLocations(
       const unordered_set<string>& excluded_locations,
+      const string& table_name_pattern = kTableNamePattern,
       vector<string>* table_names = nullptr) {
     // Shutdown all tablet servers in the specified locations so no tablet
     // replicas would be hosted by those servers.
@@ -504,7 +510,7 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
     // are available.
     SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms_ / 4));
     RETURN_NOT_OK(CreateTables(cluster_.get(), client_.get(), schema_,
-                               kTableNamePattern, num_tables_, rep_factor_,
+                               table_name_pattern, num_tables_, rep_factor_,
                                table_names));
     // Start tablet servers at the excluded locations.
     if (!excluded_locations.empty()) {
@@ -516,6 +522,44 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
       }
     }
 
+    return Status::OK();
+  }
+
+  // Create tables placing their tablet replicas elsewhere but not at the specified
+  // number of tservers in the specified locations.
+  Status CreateTablesExcludingTserversInLocations(
+      const unordered_map<string, int>& excluded_tserver_by_location,
+      const string& table_name_pattern = kTableNamePattern,
+      vector<string>* table_names = nullptr) {
+    unordered_map<string, int> excluded_tservers = excluded_tserver_by_location;
+    vector<string> excluded_tserver_uuids;
+    // Shutdown some tablet servers in the specified locations so no tablet
+    // replicas would be hosted by those servers.
+    if (!excluded_tservers.empty()) {
+      for (const auto& elem : tablet_servers_) {
+        auto* ts = elem.second;
+        if (ContainsKey(excluded_tservers, ts->location)
+            && excluded_tservers[ts->location] > 0) {
+          excluded_tserver_uuids.push_back(ts->uuid());
+          --excluded_tservers[ts->location];
+          cluster_->tablet_server_by_uuid(ts->uuid())->Shutdown();
+        }
+      }
+    }
+
+    for (const auto& elem : excluded_tservers) {
+      CHECK_EQ(0, elem.second);
+    }
+    // Wait for the catalog manager to understand that not all tablet servers
+    // are available.
+    SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms_ / 4));
+    RETURN_NOT_OK(CreateTables(cluster_.get(), client_.get(), schema_,
+                               table_name_pattern, num_tables_, rep_factor_,
+                               table_names));
+    // Start tablet servers at the excluded locations.
+    for (const auto& uuid : excluded_tserver_uuids) {
+      RETURN_NOT_OK(cluster_->tablet_server_by_uuid(uuid)->Restart());
+    }
     return Status::OK();
   }
 
@@ -1665,6 +1709,79 @@ TEST_P(LocationAwareRebalancingParamTest, Rebalance) {
       // the same as a location-unaware, whole cluster rebalancing).
       ASSERT_STR_CONTAINS(out, "Placement policy violations:\n  none\n");
     }
+  }
+}
+
+// Basic intra location rebalance tests.
+class IntraLocationRebalancingBasicTest : public RebalancingTest {
+public:
+  IntraLocationRebalancingBasicTest()
+      : RebalancingTest(/*num_tables=*/ 1,
+                        /*rep_factor=*/ 3,
+                        /*num_tservers=*/ 11) {
+  }
+
+  bool is_343_scheme() const override {
+    return true;
+  }
+};
+
+TEST_F(IntraLocationRebalancingBasicTest, LocationsWithEmptyTabletServers) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+  const string first_table_name_pattern = "rebalance_test_first_table_$0";
+  const string second_table_name_pattern = "rebalance_test_second_table_$0";
+  const LocationInfo location_info = { { "/A", 3 }, { "/B", 3 }, { "/C", 3 },
+                                       { "/D", 2 } };
+  const vector<string>& extra_master_flags = {
+    "--master_client_location_assignment_enabled=false",
+  };
+
+  copy(extra_master_flags.begin(), extra_master_flags.end(),
+       back_inserter(master_flags_));
+
+  FLAGS_num_tablet_servers = num_tservers_;
+  FLAGS_num_replicas = rep_factor_;
+  NO_FATALS(BuildAndStart(tserver_flags_, master_flags_, location_info,
+                          /*create_table=*/ false));
+
+  // Create special intra location imbalance in location "/D". Location "/D"
+  // should only contain tablet replicas of one table.
+  //
+  // Note: there are 3 tablets in each table and the replica factor is 3,
+  // so it's 9 tablet replicas per table.
+  //
+  // 1. Create table0 with tablet replicas in locations /A, /B and /C. Because
+  // the per table location load skew is not greater than 1, it won't trigger
+  // cross location rebalance, so no replica of table0 will be moved.
+  ASSERT_OK(CreateTablesExcludingLocations({"/D"}, first_table_name_pattern));
+  // 2. Create table1 in { "/A", 3 }, { "/B", 3 }, { "/C", 3 }, {"/D", 1 }.
+  // There is an imbalance in location "/D" of table1.
+  ASSERT_OK(CreateTablesExcludingTserversInLocations({ {"/D", 1 } },
+      second_table_name_pattern));
+
+  const vector<string> tool_args = {
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+  };
+
+  // Before the fix added in this changelist the rebalancer would simply
+  // crash while running. See KUDU-2987 for detail informations.
+  {
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
+        << "stderr: " << err;
+
+    // Intra location rebalancing in location "/D" should move one replica
+    // to another tserver, so there is at least one move.
+    ASSERT_STR_NOT_CONTAINS(out, "(moved 0 replicas)");
+    ASSERT_STR_CONTAINS(out, "Placement policy violations:\n  none\n");
   }
 }
 

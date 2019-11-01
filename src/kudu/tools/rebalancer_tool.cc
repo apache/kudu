@@ -286,9 +286,9 @@ Status RebalancerTool::KsckResultsToClusterRawInfo(
       }
       if (!replicas_at_location.empty()) {
         table_ids_at_location.insert(summary.table_id);
+        tablet_summaries.push_back(summary);
+        tablet_summaries.back().replicas = std::move(replicas_at_location);
       }
-      tablet_summaries.push_back(summary);
-      tablet_summaries.back().replicas = std::move(replicas_at_location);
     }
 
     for (const auto& summary : ksck_info.cluster_status.table_summaries) {
