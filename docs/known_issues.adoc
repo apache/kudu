@@ -204,3 +204,14 @@ to communicate only the most important known issues.
   tables, the `live_row_count` and `on_disk_size` metrics might produce
   inconsistent readings in some scenarios
   (see link:https://issues.apache.org/jira/browse/KUDU-2986[KUDU-2986]).
+
+* In Kudu 1.10.0 and Kudu 1.11.0, the kudu-binary JAR (targeted for
+  containerized Kudu deployments using mini-cluster) contains libnuma dynamic
+  library. Also, if building Kudu binaries in release mode with default cmake
+  settings, the libnuma library is linked statically with the Kudu binaries
+  (add `-DKUDU_LINK=dynamic` when running cmake to avoid that). The library is
+  licensed under LGPL v.2.1, however the ASF thirdparty license policy
+  explicitly prohibits including such contents into releases: see
+  link:https://www.apache.org/legal/resolved.html#category-x[Category X]. This
+  issue will be addressed ASAP in upcoming patch releases
+  (see link:https://issues.apache.org/jira/browse/KUDU-2990[KUDU-2990]).
