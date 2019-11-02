@@ -19,6 +19,8 @@
 
 #include "kudu/util/nvm_cache.h"
 
+#include <dlfcn.h>
+
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -31,7 +33,6 @@
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <memkind.h>
 
 #include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/atomicops.h"
@@ -43,13 +44,20 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+
+#ifndef MEMKIND_PMEM_MIN_SIZE
+#define MEMKIND_PMEM_MIN_SIZE (1024 * 1024 * 16) // Taken from memkind 1.9.0.
+#endif
 
 struct memkind;
 
@@ -75,10 +83,92 @@ TAG_FLAG(nvm_cache_simulate_allocation_failure, unsafe);
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
 namespace {
+
+// Taken together, these typedefs and this macro make it easy to call a
+// memkind function:
+//
+//  CALL_MEMKIND(memkind_malloc, vmp_, size);
+typedef int (*memkind_create_pmem)(const char*, size_t, memkind**);
+typedef int (*memkind_destroy_kind)(memkind*);
+typedef void* (*memkind_malloc)(memkind*, size_t);
+typedef size_t (*memkind_malloc_usable_size)(memkind*, void*);
+typedef void (*memkind_free)(memkind*, void*);
+#define CALL_MEMKIND(func_name, ...) ((func_name)g_##func_name)(__VA_ARGS__)
+
+// Function pointers into memkind; set by InitMemkindOps().
+void* g_memkind_create_pmem;
+void* g_memkind_destroy_kind;
+void* g_memkind_malloc;
+void* g_memkind_malloc_usable_size;
+void* g_memkind_free;
+
+// After InitMemkindOps() is called, true if memkind is available and safe
+// to use, false otherwise.
+bool g_memkind_available;
+
+std::once_flag g_memkind_ops_flag;
+
+// Try to dlsym() a particular symbol from 'handle', storing the result in 'ptr'
+// if successful.
+Status TryDlsym(void* handle, const char* sym, void** ptr) {
+  dlerror(); // Need to clear any existing error first.
+  void* ret = dlsym(handle, sym);
+  char* error = dlerror();
+  if (error) {
+    return Status::NotSupported(Substitute("could not dlsym $0", sym), error);
+  }
+  *ptr = ret;
+  return Status::OK();
+}
+
+// Try to dlopen() memkind and set up all the function pointers we need from it.
+//
+// Note: in terms of protecting ourselves against changes in memkind, we'll
+// notice (and fail) if a symbol is missing, but not if it's signature has
+// changed or if there's some subtle behavioral change. A scan of the memkind
+// repo suggests that backwards compatibility is enforced: symbols are only
+// added and behavioral changes are effected via the introduction of new symbols.
+void InitMemkindOps() {
+  g_memkind_available = false;
+
+  // Use RTLD_NOW so that if any of memkind's dependencies aren't satisfied
+  // (e.g. libnuma is too old and is missing symbols), we'll know up front
+  // instead of during cache operations.
+  void* memkind_lib = dlopen("libmemkind.so.0", RTLD_NOW);
+  if (!memkind_lib) {
+    LOG(WARNING) << "could not dlopen: " << dlerror();
+    return;
+  }
+  auto cleanup = MakeScopedCleanup([&]() {
+    dlclose(memkind_lib);
+  });
+
+#define DLSYM_OR_RETURN(func_name, handle) do { \
+    const Status _s = TryDlsym(memkind_lib, func_name, handle); \
+    if (!_s.ok()) { \
+      LOG(WARNING) << _s.ToString(); \
+      return; \
+    } \
+  } while (0)
+
+  DLSYM_OR_RETURN("memkind_create_pmem", &g_memkind_create_pmem);
+  DLSYM_OR_RETURN("memkind_destroy_kind", &g_memkind_destroy_kind);
+  DLSYM_OR_RETURN("memkind_malloc", &g_memkind_malloc);
+  DLSYM_OR_RETURN("memkind_malloc_usable_size", &g_memkind_malloc_usable_size);
+  DLSYM_OR_RETURN("memkind_free", &g_memkind_free);
+#undef DLSYM_OR_RETURN
+
+  g_memkind_available = true;
+
+  // Need to keep the memkind library handle open so our function pointers
+  // remain loaded in memory.
+  cleanup.cancel();
+}
 
 typedef simple_spinlock MutexType;
 
@@ -278,7 +368,7 @@ void* NvmLRUCache::MemkindMalloc(size_t size) {
   if (PREDICT_FALSE(FLAGS_nvm_cache_simulate_allocation_failure)) {
     return nullptr;
   }
-  return memkind_malloc(vmp_, size);
+  return CALL_MEMKIND(memkind_malloc, vmp_, size);
 }
 
 bool NvmLRUCache::Unref(LRUHandle* e) {
@@ -295,7 +385,7 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  memkind_free(vmp_, e);
+  CALL_MEMKIND(memkind_free, vmp_, e);
 }
 
 // Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
@@ -550,7 +640,7 @@ class ShardedLRUCache : public Cache {
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
     // memkind pool.
-    memkind_destroy_kind(vmp_);
+    CALL_MEMKIND(memkind_destroy_kind, vmp_);
   }
 
   virtual UniqueHandle Insert(UniquePendingHandle handle,
@@ -606,7 +696,7 @@ class ShardedLRUCache : public Cache {
         handle->val_length = val_len;
         handle->key_length = key_len;
         handle->charge = (charge == kAutomaticCharge) ?
-            memkind_malloc_usable_size(vmp_, buf) : charge;
+            CALL_MEMKIND(memkind_malloc_usable_size, vmp_, buf) : charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return ph;
@@ -617,7 +707,7 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual void Free(PendingHandle* ph) OVERRIDE {
-    memkind_free(vmp_, ph);
+    CALL_MEMKIND(memkind_free, vmp_, ph);
   }
 
   size_t Invalidate(const InvalidationControl& ctl) override {
@@ -634,6 +724,13 @@ class ShardedLRUCache : public Cache {
 template<>
 Cache* NewCache<Cache::EvictionPolicy::LRU,
                 Cache::MemoryType::NVM>(size_t capacity, const std::string& id) {
+  std::call_once(g_memkind_ops_flag, InitMemkindOps);
+
+  // TODO(adar): we should plumb the failure up the call stack, but at the time
+  // of writing the NVM cache is only usable by the block cache, and its use of
+  // the singleton pattern prevents the surfacing of errors.
+  CHECK(g_memkind_available) << "Memkind not available!";
+
   // memkind_create_pmem() will fail if the capacity is too small, but with
   // an inscrutable error. So, we'll check ourselves.
   CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)
@@ -641,12 +738,17 @@ Cache* NewCache<Cache::EvictionPolicy::LRU,
     << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
 
   memkind* vmp;
-  int err = memkind_create_pmem(FLAGS_nvm_cache_path.c_str(), capacity, &vmp);
+  int err = CALL_MEMKIND(memkind_create_pmem, FLAGS_nvm_cache_path.c_str(), capacity, &vmp);
   // If we cannot create the cache pool we should not retry.
   PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in path "
                            << FLAGS_nvm_cache_path.c_str();
 
   return new ShardedLRUCache(capacity, id, vmp);
+}
+
+bool CanUseNVMCacheForTests() {
+  std::call_once(g_memkind_ops_flag, InitMemkindOps);
+  return g_memkind_available;
 }
 
 } // namespace kudu
