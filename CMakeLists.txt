@@ -1139,30 +1139,6 @@ if (NOT "${KUDU_USE_ASAN}" AND
   set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
 
-# Required memkind libraries
-if (NOT APPLE)
-  find_package(Memkind REQUIRED)
-  include_directories(${MEMKIND_INCLUDE_DIR})
-  ADD_THIRDPARTY_LIB(memkind
-    STATIC_LIB "${MEMKIND_STATIC_LIB}"
-    SHARED_LIB "${MEMKIND_SHARED_LIB}"
-    DEPS numa)
-endif()
-
-if (EXISTS ${MEMKIND_SHARED_LIB})
-  set(HAVE_LIB_MEMKIND 1)
-  add_definitions(-DHAVE_LIB_MEMKIND=1)
-endif()
-
-## libnuma
-if (NOT APPLE)
-  find_package(Numa REQUIRED)
-  include_directories(${NUMA_INCLUDE_DIR})
-  ADD_THIRDPARTY_LIB(numa
-    STATIC_LIB "${NUMA_STATIC_LIB}"
-    SHARED_LIB "${NUMA_SHARED_LIB}")
-endif()
-
 ## curl
 find_package(CURL REQUIRED)
 

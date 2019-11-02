@@ -54,7 +54,9 @@ DEFINE_string(block_cache_type, "DRAM",
               "Which type of block cache to use for caching data. "
               "Valid choices are 'DRAM' or 'NVM'. DRAM, the default, "
               "caches data in regular memory. 'NVM' caches data "
-              "in a memory-mapped file using the memkind library.");
+              "in a memory-mapped file using the memkind library. To use 'NVM', "
+              "libmemkind 1.6.0 or newer must be available on the system; "
+              "otherwise Kudu will crash.");
 
 using strings::Substitute;
 
@@ -75,12 +77,8 @@ Cache* CreateCache(int64_t capacity) {
       return NewCache<Cache::EvictionPolicy::LRU, Cache::MemoryType::DRAM>(
           capacity, "block_cache");
     case Cache::MemoryType::NVM:
-#if defined(HAVE_LIB_MEMKIND)
       return NewCache<Cache::EvictionPolicy::LRU, Cache::MemoryType::NVM>(
           capacity, "block_cache");
-#else
-      LOG(FATAL) << "cache of NVM memory type is not supported";
-#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
     default:
       LOG(FATAL) << "unsupported LRU cache memory type: " << mem_type;
       return nullptr;

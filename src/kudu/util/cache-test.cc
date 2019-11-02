@@ -25,14 +25,13 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/nvm_cache.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(cache_force_single_shard);
-#if defined(HAVE_LIB_MEMKIND)
 DECLARE_string(nvm_cache_path);
-#endif // #if defined(HAVE_LIB_MEMKIND)
 
 DECLARE_double(cache_memtracker_approximation_ratio);
 
@@ -111,12 +110,10 @@ class CacheBaseTest : public KuduTest,
     FLAGS_cache_force_single_shard =
         (sharding_policy == ShardingPolicy::SingleShard);
 
-#if defined(HAVE_LIB_MEMKIND)
     if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
-#endif // #if defined(HAVE_LIB_MEMKIND)
 
     switch (eviction_policy) {
       case Cache::EvictionPolicy::FIFO:
@@ -136,13 +133,11 @@ class CacheBaseTest : public KuduTest,
                                                            "cache_test"));
             break;
           case Cache::MemoryType::NVM:
-#if defined(HAVE_LIB_MEMKIND)
-            cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
-                                  Cache::MemoryType::NVM>(cache_size(),
-                                                          "cache_test"));
-#else
-            FAIL() << "cache of NVM memory type is not supported";
-#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
+            if (CanUseNVMCacheForTests()) {
+              cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
+                                    Cache::MemoryType::NVM>(cache_size(),
+                                                            "cache_test"));
+            }
             break;
           default:
             FAIL() << mem_type << ": unrecognized cache memory type";
@@ -161,10 +156,14 @@ class CacheBaseTest : public KuduTest,
       ASSERT_TRUE(mem_tracker_.get());
     }
 
-    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
-        &metric_registry_, "test");
-    unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
-    cache_->SetMetrics(std::move(metrics));
+    // cache_ will be null if we're trying to set up a test for the NVM cache
+    // and were unable to do so.
+    if (cache_) {
+      scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+          &metric_registry_, "test");
+      unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
+      cache_->SetMetrics(std::move(metrics));
+    }
   }
 
   const size_t cache_size_;
@@ -193,7 +192,6 @@ class CacheTest :
   }
 };
 
-#if defined(HAVE_LIB_MEMKIND)
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, CacheTest,
     ::testing::Values(
@@ -215,17 +213,9 @@ INSTANTIATE_TEST_CASE_P(
         make_tuple(Cache::MemoryType::NVM,
                    Cache::EvictionPolicy::LRU,
                    ShardingPolicy::SingleShard)));
-#else
-INSTANTIATE_TEST_CASE_P(
-    CacheTypes, CacheTest,
-    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
-                       ::testing::Values(Cache::EvictionPolicy::FIFO,
-                                         Cache::EvictionPolicy::LRU),
-                       ::testing::Values(ShardingPolicy::MultiShard,
-                                         ShardingPolicy::SingleShard)));
-#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
 
 TEST_P(CacheTest, TrackMemory) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   if (mem_tracker_) {
     Insert(100, 100, 1);
     ASSERT_EQ(1, mem_tracker_->consumption());
@@ -236,6 +226,7 @@ TEST_P(CacheTest, TrackMemory) {
 }
 
 TEST_P(CacheTest, HitAndMiss) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   ASSERT_EQ(-1, Lookup(100));
 
   Insert(100, 101);
@@ -259,6 +250,7 @@ TEST_P(CacheTest, HitAndMiss) {
 }
 
 TEST_P(CacheTest, Erase) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   Erase(200);
   ASSERT_EQ(0, evicted_keys_.size());
 
@@ -278,6 +270,7 @@ TEST_P(CacheTest, Erase) {
 }
 
 TEST_P(CacheTest, EntriesArePinned) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   Insert(100, 101);
   auto h1 = cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(101, DecodeInt(cache_->Value(h1)));
@@ -306,6 +299,7 @@ TEST_P(CacheTest, EntriesArePinned) {
 // size of items still in the cache, which must be approximately the
 // same as the total capacity.
 TEST_P(CacheTest, HeavyEntries) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   const int kLight = cache_size() / 1000;
   const int kHeavy = cache_size() / 100;
   int added = 0;
@@ -330,6 +324,7 @@ TEST_P(CacheTest, HeavyEntries) {
 }
 
 TEST_P(CacheTest, InvalidateAllEntries) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   constexpr const int kEntriesNum = 1024;
   // This scenarios assumes no evictions are done at the cache capacity.
   ASSERT_LE(kEntriesNum, cache_size());
@@ -353,6 +348,7 @@ TEST_P(CacheTest, InvalidateAllEntries) {
 }
 
 TEST_P(CacheTest, InvalidateNoEntries) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   constexpr const int kEntriesNum = 10;
   // This scenarios assumes no evictions are done at the cache capacity.
   ASSERT_LE(kEntriesNum, cache_size());
@@ -374,6 +370,7 @@ TEST_P(CacheTest, InvalidateNoEntries) {
 }
 
 TEST_P(CacheTest, InvalidateNoEntriesNoAdvanceIterationFunctor) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   constexpr const int kEntriesNum = 256;
   // This scenarios assumes no evictions are done at the cache capacity.
   ASSERT_LE(kEntriesNum, cache_size());
@@ -401,6 +398,7 @@ TEST_P(CacheTest, InvalidateNoEntriesNoAdvanceIterationFunctor) {
 }
 
 TEST_P(CacheTest, InvalidateOddKeyEntries) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   constexpr const int kEntriesNum = 64;
   // This scenarios assumes no evictions are done at the cache capacity.
   ASSERT_LE(kEntriesNum, cache_size());
@@ -506,22 +504,15 @@ class LRUCacheTest :
   }
 };
 
-#if defined(HAVE_LIB_MEMKIND)
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, LRUCacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
                                          Cache::MemoryType::NVM),
                        ::testing::Values(ShardingPolicy::MultiShard,
                                          ShardingPolicy::SingleShard)));
-#else
-INSTANTIATE_TEST_CASE_P(
-    CacheTypes, LRUCacheTest,
-    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
-                       ::testing::Values(ShardingPolicy::MultiShard,
-                                         ShardingPolicy::SingleShard)));
-#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
 
 TEST_P(LRUCacheTest, EvictionPolicy) {
+  RETURN_IF_NO_NVM_CACHE(std::get<0>(GetParam()));
   static constexpr int kNumElems = 1000;
   const int size_per_elem = cache_size() / kNumElems;
 
