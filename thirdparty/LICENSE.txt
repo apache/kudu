@@ -10,7 +10,7 @@ objects. A few of these dependencies are used only at build time and are noted
 as such.
 
 --------------------------------------------------------------------------------
-thirdparty/lz4-svn/: BSD 2-clause license
+thirdparty/src/lz4-*/: BSD 2-clause license
 Source: https://github.com/Cyan4973/lz4
 
   LZ4 - Fast LZ compression algorithm
@@ -41,9 +41,9 @@ Source: https://github.com/Cyan4973/lz4
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/gflags-*/: BSD 3-clause dependency
+thirdparty/src/gflags-*/: BSD 3-clause license
 libraries: libgflags
-source: https://github.com/gflags/gflags
+Source: https://github.com/gflags/gflags
 
   Copyright (c) 2006, Google Inc.
   All rights reserved.
@@ -75,7 +75,7 @@ source: https://github.com/gflags/gflags
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/glog-*/: BSD 3-clause license
+thirdparty/src/glog-*/: BSD 3-clause license
 libraries: libglog
 Source: https://github.com/google/glog
 
@@ -145,7 +145,7 @@ Source: https://github.com/google/glog
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/gperftools-*/: BSD 3-clause
+thirdparty/src/gperftools-*/: BSD 3-clause license
 libraries: libprofiler, libtcmalloc
 Source: https://github.com/gperftools/gperftools
 
@@ -179,7 +179,7 @@ Source: https://github.com/gperftools/gperftools
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/libev-*/: BSD 2-clause
+thirdparty/src/libev-*/: BSD 2-clause license
 libraries: libev
 Source: http://software.schmorp.de/pkg/libev.html
 
@@ -222,7 +222,7 @@ Source: http://software.schmorp.de/pkg/libev.html
   file under either the BSD or the GPL.
 
 --------------------------------------------------------------------------------
-thirdparty/squeasel-*/: MIT license
+thirdparty/src/squeasel-*/: MIT license
 Source: https://github.com/cloudera/squeasel
 
   Copyright (c) 2004-2013 Sergey Lyubka
@@ -251,11 +251,11 @@ changed to a GPL license. squeasel was forked from a revision of mongoose
 obtained prior to the license change.
 
 --------------------------------------------------------------------------------
-thirdparty/mustache-*/: Apache 2.0 license
+thirdparty/src/mustache-*/: Apache 2.0 license
 Source: https://github.com/henryr/cpp-mustache
 
 --------------------------------------------------------------------------------
-thirdparty/protobuf-*/: BSD 3-clause
+thirdparty/src/protobuf-*/: BSD 3-clause license
 libraries: libprotobuf
 Source: https://github.com/google/protobuf
 
@@ -294,7 +294,7 @@ Source: https://github.com/google/protobuf
   support library is itself covered by the above license.
 
 --------------------------------------------------------------------------------
-thirdparty/rapidjson-*/: MIT License
+thirdparty/src/rapidjson-*/: MIT license
 Source: https://github.com/miloyip/rapidjson
 
   Copyright (C) 2011 Milo Yip
@@ -318,7 +318,7 @@ Source: https://github.com/miloyip/rapidjson
   THE SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/snappy-*/: BSD 3-clause
+thirdparty/src/snappy-*/: BSD 3-clause license
 libraries: libsnappy
 Source: https://github.com/google/snappy
 
@@ -352,7 +352,7 @@ Source: https://github.com/google/snappy
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/bitshuffle-*: MIT license
+thirdparty/src/bitshuffle-*: MIT license
 Source: https://github.com/kiyo-masui/bitshuffle
 
   Bitshuffle - Filter for improving compression of typed binary data.
@@ -378,7 +378,7 @@ Source: https://github.com/kiyo-masui/bitshuffle
   THE SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/kudu-trace-viewer-*/: BSD 3-clause
+thirdparty/src/kudu-trace-viewer-*/: BSD 3-clause license
 Source: https://github.com/catapult-project/catapult
 
   Copyright (c) 2012 The Chromium Authors. All rights reserved.
@@ -410,7 +410,7 @@ Source: https://github.com/catapult-project/catapult
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/zlib-*/: Zlib license
+thirdparty/src/zlib-*/: Zlib license
 libraries: libz
 Source: http://www.zlib.net/
 
@@ -436,7 +436,7 @@ Source: http://www.zlib.net/
   jloup@gzip.org          madler@alumni.caltech.edu
 
 --------------------------------------------------------------------------------
-thirdparty/llvm-*: LLVM Release License (BSD 3-clause)
+thirdparty/src/llvm-*: LLVM Release License (BSD 3-clause)
 
   ==============================================================================
   LLVM Release License
@@ -483,39 +483,12 @@ thirdparty/llvm-*: LLVM Release License (BSD 3-clause)
   SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/curl-*/: MIT/X derivative license
-Source: http://curl.haxx.se/
-
-  Copyright (c) 1996 - 2016, Daniel Stenberg, daniel@haxx.se.
-
-  All rights reserved.
-
-  Permission to use, copy, modify, and distribute this software for any
-  purpose with or without fee is hereby granted, provided that the above
-  copyright notice and this permission notice appear in all copies.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-  OF THIRD PARTY RIGHTS. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-  IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-  IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-  SOFTWARE.
-
-  Except as contained in this notice, the name of a copyright holder
-  shall not be used in advertising or otherwise to promote the sale, use
-  or other dealings in this Software without prior written authorization
-  of the copyright holder.
-
-
---------------------------------------------------------------------------------
-thirdparty/crcutil-*/: Apache 2.0 license
+thirdparty/src/crcutil-*/: Apache 2.0 license
 libraries: libcrcutil
 Source: https://code.google.com/archive/p/crcutil/
 
 --------------------------------------------------------------------------------
-thirdparty/libunwind-*/: X11 License
+thirdparty/src/libunwind-*/: X11 license
 libraries: libunwind
 Source: http://savannah.nongnu.org/projects/libunwind/
 
@@ -539,7 +512,7 @@ Source: http://savannah.nongnu.org/projects/libunwind/
   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/memkind-*/
+thirdparty/src/memkind-*/: BSD 3-clause license
 libraries: libmemkind
 Source: https://github.com/memkind/memkind
 
@@ -599,7 +572,7 @@ memkind bundles jemalloc which is licensed under the BSD 2-clause license:
   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
-thirdparty/boost_*/: Boost Software License
+thirdparty/src/boost_*/: Boost Software License
 Source: http://www.boost.org/
 
   Boost Software License - Version 1.0 - August 17th, 2003
@@ -627,7 +600,7 @@ Source: http://www.boost.org/
   DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/thrift-*/: Apache License v2.0
+thirdparty/src/thrift-*/: Apache 2.0 license
 libraries: libthrift
 Source: https://thrift.apache.org
 
@@ -641,43 +614,48 @@ full text of the licenses here, since neither source nor binary distributions
 bundle these projects.
 
 --------------------------------------------------------------------------------
-thirdparty/cmake-*/: BSD 3-clause license
-source: http://cmake.org/
+thirdparty/src/cmake-*/: BSD 3-clause license
+Source: http://cmake.org/
 NOTE: build-time dependency only
 
 --------------------------------------------------------------------------------
-thirdparty/gcovr-*/: BSD 3-clause license
-source: https://github.com/gcovr/gcovr
+thirdparty/src/gcovr-*/: BSD 3-clause license
+Source: https://github.com/gcovr/gcovr
 NOTE: optional build-time dependency
 
 --------------------------------------------------------------------------------
-thirdparty/gmock-*/: BSD 3-clause
+thirdparty/src/gmock-*/: BSD 3-clause license
 libraries: libgmock
 Source: https://github.com/google/googletest
 NOTE: build-time dependency
 TODO(KUDU-2696): gmock is unnecessarily linked into the kudu cli binary
 
 --------------------------------------------------------------------------------
-thirdparty/google-styleguide-*/: CC-By 3.0 (http://creativecommons.org/licenses/by/3.0/)
+thirdparty/src/google-styleguide-*/: CC-By 3.0 (http://creativecommons.org/licenses/by/3.0/)
 Source: https://github.com/google/styleguide
 NOTE: optional build-time dependency, not linked or bundled.
 
 --------------------------------------------------------------------------------
-thirdparty/python-*: Python 2.7 license (https://www.python.org/download/releases/2.7/license/)
+thirdparty/src/python-*/: Python 2.7 license (https://www.python.org/download/releases/2.7/license/)
 Source: http://www.python.org/
 NOTE: optional build-time dependency, not linked or bundled.
 
 --------------------------------------------------------------------------------
-thirdparty/bison: GPLv3 license (https://www.gnu.org/licenses/gpl.html)
+thirdparty/src/bison-*/: GPLv3 license (https://www.gnu.org/licenses/gpl.html)
 Source: https://www.gnu.org/software/bison
 NOTE: build-time dependency
 
 --------------------------------------------------------------------------------
-thirdparty/hadoop-*/: Apache License v2.0
+thirdparty/src/hadoop-*/: Apache 2.0 license
 Source: https://hadoop.apache.org
 NOTE: build-time dependency
 
 --------------------------------------------------------------------------------
-thirdparty/hive-*/: Apache License v2.0
+thirdparty/src/hive-*/: Apache 2.0 license
 Source: https://hive.apache.org
+NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/src/curl-*/: MIT/X derivative license
+Source: http://curl.haxx.se/
 NOTE: build-time dependency
