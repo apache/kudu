@@ -269,10 +269,16 @@ Note: You can upload to the test PyPi by adding
 . Once the review is finished and the commit is pushed, update the website following
   these link:https://github.com/apache/kudu/#deploying-changes-to-the-apache-kudu-web-site[instructions].
 
-. About 24 hours after the first step was completed, send an email to
+. About 24 hours after all artifacts have been published, send an email to
   user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org to
-  announce the release. The email should be similar to
-  link:https://s.apache.org/pduz[this].
+  announce the new release. The email should be similar to
+  link:https://s.apache.org/pduz[this]. The announcement email must be sent
+  from your apache.org address, otherwise apache.org mailer will not deliver
+  the message to the addressees of the announce@ group at least.  If using
+  gmail.com service for email correspondence, follow
+  link:https://support.google.com/mail/answer/22370?hl=en[this guide] to add
+  your apache.org address to be used as `From` address when sending email
+  messages.
 
 . About another 24 hours later, clean up the SVN. If releasing a new minor
   version, delete the oldest minor version branch in the release repo (e.g. if
