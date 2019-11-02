@@ -55,12 +55,6 @@ set(CFILE_LIBS
   cfile_proto
   bitshuffle)
 
-if(HAVE_LIB_MEMKIND)
-  set(CFILE_LIBS
-    ${CFILE_LIBS}
-    nvm_cache)
-endif()
-
 target_link_libraries(cfile ${CFILE_LIBS})
 
 # Tests

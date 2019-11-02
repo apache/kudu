@@ -195,6 +195,7 @@ set(UTIL_SRCS
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
+  nvm_cache.cc
   oid_generator.cc
   once.cc
   os-util.cc
@@ -276,31 +277,6 @@ ADD_EXPORTABLE_LIBRARY(kudu_util
   EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
 
 #######################################
-# nvm_cache
-#######################################
-
-if(HAVE_LIB_MEMKIND)
-  set(NVM_CACHE_SRCS
-    nvm_cache.cc)
-
-  set(NVM_CACHE_LIBS
-    gflags
-    glog
-    gutil
-    memkind)
-
-  if(NOT APPLE)
-    set(NVM_CACHE_LIBS
-      ${NVM_CACHE_LIBS}
-      dl
-      rt)
-  endif()
-
-  add_library(nvm_cache ${NVM_CACHE_SRCS})
-  target_link_libraries(nvm_cache ${NVM_CACHE_LIBS})
-endif()
-
-#######################################
 # kudu_util_compression
 #######################################
 set(UTIL_COMPRESSION_SRCS
@@ -357,11 +333,6 @@ target_link_libraries(kudu_test_util
   glog
   gmock
   kudu_util)
-
-if(HAVE_LIB_MEMKIND)
-  target_link_libraries(kudu_test_util
-    nvm_cache)
-endif()
 
 #######################################
 # kudu_curl_util
