@@ -41,7 +41,6 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager-test-util.h"
 #include "kudu/fs/log_block_manager.h"  // IWYU pragma: keep
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -269,7 +268,7 @@ class BlockManagerStressTest : public KuduTest {
   simple_spinlock lock_;
 
   // The block manager.
-  gscoped_ptr<BlockManager> bm_;
+  unique_ptr<BlockManager> bm_;
 
   // The directory manager.
   unique_ptr<DataDirManager> dd_manager_;
@@ -408,7 +407,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
     // Read it fully into memory.
     uint64_t block_size;
     CHECK_OK(block->Size(&block_size));
-    gscoped_ptr<uint8_t[]> scratch(new uint8_t[block_size]);
+    unique_ptr<uint8_t[]> scratch(new uint8_t[block_size]);
     Slice data(scratch.get(), block_size);
     CHECK_OK(block->Read(0, data));
 
