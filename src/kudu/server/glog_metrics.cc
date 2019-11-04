@@ -24,15 +24,18 @@
 
 METRIC_DEFINE_counter(server, glog_info_messages,
                       "INFO-level Log Messages", kudu::MetricUnit::kMessages,
-                      "Number of INFO-level log messages emitted by the application.");
+                      "Number of INFO-level log messages emitted by the application.",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_counter(server, glog_warning_messages,
                       "WARNING-level Log Messages", kudu::MetricUnit::kMessages,
-                      "Number of WARNING-level log messages emitted by the application.");
+                      "Number of WARNING-level log messages emitted by the application.",
+                      kudu::MetricLevel::kWarn);
 
 METRIC_DEFINE_counter(server, glog_error_messages,
                       "ERROR-level Log Messages", kudu::MetricUnit::kMessages,
-                      "Number of ERROR-level log messages emitted by the application.");
+                      "Number of ERROR-level log messages emitted by the application.",
+                      kudu::MetricLevel::kWarn);
 
 struct tm;
 

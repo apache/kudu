@@ -21,34 +21,42 @@
 
 METRIC_DEFINE_counter(server, file_cache_inserts,
                       "File Cache Inserts", kudu::MetricUnit::kEntries,
-                      "Number of file descriptors inserted in the cache");
+                      "Number of file descriptors inserted in the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_lookups,
                       "File Cache Lookups", kudu::MetricUnit::kEntries,
-                      "Number of file descriptors looked up from the cache");
+                      "Number of file descriptors looked up from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_evictions,
                       "File Cache Evictions", kudu::MetricUnit::kEntries,
-                      "Number of file descriptors evicted from the cache");
+                      "Number of file descriptors evicted from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_misses,
                       "File Cache Misses", kudu::MetricUnit::kEntries,
-                      "Number of lookups that didn't yield a file descriptor");
+                      "Number of lookups that didn't yield a file descriptor",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_misses_caching,
                       "File Cache Misses (Caching)", kudu::MetricUnit::kEntries,
                       "Number of lookups that were expecting a file descriptor "
                       "that didn't yield one. Use this number instead of "
                       "cache_misses when trying to determine how "
-                      "efficient the cache is");
+                      "efficient the cache is",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_hits,
                       "File Cache Hits", kudu::MetricUnit::kEntries,
-                      "Number of lookups that found a file descriptor");
+                      "Number of lookups that found a file descriptor",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, file_cache_hits_caching,
                       "File Cache Hits (Caching)", kudu::MetricUnit::kEntries,
                       "Number of lookups that were expecting a file descriptor "
                       "that found one. Use this number instead of cache_hits "
-                      "when trying to determine how efficient the cache is");
+                      "when trying to determine how efficient the cache is",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_gauge_uint64(server, file_cache_usage, "File Cache Usage",
                            kudu::MetricUnit::kEntries,
-                           "Number of entries in the file cache");
+                           "Number of entries in the file cache",
+                           kudu::MetricLevel::kInfo);
 
 namespace kudu {
 

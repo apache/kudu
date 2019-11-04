@@ -54,6 +54,8 @@ using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
 
+DECLARE_string(metrics_default_level);
+
 namespace kudu {
 
 METRIC_DEFINE_entity(test_entity);
@@ -83,7 +85,8 @@ class MetricsTest : public KuduTest {
 };
 
 METRIC_DEFINE_counter(test_entity, test_counter, "My Test Counter", MetricUnit::kRequests,
-                      "Description of test counter");
+                      "Description of test counter",
+                      kudu::MetricLevel::kInfo);
 
 TEST_F(MetricsTest, SimpleCounterTest) {
   scoped_refptr<Counter> requests =
@@ -115,7 +118,8 @@ TEST_F(MetricsTest, SimpleCounterMergeTest) {
 }
 
 METRIC_DEFINE_gauge_string(test_entity, test_string_gauge, "Test string Gauge",
-                           MetricUnit::kState, "Description of string Gauge");
+                           MetricUnit::kState, "Description of string Gauge",
+                           kudu::MetricLevel::kInfo);
 
 TEST_F(MetricsTest, SimpleStringGaugeTest) {
   scoped_refptr<StringGauge> state =
@@ -169,7 +173,8 @@ TEST_F(MetricsTest, SimpleStringGaugeForMergeTest) {
 }
 
 METRIC_DEFINE_gauge_double(test_entity, test_mean_gauge, "Test mean Gauge",
-                           MetricUnit::kUnits, "Description of mean Gauge");
+                           MetricUnit::kUnits, "Description of mean Gauge",
+                           kudu::MetricLevel::kInfo);
 
 TEST_F(MetricsTest, SimpleMeanGaugeTest) {
   scoped_refptr<MeanGauge> average_usage =
@@ -202,7 +207,8 @@ TEST_F(MetricsTest, SimpleMeanGaugeMergeTest) {
 }
 
 METRIC_DEFINE_gauge_uint64(test_entity, test_gauge, "Test uint64 Gauge",
-                           MetricUnit::kBytes, "Description of Test Gauge");
+                           MetricUnit::kBytes, "Description of Test Gauge",
+                           kudu::MetricLevel::kInfo);
 
 TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
   scoped_refptr<AtomicGauge<uint64_t> > mem_usage =
@@ -232,7 +238,8 @@ TEST_F(MetricsTest, SimpleAtomicGaugeMergeTest) {
 }
 
 METRIC_DEFINE_gauge_int64(test_entity, test_func_gauge, "Test Function Gauge",
-                          MetricUnit::kBytes, "Test Gauge 2");
+                          MetricUnit::kBytes, "Test Gauge 2",
+                          kudu::MetricLevel::kInfo);
 
 static int64_t MyFunction(int* metric_val) {
   return (*metric_val)++;
@@ -258,7 +265,8 @@ TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
 }
 
 METRIC_DEFINE_gauge_int64(test_entity, test_func_gauge_snapshot, "Test Function Gauge snapshot",
-                          MetricUnit::kOperations, "Description of Function Gauge snapshot");
+                          MetricUnit::kOperations, "Description of Function Gauge snapshot",
+                          kudu::MetricLevel::kInfo);
 class FunctionGaugeOwner {
  public:
   explicit FunctionGaugeOwner(const scoped_refptr<MetricEntity>& entity) {
@@ -368,13 +376,16 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
 
 METRIC_DEFINE_gauge_uint64(test_entity, counter_as_gauge, "Gauge exposed as Counter",
                            MetricUnit::kBytes, "Gauge exposed as Counter",
+                           kudu::MetricLevel::kInfo,
                            EXPOSE_AS_COUNTER);
 TEST_F(MetricsTest, TEstExposeGaugeAsCounter) {
   ASSERT_EQ(MetricType::kCounter, METRIC_counter_as_gauge.type());
 }
 
 METRIC_DEFINE_histogram(test_entity, test_hist, "Test Histogram",
-                        MetricUnit::kMilliseconds, "foo", 1000000, 3);
+                        MetricUnit::kMilliseconds, "foo",
+                        MetricLevel::kInfo,
+                        1000000, 3);
 
 TEST_F(MetricsTest, SimpleHistogramTest) {
   scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
@@ -702,6 +713,7 @@ TEST_F(MetricsTest, TestDumpJsonPrototypes) {
     "            \"type\": \"gauge\",\n"
     "            \"unit\": \"bytes\",\n"
     "            \"description\": \"Test Gauge 2\",\n"
+    "            \"level\": \"info\",\n"
     "            \"entity_type\": \"test_entity\"\n"
     "        }";
   ASSERT_STR_CONTAINS(json, expected);
@@ -789,6 +801,14 @@ TEST_F(MetricsTest, TestDontDumpUntouched) {
   ASSERT_STR_CONTAINS(out.str(), "test_gauge");
 }
 
+METRIC_DEFINE_counter(test_entity, warn_counter, "Warn Metric", MetricUnit::kRequests,
+                      "Description of warn metric",
+                      kudu::MetricLevel::kWarn);
+
+METRIC_DEFINE_counter(test_entity, debug_counter, "Debug Metric", MetricUnit::kRequests,
+                      "Description of debug metric",
+                      kudu::MetricLevel::kDebug);
+
 TEST_F(MetricsTest, TestFilter) {
   const int32_t kNum = 4;
   vector<string> id_uuids;
@@ -817,6 +837,14 @@ TEST_F(MetricsTest, TestFilter) {
     attr2_uuids.emplace_back(attr2_uuid);
   }
 
+  // Add 1 warn and 1 debug entity and metric.
+  scoped_refptr<MetricEntity> warnEntity =
+      METRIC_ENTITY_test_entity.Instantiate(&registry_, oid.Next());
+  scoped_refptr<Counter> warnMetric = METRIC_warn_counter.Instantiate(warnEntity);
+  scoped_refptr<MetricEntity> debugEntity =
+      METRIC_ENTITY_test_entity.Instantiate(&registry_, oid.Next());
+  scoped_refptr<Counter> debugMetric = METRIC_debug_counter.Instantiate(debugEntity);
+
   // 2.Check the filter.
   Random rand(SeedRandom());
   const string not_exist_string = "not_exist_string";
@@ -840,7 +868,7 @@ TEST_F(MetricsTest, TestFilter) {
       ASSERT_OK(registry_.WriteAsJson(&w, opts));
       rapidjson::Document d;
       d.Parse<0>(out.str().c_str());
-      ASSERT_EQ(kNum + kEntityCount, d.Size());
+      ASSERT_EQ(kNum + kEntityCount + 2, d.Size());
       ASSERT_EQ(entity_type, d[rand.Next() % kNum]["type"].GetString());
     }
   }
@@ -918,14 +946,42 @@ TEST_F(MetricsTest, TestFilter) {
       ASSERT_EQ(kNum, d.Size());
     }
   }
-  // 2.5 Default filter condition.
+  // 2.5 Filter the 'level'
+  {
+    // Higher level.
+    {
+      const string entity_level = "warn";
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.filters.entity_level = entity_level;
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(kEntityCount + 1, d.Size());
+    }
+    // Debug level includes info and warn level.
+    {
+      const string entity_level = "debug";
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.filters.entity_level = entity_level;
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(kNum + kEntityCount + 2, d.Size());
+    }
+  }
+
+  // 2.6 Default filter condition.
   {
     std::ostringstream out;
     JsonWriter w(&out, JsonWriter::PRETTY);
     ASSERT_OK(registry_.WriteAsJson(&w, MetricJsonOptions()));
     rapidjson::Document d;
     d.Parse<0>(out.str().c_str());
-    ASSERT_EQ(kNum + kEntityCount, d.Size());
+    ASSERT_EQ(kNum + kEntityCount + 2, d.Size());
   }
 }
 

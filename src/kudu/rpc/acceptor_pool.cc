@@ -50,7 +50,8 @@ using std::string;
 METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       "RPC Connections Accepted",
                       kudu::MetricUnit::kConnections,
-                      "Number of incoming TCP connections made to the RPC server");
+                      "Number of incoming TCP connections made to the RPC server",
+                      kudu::MetricLevel::kInfo);
 
 DEFINE_int32(rpc_acceptor_listen_backlog, 128,
              "Socket backlog parameter used when listening for RPC connections. "

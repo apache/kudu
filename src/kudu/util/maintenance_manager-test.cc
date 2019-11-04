@@ -54,10 +54,13 @@ METRIC_DEFINE_entity(test);
 METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,
                            "Number of Maintenance Operations Running",
                            kudu::MetricUnit::kMaintenanceOperations,
-                           "The number of background maintenance operations currently running.");
+                           "The number of background maintenance operations currently running.",
+                           kudu::MetricLevel::kInfo);
 METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         "Maintenance Operation Duration",
-                        kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
+                        kudu::MetricUnit::kSeconds, "",
+                        kudu::MetricLevel::kInfo,
+                        60000000LU, 2);
 
 DECLARE_int64(log_target_replay_size_mb);
 DECLARE_double(maintenance_op_multiplier);

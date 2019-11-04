@@ -105,11 +105,13 @@ METRIC_DEFINE_gauge_uint64(server, data_dirs_failed,
                            "Data Directories Failed",
                            kudu::MetricUnit::kDataDirectories,
                            "Number of data directories whose disks are currently "
-                           "in a failed state");
+                           "in a failed state",
+                           kudu::MetricLevel::kWarn);
 METRIC_DEFINE_gauge_uint64(server, data_dirs_full,
                            "Data Directories Full",
                            kudu::MetricUnit::kDataDirectories,
-                           "Number of data directories whose disks are currently full");
+                           "Number of data directories whose disks are currently full",
+                           kudu::MetricLevel::kWarn);
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_string(block_manager);

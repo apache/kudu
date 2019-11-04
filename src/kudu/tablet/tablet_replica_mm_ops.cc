@@ -79,11 +79,14 @@ TAG_FLAG(flush_threshold_secs, runtime);
 METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,
                            "Log GCs Running",
                            kudu::MetricUnit::kOperations,
-                           "Number of log GC operations currently running.");
+                           "Number of log GC operations currently running.",
+                           kudu::MetricLevel::kInfo);
 METRIC_DEFINE_histogram(tablet, log_gc_duration,
                         "Log GC Duration",
                         kudu::MetricUnit::kMilliseconds,
-                        "Time spent garbage collecting the logs.", 60000LU, 1);
+                        "Time spent garbage collecting the logs.",
+                        kudu::MetricLevel::kInfo,
+                        60000LU, 1);
 
 namespace kudu {
 namespace tablet {

@@ -22,37 +22,45 @@
 METRIC_DEFINE_counter(server, sentry_privileges_cache_inserts,
                       "Sentry Privileges Cache Inserts",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries inserted in the cache");
+                      "Number of entries inserted in the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_lookups,
                       "Sentry Privileges Cache Lookups",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries looked up from the cache");
+                      "Number of entries looked up from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_evictions,
                       "Sentry Privileges Cache Evictions",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries evicted from the cache");
+                      "Number of entries evicted from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_evictions_expired,
                       "Sentry Privileges Cache Evictions of Expired Entries",
                       kudu::MetricUnit::kEntries,
                       "Number of entries that had already expired upon "
-                      "eviction from the cache");
+                      "eviction from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_misses,
                       "Sentry Privileges Cache Misses",
                       kudu::MetricUnit::kEntries,
-                      "Number of lookups that didn't find a cached entry");
+                      "Number of lookups that didn't find a cached entry",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_hits,
                       "Sentry Privileges Cache Hits",
                       kudu::MetricUnit::kEntries,
-                      "Number of lookups that found a cached entry");
+                      "Number of lookups that found a cached entry",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_privileges_cache_hits_expired,
                       "Sentry Privileges Cache Hits of Expired Entries",
                       kudu::MetricUnit::kEntries,
                       "Number of lookups that found an entry, but the entry "
-                      "had already expired at the time of lookup");
+                      "had already expired at the time of lookup",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_gauge_uint64(server, sentry_privileges_cache_memory_usage,
                            "Sentry Privileges Cache Memory Usage",
                            kudu::MetricUnit::kBytes,
-                           "Memory consumed by the cache");
+                           "Memory consumed by the cache",
+                           kudu::MetricLevel::kDebug);
 
 namespace kudu {
 namespace master {

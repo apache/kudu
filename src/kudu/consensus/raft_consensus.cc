@@ -140,23 +140,27 @@ METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
                       kudu::MetricUnit::kRequests,
                       "Number of RPC requests rejected due to "
-                      "memory pressure while FOLLOWER.");
+                      "memory pressure while FOLLOWER.",
+                      kudu::MetricLevel::kWarn);
 METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           "Current Raft Consensus Term",
                           kudu::MetricUnit::kUnits,
                           "Current Term of the Raft Consensus algorithm. This number increments "
-                          "each time a leader election is started.");
+                          "each time a leader election is started.",
+                          kudu::MetricLevel::kDebug);
 METRIC_DEFINE_gauge_int64(tablet, failed_elections_since_stable_leader,
                           "Failed Elections Since Stable Leader",
                           kudu::MetricUnit::kUnits,
                           "Number of failed elections on this node since there was a stable "
                           "leader. This number increments on each failed election and resets on "
-                          "each successful one.");
+                          "each successful one.",
+                          kudu::MetricLevel::kWarn);
 METRIC_DEFINE_gauge_int64(tablet, time_since_last_leader_heartbeat,
                           "Time Since Last Leader Heartbeat",
                           kudu::MetricUnit::kMilliseconds,
                           "The time elapsed since the last heartbeat from the leader "
-                          "in milliseconds. This metric is identically zero on a leader replica.");
+                          "in milliseconds. This metric is identically zero on a leader replica.",
+                          kudu::MetricLevel::kDebug);
 
 
 using boost::optional;

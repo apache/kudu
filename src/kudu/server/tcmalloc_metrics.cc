@@ -42,18 +42,21 @@ METRIC_DEFINE_gauge_uint64(server, generic_current_allocated_bytes,
     "Heap Memory Usage", kudu::MetricUnit::kBytes,
     "Number of bytes used by the application. This will not typically match the memory "
     "use reported by the OS, because it does not include TCMalloc overhead or memory "
-    "fragmentation." TCM_ASAN_MSG);
+    "fragmentation." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, generic_heap_size,
     "Reserved Heap Memory", kudu::MetricUnit::kBytes,
-    "Bytes of system memory reserved by TCMalloc." TCM_ASAN_MSG);
+    "Bytes of system memory reserved by TCMalloc." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, tcmalloc_pageheap_free_bytes,
     "Free Heap Memory", kudu::MetricUnit::kBytes,
     "Number of bytes in free, mapped pages in page heap. These bytes can be used to "
     "fulfill allocation requests. They always count towards virtual memory usage, and "
     "unless the underlying memory is swapped out by the OS, they also count towards "
-    "physical memory usage." TCM_ASAN_MSG);
+    "physical memory usage." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, tcmalloc_pageheap_unmapped_bytes,
     "Unmapped Heap Memory", kudu::MetricUnit::kBytes,
@@ -61,16 +64,19 @@ METRIC_DEFINE_gauge_uint64(server, tcmalloc_pageheap_unmapped_bytes,
     "been released back to the OS, possibly by one of the MallocExtension \"Release\" "
     "calls. They can be used to fulfill allocation requests, but typically incur a page "
     "fault. They always count towards virtual memory usage, and depending on the OS, "
-    "typically do not count towards physical memory usage." TCM_ASAN_MSG);
+    "typically do not count towards physical memory usage." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, tcmalloc_max_total_thread_cache_bytes,
     "Thread Cache Memory Limit", kudu::MetricUnit::kBytes,
     "A limit to how much memory TCMalloc dedicates for small objects. Higher numbers "
-    "trade off more memory use for -- in some situations -- improved efficiency." TCM_ASAN_MSG);
+    "trade off more memory use for -- in some situations -- improved efficiency." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, tcmalloc_current_total_thread_cache_bytes,
     "Thread Cache Memory Usage", kudu::MetricUnit::kBytes,
-    "A measure of some of the memory TCMalloc is using (for small objects)." TCM_ASAN_MSG);
+    "A measure of some of the memory TCMalloc is using (for small objects)." TCM_ASAN_MSG,
+    kudu::MetricLevel::kInfo);
 
 #undef TCM_ASAN_MSG
 

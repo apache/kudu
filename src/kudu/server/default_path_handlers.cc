@@ -346,9 +346,10 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 
   MetricFilters& filters = opts.filters;
   filters.entity_types = ParseArray(req.parsed_args, "types");
-  filters.entity_ids =  ParseArray(req.parsed_args, "ids");
+  filters.entity_ids = ParseArray(req.parsed_args, "ids");
   filters.entity_attrs = ParseArray(req.parsed_args, "attributes");
   filters.entity_metrics = ParseArray(req.parsed_args, "metrics");
+  filters.entity_level = FindWithDefault(req.parsed_args, "level", "debug");
   vector<string> merge_rules = ParseArray(req.parsed_args, "merge_rules");
   for (const auto& merge_rule : merge_rules) {
     vector<string> values;

@@ -22,37 +22,45 @@
 METRIC_DEFINE_counter(server, test_ttl_cache_inserts,
                       "TTL Cache Inserts",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries inserted in the cache");
+                      "Number of entries inserted in the cache",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_lookups,
                       "TTL Cache Lookups",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries looked up from the cache");
+                      "Number of entries looked up from the cache",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_evictions,
                       "TTL Cache Evictions",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries evicted from the cache");
+                      "Number of entries evicted from the cache",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_evictions_expired,
                       "TTL Cache Evictions of Expired Entries",
                       kudu::MetricUnit::kEntries,
                       "Number of entries that had already expired upon "
-                      "eviction from the cache");
+                      "eviction from the cache",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_misses,
                       "TTL Cache Misses",
                       kudu::MetricUnit::kEntries,
-                      "Number of lookups that didn't find a cached entry");
+                      "Number of lookups that didn't find a cached entry",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_hits,
                       "TTL Cache Hits",
                       kudu::MetricUnit::kEntries,
-                      "Number of lookups that found a cached entry");
+                      "Number of lookups that found a cached entry",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_counter(server, test_ttl_cache_hits_expired,
                       "TTL Cache Hits of Expired Entries",
                       kudu::MetricUnit::kEntries,
                       "Number of lookups that found an entry, but the entry "
-                      "had already expired at the time of lookup");
+                      "had already expired at the time of lookup",
+                      kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_uint64(server, test_ttl_cache_memory_usage,
                            "TTL Cache Memory Usage",
                            kudu::MetricUnit::kBytes,
-                           "Memory consumed by the cache");
+                           "Memory consumed by the cache",
+                           kudu::MetricLevel::kInfo);
 
 namespace kudu {
 

@@ -87,11 +87,13 @@ TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
                            kudu::MetricUnit::kMicroseconds,
-                           "Hybrid clock timestamp.");
+                           "Hybrid clock timestamp.",
+                           kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_error,
                            "Hybrid Clock Error",
                            kudu::MetricUnit::kMicroseconds,
-                           "Server clock maximum error.");
+                           "Server clock maximum error.",
+                           kudu::MetricLevel::kInfo);
 
 namespace kudu {
 namespace clock {

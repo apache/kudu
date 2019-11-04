@@ -78,35 +78,41 @@ METRIC_DEFINE_gauge_uint64(server, threads_started,
                            "Threads Started",
                            kudu::MetricUnit::kThreads,
                            "Total number of threads started on this server",
+                           kudu::MetricLevel::kDebug,
                            kudu::EXPOSE_AS_COUNTER);
 
 METRIC_DEFINE_gauge_uint64(server, threads_running,
                            "Threads Running",
                            kudu::MetricUnit::kThreads,
-                           "Current number of running threads");
+                           "Current number of running threads",
+                           kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, cpu_utime,
                            "User CPU Time",
                            kudu::MetricUnit::kMilliseconds,
                            "Total user CPU time of the process",
+                           kudu::MetricLevel::kInfo,
                            kudu::EXPOSE_AS_COUNTER);
 
 METRIC_DEFINE_gauge_uint64(server, cpu_stime,
                            "System CPU Time",
                            kudu::MetricUnit::kMilliseconds,
                            "Total system CPU time of the process",
+                           kudu::MetricLevel::kInfo,
                            kudu::EXPOSE_AS_COUNTER);
 
 METRIC_DEFINE_gauge_uint64(server, voluntary_context_switches,
                            "Voluntary Context Switches",
                            kudu::MetricUnit::kContextSwitches,
                            "Total voluntary context switches",
+                           kudu::MetricLevel::kInfo,
                            kudu::EXPOSE_AS_COUNTER);
 
 METRIC_DEFINE_gauge_uint64(server, involuntary_context_switches,
                            "Involuntary Context Switches",
                            kudu::MetricUnit::kContextSwitches,
                            "Total involuntary context switches",
+                           kudu::MetricLevel::kInfo,
                            kudu::EXPOSE_AS_COUNTER);
 
 DEFINE_int32(thread_inject_start_latency_ms, 0,

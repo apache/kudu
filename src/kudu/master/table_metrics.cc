@@ -27,11 +27,13 @@ namespace master {
 METRIC_DEFINE_gauge_uint64(table, on_disk_size, "Table Size On Disk",
     kudu::MetricUnit::kBytes,
     "Pre-replication aggregated disk space used by all tablets in this table, "
-    "including metadata.");
+    "including metadata.",
+    kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_uint64(table, live_row_count, "Table Live Row count",
     kudu::MetricUnit::kRows,
     "Pre-replication aggregated number of live rows in this table. "
-    "Only accurate if all tablets in the table support live row counting.");
+    "Only accurate if all tablets in the table support live row counting.",
+    kudu::MetricLevel::kInfo);
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 

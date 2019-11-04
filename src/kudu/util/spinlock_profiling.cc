@@ -51,6 +51,7 @@ METRIC_DEFINE_gauge_uint64(server, spinlock_contention_time,
     "Amount of time consumed by contention on internal spinlocks since the server "
     "started. If this increases rapidly, it may indicate a performance issue in Kudu "
     "internals triggered by a particular workload and warrant investigation.",
+    kudu::MetricLevel::kWarn,
     kudu::EXPOSE_AS_COUNTER);
 
 

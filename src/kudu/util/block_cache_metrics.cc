@@ -21,33 +21,41 @@
 
 METRIC_DEFINE_counter(server, block_cache_inserts,
                       "Block Cache Inserts", kudu::MetricUnit::kBlocks,
-                      "Number of blocks inserted in the cache");
+                      "Number of blocks inserted in the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_lookups,
                       "Block Cache Lookups", kudu::MetricUnit::kBlocks,
-                      "Number of blocks looked up from the cache");
+                      "Number of blocks looked up from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_evictions,
                       "Block Cache Evictions", kudu::MetricUnit::kBlocks,
-                      "Number of blocks evicted from the cache");
+                      "Number of blocks evicted from the cache",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_misses,
                       "Block Cache Misses", kudu::MetricUnit::kBlocks,
-                      "Number of lookups that didn't yield a block");
+                      "Number of lookups that didn't yield a block",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_misses_caching,
                       "Block Cache Misses (Caching)", kudu::MetricUnit::kBlocks,
                       "Number of lookups that were expecting a block that didn't yield one."
                       "Use this number instead of cache_misses when trying to determine how "
-                      "efficient the cache is");
+                      "efficient the cache is",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_hits,
                       "Block Cache Hits", kudu::MetricUnit::kBlocks,
-                      "Number of lookups that found a block");
+                      "Number of lookups that found a block",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, block_cache_hits_caching,
                       "Block Cache Hits (Caching)", kudu::MetricUnit::kBlocks,
                       "Number of lookups that were expecting a block that found one."
                       "Use this number instead of cache_hits when trying to determine how "
-                      "efficient the cache is");
+                      "efficient the cache is",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_gauge_uint64(server, block_cache_usage, "Block Cache Memory Usage",
                            kudu::MetricUnit::kBytes,
-                           "Memory consumed by the block cache");
+                           "Memory consumed by the block cache",
+                           kudu::MetricLevel::kInfo);
 
 namespace kudu {
 

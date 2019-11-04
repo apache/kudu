@@ -108,6 +108,15 @@ bandwidth when fetching this page from a remote host.
 - `/metrics?include_raw_histograms=1` - include the raw buckets and values for histogram metrics,
 enabling accurate aggregation of percentile metrics over time and across hosts.
 
+- `/metrics?level=info` - limits the returned metrics based on their severity level.
+The levels are ordered and lower levels include the levels above them. If no level is specified,
+`debug` is used to include all metrics. The valid values are:
+   * `debug` - Metrics that are diagnostically helpful but generally not monitored
+               during normal operation.
+   * `info` - Generally useful metrics that operators always want to have available
+              but may not be monitored under normal circumstances.
+   * `warn` - Metrics which can often indicate operational oddities, which may need more investigation.
+
 For example:
 
 [source,bash]

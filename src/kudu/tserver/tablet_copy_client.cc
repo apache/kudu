@@ -104,12 +104,14 @@ DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 METRIC_DEFINE_counter(server, tablet_copy_bytes_fetched,
                       "Bytes Fetched By Tablet Copy",
                       kudu::MetricUnit::kBytes,
-                      "Number of bytes fetched during tablet copy operations since server start");
+                      "Number of bytes fetched during tablet copy operations since server start",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_gauge_int32(server, tablet_copy_open_client_sessions,
                           "Open Table Copy Client Sessions",
                           kudu::MetricUnit::kSessions,
-                          "Number of currently open tablet copy client sessions on this server");
+                          "Number of currently open tablet copy client sessions on this server",
+                          kudu::MetricLevel::kInfo);
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \

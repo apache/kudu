@@ -102,6 +102,7 @@
 //                            "Threads Started",
 //                            kudu::MetricUnit::kThreads,
 //                            "Total number of threads started on this server",
+//                            kudu::MetricLevel::kInfo,
 //                            kudu::EXPOSE_AS_COUNTER);
 //
 //
@@ -138,7 +139,8 @@
 // 3) At the top of your .cc file where you want to emit a metric, define the metric prototype:
 //
 //   METRIC_DEFINE_counter(server, ping_requests, "Ping Requests", kudu::MetricUnit::kRequests,
-//       "Number of Ping() RPC requests this server has handled since start");
+//       "Number of Ping() RPC requests this server has handled since start",
+//       kudu::MetricLevel::kInfo);
 //
 // 4) In your class where you want to emit metrics, define the metric instance itself:
 //   scoped_refptr<Counter> ping_counter_;
@@ -162,7 +164,8 @@
 //
 //   METRIC_DEFINE_entity(my_entity);
 //   METRIC_DEFINE_counter(my_entity, ping_requests, "Ping Requests", kudu::MetricUnit::kRequests,
-//       "Number of Ping() RPC requests this particular entity has handled since start");
+//       "Number of Ping() RPC requests this particular entity has handled since start",
+//       kudu::MetricLevel::kInfo);
 //
 // In whatever class represents the entity:
 //
@@ -263,39 +266,40 @@
                            "Entities Count Merged From",                            \
                            kudu::MetricUnit::kEntries,                              \
                            "Count of entities merged together when entities are "   \
-                           "merged by common attribute value.");
+                           "merged by common attribute value.",                     \
+                           kudu::MetricLevel::kInfo);
 
 // Convenience macros to define metric prototypes.
 // See the documentation at the top of this file for example usage.
-#define METRIC_DEFINE_counter(entity, name, label, unit, desc)   \
+#define METRIC_DEFINE_counter(entity, name, label, unit, desc, level)   \
   ::kudu::CounterPrototype METRIC_##name(                        \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level))
 
-#define METRIC_DEFINE_gauge_string(entity, name, label, unit, desc, ...) \
+#define METRIC_DEFINE_gauge_string(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<std::string> METRIC_##name(                 \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_bool(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_bool(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<bool> METRIC_##  name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_int32(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_int32(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<int32_t> METRIC_##name(                   \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_uint32(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_uint32(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<uint32_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_int64(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_int64(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<int64_t> METRIC_##name(                   \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_uint64(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_uint64(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<uint64_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
-#define METRIC_DEFINE_gauge_double(entity, name, label, unit, desc, ...) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_double(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<double> METRIC_##name(                      \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 
-#define METRIC_DEFINE_histogram(entity, name, label, unit, desc, max_val, num_sig_digits) \
+#define METRIC_DEFINE_histogram(entity, name, label, unit, desc, level, max_val, num_sig_digits) \
   ::kudu::HistogramPrototype METRIC_##name(                                       \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc), \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level), \
     max_val, num_sig_digits)
 
 // The following macros act as forward declarations for entity types and metric prototypes.
@@ -321,9 +325,9 @@
   extern ::kudu::HistogramPrototype METRIC_##name
 
 #if defined(__APPLE__)
-#define METRIC_DEFINE_gauge_size(entity, name, label, unit, desc, ...) \
+#define METRIC_DEFINE_gauge_size(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<size_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 #define METRIC_DECLARE_gauge_size(name) \
   extern ::kudu::GaugePrototype<size_t> METRIC_##name
 #else
@@ -409,6 +413,23 @@ class MetricType {
   static const char* const kHistogramType;
 };
 
+// Severity level used with metrics.
+// Levels:
+//   - Debug: Metrics that are diagnostically helpful but generally not monitored
+//            during normal operation.
+//   - Info: Generally useful metrics that operators always want to have available
+//           but may not be monitored under normal circumstances.
+//   - Warn: Metrics which can often indicate operational oddities, which may need
+//           more investigation.
+//
+// The levels are ordered and lower levels include the levels above them:
+//    Debug < Info < Warn
+enum class MetricLevel {
+  kDebug = 0,
+  kInfo = 1,
+  kWarn = 2
+};
+
 struct MetricFilters {
   // A set of substrings to filter entity against, where empty matches all.
   //
@@ -425,6 +446,8 @@ struct MetricFilters {
   std::vector<std::string> entity_attrs;
   // entity metrics.
   std::vector<std::string> entity_metrics;
+  // entity level.
+  std::string entity_level;
 };
 
 struct MergeAttributes {
@@ -523,12 +546,14 @@ class MetricPrototype {
              const char* label,
              MetricUnit::Type unit,
              const char* description,
+             MetricLevel level,
              uint32_t flags = 0)
       : entity_type_(entity_type),
         name_(name),
         label_(label),
         unit_(unit),
         description_(description),
+        level_(level),
         flags_(flags) {
     }
 
@@ -537,6 +562,7 @@ class MetricPrototype {
     const char* const label_;
     const MetricUnit::Type unit_;
     const char* const description_;
+    const MetricLevel level_;
     const uint32_t flags_;
   };
 
@@ -546,6 +572,7 @@ class MetricPrototype {
   MetricUnit::Type unit() const { return args_.unit_; }
   const char* description() const { return args_.description_; }
   virtual MetricType::Type type() const = 0;
+  MetricLevel level() const { return args_.level_; }
 
   // Writes the fields of this prototype to the given JSON writer.
   void WriteFields(JsonWriter* writer,
@@ -1105,7 +1132,9 @@ class AtomicGauge : public Gauge {
 //
 // Example usage:
 //
-// METRIC_define_gauge_int64(my_metric, MetricUnit::kOperations, "My metric docs");
+// METRIC_define_gauge_int64(my_metric, MetricUnit::kOperations,
+//                           "My metric docs",
+//                           kudu::MetricLevel::kInfo);
 // class MyClassWithMetrics {
 //  public:
 //   MyClassWithMetrics(const scoped_refptr<MetricEntity>& entity) {

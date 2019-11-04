@@ -66,6 +66,7 @@ METRIC_DEFINE_histogram(tablet, op_prepare_queue_length, "Operation Prepare Queu
                         "Number of operations waiting to be prepared within this tablet. "
                         "High queue lengths indicate that the server is unable to process "
                         "operations as fast as they are being written to the WAL.",
+                        kudu::MetricLevel::kInfo,
                         10000, 2);
 
 METRIC_DEFINE_histogram(tablet, op_prepare_queue_time, "Operation Prepare Queue Time",
@@ -73,6 +74,7 @@ METRIC_DEFINE_histogram(tablet, op_prepare_queue_time, "Operation Prepare Queue 
                         "Time that operations spent waiting in the prepare queue before being "
                         "processed. High queue times indicate that the server is unable to "
                         "process operations as fast as they are being written to the WAL.",
+                        kudu::MetricLevel::kInfo,
                         10000000, 2);
 
 METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time",
@@ -81,17 +83,21 @@ METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time
                         "High values may indicate that the server is under-provisioned or "
                         "that operations are experiencing high contention with one another for "
                         "locks.",
+                        kudu::MetricLevel::kInfo,
                         10000000, 2);
 
 METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          kudu::MetricUnit::kBytes,
-                         "Space used by this tablet on disk, including metadata.");
+                         "Space used by this tablet on disk, including metadata.",
+                         kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
                            kudu::MetricUnit::kState,
-                           "State of this tablet.");
+                           "State of this tablet.",
+                           kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_uint64(tablet, live_row_count, "Tablet Live Row Count",
                            kudu::MetricUnit::kRows,
-                           "Number of live rows in this tablet, excludes deleted rows.");
+                           "Number of live rows in this tablet, excludes deleted rows.",
+                           kudu::MetricLevel::kInfo);
 
 namespace kudu {
 namespace tablet {

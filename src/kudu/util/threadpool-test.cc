@@ -412,13 +412,19 @@ TEST_F(ThreadPoolTest, TestPromises) {
 
 METRIC_DEFINE_entity(test_entity);
 METRIC_DEFINE_histogram(test_entity, queue_length, "queue length",
-                        MetricUnit::kTasks, "queue length", 1000, 1);
+                        MetricUnit::kTasks, "queue length",
+                        kudu::MetricLevel::kInfo,
+                        1000, 1);
 
 METRIC_DEFINE_histogram(test_entity, queue_time, "queue time",
-                        MetricUnit::kMicroseconds, "queue time", 1000000, 1);
+                        MetricUnit::kMicroseconds, "queue time",
+                        kudu::MetricLevel::kInfo,
+                        1000000, 1);
 
 METRIC_DEFINE_histogram(test_entity, run_time, "run time",
-                        MetricUnit::kMicroseconds, "run time", 1000, 1);
+                        MetricUnit::kMicroseconds, "run time",
+                        kudu::MetricLevel::kInfo,
+                        1000, 1);
 
 TEST_F(ThreadPoolTest, TestMetrics) {
   MetricRegistry registry;

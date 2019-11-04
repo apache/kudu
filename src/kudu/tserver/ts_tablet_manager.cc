@@ -148,42 +148,50 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
                           "Number of Not Initialized Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently not initialized");
+                          "Number of tablets currently not initialized",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_initialized,
                           "Number of Initialized Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently initialized");
+                          "Number of tablets currently initialized",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_bootstrapping,
                           "Number of Bootstrapping Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently bootstrapping");
+                          "Number of tablets currently bootstrapping",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_running,
                           "Number of Running Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently running");
+                          "Number of tablets currently running",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_failed,
                           "Number of Failed Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of failed tablets");
+                          "Number of failed tablets",
+                          kudu::MetricLevel::kWarn);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_stopping,
                           "Number of Stopping Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently stopping");
+                          "Number of tablets currently stopping",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_stopped,
                           "Number of Stopped Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently stopped");
+                          "Number of tablets currently stopped",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
                           "Number of Shut Down Tablets",
                           kudu::MetricUnit::kTablets,
-                          "Number of tablets currently shut down");
+                          "Number of tablets currently shut down",
+                          kudu::MetricLevel::kInfo);
 
 DECLARE_int32(heartbeat_interval_ms);
 

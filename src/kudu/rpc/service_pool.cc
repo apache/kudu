@@ -54,19 +54,21 @@ METRIC_DEFINE_histogram(server, rpc_incoming_queue_time,
                         "RPC Queue Time",
                         kudu::MetricUnit::kMicroseconds,
                         "Number of microseconds incoming RPC requests spend in the worker queue",
+                        kudu::MetricLevel::kInfo,
                         60000000LU, 3);
 
 METRIC_DEFINE_counter(server, rpcs_timed_out_in_queue,
                       "RPC Queue Timeouts",
                       kudu::MetricUnit::kRequests,
                       "Number of RPCs whose timeout elapsed while waiting "
-                      "in the service queue, and thus were not processed.");
+                      "in the service queue, and thus were not processed.",
+                      kudu::MetricLevel::kWarn);
 
 METRIC_DEFINE_counter(server, rpcs_queue_overflow,
                       "RPC Queue Overflows",
                       kudu::MetricUnit::kRequests,
-                      "Number of RPCs dropped because the service queue "
-                      "was full.");
+                      "Number of RPCs dropped because the service queue was full.",
+                      kudu::MetricLevel::kWarn);
 
 namespace kudu {
 namespace rpc {

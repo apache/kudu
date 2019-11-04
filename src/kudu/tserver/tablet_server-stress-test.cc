@@ -57,6 +57,7 @@ METRIC_DEFINE_histogram(test, insert_latency,
                         "Insert Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "TabletServer single threaded insert latency.",
+                        kudu::MetricLevel::kInfo,
                         10000000,
                         2);
 

@@ -25,6 +25,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -35,7 +36,8 @@ namespace clock {
 METRIC_DEFINE_gauge_uint64(server, logical_clock_timestamp,
                            "Logical Clock Timestamp",
                            kudu::MetricUnit::kUnits,
-                           "Logical clock timestamp.");
+                           "Logical clock timestamp.",
+                           kudu::MetricLevel::kInfo);
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;

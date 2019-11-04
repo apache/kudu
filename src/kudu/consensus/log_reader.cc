@@ -41,15 +41,18 @@
 
 METRIC_DEFINE_counter(tablet, log_reader_bytes_read, "Bytes Read From Log",
                       kudu::MetricUnit::kBytes,
-                      "Data read from the WAL since tablet start");
+                      "Data read from the WAL since tablet start",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_counter(tablet, log_reader_entries_read, "Entries Read From Log",
                       kudu::MetricUnit::kEntries,
-                      "Number of entries read from the WAL since tablet start");
+                      "Number of entries read from the WAL since tablet start",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_histogram(tablet, log_reader_read_batch_latency, "Log Read Latency",
                         kudu::MetricUnit::kBytes,
                         "Microseconds spent reading log entry batches",
+                        kudu::MetricLevel::kInfo,
                         60000000LU, 2);
 
 using kudu::consensus::OpId;

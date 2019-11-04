@@ -92,14 +92,17 @@ namespace consensus {
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
                           MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a majority but "
-                          "not all peers. This metric is always zero for followers.");
+                          "not all peers. This metric is always zero for followers.",
+                          kudu::MetricLevel::kDebug);
 METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Operations in Progress",
                           MetricUnit::kOperations,
                           "Number of operations in the peer's queue ack'd by a minority of "
-                          "peers.");
+                          "peers.",
+                          kudu::MetricLevel::kDebug);
 METRIC_DEFINE_gauge_int64(tablet, ops_behind_leader, "Operations Behind Leader",
                           MetricUnit::kOperations,
-                          "Number of operations this server believes it is behind the leader.");
+                          "Number of operations this server believes it is behind the leader.",
+                          kudu::MetricLevel::kWarn);
 
 const char* PeerStatusToString(PeerStatus p) {
   switch (p) {

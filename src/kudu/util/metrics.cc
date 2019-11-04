@@ -225,19 +225,50 @@ scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype)
 
 namespace {
 
-bool MatchNameInList(const string& name, const vector<string>& names) {
+bool MatchName(const string& name, const string& other) {
   string name_uc;
   ToUpperCase(name, &name_uc);
 
-  for (const string& e : names) {
-    // The parameter is a case-insensitive substring match of the metric name.
-    string e_uc;
-    ToUpperCase(e, &e_uc);
-    if (name_uc.find(e_uc) != string::npos) {
+  string other_uc;
+  ToUpperCase(other, &other_uc);
+
+  // The parameter is a case-insensitive substring match of the metric name.
+  return name_uc.find(other_uc) != string::npos;
+}
+
+bool MatchNameInList(const string& name, const vector<string>& names) {
+  for (const string& other : names) {
+    if (MatchName(name, other)) {
       return true;
     }
   }
   return false;
+}
+
+const char* MetricLevelName(MetricLevel level) {
+  switch (level) {
+    case MetricLevel::kDebug:
+      return "debug";
+    case MetricLevel::kInfo:
+      return "info";
+    case MetricLevel::kWarn:
+      return "warn";
+    default:
+      return "UNKNOWN LEVEL";
+  }
+}
+
+int MetricLevelNumeric(MetricLevel level) {
+  switch (level) {
+    case MetricLevel::kDebug:
+      return 0;
+    case MetricLevel::kInfo:
+      return 1;
+    case MetricLevel::kWarn:
+      return 2;
+    default:
+      LOG(FATAL) << "Unknown metric level";
+  }
 }
 
 } // anonymous namespace
@@ -296,6 +327,30 @@ Status MetricEntity::GetMetricsAndAttrs(const MetricFilters& filters,
     // None of them match.
     if (metrics->empty()) {
       return Status::NotFound("entity is filtered by metric types");
+    }
+  }
+
+  // Filter the metrics by 'level'.
+  // Includes all levels above the lowest matched level.
+  int lowest = MetricLevelNumeric(MetricLevel::kDebug); // Default to the lowest level.
+  if (!filters.entity_level.empty()) {
+    if (MatchName(MetricLevelName(MetricLevel::kDebug), filters.entity_level)) {
+      lowest = MetricLevelNumeric(MetricLevel::kDebug);
+    } else if (MatchName(MetricLevelName(MetricLevel::kInfo), filters.entity_level)) {
+      lowest = MetricLevelNumeric(MetricLevel::kInfo);
+    } else if (MatchName(MetricLevelName(MetricLevel::kWarn), filters.entity_level)) {
+      lowest = MetricLevelNumeric(MetricLevel::kWarn);
+    }
+  }
+  for (auto metric = metrics->begin(); metric != metrics->end();) {
+    if (MetricLevelNumeric(metric->first->level()) < lowest) {
+      metric = metrics->erase(metric);
+    } else {
+      ++metric;
+    }
+    // None of them match.
+    if (metrics->empty()) {
+      return Status::NotFound("entity is filtered by metric level");
     }
   }
 
@@ -581,6 +636,9 @@ void MetricPrototype::WriteFields(JsonWriter* writer,
 
     writer->String("description");
     writer->String(description());
+
+    writer->String("level");
+    writer->String(MetricLevelName(level()));
   }
 }
 

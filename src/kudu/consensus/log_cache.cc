@@ -70,10 +70,12 @@ namespace consensus {
 
 METRIC_DEFINE_gauge_int64(tablet, log_cache_num_ops, "Log Cache Operation Count",
                           MetricUnit::kOperations,
-                          "Number of operations in the log cache.");
+                          "Number of operations in the log cache.",
+                          kudu::MetricLevel::kDebug);
 METRIC_DEFINE_gauge_int64(tablet, log_cache_size, "Log Cache Memory Usage",
                           MetricUnit::kBytes,
-                          "Amount of memory in use for caching the local log.");
+                          "Amount of memory in use for caching the local log.",
+                          kudu::MetricLevel::kDebug);
 
 static const char kParentMemTrackerId[] = "log_cache";
 

@@ -63,7 +63,8 @@ TAG_FLAG(scan_history_count, experimental);
 METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Active Scanners",
                          kudu::MetricUnit::kScanners,
-                         "Number of scanners that are currently active");
+                         "Number of scanners that are currently active",
+                         kudu::MetricLevel::kInfo);
 
 using std::string;
 using std::unique_ptr;

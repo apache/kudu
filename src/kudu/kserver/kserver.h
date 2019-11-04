@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "kudu/gutil/macros.h"

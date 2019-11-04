@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -67,6 +68,7 @@ METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Le
                         "Number of operations waiting to be applied to the tablet. "
                         "High queue lengths indicate that the server is unable to process "
                         "operations as fast as they are being written to the WAL.",
+                        kudu::MetricLevel::kWarn,
                         10000, 2);
 
 METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time",
@@ -74,6 +76,7 @@ METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time
                         "Time that operations spent waiting in the apply queue before being "
                         "processed. High queue times indicate that the server is unable to "
                         "process operations as fast as they are being written to the WAL.",
+                        kudu::MetricLevel::kWarn,
                         10000000, 2);
 
 METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
@@ -81,6 +84,7 @@ METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
                         "Time that operations spent being applied to the tablet. "
                         "High values may indicate that the server is under-provisioned or "
                         "that operations consist of very large batches.",
+                        kudu::MetricLevel::kWarn,
                         10000000, 2);
 
 namespace {

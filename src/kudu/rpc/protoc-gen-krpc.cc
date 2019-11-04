@@ -468,6 +468,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
           "  \"$rpc_full_name$ RPC Time\",\n"
           "  kudu::MetricUnit::kMicroseconds,\n"
           "  \"Microseconds spent handling $rpc_full_name$() RPC requests\",\n"
+          "  kudu::MetricLevel::kInfo,\n"
           "  60000000LU, 2);\n"
           "\n");
         subs->Pop();

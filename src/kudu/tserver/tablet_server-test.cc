@@ -3456,6 +3456,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
                           "Insert Latency",
                           MetricUnit::kMicroseconds,
                           "TabletServer single threaded insert latency.",
+                          kudu::MetricLevel::kInfo,
                           10000000,
                           2);
 

@@ -121,32 +121,38 @@ TAG_FLAG(log_block_manager_delete_dead_container, experimental);
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
-                           "Number of bytes of data blocks currently under management");
+                           "Number of bytes of data blocks currently under management",
+                           kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_blocks_under_management,
                            "Blocks Under Management",
                            kudu::MetricUnit::kBlocks,
-                           "Number of data blocks currently under management");
+                           "Number of data blocks currently under management",
+                           kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_containers,
                            "Number of Block Containers",
                            kudu::MetricUnit::kLogBlockContainers,
-                           "Number of log block containers");
+                           "Number of log block containers",
+                           kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_full_containers,
                            "Number of Full Block Containers",
                            kudu::MetricUnit::kLogBlockContainers,
-                           "Number of full log block containers");
+                           "Number of full log block containers",
+                           kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_counter(server, log_block_manager_holes_punched,
                       "Number of Holes Punched",
                       kudu::MetricUnit::kHoles,
-                      "Number of holes punched since service start");
+                      "Number of holes punched since service start",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_counter(server, log_block_manager_dead_containers_deleted,
                       "Number of Dead Block Containers Deleted",
                       kudu::MetricUnit::kLogBlockContainers,
-                      "Number of full (but dead) block containers that were deleted");
+                      "Number of full (but dead) block containers that were deleted",
+                      kudu::MetricLevel::kDebug);
 
 namespace kudu {
 

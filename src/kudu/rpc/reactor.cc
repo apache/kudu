@@ -102,7 +102,9 @@ METRIC_DEFINE_histogram(server, reactor_load_percent,
                         "The percentage of time that the reactor is busy "
                         "(not blocked awaiting network activity). If this metric "
                         "shows significant samples nears 100%, increasing the "
-                        "number of reactors may be beneficial.", 100, 2);
+                        "number of reactors may be beneficial.",
+                        kudu::MetricLevel::kInfo,
+                        100, 2);
 
 METRIC_DEFINE_histogram(server, reactor_active_latency_us,
                         "Reactor Thread Active Latency",
@@ -111,6 +113,7 @@ METRIC_DEFINE_histogram(server, reactor_active_latency_us,
                         "The reactor thread is responsible for all network I/O and "
                         "therefore outliers in this latency histogram directly contribute "
                         "to the latency of both inbound and outbound RPCs.",
+                        kudu::MetricLevel::kInfo,
                         1000000, 2);
 
 namespace kudu {

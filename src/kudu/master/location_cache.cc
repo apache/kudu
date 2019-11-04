@@ -40,11 +40,13 @@ METRIC_DEFINE_counter(server, location_mapping_cache_hits,
                       "Location Mapping Cache Hits",
                       kudu::MetricUnit::kCacheHits,
                       "Number of times location mapping assignment used "
-                      "cached data");
+                      "cached data",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, location_mapping_cache_queries,
                       "Location Mapping Cache Queries",
                       kudu::MetricUnit::kCacheQueries,
-                      "Number of queries to the location mapping cache");
+                      "Number of queries to the location mapping cache",
+                      kudu::MetricLevel::kDebug);
 
 using std::string;
 using std::vector;

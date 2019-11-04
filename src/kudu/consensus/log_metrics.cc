@@ -21,31 +21,37 @@
 
 METRIC_DEFINE_counter(tablet, log_bytes_logged, "Bytes Written to WAL",
                       kudu::MetricUnit::kBytes,
-                      "Number of bytes logged since service start");
+                      "Number of bytes logged since service start",
+                      kudu::MetricLevel::kDebug);
 
 METRIC_DEFINE_histogram(tablet, log_sync_latency, "Log Sync Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on synchronizing the log segment file",
+                        kudu::MetricLevel::kInfo,
                         60000000LU, 2);
 
 METRIC_DEFINE_histogram(tablet, log_append_latency, "Log Append Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on appending to the log segment file",
+                        kudu::MetricLevel::kInfo,
                         60000000LU, 2);
 
 METRIC_DEFINE_histogram(tablet, log_group_commit_latency, "Log Group Commit Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on committing an entire group",
+                        kudu::MetricLevel::kDebug,
                         60000000LU, 2);
 
 METRIC_DEFINE_histogram(tablet, log_roll_latency, "Log Roll Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on rolling over to a new log segment file",
+                        kudu::MetricLevel::kDebug,
                         60000000LU, 2);
 
 METRIC_DEFINE_histogram(tablet, log_entry_batches_per_group, "Log Group Commit Batch Size",
                         kudu::MetricUnit::kRequests,
                         "Number of log entry batches in a group commit group",
+                        kudu::MetricLevel::kDebug,
                         1024, 2);
 
 namespace kudu {

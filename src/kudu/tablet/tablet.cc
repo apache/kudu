@@ -153,13 +153,16 @@ TAG_FLAG(max_encoded_key_size_bytes, unsafe);
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
-                         "Size of this tablet's memrowset");
+                         "Size of this tablet's memrowset",
+                         kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_size(tablet, on_disk_data_size, "Tablet Data Size On Disk",
                          kudu::MetricUnit::kBytes,
-                         "Space used by this tablet's data blocks.");
+                         "Space used by this tablet's data blocks.",
+                         kudu::MetricLevel::kInfo);
 METRIC_DEFINE_gauge_size(tablet, num_rowsets_on_disk, "Tablet Number of Rowsets on Disk",
                          kudu::MetricUnit::kUnits,
-                         "Number of diskrowsets in this tablet");
+                         "Number of diskrowsets in this tablet",
+                         kudu::MetricLevel::kInfo);
 
 using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;

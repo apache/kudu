@@ -56,7 +56,8 @@ METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
                           "The difference between the number of replicas on "
                           "the tablet server hosting the most replicas and "
                           "the number of replicas on the tablet server hosting "
-                          "the least replicas.");
+                          "the least replicas.",
+                          kudu::MetricLevel::kWarn);
 
 using kudu::pb_util::SecureShortDebugString;
 using std::lock_guard;

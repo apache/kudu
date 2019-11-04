@@ -21,23 +21,29 @@
 
 METRIC_DEFINE_counter(server, sentry_client_tasks_successful,
                       "Successful Tasks", kudu::MetricUnit::kTasks,
-                      "Number of successfully run tasks");
+                      "Number of successfully run tasks",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_client_tasks_failed_fatal,
                       "Failed tasks (fatal)", kudu::MetricUnit::kTasks,
-                      "Number of tasks failed with fatal errors");
+                      "Number of tasks failed with fatal errors",
+                      kudu::MetricLevel::kWarn);
 METRIC_DEFINE_counter(server, sentry_client_tasks_failed_nonfatal,
                       "Failed Tasks (nonfatal)", kudu::MetricUnit::kTasks,
-                      "Number of tasks failed with non-fatal errors");
+                      "Number of tasks failed with non-fatal errors",
+                      kudu::MetricLevel::kWarn);
 METRIC_DEFINE_counter(server, sentry_client_reconnections_succeeded,
                       "Successful Reconnections", kudu::MetricUnit::kUnits,
-                      "Number of successful reconnections to Sentry");
+                      "Number of successful reconnections to Sentry",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(server, sentry_client_reconnections_failed,
                       "Failed Reconnections", kudu::MetricUnit::kUnits,
-                      "Number of failed reconnections to Sentry");
+                      "Number of failed reconnections to Sentry",
+                      kudu::MetricLevel::kDebug);
 METRIC_DEFINE_histogram(server, sentry_client_task_execution_time_us,
                         "Task Execution Time (us)",
                         kudu::MetricUnit::kMicroseconds,
                         "Duration of HaClient::Execute() calls (us)",
+                        kudu::MetricLevel::kInfo,
                         60000000, 2);
 
 namespace kudu {
