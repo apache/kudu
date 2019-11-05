@@ -2,7 +2,7 @@
 title: Known Issues and Limitations
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2019-10-29 22:51:30 PDT'
+last_updated: 'Last updated 2019-11-04 13:21:29 PST'
 ---
 <!--
 
@@ -329,6 +329,18 @@ start-up times, you can monitor the number of tablets per server in the web UI.<
 tables, the <code>live_row_count</code> and <code>on_disk_size</code> metrics might produce
 inconsistent readings in some scenarios
 (see <a href="https://issues.apache.org/jira/browse/KUDU-2986">KUDU-2986</a>).</p>
+</li>
+<li>
+<p>In Kudu 1.10.0 and Kudu 1.11.0, the kudu-binary JAR (targeted for
+containerized Kudu deployments using mini-cluster) contains libnuma dynamic
+library. Also, if building Kudu binaries in release mode with default cmake
+settings, the libnuma library is linked statically with the Kudu binaries
+(add <code>-DKUDU_LINK=dynamic</code> when running cmake to avoid that). The library is
+licensed under LGPL v.2.1, however the ASF thirdparty license policy
+explicitly prohibits including such contents into releases: see
+<a href="https://www.apache.org/legal/resolved.html#category-x">Category X</a>. This
+issue will be addressed ASAP in upcoming patch releases
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2990">KUDU-2990</a>).</p>
 </li>
 </ul>
 </div>
