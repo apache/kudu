@@ -25,6 +25,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
+#include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -43,6 +47,7 @@
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 METRIC_DECLARE_gauge_uint32(tablets_num_failed);
 
+using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
 using kudu::fs::BlockManager;
@@ -153,11 +158,44 @@ enum class ErrorType {
   DISK_FAILURE,
 };
 
-// A generalized test for different kinds of disk errors.
-class DiskErrorITest : public ExternalMiniClusterITestBase,
-                       public ::testing::WithParamInterface<ErrorType> {
+class DiskErrorITestBase : public ExternalMiniClusterITestBase,
+                           public ::testing::WithParamInterface<ErrorType> {
  public:
   typedef vector<pair<string, string>> FlagList;
+  static constexpr int kNumDataDirs = 3;
+
+  // Set the flags on the given server based on the contents of `flags`.
+  Status SetFlags(ExternalDaemon* server, const FlagList& flags) const {
+    for (const auto& flag_pair : flags) {
+      RETURN_NOT_OK(cluster_->SetFlag(server, flag_pair.first, flag_pair.second));
+    }
+    return Status::OK();
+  }
+
+  // Returns the appropriate injection flags for the given error and server.
+  FlagList InjectionFlags(ErrorType error, ExternalDaemon* error_server) const {
+    FlagList injection_flags;
+    switch (error) {
+      case ErrorType::DISK_FAILURE: {
+        // Avoid injecting errors to the first data directory.
+        string data_dirs = Substitute("$0,$1",
+                                      JoinPathSegments(error_server->data_dirs()[1], "**"),
+                                      JoinPathSegments(error_server->data_dirs()[2], "**"));
+        injection_flags.emplace_back("env_inject_eio_globs", data_dirs);
+        injection_flags.emplace_back("env_inject_eio", "1.0");
+        break;
+      }
+      case ErrorType::CFILE_CORRUPTION:
+        injection_flags.emplace_back("cfile_inject_corruption", "1.0");
+        break;
+    }
+    return injection_flags;
+  }
+};
+
+// A generalized test for different kinds of disk errors in tablet servers.
+class TabletServerDiskErrorITest : public DiskErrorITestBase {
+ public:
   const int kNumTablets = 10;
 
   // Set up a cluster with 4 tservers, with `kNumTablets` spread across the
@@ -171,7 +209,7 @@ class DiskErrorITest : public ExternalMiniClusterITestBase,
     ExternalMiniClusterOptions opts;
     // Use 3 tservers at first; we'll add an empty one later.
     opts.num_tablet_servers = 3;
-    opts.num_data_dirs = 3;
+    opts.num_data_dirs = kNumDataDirs;
     opts.extra_tserver_flags = {
       // Flush frequently so we actually get some data blocks.
       "--flush_threshold_secs=1",
@@ -204,34 +242,6 @@ class DiskErrorITest : public ExternalMiniClusterITestBase,
     }
   }
 
-  // Returns the appropriate injection flags for the given error and node.
-  FlagList InjectionFlags(ErrorType error, ExternalTabletServer* error_ts) const {
-    FlagList injection_flags;
-    switch (error) {
-      case ErrorType::DISK_FAILURE: {
-        // Avoid injecting errors to the first data directory.
-        string data_dirs = Substitute("$0,$1",
-                                      JoinPathSegments(error_ts->data_dirs()[1], "**"),
-                                      JoinPathSegments(error_ts->data_dirs()[2], "**"));
-        injection_flags.emplace_back("env_inject_eio_globs", data_dirs);
-        injection_flags.emplace_back("env_inject_eio", "1.0");
-        break;
-      }
-      case ErrorType::CFILE_CORRUPTION:
-        injection_flags.emplace_back("cfile_inject_corruption", "1.0");
-        break;
-    }
-    return injection_flags;
-  }
-
-  // Set the flags on the given server based on the contents of `flags`.
-  Status SetFlags(ExternalTabletServer* ts, const FlagList& flags) const {
-    for (const auto& flag_pair : flags) {
-      RETURN_NOT_OK(cluster_->SetFlag(ts, flag_pair.first, flag_pair.second));
-    }
-    return Status::OK();
-  }
-
   // Set the flags that would allow for the recovery of failed tablets.
   Status AllowRecovery() const {
     LOG(INFO) << "Resetting error injection flags";
@@ -262,10 +272,10 @@ class DiskErrorITest : public ExternalMiniClusterITestBase,
   }
 };
 
-INSTANTIATE_TEST_CASE_P(DiskError, DiskErrorITest,
-    ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
+INSTANTIATE_TEST_CASE_P(TabletServerDiskError, TabletServerDiskErrorITest,
+                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
 
-TEST_P(DiskErrorITest, TestFailOnBootstrap) {
+TEST_P(TabletServerDiskErrorITest, TestFailOnBootstrap) {
   // Inject the errors into one of the non-empty servers.
   ExternalTabletServer* error_ts = cluster_->tablet_server(0);
   for (auto flag_pair : InjectionFlags(GetParam(), error_ts)) {
@@ -285,7 +295,7 @@ TEST_P(DiskErrorITest, TestFailOnBootstrap) {
   NO_FATALS(v.CheckCluster());
 };
 
-TEST_P(DiskErrorITest, TestFailDuringScanWorkload) {
+TEST_P(TabletServerDiskErrorITest, TestFailDuringScanWorkload) {
   // Set up a workload that only reads from the tablets.
   TestWorkload read(cluster_.get());
   read.set_num_write_threads(0);
@@ -307,4 +317,49 @@ TEST_P(DiskErrorITest, TestFailDuringScanWorkload) {
   NO_FATALS(v.CheckCluster());
 }
 
+class MasterDiskErrorITest : public DiskErrorITestBase {
+};
+
+INSTANTIATE_TEST_CASE_P(MasterDiskError, MasterDiskErrorITest,
+                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE));
+
+// Test that triggers disk error in master during maintenance manager operations like compaction.
+TEST_P(MasterDiskErrorITest, TestMasterDiskFailure) {
+  constexpr int kNumReplicas = 1;
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumReplicas;
+  opts.num_data_dirs = kNumDataDirs;
+  opts.extra_master_flags = {
+      // Flush frequently so we actually get some disk row sets
+      "--flush_threshold_secs=1",
+      "--flush_threshold_mb=1",
+      "--enable_rowset_compaction=false"
+  };
+  NO_FATALS(StartClusterWithOpts(std::move(opts)));
+
+  // Create bunch of tables to populate the system catalog with overlapping entries
+  // that'll require compaction of the disk row sets.
+  std::unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  auto client_schema = client::KuduSchema::FromSchema(GetSimpleTestSchema());
+  for (int table_suffix = 0; table_suffix < 20; table_suffix++) {
+    string table_name = Substitute("test-$0", table_suffix);
+    LOG(INFO) << "Creating table " << table_name;
+    ASSERT_OK(table_creator->table_name(table_name)
+                  .schema(&client_schema)
+                  .set_range_partition_columns({ "key" })
+                  .num_replicas(kNumReplicas)
+                  .wait(true)
+                  .Create());
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
+  // Trigger disk failure and enable compaction.
+  auto leader_master = cluster_->leader_master();
+  auto flag_list = InjectionFlags(GetParam(), leader_master);
+  flag_list.emplace_back("enable_rowset_compaction", "true");
+  ASSERT_OK(SetFlags(leader_master, flag_list));
+
+  // Wait for the master to crash
+  ASSERT_OK(leader_master->WaitForFatal(MonoDelta::FromSeconds(20)));
+}
 }  // namespace kudu

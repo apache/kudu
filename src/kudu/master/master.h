@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "kudu/common/wire_protocol.pb.h"
@@ -35,6 +36,7 @@ class HostPortPB;
 class MaintenanceManager;
 class MonoDelta;
 class ThreadPool;
+
 namespace master {
 class LocationCache;
 }  // namespace master
@@ -102,6 +104,12 @@ class Master : public kserver::KuduServer {
   // This is not as complete as ListMasters() above, but operates just
   // based on local state.
   Status GetMasterHostPorts(std::vector<HostPortPB>* hostports) const;
+
+  // Crash the master on disk error.
+  void CrashMasterOnDiskError(const std::string& uuid);
+
+  // Crash the master on CFile corruption.
+  void CrashMasterOnCFileCorruption(const std::string& tablet_id);
 
   bool IsShutdown() const {
     return state_ == kStopped;

@@ -33,9 +33,11 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -100,6 +102,7 @@ using std::string;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;
+using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 using kudu::security::TokenSigner;
 using kudu::tserver::ConsensusServiceImpl;
@@ -167,6 +170,11 @@ Status Master::Start() {
 
 Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
+  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
+                                      Bind(&Master::CrashMasterOnDiskError, Unretained(this)));
+  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION,
+                                      Bind(&Master::CrashMasterOnCFileCorruption,
+                                           Unretained(this)));
 
   RETURN_NOT_OK(maintenance_manager_->Start());
 
@@ -245,6 +253,8 @@ void Master::Shutdown() {
     // 2. Shut down the master's subsystems.
     maintenance_manager_->Shutdown();
     catalog_manager_->Shutdown();
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
 
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();
@@ -285,9 +295,17 @@ Status Master::InitMasterRegistration() {
   return Status::OK();
 }
 
+void Master::CrashMasterOnDiskError(const string& uuid) {
+  LOG(FATAL) << Substitute("Disk error detected on data directory $0", uuid);
+}
+
+void Master::CrashMasterOnCFileCorruption(const string& tablet_id) {
+  LOG(FATAL) << Substitute("CFile corruption detected on system catalog $0", tablet_id);
+}
+
 namespace {
 
-// TODO this method should be moved to a separate class (along with
+// TODO(Alex Feinberg) this method should be moved to a separate class (along with
 // ListMasters), so that it can also be used in TS and client when
 // bootstrapping.
 Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
