@@ -49,7 +49,6 @@ struct DataTypeEncodingTraits {};
 template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
   : public DataTypeEncodingTraits<Type, Encoding> {
 
-  static const DataType kType = Type;
   static const EncodingType kEncodingType = Encoding;
 };
 
@@ -206,7 +205,7 @@ Status TypeEncodingInfo::CreateBlockBuilder(
 
 struct EncodingMapHash {
   size_t operator()(pair<DataType, EncodingType> pair) const {
-    return (pair.first + 31) ^ pair.second;
+    return (pair.first << 5) + pair.second;
   }
 };
 
