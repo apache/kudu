@@ -64,8 +64,8 @@ without padding.
 | field | width (bytes) | notes |
 | --- | --- | --- |
 | checksum | 4 | optional CRC-32 checksum of message, magic, and length |
-| magic | 8 | [see below](#versioning) |
 | message | variable | encoded [`CFileFooterPB`][cfile.proto] Protobuf message |
+| magic | 8 | [see below](#versioning) |
 | length | 4 | unsigned 32-bit length of the preceding Protobuf message |
 
 ### Versioning
