@@ -109,6 +109,13 @@ $ sudo yum install -y scl-utils ${DTLS_RPM}
 $ sudo yum install -y devtoolset-3-toolchain
 ----
 
+. Optional: If support for Kudu's NVM (non-volatile memory) block cache is
+desired, install the memkind library.
++
+----
+$ sudo yum install memkind
+----
+
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
@@ -239,6 +246,13 @@ $ sudo apt-get install autoconf automake curl flex g++ gcc gdb git \
   openjdk-8-jdk openssl patch pkg-config python rsync unzip vim-common
 ----
 
+. Optional: If support for Kudu's NVM (non-volatile memory) block cache is
+desired, install the memkind library.
++
+----
+$ sudo apt-get install libmemkind0
+----
+
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
@@ -354,6 +368,13 @@ $ sudo zypper install autoconf automake curl cyrus-sasl-devel \
   cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
   krb5-devel krb5-server libtool lsb-release make ntp openssl-devel patch \
   pkg-config python rsync unzip vim
+----
+
+. Optional: If support for Kudu's NVM (non-volatile memory) block cache is
+desired, install the memkind library.
++
+----
+$ sudo zypper install memkind
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
