@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.10.0 Release Notes
+= Apache Kudu 1.10.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,20 +28,40 @@
 :sectlinks:
 :experimental:
 
+[[rn_1.10.1]]
+Apache Kudu 1.10.1 is a bug-fix release which fixes one critical licensing
+issue in Kudu 1.10.0.
+
+[[rn_1.10.1_upgrade_notes]]
+== Upgrade Notes
+When upgrading from earlier versions of Kudu, if support for Kudu's NVM
+(non-volatile memory) block cache is desired, install the `memkind` library
+of version 1.6.0 or newer as documented in link:installation.html[Kudu
+Installation] for corresponding platform. This is a mandatory step for existing
+users of the NVM block cache (i.e. those who set `--block_cache_type=NVM`
+for `kudu-master` and `kudu-tserver`): they must install `memkind`, otherwise
+their Kudu processes will crash at startup.
+
+[[rn_1.10.1_fixed_issues]]
+== Fixed Issues
+* Fixed an issue with distributing `libnuma` dynamic library with `kudu-binary`
+  JAR artifact. Also, fixed the issue of statically compiling in `libnuma.a`
+  into `kudu-master` and `kudu-tserver` binaries when building Kudu
+  from source in release mode. The fix removes both `numactl` and `memkind`
+  projects from Kudu's thirdparty dependencies and makes the dependency on the
+  `libmemkind` library optional, opening the library using `dlopen()` and
+  resolving required symbols via `dlsym()`
+  (see link:https://issues.apache.org/jira/browse/KUDU-2990[KUDU-2990]).
+
+[[rn_1.10.0]]
+= Apache Kudu 1.10.0 Release Notes
+
 [[rn_1.10.0_upgrade_notes]]
 == Upgrade Notes
 
 * The default tablet history retention time has been raised from 15 minutes to
   7 days to better support touchless incremental backups
   (see link:https://issues.apache.org/jira/browse/KUDU-2677[KUDU-2677]).
-
-[[rn_1.10.0_obsoletions]]
-== Obsoletions
-
-
-[[rn_1.10.0_deprecations]]
-== Deprecations
-
 
 [[rn_1.10.0_new_features]]
 == New features
