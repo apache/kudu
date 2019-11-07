@@ -158,7 +158,9 @@ DEFINE_int32(delete_tablet_bench_num_flushes, 200,
              "Number of disk row sets to flush in the delete tablet benchmark");
 
 DECLARE_bool(crash_on_eio);
+DECLARE_bool(enable_flush_memrowset);
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_bool(enable_rowset_compaction);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_double(cfile_inject_corruption);
@@ -169,6 +171,7 @@ DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int32(maintenance_manager_num_threads);
+DECLARE_int32(memory_pressure_percentage);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
@@ -857,6 +860,48 @@ TEST_F(TabletServerTest, TestEIODuringDelete) {
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
   RpcController rpc;
   ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
+}
+
+class TabletServerMaintenanceMemoryPressureTest : public TabletServerTestBase {
+ public:
+  void SetUp() override {
+    NO_FATALS(TabletServerTestBase::SetUp());
+    FLAGS_enable_maintenance_manager = true;
+    FLAGS_flush_threshold_secs = 1;
+    FLAGS_memory_pressure_percentage = 0;
+
+    // While setting up rowsets, disable compactions and flushing. Do this
+    // before doing anything so we can have tighter control over the flushing
+    // of our rowsets.
+    FLAGS_enable_rowset_compaction = false;
+    FLAGS_enable_flush_memrowset = false;
+    NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
+  }
+};
+
+// Regression test for KUDU-2929. Previously, when under memory pressure, we
+// would never compact, even if there were nothing else to do. We'll simulate
+// this by flushing some overlapping rowsets and then making sure we compact.
+TEST_F(TabletServerMaintenanceMemoryPressureTest, TestCompactWhileUnderMemoryPressure) {
+  // Insert sets of overlapping rows.
+  // Since we're under memory pressure, we'll flush as soon as we're able.
+  NO_FATALS(InsertTestRowsDirect(1, 1));
+  NO_FATALS(InsertTestRowsDirect(3, 1));
+  FLAGS_enable_flush_memrowset = true;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, tablet_replica_->tablet()->num_rowsets());
+  });
+  NO_FATALS(InsertTestRowsDirect(2, 1));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(2, tablet_replica_->tablet()->num_rowsets());
+  });
+
+  // Even though we're under memory pressure, we should see compactions because
+  // there's nothing else to do.
+  FLAGS_enable_rowset_compaction = true;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, tablet_replica_->tablet()->num_rowsets());
+  });
 }
 
 TEST_F(TabletServerTest, TestInsert) {

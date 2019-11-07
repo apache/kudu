@@ -435,16 +435,9 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   }
 
   // Look at free memory. If it is dangerously low, we must select something
-  // that frees memory-- the op with the most anchored memory.
+  // that frees memory -- the op with the most anchored memory.
   double capacity_pct;
-  if (memory_pressure_func_(&capacity_pct)) {
-    if (!most_ram_anchored_op) {
-      string msg = StringPrintf("System under memory pressure "
-          "(%.2f%% of limit used). However, there are no ops currently "
-          "runnable which would free memory.", capacity_pct);
-      KLOG_EVERY_N_SECS(WARNING, 5) << msg;
-      return {nullptr, msg};
-    }
+  if (memory_pressure_func_(&capacity_pct) && most_ram_anchored_op) {
     string note = StringPrintf("under memory pressure (%.2f%% used, "
                                "can flush %" PRIu64 " bytes)",
                                capacity_pct, most_ram_anchored);

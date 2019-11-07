@@ -267,7 +267,7 @@ TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
 
 // Test that we'll run an operation that doesn't improve performance when memory
 // pressure gets high.
-TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
+TEST_F(MaintenanceManagerTest, TestMemoryPressurePrioritizesMemory) {
   TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE);
   op.set_ram_anchored(100);
   manager_->RegisterOp(&op);
@@ -282,6 +282,30 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
   ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
     });
+  manager_->UnregisterOp(&op);
+}
+
+// Test that when under memory pressure, we'll run an op that doesn't improve
+// memory pressure if there's nothing else to do.
+TEST_F(MaintenanceManagerTest, TestMemoryPressurePerformsNoMemoryOp) {
+  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE);
+  op.set_ram_anchored(0);
+  manager_->RegisterOp(&op);
+
+  // At first, we don't want to run this, since there is no perf_improvement.
+  SleepFor(MonoDelta::FromMilliseconds(20));
+  ASSERT_EQ(0, op.DurationHistogram()->TotalCount());
+
+  // Now fake that the server is under memory pressure and make our op runnable
+  // by giving it a perf score.
+  indicate_memory_pressure_ = true;
+  op.set_perf_improvement(1);
+
+  // Even though we're under memory pressure, and even though our op doesn't
+  // have any ram anchored, there's nothing else to do, so we run our op.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
+  });
   manager_->UnregisterOp(&op);
 }
 
