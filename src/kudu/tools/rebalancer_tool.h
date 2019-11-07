@@ -157,7 +157,7 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
 
-    // Get the cluter location the runner is slated to run/running at.
+    // Get the cluster location the runner is slated to run/running at.
     // 'boost::none' means all the cluster.
     virtual const boost::optional<std::string>& location() const = 0;
 

@@ -379,7 +379,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
     for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
       num_new_replicas[ts_idx] = inspect_->ListTabletsOnTS(ts_idx).size();
     }
-    // Add partition with 'label3' to 'test-table2'
+    // Add partition with 'label3' to 'test-table1'
     ASSERT_OK(alter_table_func(client_.get(), &client_schema, "test-table1", 100, 200, "label3"));
     for (int ts_idx = 0; ts_idx < kNumServers; ts_idx++) {
       int num_replicas = inspect_->ListTabletsOnTS(ts_idx).size();
