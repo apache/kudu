@@ -100,11 +100,6 @@ Source: Centos 6.6 yum repository
   OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
-NUMA: libnuma is under the GNU Lesser General Public License, v2.1.
-libraries: libnuma
-Source: numactl-2.0.12 source tarball
-
---------------------------------------------------------------------------------
 yaml-cpp: BSD license
 libraries: libyaml-cpp
 Source: yaml-cpp-yaml-cpp-0.6.2 source tarball
