@@ -78,6 +78,7 @@ class NullBitmapBuilder {
     return nitems_;
   }
 
+  // If value parameter is true, it means that all values in this run are null
   void AddRun(bool value, size_t run_length = 1) {
     nitems_ += run_length;
     rle_encoder_.Put(value, run_length);

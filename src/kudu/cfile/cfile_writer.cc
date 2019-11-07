@@ -154,7 +154,7 @@ Status CFileWriter::Start() {
   if (compression_ != NO_COMPRESSION) {
     const CompressionCodec* codec;
     RETURN_NOT_OK(GetCompressionCodec(compression_, &codec));
-    block_compressor_ .reset(new CompressedBlockBuilder(codec));
+    block_compressor_.reset(new CompressedBlockBuilder(codec));
   }
 
   CFileHeaderPB header;
@@ -331,12 +331,12 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
-  size_t nblock;
-  bool not_null = false;
+  size_t nitems;
+  bool is_null = false;
   BitmapIterator bmap_iter(bitmap, count);
-  while ((nblock = bmap_iter.Next(&not_null)) > 0) {
-    if (not_null) {
-      size_t rem = nblock;
+  while ((nitems = bmap_iter.Next(&is_null)) > 0) {
+    if (is_null) {
+      size_t rem = nitems;
       do {
         int n = data_block_->Add(ptr, rem);
         DCHECK_GE(n, 0);
@@ -352,9 +352,9 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
 
       } while (rem > 0);
     } else {
-      null_bitmap_builder_->AddRun(false, nblock);
-      ptr += nblock * typeinfo_->size();
-      value_count_ += nblock;
+      null_bitmap_builder_->AddRun(false, nitems);
+      ptr += nitems * typeinfo_->size();
+      value_count_ += nitems;
     }
   }
 
@@ -373,7 +373,7 @@ Status CFileWriter::FinishCurDataBlock() {
 
   rowid_t first_elem_ord = value_count_ - num_elems_in_block;
   VLOG(1) << "Appending data block for values " <<
-    first_elem_ord << "-" << (first_elem_ord + num_elems_in_block);
+    first_elem_ord << "-" << value_count_;
 
   // The current data block is full, need to push it
   // into the file, and add to index
