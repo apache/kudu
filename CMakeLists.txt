@@ -1221,7 +1221,8 @@ find_package(GumboQuery REQUIRED)
 include_directories(SYSTEM ${GUMBO_QUERY_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gumbo-query
   STATIC_LIB "${GUMBO_QUERY_STATIC_LIB}"
-  SHARED_LIB "${GUMBO_QUERY_SHARED_LIB}")
+  SHARED_LIB "${GUMBO_QUERY_SHARED_LIB}"
+  DEPS gumbo-parser)
 
 ## Boost
 
