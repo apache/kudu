@@ -115,6 +115,19 @@ desired, install the memkind library.
 ----
 $ sudo yum install memkind
 ----
++
+If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.
++
+----
+$ sudo yum install numactl-libs numactl-devel
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo yum remove memkind
+$ sudo make install
+$ sudo ldconfig
+----
 
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
@@ -252,6 +265,19 @@ desired, install the memkind library.
 ----
 $ sudo apt-get install libmemkind0
 ----
++
+If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.
++
+----
+$ sudo apt-get install libnuma1 libnuma-dev
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo apt-get remove memkind
+$ sudo make install
+$ sudo ldconfig
+----
 
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
@@ -375,6 +401,19 @@ desired, install the memkind library.
 +
 ----
 $ sudo zypper install memkind
+----
++
+If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.
++
+----
+$ sudo zypper install numactl-libs numactl-devel
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo zypper remove memkind
+$ sudo make install
+$ sudo ldconfig
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
