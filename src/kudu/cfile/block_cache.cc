@@ -55,7 +55,7 @@ DEFINE_string(block_cache_type, "DRAM",
               "Valid choices are 'DRAM' or 'NVM'. DRAM, the default, "
               "caches data in regular memory. 'NVM' caches data "
               "in a memory-mapped file using the memkind library. To use 'NVM', "
-              "libmemkind 1.6.0 or newer must be available on the system; "
+              "libmemkind 1.8.0 or newer must be available on the system; "
               "otherwise Kudu will crash.");
 
 using strings::Substitute;
