@@ -36,7 +36,7 @@ issue in Kudu 1.11.0.
 == Upgrade Notes
 When upgrading from earlier versions of Kudu, if support for Kudu's NVM
 (non-volatile memory) block cache is desired, install the `memkind` library
-of version 1.6.0 or newer as documented in link:installation.html[Kudu
+of version 1.8.0 or newer as documented in link:installation.html[Kudu
 Installation] for corresponding platform. This is a mandatory step for existing
 users of the NVM block cache (i.e. those who set `--block_cache_type=NVM`
 for `kudu-master` and `kudu-tserver`): they must install `memkind`, otherwise
