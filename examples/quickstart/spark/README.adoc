@@ -69,7 +69,7 @@ Run the `spark-shell` with the `kudu-spark` package:
 
 [source,bash]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.11.1
 ----
 
 NOTE: The examples below assume you are in the `spark-shell` with the
