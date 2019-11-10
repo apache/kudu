@@ -153,9 +153,17 @@ def main():
   env['SENTRY_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/sentry-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
+  # Restore the symlinks to the chrony binaries; tests expect to find them in
+  # same directory as the test binaries themselves.
+  for bin_path in glob.glob(os.path.join(ROOT, "build/*/bin")):
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin/chronyc"),
+               os.path.join(bin_path, "chronyc"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/sbin/chronyd"),
+               os.path.join(bin_path, "chronyd"))
+
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +
-    glob.glob(os.path.abspath((os.path.join(ROOT, "build/*/lib")))))
+    glob.glob(os.path.abspath(os.path.join(ROOT, "build/*/lib"))))
 
   # Don't pollute /tmp in dist-test setting. If a test crashes, the dist-test slave
   # will clear up our working directory but won't be able to find and clean up things

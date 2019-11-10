@@ -38,14 +38,14 @@ target_link_libraries(clock
 ##############################
 
 if (NOT NO_CHRONY)
-  # These are copied/installed instead of linking because:
-  #  * symlinks would not work with dist-test
-  #  * hardlinks would not work if the target directory is at different
-  #    filesystem than thirdparty
-  file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin/chronyc"
-    DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
-  file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/sbin/chronyd"
-    DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
+  # Link the chrony binaries so that they can be found via
+  # MiniChronyd::GetPath in MiniChronyd::Start.
+  execute_process(COMMAND ln -nsf
+                  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin/chronyc"
+                  "${EXECUTABLE_OUTPUT_PATH}/chronyc")
+  execute_process(COMMAND ln -nsf
+                  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/sbin/chronyd"
+                  "${EXECUTABLE_OUTPUT_PATH}/chronyd")
 
   set(MINI_CHRONYD_SRCS test/mini_chronyd.cc)
 
