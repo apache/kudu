@@ -392,6 +392,8 @@ ADD_KUDU_TEST(bloom_filter-test)
 ADD_KUDU_TEST(cache-bench RUN_SERIAL true)
 ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(callback_bind-test)
+ADD_KUDU_TEST(char_util-test
+  DATA_FILES testdata/char_truncate_utf8.txt testdata/char_truncate_ascii.txt)
 ADD_KUDU_TEST(countdown_latch-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(debug-util-test)
