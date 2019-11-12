@@ -53,6 +53,22 @@ their Kudu processes will crash at startup.
   resolving required symbols via `dlsym()`
   (see link:https://issues.apache.org/jira/browse/KUDU-2990[KUDU-2990]).
 
+* Fixed an issue with `kudu cluster rebalancer` CLI tool crashing when running
+  against a location-aware cluster if a tablet server in one location doesn't
+  contain a single tablet replica
+  (see link:https://issues.apache.org/jira/browse/KUDU-2987[KUDU-2987]).
+
+* Fixed an issue with connection negotiation using SASL mechanism when server
+  FQDN is longer than 64 characters
+  (see link:https://issues.apache.org/jira/browse/KUDU-2989[KUDU-2989]).
+
+* Fixed an issue in the test harness of the kudu-binary JAR artifact. With this
+  fix, `kudu-master` and `kudu-tserver` processes of the mini-cluster's test
+  harness no longer rely on the test NTP server to synchronize their built-in
+  NTP client. Instead, the test harness relies on the local machine clock
+  synchronized by the system NTP daemon
+  (see link:https://issues.apache.org/jira/browse/KUDU-2994[KUDU-2994]).
+
 [[rn_1.11.0]]
 = Apache Kudu 1.11.0 Release Notes
 
