@@ -20,12 +20,15 @@
 #include <cstdint>
 #include <memory>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/init.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
 using std::unique_ptr;
@@ -38,6 +41,9 @@ class CharUtilTest : public KuduTest {
   Slice data_ascii_;
 
   void SetUp() override {
+    // UTF8Truncate uses SSE4.1 instructions so we need to make sure the CPU
+    // running the test has these opcodes.
+    CHECK_OK(CheckCPUFlags());
     ReadFileToString(env_, JoinPathSegments(GetTestExecutableDirectory(),
                                            "testdata/char_truncate_utf8.txt"),
                      &string_utf8_);
@@ -90,6 +96,18 @@ TEST_F(CharUtilTest, CorrectnessTestIncompleteUtf8) {
 
   auto ptr = Truncate(test_data, 5, &result);
   ASSERT_EQ(test_data, result);
+}
+
+TEST_F(CharUtilTest, CorrectnessTestUtf8AndAscii) {
+  Slice result;
+  Slice data = "ááááááááááááááááááááááááááááááááaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+  auto ptr = Truncate(data, 64, &result);
+  ASSERT_EQ(data, result);
+
+  data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaáááááááááááááááááááááááááááááááá";
+  ptr = Truncate(data, 64, &result);
+  ASSERT_EQ(data, result);
 }
 
 TEST_F(CharUtilTest, StressTestUtf8) {
