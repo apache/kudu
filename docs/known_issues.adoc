@@ -213,5 +213,5 @@ to communicate only the most important known issues.
   licensed under LGPL v.2.1, however the ASF thirdparty license policy
   explicitly prohibits including such contents into releases: see
   link:https://www.apache.org/legal/resolved.html#category-x[Category X]. This
-  issue will be addressed ASAP in upcoming patch releases
+  issue has been addressed in 1.10.1 and 1.11.1 patch releases correspondingly
   (see link:https://issues.apache.org/jira/browse/KUDU-2990[KUDU-2990]).
