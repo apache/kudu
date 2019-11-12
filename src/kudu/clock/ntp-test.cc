@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#if !defined(NO_CHRONY)
 #include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <ctime>
+#endif
 #include <iterator>
 #include <memory>
 #include <string>
@@ -26,10 +28,13 @@
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#if !defined(NO_CHRONY)
 #include <glog/logging.h>
+#endif
 #include <gtest/gtest.h>
 
 #include "kudu/clock/builtin_ntp-internal.h"
+#if !defined(NO_CHRONY)
 #include "kudu/clock/builtin_ntp.h"
 #include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/clock/test/mini_chronyd_test_util.h"
@@ -39,6 +44,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#endif
 
 DECLARE_int32(ntp_initial_sync_wait_secs);
 DECLARE_string(builtin_ntp_servers);
@@ -396,6 +402,8 @@ TEST(TimeIntervalsTest, ThreeResponses) {
   }
 }
 
+#if !defined(NO_CHRONY)
+
 #define WALLTIME_DIAG_FMT   "%" PRId64 " +/- %8" PRId64 " us"
 
 // Test to verify functionality of the built-in NTP client by communicating
@@ -672,6 +680,8 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
   }
 #endif // #ifndef __APPLE__
 }
+
+#endif // #if !defined(NO_CHRONY)
 
 } // namespace clock
 } // namespace kudu

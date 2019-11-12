@@ -21,8 +21,7 @@ set(MINI_CLUSTER_SRCS
   mini_cluster.cc
 )
 
-add_library(mini_cluster ${MINI_CLUSTER_SRCS})
-target_link_libraries(mini_cluster
+set(MINI_CLUSTER_LIBS
   gflags
   glog
   gmock
@@ -34,7 +33,6 @@ target_link_libraries(mini_cluster
   kudu_util
   master
   master_proto
-  mini_chronyd
   mini_hms
   mini_kdc
   mini_sentry
@@ -43,8 +41,14 @@ target_link_libraries(mini_cluster
   tserver
   tserver_proto
   tserver_service_proto
-  wire_protocol_proto
-)
+  wire_protocol_proto)
+
+if (NOT NO_CHRONY)
+  set(MINI_CLUSTER_LIBS ${MINI_CLUSTER_LIBS} mini_chronyd)
+endif()
+
+add_library(mini_cluster ${MINI_CLUSTER_SRCS})
+target_link_libraries(mini_cluster ${MINI_CLUSTER_LIBS})
 add_dependencies(mini_cluster
   kudu-tserver
   kudu-master)

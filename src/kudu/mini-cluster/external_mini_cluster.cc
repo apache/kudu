@@ -34,7 +34,9 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
+#if !defined(NO_CHRONY)
 #include "kudu/clock/test/mini_chronyd.h"
+#endif
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
@@ -72,7 +74,9 @@
 #include "kudu/util/test_util.h"
 
 using kudu::client::internal::ConnectToClusterRpc;
+#if !defined(NO_CHRONY)
 using kudu::clock::MiniChronyd;
+#endif
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
@@ -115,8 +119,12 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       enable_sentry(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
-      rpc_negotiation_timeout(MonoDelta::FromSeconds(3)),
-      num_ntp_servers(UseSystemNtp() ? 0 : 1) {
+      rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
+#if !defined(NO_CHRONY)
+      ,
+      num_ntp_servers(UseSystemNtp() ? 0 : 1)
+#endif
+    {
 }
 
 ExternalMiniCluster::ExternalMiniCluster()
@@ -159,6 +167,7 @@ Status ExternalMiniCluster::HandleOptions() {
   return Status::OK();
 }
 
+#if !defined(NO_CHRONY)
 Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
   DCHECK(flags);
   if (opts_.num_ntp_servers > 0) {
@@ -184,6 +193,7 @@ Status ExternalMiniCluster::AddNtpFlags(std::vector<std::string>* flags) {
   }
   return Status::OK();
 }
+#endif // #if !defined(NO_CHRONY) ...
 
 Status ExternalMiniCluster::StartSentry() {
   sentry_->SetDataRoot(opts_.cluster_root);
@@ -249,6 +259,7 @@ Status ExternalMiniCluster::Start() {
                           "could not set krb5 client env");
   }
 
+#if !defined(NO_CHRONY)
   // Start NTP servers, if requested.
   if (opts_.num_ntp_servers > 0) {
     // Collect and keep alive the set of sockets bound with SO_REUSEPORT option
@@ -272,6 +283,7 @@ Status ExternalMiniCluster::Start() {
                             Substitute("failed to start NTP server $0", i));
     }
   }
+#endif // #if !defined(NO_CHRONY) ...
 
   // Start the Sentry service and the HMS in the following steps, in order
   // to deal with the circular dependency in terms of configuring each
@@ -532,7 +544,9 @@ Status ExternalMiniCluster::StartMasters() {
     flags.emplace_back("--location_mapping_by_uuid");
 #   endif
   }
+#if !defined(NO_CHRONY)
   RETURN_NOT_OK(AddNtpFlags(&flags));
+#endif
 
   // Start the masters.
   const string& exe = GetBinaryPath(kMasterBinaryName);
@@ -616,7 +630,9 @@ Status ExternalMiniCluster::AddTabletServer() {
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
   vector<string> extra_flags;
+#if !defined(NO_CHRONY)
   RETURN_NOT_OK(AddNtpFlags(&extra_flags));
+#endif
   auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
   std::copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
   opts.extra_flags = extra_flags;
@@ -636,6 +652,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
+#if !defined(NO_CHRONY)
 Status ExternalMiniCluster::AddNtpServer(const Sockaddr& addr) {
   clock::MiniChronydOptions options;
   options.index = ntp_servers_.size();
@@ -648,6 +665,7 @@ Status ExternalMiniCluster::AddNtpServer(const Sockaddr& addr) {
   ntp_servers_.emplace_back(std::move(chrony));
   return Status::OK();
 }
+#endif // #if !defined(NO_CHRONY) ...
 
 Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta& timeout) {
   MonoTime deadline = MonoTime::Now() + timeout;
@@ -826,6 +844,7 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
   return results;
 }
 
+#if !defined(NO_CHRONY)
 vector<MiniChronyd*> ExternalMiniCluster::ntp_servers() const {
   vector<MiniChronyd*> servers;
   servers.reserve(ntp_servers_.size());
@@ -835,6 +854,7 @@ vector<MiniChronyd*> ExternalMiniCluster::ntp_servers() const {
   }
   return servers;
 }
+#endif // #if !defined(NO_CHRONY) ...
 
 vector<HostPort> ExternalMiniCluster::master_rpc_addrs() const {
   vector<HostPort> master_hostports;

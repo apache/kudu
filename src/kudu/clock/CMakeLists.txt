@@ -37,35 +37,41 @@ target_link_libraries(clock
 # mini_chronyd
 ##############################
 
-# These are copied/installed instead of linking because:
-#  * symlinks would not work with dist-test
-#  * hardlinks would not work if the target directory is at different
-#    filesystem than thirdparty
-file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin/chronyc"
-  DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
-file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/sbin/chronyd"
-  DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
+if (NOT NO_CHRONY)
+  # These are copied/installed instead of linking because:
+  #  * symlinks would not work with dist-test
+  #  * hardlinks would not work if the target directory is at different
+  #    filesystem than thirdparty
+  file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin/chronyc"
+    DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
+  file(COPY "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/sbin/chronyd"
+    DESTINATION "${EXECUTABLE_OUTPUT_PATH}")
 
-set(MINI_CHRONYD_SRCS test/mini_chronyd.cc)
+  set(MINI_CHRONYD_SRCS test/mini_chronyd.cc)
 
-add_library(mini_chronyd ${MINI_CHRONYD_SRCS})
-target_link_libraries(mini_chronyd
-  gutil
-  kudu_test_util
-  kudu_util)
+  add_library(mini_chronyd ${MINI_CHRONYD_SRCS})
+  target_link_libraries(mini_chronyd
+    gutil
+    kudu_test_util
+    kudu_util)
 
-set(MINI_CHRONYD_TEST_UTIL_SRCS test/mini_chronyd_test_util.cc)
-add_library(mini_chronyd_test_util ${MINI_CHRONYD_TEST_UTIL_SRCS})
-target_link_libraries(mini_chronyd_test_util
-  gutil
-  kudu_test_util
-  kudu_util
-  mini_cluster)
+  set(MINI_CHRONYD_TEST_UTIL_SRCS test/mini_chronyd_test_util.cc)
+  add_library(mini_chronyd_test_util ${MINI_CHRONYD_TEST_UTIL_SRCS})
+  target_link_libraries(mini_chronyd_test_util
+    gutil
+    kudu_test_util
+    kudu_util
+    mini_cluster)
+endif() # (NOT NO_CHRONY)
 
 SET_KUDU_TEST_LINK_LIBS(clock)
 ADD_KUDU_TEST(hybrid_clock-test PROCESSORS 3)
 ADD_KUDU_TEST(logical_clock-test)
 
-SET_KUDU_TEST_LINK_LIBS(clock mini_chronyd mini_chronyd_test_util)
-ADD_KUDU_TEST(test/mini_chronyd-test)
+if (NO_CHRONY)
+  SET_KUDU_TEST_LINK_LIBS(clock)
+else()
+  SET_KUDU_TEST_LINK_LIBS(clock mini_chronyd mini_chronyd_test_util)
+  ADD_KUDU_TEST(test/mini_chronyd-test)
+endif()
 ADD_KUDU_TEST(ntp-test)

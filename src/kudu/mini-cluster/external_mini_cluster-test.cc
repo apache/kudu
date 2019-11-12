@@ -101,17 +101,27 @@ std::ostream& operator<<(std::ostream& o, BuiltInNtp opt) {
 
 class ExternalMiniClusterTest :
     public KuduTest,
-    public testing::WithParamInterface<tuple<Kerberos, HiveMetastore, BuiltInNtp>> {
+#if !defined(NO_CHRONY)
+    public testing::WithParamInterface<tuple<Kerberos, HiveMetastore, BuiltInNtp>>
+#else
+    public testing::WithParamInterface<tuple<Kerberos, HiveMetastore>>
+#endif
+{
 };
 
 INSTANTIATE_TEST_CASE_P(,
     ExternalMiniClusterTest,
     ::testing::Combine(
         ::testing::Values(Kerberos::DISABLED, Kerberos::ENABLED),
-        ::testing::Values(HiveMetastore::DISABLED, HiveMetastore::ENABLED),
+        ::testing::Values(HiveMetastore::DISABLED, HiveMetastore::ENABLED)
+#if !defined(NO_CHRONY)
+        ,
         ::testing::Values(BuiltInNtp::DISABLED,
                           BuiltInNtp::ENABLED_SINGLE_SERVER,
-                          BuiltInNtp::ENABLED_MULTIPLE_SERVERS)));
+                          BuiltInNtp::ENABLED_MULTIPLE_SERVERS,
+                          BuiltInNtp::DISABLED)
+#endif // #if !defined(NO_CHRONY) ...
+                          ));
 
 void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   ASSERT_TRUE(opts.enable_kerberos);
@@ -263,7 +273,9 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   if (std::get<1>(param) == HiveMetastore::ENABLED) {
     opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
   }
+#if !defined(NO_CHRONY)
   opts.num_ntp_servers = std::get<2>(param);
+#endif
 
   opts.num_masters = 3;
   opts.num_tablet_servers = 3;
