@@ -536,12 +536,6 @@ Status CFileReader::ReadBlock(const IOContext* io_context, const BlockPointer &p
 
     // Set the result block to our decompressed data.
     block = Slice(buf, uncompressed_size);
-  } else {
-    // Some of the File implementations from LevelDB attempt to be tricky
-    // and just return a Slice into an mmapped region (or in-memory region).
-    // But, this is hard to program against in terms of cache management, etc,
-    // so we memcpy into our scratch buffer if necessary.
-    block.relocate(scratch.get());
   }
 
   // It's possible that one of the TryAllocateFromCache() calls above
