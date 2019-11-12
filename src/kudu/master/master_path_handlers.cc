@@ -263,16 +263,22 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     table_json["id"] = EscapeForHtmlToString(table->id());
     table_json["state"] = state;
     table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
+    table_json["tablet_count"] = HumanReadableInt::ToString(table->num_tablets());
+    const TableMetrics* table_metrics = table->GetMetrics();
+    if (table_metrics) {
+      table_json["on_disk_size"] =
+          HumanReadableNumBytes::ToString(table_metrics->on_disk_size->value());
+    }
     std::string str_create_time;
     if (l.data().pb.has_create_timestamp()) {
       str_create_time = TimestampAsString(l.data().pb.create_timestamp());
     }
-    table_json["create time"] = EscapeForHtmlToString(str_create_time);
+    table_json["create_time"] = EscapeForHtmlToString(str_create_time);
     std::string str_alter_time;
     if (l.data().pb.has_alter_timestamp()) {
       str_alter_time = TimestampAsString(l.data().pb.alter_timestamp());
     }
-    table_json["alter time"] = EscapeForHtmlToString(str_alter_time);
+    table_json["alter_time"] = EscapeForHtmlToString(str_alter_time);
   }
   (*output).Set<int64_t>("num_tables", num_running_tables);
 }

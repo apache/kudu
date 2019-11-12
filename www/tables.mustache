@@ -34,6 +34,8 @@ There are {{num_tables}} tables.
     <th>Table Id</th>
     <th>State</th>
     <th>State Message</th>
+    <th data-sorter="numericStringsSorter" data-sortable="true">Tablet Count</th>
+    <th data-sorter="bytesSorter" data-sortable="true">On-Disk Size (pre-replication)</th>
     <th data-sorter="timesSorter" data-sortable="true">Create Time</th>
     <th data-sorter="timesSorter" data-sortable="true">Last Alter Time</th>
   </tr></thead>
@@ -44,8 +46,10 @@ There are {{num_tables}} tables.
       <td><a href="{{base_url}}/table?id={{id}}">{{id}}</a></td>
       <td>{{state}}</td>
       <td>{{message}}</td>
-      <td>{{create time}}</td>
-      <td>{{alter time}}</td>
+      <td>{{tablet_count}}</td>
+      <td>{{on_disk_size}}</td>
+      <td>{{create_time}}</td>
+      <td>{{alter_time}}</td>
     </tr>
    {{/tables}}
   </tbody>
