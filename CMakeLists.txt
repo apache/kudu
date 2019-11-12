@@ -1120,6 +1120,10 @@ include_directories(${KERBEROS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(krb5
   SHARED_LIB "${KERBEROS_LIBRARY}")
 
+if (NO_CHRONY)
+  add_definitions("-DNO_CHRONY")
+endif()
+
 ## Google PerfTools
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see

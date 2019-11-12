@@ -103,11 +103,15 @@ rm -rf CMakeCache.txt CMakeFiles
 
 # We want a fast build with a small total output size, so we need to build in
 # release mode with dynamic linking so that all of the target executables can
-# use the same shared objects for their dependencies.
+# use the same shared objects for their dependencies. Since we may not
+# distribute chronyc/chronyd in kudu-binaries JAR due to licensing restrictions,
+# the test harness is built to not rely on chronyd as NTP server for tests run
+# with the mini-cluster.
 echo Configuring Kudu... >&2
 $SOURCE_ROOT/build-support/enable_devtoolset.sh \
   $SOURCE_ROOT/thirdparty/installed/common/bin/cmake ../.. \
-  -DNO_TESTS=1 -DCMAKE_BUILD_TYPE=RELEASE -DKUDU_LINK=dynamic $EXTRA_CMAKE_FLAGS
+  -DNO_TESTS=1 -DNO_CHRONY=1 \
+  -DCMAKE_BUILD_TYPE=RELEASE -DKUDU_LINK=dynamic $EXTRA_CMAKE_FLAGS
 
 echo Building Kudu... >&2
 NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
