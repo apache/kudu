@@ -72,6 +72,16 @@ BUILD_ROOT=$SOURCE_ROOT/build/mini-cluster
 MINI_CLUSTER_SRCDIR=$SOURCE_ROOT/build-support/mini-cluster
 TARGETS="kudu kudu-tserver kudu-master"
 
+# Remove leftovers from previous releases/builds: rename the existing directory.
+# To skip this step, set the MINI_CLUSTER_NO_FRESH_BUILD environment variable.
+if [ -n "$MINI_CLUSTER_NO_FRESH_BUILD" ]; then
+  echo "WARNING: using existing build directory"
+else
+  suffix=$(date "+%Y%m%d.%H%M%S")
+  echo "Moving existing $BUILD_ROOT into $BUILD_ROOT.$suffix"
+  mv $BUILD_ROOT $BUILD_ROOT.$suffix
+fi
+
 cd $SOURCE_ROOT
 if [ -n "$NO_REBUILD_THIRDPARTY" ]; then
   echo Skipping thirdparty because NO_REBUILD_THIRDPARTY is not empty
@@ -116,7 +126,14 @@ make -j$NUM_PROCS $TARGETS
 # Relocate the binaries.
 $MINI_CLUSTER_SRCDIR/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
 
-ARTIFACT_NAME=$(ls -d kudu-binary* | sed 's#/##' | head -1)
+ARTIFACT_NAME="$(ls -dF kudu-binary-* | egrep '.*/$' | sed 's#/##')"
+if [ $(echo $ARTIFACT_NAME | wc -w) -ne 1 ]; then
+  echo "ERROR: this script can handle only single kudu-binary artifact, but"
+  echo "       multiple kudu-binary-* directories found under $BUILD_ROOT:"
+  echo "       $ARTIFACT_NAME"
+  echo "       Remove extra kudu-binary-* directories"
+  exit 1
+fi
 
 # Strip everything to minimize the size of the tarball we generate.
 echo Stripping symbols...
