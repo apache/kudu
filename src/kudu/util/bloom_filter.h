@@ -31,6 +31,10 @@
 
 namespace kudu {
 
+// A simple BloomFilter that takes arbitrary datatype as key.
+// For a space and cache efficient block based BloomFilter that takes 32-bit hash as key see
+// BlockBloomFilter in block_bloom_filter.h
+
 // Probe calculated from a given key. This caches the calculated
 // hash values which are necessary for probing into a Bloom Filter,
 // so that when many bloom filters have to be consulted for a given
