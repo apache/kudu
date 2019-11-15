@@ -286,6 +286,23 @@ Status ProcessRequest(const ControlShellRequestPB& req,
       RETURN_NOT_OK((*cluster)->kdc()->Kinit(req.kinit().username()));
       break;
     }
+    case ControlShellRequestPB::kSetDaemonFlag:
+    {
+      const auto& r = req.set_daemon_flag();
+      if (!r.has_id()) {
+        RETURN_NOT_OK(Status::InvalidArgument("missing process id"));
+      }
+      const auto& id = r.id();
+      if (id.type() == DaemonType::KDC) {
+        return Status::InvalidArgument("mini-KDC doesn't support SetFlag()");
+      }
+      ExternalDaemon* daemon;
+      MiniKdc* kdc;
+      RETURN_NOT_OK(FindDaemon(*cluster, id, &daemon, &kdc));
+      DCHECK(daemon);
+      RETURN_NOT_OK((*cluster)->SetFlag(daemon, r.flag(), r.value()));
+      break;
+    }
     default:
       RETURN_NOT_OK(Status::InvalidArgument("unknown cluster control request"));
   }
