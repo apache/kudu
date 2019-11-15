@@ -30,6 +30,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLPeerUnverifiedException;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -451,6 +452,11 @@ class Connection extends SimpleChannelUpstreamHandler {
       // SSLException if we've already attempted to close, otherwise log the error.
       error = new RecoverableException(Status.NetworkError(
           String.format("%s disconnected from peer", getLogPrefix())));
+    } else if (e instanceof SSLPeerUnverifiedException) {
+      String m = String.format("unable to verify identity of peer %s: %s",
+          serverInfo, e.getMessage());
+      error = new NonRecoverableException(Status.NetworkError(m), e);
+      LOG.error(m, e);
     } else {
       // If the connection was explicitly disconnected via a call to disconnect(), we should
       // have either gotten a ClosedChannelException or an SSLException.

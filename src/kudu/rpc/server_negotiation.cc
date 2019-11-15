@@ -80,6 +80,18 @@ DEFINE_double(rpc_inject_invalid_authn_token_ratio, 0,
 TAG_FLAG(rpc_inject_invalid_authn_token_ratio, runtime);
 TAG_FLAG(rpc_inject_invalid_authn_token_ratio, unsafe);
 
+DEFINE_double(rpc_inject_invalid_channel_bindings_ratio, 0,
+            "The ratio of injection of invalid channel bindings during "
+            "connection negotiation. This is a test-only flag.");
+TAG_FLAG(rpc_inject_invalid_channel_bindings_ratio, runtime);
+TAG_FLAG(rpc_inject_invalid_channel_bindings_ratio, unsafe);
+
+DEFINE_bool(rpc_send_channel_bindings, true,
+            "Whether to send channel bindings in NegotiatePB response as "
+            "prescribed by RFC 5929. This is a test-only flag.");
+TAG_FLAG(rpc_send_channel_bindings, runtime);
+TAG_FLAG(rpc_send_channel_bindings, unsafe);
+
 DECLARE_bool(rpc_encrypt_loopback_connections);
 
 DEFINE_string(trusted_subnets,
@@ -866,13 +878,19 @@ Status ServerNegotiation::SendSaslSuccess() {
     RETURN_NOT_OK(security::GenerateNonce(nonce_.get_ptr()));
     response.set_nonce(*nonce_);
 
-    if (tls_negotiated_) {
+    if (tls_negotiated_ && PREDICT_TRUE(FLAGS_rpc_send_channel_bindings)) {
       // Send the channel bindings to the client.
       security::Cert cert;
       RETURN_NOT_OK(tls_handshake_.GetLocalCert(&cert));
 
       string plaintext_channel_bindings;
       RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));
+
+      if (kudu::fault_injection::MaybeTrue(
+          FLAGS_rpc_inject_invalid_channel_bindings_ratio)) {
+        DCHECK_GT(plaintext_channel_bindings.size(), 0);
+        plaintext_channel_bindings[0] += 1;
+      }
 
       Slice ciphertext;
       RETURN_NOT_OK(SaslEncode(sasl_conn_.get(),
