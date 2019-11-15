@@ -1461,14 +1461,43 @@ for more than `--follower_unavailable_considered_failed_sec` (default 300)
 seconds, the tablet replicas on the down tablet server will be replaced by new
 replicas on available tablet servers. This will cause stress on the cluster
 as tablets re-replicate and, if the downtime lasts long enough, significant
-reduction in the number of replicas on the down tablet server. This may require
-the rebalancer to fix.
+reduction in the number of replicas on the down tablet server, which would
+require the rebalancer to fix.
 
-To work around this, increase `--follower_unavailable_considered_failed_sec` on
-all tablet servers so the amount of time before re-replication will start is
-longer than the expected downtime of the tablet server, including the time it
-takes the tablet server to restart and bootstrap its tablet replicas. To do
-this, run the following command for each tablet server:
+To work around this, in Kudu versions from 1.11 onwards, the `kudu` CLI
+contains a tool to put tablet servers into maintenance mode. While in this
+state, the tablet server’s replicas are not re-replicated due to its downtime
+alone, though re-replication may still occur in the event that the server in
+maintenance suffers from a disk failure or if a follower replica on the tablet
+server falls too far behind its leader replica. Upon exiting maintenance,
+re-replication is triggered for any remaining under-replicated tablets.
+
+The `kudu tserver state enter_maintenance` and `kudu tserver state
+exit_maintenance` tools are added to orchestrate tablet server maintenance.
+The following can be run from a tablet server to put it into maintenance:
+
+[source,bash]
+----
+$ TS_UUID=$(sudo -u kudu kudu fs dump uuid --fs_wal_dir=<wal_dir> --fs_data_dirs=<data_dirs>)
+$ sudo -u kudu kudu tserver state enter_maintenance <master_addresses> "$TS_UUID"
+----
+
+The tablet server maintenance mode is shown in the "Tablet Servers" page of the
+Kudu leader master's web UI, and in the output of `kudu cluster ksck`.  To exit
+maintenance mode, run the following:
+
+[source,bash]
+----
+$ sudo -u kudu kudu tserver state exit_maintenance <master_addresses> "$TS_UUID"
+----
+
+In versions prior to 1.11, a different approach must be used to prevent
+unwanted re-replication. Increase
+`--follower_unavailable_considered_failed_sec` on all tablet servers so the
+amount of time before re-replication starts is longer than the expected
+downtime of the tablet server, including the time it takes the tablet server to
+restart and bootstrap its tablet replicas. To do this, run the following
+command for each tablet server:
 
 [source,bash]
 ----
@@ -1486,7 +1515,7 @@ WARNING: Be sure to reset the value of `--follower_unavailable_considered_failed
 to its original value.
 
 NOTE: On Kudu versions prior to 1.8, the `--force` flag must be provided in the above
-commands.
+`set_flag` commands.
 
 [[rebalancer_tool]]
 === Running the tablet rebalancing tool
