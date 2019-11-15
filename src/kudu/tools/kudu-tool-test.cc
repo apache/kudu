@@ -4733,6 +4733,70 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     ASSERT_OK(SendReceive(req, &resp));
   }
 
+  // Set flag.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_set_daemon_flag();
+    *r->mutable_id() = tservers[0].id();
+    r->set_flag("rpc_negotiation_timeout_ms");
+    r->set_value("5000");
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Try to set a non-existent flag: this should fail.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_set_daemon_flag();
+    *r->mutable_id() = masters[0].id();
+    r->set_flag("__foo_bar_flag__");
+    r->set_value("__value__");
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "failed to set flag: result: NO_SUCH_FLAG");
+  }
+
+  // Try to set a flag on a non-existent daemon: this should fail.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_set_daemon_flag();
+    r->mutable_id()->set_index(1000);
+    r->mutable_id()->set_type(MASTER);
+    r->set_flag("flag");
+    r->set_value("value");
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "no master with index 1000");
+  }
+
+  // Try to set a flag on a KDC: this should fail since mini-KDC doesn't support
+  // SetFlag() call.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    auto* r = req.mutable_set_daemon_flag();
+    r->mutable_id()->set_index(0);
+    r->mutable_id()->set_type(KDC);
+    r->set_flag("flag");
+    r->set_value("value");
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "mini-KDC doesn't support SetFlag()");
+  }
+
   if (enable_kerberos()) {
     // Restart the KDC.
     {

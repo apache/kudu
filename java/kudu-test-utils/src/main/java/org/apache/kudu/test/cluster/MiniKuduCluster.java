@@ -52,6 +52,7 @@ import org.apache.kudu.tools.Tool.GetMastersRequestPB;
 import org.apache.kudu.tools.Tool.GetTServersRequestPB;
 import org.apache.kudu.tools.Tool.KdestroyRequestPB;
 import org.apache.kudu.tools.Tool.KinitRequestPB;
+import org.apache.kudu.tools.Tool.SetDaemonFlagRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
@@ -418,6 +419,44 @@ public class MiniKuduCluster implements AutoCloseable {
     for (Map.Entry<HostAndPort, DaemonInfo> e : tabletServers.entrySet()) {
       startTabletServer(e.getKey());
     }
+  }
+
+  /**
+   * Set flag for the specified master.
+   *
+   * @param hp unique host and port identifying the target master
+   * @throws IOException if something went wrong in transit
+   */
+  public void setMasterFlag(HostAndPort hp, String flag, String value)
+      throws IOException {
+    DaemonInfo d = getMasterServer(hp);
+    LOG.info("Setting flag for master at {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setSetDaemonFlag(SetDaemonFlagRequestPB.newBuilder()
+            .setId(d.id)
+            .setFlag(flag)
+            .setValue(value)
+            .build())
+        .build());
+  }
+
+  /**
+   * Set flag for the specified tablet server.
+   *
+   * @param hp unique host and port identifying the target tablet server
+   * @throws IOException if something went wrong in transit
+   */
+  public void setTServerFlag(HostAndPort hp, String flag, String value)
+      throws IOException {
+    DaemonInfo d = getTabletServer(hp);
+    LOG.info("Setting flag for tserver at {}", hp);
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setSetDaemonFlag(SetDaemonFlagRequestPB.newBuilder()
+            .setId(d.id)
+            .setFlag(flag)
+            .setValue(value)
+            .build())
+        .build());
   }
 
   /**
