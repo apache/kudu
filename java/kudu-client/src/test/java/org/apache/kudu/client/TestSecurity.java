@@ -30,6 +30,7 @@ import javax.security.auth.Subject;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
@@ -61,8 +62,19 @@ public class TestSecurity {
   private enum Option {
     LONG_LEADER_ELECTION,
     SHORT_TOKENS_AND_TICKETS,
-    START_TSERVERS
-  };
+    START_TSERVERS,
+  }
+
+  static private class KeyValueMessage {
+    final String key;
+    final String val;
+    final String msg;
+    KeyValueMessage(String k, String v, String m) {
+      key = k;
+      val = v;
+      msg = m;
+    }
+  }
 
   private void startCluster(Set<Option> opts) throws IOException {
     MiniKuduClusterBuilder mcb = new MiniKuduClusterBuilder();
@@ -434,5 +446,47 @@ public class TestSecurity {
     // Note: this depends on DEBUG-level org.apache.kudu.client logging.
     Assert.assertThat(cla.getAppendedText(), CoreMatchers.containsString(
         "Using caller-provided subject with Kerberos principal test-admin@KRBTEST.COM."));
+  }
+
+  /**
+   * Test that if a Kudu server (in this case master) doesn't provide valid
+   * connection binding information, Java client fails to connect to the server.
+   */
+  @Test(timeout=60000)
+  public void testNegotiationChannelBindings() throws Exception {
+    startCluster(ImmutableSet.of(Option.START_TSERVERS));
+    // Test precondition: all is well with masters -- the client is able
+    // to connect to the cluster and create a table.
+    client.createTable("TestSecurity-channel-bindings-0",
+        getBasicSchema(), getBasicCreateTableOptions());
+
+    List<KeyValueMessage> variants = ImmutableList.of(
+        new KeyValueMessage("rpc_inject_invalid_channel_bindings_ratio", "1.0",
+            "invalid channel bindings provided by remote peer"),
+        new KeyValueMessage("rpc_send_channel_bindings", "false",
+            "no channel bindings provided by remote peer"));
+
+    // Make all masters sending invalid channel binding info during connection
+    // negotiation.
+    for (KeyValueMessage kvm : variants) {
+      for (HostAndPort hp : miniCluster.getMasterServers()) {
+        miniCluster.setMasterFlag(hp, kvm.key, kvm.val);
+      }
+
+      // Now, a client should not be able to connect to any master: negotiation
+      // fails because client cannot authenticate the servers since it fails
+      // to verify the connection binding.
+      try {
+        KuduClient c = new KuduClient.KuduClientBuilder(
+            miniCluster.getMasterAddressesAsString()).build();
+        c.createTable("TestSecurity-channel-bindings-1",
+            getBasicSchema(), getBasicCreateTableOptions());
+        Assert.fail("client should not be able to connect to any master");
+      } catch (NonRecoverableException e) {
+        Assert.assertThat(e.getMessage(), CoreMatchers.containsString(
+            "unable to verify identity of peer"));
+        Assert.assertThat(e.getMessage(), CoreMatchers.containsString(kvm.msg));
+      }
+    }
   }
 }
