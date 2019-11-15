@@ -601,6 +601,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       throw new SSLPeerUnverifiedException("no peer cert found");
     }
 
+    // The first element of the array is the peer's own certificate.
+    peerCert = certs[0];
+
     // Don't wrap the TLS socket if we are using TLS for authentication only.
     boolean isAuthOnly = serverFeatures.contains(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY) &&
         isLoopbackConnection(chan);
