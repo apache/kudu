@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -63,7 +64,6 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
@@ -1500,6 +1500,37 @@ void LogBlockDeletionTransaction::AddBlock(const LogBlockRefPtr& lb) {
 }
 
 ////////////////////////////////////////////////////////////
+// LogBlockContainerLoadResult
+////////////////////////////////////////////////////////////
+
+struct LogBlockContainerLoadResult {
+  Status status;
+  FsReport report;
+
+  // Keep track of containers that have nothing but dead blocks; they will be
+  // deleted during repair.
+  vector<LogBlockContainerRefPtr> dead_containers;
+  // Keep track of containers whose live block ratio is low; their metadata
+  // files will be compacted during repair.
+  unordered_map<string, vector<BlockRecordPB>> low_live_block_containers;
+  // Keep track of deleted blocks whose space hasn't been punched; they will
+  // be repunched during repair.
+  vector<LogBlockRefPtr> need_repunching_blocks;
+
+  LogBlockContainerLoadResult() {
+    // We are going to perform these checks.
+    //
+    // Note: this isn't necessarily the complete set of FsReport checks; there
+    // may be checks that the LBM cannot perform.
+    report.full_container_space_check.emplace();
+    report.incomplete_container_check.emplace();
+    report.malformed_record_check.emplace();
+    report.misaligned_block_check.emplace();
+    report.partial_record_check.emplace();
+  }
+};
+
+////////////////////////////////////////////////////////////
 // LogBlock (definition)
 ////////////////////////////////////////////////////////////
 
@@ -1939,6 +1970,21 @@ LogBlockManager::~LogBlockManager() {
   dd_manager_->WaitOnClosures();
 }
 
+// Ensure that no load task failed without being handled.
+//
+// Currently only disk failures are handled. Reports from failed disks are
+// unusable.
+#define RETURN_ON_NON_DISK_FAILURE(d, s)                        \
+  do {                                                          \
+    if (PREDICT_FALSE(!(s).ok())) {                             \
+      if (!(s).IsDiskFailure()) {                               \
+        return s;                                               \
+      }                                                         \
+      LOG(ERROR) << Substitute("Not using report from $0: $1",  \
+          (d)->dir(), (s).ToString());                          \
+    }                                                           \
+  } while (false)
+
 Status LogBlockManager::Open(FsReport* report) {
   RETURN_NOT_OK(file_cache_.Init());
 
@@ -1981,8 +2027,10 @@ Status LogBlockManager::Open(FsReport* report) {
     InsertOrDie(&block_limits_by_data_dir_, dd.get(), limit);
   }
 
-  vector<FsReport> reports(dd_manager_->data_dirs().size());
+  // Open containers in each data dirs.
   vector<Status> statuses(dd_manager_->data_dirs().size());
+  vector<vector<unique_ptr<internal::LogBlockContainerLoadResult>>> container_results(
+      dd_manager_->data_dirs().size());
   int i = -1;
   for (const auto& dd : dd_manager_->data_dirs()) {
     i++;
@@ -1994,12 +2042,13 @@ Status LogBlockManager::Open(FsReport* report) {
       statuses[i] = Status::IOError("Data directory failed", "", EIO);
       continue;
     }
+
     // Open the data dir asynchronously.
     dd->ExecClosure(
         Bind(&LogBlockManager::OpenDataDir,
              Unretained(this),
              dd.get(),
-             &reports[i],
+             &container_results[i],
              &statuses[i]));
   }
 
@@ -2007,26 +2056,73 @@ Status LogBlockManager::Open(FsReport* report) {
   for (const auto& dd : dd_manager_->data_dirs()) {
     dd->WaitOnClosures();
   }
-  if (dd_manager_->GetFailedDataDirs().size() == dd_manager_->data_dirs().size()) {
-    return Status::IOError("All data dirs failed to open", "", EIO);
-  }
 
-  // Ensure that no open failed without being handled.
-  //
-  // Currently only disk failures are handled. Reports from failed disks are
-  // unusable.
-  FsReport merged_report;
-  for (i = 0; i < statuses.size(); i++) {
-    const Status& s = statuses[i];
-    if (PREDICT_TRUE(s.ok())) {
-      merged_report.MergeFrom(reports[i]);
+  // Check load errors and merge each data dir's container load results, then do repair tasks.
+  vector<unique_ptr<internal::LogBlockContainerLoadResult>> dir_results(
+      dd_manager_->data_dirs().size());
+  for (int i = 0; i < dd_manager_->data_dirs().size(); ++i) {
+    const auto& s = statuses[i];
+    const auto& dd = dd_manager_->data_dirs()[i];
+    RETURN_ON_NON_DISK_FAILURE(dd, s);
+    // If open dir error, do not try to repair.
+    if (PREDICT_FALSE(!s.ok())) {
       continue;
     }
-    if (!s.IsDiskFailure()) {
-      return s;
+
+    unique_ptr<internal::LogBlockContainerLoadResult> dir_result(
+        new internal::LogBlockContainerLoadResult());
+    dir_result->report.data_dirs.push_back(dd->dir());
+    bool do_repair = true;
+    for (const auto& container_result : container_results[i]) {
+      RETURN_ON_NON_DISK_FAILURE(dd, container_result->status);
+      if (PREDICT_FALSE(!s.ok())) {
+        // If open container error, do not try to repair.
+        do_repair = false;
+        break;
+      }
+
+      dir_result->report.MergeFrom(container_result->report);
+      dir_result->dead_containers.insert(
+          dir_result->dead_containers.end(),
+          container_result->dead_containers.begin(),
+          container_result->dead_containers.end());
+      container_result->dead_containers.clear();
+      dir_result->low_live_block_containers.insert(
+          container_result->low_live_block_containers.begin(),
+          container_result->low_live_block_containers.end());
+      container_result->low_live_block_containers.clear();
+      dir_result->need_repunching_blocks.insert(
+          dir_result->need_repunching_blocks.end(),
+          container_result->need_repunching_blocks.begin(),
+          container_result->need_repunching_blocks.end());
+      container_result->need_repunching_blocks.clear();
     }
-    LOG(ERROR) << Substitute("Not using report from $0: $1",
-        dd_manager_->data_dirs()[i]->dir(), s.ToString());
+    if (do_repair) {
+      dir_results[i] = std::move(dir_result);
+      dd->ExecClosure(Bind(&LogBlockManager::RepairTask, Unretained(this),
+                           dd.get(), Unretained(dir_results[i].get())));
+    }
+  }
+
+  // Wait for the repair tasks to complete.
+  for (const auto& dd : dd_manager_->data_dirs()) {
+    dd->WaitOnClosures();
+  }
+
+  FsReport merged_report;
+  for (int i = 0; i < dd_manager_->data_dirs().size(); ++i) {
+    if (PREDICT_FALSE(!dir_results[i])) {
+      continue;
+    }
+    if (PREDICT_TRUE(dir_results[i]->status.ok())) {
+      merged_report.MergeFrom(dir_results[i]->report);
+      continue;
+    }
+    RETURN_ON_NON_DISK_FAILURE(dd_manager_->data_dirs()[i], dir_results[i]->status);
+  }
+
+  if (dd_manager_->GetFailedDataDirs().size() == dd_manager_->data_dirs().size()) {
+    return Status::IOError("All data dirs failed to open", "", EIO);
   }
 
   // Either return or log the report.
@@ -2376,34 +2472,10 @@ Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
   return Status::OK();
 }
 
-void LogBlockManager::OpenDataDir(DataDir* dir,
-                                  FsReport* report,
-                                  Status* result_status) {
-  FsReport local_report;
-  local_report.data_dirs.push_back(dir->dir());
-
-  // We are going to perform these checks.
-  //
-  // Note: this isn't necessarily the complete set of FsReport checks; there
-  // may be checks that the LBM cannot perform.
-  local_report.full_container_space_check.emplace();
-  local_report.incomplete_container_check.emplace();
-  local_report.malformed_record_check.emplace();
-  local_report.misaligned_block_check.emplace();
-  local_report.partial_record_check.emplace();
-
-  // Keep track of deleted blocks whose space hasn't been punched; they will
-  // be repunched during repair.
-  vector<LogBlockRefPtr> need_repunching;
-
-  // Keep track of containers that have nothing but dead blocks; they will be
-  // deleted during repair.
-  vector<LogBlockContainerRefPtr> dead_containers;
-
-  // Keep track of containers whose live block ratio is low; their metadata
-  // files will be compacted during repair.
-  unordered_map<string, vector<BlockRecordPB>> low_live_block_containers;
-
+void LogBlockManager::OpenDataDir(
+    DataDir* dir,
+    vector<unique_ptr<internal::LogBlockContainerLoadResult>>* results,
+    Status* result_status) {
   // Find all containers and open them.
   unordered_set<string> containers_seen;
   vector<string> children;
@@ -2415,7 +2487,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
         "Could not list children of $0", dir->dir()));
     return;
   }
-  MonoTime last_opened_container_log_time = MonoTime::Now();
+
   for (const string& child : children) {
     string container_name;
     if (!TryStripSuffixString(
@@ -2428,14 +2500,16 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       continue;
     }
 
+    // Add a new result for the container.
+    results->emplace_back(new internal::LogBlockContainerLoadResult());
     LogBlockContainerRefPtr container;
     s = LogBlockContainer::Open(
-        this, dir, &local_report, container_name, &container);
-    if (s.IsAborted()) {
-      // Skip the container. Open() added a record of it to 'local_report' for us.
-      continue;
-    }
+        this, dir, &results->back()->report, container_name, &container);
     if (!s.ok()) {
+      if (s.IsAborted()) {
+        // Skip the container. Open() added a record of it to 'results->back()->report' for us.
+        continue;
+      }
       if (opts_.read_only && s.IsNotFound()) {
         // Skip the container while the operation is read-only and the files are away,
         // especially for the kudu cli tool.
@@ -2446,201 +2520,201 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       return;
     }
 
-    // Process the records, building a container-local map for live blocks and
-    // a list of dead blocks.
-    //
-    // It's important that we don't try to add these blocks to the global map
-    // incrementally as we see each record, since it's possible that one container
-    // has a "CREATE <b>" while another has a "CREATE <b> ; DELETE <b>" pair.
-    // If we processed those two containers in this order, then upon processing
-    // the second container, we'd think there was a duplicate block. Building
-    // the container-local map first ensures that we discount deleted blocks
-    // before checking for duplicate IDs.
-    //
-    // NOTE: Since KUDU-1538, we allocate sequential block IDs, which makes reuse
-    // exceedingly unlikely. However, we might have old data which still exhibits
-    // the above issue.
-    UntrackedBlockMap live_blocks;
-    BlockRecordMap live_block_records;
-    vector<LogBlockRefPtr> dead_blocks;
-    uint64_t max_block_id = 0;
-    s = container->ProcessRecords(&local_report,
-                                  &live_blocks,
-                                  &live_block_records,
-                                  &dead_blocks,
-                                  &max_block_id);
-    if (!s.ok()) {
-      *result_status = s.CloneAndPrepend(Substitute(
-          "Could not process records in container $0", container->ToString()));
-      return;
-    }
-
-    // With deleted blocks out of the way, check for misaligned blocks.
-    //
-    // We could also enforce that the record's offset is aligned with the
-    // underlying filesystem's block size, an invariant maintained by the log
-    // block manager. However, due to KUDU-1793, that invariant may have been
-    // broken, so we'll note but otherwise allow it.
-    for (const auto& e : live_blocks) {
-      if (PREDICT_FALSE(e.second->offset() %
-                        container->instance()->filesystem_block_size_bytes() != 0)) {
-        local_report.misaligned_block_check->entries.emplace_back(
-            container->ToString(), e.first);
-
-      }
-    }
-
-    if (container->full()) {
-      // Full containers without any live blocks can be deleted outright.
-      //
-      // TODO(adar): this should be reported as an inconsistency once dead
-      // container deletion is also done in real time. Until then, it would be
-      // confusing to report it as such since it'll be a natural event at startup.
-      if (container->live_blocks() == 0) {
-        DCHECK(live_blocks.empty());
-        dead_containers.emplace_back(container);
-      } else if (static_cast<double>(container->live_blocks()) /
-          container->total_blocks() <= FLAGS_log_container_live_metadata_before_compact_ratio) {
-        // Metadata files of containers with very few live blocks will be compacted.
-        //
-        // TODO(adar): this should be reported as an inconsistency once
-        // container metadata compaction is also done in realtime. Until then,
-        // it would be confusing to report it as such since it'll be a natural
-        // event at startup.
-        vector<BlockRecordPB> records(live_block_records.size());
-        int i = 0;
-        for (auto& e : live_block_records) {
-          records[i].Swap(&e.second);
-          i++;
-        }
-
-        // Sort the records such that their ordering reflects the ordering in
-        // the pre-compacted metadata file.
-        //
-        // This is preferred to storing the records in an order-preserving
-        // container (such as std::map) because while records are temporarily
-        // retained for every container, only some containers will actually
-        // undergo metadata compaction.
-        std::sort(records.begin(), records.end(),
-                  [](const BlockRecordPB& a, const BlockRecordPB& b) {
-          // Sort by timestamp.
-          if (a.timestamp_us() != b.timestamp_us()) {
-            return a.timestamp_us() < b.timestamp_us();
-          }
-
-          // If the timestamps match, sort by offset.
-          //
-          // If the offsets also match (i.e. both blocks are of zero length),
-          // it doesn't matter which of the two records comes first.
-          return a.offset() < b.offset();
-        });
-
-        low_live_block_containers[container->ToString()] = std::move(records);
-      }
-
-      // Having processed the block records, let's check whether any full
-      // containers have any extra space (left behind after a crash or from an
-      // older version of Kudu).
-      //
-      // Filesystems are unpredictable beasts and may misreport the amount of
-      // space allocated to a file in various interesting ways. Some examples:
-      // - XFS's speculative preallocation feature may artificially enlarge the
-      //   container's data file without updating its file size. This makes the
-      //   file size untrustworthy for the purposes of measuring allocated space.
-      //   See KUDU-1856 for more details.
-      // - On el6.6/ext4 a container data file that consumed ~32K according to
-      //   its extent tree was actually reported as consuming an additional fs
-      //   block (2k) of disk space. A similar container data file (generated
-      //   via the same workload) on Ubuntu 16.04/ext4 did not exhibit this.
-      //   The suspicion is that older versions of ext4 include interior nodes
-      //   of the extent tree when reporting file block usage.
-      //
-      // To deal with these issues, our extra space cleanup code (deleted block
-      // repunching and container truncation) is gated on an "actual disk space
-      // consumed" heuristic. To prevent unnecessary triggering of the
-      // heuristic, we allow for some slop in our size measurements. The exact
-      // amount of slop is configurable via
-      // log_container_excess_space_before_cleanup_fraction.
-      //
-      // Too little slop and we'll do unnecessary work at startup. Too much and
-      // more unused space may go unreclaimed.
-      string data_filename = StrCat(container->ToString(), kContainerDataFileSuffix);
-      uint64_t reported_size;
-      s = env_->GetFileSizeOnDisk(data_filename, &reported_size);
-      if (!s.ok()) {
-        HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
-            ErrorHandlerType::DISK_ERROR, dir));
-        *result_status = s.CloneAndPrepend(Substitute(
-            "Could not get on-disk file size of container $0", container->ToString()));
-        return;
-      }
-      int64_t cleanup_threshold_size = container->live_bytes_aligned() *
-          (1 + FLAGS_log_container_excess_space_before_cleanup_fraction);
-      if (reported_size > cleanup_threshold_size) {
-        local_report.full_container_space_check->entries.emplace_back(
-            container->ToString(), reported_size - container->live_bytes_aligned());
-
-        // If the container is to be deleted outright, don't bother repunching
-        // its blocks. The report entry remains, however, so it's clear that
-        // there was a space discrepancy.
-        if (container->live_blocks()) {
-          need_repunching.insert(need_repunching.end(),
-                                 dead_blocks.begin(), dead_blocks.end());
-        }
-      }
-
-      local_report.stats.lbm_full_container_count++;
-    }
-    local_report.stats.live_block_bytes += container->live_bytes();
-    local_report.stats.live_block_bytes_aligned += container->live_bytes_aligned();
-    local_report.stats.live_block_count += container->live_blocks();
-    local_report.stats.lbm_container_count++;
-
-    // Log number of containers opened every 10 seconds
-    MonoTime now = MonoTime::Now();
-    if ((now - last_opened_container_log_time).ToSeconds() > 10) {
-      LOG(INFO) << Substitute("Opened $0 log block containers in $1",
-                              local_report.stats.lbm_container_count, dir->dir());
-      last_opened_container_log_time = now;
-    }
-
-    next_block_id_.StoreMax(max_block_id + 1);
-
-    int64_t mem_usage = 0;
-    for (UntrackedBlockMap::value_type& e : live_blocks) {
-      int block_mem = kudu_malloc_usable_size(e.second.get());
-      if (!AddLogBlock(std::move(e.second))) {
-        // TODO(adar): track as an inconsistency?
-        LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
-                   << " which already is alive from another container when "
-                   << " processing container " << container->ToString();
-      }
-      mem_usage += block_mem;
-    }
-
-    mem_tracker_->Consume(mem_usage);
-
-    std::lock_guard<simple_spinlock> l(lock_);
-    AddNewContainerUnlocked(container);
-    MakeContainerAvailableUnlocked(std::move(container));
+    // Load the container's records asynchronously.
+    dir->ExecClosure(Bind(&LogBlockManager::LoadContainer, Unretained(this),
+                          dir, container, Unretained(results->back().get())));
   }
+}
 
-  // Like the rest of Open(), repairs are performed per data directory to take
-  // advantage of parallelism.
-  s = Repair(dir,
-             &local_report,
-             std::move(need_repunching),
-             std::move(dead_containers),
-             std::move(low_live_block_containers));
+void LogBlockManager::LoadContainer(DataDir* dir,
+                                    LogBlockContainerRefPtr container,
+                                    internal::LogBlockContainerLoadResult* result) {
+  // Process the records, building a container-local map for live blocks and
+  // a list of dead blocks.
+  //
+  // It's important that we don't try to add these blocks to the global map
+  // incrementally as we see each record, since it's possible that one container
+  // has a "CREATE <b>" while another has a "CREATE <b> ; DELETE <b>" pair.
+  // If we processed those two containers in this order, then upon processing
+  // the second container, we'd think there was a duplicate block. Building
+  // the container-local map first ensures that we discount deleted blocks
+  // before checking for duplicate IDs.
+  //
+  // NOTE: Since KUDU-1538, we allocate sequential block IDs, which makes reuse
+  // exceedingly unlikely. However, we might have old data which still exhibits
+  // the above issue.
+  UntrackedBlockMap live_blocks;
+  BlockRecordMap live_block_records;
+  vector<LogBlockRefPtr> dead_blocks;
+  uint64_t max_block_id = 0;
+  Status s = container->ProcessRecords(&result->report,
+                                       &live_blocks,
+                                       &live_block_records,
+                                       &dead_blocks,
+                                       &max_block_id);
   if (!s.ok()) {
-    *result_status = s.CloneAndPrepend(Substitute(
-        "fatal error while repairing inconsistencies in data directory $0",
-        dir->dir()));
+    result->status = s.CloneAndPrepend(Substitute(
+        "Could not process records in container $0", container->ToString()));
     return;
   }
 
-  *report = std::move(local_report);
-  *result_status = Status::OK();
+  // With deleted blocks out of the way, check for misaligned blocks.
+  //
+  // We could also enforce that the record's offset is aligned with the
+  // underlying filesystem's block size, an invariant maintained by the log
+  // block manager. However, due to KUDU-1793, that invariant may have been
+  // broken, so we'll note but otherwise allow it.
+  for (const auto& e : live_blocks) {
+    if (PREDICT_FALSE(e.second->offset() %
+                      container->instance()->filesystem_block_size_bytes() != 0)) {
+      result->report.misaligned_block_check->entries.emplace_back(
+          container->ToString(), e.first);
+
+    }
+  }
+
+  if (container->full()) {
+    // Full containers without any live blocks can be deleted outright.
+    //
+    // TODO(adar): this should be reported as an inconsistency once dead
+    // container deletion is also done in real time. Until then, it would be
+    // confusing to report it as such since it'll be a natural event at startup.
+    if (container->live_blocks() == 0) {
+      DCHECK(live_blocks.empty());
+      result->dead_containers.emplace_back(container);
+    } else if (static_cast<double>(container->live_blocks()) /
+        container->total_blocks() <= FLAGS_log_container_live_metadata_before_compact_ratio) {
+      // Metadata files of containers with very few live blocks will be compacted.
+      //
+      // TODO(adar): this should be reported as an inconsistency once
+      // container metadata compaction is also done in realtime. Until then,
+      // it would be confusing to report it as such since it'll be a natural
+      // event at startup.
+      vector<BlockRecordPB> records(live_block_records.size());
+      int i = 0;
+      for (auto& e : live_block_records) {
+        records[i].Swap(&e.second);
+        i++;
+      }
+
+      // Sort the records such that their ordering reflects the ordering in
+      // the pre-compacted metadata file.
+      //
+      // This is preferred to storing the records in an order-preserving
+      // container (such as std::map) because while records are temporarily
+      // retained for every container, only some containers will actually
+      // undergo metadata compaction.
+      std::sort(records.begin(), records.end(),
+                [](const BlockRecordPB& a, const BlockRecordPB& b) {
+        // Sort by timestamp.
+        if (a.timestamp_us() != b.timestamp_us()) {
+          return a.timestamp_us() < b.timestamp_us();
+        }
+
+        // If the timestamps match, sort by offset.
+        //
+        // If the offsets also match (i.e. both blocks are of zero length),
+        // it doesn't matter which of the two records comes first.
+        return a.offset() < b.offset();
+      });
+
+      result->low_live_block_containers[container->ToString()] = std::move(records);
+    }
+
+    // Having processed the block records, let's check whether any full
+    // containers have any extra space (left behind after a crash or from an
+    // older version of Kudu).
+    //
+    // Filesystems are unpredictable beasts and may misreport the amount of
+    // space allocated to a file in various interesting ways. Some examples:
+    // - XFS's speculative preallocation feature may artificially enlarge the
+    //   container's data file without updating its file size. This makes the
+    //   file size untrustworthy for the purposes of measuring allocated space.
+    //   See KUDU-1856 for more details.
+    // - On el6.6/ext4 a container data file that consumed ~32K according to
+    //   its extent tree was actually reported as consuming an additional fs
+    //   block (2k) of disk space. A similar container data file (generated
+    //   via the same workload) on Ubuntu 16.04/ext4 did not exhibit this.
+    //   The suspicion is that older versions of ext4 include interior nodes
+    //   of the extent tree when reporting file block usage.
+    //
+    // To deal with these issues, our extra space cleanup code (deleted block
+    // repunching and container truncation) is gated on an "actual disk space
+    // consumed" heuristic. To prevent unnecessary triggering of the
+    // heuristic, we allow for some slop in our size measurements. The exact
+    // amount of slop is configurable via
+    // log_container_excess_space_before_cleanup_fraction.
+    //
+    // Too little slop and we'll do unnecessary work at startup. Too much and
+    // more unused space may go unreclaimed.
+    string data_filename = StrCat(container->ToString(), kContainerDataFileSuffix);
+    uint64_t reported_size;
+    s = env_->GetFileSizeOnDisk(data_filename, &reported_size);
+    if (!s.ok()) {
+      HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(
+          ErrorHandlerType::DISK_ERROR, dir));
+      result->status = s.CloneAndPrepend(Substitute(
+          "Could not get on-disk file size of container $0", container->ToString()));
+      return;
+    }
+    int64_t cleanup_threshold_size = container->live_bytes_aligned() *
+        (1 + FLAGS_log_container_excess_space_before_cleanup_fraction);
+    if (reported_size > cleanup_threshold_size) {
+      result->report.full_container_space_check->entries.emplace_back(
+          container->ToString(), reported_size - container->live_bytes_aligned());
+
+      // If the container is to be deleted outright, don't bother repunching
+      // its blocks. The report entry remains, however, so it's clear that
+      // there was a space discrepancy.
+      if (container->live_blocks()) {
+        result->need_repunching_blocks.insert(result->need_repunching_blocks.end(),
+                                              dead_blocks.begin(), dead_blocks.end());
+      }
+    }
+
+    result->report.stats.lbm_full_container_count++;
+  }
+  result->report.stats.live_block_bytes += container->live_bytes();
+  result->report.stats.live_block_bytes_aligned += container->live_bytes_aligned();
+  result->report.stats.live_block_count += container->live_blocks();
+  result->report.stats.lbm_container_count++;
+
+  next_block_id_.StoreMax(max_block_id + 1);
+
+  int64_t mem_usage = 0;
+  for (UntrackedBlockMap::value_type& e : live_blocks) {
+    int block_mem = kudu_malloc_usable_size(e.second.get());
+    if (!AddLogBlock(std::move(e.second))) {
+      // TODO(adar): track as an inconsistency?
+      LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
+                 << " which already is alive from another container when "
+                 << " processing container " << container->ToString();
+    }
+    mem_usage += block_mem;
+  }
+
+  mem_tracker_->Consume(mem_usage);
+
+  int64_t container_count = 0;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    AddNewContainerUnlocked(container);
+    MakeContainerAvailableUnlocked(std::move(container));
+    container_count = all_containers_by_name_.size();
+  }
+
+  // Log every 200 number of log block containers
+  if (container_count % 200 == 0) {
+    LOG(INFO) << Substitute("Opened $0 log block containers", container_count);
+  }
+}
+
+void LogBlockManager::RepairTask(DataDir* dir, internal::LogBlockContainerLoadResult* result) {
+  result->status = Repair(dir,
+                          &result->report,
+                          std::move(result->need_repunching_blocks),
+                          std::move(result->dead_containers),
+                          std::move(result->low_live_block_containers));
 }
 
 #define RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(status_expr, msg) do { \

@@ -59,6 +59,7 @@ class LogBlock;
 class LogBlockContainer;
 class LogBlockDeletionTransaction;
 class LogWritableBlock;
+struct LogBlockContainerLoadResult;
 struct LogBlockManagerMetrics;
 } // namespace internal
 
@@ -328,6 +329,9 @@ class LogBlockManager : public BlockManager {
   Status RemoveLogBlock(const BlockId& block_id,
                         LogBlockRefPtr* lb);
 
+  // Simple wrapper of Repair(), used as a runnable function in thread.
+  void RepairTask(DataDir* dir, internal::LogBlockContainerLoadResult* result);
+
   // Repairs any inconsistencies for 'dir' described in 'report'.
   //
   // The following additional repairs will be performed:
@@ -358,13 +362,18 @@ class LogBlockManager : public BlockManager {
                              int64_t* file_bytes_delta);
 
   // Opens a particular data directory belonging to the block manager. The
-  // results of consistency checking (and repair, if applicable) are written to
-  // 'report'.
+  // results of consistency checking are written to 'results'.
   //
   // Success or failure is set in 'result_status'.
   void OpenDataDir(DataDir* dir,
-                   FsReport* report,
+                   std::vector<std::unique_ptr<internal::LogBlockContainerLoadResult>>* results,
                    Status* result_status);
+
+  // Reads records from one log block container in the data directory.
+  // The result details will be collected into 'result'.
+  void LoadContainer(DataDir* dir,
+                     LogBlockContainerRefPtr container,
+                     internal::LogBlockContainerLoadResult* result);
 
   // Perform basic initialization.
   Status Init();

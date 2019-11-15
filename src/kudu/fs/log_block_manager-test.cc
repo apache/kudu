@@ -86,6 +86,10 @@ DECLARE_string(block_manager_preflush_control);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
+DEFINE_int32(startup_benchmark_block_count_for_testing, 1000000,
+             "Block count to do startup benchmark.");
+DEFINE_int32(startup_benchmark_data_dir_count_for_testing, 8,
+             "Data directories to do startup benchmark.");
 
 // Block manager metrics.
 METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
@@ -1005,10 +1009,8 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 //
 // However it still can be used to micro-optimize the startup process.
 TEST_F(LogBlockManagerTest, StartupBenchmark) {
-  const int kTestDataDirCount = 8;
-  FLAGS_fs_target_data_dirs_per_tablet = kTestDataDirCount;
   std::vector<std::string> test_dirs;
-  for (int i = 0; i < kTestDataDirCount; ++i) {
+  for (int i = 0; i < FLAGS_startup_benchmark_data_dir_count_for_testing; ++i) {
     test_dirs.emplace_back(test_dir_ + "/" + std::to_string(i));
   }
   // Re-open block manager to place data on multiple data directories.
@@ -1023,7 +1025,7 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
   // See http://yoshinorimatsunobu.blogspot.com/2014/03/how-syncfilerange-really-works.html
   // for details.
   FLAGS_block_manager_preflush_control = "never";
-  const int kNumBlocks = AllowSlowTests() ? 1000000 : 1000;
+  const int kNumBlocks = AllowSlowTests() ? FLAGS_startup_benchmark_block_count_for_testing : 1000;
   // Creates 'kNumBlocks' blocks with minimal data.
   {
     unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();

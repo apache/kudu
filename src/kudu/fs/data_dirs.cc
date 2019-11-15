@@ -101,6 +101,10 @@ DEFINE_bool(fs_data_dirs_consider_available_space, true,
 TAG_FLAG(fs_data_dirs_consider_available_space, runtime);
 TAG_FLAG(fs_data_dirs_consider_available_space, evolving);
 
+DEFINE_uint64(fs_max_thread_count_per_data_dir, 8,
+              "Maximum work thread per data directory.");
+TAG_FLAG(fs_max_thread_count_per_data_dir, advanced);
+
 METRIC_DEFINE_gauge_uint64(server, data_dirs_failed,
                            "Data Directories Failed",
                            kudu::MetricUnit::kDataDirectories,
@@ -788,7 +792,7 @@ Status DataDirManager::Open() {
     // Create a per-dir thread pool.
     unique_ptr<ThreadPool> pool;
     RETURN_NOT_OK(ThreadPoolBuilder(Substitute("data dir $0", i))
-                  .set_max_threads(1)
+                  .set_max_threads(FLAGS_fs_max_thread_count_per_data_dir)
                   .set_trace_metric_prefix("data dirs")
                   .Build(&pool));
     unique_ptr<DataDir> dd(new DataDir(
