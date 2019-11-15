@@ -159,6 +159,15 @@ message KinitRequestPB {
   optional string username = 1 [ default = "test-admin" ];
 };
 
+// Call SetFlag() on the specific daemon.
+message SetDaemonFlagRequestPB {
+  // The identifier for the daemon to sent the request to.
+  optional DaemonIdentifierPB id = 1;
+  // The name of the flag to set.
+  optional string flag = 2;
+  // Value to set.
+  optional string value = 3;
+}
 
 // Sent by the control shell in response to a control shell command request.
 message ControlShellResponsePB {
@@ -194,6 +203,7 @@ message ControlShellRequestPB {
     GetKDCEnvVarsRequestPB get_kdc_env_vars = 9;
     KdestroyRequestPB kdestroy = 10;
     KinitRequestPB kinit = 11;
+    SetDaemonFlagRequestPB set_daemon_flag = 12;
   }
 }
 
