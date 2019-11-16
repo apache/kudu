@@ -74,12 +74,14 @@ TARGETS="kudu kudu-tserver kudu-master"
 
 # Remove leftovers from previous releases/builds: rename the existing directory.
 # To skip this step, set the MINI_CLUSTER_NO_FRESH_BUILD environment variable.
-if [ -n "$MINI_CLUSTER_NO_FRESH_BUILD" ]; then
-  echo "WARNING: using existing build directory"
-else
-  suffix=$(date "+%Y%m%d.%H%M%S")
-  echo "Moving existing $BUILD_ROOT into $BUILD_ROOT.$suffix"
-  mv $BUILD_ROOT $BUILD_ROOT.$suffix
+if [ -d "$BUILD_ROOT" ]; then
+  if [ -n "$MINI_CLUSTER_NO_FRESH_BUILD" ]; then
+    echo "WARNING: using existing build directory"
+  else
+    suffix=$(date "+%Y%m%d.%H%M%S")
+    echo "Moving existing $BUILD_ROOT into $BUILD_ROOT.$suffix"
+    mv $BUILD_ROOT $BUILD_ROOT.$suffix
+  fi
 fi
 
 cd $SOURCE_ROOT
