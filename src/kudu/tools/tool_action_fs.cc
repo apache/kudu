@@ -29,7 +29,6 @@
 #include <boost/container/vector.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/cfile.pb.h"
@@ -108,7 +107,7 @@ using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::ReaderOptions;
 using fs::BlockDeletionTransaction;
-using fs::ConsistencyCheckBehavior;
+using fs::UpdateInstanceBehavior;
 using fs::FsReport;
 using fs::ReadableBlock;
 using std::cout;
@@ -128,6 +127,7 @@ namespace {
 Status Check(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = !FLAGS_repair;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   FsReport report;
   RETURN_NOT_OK(fs_manager.Open(&report));
@@ -232,6 +232,7 @@ Status Format(const RunnerContext& /*context*/) {
 Status DumpUuid(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.PartialOpen());
   cout << fs_manager.uuid() << endl;
@@ -256,6 +257,7 @@ Status DumpCFile(const RunnerContext& context) {
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
@@ -287,6 +289,7 @@ Status DumpBlock(const RunnerContext& context) {
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
@@ -313,6 +316,7 @@ Status DumpBlock(const RunnerContext& context) {
 Status DumpFsTree(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
@@ -323,7 +327,7 @@ Status DumpFsTree(const RunnerContext& /*context*/) {
 Status CheckForTabletsThatWillFailWithUpdate() {
   FsManagerOpts opts;
   opts.read_only = true;
-  opts.consistency_check = ConsistencyCheckBehavior::IGNORE_INCONSISTENCY;
+  opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs(Env::Default(), std::move(opts));
   RETURN_NOT_OK(fs.Open());
 
@@ -368,7 +372,7 @@ Status Update(const RunnerContext& /*context*/) {
 
   // Now perform the update.
   FsManagerOpts opts;
-  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  opts.update_instances = UpdateInstanceBehavior::UPDATE_AND_ERROR_ON_FAILURE;
   FsManager fs(env, std::move(opts));
   return fs.Open();
 }
@@ -718,6 +722,7 @@ Status List(const RunnerContext& /*context*/) {
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
@@ -876,7 +881,10 @@ unique_ptr<Mode> BuildFsMode() {
       ActionBuilder("update_dirs", &Update)
       .Description("Updates the set of data directories in an existing Kudu filesystem")
       .ExtraDescription("If a data directory is in use by a tablet and is "
-          "removed, the operation will fail unless --force is also used")
+          "removed, the operation will fail unless --force is also used. "
+          "Starting with Kudu 1.12.0, it is not required to run this tool "
+          "to add or remove directories. This tool is preserved for backwards "
+          "compatibility")
       .AddOptionalParameter("force", boost::none, string("If true, permits "
           "the removal of a data directory that is configured for use by "
           "existing tablets. Those tablets will fail the next time the server "

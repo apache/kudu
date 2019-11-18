@@ -149,7 +149,7 @@ class FsErrorManager {
   // Runs the error notification callback with the UUID of 'dir'.
   void RunErrorNotificationCb(ErrorHandlerType e, const DataDir* dir) const {
     DCHECK_EQ(e, ErrorHandlerType::DISK_ERROR);
-    RunErrorNotificationCb(e, dir->instance()->metadata()->path_set().uuid());
+    RunErrorNotificationCb(e, dir->instance()->uuid());
   }
 
  private:

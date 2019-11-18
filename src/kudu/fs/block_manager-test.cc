@@ -15,25 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/fs/block_manager.h"
+
+#include <stdlib.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
-#include <stdlib.h>
 #include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_id.h"
-#include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
@@ -104,6 +106,15 @@ namespace fs {
 
 static const char* kTestData = "test data";
 
+template<typename T>
+string block_manager_type();
+
+template<>
+string block_manager_type<FileBlockManager>() { return "file"; }
+
+template<>
+string block_manager_type<LogBlockManager>() { return "log"; }
+
 template <typename T>
 class BlockManagerTest : public KuduTest {
  public:
@@ -143,12 +154,15 @@ class BlockManagerTest : public KuduTest {
   }
 
  protected:
+
   T* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
                         const shared_ptr<MemTracker>& parent_mem_tracker) {
     if (!dd_manager_) {
+      DataDirManagerOptions opts;
+      opts.block_manager_type = block_manager_type<T>();
       // Create a new directory manager if necessary.
       CHECK_OK(DataDirManager::CreateNewForTests(env_, { test_dir_ },
-          DataDirManagerOptions(), &dd_manager_));
+          opts, &dd_manager_));
     }
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
@@ -166,6 +180,7 @@ class BlockManagerTest : public KuduTest {
     // manager first to enforce this.
     bm_.reset();
     DataDirManagerOptions opts;
+    opts.block_manager_type = block_manager_type<T>();
     opts.metric_entity = metric_entity;
     if (create) {
       RETURN_NOT_OK(DataDirManager::CreateNewForTests(
@@ -419,6 +434,50 @@ typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
 typedef ::testing::Types<FileBlockManager> BlockManagers;
 #endif
 TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
+
+// Test to make sure that we don't break the file block manager, which depends
+// on a static set of directories to function properly. Internally, the
+// DataDirManager of a file block manager must use a specific ordering for its
+// directory UUID indexes which is persisted with the PIMFs.
+TYPED_TEST(BlockManagerTest, TestOpenWithDifferentDirOrder) {
+  const string path1 = this->GetTestPath("path1");
+  const string path2 = this->GetTestPath("path2");
+  vector<string> paths = { path1, path2 };
+  ASSERT_OK(this->env_->CreateDir(path1));
+  ASSERT_OK(this->env_->CreateDir(path2));
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     paths,
+                                     true /* create */,
+                                     false /* load_test_group */));
+
+  const string kTablet = "tablet";
+  CreateBlockOptions opts({ kTablet });
+  FLAGS_fs_target_data_dirs_per_tablet = 2;
+  ASSERT_OK(this->dd_manager_->CreateDataDirGroup(kTablet));
+
+  // Create a block and keep track of its block id.
+  unique_ptr<BlockCreationTransaction> transaction = this->bm_->NewCreationTransaction();
+  unique_ptr<WritableBlock> written_block;
+  ASSERT_OK(this->bm_->CreateBlock(opts, &written_block));
+  const auto block_id = written_block->id();
+  ASSERT_OK(written_block->Append(kTestData));
+  transaction->AddCreatedBlock(std::move(written_block));
+  ASSERT_OK(transaction->CommitCreatedBlocks());
+
+  // Now reopen the block manager with a different ordering for the data
+  // directories.
+  paths = { path2, path1 };
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     paths,
+                                     false /* create */,
+                                     false /* load_test_group */));
+
+  // We should have no trouble reading the block back.
+  unique_ptr<ReadableBlock> read_block;
+  ASSERT_OK(this->bm_->OpenBlock(block_id, &read_block));
+}
 
 // Test the entire lifecycle of a block.
 TYPED_TEST(BlockManagerTest, EndToEndTest) {

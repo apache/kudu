@@ -31,6 +31,7 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -131,6 +132,7 @@ TEST_F(OpenReadonlyFsITest, TestWriteAndVerify) {
   auto t = std::thread([this, deadline] () {
       FsManagerOpts fs_opts;
       fs_opts.read_only = true;
+      fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
       fs_opts.wal_root = cluster_->tablet_server(0)->wal_dir();
       fs_opts.data_roots = cluster_->tablet_server(0)->data_dirs();
       while (MonoTime::Now() < deadline) {

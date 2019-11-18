@@ -28,7 +28,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -448,16 +447,13 @@ Status ServerBase::Init() {
 
   fs::FsReport report;
   Status s = fs_manager_->Open(&report);
+  // No instance files existed. Try creating a new FS layout.
   if (s.IsNotFound()) {
     LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
     LOG(INFO) << "Attempting to create new FS layout instead";
     is_first_run_ = true;
     s = fs_manager_->CreateInitialFileSystemLayout();
     if (s.IsAlreadyPresent()) {
-      // The operator is likely trying to start up with an extra entry in their
-      // `fs_data_dirs` configuration.
-      LOG(INFO) << "To start Kudu with a different FS layout, the `kudu fs "
-                   "update_dirs` tool must be run first";
       return s.CloneAndPrepend("FS layout already exists; not overwriting existing layout");
     }
     RETURN_NOT_OK_PREPEND(s, "Could not create new FS layout");

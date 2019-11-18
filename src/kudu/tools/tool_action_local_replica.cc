@@ -155,6 +155,7 @@ string Indent(int indent) {
 Status FsInit(unique_ptr<FsManager>* fs_manager) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
   unique_ptr<FsManager> fs_ptr(new FsManager(Env::Default(), fs_opts));
   RETURN_NOT_OK(fs_ptr->Open());
   fs_manager->swap(fs_ptr);

@@ -21,6 +21,7 @@
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -49,6 +50,12 @@ class MemTracker;
 namespace fs {
 
 class BlockManager;
+class FsManagerTestBase_TestDuplicatePaths_Test;
+class FsManagerTestBase_TestEIOWhileRunningUpdateDirsTool_Test;
+class FsManagerTestBase_TestIsolatedMetadataDir_Test;
+class FsManagerTestBase_TestMetadataDirInDataRoot_Test;
+class FsManagerTestBase_TestMetadataDirInWALRoot_Test;
+class FsManagerTestBase_TestOpenWithDuplicateInstanceFiles_Test;
 class ReadableBlock;
 class WritableBlock;
 struct CreateBlockOptions;
@@ -109,10 +116,11 @@ struct FsManagerOpts {
   // Defaults to false.
   bool read_only;
 
-  // The behavior to use when comparing 'data_roots' to the on-disk path sets.
+  // Whether to update the on-disk instances when opening directories if
+  // inconsistencies are detected.
   //
-  // Defaults to ENFORCE_CONSISTENCY.
-  fs::ConsistencyCheckBehavior consistency_check;
+  // Defaults to UPDATE_AND_IGNORE_FAILURES.
+  fs::UpdateInstanceBehavior update_instances;
 };
 
 // FsManager provides helpers to read data and metadata files,
@@ -279,10 +287,12 @@ class FsManager {
   void DumpFileSystemTree(std::ostream& out);
 
  private:
-  FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
-  FRIEND_TEST(FsManagerTestBase, TestMetadataDirInWALRoot);
-  FRIEND_TEST(FsManagerTestBase, TestMetadataDirInDataRoot);
-  FRIEND_TEST(FsManagerTestBase, TestIsolatedMetadataDir);
+  FRIEND_TEST(fs::FsManagerTestBase, TestDuplicatePaths);
+  FRIEND_TEST(fs::FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool);
+  FRIEND_TEST(fs::FsManagerTestBase, TestIsolatedMetadataDir);
+  FRIEND_TEST(fs::FsManagerTestBase, TestMetadataDirInWALRoot);
+  FRIEND_TEST(fs::FsManagerTestBase, TestMetadataDirInDataRoot);
+  FRIEND_TEST(fs::FsManagerTestBase, TestOpenWithDuplicateInstanceFiles);
   FRIEND_TEST(tserver::MiniTabletServerTest, TestFsLayoutEndToEnd);
   friend class itest::MiniClusterFsInspector; // for access to directory names
 

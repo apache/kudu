@@ -23,7 +23,6 @@
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -115,19 +114,20 @@ enum class DataDirFsType {
   OTHER
 };
 
-// Defines the behavior of the consistency checks performed when the directory
-// manager is opened.
-enum class ConsistencyCheckBehavior {
-  // If the data directories don't match the on-disk path sets, fail.
-  ENFORCE_CONSISTENCY,
-
+// Defines the behavior when opening a directory manager that has an
+// inconsistent or incomplete set of instance files.
+enum UpdateInstanceBehavior {
   // If the data directories don't match the on-disk path sets, update the
-  // on-disk data to match. The directory manager must not be read-only.
-  UPDATE_ON_DISK,
+  // on-disk data to match if not in read-only mode.
+  UPDATE_AND_IGNORE_FAILURES,
+
+  // Like UPDATE_AND_IGNORE_FAILURES, but will return an error if any of the updates to the
+  // on-disk files fail.
+  UPDATE_AND_ERROR_ON_FAILURE,
 
   // If the data directories don't match the on-disk path sets, continue
   // without updating the on-disk data.
-  IGNORE_INCONSISTENCY
+  DONT_UPDATE
 };
 
 struct DataDirMetrics {
@@ -236,11 +236,11 @@ struct DataDirManagerOptions {
   // Defaults to false.
   bool read_only;
 
-  // The behavior to use when comparing the provided data directories to the
-  // on-disk path sets.
+  // Whether to update the on-disk instances when opening directories if
+  // inconsistencies are detected.
   //
-  // Defaults to ENFORCE_CONSISTENCY.
-  ConsistencyCheckBehavior consistency_check;
+  // Defaults to UPDATE_AND_IGNORE_FAILURES.
+  UpdateInstanceBehavior update_instances;
 };
 
 // Encapsulates knowledge of data directory management on behalf of block
@@ -419,50 +419,70 @@ class DataDirManager {
                  DataDirManagerOptions opts,
                  CanonicalizedRootsList canonicalized_data_roots);
 
-  // Initializes the data directories on disk.
+  // Initializes the data directories on disk. Returns an error if initialized
+  // directories already exist.
   //
-  // Returns an error if initialized directories already exist, or if any of
-  // the directories experience a disk failure.
+  // Note: this doesn't initialize any in-memory state for the directory
+  // manager.
   Status Create();
 
-  // Opens existing data roots from disk and indexes the files found.
+  // Opens existing instance files from disk and indexes the files found.
   //
   // Returns an error if the number of on-disk directories found exceeds the
-  // max allowed, if locks need to be acquired and cannot be, or if the
-  // metadata directory (i.e. the first one) fails to load.
+  // max allowed, if locks need to be acquired and cannot be, or if there are
+  // no healthy directories.
+  //
+  // If appropriate, this will create any missing directories and rewrite
+  // existing instance files to be consistent with each other.
   Status Open();
 
-  // Loads the instance files for each data directory.
+  // Populates the maps to index the given directories.
+  Status PopulateDirectoryMaps(const std::vector<std::unique_ptr<DataDir>>& dds);
+
+  // Loads the instance files for each directory root.
   //
-  // On success, 'loaded_instances' contains loaded instance objects. It also
-  // includes instance files that failed to load because they were missing or
-  // because of a disk failure; they are still considered "loaded" and are
-  // labeled unhealthy internally.
+  // On success, 'instance_files' contains instance objects, including those
+  // that failed to load because they were missing or because of a disk
+  // error; they are still considered "loaded" and are labeled unhealthy
+  // internally. 'has_existing_instances' is set to true if any of the instance
+  // files are healthy.
   //
   // Returns an error if an instance file fails in an irreconcileable way (e.g.
-  // the file is locked), or if none of the instance files are healthy.
+  // the file is locked).
   Status LoadInstances(
-      std::vector<std::unique_ptr<PathInstanceMetadataFile>>* loaded_instances);
+      std::vector<std::unique_ptr<PathInstanceMetadataFile>>* instance_files,
+      bool* has_existing_instances);
 
-  // Initializes new data directories specified by 'root_uuid_pairs_to_create'
-  // and updates the on-disk instance files of data directories specified by
-  // 'instances_to_update' using the contents of 'all_uuids', skipping any
-  // unhealthy instance files.
+  // Takes the set of instance files, does some basic verification on them,
+  // creates any that don't exist on disk, and updates any that have a
+  // different set of UUIDs stored than the expected set.
   //
-  // Returns an error if any disk operations fail.
-  Status CreateNewDataDirectoriesAndUpdateInstances(
-      std::vector<std::pair<std::string, std::string>> root_uuid_pairs_to_create,
-      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
-      std::vector<std::string> all_uuids);
+  // Returns an error if there is a configuration error, e.g. if the existing
+  // instances believe there should be a different block size.
+  //
+  // If in UPDATE_AND_IGNORE_FAILURES mode, an error is not returned in the event of a disk
+  // error. Instead, it is up to the caller to reload the instance files and
+  // proceed if healthy enough.
+  //
+  // If in UPDATE_AND_ERROR_ON_FAILURE mode, a failure to update instances will
+  // surface as an error.
+  Status CreateNewDirectoriesAndUpdateInstances(
+      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances);
 
   // Updates the on-disk instance files specified by 'instances_to_update'
+  // (presumably those whose 'all_uuids' field doesn't match 'new_all_uuids')
   // using the contents of 'new_all_uuids', skipping any unhealthy instance
   // files.
   //
-  // Returns an error if any disk operations fail.
-  Status UpdateInstances(
-      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
-      std::vector<std::string> new_all_uuids);
+  // If in UPDATE_AND_IGNORE_FAILURES mode, this is best effort. If any of the instance
+  // updates fail (e.g. due to a disk error) in this mode, this will log a
+  // warning about the failed updates and return OK.
+  //
+  // If in UPDATE_AND_ERROR_ON_FAILURE mode, any failure will immediately attempt
+  // to clean up any altered state and return with an error.
+  Status UpdateHealthyInstances(
+      const std::vector<std::unique_ptr<PathInstanceMetadataFile>>& instances_to_update,
+      const std::set<std::string>& new_all_uuids);
 
   // Returns a random directory in the data dir group specified in 'opts',
   // giving preference to those with more free space. If there is no room in

@@ -18,8 +18,8 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <string>
-#include <vector>
 
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -38,17 +38,24 @@ namespace fs {
 class PathInstanceMetadataFile {
  public:
   // 'env' must remain valid for the lifetime of this class.
-  PathInstanceMetadataFile(Env* env, std::string block_manager_type,
+  //
+  // 'uuid' is the UUID used for this instance file, though the UUID may be
+  // changed if we read the instance file from disk and find a different UUID.
+  PathInstanceMetadataFile(Env* env, std::string uuid, std::string block_manager_type,
                            std::string filename);
 
   ~PathInstanceMetadataFile();
 
   // Creates, writes, synchronizes, and closes a new instance metadata file.
+  // Fails the PIMF in the case of a failed directory.
   //
-  // 'uuid' is this instance's UUID, and 'all_uuids' is all of the UUIDs in
-  // this instance's path set.
-  Status Create(const std::string& uuid,
-                const std::vector<std::string>& all_uuids);
+  // 'all_uuids' is all of the unique UUIDs in this instance's path set.
+  // 'uuid_' must exist in this set. 'created_dir' is set to true if the parent
+  // directory of the file was also created during this process.
+  //
+  // This should be called if we've already tried to load the instance file but
+  // found it didn't exist.
+  Status Create(const std::set<std::string>& all_uuids, bool* created_dir = nullptr);
 
   // Opens, reads, verifies, and closes an existing instance metadata file.
   //
@@ -69,9 +76,6 @@ class PathInstanceMetadataFile {
   // Unlocks the instance metadata file. Must have been locked to begin with.
   Status Unlock();
 
-  // Sets the metadata file.
-  void SetMetadataForTests(std::unique_ptr<PathInstanceMetadataPB> metadata);
-
   // Sets that the instance failed (e.g. due to a disk failure).
   //
   // If failed, there is no guarantee that the instance will have a 'metadata_'.
@@ -89,21 +93,36 @@ class PathInstanceMetadataFile {
     return health_status_;
   }
 
+  std::string uuid() const { return uuid_; }
   std::string dir() const { return DirName(filename_); }
   const std::string& path() const { return filename_; }
-  PathInstanceMetadataPB* const metadata() const { return metadata_.get(); }
-
-  // Check the integrity of the provided instances' path sets, ignoring any
-  // unhealthy instances.
-  static Status CheckIntegrity(
-      const std::vector<std::unique_ptr<PathInstanceMetadataFile>>& instances);
+  PathInstanceMetadataPB* metadata() const { return metadata_.get(); }
 
  private:
   Env* env_;
+
+  // The UUID of this instance file. This is initialized in the constructor so
+  // it can be used when creating a new instance file. However, it may be
+  // overwritten when loading an existing instance from disk.
+  //
+  // This helps provide the invariant that, healthy or otherwise, every
+  // instance has a valid UUID, which is useful for failed-directory-tracking,
+  // which generally uses UUIDs.
+  std::string uuid_;
+
+  // The type of this instance file.
   const std::string block_manager_type_;
+
+  // The name of the file associated with this instance.
   const std::string filename_;
+
   std::unique_ptr<PathInstanceMetadataPB> metadata_;
+
+  // In order to prevent multiple Kudu processes from starting up using the
+  // same directories, we lock the instance files when starting up.
   std::unique_ptr<FileLock> lock_;
+
+  // The health of the instance file.
   Status health_status_;
 };
 

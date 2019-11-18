@@ -17,8 +17,10 @@
 
 #include "kudu/fs/fs_manager.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <ctime>
+#include <initializer_list>
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
@@ -99,7 +101,6 @@ DEFINE_string(fs_metadata_dir, "",
 TAG_FLAG(fs_metadata_dir, stable);
 
 using kudu::fs::BlockManagerOptions;
-using kudu::fs::ConsistencyCheckBehavior;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
 using kudu::fs::DataDirManagerOptions;
@@ -110,6 +111,7 @@ using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
+using kudu::fs::UpdateInstanceBehavior;
 using kudu::fs::WritableBlock;
 using kudu::pb_util::SecureDebugString;
 using std::ostream;
@@ -138,7 +140,7 @@ FsManagerOpts::FsManagerOpts()
     metadata_root(FLAGS_fs_metadata_dir),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    consistency_check(ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
+    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {
   data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
@@ -147,7 +149,7 @@ FsManagerOpts::FsManagerOpts(const string& root)
     data_roots({ root }),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    consistency_check(ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {}
+    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {}
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
@@ -160,8 +162,8 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
     opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
     initted_(false) {
-  DCHECK(opts_.consistency_check != ConsistencyCheckBehavior::UPDATE_ON_DISK ||
-         !opts_.read_only);
+DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
+       !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
 }
 
 FsManager::~FsManager() {}
@@ -388,10 +390,18 @@ Status FsManager::Open(FsReport* report) {
   });
 
   // Create any missing roots, if desired.
-  if (opts_.consistency_check == ConsistencyCheckBehavior::UPDATE_ON_DISK) {
-    RETURN_NOT_OK_PREPEND(CreateFileSystemRoots(
-        missing_roots, *metadata_, &created_dirs, &created_files),
-                          "unable to create missing filesystem roots");
+  if (!opts_.read_only &&
+      opts_.update_instances != UpdateInstanceBehavior::DONT_UPDATE) {
+    Status s = CreateFileSystemRoots(
+        missing_roots, *metadata_, &created_dirs, &created_files);
+    static const string kUnableToCreateMsg = "unable to create missing filesystem roots";
+    if (opts_.update_instances == UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {
+      // We only warn on error here -- regardless of errors, we might be in
+      // good enough shape to open the DataDirManager.
+      WARN_NOT_OK(s, kUnableToCreateMsg);
+    } else if (opts_.update_instances == UpdateInstanceBehavior::UPDATE_AND_ERROR_ON_FAILURE) {
+      RETURN_NOT_OK_PREPEND(s, kUnableToCreateMsg);
+    }
   }
 
   // Open the directory manager if it has not been opened already.
@@ -400,7 +410,7 @@ Status FsManager::Open(FsReport* report) {
     dm_opts.metric_entity = opts_.metric_entity;
     dm_opts.block_manager_type = opts_.block_manager_type;
     dm_opts.read_only = opts_.read_only;
-    dm_opts.consistency_check = opts_.consistency_check;
+    dm_opts.update_instances = opts_.update_instances;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
           canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));

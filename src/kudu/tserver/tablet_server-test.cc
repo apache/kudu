@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <set>
@@ -35,7 +36,6 @@
 #include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
@@ -134,6 +134,7 @@ using kudu::tablet::LocalTabletWriter;
 using kudu::tablet::RowSetDataPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
+using kudu::tablet::TabletStatePB;
 using kudu::tablet::TabletSuperBlockPB;
 using std::map;
 using std::pair;
@@ -860,6 +861,39 @@ TEST_F(TabletServerTest, TestEIODuringDelete) {
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
   RpcController rpc;
   ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
+}
+
+// Test that adding a directories enables tablet placement in the new
+// directories, and that removing directories fails tablets that are striped
+// across the removed directories.
+TEST_F(TabletServerTest, TestAddRemoveDirectory) {
+  // Start with multiple data dirs so the dirs are suffixed with numbers, and
+  // so when we remove a data dirs, we'll be using the same set of dirs.
+  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/2));
+  const char* kFooTablet1 = "fffffffffffffffffffffffffffffff1";
+  ASSERT_OK(mini_server_->AddTestTablet("footable", kFooTablet1, schema_));
+  ASSERT_OK(WaitForTabletRunning(kFooTablet1));
+
+  // Shut down and restart with a new directory. This is allowed, and the
+  // tablet server will be able to use the new directory if we create a new
+  // tablet.
+  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/3));
+  const char* kFooTablet2 = "fffffffffffffffffffffffffffffff2";
+  ASSERT_OK(mini_server_->AddTestTablet("footable", kFooTablet2, schema_));
+  ASSERT_OK(WaitForTabletRunning(kFooTablet2));
+
+  // Now open up again with a our original two directories. The second tablet
+  // should fail because it should have been striped across the third
+  // directory. The first tablet should be unaffected.
+  NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/2));
+  ASSERT_EVENTUALLY([&] {
+    scoped_refptr<TabletReplica> replica1;
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kFooTablet1, &replica1));
+    ASSERT_EQ(TabletStatePB::RUNNING, replica1->state());
+    scoped_refptr<TabletReplica> replica2;
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kFooTablet2, &replica2));
+    ASSERT_EQ(TabletStatePB::FAILED, replica2->state());
+  });
 }
 
 class TabletServerMaintenanceMemoryPressureTest : public TabletServerTestBase {

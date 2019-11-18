@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <ostream>
 #include <set>
-#include <unordered_map>
 #include <utility>
 
 #include <gflags/gflags_declare.h>
@@ -28,26 +27,80 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/test_util_prod.h"
 
 DECLARE_bool(enable_data_block_fsync);
+
+using kudu::pb_util::CreateMode;
+using std::set;
+using std::string;
+using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace fs {
 
-using pb_util::CreateMode;
-using std::set;
-using std::string;
-using std::unique_ptr;
-using std::unordered_map;
-using std::vector;
-using strings::Substitute;
+namespace {
+
+const char kHolePunchErrorMsg[] =
+    "Error during hole punch test. The log block manager requires a "
+    "filesystem with hole punching support such as ext4 or xfs. On el6, "
+    "kernel version 2.6.32-358 or newer is required. To run without hole "
+    "punching (at the cost of some efficiency and scalability), reconfigure "
+    "Kudu to use the file block manager. Refer to the Kudu documentation for "
+    "more details. WARNING: the file block manager is not suitable for "
+    "production use and should be used only for small-scale evaluation and "
+    "development on systems where hole-punching is not available. It's "
+    "impossible to switch between block managers after data is written to the "
+    "server. Raw error message follows";
+
+Status CheckHolePunch(Env* env, const string& path) {
+  // Arbitrary constants.
+  static uint64_t kFileSize = 4096 * 4;
+  static uint64_t kHoleOffset = 4096;
+  static uint64_t kHoleSize = 8192;
+  static uint64_t kPunchedFileSize = kFileSize - kHoleSize;
+
+  // Open the test file.
+  string filename = JoinPathSegments(path, "hole_punch_test_file");
+  unique_ptr<RWFile> file;
+  RWFileOptions opts;
+  RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
+
+  // The file has been created; delete it on exit no matter what happens.
+  auto file_deleter = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(filename),
+                "Could not delete file " + filename);
+  });
+
+  // Preallocate it, making sure the file's size is what we'd expect.
+  uint64_t sz;
+  RETURN_NOT_OK(file->PreAllocate(0, kFileSize, RWFile::CHANGE_FILE_SIZE));
+  RETURN_NOT_OK(env->GetFileSizeOnDisk(filename, &sz));
+  if (sz != kFileSize) {
+    return Status::IOError(Substitute(
+        "Unexpected pre-punch file size for $0: expected $1 but got $2",
+        filename, kFileSize, sz));
+  }
+
+  // Punch the hole, testing the file's size again.
+  RETURN_NOT_OK(file->PunchHole(kHoleOffset, kHoleSize));
+  RETURN_NOT_OK(env->GetFileSizeOnDisk(filename, &sz));
+  if (sz != kPunchedFileSize) {
+    return Status::IOError(Substitute(
+        "Unexpected post-punch file size for $0: expected $1 but got $2",
+        filename, kPunchedFileSize, sz));
+  }
+
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 // Evaluates 'status_expr' and if it results in a disk-failure error, logs a
 // message and marks the instance as unhealthy, returning with no error.
@@ -73,9 +126,11 @@ using strings::Substitute;
 } while (0)
 
 PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
+                                                   string uuid,
                                                    string block_manager_type,
                                                    string filename)
     : env_(env),
+      uuid_(std::move(uuid)),
       block_manager_type_(std::move(block_manager_type)),
       filename_(std::move(filename)) {}
 
@@ -85,10 +140,29 @@ PathInstanceMetadataFile::~PathInstanceMetadataFile() {
   }
 }
 
-Status PathInstanceMetadataFile::Create(const string& uuid, const vector<string>& all_uuids) {
-  DCHECK(!lock_) <<
-      "Creating a metadata file that's already locked would release the lock";
-  DCHECK(ContainsKey(set<string>(all_uuids.begin(), all_uuids.end()), uuid));
+Status PathInstanceMetadataFile::Create(const set<string>& all_uuids,
+                                        bool* created_dir) {
+  DCHECK(!lock_);
+  DCHECK(ContainsKey(all_uuids, uuid_));
+  const string dir_name = dir();
+
+  bool created;
+  // Create the directory if needed.
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(
+      env_util::CreateDirIfMissing(env_, dir_name, &created),
+      Substitute("Could not create directory $0", dir_name));
+  auto cleanup_dir_on_failure = MakeScopedCleanup([&] {
+    if (created) {
+      WARN_NOT_OK(env_->DeleteDir(dir_name), "Could not remove newly-created directory");
+    }
+  });
+
+  // If we're initializing the log block manager, check that we support
+  // hole-punching.
+  if (block_manager_type_ == "log") {
+    RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(CheckHolePunch(env_, dir_name),
+                                        kHolePunchErrorMsg);
+  }
 
   // Create a temporary file with which to fetch the filesystem's block size.
   //
@@ -98,23 +172,25 @@ Status PathInstanceMetadataFile::Create(const string& uuid, const vector<string>
   // it's more correct to derive it from a file in any case.
   string created_filename;
   string tmp_template = JoinPathSegments(
-      DirName(filename_), Substitute("getblocksize$0.XXXXXX", kTmpInfix));
+      dir_name, Substitute("getblocksize$0.XXXXXX", kTmpInfix));
   unique_ptr<WritableFile> tmp_file;
-  RETURN_NOT_OK(env_->NewTempWritableFile(WritableFileOptions(),
-                                          tmp_template,
-                                          &created_filename, &tmp_file));
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(
+      env_->NewTempWritableFile(WritableFileOptions(),
+                                tmp_template,
+                                &created_filename, &tmp_file),
+      "failed to create temp file while checking block size");
   SCOPED_CLEANUP({
     WARN_NOT_OK(env_->DeleteFile(created_filename),
                 "could not delete temporary file");
   });
   uint64_t block_size;
-  RETURN_NOT_OK(env_->GetBlockSize(created_filename, &block_size));
-
-  PathInstanceMetadataPB new_instance;
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->GetBlockSize(created_filename, &block_size),
+                                      "failed to check block size");
 
   // Set up the path set.
+  PathInstanceMetadataPB new_instance;
   PathSetPB* new_path_set = new_instance.mutable_path_set();
-  new_path_set->set_uuid(uuid);
+  new_path_set->set_uuid(uuid_);
   new_path_set->mutable_all_uuids()->Reserve(all_uuids.size());
   for (const string& u : all_uuids) {
     new_path_set->add_all_uuids(u);
@@ -124,10 +200,20 @@ Status PathInstanceMetadataFile::Create(const string& uuid, const vector<string>
   new_instance.set_block_manager_type(block_manager_type_);
   new_instance.set_filesystem_block_size_bytes(block_size);
 
-  return pb_util::WritePBContainerToPath(
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::WritePBContainerToPath(
       env_, filename_, new_instance,
       pb_util::NO_OVERWRITE,
-      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
+      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
+      "failed to write PB");
+
+  // Now that we're returning success, we don't need to clean anything up, and
+  // we can indicate to callers there is a new directory to clean up (if
+  // appropriate).
+  cleanup_dir_on_failure.cancel();
+  if (created_dir) {
+    *created_dir = created;
+  }
+  return Status::OK();
 }
 
 Status PathInstanceMetadataFile::LoadFromDisk() {
@@ -140,8 +226,8 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
 
   if (pb->block_manager_type() != block_manager_type_) {
     return Status::IOError(Substitute(
-      "existing data was written using the '$0' block manager; cannot restart "
-      "with a different block manager '$1' without reformatting",
+      "existing instance was written using the '$0' format; cannot restart "
+      "with a different format type '$1'",
       pb->block_manager_type(), block_manager_type_));
   }
 
@@ -153,7 +239,8 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
         "Expected $0 but was $1", pb->filesystem_block_size_bytes(), block_size));
   }
 
-  metadata_.swap(pb);
+  uuid_ = pb->path_set().uuid();
+  metadata_ = std::move(pb);
   return Status::OK();
 }
 
@@ -162,7 +249,7 @@ Status PathInstanceMetadataFile::Lock() {
 
   FileLock* lock;
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->LockFile(filename_, &lock),
-                                      "Could not lock block_manager_instance file. Make sure that "
+                                      "Could not lock instance file. Make sure that "
                                       "Kudu is not already running and you are not trying to run "
                                       "Kudu with a different user than before");
   lock_.reset(lock);
@@ -174,95 +261,6 @@ Status PathInstanceMetadataFile::Unlock() {
 
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->UnlockFile(lock_.release()),
                                       Substitute("Could not unlock $0", filename_));
-  return Status::OK();
-}
-
-void PathInstanceMetadataFile::SetMetadataForTests(
-    unique_ptr<PathInstanceMetadataPB> metadata) {
-  DCHECK(IsGTest());
-  metadata_ = std::move(metadata);
-}
-
-Status PathInstanceMetadataFile::CheckIntegrity(
-    const vector<unique_ptr<PathInstanceMetadataFile>>& instances) {
-  CHECK(!instances.empty());
-
-  // Note: although this verification works at the level of UUIDs and instance
-  // files, the (user-facing) error messages are reported in terms of data
-  // directories, because UUIDs and instance files are internal details.
-
-  int first_healthy = -1;
-  for (int i = 0; i < instances.size(); i++) {
-    if (instances[i]->healthy()) {
-      first_healthy = i;
-      break;
-    }
-  }
-  if (first_healthy == -1) {
-    return Status::NotFound("no healthy data directories found");
-  }
-
-  // Map of instance UUID to path instance structure. Tracks duplicate UUIDs.
-  unordered_map<string, PathInstanceMetadataFile*> uuids;
-
-  // Set of UUIDs specified in the path set of the first healthy instance. All
-  // instances will be compared against it to make sure all path sets match.
-  set<string> all_uuids(instances[first_healthy]->metadata()->path_set().all_uuids().begin(),
-                        instances[first_healthy]->metadata()->path_set().all_uuids().end());
-
-  if (all_uuids.size() != instances.size()) {
-    return Status::IOError(
-        Substitute("$0 data directories provided, but expected $1",
-                   instances.size(), all_uuids.size()));
-  }
-
-  for (const auto& instance : instances) {
-    // If the instance has failed (e.g. due to disk failure), there's no
-    // telling what its metadata looks like. Ignore it, and continue checking
-    // integrity across the healthy instances.
-    if (!instance->healthy()) {
-      continue;
-    }
-    const PathSetPB& path_set = instance->metadata()->path_set();
-
-    // Check that the instance's UUID has not been claimed by another instance.
-    PathInstanceMetadataFile** other = InsertOrReturnExisting(
-        &uuids, path_set.uuid(), instance.get());
-    if (other) {
-      return Status::IOError(
-          Substitute("Data directories $0 and $1 have duplicate instance metadata UUIDs",
-                     (*other)->dir(), instance->dir()),
-          path_set.uuid());
-    }
-
-    // Check that the instance's UUID is a member of all_uuids.
-    if (!ContainsKey(all_uuids, path_set.uuid())) {
-      return Status::IOError(
-          Substitute("Data directory $0 instance metadata contains unexpected UUID",
-                     instance->dir()),
-          path_set.uuid());
-    }
-
-    // Check that the instance's UUID set does not contain duplicates.
-    set<string> deduplicated_uuids(path_set.all_uuids().begin(),
-                                   path_set.all_uuids().end());
-    string all_uuids_str = JoinStrings(path_set.all_uuids(), ",");
-    if (deduplicated_uuids.size() != path_set.all_uuids_size()) {
-      return Status::IOError(
-          Substitute("Data directory $0 instance metadata path set contains duplicate UUIDs",
-                     instance->dir()),
-          JoinStrings(path_set.all_uuids(), ","));
-    }
-
-    // Check that the instance's UUID set matches the expected set.
-    if (deduplicated_uuids != all_uuids) {
-      return Status::IOError(
-          Substitute("Data directories $0 and $1 have different instance metadata UUID sets",
-                     instances[0]->dir(), instance->dir()),
-          Substitute("$0 vs $1", JoinStrings(all_uuids, ","), all_uuids_str));
-    }
-  }
-
   return Status::OK();
 }
 
