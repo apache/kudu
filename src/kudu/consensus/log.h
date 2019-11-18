@@ -158,6 +158,7 @@ class SegmentAllocator {
   // Returns a readable segment pointing at the most recently closed segment.
   Status GetClosedSegment(scoped_refptr<ReadableLogSegment>* readable_segment);
 
+  // Sets the schema and version to be used for the next allocated segment.
   void SetSchemaForNextSegment(Schema schema, uint32_t version);
 
   // Schedules a task to allocate a new log segment.
