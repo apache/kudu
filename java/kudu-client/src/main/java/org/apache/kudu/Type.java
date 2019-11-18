@@ -194,9 +194,17 @@ public enum Type {
     }
   }
 
+  /**
+   * Create a Type from its name
+   * @param name The DataType name. It accepts Type name (from the getName()
+   * method) and ENUM name (from the name() method).
+   * @throws IllegalArgumentException if the provided name doesn't map to any
+   * known type.
+   * @return a matching Type.
+   */
   public static Type getTypeForName(String name) {
     for (Type t : values()) {
-      if (t.name().equals(name)) {
+      if (t.name().equals(name) || t.getName().equals(name)) {
         return t;
       }
     }
