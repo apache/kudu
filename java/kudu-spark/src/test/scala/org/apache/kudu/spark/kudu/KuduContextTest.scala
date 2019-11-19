@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.math.BigDecimal
+import java.nio.charset.StandardCharsets.UTF_8
 import java.sql.Timestamp
 
 import org.apache.kudu.util.TimestampUtil
@@ -98,7 +99,7 @@ class KuduContextTest extends KuduTestSuite with Matchers {
       assert(r.apply(5).asInstanceOf[Boolean] == (rows.apply(index)._2 % 2 == 1))
       assert(r.apply(6).asInstanceOf[Short] == rows.apply(index)._2.toShort)
       assert(r.apply(7).asInstanceOf[Float] == rows.apply(index)._2.toFloat)
-      val binaryBytes = s"bytes ${rows.apply(index)._2}".getBytes().toSeq
+      val binaryBytes = s"bytes ${rows.apply(index)._2}".getBytes(UTF_8).toSeq
       assert(r.apply(8).asInstanceOf[Array[Byte]].toSeq == binaryBytes)
       assert(
         r.apply(9).asInstanceOf[Timestamp] ==
@@ -125,7 +126,7 @@ class KuduContextTest extends KuduTestSuite with Matchers {
       .first
       .get(0)
       .asInstanceOf[Array[Byte]]
-      .shouldBe("bytes 0".getBytes)
+      .shouldBe("bytes 0".getBytes(UTF_8))
     // decode the binary to string and compare
     dataDF
       .sort("key")

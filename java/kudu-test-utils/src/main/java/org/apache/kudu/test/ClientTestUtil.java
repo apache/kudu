@@ -171,7 +171,7 @@ public abstract class ClientTestUtil {
           }
         }
       });
-      thread.run();
+      thread.start();
       threads.add(thread);
     }
 

@@ -60,3 +60,7 @@ task runJepsen(type: JavaExec) {
 // We don't publish kudu-jepsen
 uploadArchives.enabled = false
 install.enabled = false
+
+// SpotBugs doesn't work on Clojure.
+spotbugsMain.enabled = false
+spotbugsTest.enabled = false

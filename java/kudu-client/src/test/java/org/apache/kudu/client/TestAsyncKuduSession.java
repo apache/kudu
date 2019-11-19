@@ -44,9 +44,9 @@ public class TestAsyncKuduSession {
   private static final Schema SCHEMA = getBasicSchema();
   private static final String INJECTED_TS_ERROR = "injected error for test";
 
-  private static AsyncKuduClient client;
-  private static AsyncKuduSession session;
-  private static KuduTable table;
+  private AsyncKuduClient client;
+  private AsyncKuduSession session;
+  private KuduTable table;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();

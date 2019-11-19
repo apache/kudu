@@ -176,7 +176,7 @@ public class MiniKuduCluster implements AutoCloseable {
    * Starts this Kudu cluster.
    * @throws IOException if something went wrong in transit
    */
-  private void start() throws IOException {
+  private synchronized void start() throws IOException {
     Preconditions.checkArgument(numMasters > 0, "Need at least one master");
 
     // Start the control shell and the communication channel to it.
@@ -287,14 +287,14 @@ public class MiniKuduCluster implements AutoCloseable {
    * @return the list of master servers
    */
   public List<HostAndPort> getMasterServers() {
-    return new ArrayList(masterServers.keySet());
+    return new ArrayList<>(masterServers.keySet());
   }
 
   /**
    * @return the list of tablet servers
    */
   public List<HostAndPort> getTabletServers() {
-    return new ArrayList(tabletServers.keySet());
+    return new ArrayList<>(tabletServers.keySet());
   }
 
   /**
@@ -481,8 +481,6 @@ public class MiniKuduCluster implements AutoCloseable {
         .build());
   }
 
-
-  /** {@override} */
   @Override
   public void close() {
     shutdown();
@@ -491,7 +489,7 @@ public class MiniKuduCluster implements AutoCloseable {
   /**
    * Shuts down a Kudu cluster.
    */
-  public void shutdown() {
+  public synchronized void shutdown() {
     // Closing stdin should cause the control shell process to terminate.
     if (miniClusterStdin != null) {
       try {

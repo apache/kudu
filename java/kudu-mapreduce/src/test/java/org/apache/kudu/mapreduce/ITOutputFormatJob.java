@@ -135,8 +135,8 @@ public class ITOutputFormatJob {
   }
 
   private void writeDataFile(File data) throws IOException {
-    FileOutputStream fos = new FileOutputStream(data);
-    fos.write("VALUE1\nVALUE2\n".getBytes(UTF_8));
-    fos.close();
+    try (FileOutputStream fos = new FileOutputStream(data)) {
+      fos.write("VALUE1\nVALUE2\n".getBytes(UTF_8));
+    }
   }
 }

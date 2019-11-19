@@ -33,7 +33,7 @@ public class TestLeaderFailover {
 
   private static final String TABLE_NAME =
       TestLeaderFailover.class.getName() + "-" + System.currentTimeMillis();
-  private static KuduTable table;
+  private KuduTable table;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();

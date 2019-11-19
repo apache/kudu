@@ -28,6 +28,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.junit.Assert;
 
 /**
  * This class is analog to HBaseTestingUtility except that we only need it for the MR tests.
@@ -67,7 +68,7 @@ public class HadoopTestingUtility {
     }
     Path testPath = new Path(getBaseTestDir(), testName + System.currentTimeMillis());
     this.testDir = new File(testPath.toString()).getAbsoluteFile();
-    this.testDir.mkdirs();
+    Assert.assertTrue(this.testDir.mkdirs());
     // Set this property so when mapreduce jobs run, they will use this as their home dir.
     System.setProperty("test.build.dir", this.testDir.toString());
     System.setProperty("hadoop.home.dir", this.testDir.toString());

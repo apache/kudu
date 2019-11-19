@@ -356,7 +356,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       public List<InputSplit> getSplits(JobContext job) throws IOException, InterruptedException {
         int numMappers = job.getConfiguration().getInt(GENERATOR_NUM_MAPPERS_KEY, 1);
 
-        ArrayList<InputSplit> splits = new ArrayList<InputSplit>(numMappers);
+        ArrayList<InputSplit> splits = new ArrayList<>(numMappers);
 
         for (int i = 0; i < numMappers; i++) {
           splits.add(new GeneratorInputSplit());
@@ -581,6 +581,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       client.createTable(tableName, schema, builder);
     }
 
+    @SuppressWarnings("deprecation")
     public int runRandomInputGenerator(int numMappers, long numNodes, Path tmpOutput,
                                        Integer width, Integer wrapMultiplier) throws Exception {
       LOG.info("Running RandomInputGenerator with numMappers=" + numMappers +
@@ -607,6 +608,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       return success ? 0 : 1;
     }
 
+    @SuppressWarnings("deprecation")
     public int runGenerator(int numMappers, long numNodes, int numTablets, Path tmpOutput,
                             Integer width, Integer wrapMultiplier) throws Exception {
       LOG.info("Running Generator with numMappers=" + numMappers + ", numNodes=" + numNodes);
@@ -667,6 +669,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private BytesWritable ref = new BytesWritable();
 
       @Override
+      @SuppressWarnings("unchecked")
       protected void map(NullWritable key, RowResult value, Mapper.Context context)
           throws IOException, InterruptedException {
         Bytes.setLong(rowKey, value.getLong(0));
@@ -688,7 +691,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     public static class VerifyReducer extends Reducer<BytesWritable,BytesWritable,Text,Text> {
-      private ArrayList<byte[]> refs = new ArrayList<byte[]>();
+      private ArrayList<byte[]> refs = new ArrayList<>();
 
       @Override
       public void reduce(BytesWritable key, Iterable<BytesWritable> values, Context context)
@@ -764,6 +767,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       return run(new Path(outputDir), numReducers);
     }
 
+    @SuppressWarnings("deprecation")
     public int run(Path outputDir, int numReducers) throws Exception {
       LOG.info("Running Verify with outputDir=" + outputDir + ", numReducers=" + numReducers);
 
@@ -793,7 +797,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       return success ? 0 : 1;
     }
 
-    @SuppressWarnings("deprecation")
     public boolean verify(long expectedReferenced) throws Exception {
       if (job == null) {
         throw new IllegalStateException("You should call run() first");
@@ -977,7 +980,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         System.err.println();
         HelpFormatter formatter = new HelpFormatter();
         formatter.printHelp(getClass().getSimpleName(), options);
-        System.exit(-1);
+        throw new RuntimeException(e);
       }
 
       CommandLineParser cmdLineParser = new CommandLineParser(getConf());
@@ -1105,7 +1108,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         do {
           if (headsCache.size() < numUpdatesPerMapper) {
             value = (RowResult)context.getCurrentValue();
-            headsCache.add(new Pair<Long, Long>(value.getLong(0), value.getLong(1)));
+            headsCache.add(new Pair<>(value.getLong(0), value.getLong(1)));
           }
         } while (context.nextKeyValue());
 
@@ -1240,6 +1243,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       }
     }
 
+    @SuppressWarnings("deprecation")
     public int run(long maxLinkUpdatesPerMapper) throws Exception {
       LOG.info("Running Updater with maxLinkUpdatesPerMapper=" + maxLinkUpdatesPerMapper);
 
@@ -1464,7 +1468,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   }
 
   private static void printCINodeString(CINode node) {
-    System.out.printf("%s:%s:%012d:%s:%s\n", node.key, node.prev, node.rowId, node.client,
+    System.out.printf("%s:%s:%012d:%s:%s%n", node.key, node.prev, node.rowId, node.client,
         node.updateCount);
   }
 
@@ -1487,7 +1491,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   private void usage() {
     System.err.println("Usage: " + this.getClass().getSimpleName() + " COMMAND [COMMAND options]");
     System.err.println("  where COMMAND is one of:");
-    System.err.println("");
+    System.err.println();
     System.err.println("  Generator                  A map only job that generates data.");
     System.err.println("  Verify                     A map reduce job that looks for holes");
     System.err.println("                             Look at the counts after running");

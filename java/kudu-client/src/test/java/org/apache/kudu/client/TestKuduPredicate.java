@@ -1222,7 +1222,7 @@ public class TestKuduPredicate {
   }
 
   @Test
-  public void TestDecimalCoercion() {
+  public void testDecimalCoercion() {
     Assert.assertEquals(
         KuduPredicate.newComparisonPredicate(decimal32Col, LESS, BigDecimal.valueOf(123)),
         KuduPredicate.newComparisonPredicate(decimal32Col, LESS, BigDecimal.valueOf(12300, 2))

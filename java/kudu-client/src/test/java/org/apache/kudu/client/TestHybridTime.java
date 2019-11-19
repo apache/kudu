@@ -55,7 +55,7 @@ public class TestHybridTime {
     TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
 
   private static final Schema schema = getSchema();
-  private static KuduTable table;
+  private KuduTable table;
   private KuduClient client;
 
   private static final MiniKuduClusterBuilder clusterBuilder =
@@ -87,8 +87,6 @@ public class TestHybridTime {
    * future. The remaining writes should force an update to the server's clock and only increment
    * the logical value. Check that the client propagates the timestamp correctly by scanning
    * back the appropriate rows at the appropriate snapshots.
-   *
-   * @throws Exception
    */
   @Test(timeout = 100000)
   public void test() throws Exception {

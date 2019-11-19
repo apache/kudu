@@ -225,13 +225,13 @@ class RpcTraceFrame {
         maxTime, sentCount, receivedCount, delayedCount, masterRefreshCount, authRefreshCount,
         truncated));
     if (!sentTable.isEmpty()) {
-      sb.append(String.format("\n Sent: %s", tableToString(sentTable)));
+      sb.append(String.format("%n Sent: %s", tableToString(sentTable)));
     }
     if (!receivedTable.isEmpty()) {
-      sb.append(String.format("\n Received: %s", tableToString(receivedTable)));
+      sb.append(String.format("%n Received: %s", tableToString(receivedTable)));
     }
     if (!delayedTable.isEmpty()) {
-      sb.append(String.format("\n Delayed: %s", tableToString(delayedTable)));
+      sb.append(String.format("%n Delayed: %s", tableToString(delayedTable)));
     }
     return sb.toString();
   }

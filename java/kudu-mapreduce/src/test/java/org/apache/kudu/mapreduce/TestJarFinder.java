@@ -45,7 +45,7 @@ import org.apache.kudu.test.junit.RetryRule;
  */
 public class TestJarFinder {
 
-  private static File testDir;
+  private File testDir;
 
   @Rule
   public RetryRule retryRule = new RetryRule();
@@ -58,7 +58,9 @@ public class TestJarFinder {
 
   @After
   public void tearDown() throws Exception {
-    FileUtils.deleteDirectory(testDir);
+    if (testDir != null) {
+      FileUtils.deleteDirectory(testDir);
+    }
   }
 
   @Test
@@ -81,12 +83,13 @@ public class TestJarFinder {
     File dir = new File(testDir,
       TestJarFinder.class.getName() + "-testExistingManifest");
     File metaInfDir = new File(dir, "META-INF");
-    metaInfDir.mkdirs();
+    Assert.assertTrue(metaInfDir.mkdirs());
     File manifestFile = new File(metaInfDir, "MANIFEST.MF");
     Manifest manifest = new Manifest();
-    OutputStream os = new FileOutputStream(manifestFile);
-    manifest.write(os);
-    os.close();
+
+    try (OutputStream os = new FileOutputStream(manifestFile)) {
+      manifest.write(os);
+    }
 
     File propsFile = new File(dir, "props.properties");
     Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
@@ -105,7 +108,7 @@ public class TestJarFinder {
   public void testNoManifest() throws Exception {
     File dir = new File(testDir,
       TestJarFinder.class.getName() + "-testNoManifest");
-    dir.mkdirs();
+    Assert.assertTrue(dir.mkdirs());
     File propsFile = new File(dir, "props.properties");
     Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
     new Properties().store(writer, "");

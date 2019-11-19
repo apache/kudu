@@ -74,6 +74,7 @@ public class JarFinder {
 
   public static void jarDir(File dir, String relativePath, ZipOutputStream zos)
       throws IOException {
+    Preconditions.checkNotNull(dir, "dir");
     Preconditions.checkNotNull(relativePath, "relativePath");
     Preconditions.checkNotNull(zos, "zos");
 
@@ -96,6 +97,9 @@ public class JarFinder {
   private static void zipDir(File dir, String relativePath, ZipOutputStream zos,
                              boolean start) throws IOException {
     String[] dirList = dir.list();
+    if (dirList == null) {
+      throw new RuntimeException("Could not list directory: " + dir);
+    }
     for (String aDirList : dirList) {
       File f = new File(dir, aDirList);
       if (!f.isHidden()) {
@@ -165,7 +169,10 @@ public class JarFinder {
             File testDir = getFileDir();
             testDir = testDir.getAbsoluteFile();
             if (!testDir.exists()) {
-              testDir.mkdirs();
+              if (!testDir.mkdirs()) {
+                throw new IOException(MessageFormat.format("could not create dir [{0}]",
+                    testDir));
+              }
             }
             File baseDir = new File(path);
             File tempJar = File.createTempFile("hadoop-", "", testDir);

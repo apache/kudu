@@ -792,7 +792,7 @@ public class TestKuduTable {
 
     // Insert some rows and test the statistics.
     KuduTableStatistics prevStatistics = new KuduTableStatistics(-1, -1);
-    KuduTableStatistics currentStatistics = new KuduTableStatistics(-1, -1);
+    KuduTableStatistics currentStatistics;
     KuduSession session = client.newSession();
     int num = 100;
     for (int i = 0; i < num; ++i) {

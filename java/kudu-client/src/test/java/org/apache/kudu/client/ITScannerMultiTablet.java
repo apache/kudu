@@ -41,7 +41,7 @@ public class ITScannerMultiTablet {
   protected static final int TABLET_COUNT = 3;
 
   private static Schema schema = getBasicSchema();
-  protected static KuduTable table;
+  protected KuduTable table;
 
   private static Random random = new Random(1234);
 

@@ -35,7 +35,7 @@ public class TestStatistics {
 
   private static final String TABLE_NAME = TestStatistics.class.getName() + "-"
       + System.currentTimeMillis();
-  private static KuduTable table;
+  private KuduTable table;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();

@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -157,6 +158,19 @@ public class KuduPartitioner {
     @Override
     public int compareTo(BytesKey other) {
       return Bytes.memcmp(this.bytes, other.bytes);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (!(o instanceof BytesKey)) return false;
+      BytesKey bytesKey = (BytesKey) o;
+      return compareTo(bytesKey) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+      return Arrays.hashCode(bytes);
     }
 
     @Override

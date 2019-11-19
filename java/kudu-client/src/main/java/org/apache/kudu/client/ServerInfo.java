@@ -60,7 +60,7 @@ public class ServerInfo {
     Boolean isLocal = isLocalAddressCache.get(resolvedAddr);
     if (isLocal == null) {
       isLocal = NetUtil.isLocalAddress(resolvedAddr);
-      isLocalAddressCache.put(resolvedAddr, isLocal);
+      isLocalAddressCache.putIfAbsent(resolvedAddr, isLocal);
     }
     this.local = isLocal;
   }

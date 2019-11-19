@@ -179,9 +179,10 @@ public class KuduTestHarness extends ExternalResource {
    * @param table a KuduTable which will get its single tablet's leader killed.
    * @throws Exception
    */
+  @SuppressWarnings("deprecation")
   public void killTabletLeader(KuduTable table) throws Exception {
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
-    if (tablets.isEmpty() || tablets.size() > 1) {
+    if (tablets.size() != 1) {
       fail("Currently only support killing leaders for tables containing 1 tablet, table " +
           table.getName() + " has " + tablets.size());
     }
@@ -272,6 +273,7 @@ public class KuduTestHarness extends ExternalResource {
    * @param table table to query for a TS to restart
    * @throws Exception
    */
+  @SuppressWarnings("deprecation")
   public void restartTabletServer(KuduTable table) throws Exception {
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     if (tablets.isEmpty()) {

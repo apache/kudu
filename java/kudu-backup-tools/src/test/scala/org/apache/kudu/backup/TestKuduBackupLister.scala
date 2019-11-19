@@ -68,7 +68,7 @@ abstract class BaseTestKuduBackupLister {
 
     val options = createOptions(rootPath, ListType.ALL)
     val stdout = new ByteArrayOutputStream
-    Console.withOut(new PrintStream(stdout)) {
+    Console.withOut(new PrintStream(stdout, false, "UTF-8")) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
@@ -84,7 +84,7 @@ abstract class BaseTestKuduBackupLister {
       s"taco,id_taco,${endTime(1000)},0,1000,full",
       s"taco,id_taco,${endTime(2000)},100,2000,incremental"
     ).mkString("\n")
-    assertEquals(expected, stdout.toString.trim)
+    assertEquals(expected, stdout.toString("UTF-8").trim)
   }
 
   @Test
@@ -94,7 +94,7 @@ abstract class BaseTestKuduBackupLister {
 
     val options = createOptions(rootPath, ListType.LATEST)
     val stdout = new ByteArrayOutputStream
-    Console.withOut(new PrintStream(stdout)) {
+    Console.withOut(new PrintStream(stdout, false, "UTF-8")) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
@@ -104,7 +104,7 @@ abstract class BaseTestKuduBackupLister {
       s"pizza,id_pizza,${endTime(600)},400,600,incremental",
       s"taco,id_taco,${endTime(2000)},100,2000,incremental"
     ).mkString("\n")
-    assertEquals(expected, stdout.toString.trim)
+    assertEquals(expected, stdout.toString("UTF-8").trim)
   }
 
   @Test
@@ -114,7 +114,7 @@ abstract class BaseTestKuduBackupLister {
 
     val options = createOptions(rootPath, ListType.RESTORE_SEQUENCE)
     val stdout = new ByteArrayOutputStream
-    Console.withOut(new PrintStream(stdout)) {
+    Console.withOut(new PrintStream(stdout, false, "UTF-8")) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
@@ -129,7 +129,7 @@ abstract class BaseTestKuduBackupLister {
       s"taco,id_taco,${endTime(100)},0,100,full",
       s"taco,id_taco,${endTime(2000)},100,2000,incremental"
     ).mkString("\n")
-    assertEquals(expected, stdout.toString.trim)
+    assertEquals(expected, stdout.toString("UTF-8").trim)
   }
 
   @Test
@@ -139,7 +139,7 @@ abstract class BaseTestKuduBackupLister {
 
     val options = createOptions(rootPath, ListType.ALL, Seq("taco"))
     val stdout = new ByteArrayOutputStream
-    Console.withOut(new PrintStream(stdout)) {
+    Console.withOut(new PrintStream(stdout, false, "UTF-8")) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
@@ -150,7 +150,7 @@ abstract class BaseTestKuduBackupLister {
       s"taco,id_taco,${endTime(1000)},0,1000,full",
       s"taco,id_taco,${endTime(2000)},100,2000,incremental"
     ).mkString("\n")
-    assertEquals(expected, stdout.toString.trim)
+    assertEquals(expected, stdout.toString("UTF-8").trim)
   }
 
   @Test
@@ -161,8 +161,8 @@ abstract class BaseTestKuduBackupLister {
     val options = createOptions(rootPath, ListType.ALL, Seq("pizza", "nope"))
     val stdout = new ByteArrayOutputStream
     val stderr = new ByteArrayOutputStream
-    Console.withOut(new PrintStream(stdout)) {
-      Console.withErr(new PrintStream(stderr)) {
+    Console.withOut(new PrintStream(stdout, false, "UTF-8")) {
+      Console.withErr(new PrintStream(stderr, false, "UTF-8")) {
         assertEquals(1, KuduBackupCLI.run(options))
       }
     }
@@ -174,9 +174,9 @@ abstract class BaseTestKuduBackupLister {
       s"pizza,id_pizza,${endTime(400)},200,400,incremental",
       s"pizza,id_pizza,${endTime(600)},400,600,incremental"
     ).mkString("\n")
-    assertEquals(expected, stdout.toString.trim)
+    assertEquals(expected, stdout.toString("UTF-8").trim)
 
-    assertEquals("No backups were found for 1 table(s):\nnope", stderr.toString.trim)
+    assertEquals("No backups were found for 1 table(s):\nnope", stderr.toString("UTF-8").trim)
   }
 
   def createOptions(

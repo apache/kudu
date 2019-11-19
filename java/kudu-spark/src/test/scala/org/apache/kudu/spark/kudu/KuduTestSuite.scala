@@ -17,6 +17,7 @@
 package org.apache.kudu.spark.kudu
 
 import java.math.BigDecimal
+import java.nio.charset.StandardCharsets.UTF_8
 import java.util.Date
 
 import scala.collection.JavaConverters._
@@ -38,7 +39,7 @@ import org.apache.spark.sql.SparkSession
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
-import org.scalatest.junit.JUnitSuite
+import org.scalatestplus.junit.JUnitSuite
 
 import scala.annotation.meta.getter
 
@@ -175,7 +176,7 @@ trait KuduTestSuite extends JUnitSuite {
       row.addBoolean(5, i % 2 == 1)
       row.addShort(6, i.toShort)
       row.addFloat(7, i.toFloat)
-      row.addBinary(8, s"bytes $i".getBytes())
+      row.addBinary(8, s"bytes $i".getBytes(UTF_8))
       val ts = System.currentTimeMillis() * 1000
       row.addLong(9, ts)
       row.addByte(10, i.toByte)
@@ -216,7 +217,7 @@ trait KuduTestSuite extends JUnitSuite {
       row.addBoolean(5, i % 2 == 1)
       row.addShort(6, i.toShort)
       row.addFloat(7, i.toFloat)
-      row.addBinary(8, (s"*" * rowDataSize).getBytes())
+      row.addBinary(8, (s"*" * rowDataSize).getBytes(UTF_8))
       val ts = System.currentTimeMillis() * 1000
       row.addLong(9, ts)
       row.addByte(10, i.toByte)

@@ -36,7 +36,7 @@ public class TestRowErrors {
 
   private static final Schema basicSchema = getBasicSchema();
 
-  private static KuduTable table;
+  private KuduTable table;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();

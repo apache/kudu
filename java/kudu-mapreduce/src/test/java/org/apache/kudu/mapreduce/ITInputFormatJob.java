@@ -21,7 +21,6 @@ import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -65,15 +64,14 @@ public class ITInputFormatJob {
   }
 
   @Test
-  @SuppressWarnings("deprecation")
   public void test() throws Exception {
 
     createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);
 
     JobConf conf = new JobConf();
-    HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf).getAbsolutePath();
+    HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf);
 
-    createAndTestJob(conf, new ArrayList<KuduPredicate>(), 9);
+    createAndTestJob(conf, new ArrayList<>(), 9);
 
     KuduPredicate pred1 = KuduPredicate.newComparisonPredicate(
         basicSchema.getColumnByIndex(0), KuduPredicate.ComparisonOp.GREATER_EQUAL, 20);
@@ -84,6 +82,7 @@ public class ITInputFormatJob {
     createAndTestJob(conf, Lists.newArrayList(pred1, pred2), 2);
   }
 
+  @SuppressWarnings("deprecation")
   private void createAndTestJob(JobConf conf,
                                 List<KuduPredicate> predicates, int expectedCount)
       throws Exception {
@@ -123,8 +122,7 @@ public class ITInputFormatJob {
       Mapper<NullWritable, RowResult, NullWritable, NullWritable> {
 
     @Override
-    protected void map(NullWritable key, RowResult value, Context context) throws IOException,
-        InterruptedException {
+    protected void map(NullWritable key, RowResult value, Context context) {
       context.getCounter(Counters.ROWS).increment(1);
       LOG.info(value.toStringLongFormat()); // useful to visual debugging
     }

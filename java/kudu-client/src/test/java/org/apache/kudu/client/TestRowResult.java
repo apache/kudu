@@ -44,7 +44,7 @@ public class TestRowResult {
 
   private static final Schema allTypesSchema = getSchemaWithAllTypes();
 
-  private static KuduTable table;
+  private KuduTable table;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();

@@ -36,6 +36,7 @@ import org.apache.kudu.client.KuduScannerIterator.NextRowsCallback
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
+@SerialVersionUID(1L)
 class KuduRDD private[kudu] (
     val kuduContext: KuduContext,
     @transient val table: KuduTable,

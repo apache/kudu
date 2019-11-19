@@ -294,7 +294,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -346,7 +346,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -359,7 +359,7 @@ public class TestScanPredicate {
     Schema schema = createTableSchema(Type.INT16);
     client.createTable("short-table", schema,
                            new CreateTableOptions().setRangePartitionColumns(
-                               ImmutableList.<String>of()));
+                               ImmutableList.of()));
     KuduTable table = client.openTable("short-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT16);
@@ -373,7 +373,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -398,7 +398,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -411,7 +411,7 @@ public class TestScanPredicate {
     Schema schema = createTableSchema(Type.INT64);
     client.createTable("long-table", schema,
                            new CreateTableOptions().setRangePartitionColumns(
-                               ImmutableList.<String>of()));
+                               ImmutableList.of()));
     KuduTable table = client.openTable("long-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT64);
@@ -425,7 +425,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -450,7 +450,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -476,7 +476,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -535,7 +535,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -598,7 +598,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -675,7 +675,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();
@@ -734,7 +734,7 @@ public class TestScanPredicate {
       session.apply(insert);
     }
     Insert nullInsert = table.newInsert();
-    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().addLong("key", i);
     nullInsert.getRow().setNull("value");
     session.apply(nullInsert);
     session.flush();

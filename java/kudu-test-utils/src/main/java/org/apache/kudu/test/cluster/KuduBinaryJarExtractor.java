@@ -182,7 +182,8 @@ public class KuduBinaryJarExtractor {
           Path newFile = Paths.get(target.toString(), file.toString());
           Files.copy(file, newFile, StandardCopyOption.REPLACE_EXISTING);
 
-          if (file.getParent().endsWith("bin")) {
+          Path parent = file.getParent();
+          if (parent != null && parent.endsWith("bin")) {
             Set<PosixFilePermission> perms = Files.getPosixFilePermissions(newFile);
             perms.add(PosixFilePermission.OWNER_EXECUTE);
             Files.setPosixFilePermissions(newFile, perms);

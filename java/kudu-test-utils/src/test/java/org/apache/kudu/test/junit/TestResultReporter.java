@@ -100,9 +100,10 @@ public class TestResultReporter {
    */
   private static class MockFlakyTestServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(MockFlakyTestServlet.class);
-    private final List<TestRecord> records = new ArrayList<>();
+    private static final long serialVersionUID = 1L;
+    private transient final List<TestRecord> records = new ArrayList<>();
 
-    public List<TestRecord> getRecords() {
+    List<TestRecord> getRecords() {
       return records;
     }
 

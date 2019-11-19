@@ -258,7 +258,7 @@ public class ColumnSchema {
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   public static class ColumnSchemaBuilder {
-    public static final List<Type> TYPES_WITH_ATTRIBUTES = Arrays.asList(Type.DECIMAL,
+    private static final List<Type> TYPES_WITH_ATTRIBUTES = Arrays.asList(Type.DECIMAL,
                                                                          Type.VARCHAR);
     private final String name;
     private final Type type;

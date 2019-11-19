@@ -58,6 +58,7 @@ import org.apache.kudu.Type
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
+@SerialVersionUID(1L)
 class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeoutMs: Option[Long])
     extends Serializable {
   val log: Logger = LoggerFactory.getLogger(getClass)
@@ -129,7 +130,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   val durationHistogram = new HdrHistogramAccumulator()
   sc.register(durationHistogram, "kudu.write_duration")
 
-  @Deprecated()
+  @deprecated("Use KuduContext constructor", "1.4.0")
   def this(kuduMaster: String) {
     this(kuduMaster, new SparkContext())
   }
@@ -268,7 +269,8 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
    * @param tableName the Kudu table to insert into
    */
   @deprecated(
-    "Use KuduContext.insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))")
+    "Use KuduContext.insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))",
+    "1.8.0")
   def insertIgnoreRows(data: DataFrame, tableName: String): Unit = {
     val writeOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
     log.info(s"inserting into table '$tableName'")

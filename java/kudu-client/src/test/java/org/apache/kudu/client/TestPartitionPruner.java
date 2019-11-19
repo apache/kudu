@@ -676,7 +676,7 @@ public class TestPartitionPruner {
   }
 
   @Test
-  public void TestMultiColumnInListHashPruning() throws Exception {
+  public void testMultiColumnInListHashPruning() throws Exception {
     // CREATE TABLE t
     // (a INT8, b INT8, c INT8)
     // PRIMARY KEY (a, b, c)

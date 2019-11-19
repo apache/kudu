@@ -42,3 +42,8 @@ dependencies {
 javadoc {
   enabled = false
 }
+
+tasks.withType(com.github.spotbugs.SpotBugsTask) {
+  // This class causes SpotBugs runtime errors, so we completely ignore it from analysis.
+  classes = classes.filter { !it.path.contains("BaseTestKuduBackupCleaner") }
+}

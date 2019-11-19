@@ -29,6 +29,7 @@ package org.apache.kudu.client;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -1076,7 +1077,7 @@ public final class Bytes {
   public static final MemCmp MEMCMP = new MemCmp();
 
   /** {@link Comparator} for non-{@code null} byte arrays.  */
-  private static final class MemCmp implements Comparator<byte[]> {
+  private static final class MemCmp implements Comparator<byte[]>, Serializable {
 
     private MemCmp() {  // Can't instantiate outside of this class.
     }

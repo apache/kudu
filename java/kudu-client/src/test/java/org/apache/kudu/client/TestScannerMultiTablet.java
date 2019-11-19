@@ -49,7 +49,7 @@ public class TestScannerMultiTablet {
   /**
    * The timestamp after inserting the rows into the test table during setUp().
    */
-  private static long beforeWriteTimestamp;
+  private long beforeWriteTimestamp;
   private KuduTable table;
   private KuduClient client;
   private AsyncKuduClient asyncClient;

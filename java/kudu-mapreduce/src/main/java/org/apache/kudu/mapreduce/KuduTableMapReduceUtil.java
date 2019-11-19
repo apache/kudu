@@ -1,21 +1,21 @@
-/**
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License. See accompanying LICENSE file.
- */
-
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 package org.apache.kudu.mapreduce;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLDecoder;
@@ -44,7 +44,6 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -62,6 +61,7 @@ import org.apache.kudu.client.Operation;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
+@SuppressWarnings("deprecation")
 public class KuduTableMapReduceUtil {
   // Mostly lifted from HBase's TableMapReduceUtil
 
@@ -206,6 +206,7 @@ public class KuduTableMapReduceUtil {
      * @param cacheBlocks whether the job should use scanners that cache blocks
      * @return this instance
      */
+    @SuppressWarnings("unchecked")
     public S cacheBlocks(boolean cacheBlocks) {
       this.cacheBlocks = cacheBlocks;
       return (S) this;
@@ -216,6 +217,7 @@ public class KuduTableMapReduceUtil {
      * @param isFaultTolerant whether the job should use fault tolerant scanners
      * @return this instance
      */
+    @SuppressWarnings("unchecked")
     public S isFaultTolerant(boolean isFaultTolerant) {
       this.isFaultTolerant = isFaultTolerant;
       return (S) this;
@@ -422,7 +424,7 @@ public class KuduTableMapReduceUtil {
     byte[] authnCreds = client.exportAuthenticationCredentials();
     Text service = new Text(client.getMasterAddressesAsString());
     job.getCredentials().addToken(AUTHN_CREDENTIALS_ALIAS,
-        new Token<TokenIdentifier>(null, authnCreds, KUDU_TOKEN_KIND, service));
+        new Token<>(null, authnCreds, KUDU_TOKEN_KIND, service));
   }
 
   /**
@@ -446,9 +448,6 @@ public class KuduTableMapReduceUtil {
     Text service = new Text(client.getMasterAddressesAsString());
     // Find the Hadoop credentials stored within the JAAS subject.
     Set<Credentials> credSet = subj.getPrivateCredentials(Credentials.class);
-    if (credSet == null) {
-      return;
-    }
     for (Credentials creds : credSet) {
       for (Token<?> tok : creds.getAllTokens()) {
         if (!tok.getKind().equals(KUDU_TOKEN_KIND)) {
@@ -502,13 +501,12 @@ public class KuduTableMapReduceUtil {
                                        Class<?>... classes) throws IOException {
 
     FileSystem localFs = FileSystem.getLocal(conf);
-    Set<String> jars = new HashSet<String>();
     // Add jars that are already in the tmpjars variable
-    jars.addAll(conf.getStringCollection("tmpjars"));
+    Set<String> jars = new HashSet<>(conf.getStringCollection("tmpjars"));
 
     // add jars as we find them to a map of contents jar name so that we can avoid
     // creating new jars for classes that have already been packaged.
-    Map<String, String> packagedClasses = new HashMap<String, String>();
+    Map<String, String> packagedClasses = new HashMap<>();
 
     // Add jars containing the specified classes
     for (Class<?> clazz : classes) {
@@ -567,7 +565,6 @@ public class KuduTableMapReduceUtil {
    * @param fs the FileSystem with which to qualify the returned path.
    * @param packagedClasses a map of class name to path.
    * @return a jar file that contains the class.
-   * @throws IOException
    */
   @SuppressWarnings("deprecation")
   private static Path findOrCreateJar(Class<?> myClass, FileSystem fs,
@@ -595,7 +592,6 @@ public class KuduTableMapReduceUtil {
    * the <code>packagedClasses</code> map.
    * @param myClass the class to find.
    * @return a jar file that contains the class, or null.
-   * @throws IOException
    */
   private static String findContainingJar(Class<?> myClass, Map<String, String> packagedClasses)
       throws IOException {
@@ -638,18 +634,12 @@ public class KuduTableMapReduceUtil {
     if (null == jar || jar.isEmpty()) {
       return;
     }
-    ZipFile zip = null;
-    try {
-      zip = new ZipFile(jar);
+    try (ZipFile zip = new ZipFile(jar)) {
       for (Enumeration<? extends ZipEntry> iter = zip.entries(); iter.hasMoreElements();) {
         ZipEntry entry = iter.nextElement();
         if (entry.getName().endsWith("class")) {
           packagedClasses.put(entry.getName(), jar);
         }
-      }
-    } finally {
-      if (null != zip) {
-        zip.close();
       }
     }
   }

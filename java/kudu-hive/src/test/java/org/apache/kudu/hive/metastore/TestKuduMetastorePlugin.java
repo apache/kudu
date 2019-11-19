@@ -104,7 +104,7 @@ public class TestKuduMetastorePlugin {
         "jdbc:derby:memory:" + metadb.toString() + ";create=true");
     // Set the derby log file.
     Path derbyLogFile = hiveTestDir.resolve("derby.log");
-    derbyLogFile.toFile().createNewFile();
+    assertTrue(derbyLogFile.toFile().createNewFile());
     System.setProperty("derby.stream.error.file", derbyLogFile.toString());
 
     int msPort = MetaStoreUtils.startMetaStore(metastoreConf);

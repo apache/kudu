@@ -139,7 +139,7 @@ public class TestFlexiblePartitioning {
       PartialRow lowerBound = schema.newPartialRow();
       minRow.fillPartialRow(lowerBound);
 
-      Set<Row> expected = Sets.filter(rows, minRow.gtePred());
+      Set<Row> expected = Sets.filter(rows, minRow.gtePred()::apply);
 
       KuduScanner scanner = client.newScannerBuilder(table).lowerBound(lowerBound).build();
       Set<Row> results = collectRows(scanner);
@@ -178,7 +178,7 @@ public class TestFlexiblePartitioning {
       PartialRow upperBound = schema.newPartialRow();
       maxRow.fillPartialRow(upperBound);
 
-      Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred(), maxRow.ltPred()));
+      Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred()::apply, maxRow.ltPred()));
 
       KuduScanner scanner = client.newScannerBuilder(table)
                                       .lowerBound(lowerBound)
@@ -222,7 +222,7 @@ public class TestFlexiblePartitioning {
       PartialRow upperBound = schema.newPartialRow();
       maxRow.fillPartialRow(upperBound);
 
-      Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred(), maxRow.ltPred()));
+      Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred()::apply, maxRow.ltPred()));
       Set<Row> results = new HashSet<>();
 
       for (LocatedTablet tablet : tablets) {

@@ -197,7 +197,6 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
     keys.foreach { key =>
       val insert = testTable.newInsert
       val row = insert.getRow
-      val r = Array(1, 2, 3)
       row.addString(0, key)
       kuduSession.apply(insert)
     }
@@ -234,7 +233,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
     results = sqlContext
       .sql("SELECT key FROM " + tableName + " where key IS NULL")
       .collectAsList()
-    assert(results.isEmpty())
+    assert(results.isEmpty)
   }
 
   @Test
@@ -318,7 +317,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateDouble() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c3_double FROM $tableName where c3_double > "5.0"""")
         .count())
@@ -327,7 +326,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateLong() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c4_long FROM $tableName where c4_long > "5"""")
         .count())
@@ -336,7 +335,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateBool() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i % 2 == 0 },
+      rows.count { case (_, i, _, _) => i % 2 == 0 },
       sqlContext
         .sql(s"""SELECT key, c5_bool FROM $tableName where c5_bool = true""")
         .count())
@@ -345,7 +344,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateShort() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c6_short FROM $tableName where c6_short > 5""")
         .count())
@@ -355,7 +354,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateFloat() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c7_float FROM $tableName where c7_float > 5""")
         .count())
@@ -365,7 +364,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateDecimal32() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c11_decimal32 FROM $tableName where c11_decimal32 > 5""")
         .count())
@@ -374,7 +373,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateDecimal64() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c12_decimal64 FROM $tableName where c12_decimal64 > 5""")
         .count())
@@ -383,7 +382,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicateDecimal128() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => i > 5 },
+      rows.count { case (_, i, _, _) => i > 5 },
       sqlContext
         .sql(s"""SELECT key, c13_decimal128 FROM $tableName where c13_decimal128 > 5""")
         .count())
@@ -392,13 +391,13 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
   @Test
   def testTableScanWithProjectionAndPredicate() {
     assertEquals(
-      rows.count { case (key, i, s, ts) => s != null && s > "5" },
+      rows.count { case (_, _, s, _) => s != null && s > "5" },
       sqlContext
         .sql(s"""SELECT key FROM $tableName where c2_s > "5"""")
         .count())
 
     assertEquals(
-      rows.count { case (key, i, s, ts) => s != null },
+      rows.count { case (_, _, s, _) => s != null },
       sqlContext
         .sql(s"""SELECT key, c2_s FROM $tableName where c2_s IS NOT NULL""")
         .count())
@@ -493,7 +492,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
       new CreateTableOptions()
         .setRangePartitionColumns(List("key").asJava)
         .setNumReplicas(1))
-    var options1: Map[String, String] =
+    val options1: Map[String, String] =
       Map("kudu.table" -> table1, "kudu.master" -> harness.getMasterAddressesAsString)
     df.write.options(options1).mode("append").format("kudu").save
     val df1 = sqlContext.read.options(options1).format("kudu").load
@@ -507,7 +506,7 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
       new CreateTableOptions()
         .setRangePartitionColumns(List("key").asJava)
         .setNumReplicas(1))
-    var options2: Map[String, String] =
+    val options2: Map[String, String] =
       Map("kudu.table" -> table2, "kudu.master" -> harness.getMasterAddressesAsString)
     df.write.options(options2).mode("append").format("kudu").save
     val df2 = sqlContext.read.options(options2).format("kudu").load
@@ -521,14 +520,14 @@ class SparkSQLTest extends KuduTestSuite with Matchers {
 
     // 3. Test join with table size should be able to broadcast.
     val sqlStr = s"SELECT * FROM $table1 JOIN $table2 ON $table1.key = $table2.key"
-    var physical = sqlContext.sql(sqlStr).queryExecution.sparkPlan
-    var operators = physical.collect {
+    val physical = sqlContext.sql(sqlStr).queryExecution.sparkPlan
+    val operators = physical.collect {
       case j: BroadcastHashJoinExec => j
     }
     assert(operators.size == 1)
 
     // Verify result.
-    var results = sqlContext.sql(sqlStr).collectAsList()
+    val results = sqlContext.sql(sqlStr).collectAsList()
     assert(results.size() == rowCount)
   }
 }

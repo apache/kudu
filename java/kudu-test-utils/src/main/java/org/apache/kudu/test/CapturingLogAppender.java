@@ -43,6 +43,8 @@ public class CapturingLogAppender extends AbstractAppender {
       .withPattern("%d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n")
       .build();
 
+  private static final Random RANDOM = new Random();
+
   // The caller should detach the logger before calling getAppendedText().
   // Nevertheless, for some reason it is still possible for additional
   // append() calls to happen _after_ the logger is detached, which may race
@@ -53,7 +55,7 @@ public class CapturingLogAppender extends AbstractAppender {
   public CapturingLogAppender() {
     // Appender name must be unique so that attaching/detaching works correctly
     // when multiple capturing appenders are used recursively.
-    super(String.format("CapturingToFileLogAppender-%d", new Random().nextInt()),
+    super(String.format("CapturingToFileLogAppender-%d", RANDOM.nextInt()),
           /* filter */ null, LAYOUT, /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
 
     // If we don't call start(), we get an ugly log error:

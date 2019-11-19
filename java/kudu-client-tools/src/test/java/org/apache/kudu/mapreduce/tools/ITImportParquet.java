@@ -102,12 +102,6 @@ public class ITImportParquet {
     Path data = new Path(testHome, "data.parquet");
     writeParquetFile(data,conf);
 
-    StringBuilder sb = new StringBuilder();
-    for (ColumnSchema col : schema.getColumns()) {
-      sb.append(col.getName());
-      sb.append(",");
-    }
-    sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "="
         + harness.getMasterAddressesAsString(), TABLE_NAME, data.toString()};
 

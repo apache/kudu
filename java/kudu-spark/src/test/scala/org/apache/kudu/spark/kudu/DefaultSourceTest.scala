@@ -62,7 +62,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
    * syntax still works. This should be removed when the
    * deprecated `kudu` methods are removed.
    */
-  @Test
+  @Test @deprecated("Marked as deprecated to suppress warning", "")
   def testPackageReaderAndWriter(): Unit = {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
@@ -276,7 +276,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     deleteRow(100)
   }
 
-  @Test
+  @Test @deprecated("Marked as deprecated to suppress warning", "")
   def testInsertIgnoreRowsMethod() {
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row

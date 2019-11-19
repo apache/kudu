@@ -39,3 +39,8 @@ dependencies {
 
 // Adjust the artifact name to include the spark and scala base versions.
 archivesBaseName = "kudu-spark${versions.sparkBase}_${versions.scalaBase}"
+
+tasks.withType(com.github.spotbugs.SpotBugsTask) {
+  // This class causes SpotBugs runtime errors, so we completely ignore it from analysis.
+  classes = classes.filter { !it.path.contains("SparkSQLTest") }
+}

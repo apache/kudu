@@ -35,6 +35,7 @@ import scala.collection.JavaConverters._
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
+@SerialVersionUID(1L)
 class KuduBackupRDD private[kudu] (
     @transient val table: KuduTable,
     @transient val options: BackupOptions,

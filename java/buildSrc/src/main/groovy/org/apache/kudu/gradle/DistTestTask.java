@@ -127,8 +127,7 @@ public class DistTestTask extends DefaultTask {
         File isolateFile = new File(outputDir, c + ".isolate");
         File isolatedFile = new File(outputDir, c + ".isolated");
         File genJsonFile = new File(outputDir, c + ".gen.json");
-
-        Files.write(genIsolate(outputDir.toPath(), t, c, baseDeps), isolateFile, UTF_8);
+        Files.asCharSink(isolateFile, UTF_8).write(genIsolate(outputDir.toPath(), t, c, baseDeps));
 
         // Write the gen.json
         GenJson gen = new GenJson();
@@ -137,7 +136,7 @@ public class DistTestTask extends DefaultTask {
             "-s", isolatedFile.toString());
         gen.dir = outputDir.toString();
         gen.name = c;
-        Files.write(GSON.toJson(gen), genJsonFile, UTF_8);
+        Files.asCharSink(genJsonFile, UTF_8).write(GSON.toJson(gen));
       }
     }
   }
@@ -284,7 +283,7 @@ public class DistTestTask extends DefaultTask {
   }
 
   private static class ClassNameCollectingProcessor implements TestClassProcessor {
-    public List<String> classNames = new ArrayList<String>();
+    public List<String> classNames = new ArrayList<>();
 
     @Override
     public void startProcessing(TestResultProcessor testResultProcessor) {
@@ -316,7 +315,7 @@ public class DistTestTask extends DefaultTask {
     private static class Variables {
       public List<String> files = new ArrayList<>();
       public List<String> command;
-    };
+    }
     Variables variables = new Variables();
 
     public String toJson() {

@@ -23,6 +23,7 @@ import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
@@ -298,6 +299,19 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     }
 
     return tablet.getPartition().compareTo(other.getTablet().getPartition());
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof KuduScanToken)) return false;
+    KuduScanToken that = (KuduScanToken) o;
+    return compareTo(that) == 0;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(tablet, message);
   }
 
   /**

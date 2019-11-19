@@ -355,12 +355,12 @@ public final class AsyncKuduScanner {
    * @return a ColumnSchema for the virtual IS_DELETED column
    */
   private static ColumnSchema generateIsDeletedColumn(Schema schema) {
-    String columnName = DEFAULT_IS_DELETED_COL_NAME;
+    StringBuilder columnName = new StringBuilder(DEFAULT_IS_DELETED_COL_NAME);
     // If the column already exists and we need to pick an alternate column name.
-    while (schema.hasColumn(columnName)) {
-      columnName += "_";
+    while (schema.hasColumn(columnName.toString())) {
+      columnName.append("_");
     }
-    return new ColumnSchema.ColumnSchemaBuilder(columnName, Type.BOOL)
+    return new ColumnSchema.ColumnSchemaBuilder(columnName.toString(), Type.BOOL)
             .wireType(Common.DataType.IS_DELETED)
             .defaultValue(false)
             .nullable(false)

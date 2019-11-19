@@ -172,8 +172,8 @@ class TestKuduBackup extends KuduTestSuite {
     // table that does exist, it should not throw an exception, and it should return 1 to indicate
     // some error. The logs should contain a message about the missing table.
     val options = createBackupOptions(Seq("missingTable", tableName))
-    captureLogs(() => assertEquals(1, KuduBackup.run(options, ss)))
-      .contains("the table does not exist")
+    val logs = captureLogs(() => assertEquals(1, KuduBackup.run(options, ss)))
+    assertTrue(logs.contains("the table does not exist"))
 
     // Restore the backup of the non-failed table and validate the end result.
     restoreAndValidateTable(tableName, 100)
@@ -204,9 +204,9 @@ class TestKuduBackup extends KuduTestSuite {
 
     // There's no guarantee about the order restores run in, so it doesn't work to test fail-fast
     // and then the default no-fail-fast because the actual table may have been restored.
-    captureLogs(
+    val logs = captureLogs(
       () => assertEquals(1, runRestore(createRestoreOptions(Seq("missingTable", tableName)))))
-      .contains("Failed to restore table")
+    assertTrue(logs.contains("Failed to restore table"))
   }
 
   @Test

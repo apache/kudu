@@ -22,6 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
@@ -118,8 +119,9 @@ public class TestNegotiator {
 
   KeyStore loadTestKeystore() throws Exception {
     KeyStore ks = KeyStore.getInstance("JKS");
-    ks.load(TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks"),
-        KEYSTORE_PASSWORD);
+    try (InputStream stream = TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks")) {
+      ks.load(stream, KEYSTORE_PASSWORD);
+    }
     return ks;
   }
 

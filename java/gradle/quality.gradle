@@ -42,6 +42,8 @@ spotbugs {
   toolVersion = versions.spotBugs
   ignoreFailures = true
   effort = "max"
+  reportLevel = "medium"
+  excludeFilter = file("$rootProject.projectDir/config/spotbugs/excludeFilter.xml")
 }
 
 tasks.withType(com.github.spotbugs.SpotBugsTask) {
