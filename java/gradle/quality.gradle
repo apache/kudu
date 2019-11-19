@@ -26,6 +26,7 @@ apply plugin: "scalafmt" // Automatically formats Scala code on each build.
 apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 
 checkstyle {
+  toolVersion = versions.checkstyle
   configDir = file("$rootProject.projectDir/config/checkstyle")
   ignoreFailures = true
   showViolations = true
