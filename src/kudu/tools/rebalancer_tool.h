@@ -155,7 +155,9 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     bool ScheduleNextMove(bool* has_errors, bool* timed_out) override;
 
-    bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
+    bool UpdateMovesInProgressStatus(bool* has_errors,
+                                     bool* timed_out,
+                                     bool* has_pending_moves) override;
 
     // Get the cluster location the runner is slated to run/running at.
     // 'boost::none' means all the cluster.
@@ -278,7 +280,9 @@ class RebalancerTool : public rebalance::Rebalancer {
 
     bool ScheduleNextMove(bool* has_errors, bool* timed_out) override;
 
-    bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
+    bool UpdateMovesInProgressStatus(bool* has_errors,
+                                     bool* timed_out,
+                                     bool* has_pending_moves) override;
 
    private:
     // Key is tserver UUID which corresponds to value.ts_uuid_from.

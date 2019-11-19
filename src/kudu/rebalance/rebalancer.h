@@ -170,12 +170,19 @@ class Rebalancer {
     virtual bool ScheduleNextMove(bool* has_errors, bool* timed_out) = 0;
 
     // Update statuses and auxiliary information on in-progress replica move
-    // operations. The 'timed_out' parameter is set to 'true' if not all
-    // in-progress operations were processed by the deadline specified by
-    // the 'deadline_' member field. The method returns 'true' if it's necessary
-    // to clear the state of the in-progress operations, i.e. 'forget'
-    // those, starting from a clean state.
-    virtual bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) = 0;
+    // operations.
+    // The 'timed_out' parameter is set to 'true' if not all in-progress
+    // operations were processed by the deadline specified by the 'deadline_'
+    // member field.
+    // The 'has_errors' parameter is set to 'true' if there were errors while
+    // trying to get the statuses of in-progress operations.
+    // The 'has_pending_moves' parameter is set to 'true' if there were any
+    // in-progress operations and we could check their statuses.
+    // The method returns 'true' if at least one in-progress move operation was
+    // completed (success or failure).
+    virtual bool UpdateMovesInProgressStatus(bool* has_errors,
+                                             bool* timed_out,
+                                             bool* has_pending_moves) = 0;
 
     virtual Status GetNextMoves(bool* has_moves) = 0;
 

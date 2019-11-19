@@ -545,21 +545,25 @@ Status RebalancerTool::RunWith(Runner* runner, RunStatus* result_status) {
       }
 
       // Poll for the status of pending operations. If some of the in-flight
-      // operations are complete, it might be possible to schedule new ones
+      // operations are completed, it might be possible to schedule new ones
       // by calling Runner::ScheduleNextMove().
+      auto has_pending_moves = false;
       auto has_updates = runner->UpdateMovesInProgressStatus(&has_errors,
-                                                             &is_timed_out);
+                                                             &is_timed_out,
+                                                             &has_pending_moves);
       if (has_updates) {
         // Reset the start of the staleness interval: there was some updates
         // on the status of scheduled move operations.
         staleness_start = MonoTime::Now();
+        // Continue scheduling available move operations.
+        continue;
       }
       resync_state |= has_errors;
-      if (resync_state || is_timed_out || !has_updates) {
+      if (resync_state || is_timed_out || !has_pending_moves) {
         // If there were errors while trying to get the statuses of pending
         // operations it's necessary to re-synchronize the state of the cluster:
         // most likely something has changed, so it's better to get a new set
-        // of planned moves.
+        // of planned moves. Also, do the same if not a single pending move has left.
         break;
       }
 
@@ -792,11 +796,10 @@ bool RebalancerTool::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
 }
 
 bool RebalancerTool::AlgoBasedRunner::UpdateMovesInProgressStatus(
-    bool* has_errors, bool* timed_out) {
+    bool* has_errors, bool* timed_out, bool* has_pending_moves) {
   DCHECK(has_errors);
   DCHECK(timed_out);
-  *has_errors = false;
-  *timed_out = false;
+  DCHECK(has_pending_moves);
 
   // Update the statuses of the in-progress move operations.
   auto has_updates = false;
@@ -815,7 +818,7 @@ bool RebalancerTool::AlgoBasedRunner::UpdateMovesInProgressStatus(
     const Status s = CheckCompleteMove(master_addresses_, client_,
                                        tablet_id, src_ts_uuid, dst_ts_uuid,
                                        &is_complete, &move_status);
-    has_updates |= s.ok();
+    *has_pending_moves |= s.ok();
     if (!s.ok()) {
       // There was an error while fetching the status of this move operation.
       // Since the actual status of the move is not known, don't update the
@@ -833,6 +836,7 @@ bool RebalancerTool::AlgoBasedRunner::UpdateMovesInProgressStatus(
       // The move has completed (success or failure): update the stats on the
       // pending operations per server.
       ++moves_count_;
+      has_updates = true;
       UpdateOnMoveCompleted(it->second.ts_uuid_from);
       UpdateOnMoveCompleted(it->second.ts_uuid_to);
       LOG(INFO) << Substitute("tablet $0: '$1' -> '$2' move completed: $3",
@@ -1167,16 +1171,17 @@ bool RebalancerTool::PolicyFixer::ScheduleNextMove(bool* has_errors,
 }
 
 bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
-    bool* has_errors, bool* timed_out) {
+    bool* has_errors, bool* timed_out, bool* has_pending_moves) {
   DCHECK(has_errors);
   DCHECK(timed_out);
+  DCHECK(has_pending_moves);
 
+  // Update the statuses of the in-progress move operations.
   auto has_updates = false;
   auto error_count = 0;
-  auto out_of_time = false;
   for (auto it = scheduled_moves_.begin(); it != scheduled_moves_.end(); ) {
     if (deadline_ && MonoTime::Now() >= *deadline_) {
-      out_of_time = true;
+      *timed_out = true;
       break;
     }
     bool is_complete;
@@ -1185,6 +1190,7 @@ bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
     const auto& ts_uuid = it->second.ts_uuid_from;
     auto s = CheckCompleteReplace(client_, tablet_id, ts_uuid,
                                   &is_complete, &completion_status);
+    *has_pending_moves |= s.ok();
     if (!s.ok()) {
       // Update on the movement status has failed: remove the move operation
       // as if it didn't exist. Once the cluster status is re-synchronized,
@@ -1209,7 +1215,6 @@ bool RebalancerTool::PolicyFixer::UpdateMovesInProgressStatus(
     ++it;
   }
 
-  *timed_out = out_of_time;
   *has_errors = (error_count > 0);
   return has_updates;
 }
