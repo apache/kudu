@@ -357,8 +357,8 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   clock_->time_service()->DumpDiagnostics(&log);
   string s = JoinStrings(log, "\n");
   SCOPED_TRACE(s);
-  ASSERT_STR_CONTAINS(s, "ntpq");
-  ASSERT_STR_CONTAINS(s, "ntp_gettime");
+  ASSERT_STR_MATCHES(s, "(ntp_gettime\\(\\) returns code |chronyc -n tracking)");
+  ASSERT_STR_MATCHES(s, "(ntpq -n |chronyc -n sources)");
 }
 #endif
 
