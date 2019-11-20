@@ -1,0 +1,1237 @@
+---
+title: Installing Apache Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-11-19 20:16:56 PST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Installing Apache Kudu</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Apache Kudu project only publishes source code releases, to deploy Kudu on a
+cluster follow the steps below to build Kudu from source.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="prerequisites_and_requirements"><a class="link" href="#prerequisites_and_requirements">Prerequisites and Requirements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<div class="title">Hardware</div>
+<ul>
+<li>
+<p>One or more hosts to run Kudu masters. It is recommended to have either one master (no fault
+tolerance), or three masters (can tolerate one failure). The number of masters must be odd.</p>
+</li>
+<li>
+<p>One or more hosts to run Kudu tablet servers. When using replication, a minimum of three tablet
+servers is necessary.</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+A deployment with an even number of masters provides the same level of fault tolerance as a
+deployment with one fewer master. For example, both four-master and three-master deployments can
+only tolerate a single failure; two-master deployments cannot tolerate any failures.
+</td>
+</tr>
+</table>
+</div>
+<div class="dlist">
+<div class="title">Operating System Requirements</div>
+<dl>
+<dt class="hdlist1">Linux</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (trusty), Ubuntu 16.04 (xenial),
+Ubuntu 18.04 (bionic), Debian 8 (Jessie), or SLES 12.</p>
+</li>
+<li>
+<p>A kernel and filesystem that support <em>hole punching</em>. Hole punching is the use of the
+<code>fallocate(2)</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option set. See
+<a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
+information.</p>
+</li>
+<li>
+<p>ntp.</p>
+</li>
+<li>
+<p>xfs or ext4 formatted drives.</p>
+</li>
+<li>
+<p>Although not a strict requirement, it&#8217;s highly recommended to use <code>nscd</code>
+to cache both DNS name resolution and static name resolution. See
+<a href="troubleshooting.html#slow_dns_nscd">troubleshooting slow DNS lookups</a>
+for more information.</p>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">macOS</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>OS X 10.10 Yosemite, OS X 10.11 El Capitan, macOS Sierra, or macOS High Sierra.</p>
+</li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">Windows</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Microsoft Windows is unsupported.</p>
+</li>
+</ul>
+</div>
+</dd>
+</dl>
+</div>
+<div class="ulist">
+<div class="title">Storage</div>
+<ul>
+<li>
+<p>If solid state storage is available, storing Kudu WALs on such high-performance
+media may significantly improve latency when Kudu is configured for its highest
+durability levels.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Java</div>
+<ul>
+<li>
+<p>JDK 8 is required to build Kudu, but a JRE is not required at runtime
+except for tests.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="build_from_source"><a class="link" href="#build_from_source">Build From Source</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Below are the steps for each supported operating system to build Kudu from  source.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<div class="title">Known Build Issues</div>
+<div class="ulist">
+<ul>
+<li>
+<p>It is not possible to build Kudu on Microsoft Windows.</p>
+</li>
+<li>
+<p>A C+11 capable compiler (GCC 4.8) is required.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="rhel_from_source"><a class="link" href="#rhel_from_source">RHEL or CentOS</a></h3>
+<div class="paragraph">
+<p>RHEL or CentOS 6.6 or later is required to build Kudu from source. To build
+on a version older than 7.0, the Red Hat Developer Toolset must be installed
+(in order to have access to a C++11 capable compiler).</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
+  cyrus-sasl-plain flex gcc gcc-c++ gdb git java-1.8.0-openjdk-devel \
+  krb5-server krb5-workstation libtool make openssl-devel patch \
+  pkgconfig redhat-lsb-core rsync unzip vim-common which</pre>
+</div>
+</div>
+</li>
+<li>
+<p>If building on RHEL or CentOS older than 7.0, install the Red Hat Developer
+Toolset.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64-1-2.noarch.rpm
+$ DTLS_RPM_URL=https://www.softwarecollections.org/repos/rhscl/devtoolset-3/epel-6-x86_64/noarch/${DTLS_RPM}
+$ wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
+$ sudo yum install -y scl-utils ${DTLS_RPM}
+$ sudo yum install -y devtoolset-3-toolchain</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: If support for Kudu&#8217;s NVM (non-volatile memory) block cache is
+desired, install the memkind library.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo yum install memkind</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo yum install numactl-libs numactl-devel
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo yum remove memkind
+$ sudo make install
+$ sudo ldconfig</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install some additional packages, including ruby, if you plan to build documentation.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo yum install doxygen gem graphviz ruby-devel zlib-devel</pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If building on RHEL or CentOS older than 7.0, the gem package may need to be replaced with rubygems
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone https://github.com/apache/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script. Not using
+the devtoolset will result in <code>Host compiler appears to require libatomic, but cannot find it.</code></p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the <code>kudu</code> directory itself. Notice that the devtoolset must still be specified,
+else you&#8217;ll get <code>cc1plus: error: unrecognized command line option "-std=c++11"</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">mkdir -p build/release
+cd build/release
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release ../..
+make -j4</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you need to install only a subset of Kudu executables, you can set the following <code>cmake</code> flags
+to OFF in order to skip any of the executables.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>KUDU_CLIENT_INSTALL (set to OFF to skip installing <code>/usr/local/bin/kudu</code> executable)</p>
+</li>
+<li>
+<p>KUDU_TSERVER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-tserver</code> executable)</p>
+</li>
+<li>
+<p>KUDU_MASTER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-master</code> executable)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>E.g., use the following variation of <code>cmake</code> command if you need to install only Kudu client
+libraries and headers:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..</code></pre>
+</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Optional: install Kudu executables, libraries and headers.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Running <code>sudo make install</code> installs the following:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>kudu-tserver and kudu-master executables in <code>/usr/local/sbin</code></p>
+</li>
+<li>
+<p>Kudu command line tool in <code>/usr/local/bin</code></p>
+</li>
+<li>
+<p>Kudu client library in <code>/usr/local/lib64/</code></p>
+</li>
+<li>
+<p>Kudu client headers in <code>/usr/local/include/kudu</code></p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The default installation directory is <code>/usr/local</code>. You can customize it through the <code>DESTDIR</code>
+environment variable.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo make DESTDIR=/opt/kudu install</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ make docs</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 1. RHEL / CentOS Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on a
+newly-installed RHEL or CentOS host, and can be used as the basis for an
+automated deployment scenario. It skips the steps marked <strong>Optional</strong> above.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
+
+sudo yum -y install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
+  cyrus-sasl-plain flex gcc gcc-c++ gdb git java-1.8.0-openjdk-devel \
+  krb5-server krb5-workstation libtool make openssl-devel patch pkgconfig \
+  redhat-lsb-core rsync unzip vim-common which
+DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64-1-2.noarch.rpm
+DTLS_RPM_URL=https://www.softwarecollections.org/repos/rhscl/devtoolset-3/epel-6-x86_64/noarch/${DTLS_RPM}
+wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
+sudo yum install -y scl-utils ${DTLS_RPM}
+sudo yum install -y devtoolset-3-toolchain
+git clone https://github.com/apache/kudu
+cd kudu
+build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
+mkdir -p build/release
+cd build/release
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  ../..
+make -j4</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ubuntu_from_source"><a class="link" href="#ubuntu_from_source">Ubuntu or Debian</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install autoconf automake curl flex g++ gcc gdb git \
+  krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
+  libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp \
+  openjdk-8-jdk openssl patch pkg-config python rsync unzip vim-common</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: If support for Kudu&#8217;s NVM (non-volatile memory) block cache is
+desired, install the memkind library.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install libmemkind0</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install libnuma1 libnuma-dev
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo apt-get remove memkind
+$ sudo make install
+$ sudo ldconfig</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install some additional packages, including ruby, if you plan to build documentation.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install doxygen gem graphviz ruby-dev xsltproc zlib1g-dev</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone https://github.com/apache/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the <code>kudu</code> directory itself.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
+make -j4</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you need to install only a subset of Kudu executables, you can set the following <code>cmake</code> flags
+to OFF in order to skip any of the executables.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>KUDU_CLIENT_INSTALL (set to OFF to skip installing <code>/usr/local/bin/kudu</code> executable)</p>
+</li>
+<li>
+<p>KUDU_TSERVER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-tserver</code> executable)</p>
+</li>
+<li>
+<p>KUDU_MASTER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-master</code> executable)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>E.g., use the following variation of <code>cmake</code> command if you need to install only Kudu client
+libraries and headers:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..</code></pre>
+</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Optional: install Kudu executables, libraries and headers.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Running <code>sudo make install</code> installs the following:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>kudu-tserver and kudu-master executables in <code>/usr/local/sbin</code></p>
+</li>
+<li>
+<p>Kudu command line tool in <code>/usr/local/bin</code></p>
+</li>
+<li>
+<p>Kudu client library in <code>/usr/local/lib64/</code></p>
+</li>
+<li>
+<p>Kudu client headers in <code>/usr/local/include/kudu</code></p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The default installation directory is <code>/usr/local</code>. You can customize it through the <code>DESTDIR</code>
+environment variable.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo make DESTDIR=/opt/kudu install</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ make docs</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 2. Ubuntu / Debian Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on Ubuntu, and
+can be used as the basis for an automated deployment scenario. It skips
+the steps marked <strong>Optional</strong> above.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
+
+sudo apt-get -y install autoconf automake curl flex g++ gcc gdb git \
+  krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
+  libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp \
+  openjdk-8-jdk openssl patch pkg-config python rsync unzip vim-common
+git clone https://github.com/apache/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release ../..
+make -j4</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="sles_from_source"><a class="link" href="#sles_from_source">SUSE Linux Enterprise Server</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo zypper install autoconf automake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
+  krb5-devel krb5-server libtool lsb-release make ntp openssl-devel patch \
+  pkg-config python rsync unzip vim</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: If support for Kudu&#8217;s NVM (non-volatile memory) block cache is
+desired, install the memkind library.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo zypper install memkind</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the memkind package provided with the Linux distribution is too old (1.8.0 or
+newer is required), build and install it from source.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo zypper install numactl-libs numactl-devel
+$ git clone https://github.com/memkind/memkind.git
+$ cd memkind
+$ ./build.sh --prefix=/usr
+$ sudo zypper remove memkind
+$ sudo make install
+$ sudo ldconfig</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone https://github.com/apache/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu, using the utilities installed in the previous step. Choose a build
+directory for the intermediate output, which can be anywhere in your filesystem
+except for the <code>kudu</code> directory itself.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release ../..
+make -j4</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you need to install only a subset of Kudu executables, you can set the following <code>cmake</code> flags
+to OFF in order to skip any of the executables.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>KUDU_CLIENT_INSTALL (set to OFF to skip installing <code>/usr/local/bin/kudu</code> executable)</p>
+</li>
+<li>
+<p>KUDU_TSERVER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-tserver</code> executable)</p>
+</li>
+<li>
+<p>KUDU_MASTER_INSTALL (set to OFF to skip installing <code>/usr/local/sbin/kudu-master</code> executable)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>E.g., use the following variation of <code>cmake</code> command if you need to install only Kudu client
+libraries and headers:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..</code></pre>
+</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Optional: install Kudu executables, libraries and headers.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>Running <code>sudo make install</code> installs the following:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>kudu-tserver and kudu-master executables in <code>/usr/local/sbin</code></p>
+</li>
+<li>
+<p>Kudu command line tool in <code>/usr/local/bin</code></p>
+</li>
+<li>
+<p>Kudu client library in <code>/usr/local/lib64/</code></p>
+</li>
+<li>
+<p>Kudu client headers in <code>/usr/local/include/kudu</code></p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The default installation directory is <code>/usr/local</code>. You can customize it through the <code>DESTDIR</code>
+environment variable.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo make DESTDIR=/opt/kudu install</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 3. SLES Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on SLES, and
+can be used as the basis for an automated deployment scenario. It skips
+the steps marked <strong>Optional</strong> above.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
+
+sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
+  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
+  krb5-devel libtool lsb-release make ntp openssl-devel patch \
+  pkg-config python rsync unzip vim
+git clone https://github.com/apache/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  ../..
+make -j4</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="osx_from_source"><a class="link" href="#osx_from_source">macOS</a></h3>
+<div class="paragraph">
+<p>The <a href="https://developer.apple.com/xcode/">Xcode</a> package is necessary for
+compiling Kudu. Some of the instructions below use <a href="http://brew.sh/">Homebrew</a>
+to install dependencies, but manual dependency installation is possible.</p>
+</div>
+<div class="paragraph">
+<p>After installing Xcode, don&#8217;t forget to accept the license and install command-line
+tools, if it&#8217;s not done yet:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo xcodebuild -license
+$ sudo xcode-select --install</pre>
+</div>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<div class="title">macOS Known Issues</div>
+<div class="paragraph">
+<p>Kudu support for macOS is experimental, and should only be used for development.
+See <a href="https://issues.apache.org/jira/browse/KUDU-1219">macOS Limitations &amp; Known Issues</a>
+for more information.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install some additional packages, including ruby, if you plan to build documentation.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ brew install doxygen graphviz ruby
+$ brew install gnu-sed --with-default-names #The macOS default sed handles the -i parameter differently</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone https://github.com/apache/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If different versions of the dependencies are installed and used when calling
+<code>thirdparty/build-if-necessary.sh</code>, you may get stuck with output similar to the
+following:</p>
+<div class="listingblock">
+<div class="content">
+<pre>./configure: line 16299: error near unexpected token `newline'
+./configure: line 16299: `  PKG_CHECK_MODULES('</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The thirdparty builds may be cached and may reflect the incorrect versions of the
+dependencies. Ensure that you have the correct dependencies listed in Step 1, clean
+the workspace, and then try to re-build.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clean -fdx
+$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Some combinations of Homebrew installations and system upgrades can result with a
+different kind of error:</p>
+<div class="listingblock">
+<div class="content">
+<pre>libtool: Version mismatch error.  This is libtool 2.4.6, but the
+libtool: definition of this LT_INIT comes from libtool 2.4.2.
+libtool: You should recreate aclocal.m4 with macros from libtool 2.4.6
+libtool: and run autoconf again.</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>As described in this <a href="https://github.com/Homebrew/legacy-homebrew/issues/43874">thread</a>,
+a possible fix is to uninstall and reinstall libtool:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ brew uninstall libtool &amp;&amp; brew install libtool</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Build Kudu. Choose a build directory for the intermediate output, which can be
+anywhere in your filesystem except for the <code>kudu</code> directory itself.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
+  ../..
+make -j4</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 4. macOS Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on macOS, and can
+be used as the basis for an automated deployment scenario. It assumes Xcode and Homebrew
+are installed.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>#!/bin/bash
+
+brew tap homebrew/dupes
+brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
+git clone https://github.com/apache/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+mkdir -p build/release
+cd build/release
+../../thirdparty/installed/common/bin/cmake \
+  -DCMAKE_BUILD_TYPE=release \
+  -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl \
+  ../..
+make -j4</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="build_cpp_client"><a class="link" href="#build_cpp_client">Installing the C++ Client Libraries</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>See the Kudu client install section at the bottom of <a href="#build_from_source">Build From Source</a> above.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Only build against the client libraries and headers (<code>kudu_client.so</code> and <code>client.h</code>).
+Other libraries and headers are internal to Kudu and have no stability guarantees.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="build_java_client"><a class="link" href="#build_java_client">Build the Java Client</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<div class="title">Requirements</div>
+<ul>
+<li>
+<p>JDK 8</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>To build the Java client, clone the Kudu Git repository, change to the <code>java</code>
+directory, and issue the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ./gradlew assemble</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For more information on building the Java parts of the Kudu project, as well
+as Eclipse integration, see <code>java/README.md</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="upgrade"><a class="link" href="#upgrade">Upgrade from a Previous Version of Kudu</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Before upgrading, you should read the <a href="release_notes.html">Release Notes</a> for
+the version of Kudu that you are about to install. Pay close attention to the
+incompatibilities, upgrade, and downgrade notes that are documented there.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The following upgrade process is only relevant when you have binaries available.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Prepare the software.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Place the new <code>kudu-tserver</code>, <code>kudu-master</code>, and <code>kudu</code> binaries into the appropriate
+Kudu binary directory.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Upgrade the tablet servers.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the <code>follower_unavailable_considered_failed_sec</code> configuration to a high value
+(conservatively, twice the expected restart time) to prevent tablet replicas hosted
+on restarting tablet servers from being evicted and re-replicated.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ./kudu tserver set_flag &lt;tserver&gt; follower_unavailable_considered_failed_sec 7200</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Restart one tablet server.</p>
+</li>
+<li>
+<p>Wait for all tablet replicas on the tablet server to finish bootstrapping by viewing
+<code>/tablets</code> page in the tablet server web UI.</p>
+</li>
+<li>
+<p>Restarting the tablet server will have reset the <code>follower_unavailable_considered_failed_sec</code>
+configuration. Raise it again as needed.</p>
+</li>
+<li>
+<p>Repeat the previous 3 steps for the remaining tablet servers.</p>
+</li>
+<li>
+<p>Restore the original gflag value of every tablet server (the default is 5 minutes)</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ./kudu tserver set_flag &lt;tserver&gt; follower_unavailable_considered_failed_sec 300</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>An example for a cluster with three tablet servers A, B, C:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash"># Step 1: Set the unavailable time for every tablet server to a large value
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 7200
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 7200
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 7200
+
+# Step 2: Restart the tablet server and reset the gflag one by one
+&lt;restart A and wait until A is online&gt;
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 7200
+&lt;restart B and wait until B is online&gt;
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 7200
+&lt;restart C and wait until C is online&gt;
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 7200
+
+# Step 3: Restore the default gflag value (5 minutes) for every tablet server
+$ ./kudu tserver set_flag A follower_unavailable_considered_failed_sec 300
+$ ./kudu tserver set_flag B follower_unavailable_considered_failed_sec 300
+$ ./kudu tserver set_flag C follower_unavailable_considered_failed_sec 300</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Upgrade the master servers.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Restart the master server one by one.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="next_steps"><a class="link" href="#next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+<li>
+<p><a href="administration.html">Kudu Administration</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+<span class="active-toc">Installation Guide</span>
+            <ul class="sectlevel1">
+<li><a href="#prerequisites_and_requirements">Prerequisites and Requirements</a></li>
+<li><a href="#build_from_source">Build From Source</a>
+<ul class="sectlevel2">
+<li><a href="#rhel_from_source">RHEL or CentOS</a></li>
+<li><a href="#ubuntu_from_source">Ubuntu or Debian</a></li>
+<li><a href="#sles_from_source">SUSE Linux Enterprise Server</a></li>
+<li><a href="#osx_from_source">macOS</a></li>
+</ul>
+</li>
+<li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
+<li><a href="#build_java_client">Build the Java Client</a></li>
+<li><a href="#upgrade">Upgrade from a Previous Version of Kudu</a></li>
+<li><a href="#next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,6 @@
+<map id="kudu::client::KuduWriteOperation" name="kudu::client::KuduWriteOperation">
+<area shape="rect" id="node2" href="$classkudu_1_1client_1_1KuduDelete.html" title="A single row delete to be sent to the cluster. " alt="" coords="270,5,435,32"/>
+<area shape="rect" id="node3" href="$classkudu_1_1client_1_1KuduInsert.html" title="A single row insert to be sent to the cluster. " alt="" coords="273,56,433,83"/>
+<area shape="rect" id="node4" href="$classkudu_1_1client_1_1KuduUpdate.html" title="A single row update to be sent to the cluster. " alt="" coords="268,107,437,133"/>
+<area shape="rect" id="node5" href="$classkudu_1_1client_1_1KuduUpsert.html" title="A single row upsert to be sent to the cluster. " alt="" coords="269,157,436,184"/>
+</map>

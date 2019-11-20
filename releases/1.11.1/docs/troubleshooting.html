@@ -1,0 +1,1161 @@
+---
+title: Apache Kudu Troubleshooting
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-11-19 20:16:56 PST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Troubleshooting</h1>
+      <div class="sect1">
+<h2 id="_startup_errors"><a class="link" href="#_startup_errors">Startup Errors</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="req_hole_punching"><a class="link" href="#req_hole_punching">Errors During Hole Punching Test</a></h3>
+<div class="paragraph">
+<p>Kudu requires hole punching capabilities in order to be efficient. Hole punching support
+depends upon your operation system kernel version and local filesystem implementation.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
+Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.</p>
+</li>
+<li>
+<p>Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.</p>
+</li>
+<li>
+<p>Newer versions of the ext4 and xfs filesystems support hole punching. Older versions
+that do not support hole punching will cause Kudu to emit an error message such as the
+following and to fail to start:</p>
+<div class="listingblock">
+<div class="content">
+<pre>Error during hole punch test. The log block manager requires a
+filesystem with hole punching support such as ext4 or xfs. On el6,
+kernel version 2.6.32-358 or newer is required. To run without hole
+punching (at the cost of some efficiency and scalability), reconfigure
+Kudu to use the file block manager. Refer to the Kudu documentation for
+more details. WARNING: the file block manager is not suitable for
+production use and should be used only for small-scale evaluation and
+development on systems where hole-punching is not available. It's
+impossible to switch between block managers after data is written to the
+server. Raw error message follows</pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+ext4 mountpoints may actually be backed by ext2 or ext3 formatted devices, which do not
+support hole punching. The hole punching test will fail when run on such filesystems. There
+are several different ways to determine whether an ext4 mountpoint is backed by an ext2,
+ext3, or ext4 formatted device; see <a href="https://unix.stackexchange.com/q/60723">this Stack
+Exchange post</a> for details.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p><a href="administration.html#change_dir_config">Changing Directory Configurations</a> documentation.</p>
+</div>
+<div class="paragraph">
+<p>Without hole punching support, the log block manager is unsafe to use. It won&#8217;t
+ever delete blocks, and will consume ever more space on disk.</p>
+</div>
+<div class="paragraph">
+<p>If you can&#8217;t use hole punching in your environment, you can still
+try Kudu. Enable the file block manager instead of the log block manager by
+adding the <code>--block_manager=file</code> flag to the commands you use to start the master
+and tablet servers. The file block manager does not scale as well as the log block
+manager.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>The file block manager is known to scale and perform poorly, and should
+only be used for small-scale evaluation and development, and only on systems
+where hole punching is unavailable.</p>
+</div>
+<div class="paragraph">
+<p>The file block manager uses one file per block. As multiple blocks are written
+for each rowset, the number of blocks can be very high, especially for actively
+written tablets. This can cause performance issues compared to the log block
+manager even with a small amount of data and it&#8217;s <strong>impossible to switch between
+block managers</strong> without wiping and reinitializing the tablet servers.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="disk_issues"><a class="link" href="#disk_issues">Already present: FS layout already exists</a></h3>
+<div class="paragraph">
+<p>When Kudu starts, it checks each configured data directory, expecting either for all to be
+initialized or for all to be empty. If a server fails to start with a log message like</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>then this precondition has failed. This could be because Kudu was configured with non-empty data
+directories on first startup, or because a previously-running, healthy Kudu process was restarted
+and at least one data directory was deleted or is somehow corrupted, perhaps because of a disk
+error. If in the latter situation, consult the
+<a href="administration.html#change_dir_config">Changing Directory Configurations</a> documentation.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ntp"><a class="link" href="#ntp">NTP Clock Synchronization</a></h3>
+<div class="paragraph">
+<p>For the master and tablet server daemons, the server&#8217;s clock must be synchronized using NTP.
+In addition, the <strong>maximum clock error</strong> (not to be mistaken with the estimated error)
+be below a configurable threshold. The default value is 10 seconds, but it can be set with the flag
+<code>--max_clock_sync_error_usec</code>.</p>
+</div>
+<div class="paragraph">
+<p>If NTP is not installed, or if the clock is reported as unsynchronized, Kudu will not
+start, and will emit a message such as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>F0924 20:24:36.336809 14550 hybrid_clock.cc:191 Couldn't get the current time: Clock unsynchronized. Status: Service unavailable: Error reading clock. Clock considered unsynchronized.</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If NTP is installed and synchronized, but the maximum clock error is too high,
+the user will see a message such as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Sep 17, 8:13:09.873 PM FATAL hybrid_clock.cc:196 Couldn't get the current time: Clock synchronized, but error: 11130000, is past the maximum allowable error: 10000000</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>or</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).</pre>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_installing_ntp"><a class="link" href="#_installing_ntp">Installing NTP</a></h4>
+<div class="paragraph">
+<p>To install NTP, use the appropriate command for your operating system:</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Debian/Ubuntu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo apt-get install ntp</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RHEL/CentOS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo yum install ntp</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>If NTP is installed but not running, start it using one of these commands:</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Debian/Ubuntu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo service ntp restart</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RHEL/CentOS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo /etc/init.d/ntpd restart</code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_monitoring_ntp_status"><a class="link" href="#_monitoring_ntp_status">Monitoring NTP Status</a></h4>
+<div class="paragraph">
+<p>When NTP is installed, you can monitor the synchronization status by running
+<code>ntptime</code>. For example, a healthy system may report:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ntp_gettime() returns code 0 (OK)
+  time de24c0cf.8d5da274  Tue, Feb  6 2018 16:03:27.552, (.552210980),
+  maximum error 224455 us, estimated error 383 us, TAI offset 0
+ntp_adjtime() returns code 0 (OK)
+  modes 0x0 (),
+  offset 1279.543 us, frequency 2.500 ppm, interval 1 s,
+  maximum error 224455 us, estimated error 383 us,
+  status 0x2001 (PLL,NANO),
+  time constant 10, precision 0.001 us, tolerance 500 ppm,</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In particular, note the following most important pieces of output:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>maximum error 22455 us</code>: this value is well under the 10-second maximum error required
+by Kudu.</p>
+</li>
+<li>
+<p><code>status 0x2001 (PLL,NANO)</code>: this indicates a healthy synchronization status.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>In contrast, a system without NTP properly configured and running will output
+something like the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ntp_gettime() returns code 5 (ERROR)
+  time de24c240.0c006000  Tue, Feb  6 2018 16:09:36.046, (.046881),
+  maximum error 16000000 us, estimated error 16000000 us, TAI offset 0
+ntp_adjtime() returns code 5 (ERROR)
+  modes 0x0 (),
+  offset 0.000 us, frequency 2.500 ppm, interval 1 s,
+  maximum error 16000000 us, estimated error 16000000 us,
+  status 0x40 (UNSYNC),
+  time constant 10, precision 1.000 us, tolerance 500 ppm,</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Note the <code>UNSYNC</code> status and the 16-second maximum error.</p>
+</div>
+<div class="paragraph">
+<p>If more detailed information is needed, the <code>ntpq</code> or <code>ntpdc</code> tools
+can be used to dump further information about which network time servers
+are currently acting as sources:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ ntpq -nc lpeers
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+-108.59.2.24     130.133.1.10     2 u   13   64    1   71.743    0.373   0.016
++192.96.202.120  129.6.15.28      2 u   12   64    1   72.583   -0.426   0.028
+-69.10.161.7     204.26.59.157    3 u   11   64    1   15.741    2.641   0.021
+-173.255.206.154 45.56.123.24     3 u   10   64    1   43.502    0.199   0.029
+-69.195.159.158  128.138.140.44   2 u    9   64    1   53.885   -0.016   0.013
+*216.218.254.202 .CDMA.           1 u    6   64    1    1.475   -0.400   0.012
++129.250.35.250  249.224.99.213   2 u    7   64    1    1.342   -0.640   0.018
+ 45.76.244.193   216.239.35.4     2 u    6   64    1   17.380   -0.754   0.051
+ 69.89.207.199   212.215.1.157    2 u    5   64    1   57.796   -3.411   0.059
+ 171.66.97.126   .GPSs.           1 u    4   64    1    1.024   -0.374   0.018
+ 66.228.42.59    211.172.242.174  3 u    3   64    1   72.409    0.895   0.964
+ 91.189.89.198   17.253.34.125    2 u    2   64    1  135.195   -0.329   0.171
+ 162.210.111.4   216.218.254.202  2 u    1   64    1   28.570    0.693   0.306
+ 199.102.46.80   .GPS.            1 u    2   64    1   55.652   -0.039   0.019
+ 91.189.89.199   17.253.34.125    2 u    1   64    1  135.265   -0.413   0.037
+$ ntpq -nc opeers
+     remote           local      st t when poll reach   delay   offset    disp
+==============================================================================
+-108.59.2.24     10.17.100.238    2 u   17   64    1   71.743    0.373 187.573
++192.96.202.120  10.17.100.238    2 u   16   64    1   72.583   -0.426 187.594
+-69.10.161.7     10.17.100.238    3 u   15   64    1   15.741    2.641 187.569
+-173.255.206.154 10.17.100.238    3 u   14   64    1   43.502    0.199 187.580
+-69.195.159.158  10.17.100.238    2 u   13   64    1   53.885   -0.016 187.561
+*216.218.254.202 10.17.100.238    1 u   10   64    1    1.475   -0.400 187.543
++129.250.35.250  10.17.100.238    2 u   11   64    1    1.342   -0.640 187.588
+ 45.76.244.193   10.17.100.238    2 u   10   64    1   17.380   -0.754 187.596
+ 69.89.207.199   10.17.100.238    2 u    9   64    1   57.796   -3.411 187.541
+ 171.66.97.126   10.17.100.238    1 u    8   64    1    1.024   -0.374 187.578
+ 66.228.42.59    10.17.100.238    3 u    7   64    1   72.409    0.895 187.589
+ 91.189.89.198   10.17.100.238    2 u    6   64    1  135.195   -0.329 187.584
+ 162.210.111.4   10.17.100.238    2 u    5   64    1   28.570    0.693 187.606
+ 199.102.46.80   10.17.100.238    1 u    4   64    1   55.652   -0.039 187.587
+ 91.189.89.199   10.17.100.238    2 u    3   64    1  135.265   -0.413 187.621</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Both <code>lpeers</code> and <code>opeers</code> may be helpful as <code>lpeers</code> lists refid and
+jitter, while <code>opeers</code> lists clock dispersion.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<div class="title">Using <code>chrony</code> for time synchronization</div>
+<p>Some operating systems offer <code>chrony</code> as an alternative to <code>ntpd</code> for network time
+synchronization. Kudu has been tested most thoroughly using <code>ntpd</code> and use of
+<code>chrony</code> is considered experimental.</p>
+</div>
+<div class="paragraph">
+<p>In order to use <code>chrony</code> for synchronization, <code>chrony.conf</code> must be configured
+with the <code>rtcsync</code> option.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_ntp_configuration_best_practices"><a class="link" href="#_ntp_configuration_best_practices">NTP Configuration Best Practices</a></h4>
+<div class="paragraph">
+<p>In order to provide stable time synchronization with low maximum error, follow
+these best NTP configuration best practices.</p>
+</div>
+<div class="paragraph">
+<p><strong>Always configure at least four time sources for NTP.</strong> In addition to providing
+redundancy in case one or more time sources becomes unavailable, The NTP protocol is
+designed to increase its accuracy with a diversity of sources. Even if your organization
+provides one or more local time servers, configuring additional remote servers is highly
+recommended for a robust setup.</p>
+</div>
+<div class="paragraph">
+<p><strong>Pick servers in your server&#8217;s local geography.</strong> For example, if your servers are located
+in Europe, pick servers from the European NTP pool. If your servers are running in a public
+cloud environment, consult the cloud provider&#8217;s documentation for a recommended NTP setup.
+Many cloud providers offer highly accurate clock synchronization as a service.</p>
+</div>
+<div class="paragraph">
+<p><strong>Use the <code>iburst</code> option for faster synchronization at startup</strong>. The <code>iburst</code> option
+instructs <code>ntpd</code> to send an initial "burst" of time queries at startup. This typically
+results in a faster time synchronization when a machine restarts.</p>
+</div>
+<div class="paragraph">
+<p>An example NTP server list may appear as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre># Use my organization's internal NTP servers.
+server ntp1.myorg.internal iburst
+server ntp2.myorg.internal iburst
+# Provide several public pool servers for
+# redundancy and robustness.
+server 0.pool.ntp.org iburst
+server 1.pool.ntp.org iburst
+server 2.pool.ntp.org iburst
+server 3.pool.ntp.org iburst</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+After configuring NTP, use the <code>ntpq</code> tool described above to verify that <code>ntpd</code> was
+able to connect to a variety of peers. If no public peers appear, it is possiblbe that
+the NTP protocol is being blocked by a firewall or other network connectivity issue.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_troubleshooting_ntp_stability_problems"><a class="link" href="#_troubleshooting_ntp_stability_problems">Troubleshooting NTP Stability Problems</a></h4>
+<div class="paragraph">
+<p>As of Kudu 1.6.0, Kudu daemons are able to continue to operate during a brief loss of
+NTP synchronization. If NTP synchronization is lost for several hours, however, daemons
+may crash. If a daemon crashes due to NTP synchronization issues, consult the <code>ERROR</code> log
+for a dump of related information which may help to diagnose the issue.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Kudu 1.5.0 and earlier versions were less resilient to brief NTP outages. In
+addition, they contained a <a href="https://issues.apache.org/jira/browse/KUDU-2209">bug</a>
+which could cause Kudu to incorrectly measure the maximum error, resulting in
+crashes. If you experience crashes related to clock synchronization on these
+earlier versions of Kudu and it appears that the system&#8217;s NTP configuration is correct,
+consider upgrading to Kudu 1.6.0 or later.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+NTP requires a network connection and may take a few minutes to synchronize the clock
+at startup. In some cases a spotty network connection may make NTP report the clock as unsynchronized.
+A common, though temporary, workaround for this is to restart NTP with one of the commands above.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="disk_space_usage"><a class="link" href="#disk_space_usage">Disk Space Usage</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>When using the log block manager (the default on Linux), Kudu uses
+<a href="https://en.wikipedia.org/wiki/Sparse_file">sparse files</a> to store data. A
+sparse file has a different apparent size than the actual amount of disk space
+it uses. This means that some tools may inaccurately report the disk space
+used by Kudu. For example, the size listed by <code>ls -l</code> does not accurately
+reflect the disk space used by Kudu data files:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ls -lh /data/kudu/tserver/data
+total 117M
+-rw------- 1 kudu kudu 160M Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.metadata
+-rw------- 1 kudu kudu 160M Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.metadata
+-rw------- 1 kudu kudu  687 Mar 26 19:26 block_manager_instance</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notice that the total size reported is 117MiB, while the first file&#8217;s size is
+listed as 160MiB. Adding the <code>-s</code> option to <code>ls</code> will cause <code>ls</code> to output the
+file&#8217;s disk space usage.</p>
+</div>
+<div class="paragraph">
+<p>The <code>du</code> and <code>df</code> utilities report the actual disk space usage by default.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ du -h /data/kudu/tserver/data
+118M   /data/kudu/tserver/data</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The apparent size can be shown with the <code>--apparent-size</code> flag to <code>du</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ du -h --apparent-size /data/kudu/tserver/data
+1.7G  /data/kudu/tserver/data</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="crash_reporting"><a class="link" href="#crash_reporting">Reporting Kudu Crashes</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu uses the
+<a href="https://chromium.googlesource.com/breakpad/breakpad/">Google Breakpad</a>
+library to generate a minidump whenever Kudu experiences a crash. These
+minidumps are typically only a few MB in size and are generated even if core
+dump generation is disabled. At this time, generating minidumps is only
+possible in Kudu on Linux builds.</p>
+</div>
+<div class="paragraph">
+<p>A minidump file contains important debugging information about the process that
+crashed, including shared libraries loaded and their versions, a list of
+threads running at the time of the crash, the state of the processor registers
+and a copy of the stack memory for each thread, and CPU and operating system
+version information.</p>
+</div>
+<div class="paragraph">
+<p>It is also possible to force Kudu to create a minidump without killing the
+process by sending a <code>USR1</code> signal to the <code>kudu-tserver</code> or <code>kudu-master</code>
+process. For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo pkill -USR1 kudu-tserver</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>By default, Kudu stores its minidumps in a subdirectory of its configured glog
+directory called <code>minidumps</code>. This location can be customized by setting the
+<code>--minidump_path</code> flag. Kudu will retain only a certain number of minidumps
+before deleting the oldest ones, in an effort to avoid filling up the disk with
+minidump files. The maximum number of minidumps that will be retained can be
+controlled by setting the <code>--max_minidumps</code> gflag.</p>
+</div>
+<div class="paragraph">
+<p>Minidumps contain information specific to the binary that created them and so
+are not usable without access to the exact binary that crashed, or a very
+similar binary. For more information on processing and using minidump files,
+see scripts/dump_breakpad_symbols.py.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+A minidump can be emailed to a Kudu developer or attached to a JIRA in
+order to help a Kudu developer debug a crash. In order for it to be useful, the
+developer will need to know the exact version of Kudu and the operating system
+where the crash was observed. Note that while a minidump does not contain a
+heap memory dump, it does contain stack memory and therefore it is possible for
+application data to appear in a minidump. If confidential or personal
+information is stored on the cluster, do not share minidump files.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_performance_troubleshooting"><a class="link" href="#_performance_troubleshooting">Performance Troubleshooting</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="kudu_tracing"><a class="link" href="#kudu_tracing">Kudu Tracing</a></h3>
+<div class="paragraph">
+<p>The <code>kudu-master</code> and <code>kudu-tserver</code> daemons include built-in tracing support
+based on the open source
+<a href="https://www.chromium.org/developers/how-tos/trace-event-profiling-tool">Chromium Tracing</a>
+framework. You can use tracing to help diagnose latency issues or other problems
+on Kudu servers.</p>
+</div>
+<div class="sect3">
+<h4 id="_accessing_the_tracing_interface"><a class="link" href="#_accessing_the_tracing_interface">Accessing the tracing interface</a></h4>
+<div class="paragraph">
+<p>The tracing interface is accessed via a web browser as part of the
+embedded web server in each of the Kudu daemons.</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. Tracing Interface URLs</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Daemon</th>
+<th class="tableblock halign-left valign-top">URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://tablet-server-1.example.com:8050/tracing.html" class="bare">http://tablet-server-1.example.com:8050/tracing.html</a></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Master</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://master-1.example.com:8051/tracing.html" class="bare">http://master-1.example.com:8051/tracing.html</a></p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The tracing interface is known to work in recent versions of Google Chrome.
+Other browsers may not work as expected.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_collecting_a_trace"><a class="link" href="#_collecting_a_trace">Collecting a trace</a></h4>
+<div class="paragraph">
+<p>After navigating to the tracing interface, click the <strong>Record</strong> button on the top left corner
+of the screen. When beginning to diagnose a problem, start by selecting all categories.
+Click <strong>Record</strong> to begin recording a trace.</p>
+</div>
+<div class="paragraph">
+<p>During the trace collection, events are collected into an in-memory ring buffer.
+This ring buffer is fixed in size, so it will eventually fill up to 100%. However, new events
+are still being collected while older events are being removed. While recording the trace,
+trigger the behavior or workload you are interested in exploring.</p>
+</div>
+<div class="paragraph">
+<p>After collecting for several seconds, click <strong>Stop</strong>. The collected trace will be
+downloaded and displayed. Use the <strong>?</strong> key to display help text about using the tracing
+interface to explore the trace.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_saving_a_trace"><a class="link" href="#_saving_a_trace">Saving a trace</a></h4>
+<div class="paragraph">
+<p>You can save collected traces as JSON files for later analysis by clicking <strong>Save</strong>
+after collecting the trace. To load and analyze a saved JSON file, click <strong>Load</strong>
+and choose the file.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_rpc_timeout_traces"><a class="link" href="#_rpc_timeout_traces">RPC Timeout Traces</a></h3>
+<div class="paragraph">
+<p>If client applications are experiencing RPC timeouts, the Kudu tablet server
+<code>WARNING</code> level logs should contain a log entry which includes an RPC-level trace. For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>W0922 00:56:52.313848 10858 inbound_call.cc:193] Call kudu.consensus.ConsensusService.UpdateConsensus
+from 192.168.1.102:43499 (request call id 3555909) took 1464ms (client timeout 1000).
+W0922 00:56:52.314888 10858 inbound_call.cc:197] Trace:
+0922 00:56:50.849505 (+     0us) service_pool.cc:97] Inserting onto call queue
+0922 00:56:50.849527 (+    22us) service_pool.cc:158] Handling call
+0922 00:56:50.849574 (+    47us) raft_consensus.cc:1008] Updating replica for 2 ops
+0922 00:56:50.849628 (+    54us) raft_consensus.cc:1050] Early marking committed up to term: 8 index: 880241
+0922 00:56:50.849968 (+   340us) raft_consensus.cc:1056] Triggering prepare for 2 ops
+0922 00:56:50.850119 (+   151us) log.cc:420] Serialized 1555 byte log entry
+0922 00:56:50.850213 (+    94us) raft_consensus.cc:1131] Marking committed up to term: 8 index: 880241
+0922 00:56:50.850218 (+     5us) raft_consensus.cc:1148] Updating last received op as term: 8 index: 880243
+0922 00:56:50.850219 (+     1us) raft_consensus.cc:1195] Filling consensus response to leader.
+0922 00:56:50.850221 (+     2us) raft_consensus.cc:1169] Waiting on the replicates to finish logging
+0922 00:56:52.313763 (+1463542us) raft_consensus.cc:1182] finished
+0922 00:56:52.313764 (+     1us) raft_consensus.cc:1190] UpdateReplicas() finished
+0922 00:56:52.313788 (+    24us) inbound_call.cc:114] Queueing success response</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>These traces can give an indication of which part of the request was slow. Please
+include them in bug reports related to RPC latency outliers.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_kernel_stack_watchdog_traces"><a class="link" href="#_kernel_stack_watchdog_traces">Kernel Stack Watchdog Traces</a></h3>
+<div class="paragraph">
+<p>Each Kudu server process has a background thread called the Stack Watchdog, which
+monitors the other threads in the server in case they have blocked for
+longer-than-expected periods of time. These traces can indicate operating system issues
+or bottlenecked storage.</p>
+</div>
+<div class="paragraph">
+<p>When the watchdog thread identifies a case of thread blockage, it logs an entry
+in the <code>WARNING</code> log like the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>W0921 23:51:54.306350 10912 kernel_stack_watchdog.cc:111] Thread 10937 stuck at /data/kudu/consensus/log.cc:505 for 537ms:
+Kernel stack:
+[&lt;ffffffffa00b209d&gt;] do_get_write_access+0x29d/0x520 [jbd2]
+[&lt;ffffffffa00b2471&gt;] jbd2_journal_get_write_access+0x31/0x50 [jbd2]
+[&lt;ffffffffa00fe6d8&gt;] __ext4_journal_get_write_access+0x38/0x80 [ext4]
+[&lt;ffffffffa00d9b23&gt;] ext4_reserve_inode_write+0x73/0xa0 [ext4]
+[&lt;ffffffffa00d9b9c&gt;] ext4_mark_inode_dirty+0x4c/0x1d0 [ext4]
+[&lt;ffffffffa00d9e90&gt;] ext4_dirty_inode+0x40/0x60 [ext4]
+[&lt;ffffffff811ac48b&gt;] __mark_inode_dirty+0x3b/0x160
+[&lt;ffffffff8119c742&gt;] file_update_time+0xf2/0x170
+[&lt;ffffffff8111c1e0&gt;] __generic_file_aio_write+0x230/0x490
+[&lt;ffffffff8111c4c8&gt;] generic_file_aio_write+0x88/0x100
+[&lt;ffffffffa00d3fb1&gt;] ext4_file_write+0x61/0x1e0 [ext4]
+[&lt;ffffffff81180f5b&gt;] do_sync_readv_writev+0xfb/0x140
+[&lt;ffffffff81181ee6&gt;] do_readv_writev+0xd6/0x1f0
+[&lt;ffffffff81182046&gt;] vfs_writev+0x46/0x60
+[&lt;ffffffff81182102&gt;] sys_pwritev+0xa2/0xc0
+[&lt;ffffffff8100b072&gt;] system_call_fastpath+0x16/0x1b
+[&lt;ffffffffffffffff&gt;] 0xffffffffffffffff
+
+User stack:
+    @       0x3a1ace10c4  (unknown)
+    @          0x1262103  (unknown)
+    @          0x12622d4  (unknown)
+    @          0x12603df  (unknown)
+    @           0x8e7bfb  (unknown)
+    @           0x8f478b  (unknown)
+    @           0x8f55db  (unknown)
+    @          0x12a7b6f  (unknown)
+    @       0x3a1b007851  (unknown)
+    @       0x3a1ace894d  (unknown)
+    @              (nil)  (unknown)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
+below Kudu, such as disk controllers or filesystems.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="memory_limits"><a class="link" href="#memory_limits">Memory Limits</a></h3>
+<div class="paragraph">
+<p>Kudu has a hard and soft memory limit. The hard memory limit is the maximum amount a Kudu process
+is allowed to use, and is controlled by the <code>--memory_limit_hard_bytes</code> flag. The soft memory limit
+is a percentage of the hard memory limit, controlled by the flag <code>memory_limit_soft_percentage</code> and
+with a default value of 80%, that determines the amount of memory a process may use before it will
+start rejecting some write operations.</p>
+</div>
+<div class="paragraph">
+<p>If the logs or RPC traces contain messages like</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Service unavailable: Soft memory limit exceeded (at 96.35% of capacity)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>then Kudu is rejecting writes due to memory backpressure. This may result in write timeouts. There
+are several ways to relieve the memory pressure on Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If the host has more memory available for Kudu, increase <code>--memory_limit_hard_bytes</code>.</p>
+</li>
+<li>
+<p>Increase the rate at which Kudu can flush writes from memory to disk by increasing the number of
+disks or increasing the number of maintenance manager threads <code>--maintenance_manager_num_threads</code>.
+Generally, the recommended ratio of maintenance manager threads to data directories is 1:3.</p>
+</li>
+<li>
+<p>Reduce the volume of writes flowing to Kudu on the application side.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Finally, on versions of Kudu prior to 1.8, check the value of
+<code>--block_cache_capacity_mb</code>. This setting determines the maximum size of Kudu&#8217;s
+block cache. While a higher value can help with read and write performance,
+do not raise <code>--block_cache_capacity_mb</code> above the memory pressure threshold,
+which is <code>--memory_pressure_percentage</code> (default 60%) of
+<code>--memory_limit_hard_bytes</code>, as this will cause Kudu to flush aggressively even
+if write throughput is low. Keeping <code>--block_cache_capacity_mb</code> below 50% of the
+memory pressure threshold is recommended. With the defaults, this means
+<code>--block_cache_capacity_mb</code> should not exceed 30% of
+<code>--memory_limit_hard_bytes</code>. On Kudu 1.8 and higher, servers will refuse to
+start if the block cache capacity exceeds the memory pressure threshold.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="block_cache_size"><a class="link" href="#block_cache_size">Block Cache Size</a></h3>
+<div class="paragraph">
+<p>Kudu uses an LRU cache for recently read data. On workloads that scan a subset
+of the data repeatedly, raising the size of this cache can offer significant
+performance benefits. To increase the amount of memory dedicated to the block
+cache, increase the value of the flag <code>--block_cache_capacity_mb</code>. The default
+is 512MiB.</p>
+</div>
+<div class="paragraph">
+<p>Kudu provides a set of useful metrics for evaluating the performance of the
+block cache, which can be found on the <code>/metrics</code> endpoint of the web UI. An
+example set:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-json" data-lang="json">{
+  "name": "block_cache_inserts",
+  "value": 64
+},
+{
+  "name": "block_cache_lookups",
+  "value": 512
+},
+{
+  "name": "block_cache_evictions",
+  "value": 0
+},
+{
+  "name": "block_cache_misses",
+  "value": 96
+},
+{
+  "name": "block_cache_misses_caching",
+  "value": 64
+},
+{
+  "name": "block_cache_hits",
+  "value": 0
+},
+{
+  "name": "block_cache_hits_caching",
+  "value": 352
+},
+{
+  "name": "block_cache_usage",
+  "value": 6976
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To judge the efficiency of the block cache on a tablet server, first wait until
+the server has been running and serving normal requests for some time, so the
+cache is not cold. Unless the server stores very little data or is idle,
+<code>block_cache_usage</code> should be equal or nearly equal to <code>block_cache_capacity_mb</code>.
+Once the cache has reached steady state, compare <code>block_cache_lookups</code> to
+<code>block_cache_misses_caching</code>. The latter metric counts the number of blocks that
+Kudu expected to read from cache but which weren&#8217;t found in the cache. If a
+significant amount of lookups result in misses on expected cache hits, and the
+<code>block_cache_evictions</code> metric is significant compared to <code>block_cache_inserts</code>,
+then raising the size of the block cache may provide a performance boost.
+However, the utility of the block cache is highly dependent on workload, so it&#8217;s
+necessary to test the benefits of a larger block cache.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Do not raise the block cache size <code>--block_cache_capacity_mb</code> higher
+than the memory pressure threshold (defaults to 60% of <code>--memory_limit_hard_bytes</code>).
+As this would cause poor flushing behavior, Kudu servers version 1.8 and higher
+will refuse to start when misconfigured in this way.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="heap_sampling"><a class="link" href="#heap_sampling">Heap Sampling</a></h3>
+<div class="paragraph">
+<p>For advanced debugging of memory usage, released builds of Kudu enable Heap Sampling by default.
+This allows Kudu developers to associate memory usage with the specific lines of code and data
+structures responsible. When reporting a bug related to memory usage or an apparent memory leak,
+heap profiling can give quantitative data to pinpoint the issue.</p>
+</div>
+<div class="paragraph">
+<p>If heap sampling is enabled, the current sampled heap occupancy can be retrieved over HTTP
+by visiting <code><a href="http://tablet-server.example.com:8050/pprof/heap" class="bare">http://tablet-server.example.com:8050/pprof/heap</a></code> or
+<code><a href="http://master.example.com:8051/pprof/heap" class="bare">http://master.example.com:8051/pprof/heap</a></code>. The output is a machine-readable dump of the
+stack traces with their associated heap usage.</p>
+</div>
+<div class="paragraph">
+<p>Rather than visiting the heap profile page directly in a web browser, it is typically
+more useful to use the <code>pprof</code> tool that is distributed as part of the <code>gperftools</code>
+open source project. For example, a developer with a local build tree can use the
+following command to collect the sampled heap usage and output an SVG diagram:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>thirdparty/installed/uninstrumented/bin/pprof -svg  'http://localhost:8051/pprof/heap' &gt; /tmp/heap.svg</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The resulting SVG may be visualized in a web browser or sent to the Kudu community to help
+troubleshoot memory occupancy issues.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Heap samples contain only summary information about allocations and do not contain any
+<em>data</em> from the heap. It is safe to share heap samples in public without fear of exposing
+confidential or sensitive data.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="slow_dns_nscd"><a class="link" href="#slow_dns_nscd">Slow DNS Lookups and <code>nscd</code></a></h3>
+<div class="paragraph">
+<p>For better scalability on nodes hosting many replicas, we recommend that you use
+<code>nscd</code> (name service cache daemon) to cache both DNS name resolution and static name resolution (via <code>/etc/hosts</code>).</p>
+</div>
+<div class="paragraph">
+<p>When DNS lookups are slow, you will see a log message similar to the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>W0926 11:19:01.339553 27231 net_util.cc:193] Time spent resolve address for kudu-tserver.example.com: real 4.647s    user 0.000s     sys 0.000s</pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>nscd</code> (name service cache daemon) can alleviate slow name resolution by providing
+a cache for the most common name service requests, such as for passwords, groups,
+and hosts.</p>
+</div>
+<div class="paragraph">
+<p>Refer to your operating system documentation for how to install and enable <code>nscd</code>.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_issues_using_kudu"><a class="link" href="#_issues_using_kudu">Issues using Kudu</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="hive_handler"><a class="link" href="#hive_handler">ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler</a></h3>
+<div class="paragraph">
+<p>Users will encounter this exception when trying to use a Kudu table via Hive. This
+is not a case of a missing jar, but simply that Impala stores Kudu metadata in
+Hive in a format that&#8217;s unreadable to other tools, including Hive itself and Spark.
+There is no workaround for Hive users. Spark users need to create temporary tables.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="too_many_threads"><a class="link" href="#too_many_threads">Runtime error: Could not create thread: Resource temporarily unavailable (error 11)</a></h3>
+<div class="paragraph">
+<p>Users will encounter this error when Kudu is unable to create more threads,
+usually on versions of Kudu older than 1.7. It happens on tablet servers, and
+is a sign that the tablet server hosts too many tablet replicas. To fix the
+issue, users can raise the <code>nproc</code> ulimit as detailed in the documentation for
+their operating system or distribution. However, the better solution is to
+reduce the number of replicas on the tablet server. This may involve rethinking
+the table&#8217;s partitioning schema. For the recommended limits on number of
+replicas per tablet server, see the known issues and scaling limitations
+documentation for the appropriate Kudu release. The
+<a href="http://kudu.apache.org/releases/">releases page</a> has links to documentation
+for previous versions of Kudu; for the latest release, see the
+<a href="known_issues.html">known issues page</a>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tombstoned_or_stopped_tablets"><a class="link" href="#tombstoned_or_stopped_tablets">Tombstoned or STOPPED tablet replicas</a></h3>
+<div class="paragraph">
+<p>Users may notice some replicas on a tablet server are in a STOPPED state, and
+remain on the server indefinitely. These replicas are tombstones. A tombstone
+indicates that the tablet server once held a bona fide replica of its tablet.
+For example, if a tablet server goes down and its replicas are re-replicated
+elsewhere, if the tablet server rejoins the cluster its replicas will become
+tombstones. A tombstone will remain until the table it belongs to is deleted, or
+a new replica of the same tablet is placed on the tablet server. A count of
+tombstoned replicas and details of each one are available on the /tablets page
+of the tablet server web UI.</p>
+</div>
+<div class="paragraph">
+<p>The Raft consensus algorithm that Kudu uses for replication requires tombstones
+for correctness in certain rare situations. They consume minimal resources and
+hold no data. They must not be deleted.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="cfile_corruption"><a class="link" href="#cfile_corruption">Corruption: checksum error on CFile block</a></h3>
+<div class="paragraph">
+<p>In versions prior to Kudu 1.8.0, if the data on disk becomes corrupt, users
+will encounter warnings containing "Corruption: checksum error on CFile block"
+in the tablet server logs and client side errors when trying to scan tablets
+with corrupt CFile blocks. Fixing this corruption is a manual process.</p>
+</div>
+<div class="paragraph">
+<p>To fix the issue, users can first identify all the affected tablets by
+running a checksum scan on the affected tables or tablets using the
+<code><a href="command_line_tools_reference.html#cluster-ksck">ksck</a></code> tool.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>sudo -u kudu kudu cluster ksck &lt;master_addresses&gt; -checksum_scan -tables=&lt;tables&gt;
+sudo -u kudu kudu cluster ksck &lt;master_addresses&gt; -checksum_scan -tablets=&lt;tablets&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If there is at least one replica for each tablet that does not return a corruption
+error, you can repair the bad copies by deleting them and forcing them to be
+re-replicated from the leader using the
+<code><a href="command_line_tools_reference.html#remote_replica-delete">remote_replica delete</a> tool</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>sudo -u kudu kudu remote_replica delete &lt;tserver_address&gt; &lt;tablet_id&gt; "Cfile Corruption"</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If all of the replica are corrupt, then some data loss has occurred.
+Until <a href="https://issues.apache.org/jira/browse/KUDU-2526">KUDU-2526</a> is
+completed this can happen if the corrupt replica became the leader and the
+existing follower replicas are replaced.</p>
+</div>
+<div class="paragraph">
+<p>If data has been lost, you can repair the table by replacing the corrupt tablet
+with an empty one using the
+<code><a href="command_line_tools_reference.html#tablet-unsafe_replace_tablet">unsafe_replace_tablet</a></code> tool.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>sudo -u kudu kudu tablet unsafe_replace_tablet &lt;master_addresses&gt; &lt;tablet_id&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>From versions 1.8.0 onwards, Kudu will mark the affected replicas as failed,
+leading to their automatic re-replication elsewhere.</p>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Troubleshooting Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_startup_errors">Startup Errors</a>
+<ul class="sectlevel2">
+<li><a href="#req_hole_punching">Errors During Hole Punching Test</a></li>
+<li><a href="#disk_issues">Already present: FS layout already exists</a></li>
+<li><a href="#ntp">NTP Clock Synchronization</a></li>
+</ul>
+</li>
+<li><a href="#disk_space_usage">Disk Space Usage</a></li>
+<li><a href="#crash_reporting">Reporting Kudu Crashes</a></li>
+<li><a href="#_performance_troubleshooting">Performance Troubleshooting</a>
+<ul class="sectlevel2">
+<li><a href="#kudu_tracing">Kudu Tracing</a></li>
+<li><a href="#_rpc_timeout_traces">RPC Timeout Traces</a></li>
+<li><a href="#_kernel_stack_watchdog_traces">Kernel Stack Watchdog Traces</a></li>
+<li><a href="#memory_limits">Memory Limits</a></li>
+<li><a href="#block_cache_size">Block Cache Size</a></li>
+<li><a href="#heap_sampling">Heap Sampling</a></li>
+<li><a href="#slow_dns_nscd">Slow DNS Lookups and <code>nscd</code></a></li>
+</ul>
+</li>
+<li><a href="#_issues_using_kudu">Issues using Kudu</a>
+<ul class="sectlevel2">
+<li><a href="#hive_handler">ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler</a></li>
+<li><a href="#too_many_threads">Runtime error: Could not create thread: Resource temporarily unavailable (error 11)</a></li>
+<li><a href="#tombstoned_or_stopped_tablets">Tombstoned or STOPPED tablet replicas</a></li>
+<li><a href="#cfile_corruption">Corruption: checksum error on CFile block</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
