@@ -126,12 +126,12 @@ Status LogIndex::IndexChunk::Open() {
 
   int err;
   RETRY_ON_EINTR(err, ftruncate(fd_, kChunkFileSize));
-  RETURN_NOT_OK(CheckError(fd_, "truncate"));
+  RETURN_NOT_OK(CheckError(err, "truncate"));
 
   mapping_ = static_cast<uint8_t*>(mmap(nullptr, kChunkFileSize, PROT_READ | PROT_WRITE,
                                         MAP_SHARED, fd_, 0));
   if (mapping_ == nullptr) {
-    int err = errno;
+    err = errno;
     return Status::IOError("Unable to mmap()", ErrnoToString(err), err);
   }
 

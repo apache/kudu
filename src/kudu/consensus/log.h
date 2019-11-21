@@ -127,7 +127,15 @@ class SegmentAllocator {
   Status Sync();
 
   // Syncs the current segment and writes out the footer.
-  Status CloseCurrentSegment();
+  enum CloseMode {
+    // Just close the current semgent.
+    CLOSE,
+
+    // Close the current segment and call reader_replace_last_segment_ to
+    // replace the last log segment in the log reader.
+    CLOSE_AND_REPLACE_LAST_SEGMENT,
+  };
+  Status CloseCurrentSegment(CloseMode mode);
 
   // Update the footer based on the written 'batch', e.g. to track the
   // last-written OpId.
@@ -137,9 +145,11 @@ class SegmentAllocator {
   // current active segment.
   void StopAllocationThread();
 
-  uint64_t active_segment_sequence_number = 0;
-
   std::string LogPrefix() const { return ctx_->LogPrefix(); }
+
+  uint64_t active_segment_sequence_number() const {
+    return active_segment_sequence_number_;
+  }
 
  private:
   friend class Log;
@@ -229,6 +239,9 @@ class SegmentAllocator {
   // Single-threaded threadpool on which to allocate segments.
   std::unique_ptr<ThreadPool> allocation_pool_;
   Promise<Status> allocation_status_;
+
+  // The sequence number of the 'active' log segment.
+  uint64_t active_segment_sequence_number_ = 0;
 };
 
 // Log interface, inspired by Raft's (logcabin) Log. Provides durability to

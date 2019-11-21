@@ -463,7 +463,7 @@ Status SegmentAllocator::Init(uint64_t sequence_number) {
                             "could not instantiate compression codec");
     }
   }
-  active_segment_sequence_number = sequence_number;
+  active_segment_sequence_number_ = sequence_number;
   RETURN_NOT_OK(ThreadPoolBuilder("log-alloc")
       .set_max_threads(1)
       .Build(&allocation_pool_));
@@ -531,7 +531,7 @@ Status SegmentAllocator::Sync() {
   return Status::OK();
 }
 
-Status SegmentAllocator::CloseCurrentSegment() {
+Status SegmentAllocator::CloseCurrentSegment(CloseMode mode) {
   if (hooks_) {
     RETURN_NOT_OK_PREPEND(hooks_->PreClose(), "PreClose hook failed");
   }
@@ -548,6 +548,13 @@ Status SegmentAllocator::CloseCurrentSegment() {
   if (hooks_) {
     RETURN_NOT_OK_PREPEND(hooks_->PostClose(), "PostClose hook failed");
   }
+
+  if (mode == CLOSE_AND_REPLACE_LAST_SEGMENT) {
+    scoped_refptr<ReadableLogSegment> last_segment;
+    RETURN_NOT_OK(GetClosedSegment(&last_segment));
+    return reader_replace_last_segment_(std::move(last_segment));
+  }
+
   return Status::OK();
 }
 
@@ -658,10 +665,10 @@ Status SegmentAllocator::AllocateNewSegment() {
 
 Status SegmentAllocator::SwitchToAllocatedSegment() {
   // Increment "next" log segment seqno.
-  active_segment_sequence_number++;
+  active_segment_sequence_number_++;
   const auto& tablet_id = ctx_->tablet_id;
-  string new_segment_path = ctx_->fs_manager->GetWalSegmentFileName(tablet_id,
-                                                                    active_segment_sequence_number);
+  string new_segment_path = ctx_->fs_manager->GetWalSegmentFileName(
+      tablet_id, active_segment_sequence_number_);
   Env* env = ctx_->fs_manager->env();
   RETURN_NOT_OK_PREPEND(env->RenameFile(next_segment_path_, new_segment_path), "rename");
   if (opts_->force_fsync_all) {
@@ -674,7 +681,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment() {
 
   // Set up the new header and footer.
   LogSegmentHeaderPB header;
-  header.set_sequence_number(active_segment_sequence_number);
+  header.set_sequence_number(active_segment_sequence_number_);
   header.set_tablet_id(tablet_id);
   if (codec_) {
     header.set_compression_codec(codec_->type());
@@ -723,10 +730,7 @@ Status SegmentAllocator::RollOver() {
   // If this isn't the first active segment, close the segment and make it
   // available to the log reader.
   if (active_segment_) {
-    RETURN_NOT_OK(CloseCurrentSegment());
-    scoped_refptr<ReadableLogSegment> readable_segment;
-    RETURN_NOT_OK(GetClosedSegment(&readable_segment));
-    RETURN_NOT_OK(reader_replace_last_segment_(readable_segment));
+    RETURN_NOT_OK(CloseCurrentSegment(CLOSE_AND_REPLACE_LAST_SEGMENT));
   }
   RETURN_NOT_OK(SwitchToAllocatedSegment());
 
@@ -790,14 +794,14 @@ Status Log::Init() {
   // The case where we are continuing an existing log.
   // We must pick up where the previous WAL left off in terms of
   // sequence numbers.
-  uint64_t active_segment_sequence_number = 0;
+  uint64_t active_seg_seq_num = 0;
   if (reader_->num_segments() != 0) {
     VLOG_WITH_PREFIX(1) << "Using existing " << reader_->num_segments()
                         << " segments from path: " << ctx_.fs_manager->GetWalsRootDir();
 
     vector<scoped_refptr<ReadableLogSegment> > segments;
     RETURN_NOT_OK(reader_->GetSegmentsSnapshot(&segments));
-    active_segment_sequence_number = segments.back()->header().sequence_number();
+    active_seg_seq_num = segments.back()->header().sequence_number();
   }
 
   if (options_.force_fsync_all) {
@@ -808,7 +812,7 @@ Status Log::Init() {
   }
 
   // We always create a new segment when the log starts.
-  RETURN_NOT_OK(segment_allocator_.Init(active_segment_sequence_number));
+  RETURN_NOT_OK(segment_allocator_.Init(active_seg_seq_num));
   RETURN_NOT_OK(append_thread_->Init());
   log_state_ = kLogWriting;
   return Status::OK();
@@ -918,7 +922,7 @@ Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
     LogIndexEntry index_entry;
 
     index_entry.op_id = entry_pb.replicate().id();
-    index_entry.segment_sequence_number = segment_allocator_.active_segment_sequence_number;
+    index_entry.segment_sequence_number = segment_allocator_.active_segment_sequence_number();
     index_entry.offset_in_segment = start_offset;
     RETURN_NOT_OK(log_index_->AddEntry(index_entry));
   }
@@ -1111,28 +1115,28 @@ Status Log::Close() {
   segment_allocator_.StopAllocationThread();
   append_thread_->Shutdown();
 
-  std::lock_guard<percpu_rwlock> l(state_lock_);
-  switch (log_state_) {
-    case kLogWriting: {
-      RETURN_NOT_OK(segment_allocator_.CloseCurrentSegment());
-      scoped_refptr<ReadableLogSegment> last_segment;
-      RETURN_NOT_OK(segment_allocator_.GetClosedSegment(&last_segment));
-      RETURN_NOT_OK(reader_->ReplaceLastSegment(last_segment));
-      log_state_ = kLogClosed;
-      VLOG_WITH_PREFIX(1) << "Log closed";
-
-      // Release FDs held by these objects.
-      log_index_.reset();
-      reader_.reset();
-      return Status::OK();
+  {
+    std::lock_guard<percpu_rwlock> l(state_lock_);
+    switch (log_state_) {
+      case kLogWriting:
+        log_state_ = kLogClosed;
+        break;
+      case kLogClosed:
+        VLOG_WITH_PREFIX(1) << "Log already closed";
+        return Status::OK();
+      default:
+        return Status::IllegalState(Substitute(
+            "Log not open. State: $0", log_state_));
     }
-    case kLogClosed:
-      VLOG_WITH_PREFIX(1) << "Log already closed";
-      return Status::OK();
-
-    default:
-      return Status::IllegalState(Substitute("Log not open. State: $0", log_state_));
   }
+
+  RETURN_NOT_OK(segment_allocator_.CloseCurrentSegment(SegmentAllocator::CLOSE));
+  VLOG_WITH_PREFIX(1) << "Log closed";
+
+  // Release FDs held by these objects.
+  log_index_.reset();
+  reader_.reset();
+  return Status::OK();
 }
 
 bool Log::HasOnDiskData(FsManager* fs_manager, const string& tablet_id) {
