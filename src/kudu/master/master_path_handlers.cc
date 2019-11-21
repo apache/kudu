@@ -61,6 +61,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
 #include "kudu/server/webui_util.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/jsonwriter.h"
@@ -481,6 +482,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     Capitalize(&state);
     tablet_detail_json["state"] = state;
     tablet_detail_json["state_msg"] = l.data().pb.state_msg();
+    tablet_detail_json["on_disk_size"] =
+        HumanReadableNumBytes::ToString(tablet->GetStats().on_disk_size());
     EasyJson peers_json = tablet_detail_json.Set("peers", EasyJson::kArray);
     for (const auto& e : sorted_replicas) {
       EasyJson peer_json = peers_json.PushBack(EasyJson::kObject);

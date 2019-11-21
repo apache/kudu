@@ -96,12 +96,13 @@ under the License.
   <h4>Detail</h4>
   <a href='#detail' data-toggle='collapse'>(toggle)</a>
   <div id='detail' class='collapse'>
-    <table class='table table-striped table-hover'>
+    <table data-toggle="table" class='table table-striped table-hover'>
       <thead><tr>
         <th>Tablet ID</th>
         {{{detail_partition_schema_header}}}
         <th>State</th>
         <th>Message</th>
+        <th data-sorter="bytesSorter" data-sortable="true">On-Disk Size (leaders only)</th>
         <th>Peers</th>
       </tr></thead>
       <tbody>
@@ -111,6 +112,7 @@ under the License.
           {{{partition_cols}}}
           <td>{{state}}</td>
           <td>{{state_msg}}</td>
+          <td>{{on_disk_size}}</td>
           <td>
             <ul>
               {{#peers}}
