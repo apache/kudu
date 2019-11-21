@@ -27,6 +27,10 @@
   <version>1.0-SNAPSHOT</version>
   <name>Kudu collectl Example</name>
 
+  <properties>
+    <kudu-version>1.11.1</kudu-version>
+  </properties>
+
   <build>
     <plugins>
       <plugin>
@@ -65,7 +69,7 @@
     <dependency>
       <groupId>org.apache.kudu</groupId>
       <artifactId>kudu-client</artifactId>
-      <version>1.7.0</version>
+      <version>${kudu-version}</version>
     </dependency>
 
     <!-- For logging messages. -->
