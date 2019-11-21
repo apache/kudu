@@ -18,6 +18,7 @@ Kudu 1.11.0 are encouraged to upgrade to 1.11.1 as soon as possible.
 
 Apache Kudu 1.11.1 adds several new features and improvements since
 Apache Kudu 1.10.0, including the following:
+
 - Kudu now supports putting tablet servers into maintenance mode: while in this
   mode, the tablet server’s replicas will not be re-replicated if the server
   fails. Administrative CLI are added to orchestrate tablet server maintenance
