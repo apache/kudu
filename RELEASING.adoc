@@ -130,10 +130,10 @@ To edit or update this document, edit `RELEASING.adoc` in `master`.
   (if it's not there yet), making it available for the signature verification:
 +
 ----
-svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
-cd kudu-dist-release
-(gpg --list-sigs <your-email-address> && gpg --armor --export <your-email-address>) >> KEYS
-svn commit --username=<your_apache_username> -m "Adding my key to the KEYS file"
+  svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
+  cd kudu-dist-release
+  (gpg --list-sigs <your-email-address> && gpg --armor --export <your-email-address>) >> KEYS
+  svn commit --username=<your_apache_username> -m "Adding my key to the KEYS file"
 ----
 
 . When close to building a release candidate, try building a source tarball
@@ -332,20 +332,36 @@ Note: You can upload to the test PyPi by adding
 . Generate the version-specific documentation from that branch following these
   link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
 
-. Update the `index.md` file in the releases folder, add a new folder named
-  after the release version, copy the `apidocs`, `cpp-client-api`, and `docs`
-  folders there, copy an `index.md` file from the previous release and modify it
-  accordingly. Make sure the download page meets the current
-  link:https://www.apache.org/dev/release-download-pages.html[criteria]. Base
-  it off the latest release which has the highest chance to conform to the
-  requirements, but double-check the release pages document as the criteria
-  keep changing and the announcement will be rejected if our release page
-  doesn't meet the criteria.
+. Update the `index.md` file in the `releases` directory. Add a line about
+  the newly released version into the `Latest release` section, move line
+  about the previous one into the `Previous releases`. Overall, update
+  the `Previous releases` and `Archived releases` to reflect the new contents
+  of the
+  link:https://dist.apache.org/repos/dist/release/kudu/[release SVN repository].
+  See the last item of this section to get the idea on what the new contents
+  of the release SVN repository is going to be.
 
-. Replace the `apidocs`, `cpp-client-api`, and `docs` symlinks in the `gh-pages`
-  branch with links to the new documentation. Some of them may be actual
-  directories if they had to be changed since the latest release, in this case
-  remove the directory and link the new documentation instead.
+. A new sub-directory named after the release version should be added into the
+  `releases` directory: it should contain `apidocs`, `cpp-client-api`,
+  `docs` sub-dirs and `index.md` file. Add the newly added sub-directory into
+   the git staging:
++
+----
+  # Assuming current working directory is the root of the git workspace.
+  git add releases/1.x.y
+----
+
+. Take a quick look at the auto-generated `releases/1.x.y/index.md` file
+  to make sure the download links meet the current
+  link:https://www.apache.org/dev/release-download-pages.html[criteria]. The
+  criteria keep changing and the announcement will be rejected if our release
+  page doesn't meet the criteria.
+
+. Commit the changes:
++
+----
+  git commit -a -m "update website for 1.x.y release"
+----
 
 . Submit these changes to the `gh-pages` Gerrit branch and get them reviewed.
 
@@ -363,13 +379,6 @@ Note: You can upload to the test PyPi by adding
   your apache.org address to be used as `From` address when sending email
   messages.
 
-. About another 24 hours later, clean up the SVN. If releasing a new minor
-  version, delete the oldest minor version branch in the release repo (e.g. if
-  `1.7.1`, `1.8.0`, and `1.9.0` exist and you just released `1.10.0`, delete
-  `1.7.1`). If releasing a maintenance version, delete the previous maintenance
-  branch (e.g. if you released `1.2.1`, delete `1.2.0`). Also delete any
-  release candidates from the dev SVN.
-
 . Update the version number on the branch you released from back to a SNAPSHOT
   for the next patch release, such as `1.6.1-SNAPSHOT` after the `1.6.0` release.
 
@@ -378,3 +387,10 @@ Note: You can upload to the test PyPi by adding
   fresh artifacts of latest released version.  This should be done only after
   publishing the officially released artifacts, so they are available while
   building the examples.
+
+. About another 24 hours later, clean up the SVN. If releasing a new minor
+  version, delete the oldest minor version branch in the release repo (e.g. if
+  `1.7.1`, `1.8.0`, and `1.9.0` exist and you just released `1.10.0`, delete
+  `1.7.1`). If releasing a maintenance version, delete the previous maintenance
+  branch (e.g. if you released `1.2.1`, delete `1.2.0`). Also delete any
+  release candidates from the dev SVN.
