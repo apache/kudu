@@ -403,7 +403,7 @@ CREATE TABLE metrics (
     metric STRING NOT NULL,
     time INT64 NOT NULL,
     value DOUBLE NOT NULL,
-    PRIMARY KEY (host, metric, time),
+    PRIMARY KEY (host, metric, time)
 );
 ----
 
