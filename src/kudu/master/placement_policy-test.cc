@@ -843,6 +843,42 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
   }
 }
 
+// Odd RF case: edge cases with 2 locaitons.
+// Make sure replicas are placed into both locations, even if ideal density
+// distribution would have them in a single location.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasCluster_L2_OddRFEdgeCase) {
+  const vector<LocationInfo> cluster_info = {
+      { "A", { { "A_ts0", 10 }, { "A_ts1", 10 }, { "A_ts2", 10 }, } },
+      { "B", { { "B_ts0", 9 }, { "B_ts1", 9 }, { "B_ts2", 9 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  {
+    static constexpr auto num_replicas = 3;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, none, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(1, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(2, m.count("B_ts0") + m.count("B_ts1") + m.count("B_ts2"));
+  }
+
+  {
+    static constexpr auto num_replicas = 5;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, none, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(2, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(3, m.count("B_ts0") + m.count("B_ts1") + m.count("B_ts2"));
+  }
+}
+
 // Even RF case: place tablet replicas into a cluster with 3 locations.
 TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
   const vector<LocationInfo> cluster_info = {

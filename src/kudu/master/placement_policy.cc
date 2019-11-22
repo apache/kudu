@@ -334,11 +334,16 @@ Status PlacementPolicy::SelectLocation(
       // in case of 2 locations the best placement for 4 replicas would be
       // (2 + 2), while in case of 4 and more locations that's (1 + 1 + 1 + 1).
       // Similarly, in case of 2 locations and 6 replicas, the best placement
-      // is (3 + 3), while for 3 locations that's (2 + 2 + 2).
-      if ((num_locations == 2 && num_replicas % 2 == 0 &&
-           location_replicas_num + 1 > num_replicas / 2) ||
-          (num_locations > 2 &&
-           location_replicas_num + 1 >= (num_replicas + 1) / 2)) {
+      // is (3 + 3), while for 3 locations that's (2 + 2 + 2). In case of
+      // distributing 3 replicas among 2 locations, 1 + 2 is better than 3 + 0
+      // because if all servers in the first location become unavailable, in the
+      // former case the tablet is still available, while in the latter it's not.
+      // Also, 1 + 2 is better than 0 + 3 because in case of catastrophic
+      // non-recoverable failure of the second location, no replica survives and
+      // all data is lost in the latter case, while in the former case there will
+      // be 1 replica and it may be used for manual data recovery.
+      if ((num_locations == 2 && location_replicas_num + 1 > num_replicas / 2) ||
+          (num_locations > 2 && location_replicas_num + 1 >= (num_replicas + 1) / 2)) {
         // If possible, avoid placing the majority of the tablet's replicas
         // into a single location even if load-based criterion would favor that.
         // Prefer such a distribution of replicas that will keep the majority
