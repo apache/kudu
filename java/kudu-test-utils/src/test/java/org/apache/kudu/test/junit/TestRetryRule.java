@@ -14,12 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.junit;
+
+import static org.junit.Assert.fail;
 
 import org.junit.Rule;
 import org.junit.Test;
-
-import static org.junit.Assert.fail;
 
 public class TestRetryRule {
   private static final int MAX_FAILURES = 2;

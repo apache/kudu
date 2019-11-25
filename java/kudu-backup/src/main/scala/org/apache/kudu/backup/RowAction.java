@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.backup;
+
+import java.util.Map;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
-
-import java.util.Map;
 
 /**
  * A RowAction is used to represent the action associated with a backed up row.

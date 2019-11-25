@@ -14,19 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.junit;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
-import org.apache.kudu.test.CapturingToFileLogAppender;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.junit.rules.TestRule;
-import org.junit.runner.Description;
-import org.junit.runners.model.Statement;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
@@ -36,7 +28,17 @@ import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.junit.rules.TestRule;
+import org.junit.runner.Description;
+import org.junit.runners.model.Statement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.test.CapturingToFileLogAppender;
 
 /**
  * JUnit rule to retry failed tests.

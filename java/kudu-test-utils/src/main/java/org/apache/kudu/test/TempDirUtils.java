@@ -17,17 +17,17 @@
 
 package org.apache.kudu.test;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utilities for retrieving and creating temp directories.
@@ -89,7 +89,9 @@ public class TempDirUtils {
       @Override
       public void run() {
         File dir = absPath.toFile();
-        if (!dir.exists()) return;
+        if (!dir.exists()) {
+          return;
+        }
         try {
           FileUtils.deleteDirectory(dir);
         } catch (IOException exc) {

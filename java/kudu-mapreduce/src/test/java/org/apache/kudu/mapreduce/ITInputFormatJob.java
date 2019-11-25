@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
@@ -30,17 +31,17 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
-import org.apache.kudu.Schema;
-import org.apache.kudu.test.ClientTestUtil;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.Schema;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.RowResult;
+import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITInputFormatJob {
   private static final Logger LOG = LoggerFactory.getLogger(ITInputFormatJob.class);

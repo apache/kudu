@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.cluster;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -35,6 +36,10 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Common;
 import org.apache.kudu.client.HostAndPort;
@@ -43,8 +48,8 @@ import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.TempDirUtils;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
-import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
 import org.apache.kudu.tools.Tool.DaemonIdentifierPB;
 import org.apache.kudu.tools.Tool.DaemonInfoPB;
 import org.apache.kudu.tools.Tool.GetKDCEnvVarsRequestPB;
@@ -57,10 +62,6 @@ import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
 import org.apache.kudu.util.SecurityUtil;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Depends on precompiled

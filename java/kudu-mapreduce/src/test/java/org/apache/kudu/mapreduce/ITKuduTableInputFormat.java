@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
@@ -33,7 +34,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -44,6 +44,7 @@ import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITKuduTableInputFormat {
 
@@ -57,9 +58,9 @@ public class ITKuduTableInputFormat {
   public void test() throws Exception {
     harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
 
-    KuduTable table = harness.getClient().openTable(TABLE_NAME);
-    Schema schema = getBasicSchema();
-    Insert insert = table.newInsert();
+    final KuduTable table = harness.getClient().openTable(TABLE_NAME);
+    final Schema schema = getBasicSchema();
+    final Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addInt(0, 1);
     row.addInt(1, 2);
@@ -125,7 +126,6 @@ public class ITKuduTableInputFormat {
 
   private RecordReader<NullWritable, RowResult> createRecordReader(String columnProjection,
         List<KuduPredicate> predicates) throws IOException, InterruptedException {
-    KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
     conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, harness.getMasterAddressesAsString());
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, TABLE_NAME);
@@ -136,6 +136,7 @@ public class ITKuduTableInputFormat {
       String encodedPredicates = KuduTableMapReduceUtil.base64EncodePredicates(predicates);
       conf.set(KuduTableInputFormat.ENCODED_PREDICATES_KEY, encodedPredicates);
     }
+    KuduTableInputFormat input = new KuduTableInputFormat();
     input.setConf(conf);
     List<InputSplit> splits = input.getSplits(null);
 

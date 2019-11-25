@@ -14,12 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.junit;
+
+import static org.junit.Assert.assertTrue;
 
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-
-import static org.junit.Assert.assertTrue;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -37,7 +38,9 @@ public class AssertHelpers {
 
     do {
       success = expression.get();
-      if (success) break;
+      if (success) {
+        break;
+      }
       Thread.sleep(50); // Sleep for 50ms
     } while (System.nanoTime() < deadlineNanos);
 

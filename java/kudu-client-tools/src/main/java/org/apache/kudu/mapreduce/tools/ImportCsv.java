@@ -40,7 +40,7 @@ import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 @InterfaceStability.Unstable
 public class ImportCsv extends Configured implements Tool {
 
-  public static enum Counters { BAD_LINES }
+  public enum Counters { BAD_LINES }
 
   static final String NAME = "importcsv";
   static final String DEFAULT_SEPARATOR = "\t";

@@ -62,7 +62,9 @@ public class FakeDNS {
   @GuardedBy("this")
   private boolean installed = false;
 
-  private FakeDNS() {}
+  private FakeDNS() {
+  }
+
   public static FakeDNS getInstance() {
     return instance;
   }
@@ -79,7 +81,9 @@ public class FakeDNS {
    * Install the fake DNS resolver into the Java runtime.
    */
   public synchronized void install() {
-    if (installed) return;
+    if (installed) {
+      return;
+    }
     try {
       try {
         // Override the NameService in Java 9 or later.
@@ -135,7 +139,7 @@ public class FakeDNS {
 
     private InetAddress[] lookupAllHostAddr(String host) throws UnknownHostException {
       InetAddress inetAddress;
-      synchronized(FakeDNS.this) {
+      synchronized (FakeDNS.this) {
         inetAddress = forwardResolutions.get(host);
       }
       if (inetAddress != null) {

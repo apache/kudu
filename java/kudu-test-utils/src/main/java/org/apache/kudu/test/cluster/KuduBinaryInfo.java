@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.cluster;
 
 import org.apache.yetus.audience.InterfaceAudience;
@@ -40,11 +41,15 @@ public class KuduBinaryInfo {
   /**
    * Return the binary directory of an extracted artifact.
    */
-  public String getBinDir() { return binDir; }
+  public String getBinDir() {
+    return binDir;
+  }
 
   /**
    * Return the SASL module directory of an extracted artifact.
    * May be {@code null} if unknown.
    */
-  public String getSaslDir() { return saslDir; }
+  public String getSaslDir() {
+    return saslDir;
+  }
 }

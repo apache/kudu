@@ -30,8 +30,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.apache.kudu.client.KuduTable;
-import org.apache.kudu.test.KuduTestHarness;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -49,20 +47,22 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITImportParquetPreCheck {
 
   private static final String TABLE_NAME =
-    ITImportParquet.class.getName() + "-" + System.currentTimeMillis();
+      ITImportParquet.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
   private static Schema schema;
 
   static {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(4);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
         .key(true)
         .build());
@@ -91,7 +91,7 @@ public class ITImportParquetPreCheck {
   @Before
   public void setUp() throws Exception {
     harness.getClient().createTable(TABLE_NAME, schema,
-      new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
   @After
@@ -103,7 +103,7 @@ public class ITImportParquetPreCheck {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-      HADOOP_UTIL.setupAndGetTestDir(ITImportCsv.class.getName(), conf).getAbsolutePath();
+        HADOOP_UTIL.setupAndGetTestDir(ITImportCsv.class.getName(), conf).getAbsolutePath();
 
     // Create a 4 records parquet input file.
     Path data = new Path(testHome, "data.parquet");
@@ -116,35 +116,52 @@ public class ITImportParquetPreCheck {
     thrown.expectMessage("The column column1_i does not exist in Parquet schema");
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
-    Job job = ImportParquet.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
+    Job job =
+        ImportParquet.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     job.waitForCompletion(true);
 
     KuduTable openTable = harness.getClient().openTable(TABLE_NAME);
     assertEquals(0, countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
   }
 
+  @SuppressWarnings("deprecation")
   private void writeParquetFile(Path data,Configuration conf) throws IOException {
     MessageType schema = parseMessageType(
-      "message test { "
-        + "required int32 key; "
-        + "required int32 column1_i_s; "
-        + "required binary column2_d; "
-        + "required binary column3_s; "
-        + "required boolean column4_b; "
-        + "} ");
+        "message test { " +
+          "required int32 key; " +
+          "required int32 column1_i_s; " +
+          "required binary column2_d; " +
+          "required binary column3_s; " +
+          "required boolean column4_b; " +
+          "} ");
     GroupWriteSupport.setSchema(schema, conf);
     SimpleGroupFactory f = new SimpleGroupFactory(schema);
-    ParquetWriter<Group> writer = new ParquetWriter<Group>(data, new GroupWriteSupport(),
-      UNCOMPRESSED, 1024, 1024, 512, true, false, ParquetProperties.WriterVersion.PARQUET_1_0, conf);
+    ParquetWriter<Group> writer = new ParquetWriter<>(data, new GroupWriteSupport(),
+        UNCOMPRESSED, 1024, 1024, 512, true, false,
+        ParquetProperties.WriterVersion.PARQUET_1_0, conf);
 
-    writer.write(f.newGroup().append("key", 1).append("column1_i_s", 292).append("column2_d", "no type")
-      .append("column3_s", "some string").append("column4_b", true));
-    writer.write(f.newGroup().append("key", 2).append("column1_i_s", 23).append("column2_d", "no type")
-      .append("column3_s", "some more").append("column4_b", false));
-    writer.write(f.newGroup().append("key", 3).append("column1_i_s", 32).append("column2_d", "no type")
-      .append("column3_s", "some more and more").append("column4_b", true));
-    writer.write(f.newGroup().append("key", 4).append("column1_i_s", 22).append("column2_d", "no type")
-      .append("column3_s", "some more and alst").append("column4_b", false));
+    writer.write(f.newGroup().append("key", 1)
+        .append("column1_i_s", 292)
+        .append("column2_d", "no type")
+        .append("column3_s", "some string")
+        .append("column4_b", true));
+    writer.write(f.newGroup().append("key", 2)
+        .append("column1_i_s", 23)
+        .append("column2_d", "no type")
+        .append("column3_s", "some more")
+        .append("column4_b", false));
+    writer.write(f.newGroup()
+        .append("key", 3)
+        .append("column1_i_s", 32)
+        .append("column2_d", "no type")
+        .append("column3_s", "some more and more")
+        .append("column4_b", true));
+    writer.write(f.newGroup()
+        .append("key", 4)
+        .append("column1_i_s", 22)
+        .append("column2_d", "no type")
+        .append("column3_s", "some more and alst")
+        .append("column4_b", false));
     writer.close();
   }
 }

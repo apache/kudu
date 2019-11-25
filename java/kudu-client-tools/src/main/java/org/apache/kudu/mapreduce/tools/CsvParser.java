@@ -68,7 +68,7 @@ public class CsvParser {
    */
   public ParsedLine parse(byte[] lineBytes, int length) throws BadCsvLineException {
     // Enumerate separator offsets
-    List<Integer> tabOffsets = new ArrayList<Integer>(maxColumnCount);
+    List<Integer> tabOffsets = new ArrayList<>(maxColumnCount);
     for (int i = 0; i < length; i++) {
       if (lineBytes[i] == separatorByte) {
         tabOffsets.add(i);

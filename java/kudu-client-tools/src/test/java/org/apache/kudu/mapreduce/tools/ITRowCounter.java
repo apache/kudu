@@ -25,13 +25,13 @@ import static org.junit.Assert.assertTrue;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITRowCounter {
 
@@ -56,7 +56,8 @@ public class ITRowCounter {
     createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + harness.getMasterAddressesAsString(), TABLE_NAME};
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + harness.getMasterAddressesAsString(),
+        TABLE_NAME};
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = RowCounter.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Job did not end properly", job.waitForCompletion(true));

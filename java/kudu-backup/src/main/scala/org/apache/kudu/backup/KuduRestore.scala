@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.backup
 
 import org.apache.kudu.backup.Backup.TableMetadataPB

@@ -100,8 +100,8 @@ public class JarFinder {
     if (dirList == null) {
       throw new RuntimeException("Could not list directory: " + dir);
     }
-    for (String aDirList : dirList) {
-      File f = new File(dir, aDirList);
+    for (String childDir : dirList) {
+      File f = new File(dir, childDir);
       if (!f.isHidden()) {
         if (f.isDirectory()) {
           if (!start) {

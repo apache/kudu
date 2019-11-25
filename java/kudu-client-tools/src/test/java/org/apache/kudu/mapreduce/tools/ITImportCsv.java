@@ -17,9 +17,9 @@
 
 package org.apache.kudu.mapreduce.tools;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -32,7 +32,6 @@ import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -41,10 +40,11 @@ import org.junit.Test;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.CreateTableOptions;
+import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITImportCsv {
 
@@ -114,7 +114,7 @@ public class ITImportCsv {
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
     assertEquals(3, countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
     assertEquals("INT32 key=1, INT32 column1_i=3, DOUBLE column2_d=2.3, STRING column3_s=some " +
-      "string, BOOL column4_b=true", scanTableToStrings(openTable).get(0));
+        "string, BOOL column4_b=true", scanTableToStrings(openTable).get(0));
   }
 
   private void writeCsvFile(File data) throws IOException {

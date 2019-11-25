@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.backup
 
 import java.io.InputStreamReader
@@ -28,7 +29,6 @@ import org.apache.hadoop.fs.LocatedFileStatus
 import org.apache.hadoop.fs.Path
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.backup.BackupIO._
-import org.apache.kudu.client.KuduTable
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger

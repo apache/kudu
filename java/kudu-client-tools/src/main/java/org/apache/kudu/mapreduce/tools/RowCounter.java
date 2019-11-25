@@ -45,7 +45,7 @@ public class RowCounter extends Configured implements Tool {
   static final String COLUMN_PROJECTION_KEY = "rowcounter.column.projection";
 
   /** Counter enumeration to count the actual rows. */
-  public static enum Counters { ROWS }
+  public enum Counters { ROWS }
 
   /**
    * Simple row counter

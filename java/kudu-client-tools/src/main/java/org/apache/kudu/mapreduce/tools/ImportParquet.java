@@ -73,8 +73,7 @@ public class ImportParquet extends Configured implements Tool {
     final String tableName = args[0];
     Path inputDir = new Path(args[1]);
 
-    List<Footer> footers = new ArrayList<Footer>();
-    footers.addAll(ParquetFileReader.readFooters(conf, inputDir));
+    List<Footer> footers = new ArrayList<>(ParquetFileReader.readFooters(conf, inputDir));
 
     MessageType schema = footers.get(0).getParquetMetadata().getFileMetaData().getSchema();
     GroupWriteSupport.setSchema(schema, conf);
@@ -112,8 +111,7 @@ public class ImportParquet extends Configured implements Tool {
     while (fields.hasNext()) {
       ColumnDescriptor colDesc = fields.next();
       if (colDesc.getType().equals(PrimitiveTypeName.INT96)) {
-        throw new IllegalArgumentException("Column type not supported in Kudu: "
-            + colDesc);
+        throw new IllegalArgumentException("Column type not supported in Kudu: " + colDesc);
       }
     }
 

@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -36,7 +37,6 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -47,6 +47,7 @@ import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITOutputFormatJob {
 
@@ -114,6 +115,7 @@ public class ITOutputFormatJob {
       Mapper<LongWritable, Text, NullWritable, Operation> {
 
     private KuduTable table;
+
     @Override
     protected void map(LongWritable key, Text value, Context context) throws IOException,
         InterruptedException {

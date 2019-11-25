@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.junit;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -21,6 +22,24 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import javax.servlet.MultipartConfigElement;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.Part;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableList;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -31,25 +50,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.servlet.MultipartConfigElement;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.Part;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
 
 /** Unit test for ResultReporter. */
 public class TestResultReporter {
@@ -101,7 +101,7 @@ public class TestResultReporter {
   private static class MockFlakyTestServlet extends HttpServlet {
     private static final Logger LOG = LoggerFactory.getLogger(MockFlakyTestServlet.class);
     private static final long serialVersionUID = 1L;
-    private transient final List<TestRecord> records = new ArrayList<>();
+    private final transient List<TestRecord> records = new ArrayList<>();
 
     List<TestRecord> getRecords() {
       return records;
@@ -155,7 +155,7 @@ public class TestResultReporter {
 
   @Test
   public void testRoundTrip() throws IOException {
-    ResultReporter.Options options = new ResultReporter.Options();
+    final ResultReporter.Options options = new ResultReporter.Options();
     assertNotNull(server);
     assertTrue(server.isStarted());
     assertNotNull(server.getURI());

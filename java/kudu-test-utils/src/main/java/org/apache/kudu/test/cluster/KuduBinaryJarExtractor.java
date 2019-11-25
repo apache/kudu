@@ -17,13 +17,6 @@
 
 package org.apache.kudu.test.cluster;
 
-import com.google.common.base.Preconditions;
-import com.google.gradle.osdetector.OsDetector;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
@@ -45,6 +38,13 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+import com.google.common.base.Preconditions;
+import com.google.gradle.osdetector.OsDetector;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Class to find and extract Kudu binary jars from the classpath
  */
@@ -60,7 +60,9 @@ public class KuduBinaryJarExtractor {
   /** Return the thread context classloader or the parent classloader for this class. */
   private static ClassLoader getCurrentClassLoader() {
     ClassLoader loader = Thread.currentThread().getContextClassLoader();
-    if (loader != null) return loader;
+    if (loader != null) {
+      return loader;
+    }
     return KuduBinaryJarExtractor.class.getClassLoader();
   }
 

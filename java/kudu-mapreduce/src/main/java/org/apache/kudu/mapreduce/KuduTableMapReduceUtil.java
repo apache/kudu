@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import java.io.IOException;
@@ -61,7 +62,6 @@ import org.apache.kudu.client.Operation;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-@SuppressWarnings("deprecation")
 public class KuduTableMapReduceUtil {
   // Mostly lifted from HBase's TableMapReduceUtil
 
@@ -78,7 +78,8 @@ public class KuduTableMapReduceUtil {
   /**
    * Doesn't need instantiation
    */
-  private KuduTableMapReduceUtil() { }
+  private KuduTableMapReduceUtil() {
+  }
 
 
   /**

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
@@ -25,7 +26,6 @@ import static org.junit.Assert.assertNotNull;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -34,6 +34,7 @@ import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITKuduTableOutputFormat {
 
@@ -68,7 +69,8 @@ public class ITKuduTableOutputFormat {
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);
     rw.close(null);
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = harness.getAsyncClient().newScannerBuilder(table);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder =
+        harness.getAsyncClient().newScannerBuilder(table);
     assertEquals(1, countRowsInScan(builder.build()));
   }
 }

@@ -30,18 +30,18 @@ import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITExportCsv {
 
   private static final String TABLE_NAME =
-    ITExportCsv.class.getName() + "-" + System.currentTimeMillis();
+      ITExportCsv.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
@@ -57,7 +57,7 @@ public class ITExportCsv {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-      HADOOP_UTIL.setupAndGetTestDir(ITExportCsv.class.getName(), conf).getAbsolutePath();
+        HADOOP_UTIL.setupAndGetTestDir(ITExportCsv.class.getName(), conf).getAbsolutePath();
 
     // create a table with on empty tablet and 3 tablets of 3 rows each.
     createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);

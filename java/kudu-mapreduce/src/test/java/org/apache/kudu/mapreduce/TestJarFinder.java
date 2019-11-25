@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.mapreduce;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -80,8 +81,7 @@ public class TestJarFinder {
 
   @Test
   public void testExistingManifest() throws Exception {
-    File dir = new File(testDir,
-      TestJarFinder.class.getName() + "-testExistingManifest");
+    File dir = new File(testDir, TestJarFinder.class.getName() + "-testExistingManifest");
     File metaInfDir = new File(dir, "META-INF");
     Assert.assertTrue(metaInfDir.mkdirs());
     File manifestFile = new File(metaInfDir, "MANIFEST.MF");
@@ -98,16 +98,14 @@ public class TestJarFinder {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     JarOutputStream zos = new JarOutputStream(baos);
     JarFinder.jarDir(dir, "", zos);
-    JarInputStream jis =
-      new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
+    JarInputStream jis = new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
     Assert.assertNotNull(jis.getManifest());
     jis.close();
   }
 
   @Test
   public void testNoManifest() throws Exception {
-    File dir = new File(testDir,
-      TestJarFinder.class.getName() + "-testNoManifest");
+    File dir = new File(testDir, TestJarFinder.class.getName() + "-testNoManifest");
     Assert.assertTrue(dir.mkdirs());
     File propsFile = new File(dir, "props.properties");
     Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
@@ -116,8 +114,7 @@ public class TestJarFinder {
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
     JarOutputStream zos = new JarOutputStream(baos);
     JarFinder.jarDir(dir, "", zos);
-    JarInputStream jis =
-      new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
+    JarInputStream jis = new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
     Assert.assertNotNull(jis.getManifest());
     jis.close();
   }

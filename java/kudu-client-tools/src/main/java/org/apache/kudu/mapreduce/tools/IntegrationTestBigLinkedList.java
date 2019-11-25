@@ -406,7 +406,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private byte[][] current = null;
       private String id;
       private long rowId = 0;
-      private int i;
+      private int position;
       private KuduClient client;
       private KuduTable table;
       private KuduSession session;
@@ -447,11 +447,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       @Override
       protected void map(BytesWritable key, NullWritable value, Context output) throws IOException {
-        current[i] = new byte[key.getLength()];
-        System.arraycopy(key.getBytes(), 0, current[i], 0, key.getLength());
-        if (++i == current.length) {
+        current[position] = new byte[key.getLength()];
+        System.arraycopy(key.getBytes(), 0, current[position], 0, key.getLength());
+        if (++position == current.length) {
           persist(output, current, false);
-          i = 0;
+          position = 0;
 
           // Keep track of the first row so that we can point to it at the end.
           if (first == null) {
@@ -1327,9 +1327,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
   }
 
-  /**
-   * A stand alone program that deletes a single node.
-   * TODO
+  /*
+   * TODO: A stand alone program that deletes a single node.
    */
   /*private static class Delete extends Configured implements Tool {
     @Override
@@ -1525,24 +1524,30 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   public int run(String[] args) throws Exception {
     Tool tool;
     processOptions(args);
-    if (toRun.equals("Generator")) {
-      tool = new Generator();
-    } else if (toRun.equals("Verify")) {
-      tool = new Verify();
-    } else if (toRun.equals("Loop")) {
-      Loop loop = new Loop();
-      loop.it = this;
-      tool = loop;
-
-    } else if (toRun.equals("Print")) {
-      tool = new Print();
-    } else if (toRun.equals("Update")) {
-      tool = new Updater();
-    } else if (toRun.equals("Walker")) {
-      tool = new Walker();
-    } else {
-      usage();
-      throw new RuntimeException("Unknown arg");
+    switch (toRun) {
+      case "Generator":
+        tool = new Generator();
+        break;
+      case "Verify":
+        tool = new Verify();
+        break;
+      case "Loop":
+        Loop loop = new Loop();
+        loop.it = this;
+        tool = loop;
+        break;
+      case "Print":
+        tool = new Print();
+        break;
+      case "Update":
+        tool = new Updater();
+        break;
+      case "Walker":
+        tool = new Walker();
+        break;
+      default:
+        usage();
+        throw new RuntimeException("Unknown arg");
     }
 
     return ToolRunner.run(getConf(), tool, otherArgs);

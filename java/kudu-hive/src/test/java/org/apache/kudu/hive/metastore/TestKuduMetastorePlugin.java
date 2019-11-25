@@ -39,7 +39,6 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
-import org.apache.kudu.test.junit.RetryRule;
 import org.apache.thrift.TException;
 import org.junit.After;
 import org.junit.Before;
@@ -47,6 +46,8 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestKuduMetastorePlugin {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduMetastorePlugin.class);
@@ -288,8 +289,7 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains(
-            "Kudu table type may not be altered"));
+        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to a different type by setting the external property fails.
@@ -299,8 +299,7 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains(
-           "Kudu table type may not be altered"));
+        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to the same type by setting the table property works.
@@ -332,8 +331,7 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains(
-            "Kudu table type may not be altered"));
+        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to an external type with the master context succeeds.
@@ -352,8 +350,7 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), table);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains(
-            "Kudu table columns may not be altered through Hive"));
+        assertTrue(e.getMessage().contains("Kudu table columns may not be altered through Hive"));
       }
 
       // Check that adding a column succeeds with the master event property set.

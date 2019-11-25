@@ -128,7 +128,7 @@ public class BigLinkedListCommon {
         options.addSplitRow(splitRow);
       }
     } else {
-      options.setRangePartitionColumns(Collections.<String>emptyList());
+      options.setRangePartitionColumns(Collections.emptyList());
     }
 
     if (hashPartitions > 1) {
@@ -188,5 +188,6 @@ public class BigLinkedListCommon {
   }
 
   /** Uninstantiable helper class. */
-  private BigLinkedListCommon() {}
+  private BigLinkedListCommon() {
+  }
 }

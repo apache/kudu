@@ -14,15 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test;
+
+import java.util.Random;
 
 import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Random;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -42,7 +43,8 @@ public class RandomUtils {
     long seed = System.currentTimeMillis();
     if (System.getProperty(TEST_RANDOM_SEED_PROP) != null) {
       seed = Long.parseLong(System.getProperty(TEST_RANDOM_SEED_PROP));
-      LOG.info("System property {} is defined. Overriding random seed.", TEST_RANDOM_SEED_PROP, seed);
+      LOG.info("System property {} is defined. Overriding random seed: {}",
+          TEST_RANDOM_SEED_PROP, seed);
     }
     LOG.info("Using random seed: {}", seed);
     return new Random(seed);

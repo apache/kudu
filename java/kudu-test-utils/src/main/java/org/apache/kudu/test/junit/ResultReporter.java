@@ -14,12 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.junit;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,19 +29,17 @@ import java.util.List;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import org.apache.http.StatusLine;
-import org.apache.http.util.EntityUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 /** Class to report test results to the flaky test server. */
 @InterfaceAudience.Private
@@ -62,22 +62,27 @@ public class ResultReporter {
       this.reportResults = reportResults;
       return this;
     }
+
     public Options httpEndpoint(String httpEndpoint) {
       this.httpEndpoint = httpEndpoint;
       return this;
     }
+
     public Options buildTag(String buildTag) {
       this.buildTag = buildTag;
       return this;
     }
+
     public Options revision(String revision) {
       this.revision = revision;
       return this;
     }
+
     public Options hostname(String hostname) {
       this.hostname = hostname;
       return this;
     }
+
     public Options buildConfig(String buildConfig) {
       this.buildConfig = buildConfig;
       return this;
@@ -195,10 +200,12 @@ public class ResultReporter {
    */
   public void reportResult(String testName, Result result, File logFile)
       throws IOException {
-    if (!options.reportResults) return;
+    if (!options.reportResults) {
+      return;
+    }
 
     try (CloseableHttpClient client = HttpClients.createDefault()) {
-      HttpPost post = new HttpPost("http://" + options.httpEndpoint + "/add_result");
+      final HttpPost post = new HttpPost("http://" + options.httpEndpoint + "/add_result");
 
       // Set up the request with all form parts.
       MultipartEntityBuilder meb = MultipartEntityBuilder.create();

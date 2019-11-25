@@ -19,7 +19,6 @@ package org.apache.kudu.mapreduce.tools;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ToolRunner;
-import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -27,6 +26,7 @@ import org.junit.Test;
 
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
+import org.apache.kudu.test.KuduTestHarness;
 
 public class ITIntegrationTestBigLinkedList {
 

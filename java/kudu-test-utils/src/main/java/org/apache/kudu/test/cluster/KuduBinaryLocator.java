@@ -17,13 +17,7 @@
 
 package org.apache.kudu.test.cluster;
 
-import com.google.common.base.Preconditions;
-import com.google.common.io.CharStreams;
-import org.apache.kudu.test.TempDirUtils;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -33,7 +27,14 @@ import java.io.Reader;
 import java.util.HashMap;
 import java.util.Map;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.common.base.Preconditions;
+import com.google.common.io.CharStreams;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.test.TempDirUtils;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -57,10 +58,14 @@ public class KuduBinaryLocator {
     }
 
     /** Path to the executable. */
-    public String exePath() { return exePath; }
+    public String exePath() {
+      return exePath;
+    }
 
     /** Any environment variables that should be set when running the executable. */
-    public Map<String, String> environment() { return env; }
+    public Map<String, String> environment() {
+      return env;
+    }
   }
 
   /**

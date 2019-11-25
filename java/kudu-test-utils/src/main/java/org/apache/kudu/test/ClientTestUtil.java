@@ -17,11 +17,27 @@
 
 package org.apache.kudu.test;
 
+import static org.junit.Assert.assertEquals;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
@@ -44,21 +60,6 @@ import org.apache.kudu.client.RowResultIterator;
 import org.apache.kudu.client.Upsert;
 import org.apache.kudu.util.CharUtil;
 import org.apache.kudu.util.DecimalUtil;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.nio.ByteBuffer;
-import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Utilities useful for cluster testing.
@@ -94,7 +95,9 @@ public abstract class ClientTestUtil {
     Callback<Object, RowResultIterator> cb = new Callback<Object, RowResultIterator>() {
       @Override
       public Object call(RowResultIterator arg) throws Exception {
-        if (arg == null) return null;
+        if (arg == null) {
+          return null;
+        }
         counter.addAndGet(arg.getNumRows());
         return null;
       }
@@ -130,13 +133,14 @@ public abstract class ClientTestUtil {
    * @param predicates optional predicates to apply to the scan
    * @return the number of rows in the table matching the predicates
    */
-  public static long countRowsInTable(KuduTable table, KuduPredicate... predicates) throws KuduException {
+  public static long countRowsInTable(KuduTable table, KuduPredicate... predicates)
+      throws KuduException {
     KuduScanner.KuduScannerBuilder scanBuilder =
         table.getAsyncClient().syncClient().newScannerBuilder(table);
     for (KuduPredicate predicate : predicates) {
       scanBuilder.addPredicate(predicate);
     }
-    scanBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
+    scanBuilder.setProjectedColumnIndexes(ImmutableList.of());
     return countRowsInScan(scanBuilder.build());
   }
 
@@ -156,7 +160,8 @@ public abstract class ClientTestUtil {
           try (KuduClient contextClient = new KuduClient.KuduClientBuilder(masterAddresses)
                    .defaultAdminOperationTimeoutMs(operationTimeoutMs)
                    .build()) {
-            KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serializedToken, contextClient);
+            KuduScanner scanner =
+                KuduScanToken.deserializeIntoScanner(serializedToken, contextClient);
             try {
               int localCount = 0;
               while (scanner.hasMoreRows()) {
@@ -280,17 +285,17 @@ public abstract class ClientTestUtil {
     CreateTableOptions option = new CreateTableOptions();
     option.setRangePartitionColumns(ImmutableList.of("key"));
 
-    PartialRow aLowerBound = schema.newPartialRow();
-    aLowerBound.addInt("key", 0);
-    PartialRow aUpperBound = schema.newPartialRow();
-    aUpperBound.addInt("key", 100);
-    option.addRangePartition(aLowerBound, aUpperBound);
+    PartialRow lowerBoundA = schema.newPartialRow();
+    lowerBoundA.addInt("key", 0);
+    PartialRow upperBoundA = schema.newPartialRow();
+    upperBoundA.addInt("key", 100);
+    option.addRangePartition(lowerBoundA, upperBoundA);
 
-    PartialRow bLowerBound = schema.newPartialRow();
-    bLowerBound.addInt("key", 200);
-    PartialRow bUpperBound = schema.newPartialRow();
-    bUpperBound.addInt("key", 300);
-    option.addRangePartition(bLowerBound, bUpperBound);
+    PartialRow lowerBoundB = schema.newPartialRow();
+    lowerBoundB.addInt("key", 200);
+    PartialRow upperBoundB = schema.newPartialRow();
+    upperBoundB.addInt("key", 300);
+    option.addRangePartition(lowerBoundB, upperBoundB);
 
     PartialRow split = schema.newPartialRow();
     split.addInt("key", 50);
@@ -301,7 +306,8 @@ public abstract class ClientTestUtil {
   /**
    * A generic helper function to create a table with default test options.
    */
-  public static KuduTable createDefaultTable(KuduClient client, String tableName) throws KuduException {
+  public static KuduTable createDefaultTable(KuduClient client, String tableName)
+      throws KuduException {
     return client.createTable(tableName, getBasicSchema(), getBasicCreateTableOptions());
   }
 
@@ -432,7 +438,7 @@ public abstract class ClientTestUtil {
   }
 
   public static Schema createManyStringsSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(4);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING).build());
@@ -442,7 +448,7 @@ public abstract class ClientTestUtil {
   }
 
   public static Schema createSchemaWithBinaryColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.BINARY).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.DOUBLE).build());
@@ -451,14 +457,16 @@ public abstract class ClientTestUtil {
   }
 
   public static Schema createSchemaWithTimestampColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS).nullable(true).build());
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS)
+        .key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS)
+        .nullable(true).build());
     return new Schema(columns);
   }
 
   public static Schema createSchemaWithDecimalColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.DECIMAL).key(true)
         .typeAttributes(
             new ColumnTypeAttributes.ColumnTypeAttributesBuilder()

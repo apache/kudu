@@ -307,7 +307,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     /** Tablet server locations which host the tablet to be scanned. */
     private String[] locations;
 
-    public TableSplit() { } // Writable
+    public TableSplit() {
+    } // Writable
 
     public TableSplit(KuduScanToken token, String[] locations) throws IOException {
       this.scanToken = token.serialize();
