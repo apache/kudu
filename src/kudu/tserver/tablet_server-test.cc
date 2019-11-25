@@ -2495,7 +2495,8 @@ TEST_F(TabletServerTest, TestRandomizedScanLimits) {
     const int kMaxLimit = kNumRows * static_cast<double>(0.01 * i);
 
     // Get a random limit, capped by the max, inclusive.
-    const int kLimit = rand() % kMaxLimit + 1;
+    // "kMaxLimit" cannot be 0, if it's 0, we set "kLimit" to 1 directly.
+    const int kLimit = kMaxLimit == 0 ? 1 : rand() % kMaxLimit + 1;
     LOG(INFO) << "Scanning with a limit of " << kLimit;
 
     ScanRequestPB req;
