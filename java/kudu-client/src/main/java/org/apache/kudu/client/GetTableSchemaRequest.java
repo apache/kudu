@@ -57,7 +57,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
     this.name = name;
     this.requiredFeatures = requiresAuthzTokenSupport ?
         ImmutableList.of(Master.MasterFeatures.GENERATE_AUTHZ_TOKEN_VALUE) :
-        ImmutableList.<Integer>of();
+        ImmutableList.of();
   }
 
   @Override

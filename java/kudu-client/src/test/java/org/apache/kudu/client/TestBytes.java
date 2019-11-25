@@ -14,9 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
@@ -44,7 +46,7 @@ public class TestBytes {
     Bytes.setUnsignedByte(bytes, (short) 1);
     assertTrue(Bytes.getBoolean(bytes));
     Bytes.setUnsignedByte(bytes, (short) 0);
-    assertTrue(!Bytes.getBoolean(bytes));
+    assertFalse(Bytes.getBoolean(bytes));
 
     // BYTES
     short smallUbyte = 120;
@@ -97,14 +99,14 @@ public class TestBytes {
     assertEquals(largeUlong, Bytes.getUnsignedLong(bytes));
 
     // FLOAT
-    float aFloat = 123.456f;
-    Bytes.setFloat(bytes, aFloat);
-    assertEquals(aFloat, Bytes.getFloat(bytes), 0.001);
+    float floatVal = 123.456f;
+    Bytes.setFloat(bytes, floatVal);
+    assertEquals(floatVal, Bytes.getFloat(bytes), 0.001);
 
     // DOUBLE
-    double aDouble = 123.456;
-    Bytes.setDouble(bytes, aDouble);
-    assertEquals(aDouble, Bytes.getDouble(bytes), 0.001);
+    double doubleVal = 123.456;
+    Bytes.setDouble(bytes, doubleVal);
+    assertEquals(doubleVal, Bytes.getDouble(bytes), 0.001);
 
     // DECIMAL (32 bits)
     BigDecimal smallDecimal = new BigDecimal(BigInteger.valueOf(123456789), 0,
@@ -112,10 +114,10 @@ public class TestBytes {
     Bytes.setBigDecimal(bytes, smallDecimal, DecimalUtil.MAX_DECIMAL32_PRECISION);
     assertEquals(smallDecimal,
         Bytes.getDecimal(bytes, 0, DecimalUtil.MAX_DECIMAL32_PRECISION, 0));
-    BigDecimal nSmallDecimal = new BigDecimal(BigInteger.valueOf(-123456789), 0,
+    BigDecimal negSmallDecimal = new BigDecimal(BigInteger.valueOf(-123456789), 0,
         new MathContext(DecimalUtil.MAX_DECIMAL32_PRECISION, RoundingMode.UNNECESSARY));
-    Bytes.setBigDecimal(bytes, nSmallDecimal, DecimalUtil.MAX_DECIMAL32_PRECISION);
-    assertEquals(nSmallDecimal,
+    Bytes.setBigDecimal(bytes, negSmallDecimal, DecimalUtil.MAX_DECIMAL32_PRECISION);
+    assertEquals(negSmallDecimal,
         Bytes.getDecimal(bytes, 0, DecimalUtil.MAX_DECIMAL32_PRECISION, 0));
 
     // DECIMAL (64 bits)
@@ -124,10 +126,10 @@ public class TestBytes {
     Bytes.setBigDecimal(bytes, mediumDecimal, DecimalUtil.MAX_DECIMAL64_PRECISION);
     assertEquals(mediumDecimal,
         Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL64_PRECISION, 0));
-    BigDecimal nMediumDecimal = new BigDecimal(BigInteger.valueOf(-123456789L), 0,
+    BigDecimal negMediumDecimal = new BigDecimal(BigInteger.valueOf(-123456789L), 0,
         new MathContext(DecimalUtil.MAX_DECIMAL64_PRECISION, RoundingMode.UNNECESSARY));
-    Bytes.setBigDecimal(bytes, nMediumDecimal, DecimalUtil.MAX_DECIMAL64_PRECISION);
-    assertEquals(nMediumDecimal,
+    Bytes.setBigDecimal(bytes, negMediumDecimal, DecimalUtil.MAX_DECIMAL64_PRECISION);
+    assertEquals(negMediumDecimal,
         Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL64_PRECISION, 0));
 
     // DECIMAL (128 bits)
@@ -137,11 +139,11 @@ public class TestBytes {
     Bytes.setBigDecimal(bytes, largeDecimal, DecimalUtil.MAX_DECIMAL128_PRECISION);
     assertEquals(largeDecimal,
         Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL128_PRECISION, 0));
-    BigDecimal nLargeDecimal =
+    BigDecimal negLargeDecimal =
         new BigDecimal(new java.math.BigInteger("-1234567891011121314151617181920212223"), 0,
             new MathContext(DecimalUtil.MAX_DECIMAL128_PRECISION, RoundingMode.UNNECESSARY));
-    Bytes.setBigDecimal(bytes, nLargeDecimal, DecimalUtil.MAX_DECIMAL128_PRECISION);
-    assertEquals(nLargeDecimal,
+    Bytes.setBigDecimal(bytes, negLargeDecimal, DecimalUtil.MAX_DECIMAL128_PRECISION);
+    assertEquals(negLargeDecimal,
         Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL128_PRECISION, 0));
   }
 

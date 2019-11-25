@@ -11,6 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
@@ -29,8 +30,8 @@ import java.util.concurrent.TimeUnit;
 import javax.security.auth.Subject;
 
 import com.google.common.base.Stopwatch;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.stumbleupon.async.Deferred;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
@@ -65,10 +66,11 @@ public class TestSecurity {
     START_TSERVERS,
   }
 
-  static private class KeyValueMessage {
+  private static class KeyValueMessage {
     final String key;
     final String val;
     final String msg;
+
     KeyValueMessage(String k, String v, String m) {
       key = k;
       val = v;
@@ -193,9 +195,9 @@ public class TestSecurity {
    * is to export credentials, that should trigger a connection to the
    * cluster rather than returning empty credentials.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testExportCredentialsBeforeAnyOtherAccess() throws IOException {
-    startCluster(ImmutableSet.<Option>of());
+    startCluster(ImmutableSet.of());
     try (KuduClient c = createClient()) {
       AuthenticationCredentialsPB pb = AuthenticationCredentialsPB.parseFrom(
           c.exportAuthenticationCredentials());
@@ -263,7 +265,7 @@ public class TestSecurity {
             public boolean get() throws Exception {
               ConnectToCluster connector = new ConnectToCluster(miniCluster.getMasterServers());
               List<Deferred<ConnectToMasterResponsePB>> deferreds =
-                      connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
+                  connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
                       /* timeout = */50000,
                       Connection.CredentialsPolicy.ANY_CREDENTIALS);
               // Wait for all Deferreds are called back.
@@ -273,7 +275,7 @@ public class TestSecurity {
               List<Exception> s = connector.getExceptionsReceived();
               return s.size() == 0;
             }
-      }, /* timeoutMillis = */50000);
+          }, /* timeoutMillis = */50000);
     } finally {
       System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
     }
@@ -311,7 +313,7 @@ public class TestSecurity {
    * Test that, if our Kerberos credentials expire, that we will automatically
    * re-login from an available ticket cache.
    */
-  @Test(timeout=300000)
+  @Test(timeout = 300000)
   public void testRenewAndReacquireKeberosCredentials() throws Exception {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
     Stopwatch timeSinceKinit = Stopwatch.createStarted();
@@ -343,7 +345,7 @@ public class TestSecurity {
    * Test that, if the ticket cache is refreshed but contains a different principal
    * from the original one, we will not accept it.
    */
-  @Test(timeout=300000)
+  @Test(timeout = 300000)
   public void testDoNotSwitchPrincipalsInExistingClient() throws Exception {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
     // Switch the ticket cache to a different user.
@@ -381,7 +383,7 @@ public class TestSecurity {
             }
             return false;
           }
-    }, 60000);
+      }, 60000);
   }
 
   /**
@@ -389,7 +391,7 @@ public class TestSecurity {
    * is created, the client will not attempt to refresh anything, and will
    * eventually fail with appropriate warnings in the log.
    */
-  @Test(timeout=300000)
+  @Test(timeout = 300000)
   public void testExternallyProvidedSubjectExpires() throws Exception {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
     Subject subject = SecurityUtil.getSubjectFromTicketCacheOrNull();
@@ -417,7 +419,7 @@ public class TestSecurity {
    * the UserGroupInformation class from Hadoop, which spawns a thread to
    * renew credentials from a keytab.
    */
-  @Test(timeout=300000)
+  @Test(timeout = 300000)
   public void testExternallyProvidedSubjectRefreshedExternally() throws Exception {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
 
@@ -452,7 +454,7 @@ public class TestSecurity {
    * Test that if a Kudu server (in this case master) doesn't provide valid
    * connection binding information, Java client fails to connect to the server.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testNegotiationChannelBindings() throws Exception {
     startCluster(ImmutableSet.of(Option.START_TSERVERS));
     // Test precondition: all is well with masters -- the client is able

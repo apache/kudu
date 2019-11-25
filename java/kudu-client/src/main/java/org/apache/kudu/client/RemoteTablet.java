@@ -64,7 +64,7 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
   @GuardedBy("tabletServers")
   private final Map<String, ServerInfo> tabletServers;
   private final AtomicReference<List<LocatedTablet.Replica>> replicas =
-      new AtomicReference(ImmutableList.of());
+      new AtomicReference<>(ImmutableList.of());
   private final Partition partition;
 
   @GuardedBy("tabletServers")
@@ -197,8 +197,8 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     // structure of a location to determine proximity.
     synchronized (tabletServers) {
       ServerInfo result = null;
-      List<ServerInfo> localServers = new ArrayList();
-      List<ServerInfo> serversInSameLocation = new ArrayList();
+      List<ServerInfo> localServers = new ArrayList<>();
+      List<ServerInfo> serversInSameLocation = new ArrayList<>();
       int randomIndex = randomInt % tabletServers.size();
       int index = 0;
       for (ServerInfo e : tabletServers.values()) {

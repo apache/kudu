@@ -175,7 +175,8 @@ public class KuduClient implements AutoCloseable {
    */
   public boolean isAlterTableDone(String name) throws KuduException {
     TableIdentifierPB.Builder table = TableIdentifierPB.newBuilder().setTableName(name);
-    Deferred<AlterTableResponse> d = asyncClient.getDelayedIsAlterTableDoneDeferred(table, null, null);
+    Deferred<AlterTableResponse> d =
+        asyncClient.getDelayedIsAlterTableDoneDeferred(table, null, null);
     try {
       joinAndHandleException(d);
     } catch (KuduException e) {

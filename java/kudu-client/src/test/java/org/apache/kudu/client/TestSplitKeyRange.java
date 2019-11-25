@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import static org.apache.kudu.test.ClientTestUtil.createTableWithOneThousandRows;
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
@@ -34,7 +35,7 @@ import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 public class TestSplitKeyRange {
   // Generate a unique table name
   private static final String TABLE_NAME =
-      TestSplitKeyRange.class.getName()+"-"+System.currentTimeMillis();
+      TestSplitKeyRange.class.getName() + "-" + System.currentTimeMillis();
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();
@@ -53,7 +54,7 @@ public class TestSplitKeyRange {
     // Wait for mrs flushed
     Thread.sleep(5 * 1000);
 
-    Schema schema = table.getSchema();
+    final Schema schema = table.getSchema();
 
     // 1. Don't split tablet's key range
     // 1.1 Get all key range for table
@@ -61,10 +62,10 @@ public class TestSplitKeyRange {
         table,null, null, null, null,
         AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP, -1, DEFAULT_SLEEP).join();
     assertEquals(4, keyRanges.size());
-    LocatedTablet tablet0 = keyRanges.get(0).getTablet();
-    LocatedTablet tablet1 = keyRanges.get(1).getTablet();
-    LocatedTablet tablet2 = keyRanges.get(2).getTablet();
-    LocatedTablet tablet3 = keyRanges.get(3).getTablet();
+    final LocatedTablet tablet0 = keyRanges.get(0).getTablet();
+    final LocatedTablet tablet1 = keyRanges.get(1).getTablet();
+    final LocatedTablet tablet2 = keyRanges.get(2).getTablet();
+    final LocatedTablet tablet3 = keyRanges.get(3).getTablet();
     // 1.2 Get all key range for specified tablet
     keyRanges = table.getAsyncClient().getTableKeyRanges(
         table, null, null,
@@ -74,8 +75,8 @@ public class TestSplitKeyRange {
         -1, DEFAULT_SLEEP).join();
     assertEquals(1, keyRanges.size());
     assertEquals(tablet1.toString(), keyRanges.get(0).getTablet().toString());
-    assertEquals(null, keyRanges.get(0).getPrimaryKeyStart());
-    assertEquals(null, keyRanges.get(0).getPrimaryKeyEnd());
+    assertNull(keyRanges.get(0).getPrimaryKeyStart());
+    assertNull(keyRanges.get(0).getPrimaryKeyEnd());
 
     // 2. Don't set primary key range, and splitSizeBytes > tablet's size
     keyRanges = table.getAsyncClient().getTableKeyRanges(

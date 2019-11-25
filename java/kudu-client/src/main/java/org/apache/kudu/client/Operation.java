@@ -207,8 +207,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
                                                        builder.getTimestamp(),
                                                        this,
                                                        error);
-    return new Pair<OperationResponse, Object>(
-        response, builder.hasError() ? builder.getError() : null);
+    return new Pair<>(response, builder.hasError() ? builder.getError() : null);
   }
 
   @Override

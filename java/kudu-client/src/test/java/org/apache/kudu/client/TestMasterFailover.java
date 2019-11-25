@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
@@ -44,14 +45,17 @@ public class TestMasterFailover {
   public void testKillLeaderBeforeCreateClient() throws Exception {
     doTestKillLeader(KillBefore.CREATE_CLIENT);
   }
+
   @Test(timeout = 30000)
   public void testKillLeaderBeforeCreateTable() throws Exception {
     doTestKillLeader(KillBefore.CREATE_TABLE);
   }
+
   @Test(timeout = 30000)
   public void testKillLeaderBeforeOpenTable() throws Exception {
     doTestKillLeader(KillBefore.OPEN_TABLE);
   }
+
   @Test(timeout = 30000)
   public void testKillLeaderBeforeScanTable() throws Exception {
     doTestKillLeader(KillBefore.SCAN_TABLE);
@@ -61,8 +65,8 @@ public class TestMasterFailover {
     String tableName = "TestMasterFailover-killBefore=" + killBefore;
     int countMasters = harness.getMasterServers().size();
     if (countMasters < 3) {
-      throw new Exception("This test requires at least 3 master servers, but only "
-        + countMasters + " are specified.");
+      throw new Exception("This test requires at least 3 master servers, but only " +
+          countMasters + " are specified.");
     }
 
     if (killBefore == KillBefore.CREATE_CLIENT) {

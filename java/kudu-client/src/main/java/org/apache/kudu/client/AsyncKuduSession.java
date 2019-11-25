@@ -167,7 +167,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * capacity may be available in the active buffer.
    */
   private final AtomicReference<Deferred<Void>> flushNotification =
-      new AtomicReference<>(new Deferred<Void>());
+      new AtomicReference<>(new Deferred<>());
 
   /**
    * Tracks whether the session has been closed.
@@ -231,7 +231,7 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   /**
    * Lets us set a specific seed for tests
-   * @param seed
+   * @param seed the seed to use
    */
   @InterfaceAudience.LimitedPrivate("Test")
   void setRandomSeed(long seed) {
@@ -309,7 +309,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   private void queueBuffer(Buffer buffer) {
     inactiveBuffers.add(buffer);
     buffer.callbackFlushNotification();
-    Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<Void>());
+    Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<>());
     localFlushNotification.callback(null);
   }
 
@@ -430,7 +430,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     //            flushing 'buffer'. This is less performant but has less surprising semantics than
     //            simultaneously flushing two buffers. Even though we don't promise those semantics,
     //            I'm going to leave it this way for now because it's never caused any trouble.
-    return AsyncUtil.addBothDeferring(nonActiveBufferFlush, _unused -> doFlush(buffer));
+    return AsyncUtil.addBothDeferring(nonActiveBufferFlush, unused -> doFlush(buffer));
   }
 
   /**
@@ -618,13 +618,16 @@ public class AsyncKuduSession implements SessionConfiguration {
             // 2. If it filled or overflowed the buffer, kick off a flush.
             activeBuffer.getOperations().add(new BufferedOperation(tablet, operation));
             if (activeBufferSize == 0) {
-              AsyncKuduClient.newTimeout(client.getTimer(), activeBuffer.getFlusherTask(), flushIntervalMillis);
+              AsyncKuduClient.newTimeout(client.getTimer(), activeBuffer.getFlusherTask(),
+                  flushIntervalMillis);
             }
             if (activeBufferSize + 1 >= mutationBufferMaxOps && inactiveBufferAvailable()) {
               fullBuffer = retireActiveBufferUnlocked();
             }
             break;
           }
+          default:
+            throw new IllegalArgumentException("Unexpected flushMode: " + flushMode);
         }
       }
     } finally {
@@ -677,7 +680,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     final Deferred<Void> notificationB = bufferB.getFlushNotification();
     if (activeBuffer == null) {
       // Both buffers are either flushing or inactive.
-      return AsyncUtil.addBothDeferring(notificationA, _unused -> notificationB);
+      return AsyncUtil.addBothDeferring(notificationA, unused -> notificationB);
     } else if (activeBuffer == bufferA) {
       return notificationB;
     } else {

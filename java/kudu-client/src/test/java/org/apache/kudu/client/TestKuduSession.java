@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
@@ -250,8 +251,9 @@ public class TestKuduSession {
 
   @Test(timeout = 10000)
   public void testOverWritingValues() throws Exception {
-    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
-    KuduSession session = client.newSession();
+    final KuduTable table =
+        client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    final KuduSession session = client.newSession();
     Insert insert = createInsert(table, 0);
     PartialRow row = insert.getRow();
 
@@ -372,7 +374,7 @@ public class TestKuduSession {
         assertTrue(result.hasRowError());
         assertTrue(result.getRowError().getErrorStatus().isNotFound());
       } else {
-        assertTrue(!result.hasRowError());
+        assertFalse(result.hasRowError());
       }
     }
   }

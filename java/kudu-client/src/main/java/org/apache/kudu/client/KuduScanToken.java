@@ -19,7 +19,6 @@ package org.apache.kudu.client;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.base.MoreObjects;
@@ -35,7 +34,6 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.Client.ScanTokenPB;
-import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.util.Pair;
 
 /**
@@ -170,10 +168,12 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           schema.getColumnIndex(colSchemaFromPb.getId()) :
           schema.getColumnIndex(colSchemaFromPb.getName());
       ColumnSchema colSchema = schema.getColumnByIndex(colIdx);
-      if (colSchemaFromPb.getType() != colSchema.getType().getDataType(colSchema.getTypeAttributes())) {
+      if (colSchemaFromPb.getType() !=
+          colSchema.getType().getDataType(colSchema.getTypeAttributes())) {
         throw new IllegalStateException(String.format(
             "invalid type %s for column '%s' in scan token, expected: %s",
-            colSchemaFromPb.getType().name(), colSchemaFromPb.getName(), colSchema.getType().name()));
+            colSchemaFromPb.getType().name(), colSchemaFromPb.getName(),
+            colSchema.getType().name()));
       }
       if (colSchemaFromPb.getIsNullable() != colSchema.isNullable()) {
         throw new IllegalStateException(String.format(
@@ -185,6 +185,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     return columns;
   }
 
+  @SuppressWarnings("deprecation")
   private static KuduScanner pbIntoScanner(ScanTokenPB message,
                                            KuduClient client) throws KuduException {
     Preconditions.checkArgument(
@@ -303,8 +304,12 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (!(o instanceof KuduScanToken)) return false;
+    if (this == o) {
+      return true;
+    }
+    if (!(o instanceof KuduScanToken)) {
+      return false;
+    }
     KuduScanToken that = (KuduScanToken) o;
     return compareTo(that) == 0;
   }

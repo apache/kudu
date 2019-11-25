@@ -44,7 +44,8 @@ public final class Slices {
    */
   public static final Slice EMPTY_SLICE = new Slice(0);
 
-  private Slices() {}
+  private Slices() {
+  }
 
   public static Slice ensureSize(Slice existingSlice, int minWritableBytes) {
     if (existingSlice == null) {
@@ -149,7 +150,7 @@ public final class Slices {
       new ThreadLocal<Map<Charset, CharsetEncoder>>() {
         @Override
         protected Map<Charset, CharsetEncoder> initialValue() {
-          return new IdentityHashMap<Charset, CharsetEncoder>();
+          return new IdentityHashMap<>();
         }
       };
 
@@ -157,7 +158,7 @@ public final class Slices {
       new ThreadLocal<Map<Charset, CharsetDecoder>>() {
         @Override
         protected Map<Charset, CharsetDecoder> initialValue() {
-          return new IdentityHashMap<Charset, CharsetDecoder>();
+          return new IdentityHashMap<>();
         }
       };
 

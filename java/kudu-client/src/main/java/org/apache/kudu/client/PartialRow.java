@@ -954,34 +954,6 @@ public class PartialRow {
   }
 
   /**
-   * Get the specified column's value as an Object.
-   *
-   * This method is useful when you don't care about autoboxing
-   * and your existing type handling logic is based on Java types.
-   *
-   * The Object type is based on the column's {@link Type}:
-   *  Type.BOOL -> java.lang.Boolean
-   *  Type.INT8 -> java.lang.Byte
-   *  Type.INT16 -> java.lang.Short
-   *  Type.INT32 -> java.lang.Integer
-   *  Type.INT64 -> java.lang.Long
-   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
-   *  Type.FLOAT -> java.lang.Float
-   *  Type.DOUBLE -> java.lang.Double
-   *  Type.STRING -> java.lang.String
-   *  Type.VARCHAR -> java.lang.String
-   *  Type.BINARY -> byte[]
-   *  Type.DECIMAL -> java.math.BigDecimal
-   *
-   * @param columnName name of the column in the schema
-   * @return the column's value as an Object, null if the column value is null or unset
-   * @throws IndexOutOfBoundsException if the column doesn't exist
-   */
-  public Object getObject(String columnName) {
-    return getObject(this.schema.getColumnIndex(columnName));
-  }
-
-  /**
    * Add the specified column's value as an Object.
    *
    * This method is useful when you don't care about autoboxing
@@ -1045,11 +1017,21 @@ public class PartialRow {
         return;
       }
       switch (col.getType()) {
-        case BOOL: addBoolean(columnIndex, (Boolean) val); break;
-        case INT8: addByte(columnIndex, (Byte) val); break;
-        case INT16: addShort(columnIndex, (Short) val); break;
-        case INT32: addInt(columnIndex, (Integer) val); break;
-        case INT64: addLong(columnIndex, (Long) val); break;
+        case BOOL:
+          addBoolean(columnIndex, (Boolean) val);
+          break;
+        case INT8:
+          addByte(columnIndex, (Byte) val);
+          break;
+        case INT16:
+          addShort(columnIndex, (Short) val);
+          break;
+        case INT32:
+          addInt(columnIndex, (Integer) val);
+          break;
+        case INT64:
+          addLong(columnIndex, (Long) val);
+          break;
         case UNIXTIME_MICROS:
           if (val instanceof Timestamp) {
             addTimestamp(columnIndex, (Timestamp) val);
@@ -1057,10 +1039,18 @@ public class PartialRow {
             addLong(columnIndex, (Long) val);
           }
           break;
-        case FLOAT: addFloat(columnIndex, (Float) val); break;
-        case DOUBLE: addDouble(columnIndex, (Double) val); break;
-        case STRING: addString(columnIndex, (String) val); break;
-        case VARCHAR: addVarchar(columnIndex, (String) val); break;
+        case FLOAT:
+          addFloat(columnIndex, (Float) val);
+          break;
+        case DOUBLE:
+          addDouble(columnIndex, (Double) val);
+          break;
+        case STRING:
+          addString(columnIndex, (String) val);
+          break;
+        case VARCHAR:
+          addVarchar(columnIndex, (String) val);
+          break;
         case BINARY:
           if (val instanceof byte[]) {
             addBinary(columnIndex, (byte[]) val);
@@ -1068,7 +1058,9 @@ public class PartialRow {
             addBinary(columnIndex, (ByteBuffer) val);
           }
           break;
-        case DECIMAL: addDecimal(columnIndex, (BigDecimal) val); break;
+        case DECIMAL:
+          addDecimal(columnIndex, (BigDecimal) val);
+          break;
         default:
           throw new IllegalArgumentException("Unsupported column type: " + col.getType());
       }
@@ -1099,13 +1091,43 @@ public class PartialRow {
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
    *
+   * @param columnName name of the column in the schema
+   * @return the column's value as an Object, null if the column value is null or unset
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Object getObject(String columnName) {
+    return getObject(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's value as an Object.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.VARCHAR -> java.lang.String
+   *  Type.BINARY -> byte[]
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
    * @param columnIndex Column index in the schema
    * @return the column's value as an Object, null if the column value is null or unset
    * @throws IndexOutOfBoundsException if the column doesn't exist
    */
   public Object getObject(int columnIndex) {
     checkColumnExists(schema.getColumnByIndex(columnIndex));
-    if (isNull(columnIndex) || !isSet(columnIndex)) return null;
+    if (isNull(columnIndex) || !isSet(columnIndex)) {
+      return null;
+    }
     Type type = schema.getColumnByIndex(columnIndex).getType();
     switch (type) {
       case BOOL: return getBoolean(columnIndex);
@@ -1645,18 +1667,18 @@ public class PartialRow {
       case VARCHAR:
       case STRING:
       case BINARY: {
-        ByteBuffer aData = a.varLengthData.get(index).duplicate();
-        ByteBuffer bData = b.varLengthData.get(index).duplicate();
-        aData.reset();
-        bData.reset();
-        int aLen = aData.limit() - aData.position();
-        int bLen = bData.limit() - bData.position();
+        ByteBuffer dataA = a.varLengthData.get(index).duplicate();
+        ByteBuffer dataB = b.varLengthData.get(index).duplicate();
+        dataA.reset();
+        dataB.reset();
+        int lenA = dataA.limit() - dataA.position();
+        int lenB = dataB.limit() - dataB.position();
 
-        if (aLen != bLen) {
+        if (lenA != lenB) {
           return false;
         }
-        for (int i = 0; i < aLen; i++) {
-          if (aData.get(aData.position() + i) != bData.get(bData.position() + i)) {
+        for (int i = 0; i < lenA; i++) {
+          if (dataA.get(dataA.position() + i) != dataB.get(dataB.position() + i)) {
             return false;
           }
         }
@@ -1734,21 +1756,21 @@ public class PartialRow {
       case STRING:
       case BINARY: {
         // Check that b is 1 byte bigger than a, the extra byte is 0, and the other bytes are equal.
-        ByteBuffer aData = lower.varLengthData.get(index).duplicate();
-        ByteBuffer bData = upper.varLengthData.get(index).duplicate();
-        aData.reset();
-        bData.reset();
-        int aLen = aData.limit() - aData.position();
-        int bLen = bData.limit() - bData.position();
+        ByteBuffer dataA = lower.varLengthData.get(index).duplicate();
+        ByteBuffer dataB = upper.varLengthData.get(index).duplicate();
+        dataA.reset();
+        dataB.reset();
+        int lenA = dataA.limit() - dataA.position();
+        int lenB = dataB.limit() - dataB.position();
 
-        if (aLen == Integer.MAX_VALUE ||
-            aLen + 1 != bLen ||
-            bData.get(bData.limit() - 1) != 0) {
+        if (lenA == Integer.MAX_VALUE ||
+            lenA + 1 != lenB ||
+            dataB.get(dataB.limit() - 1) != 0) {
           return false;
         }
 
-        for (int i = 0; i < aLen; i++) {
-          if (aData.get(aData.position() + i) != bData.get(bData.position() + i)) {
+        for (int i = 0; i < lenA; i++) {
+          if (dataA.get(dataA.position() + i) != dataB.get(dataB.position() + i)) {
             return false;
           }
         }

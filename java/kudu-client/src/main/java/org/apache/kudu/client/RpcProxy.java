@@ -44,7 +44,6 @@ import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
 
-
 /**
  * This is a 'stateless' helper to send RPCs to a Kudu server ('stateless' in the sense that it
  * does not keep any state itself besides the references to the {@link AsyncKuduClient} and
@@ -83,16 +82,6 @@ class RpcProxy {
   }
 
   /**
-   * Send the specified RPC using the connection to the Kudu server.
-   *
-   * @param <R> type of the RPC
-   * @param rpc the RPC to send over the connection
-   */
-  <R> void sendRpc(final KuduRpc<R> rpc) {
-    sendRpc(client, connection, rpc);
-  }
-
-  /**
    * Fails the next numFail RPCs by throwing the passed exception.
    * @param numFail the number of RPCs to fail
    * @param exception the exception to throw when failing an rpc
@@ -102,6 +91,16 @@ class RpcProxy {
     Preconditions.checkNotNull(exception);
     staticNumFail = numFail;
     staticException = exception;
+  }
+
+  /**
+   * Send the specified RPC using the connection to the Kudu server.
+   *
+   * @param <R> type of the RPC
+   * @param rpc the RPC to send over the connection
+   */
+  <R> void sendRpc(final KuduRpc<R> rpc) {
+    sendRpc(client, connection, rpc);
   }
 
   /**

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
@@ -81,7 +82,9 @@ public class TestPartitionPruner {
 
     int scannedPartitions = 0;
     for (Partition partition : partitions) {
-      if (!pruner.shouldPruneForTests(partition)) scannedPartitions++;
+      if (!pruner.shouldPruneForTests(partition)) {
+        scannedPartitions++;
+      }
     }
 
     // Check that the number of ScanTokens built for the scan matches.
@@ -150,7 +153,9 @@ public class TestPartitionPruner {
 
     int scannedPartitions = 0;
     for (Partition partition : partitions) {
-      if (!pruner.shouldPruneForTests(partition)) scannedPartitions++;
+      if (!pruner.shouldPruneForTests(partition)) {
+        scannedPartitions++;
+      }
     }
 
     assertEquals(expectedTablets, scannedPartitions);
@@ -306,8 +311,8 @@ public class TestPartitionPruner {
     KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
-    byte min = Byte.MIN_VALUE;
-    byte max = Byte.MAX_VALUE;
+    final byte min = Byte.MIN_VALUE;
+    final byte max = Byte.MAX_VALUE;
 
     // No bounds
     checkPartitionsPrimaryKey(2, table, partitions,
@@ -437,10 +442,10 @@ public class TestPartitionPruner {
 
     // c >= MIN
     checkPartitions(3, 1, table, partitions,
-                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MIN_VALUE));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MIN_VALUE));
     // c >= MAX
     checkPartitions(1, 1, table, partitions,
-                    KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MAX_VALUE));
+        KuduPredicate.newComparisonPredicate(c, ComparisonOp.GREATER_EQUAL, Byte.MAX_VALUE));
 
     // c >= -10
     // c < 0
@@ -539,7 +544,7 @@ public class TestPartitionPruner {
 
     // c IN (0, 1, 2)
     checkPartitions(2, 1, table, partitions,
-                    KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) 0, (byte) 1, (byte) 2)));
+        KuduPredicate.newInListPredicate(c, ImmutableList.of((byte) 0, (byte) 1, (byte) 2)));
 
     // c IN (-10, 0)
     // b < "m"
@@ -565,10 +570,10 @@ public class TestPartitionPruner {
     ColumnSchema a = new ColumnSchema.ColumnSchemaBuilder("a", Type.INT8).key(true).build();
     ColumnSchema b = new ColumnSchema.ColumnSchemaBuilder("b", Type.INT8).key(true).build();
     ColumnSchema c = new ColumnSchema.ColumnSchemaBuilder("c", Type.INT8).key(true).build();
-    Schema schema = new Schema(ImmutableList.of(a, b, c));
+    final Schema schema = new Schema(ImmutableList.of(a, b, c));
 
     CreateTableOptions tableBuilder = new CreateTableOptions();
-    tableBuilder.setRangePartitionColumns(new ArrayList<String>());
+    tableBuilder.setRangePartitionColumns(new ArrayList<>());
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 2);
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 2);
 
@@ -634,10 +639,10 @@ public class TestPartitionPruner {
     ColumnSchema a = new ColumnSchema.ColumnSchemaBuilder("a", Type.INT8).key(true).build();
     ColumnSchema b = new ColumnSchema.ColumnSchemaBuilder("b", Type.INT8).key(true).build();
     ColumnSchema c = new ColumnSchema.ColumnSchemaBuilder("c", Type.INT8).key(true).build();
-    Schema schema = new Schema(ImmutableList.of(a, b, c));
+    final Schema schema = new Schema(ImmutableList.of(a, b, c));
 
     CreateTableOptions tableBuilder = new CreateTableOptions();
-    tableBuilder.setRangePartitionColumns(new ArrayList<String>());
+    tableBuilder.setRangePartitionColumns(new ArrayList<>());
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 3);
     tableBuilder.addHashPartitions(ImmutableList.of("b"), 3);
     tableBuilder.addHashPartitions(ImmutableList.of("c"), 3);
@@ -685,10 +690,10 @@ public class TestPartitionPruner {
     ColumnSchema a = new ColumnSchema.ColumnSchemaBuilder("a", Type.INT8).key(true).build();
     ColumnSchema b = new ColumnSchema.ColumnSchemaBuilder("b", Type.INT8).key(true).build();
     ColumnSchema c = new ColumnSchema.ColumnSchemaBuilder("c", Type.INT8).key(true).build();
-    Schema schema = new Schema(ImmutableList.of(a, b, c));
+    final Schema schema = new Schema(ImmutableList.of(a, b, c));
 
     CreateTableOptions tableBuilder = new CreateTableOptions();
-    tableBuilder.setRangePartitionColumns(new ArrayList<String>());
+    tableBuilder.setRangePartitionColumns(new ArrayList<>());
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 3);
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 3);
 
@@ -703,7 +708,7 @@ public class TestPartitionPruner {
 
     // a in [0, 1, 8];
     checkPartitions(9, 1, table, partitions,
-                    KuduPredicate.newInListPredicate(a, ImmutableList.of((byte) 0, (byte) 1, (byte) 8)));
+        KuduPredicate.newInListPredicate(a, ImmutableList.of((byte) 0, (byte) 1, (byte) 8)));
 
     // b in [0, 1];
     checkPartitions(9, 1, table, partitions,
@@ -750,9 +755,13 @@ public class TestPartitionPruner {
     //         PARTITION VALUES >= 10);
     //    HASH (host, metric) 2 PARTITIONS;
 
-    ColumnSchema host = new ColumnSchema.ColumnSchemaBuilder("host", Type.STRING).key(true).build();
-    ColumnSchema metric = new ColumnSchema.ColumnSchemaBuilder("metric", Type.STRING).key(true).build();
-    ColumnSchema timestamp = new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).key(true).build();
+    ColumnSchema host =
+        new ColumnSchema.ColumnSchemaBuilder("host", Type.STRING).key(true).build();
+    ColumnSchema metric =
+        new ColumnSchema.ColumnSchemaBuilder("metric", Type.STRING).key(true).build();
+    ColumnSchema timestamp =
+        new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS)
+            .key(true).build();
     ColumnSchema value = new ColumnSchema.ColumnSchemaBuilder("value", Type.DOUBLE).build();
     Schema schema = new Schema(ImmutableList.of(host, metric, timestamp, value));
 
@@ -813,9 +822,9 @@ public class TestPartitionPruner {
     // metric = "a"
     // timestamp >= 10;
     checkPartitions(1, 1, table, partitions,
-                    KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
-                    KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
-                    KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10));
+        KuduPredicate.newComparisonPredicate(host, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(metric, ComparisonOp.EQUAL, "a"),
+        KuduPredicate.newComparisonPredicate(timestamp, ComparisonOp.GREATER_EQUAL, 10));
 
     // host = "a"
     // metric = "a"

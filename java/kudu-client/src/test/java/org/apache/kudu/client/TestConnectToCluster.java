@@ -50,7 +50,7 @@ public class TestConnectToCluster {
    * RPC when connecting to a master which does not support the new
    * ConnectToMaster RPC.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testFallbackConnectRpc() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
          .addMasterServerFlag("--master_support_connect_to_master_rpc=0")
@@ -58,7 +58,7 @@ public class TestConnectToCluster {
          .numTabletServers(0)
          .build();
          KuduClient c = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
-         .build()) {
+             .build()) {
       // Call some method which uses the master. This forces us to connect
       // and verifies that the fallback works.
       c.listTabletServers();
@@ -71,7 +71,7 @@ public class TestConnectToCluster {
    * the resulting exception should clarify their error rather than
    * saying that no leader was found.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testConnectToOneOfManyMasters() throws Exception {
     int successes = 0;
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
@@ -111,11 +111,11 @@ public class TestConnectToCluster {
    */
   @Test(timeout = 10000)
   public void testAggregateResponses() throws Exception {
-    NonRecoverableException reusableNRE = new NonRecoverableException(
+    final NonRecoverableException reusableNRE = new NonRecoverableException(
         Status.RuntimeError(""));
-    RecoverableException reusableRE = new RecoverableException(
+    final RecoverableException reusableRE = new RecoverableException(
         Status.RuntimeError(""));
-    NoLeaderFoundException retryResponse =
+    final NoLeaderFoundException retryResponse =
         new NoLeaderFoundException(Status.RuntimeError(""));
     // We don't test for a particular good response, so as long as we pass something that's not an
     // exception to runTest() we're good.
@@ -247,8 +247,6 @@ public class TestConnectToCluster {
       grrm.getDeferred().join(); // Don't care about the response.
       if ((expectedResponse instanceof Exception)) {
         fail("Should not work " + expectedResponse.getClass());
-      } else {
-        // ok
       }
     } catch (Exception ex) {
       assertEquals(expectedResponse.getClass(), ex.getClass());

@@ -128,8 +128,8 @@ public class SchemaGenerator {
 
     if (type == Type.VARCHAR) {
       int length = random.nextInt(
-        (CharUtil.MAX_VARCHAR_LENGTH - CharUtil.MIN_VARCHAR_LENGTH) + 1)
-        + CharUtil.MIN_VARCHAR_LENGTH;
+          (CharUtil.MAX_VARCHAR_LENGTH - CharUtil.MIN_VARCHAR_LENGTH) + 1) +
+          CharUtil.MIN_VARCHAR_LENGTH;
       typeAttributes = CharUtil.typeAttributes(length);
       builder.typeAttributes(typeAttributes);
     }

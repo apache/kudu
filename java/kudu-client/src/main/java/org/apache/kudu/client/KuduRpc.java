@@ -102,7 +102,7 @@ public abstract class KuduRpc<R> {
   private static final Logger LOG = LoggerFactory.getLogger(KuduRpc.class);
 
   private final List<RpcTraceFrame> traces =
-      Collections.synchronizedList(new ArrayList<RpcTraceFrame>());
+      Collections.synchronizedList(new ArrayList<>());
 
   private KuduRpc<?> parentRpc;
 
@@ -119,7 +119,8 @@ public abstract class KuduRpc<R> {
   /**
    * Binds the given authorization token to the request.
    */
-  void bindAuthzToken(Token.SignedTokenPB token) {}
+  void bindAuthzToken(Token.SignedTokenPB token) {
+  }
 
   /**
    * Whether the request needs to be authorized via authz token.
@@ -304,8 +305,8 @@ public abstract class KuduRpc<R> {
    * @param parentRpc RPC that will also receive traces from this RPC
    */
   void setParentRpc(KuduRpc<?> parentRpc) {
-    assert(this.parentRpc == null);
-    assert(this != parentRpc);
+    assert (this.parentRpc == null);
+    assert (this != parentRpc);
     this.parentRpc = parentRpc;
   }
 
@@ -332,7 +333,7 @@ public abstract class KuduRpc<R> {
   /** Package private way of accessing / creating the Deferred of this RPC.  */
   final Deferred<R> getDeferred() {
     if (deferred == null) {
-      deferred = new Deferred<R>();
+      deferred = new Deferred<>();
     }
     return deferred;
   }

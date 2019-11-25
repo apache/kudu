@@ -153,7 +153,8 @@ class RpcTraceFrame {
   /**
    * Returns a String wih the trace summary in the following format:
    *
-   *  Trace Summary(trace-duration ms): Sent(n), Received(n), Delayed(n), MasterRefresh(n), AuthRefresh(n), Truncated: ?
+   *  Trace Summary(trace-duration ms): Sent(n), Received(n), Delayed(n), MasterRefresh(n),
+   *  AuthRefresh(n), Truncated: ?
    *   Sent: (server-uuid, [ rpc-method, count ], ...), ...
    *   Received: (server-uuid, [ rpc-status, count ], ...), ...
    *   Delayed: (server-uuid, [ rpc-method, count ], ...), ...
@@ -215,6 +216,8 @@ class RpcTraceFrame {
         case TRACE_TRUNCATED:
           truncated = true;
           break;
+        default:
+          throw new IllegalArgumentException("Unexpected action: " + trace.getAction());
       }
       maxTime = Long.max(maxTime, trace.getTimestampMs() - baseTimestamp);
     }

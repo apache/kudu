@@ -118,15 +118,11 @@ class SplitKeyRangeRequest extends KuduRpc<SplitKeyRangeResponse> {
         Tserver.SplitKeyRangeResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
 
-    List<KeyRangePB> keyRanges = new ArrayList<>();
-    for (KeyRangePB keyRange : respBuilder.getRangesList()) {
-      keyRanges.add(keyRange);
-    }
+    List<KeyRangePB> keyRanges = new ArrayList<>(respBuilder.getRangesList());
 
     SplitKeyRangeResponse response = new SplitKeyRangeResponse(
         timeoutTracker.getElapsedMillis(), tsUuid, keyRanges);
-    return new Pair<SplitKeyRangeResponse, Object>(response,
-      respBuilder.hasError() ? respBuilder.getError() : null);
+    return new Pair<>(response, respBuilder.hasError() ? respBuilder.getError() : null);
   }
 
   @Override

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
@@ -360,7 +361,7 @@ public class ITClient {
       for (RowResult row : scanner) {
         results.add(row);
       }
-      if (results.isEmpty() || results.size() > 1) {
+      if (results.size() != 1) {
         reportError("Random get got 0 or many rows " + results.size() + " for key " + key, null);
         return false;
       }

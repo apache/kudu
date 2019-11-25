@@ -47,7 +47,7 @@ public class KuduScannerIterator implements Iterator<RowResult> {
   /**
    * Calls the keepAlive API on the current scanner if the keepAlivePeriodMs has passed.
    */
-  private void KeepKuduScannerAlive() throws KuduException {
+  private void keepKuduScannerAlive() throws KuduException {
     long now = System.currentTimeMillis();
     if (now >= lastKeepAliveTimeMs + keepAlivePeriodMs && !scanner.isClosed()) {
       scanner.keepAlive();
@@ -71,7 +71,7 @@ public class KuduScannerIterator implements Iterator<RowResult> {
           nextRowsCallback.call(currentIterator.getNumRows());
         }
       }
-      KeepKuduScannerAlive();
+      keepKuduScannerAlive();
       return currentIterator.hasNext();
     } catch (KuduException ex) {
       throw new RuntimeException(ex);
@@ -89,7 +89,7 @@ public class KuduScannerIterator implements Iterator<RowResult> {
   }
 
   @InterfaceAudience.LimitedPrivate("Spark")
-  public static abstract class NextRowsCallback {
+  public abstract static class NextRowsCallback {
 
     /**
      * @param numRows The number of rows returned from the

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.Type.STRING;
@@ -52,7 +53,7 @@ public class TestHybridTime {
 
   // Generate a unique table name
   private static final String TABLE_NAME =
-    TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
+      TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
 
   private static final Schema schema = getSchema();
   private KuduTable table;
@@ -134,9 +135,9 @@ public class TestHybridTime {
       long snapshotTime = physicalAndLogicalToHTTimestamp(futureTs, logicalValues.get(i));
       int expected = i + 1;
       assertEquals(
-          String.format("wrong number of rows for write %d at logical timestamp %d", i, logicalValue),
-          expected,
-          scanAtSnapshot(snapshotTime));
+          String.format("wrong number of rows for write %d at logical timestamp %d",
+              i, logicalValue),
+          expected, scanAtSnapshot(snapshotTime));
     }
 
     // The last snapshots needs to be one into the future w.r.t. the last write's timestamp
@@ -149,7 +150,8 @@ public class TestHybridTime {
   }
 
   private int scanAtSnapshot(long time) throws Exception {
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = harness.getAsyncClient().newScannerBuilder(table)
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder =
+        harness.getAsyncClient().newScannerBuilder(table)
         .snapshotTimestampRaw(time)
         .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT);
     return countRowsInScan(builder.build());

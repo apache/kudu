@@ -72,7 +72,8 @@ public class TestScanPredicate {
   }
 
   private int countRows(KuduTable table, KuduPredicate... predicates) throws Exception {
-    KuduScanner.KuduScannerBuilder scanBuilder =  new KuduScanner.KuduScannerBuilder(asyncClient, table);
+    KuduScanner.KuduScannerBuilder scanBuilder =
+        new KuduScanner.KuduScannerBuilder(asyncClient, table);
     for (KuduPredicate predicate : predicates) {
       scanBuilder.addPredicate(predicate);
     }
@@ -148,9 +149,8 @@ public class TestScanPredicate {
         100.0F,
         Float.MAX_VALUE,
         Float.POSITIVE_INFINITY
-
-        // TODO: uncomment after fixing KUDU-1386
-        // Float.NaN
+    // TODO: uncomment after fixing KUDU-1386
+    // Float.NaN
     );
   }
 
@@ -192,8 +192,8 @@ public class TestScanPredicate {
         Double.MAX_VALUE,
         Double.POSITIVE_INFINITY
 
-        // TODO: uncomment after fixing KUDU-1386
-        // Double.NaN
+    // TODO: uncomment after fixing KUDU-1386
+    // Double.NaN
     );
   }
 
@@ -465,7 +465,7 @@ public class TestScanPredicate {
     KuduTable table = client.openTable("float-table");
 
     NavigableSet<Float> values = createFloatValues();
-    List<Float> testValues = createFloatTestValues();
+    final List<Float> testValues = createFloatTestValues();
     KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
@@ -524,7 +524,7 @@ public class TestScanPredicate {
     KuduTable table = client.openTable("double-table");
 
     NavigableSet<Double> values = createDoubleValues();
-    List<Double> testValues = createDoubleTestValues();
+    final List<Double> testValues = createDoubleTestValues();
     KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
@@ -587,7 +587,7 @@ public class TestScanPredicate {
     KuduTable table = client.openTable("decimal-table");
 
     NavigableSet<BigDecimal> values = createDecimalValues();
-    List<BigDecimal> testValues = createDecimalTestValues();
+    final List<BigDecimal> testValues = createDecimalTestValues();
     KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
@@ -655,7 +655,7 @@ public class TestScanPredicate {
     KuduTable table = client.openTable("string-table");
 
     NavigableSet<String> values = createStringValues();
-    List<String> testValues = createStringTestValues();
+    final List<String> testValues = createStringTestValues();
     KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
@@ -723,7 +723,7 @@ public class TestScanPredicate {
     KuduTable table = client.openTable("binary-table");
 
     NavigableSet<String> values = createStringValues();
-    List<String> testValues = createStringTestValues();
+    final List<String> testValues = createStringTestValues();
     KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;

@@ -34,7 +34,7 @@ public enum ExternalConsistencyMode {
   COMMIT_WAIT(Common.ExternalConsistencyMode.COMMIT_WAIT);
 
   private final Common.ExternalConsistencyMode pbVersion;
-  private ExternalConsistencyMode(Common.ExternalConsistencyMode pbVersion) {
+  ExternalConsistencyMode(Common.ExternalConsistencyMode pbVersion) {
     this.pbVersion = pbVersion;
   }
 

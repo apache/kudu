@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
@@ -36,7 +37,7 @@ import org.apache.kudu.test.KuduTestHarness;
 public class ITScannerMultiTablet {
 
   private static final String TABLE_NAME =
-      ITScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
+      ITScannerMultiTablet.class.getName() + "-" + System.currentTimeMillis();
   protected static final int ROW_COUNT = 20000;
   protected static final int TABLET_COUNT = 3;
 

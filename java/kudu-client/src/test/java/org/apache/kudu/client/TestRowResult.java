@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -63,7 +64,7 @@ public class TestRowResult {
     row.addByte(0, (byte) 1);
     row.addShort(1, (short) 2);
     row.addInt(2, 3);
-    row.addLong(3, 4l);
+    row.addLong(3, 4L);
     row.addBoolean(4, true);
     row.addFloat(5, 5.6f);
     row.addDouble(6, 7.8);
@@ -109,15 +110,18 @@ public class TestRowResult {
 
       assertEquals(5.6f, rr.getFloat(5), .001f);
       assertEquals(5.6f, (float) rr.getObject(5), .001f);
-      assertEquals(5.6f, rr.getFloat(allTypesSchema.getColumnByIndex(5).getName()), .001f);
+      assertEquals(5.6f,
+          rr.getFloat(allTypesSchema.getColumnByIndex(5).getName()), .001f);
 
       assertEquals(7.8, rr.getDouble(6), .001);
       assertEquals(7.8, (double) rr.getObject(6), .001);
-      assertEquals(7.8, rr.getDouble(allTypesSchema.getColumnByIndex(6).getName()), .001f);
+      assertEquals(7.8,
+          rr.getDouble(allTypesSchema.getColumnByIndex(6).getName()), .001f);
 
       assertEquals("string-value", rr.getString(7));
       assertEquals("string-value", rr.getObject(7));
-      assertEquals("string-value", rr.getString(allTypesSchema.getColumnByIndex(7).getName()));
+      assertEquals("string-value",
+          rr.getString(allTypesSchema.getColumnByIndex(7).getName()));
 
       assertArrayEquals("binary-array".getBytes(UTF_8), rr.getBinaryCopy(8));
       assertArrayEquals("binary-array".getBytes(UTF_8), (byte[]) rr.getObject(8));
@@ -138,15 +142,18 @@ public class TestRowResult {
 
       assertEquals(new Timestamp(11), rr.getTimestamp(11));
       assertEquals(new Timestamp(11), rr.getObject(11));
-      assertEquals(new Timestamp(11), rr.getTimestamp(allTypesSchema.getColumnByIndex(11).getName()));
+      assertEquals(new Timestamp(11),
+          rr.getTimestamp(allTypesSchema.getColumnByIndex(11).getName()));
 
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(12));
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getObject(12));
-      assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));
+      assertEquals(BigDecimal.valueOf(12345, 3),
+          rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));
 
       assertEquals("varcharval", rr.getVarchar(13));
       assertEquals("varcharval", rr.getObject(13));
-      assertEquals("varcharval", rr.getVarchar(allTypesSchema.getColumnByIndex(13).getName()));
+      assertEquals("varcharval",
+          rr.getVarchar(allTypesSchema.getColumnByIndex(13).getName()));
 
       // We test with the column name once since it's the same method for all types, unlike above.
       assertEquals(Type.INT8, rr.getColumnType(allTypesSchema.getColumnByIndex(0).getName()));

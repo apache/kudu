@@ -62,14 +62,15 @@ public class TestAuthTokenReacquire {
 
   // Inject additional INVALID_AUTHENTICATION_TOKEN responses from both the
   // master and tablet servers, even for not-yet-expired tokens.
-  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
-      .enableKerberos()
-      .addMasterServerFlag(String.format("--authn_token_validity_seconds=%d", TOKEN_TTL_SEC))
-      .addMasterServerFlag(String.format("--authz_token_validity_seconds=%d", TOKEN_TTL_SEC))
-      .addMasterServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
-      .addTabletServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
-      .addTabletServerFlag("--tserver_enforce_access_control=true")
-      .addTabletServerFlag("--tserver_inject_invalid_authz_token_ratio=0.5");
+  private static final MiniKuduClusterBuilder clusterBuilder =
+      KuduTestHarness.getBaseClusterBuilder()
+          .enableKerberos()
+          .addMasterServerFlag(String.format("--authn_token_validity_seconds=%d", TOKEN_TTL_SEC))
+          .addMasterServerFlag(String.format("--authz_token_validity_seconds=%d", TOKEN_TTL_SEC))
+          .addMasterServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
+          .addTabletServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
+          .addTabletServerFlag("--tserver_enforce_access_control=true")
+          .addTabletServerFlag("--tserver_inject_invalid_authz_token_ratio=0.5");
 
   private KuduClient client;
   private AsyncKuduClient asyncClient;
@@ -109,7 +110,7 @@ public class TestAuthTokenReacquire {
     // To ratchet up the intensity a bit, run the scenario by several concurrent threads.
     List<Thread> threads = new ArrayList<>();
     final Map<Integer, Throwable> exceptions =
-        Collections.synchronizedMap(new HashMap<Integer, Throwable>());
+        Collections.synchronizedMap(new HashMap<>());
     for (int i = 0; i < 8; ++i) {
       final int threadIdx = i;
       Thread thread = new Thread(new Runnable() {
@@ -149,7 +150,8 @@ public class TestAuthTokenReacquire {
             try {
               client.deleteTable(tableName);
             } catch (KuduException ex) {
-              // See the above comment about table creation. The same idea applies to table deletion.
+              // See the above comment about table creation.
+              // The same idea applies to table deletion.
               // TODO(KUDU-1537): Remove this workaround when table deletion is exactly-once.
               if (!ex.getStatus().isNotFound()) {
                 throw ex;
@@ -199,13 +201,15 @@ public class TestAuthTokenReacquire {
 
   @Test
   public void testBasicWorkflow() throws Exception {
-    KuduTable table = client.createTable(TABLE_NAME, basicSchema,
+    final KuduTable table = client.createTable(TABLE_NAME, basicSchema,
         getBasicCreateTableOptions());
-    String tableId = table.getTableId();
+    final String tableId = table.getTableId();
     int key = 0;
 
     // Drop all connections so the first write needs to reconnect with a new authn token.
+    // CHECKSTYLE:OFF
     Token.SignedTokenPB originalToken = asyncClient.securityContext.getAuthenticationToken();
+    // CHECKSTYLE:ON
     dropConnectionsAndExpireTokens();
     KuduSession session = client.newSession();
     session.setTimeoutMillis(OP_TIMEOUT_MS);

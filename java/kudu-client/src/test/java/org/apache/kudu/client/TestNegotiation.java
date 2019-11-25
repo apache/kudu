@@ -56,8 +56,8 @@ public class TestNegotiation {
     try (MiniKuduCluster cluster = clusterBuilder.build()) {
       cluster.kdestroy();
       try (Closeable c = cla.attach();
-           KuduClient client = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
-                                             .build()
+           KuduClient client =
+               new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString()).build()
       ) {
         assertTrue(client.getTablesList().getTablesList().isEmpty());
       }

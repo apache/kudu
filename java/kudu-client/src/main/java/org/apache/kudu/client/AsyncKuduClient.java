@@ -692,10 +692,10 @@ public class AsyncKuduClient implements AutoCloseable {
     // If requested, add a callback that waits until all of the table's tablets
     // have been altered.
     return responseD.addCallbackDeferring(resp -> {
-          TableIdentifierPB.Builder table = TableIdentifierPB.newBuilder()
-              .setTableId(ByteString.copyFromUtf8(resp.getTableId()));
-          return getDelayedIsAlterTableDoneDeferred(table, alter, resp);
-        });
+      TableIdentifierPB.Builder table = TableIdentifierPB.newBuilder()
+          .setTableId(ByteString.copyFromUtf8(resp.getTableId()));
+      return getDelayedIsAlterTableDoneDeferred(table, alter, resp);
+    });
   }
 
   /**
@@ -835,7 +835,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     return AsyncUtil.addCallbacksDeferring(
         getTableSchema(name, null, null),
-        _table -> Deferred.fromResult(true),
+        table -> Deferred.fromResult(true),
         (Callback<Deferred<Boolean>, Exception>) e -> {
           if (e instanceof NonRecoverableException) {
             Status status = ((NonRecoverableException) e).getStatus();
@@ -914,7 +914,7 @@ public class AsyncKuduClient implements AutoCloseable {
           return null;
         })
         .addErrback(new RetryTaskErrback<>(
-            fakeRpc, _ignored -> doExportAuthenticationCredentials(fakeRpc)));
+            fakeRpc, ignored -> doExportAuthenticationCredentials(fakeRpc)));
   }
 
   @InterfaceAudience.LimitedPrivate("Test")
@@ -1203,8 +1203,8 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     final KuduRpc<Void> keepAliveRequest = scanner.getKeepAliveRequest();
-    final ServerInfo info = tablet.getReplicaSelectedServerInfo(keepAliveRequest.getReplicaSelection(),
-                                                                location);
+    final ServerInfo info =
+        tablet.getReplicaSelectedServerInfo(keepAliveRequest.getReplicaSelection(), location);
     if (info == null) {
       return Deferred.fromResult(null);
     }
@@ -1506,10 +1506,11 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param alterResp response from an earlier AlterTable RPC, if any
    * @return callback that will eventually return 'alterResp'
    */
-  private Callback<Deferred<AlterTableResponse>, IsAlterTableDoneResponse> getDelayedIsAlterTableDoneCB(
-      @Nonnull final KuduRpc<AlterTableResponse> rpc,
-      @Nonnull final TableIdentifierPB.Builder table,
-      @Nullable final AlterTableResponse alterResp) {
+  private Callback<Deferred<AlterTableResponse>, IsAlterTableDoneResponse>
+      getDelayedIsAlterTableDoneCB(
+          @Nonnull final KuduRpc<AlterTableResponse> rpc,
+          @Nonnull final TableIdentifierPB.Builder table,
+          @Nullable final AlterTableResponse alterResp) {
     return resp -> {
       // Store the Deferred locally; callback() below will reset it and we'd
       // return a different, non-triggered Deferred.
@@ -1756,41 +1757,40 @@ public class AsyncKuduClient implements AutoCloseable {
     // TODO(todd): stop using this 'masterTable' hack.
     return ConnectToCluster.run(masterTable, masterAddresses, parentRpc,
         defaultAdminOperationTimeoutMs, Connection.CredentialsPolicy.ANY_CREDENTIALS).addCallback(
-        resp -> {
-          if (resp.getConnectResponse().hasAuthnToken()) {
-            // If the response has security info, adopt it.
-            securityContext.setAuthenticationToken(resp.getConnectResponse().getAuthnToken());
-          }
-          List<ByteString> caCerts = resp.getConnectResponse().getCaCertDerList();
-          if (!caCerts.isEmpty()) {
-            try {
-              securityContext.trustCertificates(caCerts);
-            } catch (CertificateException e) {
-              LOG.warn("Ignoring invalid CA cert from leader {}: {}",
-                       resp.getLeaderHostAndPort(),
-                       e.getMessage());
-            }
-          }
+            resp -> {
+              if (resp.getConnectResponse().hasAuthnToken()) {
+                // If the response has security info, adopt it.
+                securityContext.setAuthenticationToken(resp.getConnectResponse().getAuthnToken());
+              }
+              List<ByteString> caCerts = resp.getConnectResponse().getCaCertDerList();
+              if (!caCerts.isEmpty()) {
+                try {
+                  securityContext.trustCertificates(caCerts);
+                } catch (CertificateException e) {
+                  LOG.warn("Ignoring invalid CA cert from leader {}: {}",
+                      resp.getLeaderHostAndPort(), e.getMessage());
+                }
+              }
 
-          HiveMetastoreConfig hiveMetastoreConfig = null;
-          Master.ConnectToMasterResponsePB respPb = resp.getConnectResponse();
-          if (respPb.hasHmsConfig()) {
-            Master.HiveMetastoreConfig metastoreConf = respPb.getHmsConfig();
-            hiveMetastoreConfig = new HiveMetastoreConfig(metastoreConf.getHmsUris(),
-                                                          metastoreConf.getHmsSaslEnabled(),
-                                                          metastoreConf.getHmsUuid());
-          }
-          synchronized (AsyncKuduClient.this) {
-            AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
-            location = respPb.getClientLocation();
-          }
+              HiveMetastoreConfig hiveMetastoreConfig = null;
+              Master.ConnectToMasterResponsePB respPb = resp.getConnectResponse();
+              if (respPb.hasHmsConfig()) {
+                Master.HiveMetastoreConfig metastoreConf = respPb.getHmsConfig();
+                hiveMetastoreConfig = new HiveMetastoreConfig(metastoreConf.getHmsUris(),
+                                                              metastoreConf.getHmsSaslEnabled(),
+                                                              metastoreConf.getHmsUuid());
+              }
+              synchronized (AsyncKuduClient.this) {
+                AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
+                location = respPb.getClientLocation();
+              }
 
-          hasConnectedToMaster = true;
+              hasConnectedToMaster = true;
 
-          // Translate the located master into a TableLocations
-          // since the rest of our locations caching code expects this type.
-          return resp.getAsTableLocations();
-        });
+              // Translate the located master into a TableLocations
+              // since the rest of our locations caching code expects this type.
+              return resp.getAsTableLocations();
+            });
   }
 
   /**
@@ -2004,28 +2004,28 @@ public class AsyncKuduClient implements AutoCloseable {
                                          tablet.getPartition().getPartitionKeyStart(),
                                          splitSizeBytes,
                                          fakeRpc)
-                          .addCallbackDeferring(resp -> {
-                            final List<KeyRange> ranges = Lists.newArrayList();
-                            LOG.debug("Key ranges for {}", table.getName());
-                            for (Common.KeyRangePB pb : resp.getKeyRanges()) {
-                              KeyRange newRange = new KeyRange(tablet,
-                                                               pb.getStartPrimaryKey().toByteArray(),
-                                                               pb.getStopPrimaryKey().toByteArray(),
-                                                               pb.getSizeBytesEstimates());
-                              ranges.add(newRange);
-                              LOG.debug(newRange.toString());
-                            }
-                            return Deferred.fromResult(ranges);
-                          }));
+            .addCallbackDeferring(resp -> {
+              final List<KeyRange> ranges = Lists.newArrayList();
+              LOG.debug("Key ranges for {}", table.getName());
+              for (Common.KeyRangePB pb : resp.getKeyRanges()) {
+                KeyRange newRange = new KeyRange(tablet,
+                                                 pb.getStartPrimaryKey().toByteArray(),
+                                                 pb.getStopPrimaryKey().toByteArray(),
+                                                 pb.getSizeBytesEstimates());
+                ranges.add(newRange);
+                LOG.debug(newRange.toString());
+              }
+              return Deferred.fromResult(ranges);
+            }));
       }
       // Must preserve the order.
       return Deferred.groupInOrder(deferreds).addCallbackDeferring(rangeLists -> {
-            final List<KeyRange> ret = Lists.newArrayList();
-            for (List<KeyRange> ranges : rangeLists) {
-              ret.addAll(ranges);
-            }
-            return Deferred.fromResult(ret);
-          });
+        final List<KeyRange> ret = Lists.newArrayList();
+        for (List<KeyRange> ranges : rangeLists) {
+          ret.addAll(ranges);
+        }
+        return Deferred.fromResult(ret);
+      });
     };
 
     final List<LocatedTablet> tablets = Lists.newArrayList();
@@ -2142,7 +2142,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // in parallel. Asynchbase does some hacking with a "probe" RPC while putting the other ones
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
     // we're not expecting this in Kudu.
-    newTimeout(timer, _timeout -> sendRpcToTablet(rpc), sleepTime);
+    newTimeout(timer, timeout -> sendRpcToTablet(rpc), sleepTime);
     return rpc.getDeferred();
   }
 
@@ -2316,8 +2316,8 @@ public class AsyncKuduClient implements AutoCloseable {
         int tsInfoIdx = replica.getTsInfoIdx();
         if (tsInfoIdx >= numTsInfos) {
           lookupExceptions.add(new NonRecoverableException(Status.Corruption(
-              String.format("invalid response from master: referenced tablet idx %d but only %d present",
-                            tsInfoIdx, numTsInfos))));
+              String.format("invalid response from master: referenced tablet idx %d but only %d " +
+                      "present", tsInfoIdx, numTsInfos))));
           continue;
         }
         TSInfoPB tsInfo = tsInfosList.get(tsInfoIdx);
@@ -2435,8 +2435,7 @@ public class AsyncKuduClient implements AutoCloseable {
               "Table location expired before it could be processed")));
         }
         if (entry.isNonCoveredRange()) {
-          if (lookupType == LookupType.POINT
-              || entry.getUpperBoundPartitionKey().length == 0) {
+          if (lookupType == LookupType.POINT || entry.getUpperBoundPartitionKey().length == 0) {
             return Deferred.fromError(
                 new NonCoveredRangeException(entry.getLowerBoundPartitionKey(),
                                              entry.getUpperBoundPartitionKey()));

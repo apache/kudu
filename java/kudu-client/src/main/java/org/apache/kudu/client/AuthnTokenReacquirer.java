@@ -100,8 +100,8 @@ final class AuthnTokenReacquirer {
 
   private void reacquireAuthnToken() {
 
-    /**
-     * An utility class providing callbacks for successful completion of authn token re-acqusition.
+    /*
+      An utility class providing callbacks for successful completion of authn token re-acqusition.
      */
     final class NewAuthnTokenCB implements Callback<Void, Boolean> {
       /**
@@ -131,7 +131,7 @@ final class AuthnTokenReacquirer {
       }
     }
 
-    /**
+    /*
      * Errback to retry authn token re-acquisition and notify the handle the affected RPCs if the
      * re-acquisition failed after some number of retries (currently, it's 5 attempts).
      *

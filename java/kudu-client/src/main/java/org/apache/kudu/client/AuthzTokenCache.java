@@ -61,7 +61,8 @@ public class AuthzTokenCache {
   private final AsyncKuduClient client;
 
   // Map from a table ID to an authz token for that table.
-  private final ConcurrentHashMap<String, Token.SignedTokenPB> authzTokens = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Token.SignedTokenPB> authzTokens =
+      new ConcurrentHashMap<>();
 
   // Map from a table ID that has an in-flight RPC to get a new authz token, to
   // the list of RPCs waiting to be retried once that token is received and the
@@ -171,7 +172,7 @@ public class AuthzTokenCache {
    * @param <R> the RPC type
    */
   <R> void retrieveAuthzToken(@Nonnull final KuduRpc<R> rpc, @Nonnull final KuduException ex) {
-    /**
+    /*
      * Handles a response from getting an authz token.
      */
     final class NewAuthzTokenCB implements Callback<Void, GetTableSchemaResponse> {
@@ -198,7 +199,7 @@ public class AuthzTokenCache {
       }
     }
 
-    /**
+    /*
      * Handles the case where there was an error getting the new authz token.
      */
     final class NewAuthzTokenErrB implements Callback<Void, Exception> {

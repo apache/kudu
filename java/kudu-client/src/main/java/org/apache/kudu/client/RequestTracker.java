@@ -82,7 +82,7 @@ public class RequestTracker {
     assert sequenceId != NO_SEQ_NO;
     synchronized (lock) {
       boolean removed = incompleteRpcs.remove(sequenceId);
-      assert(removed) : "Could not remove seqid " + sequenceId + " from request tracker";
+      assert (removed) : "Could not remove seqid " + sequenceId + " from request tracker";
     }
   }
 

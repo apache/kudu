@@ -39,7 +39,7 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
 
     int rowCount = 0;
     int loopCount = 0;
-    while(scanner.hasMoreRows()) {
+    while (scanner.hasMoreRows()) {
       loopCount++;
       RowResultIterator rri = scanner.nextRows();
       rowCount += rri.getNumRows();
@@ -62,7 +62,7 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    * Tests non fault tolerant scanner by killing the tablet server while scanning and
    * verifies it throws {@link NonRecoverableException} as expected.
    */
-  @Test(timeout = 100000, expected=NonRecoverableException.class)
+  @Test(timeout = 100000, expected = NonRecoverableException.class)
   public void testNonFaultTolerantScannerKill() throws Exception {
     serverFaultInjection(false, false, false);
   }
@@ -71,7 +71,7 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    * Tests non fault tolerant scanner by restarting the tablet server while scanning and
    * verifies it throws {@link NonRecoverableException} as expected.
    */
-  @Test(timeout = 100000, expected=NonRecoverableException.class)
+  @Test(timeout = 100000, expected = NonRecoverableException.class)
   public void testNonFaultTolerantScannerRestart() throws Exception {
     serverFaultInjection(true, false, false);
   }

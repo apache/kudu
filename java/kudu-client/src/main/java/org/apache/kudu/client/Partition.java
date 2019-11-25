@@ -227,7 +227,7 @@ public class Partition implements Comparable<Partition> {
     PartitionSchema partitionSchema = table.getPartitionSchema();
     PartitionSchema.RangeSchema rangeSchema = partitionSchema.getRangeSchema();
 
-    if (rangeSchema.getColumns().isEmpty()) {
+    if (rangeSchema.getColumnIds().isEmpty()) {
       return "";
     }
     if (rangeKeyStart.length == 0 && rangeKeyEnd.length == 0) {
@@ -235,11 +235,11 @@ public class Partition implements Comparable<Partition> {
     }
 
     List<Integer> idxs = new ArrayList<>();
-    for (int id : partitionSchema.getRangeSchema().getColumns()) {
+    for (int id : partitionSchema.getRangeSchema().getColumnIds()) {
       idxs.add(schema.getColumnIndex(id));
     }
 
-    int numColumns = rangeSchema.getColumns().size();
+    int numColumns = rangeSchema.getColumnIds().size();
     StringBuilder sb = new StringBuilder();
 
     if (rangeKeyEnd.length == 0) {

@@ -70,6 +70,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param readMode a read mode for the scanner
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S readMode(AsyncKuduScanner.ReadMode readMode) {
     this.readMode = readMode;
     return (S) this;
@@ -91,6 +92,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param isFaultTolerant a boolean that indicates if scan is fault-tolerant
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S setFaultTolerant(boolean isFaultTolerant) {
     this.isFaultTolerant = isFaultTolerant;
     if (isFaultTolerant) {
@@ -119,6 +121,7 @@ public abstract class AbstractKuduScannerBuilder
    * @deprecated use {@link #addPredicate}
    */
   @Deprecated
+  @SuppressWarnings("unchecked")
   public S addColumnRangePredicatesRaw(byte[] predicateBytes) {
     for (Tserver.ColumnRangePredicatePB pb : ColumnRangePredicate.fromByteArray(predicateBytes)) {
       addPredicate(ColumnRangePredicate.fromPb(pb).toKuduPredicate());
@@ -131,6 +134,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param predicate predicate to add
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S addPredicate(KuduPredicate predicate) {
     String columnName = predicate.getColumn().getName();
     KuduPredicate existing = predicates.get(columnName);
@@ -155,6 +159,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param columnNames the names of columns to read, or 'null' to read all columns
    * (the default)
    */
+  @SuppressWarnings("unchecked")
   public S setProjectedColumnNames(List<String> columnNames) {
     projectedColumnIndexes = null;
     if (columnNames != null) {
@@ -172,6 +177,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param columnIndexes the indexes of columns to read, or 'null' to read all columns
    * (the default)
    */
+  @SuppressWarnings("unchecked")
   public S setProjectedColumnIndexes(List<Integer> columnIndexes) {
     projectedColumnNames = null;
     if (columnIndexes != null) {
@@ -190,6 +196,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param batchSizeBytes a strictly positive number of bytes
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S batchSizeBytes(int batchSizeBytes) {
     this.batchSizeBytes = batchSizeBytes;
     return (S) this;
@@ -202,6 +209,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param limit a positive long
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S limit(long limit) {
     this.limit = limit;
     return (S) this;
@@ -215,6 +223,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param prefetching a boolean that indicates if the scanner should prefetch rows
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S prefetching(boolean prefetching) {
     this.prefetching = prefetching;
     return (S) this;
@@ -226,6 +235,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param cacheBlocks a boolean that indicates if data blocks should be cached or not
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S cacheBlocks(boolean cacheBlocks) {
     this.cacheBlocks = cacheBlocks;
     return (S) this;
@@ -241,6 +251,7 @@ public abstract class AbstractKuduScannerBuilder
    *                                  read mode was not set to READ_AT_SNAPSHOT
    */
   @InterfaceAudience.Private
+  @SuppressWarnings("unchecked")
   public S snapshotTimestampRaw(long htTimestamp) {
     this.htTimestamp = htTimestamp;
     return (S) this;
@@ -255,6 +266,7 @@ public abstract class AbstractKuduScannerBuilder
    * @throws IllegalArgumentException on build(), if the timestamp is less than 0 or if the
    *                                  read mode was not set to READ_AT_SNAPSHOT
    */
+  @SuppressWarnings("unchecked")
   public S snapshotTimestampMicros(long timestamp) {
     this.htTimestamp = HybridTimeUtil.physicalAndLogicalToHTTimestamp(timestamp, 0);
     return (S) this;
@@ -271,6 +283,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   @InterfaceAudience.Private
+  @SuppressWarnings("unchecked")
   public S diffScan(long startTimestamp, long endTimestamp) {
     this.startTimestamp = startTimestamp;
     this.htTimestamp = endTimestamp;
@@ -285,6 +298,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param scanRequestTimeout a long representing time in milliseconds
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S scanRequestTimeout(long scanRequestTimeout) {
     this.scanRequestTimeout = scanRequestTimeout;
     return (S) this;
@@ -308,6 +322,7 @@ public abstract class AbstractKuduScannerBuilder
    * @deprecated use {@link #lowerBound(PartialRow)}
    */
   @Deprecated
+  @SuppressWarnings("unchecked")
   public S lowerBoundRaw(byte[] startPrimaryKey) {
     if (lowerBoundPrimaryKey.length == 0 ||
         Bytes.memcmp(startPrimaryKey, lowerBoundPrimaryKey) > 0) {
@@ -334,6 +349,7 @@ public abstract class AbstractKuduScannerBuilder
    * @deprecated use {@link #exclusiveUpperBound(PartialRow)}
    */
   @Deprecated
+  @SuppressWarnings("unchecked")
   public S exclusiveUpperBoundRaw(byte[] endPrimaryKey) {
     if (upperBoundPrimaryKey.length == 0 ||
         Bytes.memcmp(endPrimaryKey, upperBoundPrimaryKey) < 0) {
@@ -348,6 +364,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param replicaSelection replication selection mechanism to use
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S replicaSelection(ReplicaSelection replicaSelection) {
     this.replicaSelection = replicaSelection;
     return (S) this;
@@ -359,6 +376,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param partitionKey the encoded partition key
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   S lowerBoundPartitionKeyRaw(byte[] partitionKey) {
     if (Bytes.memcmp(partitionKey, lowerBoundPartitionKey) > 0) {
       this.lowerBoundPartitionKey = partitionKey;
@@ -372,6 +390,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param partitionKey the encoded partition key
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   S exclusiveUpperBoundPartitionKeyRaw(byte[] partitionKey) {
     if (upperBoundPartitionKey.length == 0 ||
         Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
@@ -387,6 +406,7 @@ public abstract class AbstractKuduScannerBuilder
    * @param keepAlivePeriodMs the keep alive period in milliseconds
    * @return this instance
    */
+  @SuppressWarnings("unchecked")
   public S keepAlivePeriodMs(long keepAlivePeriodMs) {
     this.keepAlivePeriodMs = keepAlivePeriodMs;
     return (S) this;

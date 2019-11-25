@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInTable;
@@ -192,7 +193,7 @@ public class TestAsyncKuduSession {
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
     session.apply(createBasicSchemaInsert(nonReplicatedTable, 1)).join();
 
-    int numClientsBefore = client.getConnectionListCopy().size();
+    final int numClientsBefore = client.getConnectionListCopy().size();
 
     // Restart all the tablet servers.
     harness.killAllTabletServers();

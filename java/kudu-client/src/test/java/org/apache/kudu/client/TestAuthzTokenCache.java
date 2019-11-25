@@ -85,7 +85,7 @@ public class TestAuthzTokenCache {
     // upon accessing a table.
     final KuduTable table = client.createTable(tableName, getBasicSchema(),
         getBasicCreateTableOptions());
-    AuthzTokenCache tokenCache = asyncClient.getAuthzTokenCache();
+    final AuthzTokenCache tokenCache = asyncClient.getAuthzTokenCache();
     String tableId = table.getTableId();
     Token.SignedTokenPB originalToken = asyncClient.getAuthzToken(tableId);
     assertNotNull(originalToken);
@@ -112,6 +112,7 @@ public class TestAuthzTokenCache {
     final KuduTable table = client.createTable(tableName, getBasicSchema(),
         getBasicCreateTableOptions());
     final String tableId = table.getTableId();
+
     class AuthzTokenFetcher implements Callable<Exception> {
       @Override
       public Exception call() {
@@ -123,6 +124,7 @@ public class TestAuthzTokenCache {
         return null;
       }
     }
+
     // Send a bunch of authz token requests in parallel.
     final int NUM_THREADS = 30;
     ArrayList<AuthzTokenFetcher> fetchers = new ArrayList<>();

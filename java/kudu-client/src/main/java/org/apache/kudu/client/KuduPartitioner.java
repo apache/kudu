@@ -162,8 +162,12 @@ public class KuduPartitioner {
 
     @Override
     public boolean equals(Object o) {
-      if (this == o) return true;
-      if (!(o instanceof BytesKey)) return false;
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof BytesKey)) {
+        return false;
+      }
       BytesKey bytesKey = (BytesKey) o;
       return compareTo(bytesKey) == 0;
     }
@@ -231,7 +235,9 @@ public class KuduPartitioner {
         String tabletId = new String(tablet.getTabletId(), UTF_8);
         tabletIdToPartition.put(tabletId, tablet.getPartition());
         byte[] keyEnd = tablet.getPartition().partitionKeyEnd;
-        if (keyEnd.length == 0) break;
+        if (keyEnd.length == 0) {
+          break;
+        }
         nextPartKey = keyEnd;
       }
       return new KuduPartitioner(table.getPartitionSchema(), tabletIdToPartition);

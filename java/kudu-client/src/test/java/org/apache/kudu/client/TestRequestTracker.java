@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
@@ -89,6 +90,7 @@ public class TestRequestTracker {
 
   private static class Checker {
     long curIncomplete = 0;
+
     public synchronized void check(long seqNo, long firstIncomplete) {
       Assert.assertTrue("should not send a seq number that was previously marked complete",
           seqNo >= curIncomplete);

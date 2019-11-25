@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu;
 
 import static org.junit.Assert.assertEquals;
@@ -38,12 +39,13 @@ public class TestColumnSchema {
 
   @Test
   public void testToString() {
-    ColumnSchema col1 = new ColumnSchemaBuilder("col1", Type.STRING).build();
-    ColumnSchema col2 = new ColumnSchemaBuilder("col2", Type.INT64).build();
-    ColumnSchema col3 = new ColumnSchemaBuilder("col3", Type.DECIMAL)
+    final ColumnSchema col1 = new ColumnSchemaBuilder("col1", Type.STRING).build();
+    final ColumnSchema col2 = new ColumnSchemaBuilder("col2", Type.INT64).build();
+    final ColumnSchema col3 = new ColumnSchemaBuilder("col3", Type.DECIMAL)
         .typeAttributes(DecimalUtil.typeAttributes(5, 2))
         .build();
-    ColumnSchema col4 = new ColumnSchemaBuilder("col4", Type.INT16).comment("test comment").build();
+    final ColumnSchema col4 = new ColumnSchemaBuilder("col4", Type.INT16)
+        .comment("test comment").build();
 
     assertEquals("Column name: col1, type: string", col1.toString());
     assertEquals("Column name: col2, type: int64", col2.toString());
@@ -100,6 +102,7 @@ public class TestColumnSchema {
     ColumnSchema commentInt3 = new ColumnSchemaBuilder("col1", Type.INT32).comment("Test").build();
     assertNotEquals(commentInt1, commentInt3);
   }
+
   @Test
   public void testOutOfRangeVarchar() throws Exception {
     expectedException.expect(IllegalArgumentException.class);

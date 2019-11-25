@@ -268,8 +268,8 @@ public class KuduTable {
     // to avoid an extra call to get the range partitions.
     List<Partition> rangePartitions = new ArrayList<>();
     List<KuduScanToken> scanTokens = new KuduScanToken.KuduScanTokenBuilder(client, this)
-      .setTimeout(timeout)
-      .build();
+        .setTimeout(timeout)
+        .build();
     for (KuduScanToken token : scanTokens) {
       Partition partition = token.getTablet().getPartition();
       // Filter duplicate range partitions by taking only the tablets whose hash

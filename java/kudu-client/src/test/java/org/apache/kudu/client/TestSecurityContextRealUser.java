@@ -39,7 +39,8 @@ import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 public class TestSecurityContextRealUser {
   private String tableName;
 
-  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
+  private static final MiniKuduClusterBuilder clusterBuilder =
+      KuduTestHarness.getBaseClusterBuilder()
       // This test requires a delicate setup. We enable Kerberos, make
       // authentication optional, and set the superuser ACL to test-admin so that
       // the external mini-cluster is able to connect to the master while creating
@@ -90,7 +91,7 @@ public class TestSecurityContextRealUser {
       // Smoke-test tserver connection by scanning a table.
       KuduTable table = client.createTable(tableName, getBasicSchema(),
                                            new CreateTableOptions().setRangePartitionColumns(
-                                               new ArrayList<String>()));
+                                               new ArrayList<>()));
       assertEquals(0, scanTableToStrings(table).size());
     }
   }

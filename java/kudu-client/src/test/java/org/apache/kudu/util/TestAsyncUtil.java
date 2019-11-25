@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
 
 import static org.junit.Assert.assertEquals;
@@ -35,7 +36,7 @@ public class TestAsyncUtil {
 
   @Test(expected = IllegalStateException.class)
   public void testAddCallbacksDeferring() throws Exception {
-    Deferred<String> d = new Deferred<String>();
+    Deferred<String> d = new Deferred<>();
     TestCallback cb = new TestCallback();
     TestErrback eb = new TestErrback();
 
@@ -45,25 +46,25 @@ public class TestAsyncUtil {
     d.callback(testStr);
     assertEquals(d.join(), "callback: " + testStr);
 
-    d = new Deferred<String>();
+    d = new Deferred<>();
     AsyncUtil.addCallbacksDeferring(d, cb, eb);
     d.callback(new IllegalArgumentException());
     assertEquals(d.join(), "illegal arg");
 
-    d = new Deferred<String>();
+    d = new Deferred<>();
     AsyncUtil.addCallbacksDeferring(d, cb, eb);
     d.callback(new IllegalStateException());
     d.join();
   }
 
-  final static class TestCallback implements Callback<Deferred<String>, String> {
+  static final class TestCallback implements Callback<Deferred<String>, String> {
     @Override
     public Deferred<String> call(String arg) throws Exception {
       return Deferred.fromResult("callback: " + arg);
     }
   }
 
-  final static class TestErrback implements Callback<Deferred<String>, Exception> {
+  static final class TestErrback implements Callback<Deferred<String>, Exception> {
     @Override
     public Deferred<String> call(Exception arg) {
       if (arg instanceof IllegalArgumentException) {

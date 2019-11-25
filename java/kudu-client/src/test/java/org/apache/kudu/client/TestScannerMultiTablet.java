@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.Type.STRING;
@@ -43,7 +44,7 @@ import org.apache.kudu.test.KuduTestHarness;
 public class TestScannerMultiTablet {
   // Generate a unique table name
   private static final String TABLE_NAME =
-      TestScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
+      TestScannerMultiTablet.class.getName() + "-" + System.currentTimeMillis();
 
   private static Schema schema = getSchema();
 
@@ -108,10 +109,10 @@ public class TestScannerMultiTablet {
   }
 
   private void validateResourceMetrics(ResourceMetrics resourceMetrics) {
-      assertTrue("queue_duration_nanos > 0",
-              resourceMetrics.getMetric("queue_duration_nanos") > 0L);
-      assertTrue("total_duration_nanos > 0",
-              resourceMetrics.getMetric("total_duration_nanos") > 0L);
+    assertTrue("queue_duration_nanos > 0",
+        resourceMetrics.getMetric("queue_duration_nanos") > 0L);
+    assertTrue("total_duration_nanos > 0",
+        resourceMetrics.getMetric("total_duration_nanos") > 0L);
   }
 
   // Test scanner resource metrics.
@@ -165,6 +166,7 @@ public class TestScannerMultiTablet {
 
   // Test mixing start/end row keys with predicates.
   @Test(timeout = 100000)
+  @SuppressWarnings("deprecation")
   public void testKeysAndPredicates() throws Exception {
     // Value that doesn't exist, predicates has primary column
     ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumnByIndex(1));
@@ -461,6 +463,7 @@ public class TestScannerMultiTablet {
         exclusiveUpperBoundKeyOne, exclusiveUpperBoundKeyTwo, null);
   }
 
+  @SuppressWarnings("deprecation")
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
                                       String lowerBoundKeyTwo,
                                       String exclusiveUpperBoundKeyOne,

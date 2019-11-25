@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
@@ -33,8 +34,8 @@ import org.apache.kudu.test.KuduTestHarness;
 
 public class TestStatistics {
 
-  private static final String TABLE_NAME = TestStatistics.class.getName() + "-"
-      + System.currentTimeMillis();
+  private static final String TABLE_NAME = TestStatistics.class.getName() + "-" +
+      System.currentTimeMillis();
   private KuduTable table;
 
   @Rule

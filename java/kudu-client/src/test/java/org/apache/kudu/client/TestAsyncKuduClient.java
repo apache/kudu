@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -186,22 +187,22 @@ public class TestAsyncKuduClient {
   @Test
   public void testNoLeader() throws Exception {
     final int requestBatchSize = 10;
-    CreateTableOptions options = getBasicCreateTableOptions();
-    KuduTable table = client.createTable(
+    final CreateTableOptions options = getBasicCreateTableOptions();
+    final KuduTable table = client.createTable(
         "testNoLeader-" + System.currentTimeMillis(),
         basicSchema,
         options);
 
     // Lookup the current locations so that we can pass some valid information to discoverTablets.
-    List<LocatedTablet> tablets = asyncClient
+    final List<LocatedTablet> tablets = asyncClient
         .locateTable(table, null, null, requestBatchSize, DEFAULT_SLEEP)
         .join(DEFAULT_SLEEP);
-    LocatedTablet tablet = tablets.get(0);
-    LocatedTablet.Replica leader = tablet.getLeaderReplica();
+    final LocatedTablet tablet = tablets.get(0);
+    final LocatedTablet.Replica leader = tablet.getLeaderReplica();
 
     // Fake a master lookup that only returns one follower for the tablet.
-    List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
-    List<Master.TSInfoPB> tsInfos = new ArrayList<>();
+    final List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
+    final List<Master.TSInfoPB> tsInfos = new ArrayList<>();
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
     tabletPb.setPartition(ProtobufUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFrom(tablet.getTabletId()));

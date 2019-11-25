@@ -593,11 +593,11 @@ public class KuduPredicate {
         vals.add(Bytes.fromDouble((Double) value));
       }
     } else if (t instanceof BigDecimal) {
-        checkColumn(column, Type.DECIMAL);
-        for (T value : values) {
-          vals.add(Bytes.fromBigDecimal((BigDecimal) value,
-              column.getTypeAttributes().getPrecision()));
-        }
+      checkColumn(column, Type.DECIMAL);
+      for (T value : values) {
+        vals.add(Bytes.fromBigDecimal((BigDecimal) value,
+            column.getTypeAttributes().getPrecision()));
+      }
     } else if (t instanceof String) {
       checkColumn(column, Type.STRING, Type.VARCHAR);
       for (T value : values) {
@@ -1015,7 +1015,7 @@ public class KuduPredicate {
         return m < n && m + 1 == n;
       }
       case INT32:
-      case DECIMAL32:{
+      case DECIMAL32: {
         int m = Bytes.getInt(a);
         int n = Bytes.getInt(b);
         return m < n && m + 1 == n;
@@ -1169,9 +1169,9 @@ public class KuduPredicate {
       case DECIMAL32:
       case DECIMAL64:
       case DECIMAL128:
-       ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
-       return Bytes.getDecimal(value, typeAttributes.getPrecision(),
-           typeAttributes.getScale()).toString();
+        ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
+        return Bytes.getDecimal(value, typeAttributes.getPrecision(),
+            typeAttributes.getScale()).toString();
       default:
         throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
     }

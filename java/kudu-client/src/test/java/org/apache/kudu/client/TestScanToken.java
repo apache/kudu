@@ -239,7 +239,7 @@ public class TestScanToken {
   @Test
   public void testScanTokensConcurrentColumnRename() throws Exception {
     Schema schema = getBasicSchema();
-    String oldColName = schema.getColumnByIndex(1).getName();
+    final String oldColName = schema.getColumnByIndex(1).getName();
     CreateTableOptions createOptions = new CreateTableOptions();
     createOptions.setRangePartitionColumns(ImmutableList.of());
     createOptions.setNumReplicas(1);
@@ -359,8 +359,10 @@ public class TestScanToken {
     for (KuduScanner scanner : scanners) {
       scannedRows += countRowsInScan(scanner);
     }
-    assertTrue(String.format("%d >= %d / 3?", scannedRows, numRows), scannedRows >= numRows / 3);
-    assertTrue(String.format("%d <= 2 * %d / 3?", scannedRows, numRows), scannedRows <= 2 * numRows / 3);
+    assertTrue(String.format("%d >= %d / 3?", scannedRows, numRows),
+        scannedRows >= numRows / 3);
+    assertTrue(String.format("%d <= 2 * %d / 3?", scannedRows, numRows),
+        scannedRows <= 2 * numRows / 3);
   }
 
   /** Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class. */
@@ -415,7 +417,9 @@ public class TestScanToken {
     while (scanner.hasMoreRows()) {
       for (RowResult rowResult : scanner.nextRows()) {
         numMutations++;
-        if (rowResult.isDeleted()) numDeletes++;
+        if (rowResult.isDeleted()) {
+          numDeletes++;
+        }
       }
     }
     assertEquals(numExpectedMutations, numMutations);

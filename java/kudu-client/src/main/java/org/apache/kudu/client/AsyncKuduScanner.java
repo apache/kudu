@@ -311,7 +311,7 @@ public final class AsyncKuduScanner {
 
     // Map the column names to actual columns in the table schema.
     // If the user set this to 'null', we scan all columns.
-    List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    List<ColumnSchema> columns = new ArrayList<>();
     if (projectedNames != null) {
       for (String columnName : projectedNames) {
         ColumnSchema originalColumn = table.getSchema().getColumn(columnName);
@@ -974,7 +974,7 @@ public final class AsyncKuduScanner {
       readProtobuf(callResponse.getPBMessage(), builder);
       ScannerKeepAliveResponsePB resp = builder.build();
       TabletServerErrorPB error = resp.hasError() ? resp.getError() : null;
-      return new Pair<Void, Object>(null, error);
+      return new Pair<>(null, error);
     }
   }
 
@@ -1123,7 +1123,7 @@ public final class AsyncKuduScanner {
           case TABLET_NOT_RUNNING:
             if (state == State.OPENING || (state == State.NEXT && isFaultTolerant)) {
               // Doing this will trigger finding the new location.
-              return new Pair<Response, Object>(null, error);
+              return new Pair<>(null, error);
             } else {
               Status statusIncomplete = Status.Incomplete("Cannot continue scanning, " +
                   "the tablet has moved and this isn't a fault tolerant scan");
@@ -1141,7 +1141,8 @@ public final class AsyncKuduScanner {
       }
       // TODO: Find a clean way to plumb in reuseRowResult.
       RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
-          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse, reuseRowResult);
+          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse,
+          reuseRowResult);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
@@ -1161,7 +1162,7 @@ public final class AsyncKuduScanner {
       if (LOG.isDebugEnabled()) {
         LOG.debug("{} for scanner {}", response.toString(), AsyncKuduScanner.this);
       }
-      return new Pair<Response, Object>(response, error);
+      return new Pair<>(response, error);
     }
 
     @Override

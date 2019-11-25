@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
@@ -86,7 +87,7 @@ public class TestRowErrors {
     KuduSession session = harness.getClient().newSession();
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
 
-    int dupRows = 3;
+    final int dupRows = 3;
     session.apply(createInsert(12));
     session.apply(createInsert(22));
     session.apply(createInsert(32));

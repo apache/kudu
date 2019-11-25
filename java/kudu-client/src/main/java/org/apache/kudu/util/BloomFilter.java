@@ -43,15 +43,15 @@ import org.apache.yetus.audience.InterfaceStability;
  * <p>Here is an example for use:
  * <pre>
  * {@code
- *   BloomFilter bf = BloomFilter.BySizeAndFPRate(nBytes);
+ *   BloomFilter bf = BloomFilter.BySizeAndFPRate(numBytes);
  *   bf.put(1);
  *   bf.put(3);
  *   bf.put(4);
  *   byte[] bitSet = bf.getBitSet();
- *   byte[] nHashes = bf.getNHashes();
+ *   byte[] numHashes = bf.getNumHashes();
  *   String hashFunctionName = bf.getHashFunctionName();
  *   // TODO: implement the interface for serializing and sending
- *   // (bitSet, nHashes, hashFunctionName) to TServer.
+ *   // (bitSet, numHashes, hashFunctionName) to TServer.
  * }
  * </pre>
  */
@@ -61,50 +61,51 @@ import org.apache.yetus.audience.InterfaceStability;
 public class BloomFilter {
 
   private final BitSet bitSet;
-  private final int nHashes;
+  private final int numHashes;
   private final byte[] byteBuffer;
   private final HashFunction hashFunction;
   private static final double DEFAULT_FP_RATE = 0.01;
 
-  private BloomFilter(BitSet bitSet, int nHashes, HashFunction hashFunction) {
+  private BloomFilter(BitSet bitSet, int numHashes, HashFunction hashFunction) {
     Preconditions.checkArgument(bitSet.size() >= 8, "Number of bits in " +
-      "bitset should be at least 8, but found %s.", bitSet.size());
+        "bitset should be at least 8, but found %s.", bitSet.size());
     this.bitSet = bitSet;
-    this.nHashes = nHashes;
+    this.numHashes = numHashes;
     this.hashFunction = hashFunction;
     byteBuffer = new byte[8];
   }
 
   /**
    * Generate bloom filter, default hashing is {@code Murmur2} and false positive rate is 0.01.
-   * @param nBytes size of bloom filter in bytes
+   * @param numBytes size of bloom filter in bytes
    */
-  public static BloomFilter bySize(int nBytes) {
-    return bySizeAndFPRate(nBytes, DEFAULT_FP_RATE);
+  public static BloomFilter bySize(int numBytes) {
+    return bySizeAndFPRate(numBytes, DEFAULT_FP_RATE);
   }
 
   /**
    * Generate bloom filter, default hashing is {@code Murmur2}.
-   * @param nBytes size of bloom filter in bytes
+   * @param numBytes size of bloom filter in bytes
    * @param fpRate the probability that TServer will erroneously return a record that has not
    *               ever been {@code put} into the {@code BloomFilter}.
    */
-  public static BloomFilter bySizeAndFPRate(int nBytes, double fpRate) {
-    return bySizeAndFPRate(nBytes, fpRate, HashFunctions.MURMUR2);
+  public static BloomFilter bySizeAndFPRate(int numBytes, double fpRate) {
+    return bySizeAndFPRate(numBytes, fpRate, HashFunctions.MURMUR2);
   }
 
   /**
    * Generate bloom filter.
-   * @param nBytes size of bloom filter in bytes
+   * @param numBytes size of bloom filter in bytes
    * @param fpRate the probability that TServer will erroneously return a record that has not
    *               ever been {@code put} into the {@code BloomFilter}.
    * @param hashFunction hashing used when updating or checking containment, user should pick
    *                     the hashing function from {@code HashFunctions}
    */
-  public static BloomFilter bySizeAndFPRate(int nBytes, double fpRate, HashFunction hashFunction) {
-    int nBits = nBytes * 8;
-    int nHashes = computeOptimalHashCount(nBits, optimalExpectedCount(nBytes, fpRate));
-    return new BloomFilter(new BitSet(nBits), nHashes, hashFunction);
+  public static BloomFilter bySizeAndFPRate(int numBytes, double fpRate,
+                                            HashFunction hashFunction) {
+    int numBits = numBytes * 8;
+    int numHashes = computeOptimalHashCount(numBits, optimalExpectedCount(numBytes, fpRate));
+    return new BloomFilter(new BitSet(numBits), numHashes, hashFunction);
   }
 
   /**
@@ -138,10 +139,10 @@ public class BloomFilter {
    */
   public static BloomFilter byCountAndFPRate(
       int expectedCount, double fpRate, HashFunction hashFunction) {
-    int nBytes = optimalNumOfBytes(expectedCount, fpRate);
-    int nBits = nBytes * 8;
-    int nHashes = computeOptimalHashCount(nBits, expectedCount);
-    return new BloomFilter(new BitSet(nBits), nHashes, hashFunction);
+    int numBytes = optimalNumOfBytes(expectedCount, fpRate);
+    int numBits = numBytes * 8;
+    int numHashes = computeOptimalHashCount(numBits, expectedCount);
+    return new BloomFilter(new BitSet(numBits), numHashes, hashFunction);
   }
 
   /**
@@ -233,8 +234,8 @@ public class BloomFilter {
   /**
    * Get the number of hashing times when updating or checking containment.
    */
-  public int getNHashes() {
-    return nHashes;
+  public int getNumHashes() {
+    return numHashes;
   }
 
   /**
@@ -276,7 +277,7 @@ public class BloomFilter {
     long h1 = (0xFFFFFFFFL & h);
     long h2 = (h >>> 32);
     long tmp = h1;
-    for (int i = 0; i < nHashes; i++) {
+    for (int i = 0; i < numHashes; i++) {
       long bitPos = tmp % bitSet.size();
       bitSet.set((int)bitPos);
       tmp += h2;
@@ -359,7 +360,7 @@ public class BloomFilter {
     long h1 = (0xFFFFFFFFL & h);
     long h2 = (h >>> 32);
     long tmp = h1;
-    int remHashes = nHashes;
+    int remHashes = numHashes;
     while (remHashes != 0) {
       long bitPos = tmp % bitSet.size();
       if (!bitSet.get((int)bitPos)) {
@@ -380,15 +381,17 @@ public class BloomFilter {
     return (int) Math.ceil(-expectedCount * Math.log(fpRate) / (Math.log(2) * Math.log(2) * 8));
   }
 
-  private static int optimalExpectedCount(int nBytes, double fpRate) {
-    int nBits = nBytes * 8;
-    return (int) Math.ceil(-nBits * kNaturalLog2 * kNaturalLog2 / Math.log(fpRate));
+  private static int optimalExpectedCount(int numBytes, double fpRate) {
+    int numBits = numBytes * 8;
+    return (int) Math.ceil(-numBits * kNaturalLog2 * kNaturalLog2 / Math.log(fpRate));
   }
 
-  private static int computeOptimalHashCount(int nBits, int elems) {
-    int nHashes = (int)(nBits * kNaturalLog2 / elems);
-    if (nHashes < 1) nHashes = 1;
-    return nHashes;
+  private static int computeOptimalHashCount(int numBits, int elems) {
+    int numHashes = (int)(numBits * kNaturalLog2 / elems);
+    if (numHashes < 1) {
+      numHashes = 1;
+    }
+    return numHashes;
   }
 
   @Override
@@ -396,8 +399,8 @@ public class BloomFilter {
     StringBuilder sb = new StringBuilder();
     sb.append("BloomFilter(nBits=");
     sb.append(bitSet.size());
-    sb.append(", nHashes=");
-    sb.append(nHashes);
+    sb.append(", numHashes=");
+    sb.append(numHashes);
     sb.append(", hashing=");
     sb.append(hashFunction);
     sb.append(")");

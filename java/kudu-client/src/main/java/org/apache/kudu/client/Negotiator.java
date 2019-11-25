@@ -91,7 +91,7 @@ import org.apache.kudu.util.SecurityUtil;
 public class Negotiator extends SimpleChannelUpstreamHandler {
   private static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
-  private final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
+  private final SaslClientCallbackHandler saslCallback = new SaslClientCallbackHandler();
   private static final ImmutableSet<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(
           RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS,
@@ -154,7 +154,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    */
   private final SignedTokenPB authnToken;
 
-  private static enum AuthnTokenNotUsedReason {
+  private enum AuthnTokenNotUsedReason {
     NONE_AVAILABLE("no token is available"),
     NO_TRUSTED_CERTS("no TLS certificates are trusted by the client"),
     FORBIDDEN_BY_POLICY("this connection will be used to acquire a new token and " +
@@ -164,8 +164,10 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     AuthnTokenNotUsedReason(String msg) {
       this.msg = msg;
     }
+
     final String msg;
-  };
+  }
+
   private AuthnTokenNotUsedReason authnTokenNotUsedReason = null;
 
   private State state = State.INITIAL;
@@ -448,7 +450,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
                                            "kudu",
                                            remoteHostname,
                                            props,
-                                           SASL_CALLBACK);
+            saslCallback);
         chosenMech = clientMech;
         break;
       } catch (SaslException e) {

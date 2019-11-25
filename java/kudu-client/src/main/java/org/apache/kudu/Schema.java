@@ -109,8 +109,8 @@ public class Schema {
     int varLenCnt = 0;
     this.columnOffsets = new int[columns.size()];
     this.columnsByName = new HashMap<>(columns.size());
-    this.columnsById = hasColumnIds ? new HashMap<Integer, Integer>(columnIds.size()) : null;
-    this.columnIdByName = hasColumnIds ? new HashMap<String, Integer>(columnIds.size()) : null;
+    this.columnsById = hasColumnIds ? new HashMap<>(columnIds.size()) : null;
+    this.columnIdByName = hasColumnIds ? new HashMap<>(columnIds.size()) : null;
     int offset = 0;
     boolean hasNulls = false;
     int isDeletedIndex = NO_IS_DELETED_INDEX;

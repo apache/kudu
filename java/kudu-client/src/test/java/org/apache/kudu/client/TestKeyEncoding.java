@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -92,7 +93,7 @@ public class TestKeyEncoding {
     }
     return new PartitionSchema(
         new PartitionSchema.RangeSchema(columnIds),
-        ImmutableList.<PartitionSchema.HashBucketSchema>of(), schema);
+        ImmutableList.of(), schema);
   }
 
   /**
@@ -319,7 +320,7 @@ public class TestKeyEncoding {
         new ColumnSchemaBuilder("b", Type.STRING).key(true),
         new ColumnSchemaBuilder("c", Type.STRING).key(true));
 
-    PartitionSchema partitionSchema =
+    final PartitionSchema partitionSchema =
         new PartitionSchema(new RangeSchema(ImmutableList.of(0, 1, 2)),
                             ImmutableList.of(
                                 new HashBucketSchema(ImmutableList.of(0, 1), 32, 0),
@@ -401,17 +402,17 @@ public class TestKeyEncoding {
 
     KuduTable table = client.createTable("testAllPrimaryKeyTypes-" + System.currentTimeMillis(),
         schema, defaultCreateTableOptions(schema));
-    KuduSession session = client.newSession();
+    final KuduSession session = client.newSession();
 
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addByte(0, (byte) 1);
     row.addShort(1, (short) 2);
     row.addInt(2, 3);
-    row.addLong(3, 4l);
+    row.addLong(3, 4L);
     row.addString(4, "foo");
     row.addBinary(5, "bar".getBytes(UTF_8));
-    row.addLong(6, 6l);
+    row.addLong(6, 6L);
     row.addDecimal(7, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL32));
     row.addDecimal(8, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64));
     row.addDecimal(9, new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128));
@@ -430,10 +431,10 @@ public class TestKeyEncoding {
       assertEquals((byte) 0x01, rr.getByte(0));
       assertEquals((short) 2, rr.getShort(1));
       assertEquals(3, rr.getInt(2));
-      assertEquals(4l, rr.getLong(3));
+      assertEquals(4L, rr.getLong(3));
       assertBytesEquals(rr.getBinaryCopy(4), "foo");
       assertBytesEquals(rr.getBinaryCopy(5), "bar");
-      assertEquals(6l, rr.getLong(6));
+      assertEquals(6L, rr.getLong(6));
       assertTrue(BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL32)
           .compareTo(rr.getDecimal(7)) == 0);
       assertTrue(BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64)

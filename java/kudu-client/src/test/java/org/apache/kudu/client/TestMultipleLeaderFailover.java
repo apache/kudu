@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
@@ -45,8 +46,8 @@ public class TestMultipleLeaderFailover {
           @Override
           public boolean get() throws Exception {
             AsyncKuduScanner scanner = harness.getAsyncClient().newScannerBuilder(table).build();
-            int read_count = countRowsInScan(scanner);
-            return read_count == rowCount;
+            int readCount = countRowsInScan(scanner);
+            return readCount == rowCount;
           }
         }, timeoutMs);
   }
@@ -57,6 +58,7 @@ public class TestMultipleLeaderFailover {
    * Finally it counts to make sure we have total_rows_to_insert of them.
    */
   @Test(timeout = 100000)
+  @SuppressWarnings("deprecation")
   public void testMultipleFailover() throws Exception {
     KuduTable table;
     CreateTableOptions builder = getBasicCreateTableOptions();

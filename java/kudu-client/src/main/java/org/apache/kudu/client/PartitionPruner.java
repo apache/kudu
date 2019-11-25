@@ -360,7 +360,7 @@ public class PartitionPruner {
     PartialRow row = schema.newPartialRow();
     int pushedPredicates = 0;
 
-    List<Integer> rangePartitionColumnIdxs = idsToIndexes(schema, rangeSchema.getColumns());
+    List<Integer> rangePartitionColumnIdxs = idsToIndexes(schema, rangeSchema.getColumnIds());
 
     // Copy predicates into the row in range partition key column order,
     // stopping after the first missing predicate.
@@ -421,7 +421,7 @@ public class PartitionPruner {
     int pushedPredicates = 0;
     KuduPredicate finalPredicate = null;
 
-    List<Integer> rangePartitionColumnIdxs = idsToIndexes(schema, rangeSchema.getColumns());
+    List<Integer> rangePartitionColumnIdxs = idsToIndexes(schema, rangeSchema.getColumnIds());
 
     // Step 1: copy predicates into the row in range partition key column order, stopping after
     // the first missing predicate.

@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
@@ -40,10 +41,13 @@ public class TestTableLocationsCache {
    * Prevent time from advancing during the test by mocking the time.
    */
   @Before
+  @SuppressWarnings("unstable")
   public void mockTime() {
     TableLocationsCache.ticker = Mockito.mock(Ticker.class);
   }
+
   @After
+  @SuppressWarnings("unstable")
   public void unmockTime() {
     TableLocationsCache.ticker = Ticker.systemTicker();
   }

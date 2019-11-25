@@ -227,7 +227,8 @@ class SecurityContext {
         throw new RuntimeException(e.getCause());
       }
       if (newSubject == null || SecurityUtil.getKerberosPrincipalOrNull(newSubject) == null) {
-        LOG.warn("Tried to refresh Kerberos credentials but was unable to re-login from ticket cache");
+        LOG.warn("Tried to refresh Kerberos credentials but was unable to re-login from " +
+            "ticket cache");
         loggedRefreshFailure = true;
         nextAllowedRefreshNanotime = now + TimeUnit.SECONDS.toNanos(REFRESH_RATE_LIMIT_SECS);
         return;

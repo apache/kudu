@@ -19,7 +19,6 @@ package org.apache.kudu.client;
 
 import static com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -27,10 +26,10 @@ import java.util.stream.Collectors;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Descriptors.FieldDescriptor;
-
-import org.apache.kudu.tserver.Tserver.ResourceMetricsPB;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
+
+import org.apache.kudu.tserver.Tserver.ResourceMetricsPB;
 
 /**
  * A container for scanner resource metrics.
@@ -49,8 +48,8 @@ public class ResourceMetrics {
    * @return a map of metric name to metric value
    */
   public Map<String, Long> get() {
-      return metrics.entrySet().stream()
-              .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().sum()));
+    return metrics.entrySet().stream()
+        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().sum()));
   }
 
   /**
@@ -59,7 +58,7 @@ public class ResourceMetrics {
    * @return the value of the named metric; if the metric is not found, returns 0
    */
   public long getMetric(String name) {
-      return metrics.getOrDefault(name, new LongAdder()).sum();
+    return metrics.getOrDefault(name, new LongAdder()).sum();
   }
 
   /**

@@ -93,10 +93,10 @@ class KeyRange {
   @Override
   public String toString() {
     return String.format("[%s, %s), %s, %s",
-                         primaryKeyStart == null || primaryKeyStart.length == 0
-                             ? "<start>" : Bytes.hex(primaryKeyStart),
-                         primaryKeyStart == null || primaryKeyEnd.length == 0
-                             ? "<end>" : Bytes.hex(primaryKeyEnd),
+                         primaryKeyStart == null || primaryKeyStart.length == 0 ?
+                             "<start>" : Bytes.hex(primaryKeyStart),
+                         primaryKeyStart == null || primaryKeyEnd.length == 0 ?
+                             "<end>" : Bytes.hex(primaryKeyEnd),
                          String.valueOf(dataSizeBytes),
                          tablet.toString());
   }

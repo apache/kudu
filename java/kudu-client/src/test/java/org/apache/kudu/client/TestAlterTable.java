@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.countRowsInTable;
@@ -21,6 +22,7 @@ import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -116,7 +118,7 @@ public class TestAlterTable {
 
   @Test
   public void testAlterAddColumns() throws Exception {
-    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    KuduTable table = createTable(ImmutableList.of());
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
@@ -130,7 +132,7 @@ public class TestAlterTable {
     assertEquals(5, table.getSchema().getColumnCount());
 
     // Add a row with addNullableDef=null
-    KuduSession session = client.newSession();
+    final KuduSession session = client.newSession();
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addInt("c0", 101);
@@ -144,8 +146,8 @@ public class TestAlterTable {
     assertEquals(String.format("row errors: %s", Arrays.toString(rowErrors)), 0, rowErrors.length);
 
     // Check defaults applied, and that row key=101
-    List<String> actual = scanTableToStrings(table);
-    List<String> expected = new ArrayList<>(101);
+    final List<String> actual = scanTableToStrings(table);
+    final List<String> expected = new ArrayList<>(101);
     for (int i = 0; i < 100; i++) {
       expected.add(i, String.format("INT32 c0=%d, INT32 c1=%d, INT32 addNonNull=100" +
           ", INT32 addNullable=NULL, INT32 addNullableDef=200", i, i));
@@ -158,7 +160,7 @@ public class TestAlterTable {
 
   @Test
   public void testAlterModifyColumns() throws Exception {
-    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    KuduTable table = createTable(ImmutableList.of());
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
@@ -166,7 +168,7 @@ public class TestAlterTable {
     ColumnSchema col = table.getSchema().getColumns().get(1);
     assertEquals(CompressionAlgorithm.DEFAULT_COMPRESSION, col.getCompressionAlgorithm());
     assertEquals(Encoding.AUTO_ENCODING, col.getEncoding());
-    assertEquals(null, col.getDefaultValue());
+    assertNull(col.getDefaultValue());
 
     // Alter the table.
     client.alterTable(tableName, new AlterTableOptions()
@@ -184,7 +186,7 @@ public class TestAlterTable {
 
   @Test
   public void testRenameKeyColumn() throws Exception {
-    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    KuduTable table = createTable(ImmutableList.of());
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
@@ -233,7 +235,7 @@ public class TestAlterTable {
 
   @Test
   public void testAlterRangePartitioning() throws Exception {
-    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    KuduTable table = createTable(ImmutableList.of());
     Schema schema = table.getSchema();
 
     // Insert some rows, and then drop the partition and ensure that the table is empty.
@@ -323,7 +325,7 @@ public class TestAlterTable {
                                     RangePartitionBound.EXCLUSIVE_BOUND,
                                     RangePartitionBound.INCLUSIVE_BOUND);
 
-    KuduTable table = client.createTable(tableName, schema, createOptions);
+    final KuduTable table = client.createTable(tableName, schema, createOptions);
 
     lower.addInt("c0", 199);
     upper.addInt("c0", 299);
@@ -484,7 +486,7 @@ public class TestAlterTable {
 
   @Test
   public void testAlterExtraConfigs() throws Exception {
-    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    KuduTable table = createTable(ImmutableList.of());
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 

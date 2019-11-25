@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
@@ -66,7 +67,7 @@ public class ITClientStress {
 
     // Capture logs so we can check that no exceptions are logged.
     CapturingLogAppender cla = new CapturingLogAppender();
-    try (Closeable c = cla.attach()){
+    try (Closeable c = cla.attach()) {
       Stopwatch s = Stopwatch.createStarted();
       while (s.elapsed(TimeUnit.SECONDS) < secondsToRun &&
           thrown.get() == null) {
@@ -105,7 +106,7 @@ public class ITClientStress {
    * Impala 2.8 front-end under a high-concurrency workload. Each query
    * starts a new client, fetches scan tokens, and closes the client.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testManyShortClientsGeneratingScanTokens() throws Exception {
     final String TABLE_NAME = "testManyClients";
     final int SECONDS_TO_RUN = 10;
@@ -136,7 +137,7 @@ public class ITClientStress {
    * Stress test which performs upserts from many sessions on different threads
    * sharing the same KuduClient and KuduTable instance.
    */
-  @Test(timeout=60000)
+  @Test(timeout = 60000)
   public void testMultipleSessions() throws Exception {
     final String TABLE_NAME = "testMultipleSessions";
     final int SECONDS_TO_RUN = 10;

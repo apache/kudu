@@ -60,13 +60,13 @@ public enum Type {
    * @param dataType DataType from the common's pb
    * @param name string representation of the type
    */
-  private Type(DataType dataType, String name) {
+  Type(DataType dataType, String name) {
     this.dataTypes = ImmutableList.of(dataType);
     this.name = name;
     this.size = getTypeSize(dataType);
   }
 
-  private Type(List<DataType> dataTypes, String name) {
+  Type(List<DataType> dataTypes, String name) {
     this.dataTypes = ImmutableList.copyOf(dataTypes);
     this.name = name;
     this.size = -1;

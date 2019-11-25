@@ -190,10 +190,10 @@ class Batch extends KuduRpc<BatchResponse> {
           Thread.currentThread().interrupt();
         }
       }
-      return new Pair<BatchResponse, Object>(response, injectedError);
+      return new Pair<>(response, injectedError);
     }
 
-    return new Pair<BatchResponse, Object>(response,
+    return new Pair<>(response,
         builder.hasError() ? builder.getError() : null);
   }
 

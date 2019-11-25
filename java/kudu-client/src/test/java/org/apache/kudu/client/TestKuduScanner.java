@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.client;
 
 import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
@@ -181,8 +182,8 @@ public class TestKuduScanner {
   @Test(timeout = 100000)
   public void testOpenScanWithDroppedPartition() throws Exception {
     // Create a table with 2 range partitions.
-    Schema basicSchema = getBasicSchema();
-    String tableName = "testOpenScanWithDroppedPartition";
+    final Schema basicSchema = getBasicSchema();
+    final String tableName = "testOpenScanWithDroppedPartition";
     PartialRow bottom = basicSchema.newPartialRow();
     bottom.addInt("key", 0);
     PartialRow middle = basicSchema.newPartialRow();
@@ -258,13 +259,14 @@ public class TestKuduScanner {
     long startHT = client.getLastPropagatedTimestamp() + 1;
     LOG.info("startHT: {}", startHT);
 
-    // Generate row mutations. The mutations performed here are what should be seen by the diff scan.
+    // Generate row mutations.
+    // The mutations performed here are what should be seen by the diff scan.
     int mutationBounds = 10;
     int expectedNumInserts = random.nextInt(mutationBounds);
     int expectedNumUpdates = random.nextInt(mutationBounds);
     int expectedNumDeletes = random.nextInt(mutationBounds);
-    List<Operation> operations =
-        generateMutationOperations(table, expectedNumInserts, expectedNumUpdates, expectedNumDeletes);
+    List<Operation> operations = generateMutationOperations(table, expectedNumInserts,
+                                                            expectedNumUpdates, expectedNumDeletes);
     Map<Integer, ChangeType> mutations = applyOperations(operations);
     LOG.info("Mutations: {}", mutations);
 

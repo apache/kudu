@@ -661,7 +661,7 @@ public final class Bytes {
    */
   private static void reverseBytes(final byte[] b) {
     // Swaps the items until the mid-point is reached.
-    for(int i = 0; i < b.length / 2; i++) {
+    for (int i = 0; i < b.length / 2; i++) {
       byte temp = b[i];
       b[i] = b[b.length - i - 1];
       b[b.length - i - 1] = temp;
@@ -803,7 +803,7 @@ public final class Bytes {
         long longVal = getLong(b, offset);
         return BigDecimal.valueOf(longVal, scale);
       case DecimalUtil.DECIMAL128_SIZE:
-         BigInteger int128Val = getBigInteger(b, offset);
+        BigInteger int128Val = getBigInteger(b, offset);
         return new BigDecimal(int128Val, scale);
       default:
         throw new IllegalArgumentException("Unsupported decimal type size: " + size);
@@ -830,7 +830,8 @@ public final class Bytes {
    * @param offset The offset in the array to start writing at.
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
-  public static void setBigDecimal(final byte[] b, final BigDecimal n, int precision, final int offset) {
+  public static void setBigDecimal(final byte[] b, final BigDecimal n, int precision,
+                                   final int offset) {
     int size = DecimalUtil.precisionToSize(precision);
     BigInteger bigInt = n.unscaledValue();
     switch (size) {
@@ -998,9 +999,7 @@ public final class Bytes {
     } catch (UnsupportedOperationException e) {
       return "(failed to extract content of buffer of type " +
           buf.getClass().getName() + ')';
-    } catch (IllegalAccessException e) {
-      throw new AssertionError("Should not happen: " + e);
-    } catch (InvocationTargetException e) {
+    } catch (IllegalAccessException | InvocationTargetException e) {
       throw new AssertionError("Should not happen: " + e);
     }
     return pretty(array);

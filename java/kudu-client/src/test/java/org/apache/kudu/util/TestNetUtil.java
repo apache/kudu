@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.util;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -45,15 +46,15 @@ public class TestNetUtil {
    */
   @Test
   public void testParseString() {
-    String aStringWithPort = "1.2.3.4:1234";
-    HostAndPort hostAndPortForAStringWithPort = NetUtil.parseString(aStringWithPort, 0);
-    assertEquals(hostAndPortForAStringWithPort.getHost(), "1.2.3.4");
-    assertEquals(hostAndPortForAStringWithPort.getPort(), 1234);
+    String stringWithPort = "1.2.3.4:1234";
+    HostAndPort hostAndPortForStringWithPort = NetUtil.parseString(stringWithPort, 0);
+    assertEquals(hostAndPortForStringWithPort.getHost(), "1.2.3.4");
+    assertEquals(hostAndPortForStringWithPort.getPort(), 1234);
 
-    String aStringWithoutPort = "1.2.3.4";
-    HostAndPort hostAndPortForAStringWithoutPort = NetUtil.parseString(aStringWithoutPort, 12345);
-    assertEquals(hostAndPortForAStringWithoutPort.getHost(), aStringWithoutPort);
-    assertEquals(hostAndPortForAStringWithoutPort.getPort(), 12345);
+    String stringWithoutPort = "1.2.3.4";
+    HostAndPort hostAndPortForStringWithoutPort = NetUtil.parseString(stringWithoutPort, 12345);
+    assertEquals(hostAndPortForStringWithoutPort.getHost(), stringWithoutPort);
+    assertEquals(hostAndPortForStringWithoutPort.getPort(), 12345);
   }
 
   /**

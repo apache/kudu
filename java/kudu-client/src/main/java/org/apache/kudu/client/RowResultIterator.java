@@ -94,7 +94,8 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
           " bytes of data but expected " + expectedSize + " for " + numRows + " rows");
       throw new NonRecoverableException(statusIllegalState);
     }
-    return new RowResultIterator(elapsedMillis, tsUUID, schema, numRows, bs, indirectBs, reuseRowResult);
+    return new RowResultIterator(elapsedMillis, tsUUID, schema, numRows, bs, indirectBs,
+        reuseRowResult);
   }
 
   /**

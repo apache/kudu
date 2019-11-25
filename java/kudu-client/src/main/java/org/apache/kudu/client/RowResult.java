@@ -609,7 +609,9 @@ public class RowResult {
    */
   public Object getObject(int columnIndex) {
     checkValidColumn(columnIndex);
-    if (isNull(columnIndex)) return null;
+    if (isNull(columnIndex)) {
+      return null;
+    }
     Type type = schema.getColumnByIndex(columnIndex).getType();
     switch (type) {
       case BOOL: return getBoolean(columnIndex);

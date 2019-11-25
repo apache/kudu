@@ -133,7 +133,8 @@ public class DecimalUtil {
     }
     if (val.precision() > targetPrecision) {
       throw new IllegalArgumentException("Value precision " + val.precision() +
-          " (after scale coercion) can't be coerced to target precision " +  targetPrecision + ". ");
+          " (after scale coercion) can't be coerced to target precision " +
+          targetPrecision + ". ");
     }
     return val;
   }

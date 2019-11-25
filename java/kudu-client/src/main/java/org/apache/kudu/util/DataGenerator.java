@@ -92,30 +92,40 @@ public class DataGenerator {
       switch (type) {
         // TODO(ghenke): Support range bound configuration.
         case BOOL:
-          row.addBoolean(i, random.nextBoolean()); break;
+          row.addBoolean(i, random.nextBoolean());
+          break;
         case INT8:
-          row.addByte(i, (byte) random.nextInt()); break;
+          row.addByte(i, (byte) random.nextInt());
+          break;
         case INT16:
-          row.addShort(i, (short) random.nextInt()); break;
+          row.addShort(i, (short) random.nextInt());
+          break;
         case INT32:
-          row.addInt(i, random.nextInt()); break;
+          row.addInt(i, random.nextInt());
+          break;
         case INT64:
         case UNIXTIME_MICROS:
-          row.addLong(i, random.nextLong()); break;
+          row.addLong(i, random.nextLong());
+          break;
         case FLOAT:
-          row.addFloat(i, random.nextFloat()); break;
+          row.addFloat(i, random.nextFloat());
+          break;
         case DOUBLE:
-          row.addDouble(i, random.nextDouble()); break;
+          row.addDouble(i, random.nextDouble());
+          break;
         case DECIMAL:
-          row.addDecimal(i, randomDecimal(col.getTypeAttributes(), random)); break;
+          row.addDecimal(i, randomDecimal(col.getTypeAttributes(), random));
+          break;
         case VARCHAR:
           row.addVarchar(i, randomString(Math.min(col.getTypeAttributes().getLength(),
                                                   stringLength), random));
           break;
         case STRING:
-          row.addString(i, randomString(stringLength, random)); break;
+          row.addString(i, randomString(stringLength, random));
+          break;
         case BINARY:
-          row.addBinary(i, randomBinary(binaryLength, random)); break;
+          row.addBinary(i, randomBinary(binaryLength, random));
+          break;
         default:
           throw new UnsupportedOperationException("Unsupported type " + type);
       }
@@ -136,7 +146,7 @@ public class DataGenerator {
    * Utility method to return a random string value.
    */
   public static String randomString(int length, Random random) {
-    byte bytes[] = new byte[length];
+    byte[] bytes = new byte[length];
     random.nextBytes(bytes);
     return DatatypeConverter.printBase64Binary(bytes);
   }
@@ -145,7 +155,7 @@ public class DataGenerator {
    * Utility method to return a random binary value.
    */
   public static byte[] randomBinary(int length, Random random) {
-    byte bytes[] = new byte[length];
+    byte[] bytes = new byte[length];
     random.nextBytes(bytes);
     return bytes;
   }
@@ -161,7 +171,8 @@ public class DataGenerator {
     private float nullRate = 0.1f;
     private float defaultRate = 0.1f;
 
-    public DataGeneratorBuilder() {}
+    public DataGeneratorBuilder() {
+    }
 
     /**
      * Define a custom Random instance to use for any random generation.

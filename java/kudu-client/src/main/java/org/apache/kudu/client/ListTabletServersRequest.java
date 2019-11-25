@@ -60,7 +60,7 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
         ListTabletServersResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     int serversCount = respBuilder.getServersCount();
-    List<String> servers = new ArrayList<String>(serversCount);
+    List<String> servers = new ArrayList<>(serversCount);
     for (ListTabletServersResponsePB.Entry entry : respBuilder.getServersList()) {
       servers.add(entry.getRegistration().getRpcAddresses(0).getHost());
     }

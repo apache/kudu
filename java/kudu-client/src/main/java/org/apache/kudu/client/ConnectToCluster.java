@@ -62,7 +62,7 @@ final class ConnectToCluster {
 
   // Exceptions received so far: kept for debugging purposes.
   private final List<Exception> exceptionsReceived =
-      Collections.synchronizedList(new ArrayList<Exception>());
+      Collections.synchronizedList(new ArrayList<>());
 
   /**
    * If we've received a response from a master which indicates the full
@@ -101,7 +101,8 @@ final class ConnectToCluster {
     // basically reuse in some way the master permits.
     long timeoutMillis = parentRpc == null ? defaultTimeoutMs :
                                              parentRpc.timeoutTracker.getMillisBeforeTimeout();
-    final ConnectToMasterRequest rpc = new ConnectToMasterRequest(masterTable, timer, timeoutMillis);
+    final ConnectToMasterRequest rpc =
+        new ConnectToMasterRequest(masterTable, timer, timeoutMillis);
     rpc.setParentRpc(parentRpc);
     Deferred<ConnectToMasterResponsePB> d = rpc.getDeferred();
     rpc.attempt++;

@@ -86,5 +86,6 @@ public class StringUtil {
   }
 
   /** Non-constructable utility class. */
-  private StringUtil() { }
+  private StringUtil() {
+  }
 }

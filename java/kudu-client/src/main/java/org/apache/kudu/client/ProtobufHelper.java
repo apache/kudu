@@ -119,7 +119,7 @@ public class ProtobufHelper {
       schemaBuilder.setReadDefaultValue(UnsafeByteOperations.unsafeWrap(
           objectToWireFormat(column, column.getDefaultValue())));
     }
-    if(column.getTypeAttributes() != null) {
+    if (column.getTypeAttributes() != null) {
       schemaBuilder.setTypeAttributes(
           columnTypeAttributesToPb(Common.ColumnTypeAttributesPB.newBuilder(), column));
     }
@@ -170,10 +170,10 @@ public class ProtobufHelper {
   public static ColumnTypeAttributes pbToColumnTypeAttributes(Common.ColumnTypeAttributesPB pb) {
     ColumnTypeAttributes.ColumnTypeAttributesBuilder builder =
         new ColumnTypeAttributes.ColumnTypeAttributesBuilder();
-    if(pb.hasPrecision()) {
+    if (pb.hasPrecision()) {
       builder.precision(pb.getPrecision());
     }
-    if(pb.hasScale()) {
+    if (pb.hasScale()) {
       builder.scale(pb.getScale());
     }
     if (pb.hasLength()) {

@@ -17,17 +17,16 @@
 
 package org.apache.kudu;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-import org.apache.kudu.util.CharUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.Common.EncodingType;
 import org.apache.kudu.Compression.CompressionType;
+import org.apache.kudu.util.CharUtil;
 
 /**
  * Represents a Kudu Table column. Use {@link ColumnSchema.ColumnSchemaBuilder} in order to
@@ -220,8 +219,12 @@ public class ColumnSchema {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (!(o instanceof ColumnSchema)) return false;
+    if (this == o) {
+      return true;
+    }
+    if (!(o instanceof ColumnSchema)) {
+      return false;
+    }
     ColumnSchema that = (ColumnSchema) o;
     return Objects.equals(name, that.name) &&
         Objects.equals(type, that.type) &&
@@ -421,9 +424,9 @@ public class ColumnSchema {
         this.wireType = type.getDataType(typeAttributes);
       }
       if (type == Type.VARCHAR) {
-        if (typeAttributes == null || !typeAttributes.hasLength()
-          || typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH
-          || typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
+        if (typeAttributes == null || !typeAttributes.hasLength() ||
+            typeAttributes.getLength() < CharUtil.MIN_VARCHAR_LENGTH ||
+            typeAttributes.getLength() > CharUtil.MAX_VARCHAR_LENGTH) {
           throw new IllegalArgumentException(
             String.format("VARCHAR's length must be set and between %d and %d",
                           CharUtil.MIN_VARCHAR_LENGTH, CharUtil.MAX_VARCHAR_LENGTH));
@@ -433,6 +436,6 @@ public class ColumnSchema {
                               key, nullable, defaultValue,
                               desiredBlockSize, encoding, compressionAlgorithm,
                               typeAttributes, wireType, comment);
-     }
+    }
   }
 }

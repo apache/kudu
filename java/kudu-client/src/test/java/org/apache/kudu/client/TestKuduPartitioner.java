@@ -58,9 +58,9 @@ public class TestKuduPartitioner {
     // 3333-6666 x      x     x
     //  >=6666   x      x     x
     Schema basicSchema = getBasicSchema();
-    int numRanges = 3;
-    int numHashPartitions = 3;
-    String tableName = "TestPartitioner";
+    final int numRanges = 3;
+    final int numHashPartitions = 3;
+    final String tableName = "TestPartitioner";
 
     List<PartialRow> splitRows = new ArrayList<>();
     for (int split : Arrays.asList(3333, 6666)) {
@@ -120,15 +120,14 @@ public class TestKuduPartitioner {
 
     // If we recreate the partitioner, it should get the new partitioning info.
     part = new KuduPartitioner.KuduPartitionerBuilder(table).build();
-    numRanges = 1;
-    assertEquals(numRanges * numHashPartitions, part.numPartitions());
+    assertEquals(numHashPartitions, part.numPartitions());
   }
 
   @Test
   public void testPartitionerNonCoveredRange() throws Exception {
-    Schema basicSchema = getBasicSchema();
-    int numHashPartitions = 3;
-    String tableName = "TestPartitionerNonCoveredRange";
+    final Schema basicSchema = getBasicSchema();
+    final int numHashPartitions = 3;
+    final String tableName = "TestPartitionerNonCoveredRange";
 
     CreateTableOptions createOptions = new CreateTableOptions();
     createOptions.addHashPartitions(Collections.singletonList("key"), numHashPartitions);
@@ -203,7 +202,8 @@ public class TestKuduPartitioner {
 
     // This partitioner should build correctly because the table cache holds the partitions
     // from the previous partitioner.
-    KuduPartitioner partitionerFromCache = new KuduPartitioner.KuduPartitionerBuilder(table).build();
+    KuduPartitioner partitionerFromCache =
+        new KuduPartitioner.KuduPartitionerBuilder(table).build();
 
     assertEquals(partitioner.numPartitions(), partitionerFromCache.numPartitions());
   }

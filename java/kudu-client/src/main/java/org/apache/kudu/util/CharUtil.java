@@ -17,8 +17,9 @@
 
 package org.apache.kudu.util;
 
-import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.yetus.audience.InterfaceAudience;
+
+import org.apache.kudu.ColumnTypeAttributes;
 
 @InterfaceAudience.Private
 public class CharUtil {
