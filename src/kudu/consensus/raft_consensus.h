@@ -183,6 +183,21 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns true if RaftConsensus is running.
   bool IsRunning() const;
 
+  // Start tracking the leader for failures. This typically occurs at startup
+  // and when the local peer steps down as leader.
+  //
+  // If 'delta' is set, it is used as the initial period for leader failure
+  // detection. Otherwise, the minimum election timeout is used.
+  //
+  // If the failure detector is already registered, has no effect.
+  void EnableFailureDetector(boost::optional<MonoDelta> delta);
+
+  // Stop tracking the current leader for failures. This typically occurs when
+  // the local peer becomes leader.
+  //
+  // If the failure detector is already disabled, has no effect.
+  void DisableFailureDetector();
+
   // Emulates an election by increasing the term number and asserting leadership
   // in the configuration by sending a NO_OP to other peers.
   // This is NOT safe to use in a distributed configuration with failure detection
@@ -640,21 +655,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
   void NestedElectionDecisionCallback(
       ElectionReason reason, const ElectionResult& result);
-
-  // Start tracking the leader for failures. This typically occurs at startup
-  // and when the local peer steps down as leader.
-  //
-  // If 'delta' is set, it is used as the initial period for leader failure
-  // detection. Otherwise, the minimum election timeout is used.
-  //
-  // If the failure detector is already registered, has no effect.
-  void EnableFailureDetector(boost::optional<MonoDelta> delta);
-
-  // Stop tracking the current leader for failures. This typically occurs when
-  // the local peer becomes leader.
-  //
-  // If the failure detector is already disabled, has no effect.
-  void DisableFailureDetector();
 
   // Enables or disables the failure detector based on the role of the local
   // peer in the active config. If the local peer a VOTER, but not the leader,
