@@ -19,7 +19,6 @@
 
 apply plugin: "checkstyle" // Ensures Java code follows the defined coding style.
 apply plugin: "com.github.spotbugs"   // Performs static code analysis to look for bugs in Java code.
-apply plugin: "pmd"        // Performs static code analysis to look for common code smells in Java code.
 apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
 apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
 apply plugin: "scalafmt" // Automatically formats Scala code on each build.
@@ -59,11 +58,6 @@ task spotbugs(dependsOn: [spotbugsMain, spotbugsTest], group: "Verification") {
   description = "Run SpotBugs analysis."
 }
 
-pmd {
-  toolVersion = versions.pmd
-  ignoreFailures = true
-}
-
 scalafmt {
   configFilePath = "$rootDir/.scalafmt.conf"
 }
@@ -73,12 +67,6 @@ tasks.withType(ScalaCompile) {
   if (!propertyExists("skipFormat")) {
      dependsOn("scalafmtAll")
   }
-}
-
-// Create an aggregate pmd task.
-// This simplifies running pmd on all the code by only needing one task instead of multiple in your command.
-task pmd(dependsOn: [pmdMain, pmdTest], group: "Verification") {
-  description = "Run PMD analysis."
 }
 
 // Configure error-prone.

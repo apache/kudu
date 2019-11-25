@@ -50,7 +50,6 @@ versions += [
     netty          : "3.10.6.Final",
     osdetector     : "1.6.2",
     parquet        : "1.10.1",
-    pmd            : "5.8.1",
     protobuf       : "3.10.0",
     scala          : "2.11.12",
     scalatest      : "3.0.8",
