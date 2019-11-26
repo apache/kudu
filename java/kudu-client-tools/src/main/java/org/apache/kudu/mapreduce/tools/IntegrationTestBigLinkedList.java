@@ -736,9 +736,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           context.getCounter(Counts.UNREFERENCED).increment(1);
         } else {
           if (refs.size() > 1) {
-            if (refsList != null) {
-              context.write(new Text(keyString), new Text(refsList.toString()));
-            }
+            context.write(new Text(keyString), new Text(refsList.toString()));
             context.getCounter(Counts.EXTRAREFERENCES).increment(refs.size() - 1);
           }
           // node is defined and referenced
@@ -1107,8 +1105,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         // Add as many heads as we need, then we skip the rest.
         do {
           if (headsCache.size() < numUpdatesPerMapper) {
-            value = (RowResult)context.getCurrentValue();
-            headsCache.add(new Pair<>(value.getLong(0), value.getLong(1)));
+            RowResult realValue = (RowResult) context.getCurrentValue();
+            headsCache.add(new Pair<>(realValue.getLong(0), realValue.getLong(1)));
           }
         } while (context.nextKeyValue());
 

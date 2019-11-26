@@ -254,7 +254,7 @@ class KeyEncoder {
 
     List<Integer> buckets = new ArrayList<>();
 
-    for (HashBucketSchema unused : partitionSchema.getHashBucketSchemas()) {
+    for (int i = 0; i < partitionSchema.getHashBucketSchemas().size(); i++) {
       if (buf.hasRemaining()) {
         buckets.add(buf.getInt());
       } else {

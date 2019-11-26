@@ -86,6 +86,7 @@ public class ExportCsvMapper extends Mapper<NullWritable, RowResult, NullWritabl
           buf.append(value.getInt(i));
           break;
         case INT64:
+        case UNIXTIME_MICROS:
           buf.append(value.getLong(i));
           break;
         case STRING:
@@ -102,9 +103,6 @@ public class ExportCsvMapper extends Mapper<NullWritable, RowResult, NullWritabl
           break;
         case BOOL:
           buf.append(value.getBoolean(i));
-          break;
-        case UNIXTIME_MICROS:
-          buf.append(value.getLong(i));
           break;
         default:
           buf.append("<unknown type!>");

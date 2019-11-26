@@ -32,7 +32,6 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
 import org.apache.kudu.test.ProtobufUtils;
 import org.apache.kudu.test.junit.RetryRule;
 

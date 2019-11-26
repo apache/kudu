@@ -1644,7 +1644,6 @@ public class PartialRow {
 
     switch (type) {
       case BOOL:
-        return a.rowAlloc[offset] == b.rowAlloc[offset];
       case INT8:
         return a.rowAlloc[offset] == b.rowAlloc[offset];
       case INT16:

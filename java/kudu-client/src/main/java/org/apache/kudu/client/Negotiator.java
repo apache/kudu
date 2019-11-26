@@ -35,6 +35,7 @@ import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import javax.net.ssl.SSLEngine;
@@ -400,7 +401,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     Map<String, String> errorsByMech = Maps.newHashMap();
     Set<SaslMechanism> serverMechs = Sets.newHashSet();
     for (RpcHeader.NegotiatePB.SaslMechanism mech : response.getSaslMechanismsList()) {
-      switch (mech.getMechanism().toUpperCase()) {
+      switch (mech.getMechanism().toUpperCase(Locale.ENGLISH)) {
         case "GSSAPI":
           serverMechs.add(SaslMechanism.GSSAPI);
           break;
@@ -450,7 +451,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
                                            "kudu",
                                            remoteHostname,
                                            props,
-            saslCallback);
+                                           saslCallback);
         chosenMech = clientMech;
         break;
       } catch (SaslException e) {

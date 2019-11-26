@@ -32,7 +32,7 @@ import org.apache.yetus.audience.InterfaceStability
 @InterfaceAudience.Public
 @InterfaceStability.Unstable //TODO: Unstable due to KUDU-2454
 object ImportExportKudu {
-  val LOG: Logger = LoggerFactory.getLogger(ImportExportKudu.getClass)
+  val log: Logger = LoggerFactory.getLogger(ImportExportKudu.getClass)
 
   def fail(msg: String): Nothing = {
     System.err.println(msg)
@@ -68,7 +68,7 @@ object ImportExportKudu {
 
   object ArgsCls {
     private def parseInner(options: ArgsCls, args: List[String]): ArgsCls = {
-      LOG.info(args.mkString(","))
+      log.info(args.mkString(","))
       args match {
         case Nil => options
         case "--help" :: _ =>

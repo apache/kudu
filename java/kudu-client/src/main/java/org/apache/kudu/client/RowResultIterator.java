@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -112,6 +113,9 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
 
   @Override
   public RowResult next() {
+    if (!hasNext()) {
+      throw new NoSuchElementException();
+    }
     // If sharedRowResult is not null, we should reuse it for every next call.
     if (sharedRowResult != null) {
       this.sharedRowResult.advancePointerTo(this.currentRow++);

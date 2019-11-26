@@ -19,6 +19,7 @@ package org.apache.kudu.backup
 
 import java.time.Duration
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 import org.apache.kudu.backup.BackupCLIOptions.DefaultDryRun
 import org.apache.kudu.backup.BackupCLIOptions.DefaultExpirationAge
@@ -90,16 +91,19 @@ object BackupCLIOptions {
         .text("List the backups in the rootPath.")
         .children(
           opt[String]("type")
-            .action((v, o) => o.copy(listType = ListType.withName(v.toUpperCase)))
+            .action((v, o) => o.copy(listType = ListType.withName(v.toUpperCase(Locale.ENGLISH))))
             .text("The type of listing to perform. One of 'latest', 'restore_sequence', 'all'. " +
-              s"Default: ${DefaultListType.toString.toLowerCase()}")
-            .validate(
-              validateEnumeratedOption("type", ListType.values.map(_.toString.toLowerCase))),
+              s"Default: ${DefaultListType.toString.toLowerCase(Locale.ENGLISH)}")
+            .validate(validateEnumeratedOption(
+              "type",
+              ListType.values.map(_.toString.toLowerCase(Locale.ENGLISH)))),
           opt[String]("format")
-            .action((v, o) => o.copy(format = Format.withName(v.toUpperCase)))
+            .action((v, o) => o.copy(format = Format.withName(v.toUpperCase(Locale.ENGLISH))))
             .text(s"The output format. One of 'pretty', 'tsv', 'csv'. " +
-              s"Default: ${DefaultFormat.toString.toLowerCase()}")
-            .validate(validateEnumeratedOption("format", Format.values.map(_.toString.toLowerCase)))
+              s"Default: ${DefaultFormat.toString.toLowerCase(Locale.ENGLISH)}")
+            .validate(validateEnumeratedOption(
+              "format",
+              Format.values.map(_.toString.toLowerCase(Locale.ENGLISH))))
             .optional()
         )
 

@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.base.Preconditions;
@@ -57,12 +58,8 @@ public class ServerInfo {
     this.hostPort = hostPort;
     this.resolvedAddr = new InetSocketAddress(resolvedAddr, hostPort.getPort());
     this.location = location;
-    Boolean isLocal = isLocalAddressCache.get(resolvedAddr);
-    if (isLocal == null) {
-      isLocal = NetUtil.isLocalAddress(resolvedAddr);
-      isLocalAddressCache.putIfAbsent(resolvedAddr, isLocal);
-    }
-    this.local = isLocal;
+    this.local = isLocalAddressCache.computeIfAbsent(resolvedAddr,
+        inetAddress -> NetUtil.isLocalAddress(resolvedAddr));
   }
 
   /**
@@ -79,7 +76,8 @@ public class ServerInfo {
    */
   public String getAndCanonicalizeHostname() {
     try {
-      return InetAddress.getByName(hostPort.getHost()).getCanonicalHostName().toLowerCase();
+      return InetAddress.getByName(
+          hostPort.getHost()).getCanonicalHostName().toLowerCase(Locale.ENGLISH);
     } catch (UnknownHostException e) {
       return hostPort.getHost();
     }

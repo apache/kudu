@@ -70,7 +70,7 @@ import org.apache.kudu.util.SecurityUtil;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class MiniKuduCluster implements AutoCloseable {
+public final class MiniKuduCluster implements AutoCloseable {
 
   private static final Logger LOG = LoggerFactory.getLogger(MiniKuduCluster.class);
 

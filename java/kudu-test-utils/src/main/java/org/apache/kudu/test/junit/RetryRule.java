@@ -69,7 +69,7 @@ public class RetryRule implements TestRule {
         for (String l = br.readLine(); l != null; l = br.readLine()) {
           FLAKY_TESTS.add(l);
         }
-      } catch (Exception e) {
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }

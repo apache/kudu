@@ -65,44 +65,42 @@ public class TestKuduBinaryJarExtractor {
 
     final Map<String, String> env = new HashMap<>();
     env.put("create", "true");
-    final FileSystem zipFs = FileSystems.newFileSystem(uri, env);
+    try (FileSystem zipFs = FileSystems.newFileSystem(uri, env)) {
+      final Path root = zipFs.getPath("/");
+      final Path src =
+          Paths.get(TestKuduBinaryJarExtractor.class.getResource("/fake-kudu-binary").toURI());
 
-    final Path root = zipFs.getPath("/");
-    final Path src =
-        Paths.get(TestKuduBinaryJarExtractor.class.getResource("/fake-kudu-binary").toURI());
-
-    Files.walkFileTree(src, new SimpleFileVisitor<Path>() {
-      @Override
-      public FileVisitResult visitFile(Path file,
-                                       BasicFileAttributes attrs) throws IOException {
-        final Path dest = zipFs.getPath(root.toString(),
-            src.relativize(file).toString());
-        Files.copy(file, dest, StandardCopyOption.REPLACE_EXISTING);
-        return FileVisitResult.CONTINUE;
-      }
-
-      @Override
-      public FileVisitResult preVisitDirectory(Path dir,
-                                               BasicFileAttributes attrs) throws IOException {
-        final Path dirToCreate = zipFs.getPath(root.toString(),
-            src.relativize(dir).toString());
-        if (Files.notExists(dirToCreate)) {
-          LOG.debug("Creating directory {}", dirToCreate);
-          Files.createDirectories(dirToCreate);
+      Files.walkFileTree(src, new SimpleFileVisitor<Path>() {
+        @Override
+        public FileVisitResult visitFile(Path file,
+                                         BasicFileAttributes attrs) throws IOException {
+          final Path dest = zipFs.getPath(root.toString(),
+              src.relativize(file).toString());
+          Files.copy(file, dest, StandardCopyOption.REPLACE_EXISTING);
+          return FileVisitResult.CONTINUE;
         }
-        return FileVisitResult.CONTINUE;
+
+        @Override
+        public FileVisitResult preVisitDirectory(Path dir,
+                                                 BasicFileAttributes attrs) throws IOException {
+          final Path dirToCreate = zipFs.getPath(root.toString(),
+              src.relativize(dir).toString());
+          if (Files.notExists(dirToCreate)) {
+            LOG.debug("Creating directory {}", dirToCreate);
+            Files.createDirectories(dirToCreate);
+          }
+          return FileVisitResult.CONTINUE;
+        }
+      });
+
+      Path metaInf = zipFs.getPath(root.toString(), "META-INF");
+      Files.createDirectory(metaInf);
+      // Customize the properties file to enable positive and negative test scenarios.
+      Path propsPath = zipFs.getPath(metaInf.toString(), "apache-kudu-test-binary.properties");
+      try (OutputStream propsOutputStream = Files.newOutputStream(propsPath)) {
+        writeProperties(os, propsOutputStream);
       }
-    });
-
-    Path metaInf = zipFs.getPath(root.toString(), "META-INF");
-    Files.createDirectory(metaInf);
-    // Customize the properties file to enable positive and negative test scenarios.
-    Path propsPath = zipFs.getPath(metaInf.toString(), "apache-kudu-test-binary.properties");
-    OutputStream propsOutputStream = Files.newOutputStream(propsPath);
-    writeProperties(os, propsOutputStream);
-    propsOutputStream.close();
-
-    zipFs.close();
+    }
     return path;
   }
 

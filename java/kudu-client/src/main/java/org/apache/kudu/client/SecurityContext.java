@@ -17,8 +17,10 @@
 
 package org.apache.kudu.client;
 
+import java.io.IOException;
 import java.security.AccessControlContext;
 import java.security.AccessController;
+import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
@@ -27,6 +29,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nonnull;
@@ -140,7 +143,7 @@ class SecurityContext {
 
       this.sslContextTrustAny = SSLContext.getInstance("TLS");
       sslContextTrustAny.init(null, new TrustManager[] { new TrustAnyCert() }, null);
-    } catch (Exception e) {
+    } catch (GeneralSecurityException | RuntimeException e) {
       throw new RuntimeException(e);
     }
   }
@@ -217,12 +220,8 @@ class SecurityContext {
       LOG.debug("Refreshing Kerberos credentials...");
       Subject newSubject;
       try {
-        newSubject = Subject.doAs(new Subject(), new PrivilegedExceptionAction<Subject>() {
-          @Override
-          public Subject run() {
-            return SecurityUtil.getSubjectFromTicketCacheOrNull();
-          }
-        });
+        newSubject = Subject.doAs(new Subject(),
+            (PrivilegedExceptionAction<Subject>) SecurityUtil::getSubjectFromTicketCacheOrNull);
       } catch (PrivilegedActionException e) {
         throw new RuntimeException(e.getCause());
       }
@@ -241,7 +240,7 @@ class SecurityContext {
       // so let's just refuse the re-login attempt if the principal switched.
       KerberosPrincipal oldPrincipal = SecurityUtil.getKerberosPrincipalOrNull(localSubject);
       KerberosPrincipal principal = SecurityUtil.getKerberosPrincipalOrNull(newSubject);
-      if (!oldPrincipal.equals(principal)) {
+      if (!Objects.equals(oldPrincipal, principal)) {
         LOG.error("Attempted to refresh Kerberos credentials from ticket cache but found that " +
             "the new Kerberos principal {} did not match the original principal {}. Ignoring.",
             principal, oldPrincipal);
@@ -400,7 +399,7 @@ class SecurityContext {
         throw new RuntimeException("TrustManagerFactory generated multiple TrustManagers");
       }
       return (X509TrustManager) managers[0];
-    } catch (Exception e) {
+    } catch (GeneralSecurityException | IOException | RuntimeException e) {
       Throwables.throwIfInstanceOf(e, CertificateException.class);
       throw new RuntimeException(e);
     }
@@ -435,7 +434,7 @@ class SecurityContext {
 
     @Override
     public X509Certificate[] getAcceptedIssuers() {
-      return null;
+      return new X509Certificate[0];
     }
   }
 

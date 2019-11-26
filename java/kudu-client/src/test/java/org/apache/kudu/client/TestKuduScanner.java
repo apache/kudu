@@ -124,7 +124,7 @@ public class TestKuduScanner {
       "--scanner_gc_check_interval_us=500000"}) // 10% of the TTL.
   public void testKeepAlive() throws Exception {
     int rowCount = 500;
-    int shortScannerTtlMs = 5000;
+    long shortScannerTtlMs = 5000;
 
     // Create a simple table with a single partition.
     Schema tableSchema = new Schema(Collections.singletonList(
@@ -154,7 +154,7 @@ public class TestKuduScanner {
     // Test that a keepAlivePeriodMs greater than the scanner ttl fails.
     KuduScanner badScanner = client.newScannerBuilder(table)
         .batchSizeBytes(100) // Set a small batch size so the first scan doesn't read all the rows.
-        .keepAlivePeriodMs(shortScannerTtlMs * 2)
+        .keepAlivePeriodMs(shortScannerTtlMs * 2L)
         .build();
     try {
       processKeepAliveScanner(badScanner, shortScannerTtlMs);
@@ -164,10 +164,12 @@ public class TestKuduScanner {
     }
   }
 
-  private void processKeepAliveScanner(KuduScanner scanner, int scannerTtlMs) throws Exception {
+  private void processKeepAliveScanner(KuduScanner scanner, long scannerTtlMs) throws Exception {
     int i = 0;
+    KuduScannerIterator iterator = scanner.iterator();
     // Ensure reading takes longer than the scanner ttl.
-    for (RowResult unused : scanner) {
+    while (iterator.hasNext()) {
+      iterator.next();
       // Sleep for half the ttl for the first few rows. This ensures
       // we are on the same tablet and will go past the ttl without
       // a new scan request. It also ensures a single row doesn't go

@@ -36,6 +36,8 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
@@ -1045,21 +1047,37 @@ public final class Bytes {
     try {
       ReplayingDecoderBuffer = Class.forName("org.jboss.netty.handler.codec." +
           "replay.ReplayingDecoderBuffer");
-      Field field = null;
-      try {
-        field = ReplayingDecoderBuffer.getDeclaredField("buffer");
-        field.setAccessible(true);
-      } catch (NoSuchFieldException e) {
-        // Ignore.  Field has been removed in Netty 3.5.1.
-      }
+      Field field = AccessController.doPrivileged(new PrivilegedAction<Field>() {
+        @Override
+        public Field run() {
+          try {
+            Field bufferField = ReplayingDecoderBuffer.getDeclaredField("buffer");
+            bufferField.setAccessible(true);
+            return bufferField;
+          } catch (NoSuchFieldException e) {
+            // Ignore.  Field has been removed in Netty 3.5.1.
+            return null;
+          }
+        }
+      });
       RDB_buffer = field;
       if (field != null) {  // Netty 3.5.0 or before.
         RDB_buf = null;
       } else {
-        RDB_buf = ReplayingDecoderBuffer.getDeclaredMethod("buf");
-        RDB_buf.setAccessible(true);
+        RDB_buf = AccessController.doPrivileged(new PrivilegedAction<Method>() {
+          @Override
+          public Method run() {
+            try {
+              Method bufMethod = ReplayingDecoderBuffer.getDeclaredMethod("buf");
+              bufMethod.setAccessible(true);
+              return bufMethod;
+            } catch (NoSuchMethodException e) {
+              throw new RuntimeException(e);
+            }
+          }
+        });
       }
-    } catch (Exception e) {
+    } catch (ReflectiveOperationException | RuntimeException e) {
       throw new RuntimeException("static initializer failed", e);
     }
   }
@@ -1077,6 +1095,8 @@ public final class Bytes {
 
   /** {@link Comparator} for non-{@code null} byte arrays.  */
   private static final class MemCmp implements Comparator<byte[]>, Serializable {
+
+    private static final long serialVersionUID = 914981342853419168L;
 
     private MemCmp() {  // Can't instantiate outside of this class.
     }

@@ -189,7 +189,7 @@ public class JarFinder {
     return null;
   }
 
-  private static File getFileDir() throws IOException {
+  private static synchronized File getFileDir() throws IOException {
     if (fileDir == null) {
       String testDirPath = System.getProperty(FILE_DIR_PROPERTY);
       if (testDirPath == null) {

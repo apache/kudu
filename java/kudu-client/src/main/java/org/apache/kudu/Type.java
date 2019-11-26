@@ -171,22 +171,33 @@ public enum Type {
    */
   public static Type getTypeForDataType(DataType type) {
     switch (type) {
-      case STRING: return STRING;
-      case BINARY: return BINARY;
-      case VARCHAR: return VARCHAR;
-      case BOOL: return BOOL;
-      case INT8: return INT8;
-      case INT16: return INT16;
-      case INT32: return INT32;
-      case INT64: return INT64;
-      case UNIXTIME_MICROS: return UNIXTIME_MICROS;
-      case FLOAT: return FLOAT;
-      case DOUBLE: return DOUBLE;
+      case STRING:
+        return STRING;
+      case BINARY:
+        return BINARY;
+      case VARCHAR:
+        return VARCHAR;
+      case BOOL:
+      case IS_DELETED:
+        return BOOL;
+      case INT8:
+        return INT8;
+      case INT16:
+        return INT16;
+      case INT32:
+        return INT32;
+      case INT64:
+        return INT64;
+      case UNIXTIME_MICROS:
+        return UNIXTIME_MICROS;
+      case FLOAT:
+        return FLOAT;
+      case DOUBLE:
+        return DOUBLE;
       case DECIMAL32:
       case DECIMAL64:
       case DECIMAL128:
         return DECIMAL;
-      case IS_DELETED: return BOOL;
       default:
         throw new IllegalArgumentException("The provided data type doesn't map" +
             " to know any known one: " + type.getDescriptorForType().getFullName());

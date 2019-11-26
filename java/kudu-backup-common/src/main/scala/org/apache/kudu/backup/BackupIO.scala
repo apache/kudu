@@ -242,11 +242,14 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
    */
   def readTableMetadata(metadataPath: Path): TableMetadataPB = {
     val in = new InputStreamReader(fs.open(metadataPath), StandardCharsets.UTF_8)
-    val json = CharStreams.toString(in)
-    in.close()
-    val builder = TableMetadataPB.newBuilder()
-    JsonFormat.parser().merge(json, builder)
-    builder.build()
+    try {
+      val json = CharStreams.toString(in)
+      val builder = TableMetadataPB.newBuilder()
+      JsonFormat.parser().merge(json, builder)
+      builder.build()
+    } finally {
+      in.close()
+    }
   }
 }
 

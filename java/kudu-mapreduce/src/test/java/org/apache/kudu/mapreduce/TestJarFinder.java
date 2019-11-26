@@ -82,40 +82,39 @@ public class TestJarFinder {
   @Test
   public void testExistingManifest() throws Exception {
     File dir = new File(testDir, TestJarFinder.class.getName() + "-testExistingManifest");
-    File metaInfDir = new File(dir, "META-INF");
-    Assert.assertTrue(metaInfDir.mkdirs());
-    File manifestFile = new File(metaInfDir, "MANIFEST.MF");
-    Manifest manifest = new Manifest();
-
-    try (OutputStream os = new FileOutputStream(manifestFile)) {
-      manifest.write(os);
-    }
-
-    File propsFile = new File(dir, "props.properties");
-    Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
-    new Properties().store(writer, "");
-    writer.close();
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    JarOutputStream zos = new JarOutputStream(baos);
-    JarFinder.jarDir(dir, "", zos);
-    JarInputStream jis = new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
-    Assert.assertNotNull(jis.getManifest());
-    jis.close();
+    Assert.assertTrue(dir.mkdirs());
+    writeManifest(dir);
+    Assert.assertNotNull(getManifest(dir));
   }
 
   @Test
   public void testNoManifest() throws Exception {
     File dir = new File(testDir, TestJarFinder.class.getName() + "-testNoManifest");
     Assert.assertTrue(dir.mkdirs());
+    Assert.assertNotNull(getManifest(dir));
+  }
+
+  private void writeManifest(File dir) throws Exception {
+    File metaInfDir = new File(dir, "META-INF");
+    Assert.assertTrue(metaInfDir.mkdirs());
+    File manifestFile = new File(metaInfDir, "MANIFEST.MF");
+    Manifest manifest = new Manifest();
+    try (OutputStream os = new FileOutputStream(manifestFile)) {
+      manifest.write(os);
+    }
+  }
+
+  private Manifest getManifest(File dir) throws Exception {
     File propsFile = new File(dir, "props.properties");
-    Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
-    new Properties().store(writer, "");
-    writer.close();
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    JarOutputStream zos = new JarOutputStream(baos);
-    JarFinder.jarDir(dir, "", zos);
-    JarInputStream jis = new JarInputStream(new ByteArrayInputStream(baos.toByteArray()));
-    Assert.assertNotNull(jis.getManifest());
-    jis.close();
+    try (Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8)) {
+      new Properties().store(writer, "");
+    }
+    try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+         JarOutputStream zos = new JarOutputStream(baos)) {
+      JarFinder.jarDir(dir, "", zos);
+      try (JarInputStream jis = new JarInputStream(new ByteArrayInputStream(baos.toByteArray()))) {
+        return jis.getManifest();
+      }
+    }
   }
 }

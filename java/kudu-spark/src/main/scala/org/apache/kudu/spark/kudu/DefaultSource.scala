@@ -18,6 +18,7 @@
 package org.apache.kudu.spark.kudu
 
 import java.net.InetAddress
+import java.util.Locale
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -210,7 +211,7 @@ class DefaultSource
   }
 
   private def getScanLocalityType(opParam: String): ReplicaSelection = {
-    opParam.toLowerCase match {
+    opParam.toLowerCase(Locale.ENGLISH) match {
       case "leader_only" => ReplicaSelection.LEADER_ONLY
       case "closest_replica" => ReplicaSelection.CLOSEST_REPLICA
       case _ =>
@@ -223,7 +224,7 @@ class DefaultSource
   }
 
   private def stringToOperationType(opParam: String): OperationType = {
-    opParam.toLowerCase match {
+    opParam.toLowerCase(Locale.ENGLISH) match {
       case "insert" => Insert
       case "insert-ignore" => Insert
       case "upsert" => Upsert

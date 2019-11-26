@@ -98,7 +98,7 @@ public class TestNegotiator {
   public RetryRule retryRule = new RetryRule();
 
   @Before
-  public void setup() {
+  public void setUp() {
     serverEngine = createServerEngine();
     serverEngine.setUseClientMode(false);
     secContext = new SecurityContext();

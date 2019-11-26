@@ -1386,27 +1386,7 @@ public class AsyncKuduClient implements AutoCloseable {
       @Nonnull final String method,
       @Nullable final KuduRpc<?> parent,
       long timeoutMs) {
-    KuduRpc<R> rpc = new KuduRpc<R>(null, timer, timeoutMs) {
-      @Override
-      Message createRequestPB() {
-        return null;
-      }
-
-      @Override
-      String serviceName() {
-        return null;
-      }
-
-      @Override
-      String method() {
-        return method;
-      }
-
-      @Override
-      Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID) throws KuduException {
-        return null;
-      }
-    };
+    KuduRpc<R> rpc = new FakeKuduRpc<R>(method, timer, timeoutMs);
     rpc.setParentRpc(parent);
     return rpc;
   }
@@ -1423,6 +1403,38 @@ public class AsyncKuduClient implements AutoCloseable {
       @Nonnull final String method,
       @Nullable final KuduRpc<?> parent) {
     return buildFakeRpc(method, parent, defaultAdminOperationTimeoutMs);
+  }
+
+  /**
+   * A fake RPC that is used for timeouts and will never be sent.
+   */
+  private static class FakeKuduRpc<R> extends KuduRpc<R> {
+    private final String method;
+
+    FakeKuduRpc(String method, Timer timer, long timeoutMillis) {
+      super(null, timer, timeoutMillis);
+      this.method = method;
+    }
+
+    @Override
+    Message createRequestPB() {
+      return null;
+    }
+
+    @Override
+    String serviceName() {
+      return null;
+    }
+
+    @Override
+    String method() {
+      return method;
+    }
+
+    @Override
+    Pair<R, Object> deserialize(CallResponse callResponse, String tsUUID) throws KuduException {
+      return null;
+    }
   }
 
   /**

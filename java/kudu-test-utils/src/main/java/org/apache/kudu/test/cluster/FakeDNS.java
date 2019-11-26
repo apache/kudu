@@ -115,7 +115,7 @@ public class FakeDNS {
         // Java 8 or earlier takes a list of NameServices
         field.set(InetAddress.class, Arrays.asList(proxy));
       }
-    } catch (Exception e) {
+    } catch (ReflectiveOperationException e) {
       throw new RuntimeException(e);
     }
     installed = true;

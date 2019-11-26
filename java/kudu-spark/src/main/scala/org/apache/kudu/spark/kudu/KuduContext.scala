@@ -470,7 +470,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
 }
 
 private object KuduContext {
-  val Log: Logger = LoggerFactory.getLogger(classOf[KuduContext])
+  val log: Logger = LoggerFactory.getLogger(classOf[KuduContext])
 
   /**
    * Returns a new Kerberos-authenticated [[Subject]] if the Spark context contains
@@ -496,7 +496,7 @@ private object KuduContext {
     val keytab =
       sc.getConf.getOption("spark.yarn.keytab").getOrElse(return subject)
 
-    Log.info(s"Logging in as principal $principal with keytab $keytab")
+    log.info(s"Logging in as principal $principal with keytab $keytab")
 
     val conf = new Configuration {
       override def getAppConfigurationEntry(name: String): Array[AppConfigurationEntry] = {
@@ -524,7 +524,7 @@ private object KuduContext {
 }
 
 private object KuduClientCache {
-  val Log: Logger = LoggerFactory.getLogger(KuduClientCache.getClass)
+  val log: Logger = LoggerFactory.getLogger(KuduClientCache.getClass)
 
   private case class CacheValue(kuduClient: AsyncKuduClient, shutdownHookHandle: Runnable)
 
@@ -546,7 +546,7 @@ private object KuduClientCache {
         try {
           cacheValue.kuduClient.close()
         } catch {
-          case e: Exception => Log.warn("Error while shutting down the test client", e);
+          case e: Exception => log.warn("Error while shutting down the test client", e);
         }
 
         // A client may only be closed once, so once we've close this client,

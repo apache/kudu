@@ -81,12 +81,12 @@ public class TestOperation {
 
       // Check the strings.
       int offset = 3;
-      for (int i = 0; i <= 4; i++) {
+      for (long i = 0; i <= 4; i++) {
         // The offset into the indirect buffer
-        assertEquals(6 * i, Bytes.getLong(rows, offset));
+        assertEquals(6L * i, Bytes.getLong(rows, offset));
         offset += Longs.BYTES;
         // The length of the pointed-to string.
-        assertEquals(6, Bytes.getLong(rows, offset));
+        assertEquals(6L, Bytes.getLong(rows, offset));
         offset += Longs.BYTES;
       }
 

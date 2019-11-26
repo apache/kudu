@@ -67,20 +67,23 @@
              <Bug pattern="NM_CLASS_NAMING_CONVENTION"/>
              <!-- NM_METHOD_NAMING_CONVENTION: Method names should start with a lower case letter. -->
              <Bug pattern="NM_METHOD_NAMING_CONVENTION"/>
+             <!-- NM_FIELD_NAMING_CONVENTION: Field names should start with a lower case letter. -->
+             <Bug pattern="NM_FIELD_NAMING_CONVENTION"/>
              <!-- EC_NULL_ARG: Call to equals(null) -->
              <Bug pattern="EC_NULL_ARG"/>
              <!-- NP_ALWAYS_NULL: Null pointer dereference -->
              <Bug pattern="NP_ALWAYS_NULL"/>
              <!-- MS_CANNOT_BE_FINAL: Field isn't final and can't be protected from malicious code. -->
              <Bug pattern="MS_CANNOT_BE_FINAL"/>
+             <!-- DLS_DEAD_LOCAL_STORE: Dead store to local variable. -->
+             <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
+             <!-- UPM_UNCALLED_PRIVATE_METHOD: Private method is never called. -->
+             <Bug pattern="UPM_UNCALLED_PRIVATE_METHOD"/>
+             <!-- SE_NO_SERIALVERSIONID: Class is Serializable, but doesn't define serialVersionUID. -->
+             <Bug pattern="SE_NO_SERIALVERSIONID"/>
+             <!-- HE_HASHCODE_USE_OBJECT_EQUALS: Class defines hashCode() and uses Object.equals(). -->
+             <Bug pattern="HE_HASHCODE_USE_OBJECT_EQUALS"/>
          </Or>
-    </Match>
-    <Match>
-        <!-- The retry rule doesn't need to be read.
-        This naming scheme should be used for all RetryRule usage to avoid SpotBugs issues.
-        -->
-        <Field name="~.*retryRule" />
-        <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD" />
     </Match>
     <Match>
         <!-- Disable warnings about mutable objects and the use of public fields.
@@ -89,23 +92,53 @@
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
     </Match>
     <Match>
-        <!-- This rule often falsely flags side effecting calls. Tests will frequently call
-        methods for the side effects without caring about the return value. -->
-        <Class name="~org\.apache\.kudu.*Test.*"/>
-        <Bug pattern="RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT" />
-    </Match>
-    <Match>
-        <!-- Tests use i % 2 == 1 frequently to alternate behavior. -->
-        <!-- TODO: converting these into negated "check for even" and remove. -->
-        <Class name="~org\.apache\.kudu.*Test.*"/>
-        <Bug pattern="IM_BAD_CHECK_FOR_ODD" />
+        <!-- Bugs that are ignored in all tests. -->
+        <Or>
+            <Class name="~org\.apache\.kudu.*Test.*"/>
+            <Class name="~org\.apache\.kudu\..*\.IT.*"/>
+        </Or>
+        <Or>
+            <!-- Often fields are initialized in the setUp method in tests. -->
+            <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR" />
+            <!-- Tests often ignore expected exceptions -->
+            <Bug pattern="DE_MIGHT_IGNORE" />
+            <Bug pattern="REC_CATCH_EXCEPTION" />
+            <!-- Tests of call methods for their side effects or to check for exceptions and
+            ignore the return value -->
+            <Bug pattern="RV_RETURN_VALUE_IGNORED" />
+            <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+            <Bug pattern="RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT" />
+            <!-- Tests often cast to a known class. -->
+            <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+            <!-- Tests don't need to worry about serialization compatibility. -->
+            <Bug pattern="SE_NO_SERIALVERSIONID" />
+            <!-- Tests use i % 2 == 1 frequently to alternate behavior. -->
+            <!-- TODO: converting these into negated "check for even" and remove. -->
+            <Bug pattern="IM_BAD_CHECK_FOR_ODD" />
+            <!-- The retry rule doesn't need to be read.
+            This naming scheme should be used for all RetryRule usage to avoid SpotBugs issues.
+            -->
+            <And>
+                <Field name="~.*retryRule" />
+                <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD" />
+            </And>
+            <!-- We generally don't care about minor performance issues in tests. -->
+            <And>
+                <Bug category="PERFORMANCE" />
+                <Priority value="3" />
+            </And>
+        </Or>
     </Match>
 
     <!-- kudu-backup exclusions -->
     <Match>
-        <!-- The options field doesn't need to be restored in this case. -->
+        <!-- These fields don't need to be restored in this case. -->
         <Class name="org.apache.kudu.backup.KuduBackupRDD"/>
-        <Field name="options" />
+        <Or>
+            <Field name="options" />
+            <Field name="sc" />
+            <Field name="table" />
+        </Or>
         <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
     </Match>
 
@@ -123,6 +156,61 @@
             <Class name="org.apache.kudu.client.KuduException$OriginalException"/>
         </Or>
         <Bug pattern="NM_CLASS_NOT_EXCEPTION" />
+    </Match>
+    <Match>
+        <!-- Though returning null is a bad practice, changing this now breaks expectations. -->
+        <Or>
+            <And>
+                <Class name="org.apache.kudu.client.KuduRpc"/>
+                <Method name="partitionKey" />
+            </And>
+            <And>
+                <Class name="org.apache.kudu.client.ColumnRangePredicate"/>
+                <Method name="toByteArray" />
+            </And>
+        </Or>
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <Match>
+        <!-- The return value isn't needed. -->
+        <Class name="org.apache.kudu.client.ErrorCollector"/>
+        <Method name="addError" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED" />
+    </Match>
+    <Match>
+        <!-- Status has manny upper case methods, but changing it would be breaking. -->
+        <Class name="org.apache.kudu.client.Status"/>
+        <Bug pattern="NM_METHOD_NAMING_CONVENTION" />
+    </Match>
+    <Match>
+        <!-- These instances of floating point equality are correct. -->
+        <Or>
+            <And>
+                <Class name="org.apache.kudu.client.KuduPredicate"/>
+                <Method name="areConsecutive" />
+            </And>
+            <And>
+                <Class name="org.apache.kudu.client.PartialRow"/>
+                <Or>
+                    <Method name="incrementColumn" />
+                    <Method name="isCellEqual" />
+                    <Method name="isCellIncremented" />
+                </Or>
+            </And>
+        </Or>
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+    <Match>
+        <!-- This cast is safe. -->
+        <Class name="org.apache.kudu.client.Negotiator"/>
+        <Method name="evaluateChallenge" />
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
+    </Match>
+    <Match>
+        <!-- Changing this would break public API. -->
+        <Class name="org.apache.kudu.client.AlterTableResponse"/>
+        <Method name="getTsUUID" />
+        <Bug pattern="NM_CONFUSING" />
     </Match>
 
     <Match>
@@ -154,15 +242,36 @@
         <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD" />
     </Match>
 
+    <!-- kudu-mapreduce exclusions -->
+    <Match>
+        <!-- This is a false positive. -->
+        <Class name="org.apache.kudu.mapreduce.TestJarFinder"/>
+        <Method name="writeManifest" />
+        <Bug pattern="OBL_UNSATISFIED_OBLIGATION" />
+    </Match>
+
     <!-- kudu-spark exclusions -->
     <Match>
-        <!-- The options and projectedCols field doesn't need to be restored in this case. -->
+        <!-- These fields don't need to be restored in this case. -->
         <Class name="org.apache.kudu.spark.kudu.KuduRDD"/>
         <Or>
             <Field name="options" />
+            <Field name="predicates"/>
             <Field name="projectedCols"/>
+            <Field name="sc"/>
+            <Field name="table"/>
         </Or>
         <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
+    <Match>
+        <!-- These fields don't need to be restored in this case. -->
+        <Class name="org.apache.kudu.spark.kudu.KuduContext"/>
+        <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
+    <Match>
+        <!-- This instance of floating point equality is correct. -->
+        <Class name="~org\.apache\.kudu\.spark\.kudu\.KuduContextTest.*"/>
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
     </Match>
 
     <!-- kudu-test-utils exclusions -->
@@ -175,5 +284,10 @@
         <!-- This is a mock for a test and doesn't need to be serialized. -->
         <Class name="org.apache.kudu.test.junit.TestResultReporter$MockFlakyTestServlet"/>
         <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
+    <Match>
+        <!-- This is okay in a test context. -->
+        <Class name="org.apache.kudu.test.cluster.FakeDNS"/>
+        <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED" />
     </Match>
 </FindBugsFilter>

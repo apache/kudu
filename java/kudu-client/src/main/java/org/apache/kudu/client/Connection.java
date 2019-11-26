@@ -596,23 +596,35 @@ class Connection extends SimpleChannelUpstreamHandler {
   Deferred<Void> shutdown() {
     final ChannelFuture disconnectFuture = disconnect();
     final Deferred<Void> d = new Deferred<>();
-    disconnectFuture.addListener(new ChannelFutureListener() {
-      @Override
-      public void operationComplete(final ChannelFuture future) {
-        if (future.isSuccess()) {
-          d.callback(null);
-          return;
-        }
-        final Throwable t = future.getCause();
-        if (t instanceof Exception) {
-          d.callback(t);
-        } else {
-          d.callback(new NonRecoverableException(
-              Status.IllegalState("failed to shutdown: " + this), t));
-        }
-      }
-    });
+    disconnectFuture.addListener(new ShutdownListener(d));
     return d;
+  }
+
+  /**
+   * A ChannelFutureListener that completes the passed deferred on completion.
+   */
+  private static class ShutdownListener implements ChannelFutureListener {
+
+    private final Deferred<Void> deferred;
+
+    public ShutdownListener(Deferred<Void> deferred) {
+      this.deferred = deferred;
+    }
+
+    @Override
+    public void operationComplete(final ChannelFuture future) {
+      if (future.isSuccess()) {
+        deferred.callback(null);
+        return;
+      }
+      final Throwable t = future.getCause();
+      if (t instanceof Exception) {
+        deferred.callback(t);
+      } else {
+        deferred.callback(new NonRecoverableException(
+            Status.IllegalState("failed to shutdown: " + this), t));
+      }
+    }
   }
 
   /** @return string representation of this object (suitable for printing into the logs, etc.) */

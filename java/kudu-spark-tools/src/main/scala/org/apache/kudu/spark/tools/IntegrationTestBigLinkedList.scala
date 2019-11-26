@@ -18,6 +18,7 @@
 package org.apache.kudu.spark.tools
 
 import java.net.InetAddress
+import java.util.Locale
 
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.KuduClient
@@ -52,7 +53,7 @@ import scala.util.Try
 @InterfaceStability.Unstable
 object IntegrationTestBigLinkedList {
 
-  val LOG: Logger =
+  val log: Logger =
     LoggerFactory.getLogger(IntegrationTestBigLinkedList.getClass)
 
   def usage: String =
@@ -100,7 +101,7 @@ object IntegrationTestBigLinkedList {
   def main(args: Array[String]): Unit = {
     if (args.isEmpty) { fail(usage) }
 
-    args(0).toLowerCase() match {
+    args(0).toLowerCase(Locale.ENGLISH) match {
       case "generate" => Generator.main(args.slice(1, args.length))
       case "verify" => Verifier.main(args.slice(1, args.length))
       case "loop" => Looper.main(args.slice(1, args.length))
@@ -110,7 +111,7 @@ object IntegrationTestBigLinkedList {
 }
 
 object Generator {
-  import IntegrationTestBigLinkedList.LOG
+  import IntegrationTestBigLinkedList.log
   import IntegrationTestBigLinkedList.defaultMasterAddrs
   import IntegrationTestBigLinkedList.fail
   import IntegrationTestBigLinkedList.nanosToHuman
@@ -223,7 +224,7 @@ object Generator {
       for (_ <- 0 until args.lists) {
         val start = System.nanoTime()
         insertList(clientId, args, table, session, rand)
-        LOG.info(
+        log.info(
           s"$clientId inserted ${args.nodes} node linked list in {}",
           nanosToHuman(System.nanoTime() - start))
       }
@@ -452,7 +453,7 @@ object Verifier {
 }
 
 object Looper {
-  import IntegrationTestBigLinkedList.LOG
+  import IntegrationTestBigLinkedList.log
   import IntegrationTestBigLinkedList.fail
 
   def main(args: Array[String]): Unit = {
@@ -471,9 +472,9 @@ object Looper {
       val expected = verifyArgs.nodes.map(_ + nodesPerLoop)
       Verifier.verify(expected, count).map(fail)
       verifyArgs = verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))
-      LOG.info("*************************************************")
-      LOG.info(s"Completed $n loops. Nodes verified: ${count.referenced}")
-      LOG.info("*************************************************")
+      log.info("*************************************************")
+      log.info(s"Completed $n loops. Nodes verified: ${count.referenced}")
+      log.info("*************************************************")
     }
   }
 }

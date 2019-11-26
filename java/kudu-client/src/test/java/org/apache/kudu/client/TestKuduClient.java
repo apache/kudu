@@ -1240,7 +1240,7 @@ public class TestKuduClient {
         fail();
       } catch (InvocationTargetException ex) {
         assertTrue(ex.getTargetException() instanceof KuduException);
-        KuduException realEx = (KuduException)ex.getTargetException();
+        KuduException realEx = (KuduException) ex.getTargetException();
         assertTrue(realEx.getStatus().isTimedOut());
       }
     }

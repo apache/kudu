@@ -48,7 +48,7 @@ class KuduRDDTest extends KuduTestSuite {
     ))
   def testKeepAlive() {
     val rowCount = 500
-    val shortScannerTtlMs = 5000
+    val shortScannerTtlMs = 5000L
 
     // Create a simple table with a single partition.
     val tableName = "testKeepAlive"
@@ -82,7 +82,7 @@ class KuduRDDTest extends KuduTestSuite {
         // a new scan request. It also ensures a single row doesn't go
         // longer than the ttl.
         if (i < 5) {
-          Thread.sleep(shortScannerTtlMs / 2) // Sleep for half the ttl.
+          Thread.sleep(shortScannerTtlMs / 2L) // Sleep for half the ttl.
           i = i + 1
         }
       }
@@ -95,7 +95,7 @@ class KuduRDDTest extends KuduTestSuite {
       List("key"),
       KuduReadOptions(
         batchSize = 100, // Set a small batch size so the first scan doesn't read all the rows.
-        keepAlivePeriodMs = shortScannerTtlMs / 4)
+        keepAlivePeriodMs = shortScannerTtlMs / 4L)
     )
     processRDD(goodRdd)
 
@@ -106,7 +106,7 @@ class KuduRDDTest extends KuduTestSuite {
       List("key"),
       KuduReadOptions(
         batchSize = 100, // Set a small batch size so the first scan doesn't read all the rows.
-        keepAlivePeriodMs = shortScannerTtlMs * 2)
+        keepAlivePeriodMs = shortScannerTtlMs * 2L)
     )
     try {
       processRDD(badRdd)

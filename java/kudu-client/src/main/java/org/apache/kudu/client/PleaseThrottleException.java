@@ -66,10 +66,10 @@ public final class PleaseThrottleException extends RecoverableException
     implements HasFailedRpcException {
 
   /** The RPC that was failed with this exception.  */
-  private final Operation rpc;
+  private final transient Operation rpc;
 
   /** A deferred one can wait on before retrying the failed RPC.  */
-  private final Deferred deferred;
+  private final transient Deferred deferred;
 
   /**
    * Constructor.
