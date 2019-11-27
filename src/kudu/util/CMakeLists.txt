@@ -322,6 +322,26 @@ ADD_EXPORTABLE_LIBRARY(kudu_util_compression
 target_compile_definitions(kudu_util_compression PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS)
 target_compile_definitions(kudu_util_compression_exported PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS)
 
+#######################################
+# kudu_curl_util
+#######################################
+add_library(kudu_curl_util
+  curl_util.cc)
+target_link_libraries(kudu_curl_util
+  security
+  ${CURL_LIBRARIES}
+  glog
+  gutil)
+
+#######################################
+# kudu_cloud_util
+#######################################
+add_library(kudu_cloud_util
+  cloud/instance_detector.cc
+  cloud/instance_metadata.cc)
+target_link_libraries(kudu_cloud_util
+  kudu_curl_util)
+
 # See the comment in sanitizer_options.cc for details on this library's usage.
 # The top-level CMakeLists sets a ${SANITIZER_OPTIONS_OVERRIDE} variable which
 # should be linked first into all Kudu binaries.
@@ -357,19 +377,6 @@ target_link_libraries(kudu_test_util
   glog
   gmock
   kudu_util)
-
-#######################################
-# kudu_curl_util
-#######################################
-if(NOT NO_TESTS)
-  add_library(kudu_curl_util
-    curl_util.cc)
-  target_link_libraries(kudu_curl_util
-    security
-    ${CURL_LIBRARIES}
-    glog
-    gutil)
-endif()
 
 #######################################
 # kudu_test_main
@@ -562,4 +569,13 @@ ADD_KUDU_TEST(curl_util-test)
 if(NOT NO_TESTS)
   target_link_libraries(curl_util-test
     kudu_curl_util)
+endif()
+
+#######################################
+# instance_detector-test
+#######################################
+ADD_KUDU_TEST(cloud/instance_detector-test)
+if(NOT NO_TESTS)
+  target_link_libraries(instance_detector-test
+    kudu_cloud_util)
 endif()
