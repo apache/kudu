@@ -543,6 +543,7 @@ void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
   json->Set("requestor", scan.remote_user.username());
 
   json->Set("duration", HumanReadableElapsedTime::ToShortString(duration.ToSeconds()));
+  json->Set("num_round_trips", scan.last_call_seq_id);
   json->Set("time_since_start",
             HumanReadableElapsedTime::ToShortString(time_since_start.ToSeconds()));
 
