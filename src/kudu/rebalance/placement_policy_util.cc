@@ -242,10 +242,10 @@ Status BuildTabletsPlacementInfo(
     // TODO(aserbin): process RF=1 tablets as necessary
     if (tablet_summary.result != cluster_summary::HealthCheckResult::HEALTHY &&
         tablet_summary.result != cluster_summary::HealthCheckResult::RECOVERING) {
-      VLOG(1) << Substitute("tablet $0: not considering replicas for movement "
-                            "since the tablet's status is '$1'",
-                            tablet_id,
-                            cluster_summary::HealthCheckResultToString(tablet_summary.result));
+      LOG(INFO) << Substitute("tablet $0: not considering replicas for movement "
+                              "since the tablet's status is '$1'",
+                              tablet_id,
+                              cluster_summary::HealthCheckResultToString(tablet_summary.result));
       continue;
     }
     EmplaceOrDie(&tablet_to_table_id, tablet_id, tablet_summary.table_id);

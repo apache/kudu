@@ -300,8 +300,24 @@ class RebalanceIgnoredTserversTest :
     public AdminCliTest {
 };
 TEST_F(RebalanceIgnoredTserversTest, Basic) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
   FLAGS_num_tablet_servers = 5;
+  // Start a cluster with a single tablet.
   NO_FATALS(BuildAndStart());
+
+  // Pre-condition: all replicas on ignored tservers should be healthy or recovering.
+  // Here we just ensure the cluster is healthy.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_TOOL_OK(
+      "cluster",
+      "ksck",
+      cluster_->master()->bound_rpc_addr().ToString()
+    );
+  });
 
   // Assign one ignored tserver and move_replicas_from_ignored_tservers=true
   // without setting it into maintenance mode.
@@ -354,8 +370,8 @@ TEST_F(RebalanceIgnoredTserversTest, Basic) {
   }
 
   // Assign two ignored tservers, one of which is unhealthy,
-  // 'move_replicas_from_ignored_tservers=true' and
-  // 'output_replica_distribution_details' are both enabled.
+  // '-move_replicas_from_ignored_tservers' and
+  // '-output_replica_distribution_details' are both enabled.
   auto* ts = cluster_->tablet_server(1);
   ASSERT_NE(nullptr, ts);
   ts->Shutdown();
