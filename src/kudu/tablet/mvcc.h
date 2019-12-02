@@ -354,7 +354,9 @@ class MvccManager {
   // Adjusts the clean time, i.e. the timestamp such that all transactions with
   // lower timestamps are committed or aborted, based on which transactions are
   // currently in flight and on what is the latest value of 'safe_time_'.
-  void AdjustCleanTime();
+  //
+  // Must be called with lock_ held.
+  void AdjustCleanTimeUnlocked();
 
   // Advances the earliest in-flight timestamp, based on which transactions are
   // currently in-flight. Usually called when the previous earliest transaction
