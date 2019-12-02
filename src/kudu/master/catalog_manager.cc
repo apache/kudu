@@ -64,7 +64,6 @@
 #include <boost/function.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
 
@@ -3144,6 +3143,9 @@ class RetryingTSRpcTask : public MonitoredTask {
     return static_cast<State>(NoBarrier_Load(&state_));
   }
 
+  // Return the id of the tablet that is the subject of the async request.
+  virtual string tablet_id() const = 0;
+
   MonoTime start_timestamp() const override { return start_ts_; }
   MonoTime completion_timestamp() const override { return end_ts_; }
   const scoped_refptr<TableInfo>& table() const { return table_ ; }
@@ -3161,9 +3163,6 @@ class RetryingTSRpcTask : public MonitoredTask {
   //
   // Runs on the reactor thread, so must not block or perform any IO.
   virtual void HandleResponse(int attempt) = 0;
-
-  // Return the id of the tablet that is the subject of the async request.
-  virtual string tablet_id() const = 0;
 
   // Overridable log prefix with reasonable default.
   virtual string LogPrefix() const {
@@ -3322,13 +3321,7 @@ void RetryingTSRpcTask::RunDelayedTask(const Status& status) {
 
 void RetryingTSRpcTask::UnregisterAsyncTask() {
   end_ts_ = MonoTime::Now();
-  if (table_ != nullptr) {
-    table_->RemoveTask(this);
-  } else {
-    // This is a floating task (since the table does not exist)
-    // created as response to a tablet report.
-    Release();  // May call "delete this";
-  }
+  table_->RemoveTask(tablet_id(), this);
 }
 
 Status RetryingTSRpcTask::ResetTSProxy() {
@@ -3475,7 +3468,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
   }
 
   string description() const override {
-    return tablet_id_ + " Delete Tablet RPC for TS=" + permanent_uuid_;
+    return "DeleteTablet RPC for tablet " + tablet_id_ + " on TS " + permanent_uuid_;
   }
 
  protected:
@@ -3494,10 +3487,17 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
               target_ts_desc_->ToString(), tablet_id_, status.ToString());
           MarkComplete();
           break;
+        // Do not retry on a CAS error
         case TabletServerErrorPB::CAS_FAILED:
           LOG(WARNING) << Substitute("TS $0: delete failed for tablet $1 "
               "because of a CAS failure. No further retry: $2",
               target_ts_desc_->ToString(), tablet_id_, status.ToString());
+          MarkFailed();
+          break;
+        case TabletServerErrorPB::ALREADY_INPROGRESS:
+          LOG(WARNING) << Substitute("TS $0: delete failed for tablet $1 "
+            "because tablet deleting was already in progress. No further retry: $2",
+            target_ts_desc_->ToString(), tablet_id_, status.ToString());
           MarkComplete();
           break;
         default:
@@ -3566,7 +3566,8 @@ class AsyncAlterTable : public RetryingTSRpcTask {
   string type_name() const override { return "AlterTable"; }
 
   string description() const override {
-    return tablet_->ToString() + " Alter Table RPC";
+    return Substitute("AlterTable RPC for tablet $0 (table $1, current schema version=$2)",
+                      tablet_->id(), table_->ToString(), table_->schema_version());
   }
 
  private:
@@ -3938,7 +3939,7 @@ Status CatalogManager::ProcessTabletReport(
   unordered_map<string, scoped_refptr<TabletInfo>> tablet_infos;
 
   // Keeps track of all RPCs that should be sent when we're done.
-  vector<unique_ptr<RetryingTSRpcTask>> rpcs;
+  vector<scoped_refptr<RetryingTSRpcTask>> rpcs;
 
   // Locks the referenced tables (for READ) and tablets (for WRITE).
   //
@@ -4017,8 +4018,7 @@ Status CatalogManager::ProcessTabletReport(
         table->metadata().state().is_deleted()) {
       const string& msg = tablet->metadata().state().pb.state_msg();
       update->set_state_msg(msg);
-      LOG(INFO) << Substitute("Got report from deleted tablet $0 ($1): Sending "
-          "delete request for this tablet", tablet->ToString(), msg);
+      VLOG(1) << Substitute("Got report from deleted tablet $0 ($1)", tablet->ToString(), msg);
 
       // TODO(unknown): Cancel tablet creation, instead of deleting, in cases
       // where that might be possible (tablet creation timeout & replacement).
@@ -4300,15 +4300,15 @@ Status CatalogManager::ProcessTabletReport(
 
   // 15. Send all queued RPCs.
   for (auto& rpc : rpcs) {
-    if (rpc->table() != nullptr) {
-      rpc->table()->AddTask(rpc.get());
-    } else {
-      // This is a floating task (since the table does not exist) created in
-      // response to a tablet report.
-      rpc->AddRef();
+    if (rpc->table()->ContainsTask(rpc->tablet_id(), rpc->description())) {
+      // There are some tasks with the same tablet_id, alter type (and permanent_uuid
+      // for some specific tasks) already running, here we just ignore the rpc to avoid
+      // sending duplicate requests, maybe it will be sent the next time the tserver heartbeats.
+      VLOG(1) << Substitute("Not sending duplicate request: $0", rpc->description());
+      continue;
     }
+    rpc->table()->AddTask(rpc->tablet_id(), rpc);
     WARN_NOT_OK(rpc->Run(), Substitute("Failed to send $0", rpc->description()));
-    rpc.release();
   }
 
   return Status::OK();
@@ -4358,9 +4358,9 @@ void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table
   table->GetAllTablets(&tablets);
 
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
-    auto call = new AsyncAlterTable(master_, tablet);
-    table->AddTask(call);
-    WARN_NOT_OK(call->Run(), "Failed to send alter table request");
+    scoped_refptr<AsyncAlterTable> task = new AsyncAlterTable(master_, tablet);
+    table->AddTask(tablet->id(), task);
+    WARN_NOT_OK(task->Run(), "Failed to send alter table request");
   }
 }
 
@@ -4391,11 +4391,11 @@ void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& ta
       << "Sending DeleteTablet for " << cstate.committed_config().peers().size()
       << " replicas of tablet " << tablet->id();
   for (const auto& peer : cstate.committed_config().peers()) {
-    AsyncDeleteReplica* call = new AsyncDeleteReplica(
+    scoped_refptr<AsyncDeleteReplica> task = new AsyncDeleteReplica(
         master_, peer.permanent_uuid(), tablet->table(), tablet->id(),
         TABLET_DATA_DELETED, none, deletion_msg);
-    tablet->table()->AddTask(call);
-    WARN_NOT_OK(call->Run(), Substitute(
+    tablet->table()->AddTask(tablet->id(), task);
+    WARN_NOT_OK(task->Run(), Substitute(
         "Failed to send DeleteReplica request for tablet $0", tablet->id()));
   }
 }
@@ -4777,10 +4777,9 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
       tablet_lock.data().pb.consensus_state().committed_config();
   tablet->set_last_create_tablet_time(MonoTime::Now());
   for (const RaftPeerPB& peer : config.peers()) {
-    AsyncCreateReplica* task = new AsyncCreateReplica(master_,
-                                                      peer.permanent_uuid(),
-                                                      tablet, tablet_lock);
-    tablet->table()->AddTask(task);
+    scoped_refptr<AsyncCreateReplica> task = new AsyncCreateReplica(
+        master_, peer.permanent_uuid(), tablet, tablet_lock);
+    tablet->table()->AddTask(tablet->id(), task);
     WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
   }
 }
@@ -5419,6 +5418,11 @@ string TableInfo::ToString() const {
   return Substitute("$0 [id=$1]", l.data().pb.name(), table_id_);
 }
 
+uint32_t TableInfo::schema_version() const {
+  TableMetadataLock l(this, LockMode::READ);
+  return l.data().pb.version();
+}
+
 void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                                  const vector<scoped_refptr<TabletInfo>>& tablets_to_drop) {
   std::lock_guard<rw_spinlock> l(lock_);
@@ -5507,29 +5511,26 @@ bool TableInfo::IsCreateInProgress() const {
   return false;
 }
 
-void TableInfo::AddTask(MonitoredTask* task) {
-  task->AddRef();
-  {
-    std::lock_guard<rw_spinlock> l(lock_);
-    pending_tasks_.insert(task);
-  }
+void TableInfo::AddTask(const string& tablet_id, const scoped_refptr<MonitoredTask>& task) {
+  std::lock_guard<rw_spinlock> l(lock_);
+  pending_tasks_.emplace(tablet_id, task);
 }
 
-void TableInfo::RemoveTask(MonitoredTask* task) {
-  {
-    std::lock_guard<rw_spinlock> l(lock_);
-    pending_tasks_.erase(task);
+void TableInfo::RemoveTask(const string& tablet_id, MonitoredTask* task) {
+  std::lock_guard<rw_spinlock> l(lock_);
+  auto range = pending_tasks_.equal_range(tablet_id);
+  for (auto it = range.first; it != range.second; ++it) {
+    if (it->second.get() == task) {
+      pending_tasks_.erase(it);
+      break;
+    }
   }
-
-  // Done outside the lock so that if Release() drops the last ref to this
-  // TableInfo, RemoveTask() won't unlock a freed lock.
-  task->Release();
 }
 
 void TableInfo::AbortTasks() {
   shared_lock<rw_spinlock> l(lock_);
-  for (MonitoredTask* task : pending_tasks_) {
-    task->Abort();
+  for (auto& task : pending_tasks_) {
+    task.second->Abort();
   }
 }
 
@@ -5547,10 +5548,24 @@ void TableInfo::WaitTasksCompletion() {
   }
 }
 
-void TableInfo::GetTaskList(vector<scoped_refptr<MonitoredTask>>* ret) {
+bool TableInfo::ContainsTask(const string& tablet_id, const string& task_description) {
   shared_lock<rw_spinlock> l(lock_);
-  for (MonitoredTask* task : pending_tasks_) {
-    ret->push_back(make_scoped_refptr(task));
+  auto range = pending_tasks_.equal_range(tablet_id);
+  for (auto it = range.first; it != range.second; ++it) {
+    if (it->second->description() == task_description) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void TableInfo::GetTaskList(vector<scoped_refptr<MonitoredTask>>* tasks) {
+  tasks->clear();
+  {
+    shared_lock<rw_spinlock> l(lock_);
+    for (const auto& task : pending_tasks_) {
+      tasks->push_back(task.second);
+    }
   }
 }
 

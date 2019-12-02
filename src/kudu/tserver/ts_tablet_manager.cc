@@ -854,7 +854,7 @@ Status TSTabletManager::BeginReplicaStateTransition(
   Status s = StartTabletStateTransitionUnlocked(tablet_id, reason, deleter);
   if (PREDICT_FALSE(!s.ok())) {
     if (error_code) {
-      *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+      *error_code = TabletServerErrorPB::ALREADY_INPROGRESS;
     }
     return s;
   }

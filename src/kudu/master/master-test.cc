@@ -70,6 +70,7 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/monitored_task.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/atomic.h"
@@ -1775,6 +1776,125 @@ TEST_F(MasterTest, TestTableIdentifierWithIdAndName) {
     ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
     ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
   }
+}
+
+TEST_F(MasterTest, TestDuplicateRequest) {
+  const char* const kTsUUID = "my-ts-uuid";
+  TSToMasterCommonPB common;
+  common.mutable_ts_instance()->set_permanent_uuid(kTsUUID);
+  common.mutable_ts_instance()->set_instance_seqno(1);
+
+  // Register the fake TS, without sending any tablet report.
+  ServerRegistrationPB fake_reg;
+  MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
+  MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
+  fake_reg.set_software_version(VersionInfo::GetVersionInfo());
+  fake_reg.set_start_time(10000);
+
+  // Information on replica management scheme.
+  ReplicaManagementInfoPB rmi;
+  rmi.set_replacement_scheme(ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION);
+
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_TRUE(resp.leader_master());
+    ASSERT_FALSE(resp.needs_reregister());
+    ASSERT_FALSE(resp.needs_full_tablet_report());
+    ASSERT_FALSE(resp.has_tablet_report());
+  }
+
+  vector<shared_ptr<TSDescriptor> > descs;
+  master_->ts_manager()->GetAllDescriptors(&descs);
+  ASSERT_EQ(1, descs.size()) << "Should have registered the TS";
+  ServerRegistrationPB reg;
+  descs[0]->GetRegistration(&reg);
+  ASSERT_EQ(SecureDebugString(fake_reg), SecureDebugString(reg))
+      << "Master got different registration";
+  shared_ptr<TSDescriptor> ts_desc;
+  ASSERT_TRUE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_EQ(ts_desc, descs[0]);
+
+  // Create a table with three tablets.
+  const char *kTableName = "test_table";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(master_->catalog_manager()->GetAllTables(&tables));
+    ASSERT_EQ(1, tables.size());
+  }
+
+  scoped_refptr<TableInfo> table = tables[0];
+  vector<scoped_refptr<TabletInfo>> tablets;
+  table->GetAllTablets(&tablets);
+  ASSERT_EQ(tablets.size(), 3);
+
+  // Delete the table.
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // The table has no pending task.
+  // The master would not send DeleteTablet requests for no consensus state for tablets.
+  vector<scoped_refptr<MonitoredTask>> task_list;
+  tables[0]->GetTaskList(&task_list);
+  ASSERT_EQ(task_list.size(), 0);
+
+  // Now the tserver send a full report with a deleted tablet.
+  // The master will process it and send 'DeleteTablet' request to the tserver.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    TabletReportPB* tr = req.mutable_tablet_report();
+    tr->set_is_incremental(false);
+    tr->set_sequence_number(0);
+    tr->add_updated_tablets()->set_tablet_id(tablets[0]->id());
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_tablet_report());
+  }
+
+  // The 'DeleteTablet' task is running for the master will continue
+  // retrying to connect to the fake TS.
+  tables[0]->GetTaskList(&task_list);
+  ASSERT_EQ(task_list.size(), 1);
+  ASSERT_EQ(task_list[0]->state(), MonitoredTask::kStateRunning);
+
+  // Now the tserver send a full report with two deleted tablets.
+  // The master will not send duplicate DeleteTablet request to the tserver.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    TabletReportPB* tr = req.mutable_tablet_report();
+    tr->set_is_incremental(true);
+    tr->set_sequence_number(0);
+    tr->add_updated_tablets()->set_tablet_id(tablets[0]->id());
+    tr->add_updated_tablets()->set_tablet_id(tablets[1]->id());
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_tablet_report());
+  }
+
+  tables[0]->GetTaskList(&task_list);
+  ASSERT_EQ(task_list.size(), 2);
 }
 
 TEST_F(MasterTest, TestGetTableStatistics) {
