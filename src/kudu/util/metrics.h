@@ -779,6 +779,16 @@ class Metric : public RefCountedThreadSafe<Metric> {
   // NOTE: If merge with self, do nothing.
   virtual void MergeFrom(const scoped_refptr<Metric>& other) = 0;
 
+  // Invalidate 'm_epoch_', causing this metric to be invisible until its value changes.
+  void InvalidateEpoch() {
+    m_epoch_ = -1;
+  }
+
+  // Return true if this metric is invisible otherwise false.
+  bool IsInvisible() const {
+    return -1 == m_epoch_;
+  }
+
  protected:
   explicit Metric(const MetricPrototype* prototype);
   virtual ~Metric();
@@ -790,11 +800,6 @@ class Metric : public RefCountedThreadSafe<Metric> {
       // Out-of-line the uncommon case which requires a bit more code.
       UpdateModificationEpochSlowPath();
     }
-  }
-
-  // Invalidate 'm_epoch_', causing this metric to be invisible until its value changes.
-  void InvalidateEpoch() {
-    m_epoch_ = -1;
   }
 
   // Causes this metric to be skipped during a merge..

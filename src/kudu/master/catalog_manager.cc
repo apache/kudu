@@ -5587,13 +5587,25 @@ void TableInfo::UpdateMetrics(const string& tablet_id,
         - static_cast<int64_t>(old_stats.on_disk_size()));
     if (new_stats.has_live_row_count()) {
       DCHECK(!metrics_->ContainsTabletNoLiveRowCount(tablet_id));
-      metrics_->live_row_count->IncrementBy(
-          static_cast<int64_t>(new_stats.live_row_count())
-          - static_cast<int64_t>(old_stats.live_row_count()));
+
+      // The function "IncrementBy" makes the metric visible by validating the epoch.
+      // So, it's very important to skip calling it while the metric is invisible.
+      if (!metrics_->live_row_count->IsInvisible()) {
+        metrics_->live_row_count->IncrementBy(
+            static_cast<int64_t>(new_stats.live_row_count())
+            - static_cast<int64_t>(old_stats.live_row_count()));
+      }
     } else if (!old_stats.has_on_disk_size()) {
-      // The new reported stat doesn't support 'live_row_count' and
-      // this is the first report stat of the tablet.
+      // For an existing tablet, either it supports 'live_row_count' or not. Obviously,
+      // it doesn't support this feature in this branch. So we gather the tablet uuid to
+      // make sure later that the table doesn't support this either. But the new_stats
+      // will keep coming, so it's necessary to limit the operation to one time only.
+      // Thus, we use the 'on_disk_size' metric of the old_stats as a switch when it is
+      // transitioned from "uninitialized stats" to "has_on_disk_size()".
       metrics_->AddTabletNoLiveRowCount(tablet_id);
+
+      // Make the metric invisible by invalidating the epoch.
+      metrics_->live_row_count->InvalidateEpoch();
     }
   }
 }
@@ -5607,6 +5619,15 @@ void TableInfo::RemoveMetrics(const string& tablet_id,
       metrics_->live_row_count->IncrementBy(-static_cast<int64_t>(old_stats.live_row_count()));
     } else {
       metrics_->DeleteTabletNoLiveRowCount(tablet_id);
+
+      // Make the metric visible again after all of the legacy tablets are deleted.
+      if (metrics_->TableSupportsLiveRowCount()) {
+        uint64_t live_row_count = 0;
+        for (const auto& e : tablet_map_) {
+          live_row_count += e.second->GetStats().live_row_count();
+        }
+        metrics_->live_row_count->IncrementBy(static_cast<int64_t>(live_row_count));
+      }
     }
   }
 }

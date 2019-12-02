@@ -52,6 +52,7 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -70,6 +71,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
@@ -1798,6 +1800,74 @@ TEST_F(MasterTest, TestGetTableStatistics) {
   ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
   ASSERT_EQ(FLAGS_on_disk_size_for_testing, resp.on_disk_size());
   ASSERT_EQ(FLAGS_live_row_count_for_testing, resp.live_row_count());
+}
+
+TEST_F(MasterTest, TestHideLiveRowCountInTableMetrics) {
+  const char* kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(master_->catalog_manager()->GetAllTables(&tables));
+    ASSERT_EQ(1, tables.size());
+  }
+  vector<scoped_refptr<TabletInfo>> tablets;
+  tables[0]->GetAllTablets(&tablets);
+
+  const auto call_update_metrics = [&] (
+      scoped_refptr<TabletInfo>& tablet,
+      bool support_live_row_count) {
+    tablet::ReportedTabletStatsPB old_stats;
+    tablet::ReportedTabletStatsPB new_stats;
+    new_stats.set_on_disk_size(1);
+    if (support_live_row_count) {
+      old_stats.set_live_row_count(1);
+      new_stats.set_live_row_count(1);
+    }
+    tables[0]->UpdateMetrics(tablet->id(), old_stats, new_stats);
+  };
+
+  // Trigger to cause 'live_row_count' invisible.
+  {
+    for (int i = 0; i < 100; ++i) {
+      for (int j = 0; j < tablets.size(); ++j) {
+        NO_FATALS(call_update_metrics(tablets[j], (tablets.size() - 1 != j)));
+      }
+    }
+
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?ids=$1",
+                                    mini_master_->bound_http_addr().ToString(),
+                                    tables[0]->id()),
+                         &buf));
+    string raw = buf.ToString();
+    ASSERT_STR_CONTAINS(raw, kTableName);
+    ASSERT_STR_CONTAINS(raw, "on_disk_size");
+    ASSERT_STR_NOT_CONTAINS(raw, "live_row_count");
+  }
+
+  // Trigger to cause 'live_row_count' visible.
+  {
+    tables[0]->RemoveMetrics(tablets.back()->id(), tablet::ReportedTabletStatsPB());
+    for (int i = 0; i < 100; ++i) {
+      for (int j = 0; j < tablets.size(); ++j) {
+        NO_FATALS(call_update_metrics(tablets[j], true));
+      }
+    }
+    EasyCurl c;
+    faststring buf;
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?ids=$1",
+                                    mini_master_->bound_http_addr().ToString(),
+                                    tables[0]->id()),
+                         &buf));
+    string raw = buf.ToString();
+    ASSERT_STR_CONTAINS(raw, kTableName);
+    ASSERT_STR_CONTAINS(raw, "on_disk_size");
+    ASSERT_STR_CONTAINS(raw, "live_row_count");
+  }
 }
 
 class AuthzTokenMasterTest : public MasterTest,
