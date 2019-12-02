@@ -178,6 +178,7 @@ const char* const kDefaultValueArg = "default_value";
 const char* const kCompressionTypeArg = "compression_type";
 const char* const kEncodingTypeArg = "encoding_type";
 const char* const kBlockSizeArg = "block_size";
+const char* const kColumnCommentArg = "column_comment";
 const char* const kCreateTableJSONArg = "create_table_json";
 
 enum PartitionAction {
@@ -839,6 +840,18 @@ Status ColumnSetBlockSize(const RunnerContext& context) {
   return alterer->Alter();
 }
 
+Status ColumnSetComment(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& column_comment = FindOrDie(context.required_args, kColumnCommentArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->Comment(column_comment);
+  return alterer->Alter();
+}
+
 Status DeleteColumn(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
@@ -1320,6 +1333,15 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kBlockSizeArg, "Block size of the column" })
       .Build();
 
+  unique_ptr<Action> column_set_comment =
+      ActionBuilder("column_set_comment", &ColumnSetComment)
+      .Description("Set comment for a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to alter" })
+      .AddRequiredParameter({ kColumnCommentArg, "Comment of the column" })
+      .Build();
+
   unique_ptr<Action> delete_column =
       ActionBuilder("delete_column", &DeleteColumn)
       .Description("Delete a column")
@@ -1365,6 +1387,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(column_set_compression))
       .AddAction(std::move(column_set_default))
       .AddAction(std::move(column_set_encoding))
+      .AddAction(std::move(column_set_comment))
       .AddAction(std::move(copy_table))
       .AddAction(std::move(create_table))
       .AddAction(std::move(delete_column))

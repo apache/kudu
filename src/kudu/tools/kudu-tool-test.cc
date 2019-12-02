@@ -1111,14 +1111,26 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kTableModeRegexes = {
-        "delete.*Delete a table",
-        "rename_table.*Rename a table",
-        "rename_column.*Rename a column",
-        "list.*List tables",
-        "scan.*Scan rows from a table",
+        "add_range_partition.*Add a range partition for table",
+        "column_remove_default.*Remove write_default value for a column",
+        "column_set_block_size.*Set block size for a column",
+        "column_set_compression.*Set compression type for a column",
+        "column_set_default.*Set write_default value for a column",
+        "column_set_encoding.*Set encoding type for a column",
+        "column_set_comment.*Set comment for a column",
         "copy.*Copy table data to another table",
-        "set_extra_config.*Change a extra configuration value on a table",
+        "create.*Create a new table",
+        "delete_column.*Delete a column",
+        "delete.*Delete a table",
+        "describe.*Describe a table",
+        "drop_range_partition.*Drop a range partition of table",
         "get_extra_configs.*Get the extra configuration properties for a table",
+        "list.*List tables",
+        "locate_row.*Locate which tablet a row belongs to",
+        "rename_column.*Rename a column",
+        "rename_table.*Rename a table",
+        "scan.*Scan rows from a table",
+        "set_extra_config.*Change a extra configuration value on a table",
         "statistics.*Get table statistics"
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
@@ -3443,6 +3455,23 @@ TEST_F(ToolTest, TestAlterColumn) {
 
   // Test invalid block_size.
   NO_FATALS(check_bad_input("column_set_block_size", "0", "Invalid block size:"));
+
+  // Alter comment for a column.
+  const auto alter_comment = [&] (size_t idx) {
+    ObjectIdGenerator generator;
+    const string comment = generator.Next();
+    ASSERT_EQ(table->schema().Column(idx).comment(), "");
+    NO_FATALS(RunActionStdoutNone(Substitute("table column_set_comment $0 $1 $2 $3",
+                                             master_addr,
+                                             kTableName,
+                                             table->schema().Column(idx).name(),
+                                             comment)));
+    ASSERT_OK(client->OpenTable(kTableName, &table));
+    ASSERT_EQ(table->schema().Column(idx).comment(), comment);
+  };
+  for (int i = 0; i < table->schema().num_columns(); ++i) {
+    NO_FATALS(alter_comment(i));
+  }
 }
 
 TEST_F(ToolTest, TestColumnSetDefault) {
