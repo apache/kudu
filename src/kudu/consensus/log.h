@@ -457,10 +457,10 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
   // being written to, with the same segment once properly closed.
-  Status ReplaceSegmentInReader(const scoped_refptr<ReadableLogSegment>& segment);
+  Status ReplaceSegmentInReader(scoped_refptr<ReadableLogSegment> segment);
 
   // Adds the given segment to 'log_reader_'.
-  Status AddEmptySegmentInReader(const scoped_refptr<ReadableLogSegment>& segment);
+  Status AddEmptySegmentInReader(scoped_refptr<ReadableLogSegment> segment);
 
   Status Sync();
 

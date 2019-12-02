@@ -475,10 +475,6 @@ class WritableLogSegment {
  private:
   FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
 
-  const std::shared_ptr<WritableFile>& writable_file() const {
-    return writable_file_;
-  }
-
   // The path to the log file.
   const std::string path_;
 

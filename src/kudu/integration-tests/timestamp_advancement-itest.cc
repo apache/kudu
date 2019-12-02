@@ -41,7 +41,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -180,10 +179,10 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
   Status CheckForWriteReplicatesInLog(MiniTabletServer* ts, const string& tablet_id,
                                       bool* has_write_replicates) const {
     shared_ptr<LogReader> reader;
-    RETURN_NOT_OK(LogReader::Open(env_,
-                  ts->server()->fs_manager()->GetTabletWalDir(tablet_id),
-                  scoped_refptr<log::LogIndex>(), tablet_id,
-                  scoped_refptr<MetricEntity>(), &reader));
+    RETURN_NOT_OK(LogReader::Open(
+       ts->server()->fs_manager(),
+       scoped_refptr<log::LogIndex>(), tablet_id,
+       scoped_refptr<MetricEntity>(), &reader));
     log::SegmentSequence segs;
     RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
     unique_ptr<log::LogEntryPB> entry;

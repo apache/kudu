@@ -641,10 +641,9 @@ Status SegmentAllocator::AllocateNewSegment() {
   VLOG_WITH_PREFIX(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
   unique_ptr<WritableFile> segment_file;
   Env* env = ctx_->fs_manager->env();
-  RETURN_NOT_OK_PREPEND(env->NewTempWritableFile(opts,
-                                         path_tmpl,
-                                         &next_segment_path_,
-                                         &segment_file), "ASDF");
+  RETURN_NOT_OK_PREPEND(env->NewTempWritableFile(
+      opts, path_tmpl, &next_segment_path_, &segment_file),
+                        "could not create next WAL segment");
   next_segment_file_.reset(segment_file.release());
   VLOG_WITH_PREFIX(1) << "Created next WAL segment, placeholder path: " << next_segment_path_;
 
@@ -658,7 +657,8 @@ Status SegmentAllocator::AllocateNewSegment() {
                                                       FLAGS_fs_wal_dir_reserved_bytes));
     // TODO (perf) zero the new segments -- this could result in
     // additional performance improvements.
-    RETURN_NOT_OK_PREPEND(next_segment_file_->PreAllocate(max_segment_size_), "E");
+    RETURN_NOT_OK_PREPEND(next_segment_file_->PreAllocate(max_segment_size_),
+                          "could not preallocate next WAL segment");
   }
   return Status::OK();
 }
@@ -670,7 +670,8 @@ Status SegmentAllocator::SwitchToAllocatedSegment() {
   string new_segment_path = ctx_->fs_manager->GetWalSegmentFileName(
       tablet_id, active_segment_sequence_number_);
   Env* env = ctx_->fs_manager->env();
-  RETURN_NOT_OK_PREPEND(env->RenameFile(next_segment_path_, new_segment_path), "rename");
+  RETURN_NOT_OK_PREPEND(env->RenameFile(next_segment_path_, new_segment_path),
+                        "could not rename next WAL segment");
   if (opts_->force_fsync_all) {
     RETURN_NOT_OK(env->SyncDir(ctx_->log_dir));
   }
@@ -710,7 +711,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment() {
     new ReadableLogSegment(new_segment_path,
                            shared_ptr<RandomAccessFile>(readable_file.release())));
   RETURN_NOT_OK(readable_segment->Init(header, new_segment->first_entry_offset()));
-  RETURN_NOT_OK(reader_add_segment_(readable_segment));
+  RETURN_NOT_OK(reader_add_segment_(std::move(readable_segment)));
 
   // Now set 'active_segment_' to the new segment.
   active_segment_ = std::move(new_segment);
@@ -1187,14 +1188,14 @@ Status Log::RemoveRecoveryDirIfExists(FsManager* fs_manager, const string& table
   return Status::OK();
 }
 
-Status Log::AddEmptySegmentInReader(const scoped_refptr<ReadableLogSegment>& segment) {
+Status Log::AddEmptySegmentInReader(scoped_refptr<ReadableLogSegment> segment) {
   std::lock_guard<percpu_rwlock> l(state_lock_);
-  return reader_->AppendEmptySegment(segment);
+  return reader_->AppendEmptySegment(std::move(segment));
 }
 
-Status Log::ReplaceSegmentInReader(const scoped_refptr<ReadableLogSegment>& segment) {
+Status Log::ReplaceSegmentInReader(scoped_refptr<ReadableLogSegment> segment) {
   std::lock_guard<percpu_rwlock> l(state_lock_);
-  return reader_->ReplaceLastSegment(segment);
+  return reader_->ReplaceLastSegment(std::move(segment));
 }
 
 std::string Log::LogPrefix() const { return ctx_.LogPrefix(); }

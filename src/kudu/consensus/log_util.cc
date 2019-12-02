@@ -774,7 +774,7 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
   PutFixed32(&buf, new_header.ByteSize());
   // Then Serialize the PB.
   pb_util::AppendToString(new_header, &buf);
-  RETURN_NOT_OK(writable_file()->Append(Slice(buf)));
+  RETURN_NOT_OK(writable_file_->Append(Slice(buf)));
 
   header_.CopyFrom(new_header);
   first_entry_offset_ = buf.size();
@@ -796,7 +796,7 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   buf.append(kLogSegmentFooterMagicString);
   PutFixed32(&buf, footer.ByteSize());
 
-  RETURN_NOT_OK_PREPEND(writable_file()->Append(Slice(buf)), "Could not write the footer");
+  RETURN_NOT_OK_PREPEND(writable_file_->Append(Slice(buf)), "Could not write the footer");
 
   footer_.CopyFrom(footer);
   is_footer_written_ = true;

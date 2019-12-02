@@ -134,11 +134,11 @@ class LogReader : public enable_make_shared<LogReader> {
   // Index entries in 'segment's footer will be added to the index.
   // If the segment has no footer it will be scanned so this should not be used
   // for new segments.
-  Status AppendSegment(const scoped_refptr<ReadableLogSegment>& segment);
+  Status AppendSegment(scoped_refptr<ReadableLogSegment> segment);
 
   // Same as above but for segments without any entries.
   // Used by the Log to add "empty" segments.
-  Status AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& segment);
+  Status AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment);
 
   // Removes segments with sequence numbers less than or equal to
   // 'segment_sequence_number' from this reader.
@@ -150,14 +150,14 @@ class LogReader : public enable_make_shared<LogReader> {
   // Requires that the last segment in 'segments_' has the same sequence
   // number as 'segment'.
   // Expects 'segment' to be properly closed and to have footer.
-  Status ReplaceLastSegment(const scoped_refptr<ReadableLogSegment>& segment);
+  Status ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment);
 
   // Appends 'segment' to the segment sequence.
   // Assumes that the segment was scanned, if no footer was found.
   // To be used only internally, clients of this class with private access (i.e. friends)
   // should use the thread safe version, AppendSegment(), which will also scan the segment
   // if no footer is present.
-  Status AppendSegmentUnlocked(const scoped_refptr<ReadableLogSegment>& segment);
+  Status AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment);
 
   // Used by Log to update its LogReader on how far it is possible to read
   // the current segment. Requires that the reader has at least one segment
