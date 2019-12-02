@@ -61,8 +61,8 @@ message SocketStatsPB {
   optional uint32 snd_cwnd = 3;
   optional uint32 total_retrans = 4;
 
-  optional uint32 pacing_rate = 5;
-  optional uint32 max_pacing_rate = 6;
+  optional uint64 pacing_rate = 5;
+  optional uint64 max_pacing_rate = 6;
 
   optional uint64 bytes_acked = 7;
   optional uint64 bytes_received = 8;

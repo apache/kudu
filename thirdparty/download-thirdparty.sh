@@ -322,14 +322,8 @@ fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
-  "patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch" \
   "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
-  "patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch" \
-  "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
-  "patch -d tools/clang/tools/include-what-you-use -p1 < $TP_DIR/patches/llvm-iwyu-llvm-6-compat.patch" \
-  "patch -d projects/compiler-rt -p1 < $TP_DIR/patches/llvm-tsan-disable-trace-switching-after-multithreaded-for.patch" \
-  "patch -d projects -p1 < $TP_DIR/patches/llvm-ustat-removal.patch" \
-  "patch -d projects -p1 < $TP_DIR/patches/llvm-fix-944-destruction-of-a-locked-mutex.patch"
+  "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \

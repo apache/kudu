@@ -350,7 +350,8 @@ if (${KUDU_USE_UBSAN})
   # Enable UB and unsigned integer overflow detection.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined,integer")
   # Disable 'alignment' because unaligned access is really OK on Nehalem and we do it all over the place.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize=alignment")
+  # TODO(todd): enable implicit-integer-sign-change checking after fixing issues.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize=alignment,implicit-integer-sign-change,implicit-unsigned-integer-truncation,implicit-signed-integer-truncation")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/ubsan-blacklist.txt")
   # Stop execution after UB or overflow is detected.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize-recover=undefined,integer")
