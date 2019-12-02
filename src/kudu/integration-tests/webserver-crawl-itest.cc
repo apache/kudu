@@ -168,10 +168,9 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
   ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
 
-  // Create a table and write soem data so that log anchors page gets populated.
+  // Create a table and write some data so that the log anchor pages get populated.
   TestWorkload work(&cluster);
   work.set_num_replicas(3);
-  work.set_num_read_threads(4);
   work.set_num_tablets(6);
   work.Setup();
   work.Start();
@@ -296,6 +295,7 @@ TEST_P(WebserverCrawlITest, TestAllWebPages) {
     string host = ret == string::npos ? url : url.substr(0, ret);
 
     // Every link should be reachable.
+    SCOPED_TRACE(url);
     ASSERT_OK(curl.FetchURL(url, &response, headers));
     string resp_str = response.ToString();
     SCOPED_TRACE(resp_str);
