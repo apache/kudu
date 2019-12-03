@@ -190,7 +190,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
       }
       previous_seg_seqno = entry->header().sequence_number();
       previous_seg_path = entry->path();
-      RETURN_NOT_OK(AppendSegmentUnlocked(std::move(entry)));
+      DCHECK(entry->HasFooter());
+      AppendSegmentUnlocked(std::move(entry));
     }
 
     state_ = kLogReaderReading;
@@ -384,12 +385,12 @@ void LogReader::UpdateLastSegmentOffset(int64_t readable_to_offset) {
   CHECK_EQ(state_, kLogReaderReading);
   DCHECK(!segments_.empty());
   // Get the last segment
-  ReadableLogSegment* segment = segments_.back().get();
+  auto* segment = segments_.back().get();
   DCHECK(!segment->HasFooter());
   segment->UpdateReadableToOffset(readable_to_offset);
 }
 
-Status LogReader::ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment) {
+void LogReader::ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment) {
   // This is used to replace the last segment once we close it properly so it must
   // have a footer.
   DCHECK(segment->HasFooter());
@@ -397,11 +398,9 @@ Status LogReader::ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment) 
   std::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   // Make sure the segment we're replacing has the same sequence number
-  CHECK(!segments_.empty());
+  DCHECK(!segments_.empty());
   CHECK_EQ(segment->header().sequence_number(), segments_.back()->header().sequence_number());
   segments_[segments_.size() - 1] = std::move(segment);
-
-  return Status::OK();
 }
 
 Status LogReader::AppendSegment(scoped_refptr<ReadableLogSegment> segment) {
@@ -410,34 +409,31 @@ Status LogReader::AppendSegment(scoped_refptr<ReadableLogSegment> segment) {
     RETURN_NOT_OK(segment->RebuildFooterByScanning());
   }
   std::lock_guard<simple_spinlock> lock(lock_);
-  return AppendSegmentUnlocked(std::move(segment));
-}
-
-Status LogReader::AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment) {
-  DCHECK(segment->IsInitialized());
-  DCHECK(segment->HasFooter());
-
-  if (!segments_.empty()) {
-    CHECK_EQ(segments_.back()->header().sequence_number() + 1,
-             segment->header().sequence_number());
-  }
-  segments_.emplace_back(std::move(segment));
+  AppendSegmentUnlocked(std::move(segment));
   return Status::OK();
 }
 
-Status LogReader::AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment) {
+void LogReader::AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment) {
+  DCHECK(segment->IsInitialized());
+  DCHECK(lock_.is_locked());
+
+#ifndef NDEBUG
+  if (!segments_.empty()) {
+    DCHECK_EQ(segments_.back()->header().sequence_number() + 1,
+              segment->header().sequence_number());
+  }
+#endif
+  segments_.emplace_back(std::move(segment));
+}
+
+void LogReader::AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment) {
   DCHECK(segment->IsInitialized());
   std::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
-  if (!segments_.empty()) {
-    CHECK_EQ(segments_.back()->header().sequence_number() + 1,
-             segment->header().sequence_number());
-  }
-  segments_.emplace_back(std::move(segment));
-  return Status::OK();
+  AppendSegmentUnlocked(std::move(segment));
 }
 
-const int LogReader::num_segments() const {
+int LogReader::num_segments() const {
   std::lock_guard<simple_spinlock> lock(lock_);
   return segments_.size();
 }

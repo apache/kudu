@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/consensus_queue.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,7 +25,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -36,7 +37,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -563,7 +563,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
     ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 10 ops
     if (i % 10 == 0) {
-      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+      ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
     }
   }
   ASSERT_OK(log_->WaitUntilAllFlushed());
@@ -626,7 +626,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
     ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 3 ops
     if (i % 3 == 0) {
-      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+      ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
     }
   }
 
@@ -636,7 +636,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
     ASSERT_OK(log::AppendNoOpToLogSync(clock_, log_.get(), &opid));
     // Roll the log every 3 ops
     if (i % 3 == 0) {
-      ASSERT_OK(log_->AllocateSegmentAndRollOver());
+      ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
     }
   }
 

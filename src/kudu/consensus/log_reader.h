@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_LOG_LOG_READER_H_
-#define KUDU_LOG_LOG_READER_H_
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -46,12 +45,19 @@ class ReplicateMsg;
 } // namespace consensus
 
 namespace log {
-class LogIndex;
 class LogEntryBatchPB;
+class LogIndex;
 struct LogIndexEntry;
 
-// Reads a set of segments from a given path. Segment headers and footers
-// are read and parsed, but entries are not.
+// Reads a set of segments from a given path. Segment headers and footers are
+// read and parsed, but entries are not.
+//
+// Once initialized, care should be taken to avoid mutating the segments in a
+// non-thread-safe manner. E.g. segment mutation should be made thread-safe with
+// locking primitives, or done via a copy-then-replace access pattern.
+// UpdateLastSegmentOffset and ReplaceLastSegment are examples of each these
+// patterns respectively.
+//
 // This class is thread safe.
 class LogReader : public enable_make_shared<LogReader> {
  public:
@@ -109,7 +115,7 @@ class LogReader : public enable_make_shared<LogReader> {
   Status LookupOpId(int64_t op_index, consensus::OpId* op_id) const;
 
   // Returns the number of segments.
-  const int num_segments() const;
+  int num_segments() const;
 
   std::string ToString() const;
 
@@ -138,7 +144,7 @@ class LogReader : public enable_make_shared<LogReader> {
 
   // Same as above but for segments without any entries.
   // Used by the Log to add "empty" segments.
-  Status AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment);
+  void AppendEmptySegment(scoped_refptr<ReadableLogSegment> segment);
 
   // Removes segments with sequence numbers less than or equal to
   // 'segment_sequence_number' from this reader.
@@ -150,14 +156,14 @@ class LogReader : public enable_make_shared<LogReader> {
   // Requires that the last segment in 'segments_' has the same sequence
   // number as 'segment'.
   // Expects 'segment' to be properly closed and to have footer.
-  Status ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment);
+  void ReplaceLastSegment(scoped_refptr<ReadableLogSegment> segment);
 
   // Appends 'segment' to the segment sequence.
   // Assumes that the segment was scanned, if no footer was found.
   // To be used only internally, clients of this class with private access (i.e. friends)
   // should use the thread safe version, AppendSegment(), which will also scan the segment
   // if no footer is present.
-  Status AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment);
+  void AppendSegmentUnlocked(scoped_refptr<ReadableLogSegment> segment);
 
   // Used by Log to update its LogReader on how far it is possible to read
   // the current segment. Requires that the reader has at least one segment
@@ -199,5 +205,3 @@ class LogReader : public enable_make_shared<LogReader> {
 
 }  // namespace log
 }  // namespace kudu
-
-#endif /* KUDU_LOG_LOG_READER_H_ */

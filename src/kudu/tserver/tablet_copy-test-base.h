@@ -116,7 +116,7 @@ class TabletCopyTest : public TabletServerTestBase {
       for (int row_id = 0; row_id < kNumLogRolls * kIncr; row_id += kIncr) {
         InsertTestRowsRemote(row_id, kIncr);
         ASSERT_OK(tablet_replica_->tablet()->Flush());
-        ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOver());
+        ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
       }
     }
   }

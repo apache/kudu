@@ -19,8 +19,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <limits>
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -95,25 +95,23 @@ enum SegmentAllocationState {
 class SegmentAllocator {
  public:
   // Creates a new SegmentAllocator. The allocator isn't usable until Init() is
-  // called. 'opts' and 'ctx' are options and various context variables that
-  // are relevant for the Log for which we are allocating segments. 'schema'
-  // and 'schema_version' define the initial schema for the Log.
-  // 'reader_replace_last_segment' is a functor that should be called upon
-  // closing a segment to make the segment readable by the Log's reader.
-  // 'reader_add_segment' is a functor that should be called upon initializing
-  // a new segment to make the segment readable by the Log's reader.
+  // called.
+  //
+  // 'opts' and 'ctx' are options and various context variables that
+  // are relevant for the Log for which we are allocating segments.
+  //
+  // 'schema' and 'schema_version' define the initial schema for the Log.
   SegmentAllocator(const LogOptions* opts,
                    const LogContext* ctx,
                    Schema schema,
-                   uint32_t schema_version,
-                   std::function<Status(scoped_refptr<ReadableLogSegment>)>
-                       reader_replace_last_segment,
-                   std::function<Status(scoped_refptr<ReadableLogSegment>)>
-                       reader_add_segment);
+                   uint32_t schema_version);
 
-  // Sets the currently active segment number, starts the threadpool, and
-  // synchronously allocates an active segment.
-  Status Init(uint64_t sequence_number);
+  // Initializes the SegmentAllocator using 'sequence_number' as the active
+  // segment's sequence number.
+  //
+  // 'new_readable_segment' contains the newly active segment, reopened for reading.
+  Status Init(uint64_t sequence_number,
+              scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Checks whether it's time to allocate (e.g. the current segment is full)
   // and/or roll over (e.g. a previous pre-allocation has finished), and does
@@ -121,21 +119,24 @@ class SegmentAllocator {
   //
   // 'write_size_bytes' is the expected size of the next write; if the active
   // segment would go above the max segment size, a new segment is allocated.
-  Status AllocateOrRollOverIfNecessary(uint32_t write_size_bytes);
+  //
+  // In the event of a roll over, 'closed_segment' contains a new segment reader
+  // for the just-closed segment (if there was one), and 'new_readable_segment'
+  // contains the newly active segment, reopened for reading.
+  Status AllocateOrRollOverIfNecessary(
+      uint32_t write_size_bytes,
+      scoped_refptr<ReadableLogSegment>* closed_segment,
+      scoped_refptr<ReadableLogSegment>* new_readable_segment);
+
 
   // Fsyncs the currently active segment to disk.
   Status Sync();
 
   // Syncs the current segment and writes out the footer.
-  enum CloseMode {
-    // Just close the current semgent.
-    CLOSE,
-
-    // Close the current segment and call reader_replace_last_segment_ to
-    // replace the last log segment in the log reader.
-    CLOSE_AND_REPLACE_LAST_SEGMENT,
-  };
-  Status CloseCurrentSegment(CloseMode mode);
+  //
+  // If 'closed_segment' is not null, it will contain a new ReadableLogSegment
+  // corresponding to the segment that was just closed.
+  Status CloseCurrentSegment(scoped_refptr<ReadableLogSegment>* closed_segment);
 
   // Update the footer based on the written 'batch', e.g. to track the
   // last-written OpId.
@@ -163,7 +164,14 @@ class SegmentAllocator {
 
   // This is not thread-safe. It is up to the caller to ensure this does not
   // interfere with the append thread's attempts to switch log segments.
-  Status AllocateSegmentAndRollOver();
+  //
+  // If there was a previous active segment, 'closed_segment' contains a new
+  // segment reader built for that segment.
+  //
+  // 'new_readable_segment' contains the newly active segment, reopened for reading.
+  Status AllocateSegmentAndRollOver(
+      scoped_refptr<ReadableLogSegment>* closed_segment,
+      scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Returns a readable segment pointing at the most recently closed segment.
   Status GetClosedSegment(scoped_refptr<ReadableLogSegment>* readable_segment);
@@ -184,19 +192,20 @@ class SegmentAllocator {
   Status AllocateNewSegment();
 
   // Swaps in the next segment file as the new active segment.
-  Status SwitchToAllocatedSegment();
+  //
+  // 'new_readable_segment' contains the newly active segment, reopened for reading.
+  Status SwitchToAllocatedSegment(
+      scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Waits for any on-going allocation to complete and rolls over onto the
-  // allocated segment, swapping out the previous active segment (if one
-  // existed).
-  Status RollOver();
-
-  // Function call that replaces the last segment in the Log's log reader with
-  // the input readable log segment.
-  const std::function<Status(scoped_refptr<ReadableLogSegment>)> reader_replace_last_segment_;
-
-  // Function call that adds the input segment to the Log's log reader.
-  const std::function<Status(scoped_refptr<ReadableLogSegment>)> reader_add_segment_;
+  // allocated segment, swapping out the previous active segment if it existed.
+  //
+  // If there was a previous active segment, 'closed_segment' contains a new
+  // segment reader built for that segment.
+  //
+  // 'new_readable_segment' contains the newly active segment, reopened for reading.
+  Status RollOver(scoped_refptr<ReadableLogSegment>* closed_segment,
+                  scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Hooks used to inject faults into the allocator.
   std::shared_ptr<LogFaultHooks> hooks_;
@@ -398,7 +407,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // available in closed, readable segments.
   //
   // This is not thread-safe. Used in test only.
-  Status AllocateSegmentAndRollOver();
+  Status AllocateSegmentAndRollOverForTests();
 
   void SetLogFaultHooksForTests(const std::shared_ptr<LogFaultHooks>& hooks) {
     segment_allocator_.hooks_ = hooks;
@@ -454,13 +463,6 @@ class Log : public RefCountedThreadSafe<Log> {
   // log segment.
   Status UpdateIndexForBatch(const LogEntryBatch& batch,
                              int64_t start_offset);
-
-  // Replaces the last "empty" segment in 'log_reader_', i.e. the one currently
-  // being written to, with the same segment once properly closed.
-  Status ReplaceSegmentInReader(scoped_refptr<ReadableLogSegment> segment);
-
-  // Adds the given segment to 'log_reader_'.
-  Status AddEmptySegmentInReader(scoped_refptr<ReadableLogSegment> segment);
 
   Status Sync();
 

@@ -28,7 +28,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -193,7 +192,7 @@ TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
   AppendNoOpsToLogSync(clock_, log_.get(), &opid, 2);
 
   // RollOver() the batch so that we have a properly formed footer.
-  ASSERT_OK(log_->AllocateSegmentAndRollOver());
+  ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
 
   SegmentSequence segments;
   log_->reader()->GetSegmentsSnapshot(&segments);
@@ -488,7 +487,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   ASSERT_EQ(written_entries_size, log_->segment_allocator_.active_segment_->written_offset());
 
   // When we roll it should go back to the header size.
-  ASSERT_OK(log_->AllocateSegmentAndRollOver());
+  ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
   ASSERT_EQ(header_size, log_->segment_allocator_.active_segment_->written_offset());
   written_entries_size = header_size;
 

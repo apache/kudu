@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CONSENSUS_LOG_UTIL_H_
-#define KUDU_CONSENSUS_LOG_UTIL_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -102,7 +100,7 @@ class LogEntryReader {
 
   // Construct a LogEntryReader to read from the provided segment.
   // 'seg' must outlive the LogEntryReader.
-  explicit LogEntryReader(ReadableLogSegment* seg);
+  explicit LogEntryReader(const ReadableLogSegment* seg);
 
   ~LogEntryReader();
 
@@ -131,7 +129,7 @@ class LogEntryReader {
   Status MakeCorruptionStatus(const Status& status) const;
 
   // The segment being read.
-  ReadableLogSegment* seg_;
+  const ReadableLogSegment* seg_;
 
   // The last several entries which were successfully read.
   struct RecentEntry {
@@ -171,6 +169,10 @@ class LogEntryReader {
 // segments are rolled over and the Log continues in a new segment.
 
 // A readable log segment for recovery and follower catch-up.
+//
+// Const methods are thread-safe; non-const methods are not. Care must be taken
+// not to invoke non-thread-safe methods after the segment has been incorporated
+// into the LogReader, as there may be concurrent threads accessing the reader.
 class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
  public:
   // Factory method to construct a ReadableLogSegment from a file on the FS.
@@ -207,12 +209,15 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
   // the log entries read up to the corrupted one are returned in the 'entries'
   // vector.
-  Status ReadEntries(LogEntries* entries);
+  Status ReadEntries(LogEntries* entries) const;
 
   // Rebuilds this segment's footer by scanning its entries.
   // This is an expensive operation as it reads and parses the whole segment
   // so it should be only used in the case of a crash, where the footer is
   // missing because we didn't have the time to write it out.
+  //
+  // This function is not thread-safe and should only be called when there's no
+  // danger of another thread accessing the segment.
   Status RebuildFooterByScanning();
 
   bool IsInitialized() const {
@@ -311,25 +316,25 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   //
   // Returns Uninitialized() if the file appears to be preallocated but never
   // written.
-  Status ReadHeaderMagicAndHeaderLength(uint32_t *len);
+  Status ReadHeaderMagicAndHeaderLength(uint32_t *len) const;
 
   // Parse the magic and the PB-header length prefix from 'data'.
   // In the case that 'data' is all '\0' bytes, indicating a preallocated
   // but never-written segment, returns Status::Uninitialized().
-  Status ParseHeaderMagicAndHeaderLength(const Slice &data, uint32_t *parsed_len);
+  Status ParseHeaderMagicAndHeaderLength(const Slice &data, uint32_t *parsed_len) const;
 
   Status ReadFooter();
 
-  Status ReadFooterMagicAndFooterLength(uint32_t *len);
+  Status ReadFooterMagicAndFooterLength(uint32_t *len) const;
 
-  Status ParseFooterMagicAndFooterLength(const Slice &data, uint32_t *parsed_len);
+  static Status ParseFooterMagicAndFooterLength(const Slice &data, uint32_t *parsed_len);
 
   // Starting at 'offset', read the rest of the log file, looking for any
   // valid log entry headers. If any are found, sets *has_valid_entries to true.
   //
   // Returns a bad Status only in the case that some IO error occurred reading the
   // file.
-  Status ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries);
+  Status ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries) const;
 
   // Read an entry header and its associated batch at the given offset.
   // If successful, updates '*offset' to point to the next batch
@@ -339,14 +344,14 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // to indicate the cause of the error.
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
                                  std::unique_ptr<LogEntryBatchPB>* batch,
-                                 EntryHeaderStatus* status_detail);
+                                 EntryHeaderStatus* status_detail) const;
 
   // Reads a log entry header from the segment.
   //
   // Also increments the passed offset* by the length of the entry on successful
   // read.
   Status ReadEntryHeader(int64_t *offset, EntryHeader* header,
-                         EntryHeaderStatus* status_detail);
+                         EntryHeaderStatus* status_detail) const;
 
   // Decode a log entry header from the given slice. The header length is
   // determined by 'entry_header_size()'.
@@ -354,14 +359,14 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   //
   // NOTE: this is performance-critical since it is used by ScanForValidEntryHeaders
   // and thus returns an enum instead of Status.
-  EntryHeaderStatus DecodeEntryHeader(const Slice& data, EntryHeader* header);
+  EntryHeaderStatus DecodeEntryHeader(const Slice& data, EntryHeader* header) const;
 
   // Reads a log entry batch from the provided readable segment, which gets decoded
   // into 'entry_batch' and increments 'offset' by the batch's length.
   Status ReadEntryBatch(int64_t* offset,
                         const EntryHeader& header,
                         faststring* tmp_buf,
-                        std::unique_ptr<LogEntryBatchPB>* entry_batch);
+                        std::unique_ptr<LogEntryBatchPB>* entry_batch) const;
 
   void UpdateReadableToOffset(int64_t readable_to_offset);
 
@@ -378,7 +383,6 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // we can read without the fear of reading garbage/zeros.
   // This is atomic because the Log thread might be updating the segment's readable
   // offset while an async reader is reading the segment's entries.
-  // is reading it.
   AtomicInt<int64_t> readable_to_offset_;
 
   // a readable file for a log segment (used on replay)
@@ -516,5 +520,3 @@ void UpdateFooterForReplicateEntry(
 
 }  // namespace log
 }  // namespace kudu
-
-#endif /* KUDU_CONSENSUS_LOG_UTIL_H_ */

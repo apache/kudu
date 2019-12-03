@@ -21,6 +21,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -34,8 +35,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/array_view.h" // IWYU pragma: keep
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
@@ -109,7 +110,7 @@ LogOptions::LogOptions()
 // LogEntryReader
 ////////////////////////////////////////////////////////////
 
-LogEntryReader::LogEntryReader(ReadableLogSegment* seg)
+LogEntryReader::LogEntryReader(const ReadableLogSegment* seg)
     : seg_(seg),
       num_batches_read_(0),
       num_entries_read_(0),
@@ -441,14 +442,14 @@ Status ReadableLogSegment::ReadHeader() {
                                 "of Kudu");
   }
 
-  header_.Swap(&header);
+  header_ = std::move(header);
   first_entry_offset_ = header_size + kLogSegmentHeaderMagicAndHeaderLength;
 
   return Status::OK();
 }
 
 
-Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
+Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) const {
   uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
   Slice slice(scratch, kLogSegmentHeaderMagicAndHeaderLength);
   RETURN_NOT_OK(readable_file_->Read(0, slice));
@@ -456,8 +457,8 @@ Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
   return Status::OK();
 }
 
-Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
-                                                           uint32_t *parsed_len) {
+Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(
+    const Slice &data, uint32_t *parsed_len) const {
   RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentHeaderMagicAndHeaderLength),
                         "Log segment file is too small to contain initial magic number");
 
@@ -517,11 +518,11 @@ Status ReadableLogSegment::ReadFooter() {
                                                 footer_size),
                         "Unable to parse protobuf");
 
-  footer_.Swap(&footer);
+  footer_ = std::move(footer);
   return Status::OK();
 }
 
-Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) {
+Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) const {
   uint8_t scratch[kLogSegmentFooterMagicAndFooterLength];
   Slice slice(scratch, kLogSegmentFooterMagicAndFooterLength);
 
@@ -533,8 +534,8 @@ Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) {
   return Status::OK();
 }
 
-Status ReadableLogSegment::ParseFooterMagicAndFooterLength(const Slice &data,
-                                                           uint32_t *parsed_len) {
+Status ReadableLogSegment::ParseFooterMagicAndFooterLength(
+    const Slice &data, uint32_t *parsed_len) {
   RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentFooterMagicAndFooterLength),
                         "Slice is too small to contain final magic number");
 
@@ -547,7 +548,7 @@ Status ReadableLogSegment::ParseFooterMagicAndFooterLength(const Slice &data,
   return Status::OK();
 }
 
-Status ReadableLogSegment::ReadEntries(LogEntries* entries) {
+Status ReadableLogSegment::ReadEntries(LogEntries* entries) const {
   TRACE_EVENT1("log", "ReadableLogSegment::ReadEntries",
                "path", path_);
   LogEntryReader reader(this);
@@ -571,7 +572,8 @@ size_t ReadableLogSegment::entry_header_size() const {
   return header_.has_deprecated_major_version() ? kEntryHeaderSizeV1 : kEntryHeaderSizeV2;
 }
 
-Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries) {
+Status ReadableLogSegment::ScanForValidEntryHeaders(
+    int64_t offset, bool* has_valid_entries) const {
   TRACE_EVENT1("log", "ReadableLogSegment::ScanForValidEntryHeaders",
                "path", path_);
   VLOG(1) << "Scanning " << path_ << " for valid entry headers "
@@ -617,7 +619,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_va
 
 Status ReadableLogSegment::ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
                                                    unique_ptr<LogEntryBatchPB>* batch,
-                                                   EntryHeaderStatus* status_detail) {
+                                                   EntryHeaderStatus* status_detail) const {
   int64_t cur_offset = *offset;
   EntryHeader header;
   RETURN_NOT_OK(ReadEntryHeader(&cur_offset, &header, status_detail));
@@ -633,7 +635,7 @@ Status ReadableLogSegment::ReadEntryHeaderAndBatch(int64_t* offset, faststring* 
 }
 
 Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header,
-                                           EntryHeaderStatus* status_detail) {
+                                           EntryHeaderStatus* status_detail) const {
   const size_t header_size = entry_header_size();
   uint8_t scratch[header_size];
   Slice slice(scratch, header_size);
@@ -658,7 +660,7 @@ Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header,
 }
 
 EntryHeaderStatus ReadableLogSegment::DecodeEntryHeader(
-    const Slice& data, EntryHeader* header) {
+    const Slice& data, EntryHeader* header) const {
   uint32_t computed_header_crc;
   if (entry_header_size() == kEntryHeaderSizeV2) {
     header->msg_length_compressed = DecodeFixed32(&data[0]);
@@ -689,7 +691,7 @@ EntryHeaderStatus ReadableLogSegment::DecodeEntryHeader(
 Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
                                           const EntryHeader& header,
                                           faststring* tmp_buf,
-                                          unique_ptr<LogEntryBatchPB>* entry_batch) {
+                                          unique_ptr<LogEntryBatchPB>* entry_batch) const {
   TRACE_EVENT2("log", "ReadableLogSegment::ReadEntryBatch",
                "path", path_,
                "range", Substitute("offset=$0 entry_len=$1",

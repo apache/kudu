@@ -347,10 +347,10 @@ class LogTestBase : public KuduTest {
   }
 
   Status RollLog() {
-    return log_->AllocateSegmentAndRollOver();
+    return log_->AllocateSegmentAndRollOverForTests();
   }
 
-  std::string DumpSegmentsToString(const SegmentSequence& segments) {
+  static std::string DumpSegmentsToString(const SegmentSequence& segments) {
     std::string dump;
     for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
       dump.append("------------\n");

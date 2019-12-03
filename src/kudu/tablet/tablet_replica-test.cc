@@ -25,7 +25,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -320,9 +319,9 @@ class TabletReplicaTest : public KuduTabletTest {
     return Status::OK();
   }
 
-  Status RollLog(TabletReplica* replica) {
+  static Status RollLog(TabletReplica* replica) {
     RETURN_NOT_OK(replica->log_->WaitUntilAllFlushed());
-    return replica->log_->AllocateSegmentAndRollOver();
+    return replica->log_->AllocateSegmentAndRollOverForTests();
   }
 
   Status ExecuteWriteAndRollLog(TabletReplica* tablet_replica, const WriteRequestPB& req) {
@@ -604,7 +603,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
       << "By the time a transaction is applied, it should have an Opid";
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.
-    ASSERT_OK(log->AllocateSegmentAndRollOver());
+    ASSERT_OK(log->AllocateSegmentAndRollOverForTests());
   }
 
   ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
