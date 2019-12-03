@@ -14,12 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CONSENSUS_LOG_INDEX_H
-#define KUDU_CONSENSUS_LOG_INDEX_H
+#pragma once
 
 #include <cstdint>
-#include <string>
 #include <map>
+#include <string>
 
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/macros.h"
@@ -28,6 +27,9 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class Env;
+
 namespace log {
 
 // An entry in the index.
@@ -45,21 +47,22 @@ struct LogIndexEntry {
   std::string ToString() const;
 };
 
-// An on-disk structure which indexes from OpId index to the specific position in the WAL
-// which contains the latest ReplicateMsg for that index.
+// An on-disk structure which indexes from OpId index to the specific position
+// in the WAL which contains the latest ReplicateMsg for that index.
 //
-// This structure is on-disk but *not durable*. We use mmap()ed IO to write it out, and
-// never sync it to disk. Its only purpose is to allow random-reading earlier entries from
-// the log to serve to Raft followers.
+// This structure is on-disk but *not durable* (i.e. it is never synced to
+// disk). Its only purpose is to allow random-reading earlier entries from the
+// log to serve to Raft followers.
 //
-// This class is thread-safe, but doesn't provide a memory barrier between writers and
-// readers. In other words, if a reader is expected to see an index entry written by a
-// writer, there should be some other synchronization between them to ensure visibility.
+// This class is thread-safe, but doesn't provide a memory barrier between
+// writers and readers. In other words, if a reader is expected to see an index
+// entry written by a writer, there should be some other synchronization between
+// them to ensure visibility.
 //
 // See .cc file for implementation notes.
 class LogIndex : public RefCountedThreadSafe<LogIndex> {
  public:
-  explicit LogIndex(std::string base_dir);
+  LogIndex(Env* env, std::string base_dir);
 
   // Record an index entry in the index.
   Status AddEntry(const LogIndexEntry& entry);
@@ -92,6 +95,9 @@ class LogIndex : public RefCountedThreadSafe<LogIndex> {
   // Return the path of the given index chunk.
   std::string GetChunkPath(int64_t chunk_idx);
 
+  // Environment with which to do file I/O.
+  Env* env_;
+
   // The base directory where index files are located.
   const std::string base_dir_;
 
@@ -100,7 +106,7 @@ class LogIndex : public RefCountedThreadSafe<LogIndex> {
   // Map from chunk index to IndexChunk. The chunk index is the log index modulo
   // the number of entries per chunk (see docs in log_index.cc).
   // Protected by open_chunks_lock_
-  typedef std::map<int64_t, scoped_refptr<IndexChunk> > ChunkMap;
+  typedef std::map<int64_t, scoped_refptr<IndexChunk>> ChunkMap;
   ChunkMap open_chunks_;
 
   DISALLOW_COPY_AND_ASSIGN(LogIndex);
@@ -108,4 +114,3 @@ class LogIndex : public RefCountedThreadSafe<LogIndex> {
 
 } // namespace log
 } // namespace kudu
-#endif /* KUDU_CONSENSUS_LOG_INDEX_H */

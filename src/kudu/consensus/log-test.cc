@@ -347,7 +347,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
   // because it has a cached header.
   shared_ptr<LogReader> reader;
   ASSERT_OK(LogReader::Open(fs_manager_.get(),
-                            make_scoped_refptr(new LogIndex(log_->log_dir_)),
+                            make_scoped_refptr(new LogIndex(env_, log_->log_dir_)),
                             kTestTablet, nullptr, &reader));
   ASSERT_EQ(1, reader->num_segments());
 

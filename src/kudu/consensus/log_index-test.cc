@@ -39,7 +39,7 @@ class LogIndexTest : public KuduTest {
  public:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    index_ = new LogIndex(test_dir_);
+    index_ = new LogIndex(env_, test_dir_);
   }
 
  protected:

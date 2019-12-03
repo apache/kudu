@@ -783,7 +783,7 @@ Status Log::Init() {
   CHECK_EQ(kLogInitialized, log_state_);
 
   // Init the index
-  log_index_.reset(new LogIndex(ctx_.log_dir));
+  log_index_.reset(new LogIndex(ctx_.fs_manager->env(), ctx_.log_dir));
 
   // Reader for previous segments.
   RETURN_NOT_OK(LogReader::Open(ctx_.fs_manager,
