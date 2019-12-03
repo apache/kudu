@@ -251,7 +251,7 @@ Status BackupConsensusMetadata(FsManager* fs_manager,
   string cmeta_filename = fs_manager->GetConsensusMetadataPath(tablet_id);
   string backup_filename = Substitute("$0.pre_rewrite.$1", cmeta_filename, env->NowMicros());
   WritableFileOptions opts;
-  opts.mode = Env::CREATE_NON_EXISTING;
+  opts.mode = Env::MUST_CREATE;
   opts.sync_on_close = true;
   RETURN_NOT_OK(env_util::CopyFile(env, cmeta_filename, backup_filename, opts));
   LOG(INFO) << "Backed up old consensus metadata to " << backup_filename;

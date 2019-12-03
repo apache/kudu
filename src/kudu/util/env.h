@@ -52,15 +52,17 @@ class Env {
  public:
   // Governs if/how the file is created.
   //
-  // enum value                      | file exists       | file does not exist
-  // --------------------------------+-------------------+--------------------
-  // CREATE_IF_NON_EXISTING_TRUNCATE | opens + truncates | creates
-  // CREATE_NON_EXISTING             | fails             | creates
-  // OPEN_EXISTING                   | opens             | fails
-  enum CreateMode {
-    CREATE_IF_NON_EXISTING_TRUNCATE,
-    CREATE_NON_EXISTING,
-    OPEN_EXISTING
+  // enum value                   | file exists       | file does not exist
+  // -----------------------------+-------------------+--------------------
+  // CREATE_OR_OPEN_WITH_TRUNCATE | opens + truncates | creates
+  // CREATE_OR_OPEN               | opens             | creates
+  // MUST_CREATE                  | fails             | creates
+  // MUST_EXIST                   | opens             | fails
+  enum OpenMode {
+    CREATE_OR_OPEN_WITH_TRUNCATE,
+    CREATE_OR_OPEN,
+    MUST_CREATE,
+    MUST_EXIST
   };
 
   Env() { }
@@ -452,11 +454,11 @@ struct WritableFileOptions {
   bool sync_on_close;
 
   // See CreateMode for details.
-  Env::CreateMode mode;
+  Env::OpenMode mode;
 
   WritableFileOptions()
     : sync_on_close(false),
-      mode(Env::CREATE_IF_NON_EXISTING_TRUNCATE) { }
+      mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE) { }
 };
 
 // Options specified when a file is opened for random access.
@@ -525,11 +527,11 @@ struct RWFileOptions {
   bool sync_on_close;
 
   // See CreateMode for details.
-  Env::CreateMode mode;
+  Env::OpenMode mode;
 
   RWFileOptions()
     : sync_on_close(false),
-      mode(Env::CREATE_IF_NON_EXISTING_TRUNCATE) { }
+      mode(Env::CREATE_OR_OPEN_WITH_TRUNCATE) { }
 };
 
 // A file abstraction for both reading and writing. No notion of a built-in

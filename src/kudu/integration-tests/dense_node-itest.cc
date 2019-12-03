@@ -203,7 +203,7 @@ TEST_F(DenseNodeTest, RunTest) {
     LOG_TIMING(INFO, "dropping kernel caches") {
       unique_ptr<WritableFile> f;
       WritableFileOptions opts;
-      opts.mode = Env::OPEN_EXISTING;
+      opts.mode = Env::MUST_EXIST;
       ASSERT_OK(env_->NewWritableFile(opts, "/proc/sys/vm/drop_caches", &f));
       ASSERT_OK(f->Append("3\n"));
       ASSERT_OK(f->Close());

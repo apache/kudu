@@ -992,7 +992,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
         string new_instance = fs_manager()->GetInstanceMetadataPath(fs_root);
         if (!env_->FileExists(new_instance)) {
           WritableFileOptions wr_opts;
-          wr_opts.mode = Env::CREATE_NON_EXISTING;
+          wr_opts.mode = Env::MUST_CREATE;
           ASSERT_OK(env_util::CopyFile(env_, source_instance, new_instance, wr_opts));
           ReinitFsManagerWithOpts(fs_opts);
           open_status = fs_manager()->Open();

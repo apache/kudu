@@ -749,7 +749,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   unique_ptr<RWFile> metadata_writer;
   unique_ptr<RWFile> data_file;
   RWFileOptions wr_opts;
-  wr_opts.mode = Env::CREATE_NON_EXISTING;
+  wr_opts.mode = Env::MUST_CREATE;
 
   // Repeat in the event of a container id collision (unlikely).
   //
@@ -769,7 +769,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     }
     data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
     RWFileOptions rw_opts;
-    rw_opts.mode = Env::CREATE_NON_EXISTING;
+    rw_opts.mode = Env::MUST_CREATE;
     data_status = block_manager->env()->NewRWFile(rw_opts,
                                                   data_path,
                                                   &data_file);
@@ -2729,7 +2729,7 @@ Status LogBlockManager::Repair(
     for (auto& pr : report->partial_record_check->entries) {
       unique_ptr<RWFile> file;
       RWFileOptions opts;
-      opts.mode = Env::OPEN_EXISTING;
+      opts.mode = Env::MUST_EXIST;
       LogBlockContainerRefPtr container = FindPtrOrNull(containers_by_name, pr.container);
       if (!container) {
         // The container was deleted outright.

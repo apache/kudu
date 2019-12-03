@@ -157,7 +157,7 @@ Status RollingLog::Open() {
     WritableFileOptions opts;
     // Logs aren't worth the performance cost of durability.
     opts.sync_on_close = false;
-    opts.mode = Env::CREATE_NON_EXISTING;
+    opts.mode = Env::MUST_CREATE;
 
     RETURN_NOT_OK(env_->NewWritableFile(opts, path, &file_));
 

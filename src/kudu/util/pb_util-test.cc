@@ -177,7 +177,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
 Status TestPBUtil::TruncateFile(const string& path, uint64_t size) {
   unique_ptr<RWFile> file;
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   RETURN_NOT_OK(env_->NewRWFile(opts, path, &file));
   RETURN_NOT_OK(file->Truncate(size));
   return Status::OK();
@@ -406,7 +406,7 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
 
   unique_ptr<WritablePBContainerFile> writer;
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   ASSERT_OK(NewPBCWriter(version_, opts, &writer));
   ASSERT_OK(writer->OpenExisting());
 

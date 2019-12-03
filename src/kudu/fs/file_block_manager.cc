@@ -787,7 +787,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     RETURN_NOT_OK_HANDLE_DISK_FAILURE(s,
         error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, dir));
     WritableFileOptions wr_opts;
-    wr_opts.mode = Env::CREATE_NON_EXISTING;
+    wr_opts.mode = Env::MUST_CREATE;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
   } while (PREDICT_FALSE(s.IsAlreadyPresent()));
   if (s.ok()) {

@@ -612,7 +612,7 @@ TEST_F(TestEnv, TestOverwrite) {
 
   // File exists, try to overwrite (and fail).
   WritableFileOptions opts;
-  opts.mode = Env::CREATE_NON_EXISTING;
+  opts.mode = Env::MUST_CREATE;
   Status s = env_util::OpenFileForWrite(opts,
                                         env_, test_path, &writer);
   ASSERT_TRUE(s.IsAlreadyPresent());
@@ -634,7 +634,7 @@ TEST_F(TestEnv, TestReopen) {
 
   // Reopen it and append to it.
   WritableFileOptions reopen_opts;
-  reopen_opts.mode = Env::OPEN_EXISTING;
+  reopen_opts.mode = Env::MUST_EXIST;
   ASSERT_OK(env_util::OpenFileForWrite(reopen_opts,
                                        env_, test_path, &writer));
   ASSERT_EQ(first.length(), writer->Size());
@@ -931,16 +931,31 @@ TEST_F(TestEnv, TestRWFile) {
 
   // Make sure we can't overwrite it.
   RWFileOptions opts;
-  opts.mode = Env::CREATE_NON_EXISTING;
+  opts.mode = Env::MUST_CREATE;
   ASSERT_TRUE(env_->NewRWFile(opts, GetTestPath("foo"), &file).IsAlreadyPresent());
 
   // Reopen it without truncating the existing data.
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
   uint8_t scratch4[kNewTestData.length()];
   Slice result4(scratch4, kNewTestData.length());
   ASSERT_OK(file->Read(0, result4));
   ASSERT_EQ(result4, kNewTestData);
+
+  // Test CREATE_OR_OPEN semantics on a new file.
+  const string bar_path = GetTestPath("bar");
+  unique_ptr<RWFile> file_two;
+  opts.mode = Env::CREATE_OR_OPEN;
+  ASSERT_FALSE(env_->FileExists(bar_path));
+  ASSERT_OK(env_->NewRWFile(opts, bar_path, &file_two));
+  ASSERT_TRUE(env_->FileExists(bar_path));
+  ASSERT_OK(file_two->Write(0, kTestData));
+  ASSERT_OK(file_two->Size(&sz));
+  ASSERT_EQ(kTestData.length(), sz);
+
+  ASSERT_OK(env_->NewRWFile(opts, bar_path, &file_two));
+  ASSERT_OK(file_two->Size(&sz));
+  ASSERT_EQ(kTestData.length(), sz);
 }
 
 TEST_F(TestEnv, TestCanonicalize) {

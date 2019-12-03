@@ -123,7 +123,7 @@ Status LBMCorruptor::PreallocateFullContainer() {
 
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   int64_t initial_size;
   RETURN_NOT_OK(PreallocateForBlock(data_file.get(), mode,
@@ -153,7 +153,7 @@ Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
   // Must be non-zero length, otherwise preallocation will fail.
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   int64_t block_length = (rand_.Uniform(16) + 1) * fs_block_size;
   int64_t initial_data_size;
@@ -227,7 +227,7 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
   {
     unique_ptr<RWFile> data_file;
     RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
+    opts.mode = Env::MUST_EXIST;
     RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
     RETURN_NOT_OK(PreallocateForBlock(data_file.get(), RWFile::CHANGE_FILE_SIZE,
                                       kBlockSize, &initial_data_size));
@@ -292,7 +292,7 @@ Status LBMCorruptor::AddMisalignedBlockToContainer() {
 
   unique_ptr<RWFile> data_file;
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
   uint64_t initial_data_size;
   RETURN_NOT_OK(data_file->Size(&initial_data_size));
@@ -360,7 +360,7 @@ Status LBMCorruptor::AddPartialRecordToContainer() {
   // Corrupt the record by truncating one byte off the end of it.
   {
     RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
+    opts.mode = Env::MUST_EXIST;
     unique_ptr<RWFile> metadata_file;
     RETURN_NOT_OK(env_->NewRWFile(opts, c->metadata_filename, &metadata_file));
     uint64_t initial_metadata_size;
@@ -422,7 +422,7 @@ Status LBMCorruptor::OpenMetadataWriter(
     const Container& container,
     unique_ptr<WritablePBContainerFile>* writer) {
   RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
+  opts.mode = Env::MUST_EXIST;
   unique_ptr<RWFile> metadata_file;
   RETURN_NOT_OK(env_->NewRWFile(opts,
                                 container.metadata_filename,

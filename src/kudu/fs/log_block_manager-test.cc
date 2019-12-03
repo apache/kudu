@@ -671,7 +671,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   for (const auto num_bytes : {1, 8, 128}) {
     {
       RWFileOptions opts;
-      opts.mode = Env::OPEN_EXISTING;
+      opts.mode = Env::MUST_EXIST;
       unique_ptr<RWFile> file;
       ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
       ASSERT_OK(file->Truncate(good_meta_size + num_bytes));
@@ -729,7 +729,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // data loss, however it will look like a failed partial write.
   {
     RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
+    opts.mode = Env::MUST_EXIST;
     unique_ptr<RWFile> file;
     ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
     ASSERT_OK(file->Truncate(good_meta_size - 1));
@@ -867,7 +867,7 @@ TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
     LOG(INFO) << "Pass " << mode;
     unique_ptr<RWFile> data_file;
     RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
+    opts.mode = Env::MUST_EXIST;
     ASSERT_OK(env_->NewRWFile(opts, fname, &data_file));
     ASSERT_OK(data_file->PreAllocate(size_after_close, size_after_close, mode));
     uint64_t size_after_preallocate;
