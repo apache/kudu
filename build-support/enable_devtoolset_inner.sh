@@ -25,7 +25,7 @@ set -e
 
 # If ccache was on the PATH and CC/CXX have not already been set, set them to
 # devtoolset-3 specific ccache helper scripts (thus enabling ccache).
-if which ccache > /dev/null 2>&1 && [ -a ! "$CC" -a ! "$CXX" ]; then
+if which ccache > /dev/null 2>&1 && [ ! "$CC" -a ! "$CXX" ]; then
   ROOT=$(cd $(dirname "$BASH_SOURCE") ; pwd)
   export CC="$ROOT/ccache-devtoolset-3/cc"
   export CXX="$ROOT/ccache-devtoolset-3/c++"
