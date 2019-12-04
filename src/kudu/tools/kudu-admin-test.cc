@@ -1507,9 +1507,9 @@ TEST_F(AdminCliTest, TestSimultaneousLeaderTransferAndAbruptStepdown) {
   // complete, so we'll back off on how frequently we disrupt leadership to give
   // time for progress to be made.
   #if defined(ADDRESS_SANITIZER)
-    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(5000);
+    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(6000);
   #else
-    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(1000);
+    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(2000);
   #endif
 
   const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
