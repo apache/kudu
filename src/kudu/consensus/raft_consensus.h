@@ -343,9 +343,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns uuid of the current leader
   std::string GetLeaderUuid() const;
 
+  // Returns hostport of the current leader
+  std::pair<std::string, unsigned int> GetLeaderHostPort() const;
+
   // Returns the uuid of this peer.
   // Thread-safe.
   const std::string& peer_uuid() const;
+
+  // Returns the hostport of this peer.
+  std::pair<std::string, unsigned int> peer_hostport() const;
 
   // Returns the id of the tablet whose updates this consensus instance helps coordinate.
   // Thread-safe.

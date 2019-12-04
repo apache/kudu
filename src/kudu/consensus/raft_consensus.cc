@@ -2405,6 +2405,12 @@ string RaftConsensus::GetLeaderUuid() const {
   return GetLeaderUuidUnlocked();
 }
 
+std::pair<string, unsigned int> RaftConsensus::GetLeaderHostPort() const
+{
+  LockGuard l(lock_);
+  return cmeta_->leader_hostport();
+}
+
 void RaftConsensus::SetStateUnlocked(State new_state) {
   switch (new_state) {
     case kInitialized:
@@ -2503,6 +2509,15 @@ Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
 
 const string& RaftConsensus::peer_uuid() const {
   return local_peer_pb_.permanent_uuid();
+}
+
+std::pair<string, unsigned int> RaftConsensus::peer_hostport() const {
+  if (local_peer_pb_.has_last_known_addr()) {
+    const ::kudu::HostPortPB& host_port = local_peer_pb_.last_known_addr();
+    std::string host = host_port.host();
+    return std::make_pair(host_port.host(), host_port.port());
+  }
+  return {};
 }
 
 const string& RaftConsensus::tablet_id() const {
