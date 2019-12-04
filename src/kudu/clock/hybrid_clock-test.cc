@@ -205,7 +205,7 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
 // The normal case for transactions. Obtain a timestamp and then wait until
 // we're sure that tx_latest < now_earliest.
 TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
-  MonoTime before = MonoTime::Now();
+  const MonoTime before = MonoTime::Now();
 
   // we do no time adjustment, this event should fall right within the possible
   // error interval
@@ -214,7 +214,7 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
   clock_->NowWithError(&past_ts, &past_max_error);
   // Make sure the error is at least a small number of microseconds, to ensure
   // that we always have to wait.
-  past_max_error = std::max(past_max_error, static_cast<uint64_t>(20));
+  past_max_error = std::max(past_max_error, static_cast<uint64_t>(2000));
   Timestamp wait_until = HybridClock::AddPhysicalTimeToTimestamp(
       past_ts,
       MonoDelta::FromMicroseconds(past_max_error));
