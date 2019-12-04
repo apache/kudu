@@ -51,7 +51,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
-#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
@@ -184,15 +183,15 @@ MessengerBuilder& MessengerBuilder::set_reuseport() {
   return *this;
 }
 
-Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
+Status MessengerBuilder::Build(shared_ptr<Messenger>* msgr) {
   // Initialize SASL library before we start making requests
   RETURN_NOT_OK(SaslInit(!keytab_file_.empty()));
 
-  Messenger* new_msgr(new Messenger(*this));
-
-  auto cleanup = MakeScopedCleanup([&] () {
-      new_msgr->AllExternalReferencesDropped();
-  });
+  // See docs on Messenger::retain_self_ for info about this odd hack.
+  //
+  // Note: can't use make_shared() as it doesn't support custom deleters.
+  shared_ptr<Messenger> new_msgr(new Messenger(*this),
+                                 std::mem_fn(&Messenger::AllExternalReferencesDropped));
 
   RETURN_NOT_OK(ParseTriState("--rpc_authentication",
                               rpc_authentication_,
@@ -233,9 +232,7 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
     }
   }
 
-  // See docs on Messenger::retain_self_ for info about this odd hack.
-  cleanup.cancel();
-  *msgr = shared_ptr<Messenger>(new_msgr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
+  *msgr = std::move(new_msgr);
   return Status::OK();
 }
 

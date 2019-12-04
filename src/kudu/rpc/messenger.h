@@ -21,15 +21,17 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/rpc_service.h"
 #include "kudu/security/security_flags.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
@@ -65,7 +67,6 @@ class InboundCall;
 class Messenger;
 class OutboundCall;
 class Reactor;
-class RpcService;
 class RpczStore;
 
 struct AcceptorPoolInfo {
@@ -165,7 +166,7 @@ class MessengerBuilder {
   // Configure the messenger to set the SO_REUSEPORT socket option.
   MessengerBuilder& set_reuseport();
 
-  Status Build(std::shared_ptr<Messenger> *msgr);
+  Status Build(std::shared_ptr<Messenger>* msgr);
 
  private:
   const std::string name_;
