@@ -45,6 +45,12 @@ GERRIT_PASSWORD = os.getenv('TIDYBOT_PASSWORD')
 
 GERRIT_URL = "https://gerrit.cloudera.org"
 
+DISABLED_TIDY_CHECKS=[
+    # Although useful in production code, we use magic numbers liberally in
+    # tests, and many would be net less clear as named constants.
+    'readability-magic-numbers',
+]
+
 def run_tidy(sha="HEAD", is_rev_range=False):
     diff_cmdline = ["git", "diff" if is_rev_range else "show", sha]
 
@@ -62,9 +68,11 @@ def run_tidy(sha="HEAD", is_rev_range=False):
             "--",
             path]
         subprocess.check_call(cmd, stdout=patch_file, cwd=ROOT)
+        checks_arg_value = ",".join([ "-" + c for c in DISABLED_TIDY_CHECKS ])
         cmdline = [CLANG_TIDY_DIFF,
                    "-clang-tidy-binary", CLANG_TIDY,
                    "-p0",
+                   "-checks=" + checks_arg_value,
                    "--",
                    "-DCLANG_TIDY"] + compile_flags.get_flags()
         return subprocess.check_output(
