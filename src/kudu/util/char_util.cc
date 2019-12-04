@@ -17,10 +17,11 @@
 
 #include "kudu/util/char_util.h"
 
-#include <algorithm>
-#include <cstring>
 #include <emmintrin.h>
 #include <smmintrin.h>
+
+#include <algorithm>
+#include <cstring>
 
 namespace kudu {
 

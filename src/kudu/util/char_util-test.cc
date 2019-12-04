@@ -23,6 +23,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/init.h"
@@ -60,6 +61,10 @@ class CharUtilTest : public KuduTest {
   }
 
   void StressTest(const Slice& slice, int length) {
+    // The memory accesses done in UTF8Truncate are quite slow with TSAN
+    // instrumentation, probably because so many of them are unaligned.
+    // Since this test is single-threaded, let's just disable TSAN in it.
+    debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
     for (int i = 0; i < kNumCycles_; ++i) {
       Slice result;
       auto ptr = Truncate(slice, length, &result);
