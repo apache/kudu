@@ -465,8 +465,8 @@ class Log : public RefCountedThreadSafe<Log> {
   Status Sync();
 
   // Helper method to get the segment sequence to GC based on the provided 'retention' struct.
-  Status GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
-                                 SegmentSequence* segments_to_gc) const;
+  void GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
+                               SegmentSequence* segments_to_gc) const;
 
   LogEntryBatchQueue* entry_queue() {
     return &entry_batch_queue_;

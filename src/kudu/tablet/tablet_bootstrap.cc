@@ -1154,7 +1154,7 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
                                      ConsensusBootstrapInfo* consensus_info) {
   ReplayState state;
   log::SegmentSequence segments;
-  RETURN_NOT_OK(log_reader_->GetSegmentsSnapshot(&segments));
+  log_reader_->GetSegmentsSnapshot(&segments);
 
   // The first thing to do is to rewind the tablet's schema back to the schema
   // as of the point in time where the logs begin. We must replay the writes

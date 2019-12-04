@@ -87,7 +87,7 @@ class LogReader : public enable_make_shared<LogReader> {
 
   // Copies a snapshot of the current sequence of segments into 'segments'.
   // 'segments' will be cleared first.
-  Status GetSegmentsSnapshot(SegmentSequence* segments) const;
+  void GetSegmentsSnapshot(SegmentSequence* segments) const;
 
   // Reads all ReplicateMsgs from 'starting_at' to 'up_to' both inclusive.
   // The caller takes ownership of the returned ReplicateMsg objects.
@@ -142,7 +142,7 @@ class LogReader : public enable_make_shared<LogReader> {
 
   // Removes segments with sequence numbers less than or equal to
   // 'segment_sequence_number' from this reader.
-  Status TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number);
+  void TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number);
 
   // Replaces the last segment in the reader with 'segment'.
   // Used to replace a segment that was still in the process of being written
@@ -175,7 +175,7 @@ class LogReader : public enable_make_shared<LogReader> {
   Status Init(const std::string& tablet_wal_path);
 
   // Initializes an 'empty' reader for tests, i.e. does not scan a path looking for segments.
-  Status InitEmptyReaderForTests();
+  void InitEmptyReaderForTests();
 
   Env* env_;
   const scoped_refptr<LogIndex> log_index_;

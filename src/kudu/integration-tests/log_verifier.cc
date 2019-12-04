@@ -78,7 +78,7 @@ Status LogVerifier::ScanForCommittedOpIds(int ts_idx, const string& tablet_id,
   RETURN_NOT_OK(LogReader::Open(env_, wal_dir, scoped_refptr<log::LogIndex>(), tablet_id,
                                 scoped_refptr<MetricEntity>(), &reader));
   log::SegmentSequence segs;
-  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
+  reader->GetSegmentsSnapshot(&segs);
   unique_ptr<log::LogEntryPB> entry;
   for (const auto& seg : segs) {
     log::LogEntryReader reader(seg.get());

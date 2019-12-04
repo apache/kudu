@@ -801,7 +801,7 @@ Status Log::Init() {
                         << " segments from path: " << ctx_.fs_manager->GetWalsRootDir();
 
     vector<scoped_refptr<ReadableLogSegment> > segments;
-    RETURN_NOT_OK(reader_->GetSegmentsSnapshot(&segments));
+    reader_->GetSegmentsSnapshot(&segments);
     active_seg_seq_num = segments.back()->header().sequence_number();
   }
 
@@ -968,11 +968,10 @@ int GetPrefixSizeToGC(RetentionIndexes retention_indexes, const SegmentSequence&
   return prefix_size;
 }
 
-Status Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
+void Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
                                     SegmentSequence* segments_to_gc) const {
-  RETURN_NOT_OK(reader_->GetSegmentsSnapshot(segments_to_gc));
+  reader_->GetSegmentsSnapshot(segments_to_gc);
   segments_to_gc->resize(GetPrefixSizeToGC(retention_indexes, *segments_to_gc));
-  return Status::OK();
 }
 
 Status Log::Append(LogEntryPB* entry) {
@@ -1013,7 +1012,7 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
       std::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
-      RETURN_NOT_OK(GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete));
+      GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
 
       if (segments_to_delete.empty()) {
         VLOG_WITH_PREFIX(1) << "No segments to delete.";
@@ -1022,8 +1021,8 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
       }
       // Trim the prefix of segments from the reader so that they are no longer
       // referenced by the log.
-      RETURN_NOT_OK(reader_->TrimSegmentsUpToAndIncluding(
-          segments_to_delete[segments_to_delete.size() - 1]->header().sequence_number()));
+      reader_->TrimSegmentsUpToAndIncluding(
+          segments_to_delete[segments_to_delete.size() - 1]->header().sequence_number());
     }
 
     // Now that they are no longer referenced by the Log, delete the files.
@@ -1057,14 +1056,10 @@ int64_t Log::GetGCableDataSize(RetentionIndexes retention_indexes) const {
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
-    Status s = GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
-
-    if (!s.ok() || segments_to_delete.empty()) {
-      return 0;
-    }
+    GetSegmentsToGCUnlocked(retention_indexes, &segments_to_delete);
   }
   int64_t total_size = 0;
-  for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
+  for (const auto& segment : segments_to_delete) {
     total_size += segment->file_size();
   }
   return total_size;
@@ -1076,7 +1071,7 @@ void Log::GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const {
   {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
-    CHECK_OK(reader_->GetSegmentsSnapshot(&segments));
+    reader_->GetSegmentsSnapshot(&segments);
   }
 
   int64_t cumulative_size = 0;
@@ -1094,9 +1089,10 @@ int64_t Log::OnDiskSize() {
     shared_lock<rw_spinlock> l(state_lock_.get_lock());
     // If the log is closed, the tablet is either being deleted or tombstoned,
     // so we don't count the size of its log anymore as it should be deleted.
-    if (log_state_ == kLogClosed || !reader_->GetSegmentsSnapshot(&segments).ok()) {
+    if (log_state_ == kLogClosed) {
       return on_disk_size_.load();
     }
+    reader_->GetSegmentsSnapshot(&segments);
   }
   int64_t ret = 0;
   for (const auto& segment : segments) {

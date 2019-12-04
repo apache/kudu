@@ -198,12 +198,10 @@ Status LogReader::Init(const string& tablet_wal_path) {
   return Status::OK();
 }
 
-Status LogReader::InitEmptyReaderForTests() {
+void LogReader::InitEmptyReaderForTests() {
   std::lock_guard<simple_spinlock> lock(lock_);
   state_ = kLogReaderReading;
-  return Status::OK();
 }
-
 
 int64_t LogReader::GetMinReplicateIndex() const {
   std::lock_guard<simple_spinlock> lock(lock_);
@@ -357,14 +355,13 @@ Status LogReader::LookupOpId(int64_t op_index, OpId* op_id) const {
   return Status::OK();
 }
 
-Status LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
+void LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
   std::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   segments->assign(segments_.begin(), segments_.end());
-  return Status::OK();
 }
 
-Status LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
+void LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
   std::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   auto iter = segments_.begin();
@@ -380,7 +377,6 @@ Status LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) 
   }
   LOG(INFO) << "T " << tablet_id_ << ": removed " << num_deleted_segments
             << " log segments from log reader";
-  return Status::OK();
 }
 
 void LogReader::UpdateLastSegmentOffset(int64_t readable_to_offset) {

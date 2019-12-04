@@ -188,7 +188,7 @@ Status FindLastLoggedOpId(FsManager* fs, const string& tablet_id,
   RETURN_NOT_OK(LogReader::Open(fs, scoped_refptr<log::LogIndex>(), tablet_id,
                                 scoped_refptr<MetricEntity>(), &reader));
   SegmentSequence segs;
-  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
+  reader->GetSegmentsSnapshot(&segs);
   // Reverse iterate the segments to find the 'last replicated' entry quickly.
   // Note that we still read the entries within a segment in sequential
   // fashion, so the last entry within the first 'found' segment will
@@ -526,7 +526,7 @@ Status DumpWals(const RunnerContext& context) {
                                 &reader));
 
   SegmentSequence segments;
-  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segments));
+  reader->GetSegmentsSnapshot(&segments);
 
   for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
     RETURN_NOT_OK(PrintSegment(segment));

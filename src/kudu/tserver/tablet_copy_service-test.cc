@@ -471,7 +471,7 @@ TEST_F(TabletCopyServiceTest, TestFetchLog) {
 
   // Fetch the local data.
   log::SegmentSequence local_segments;
-  ASSERT_OK(tablet_replica_->log()->reader()->GetSegmentsSnapshot(&local_segments));
+  tablet_replica_->log()->reader()->GetSegmentsSnapshot(&local_segments);
 
   uint64_t first_seg_seqno = (*local_segments.begin())->header().sequence_number();
 

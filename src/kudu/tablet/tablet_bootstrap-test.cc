@@ -324,7 +324,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     // commits.
     ASSERT_OK(AppendCommit(opid));
     log::SegmentSequence segments;
-    ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
+    log_->reader()->GetSegmentsSnapshot(&segments);
     fs_manager_->env()->DeleteFile(segments[0]->path());
 
     // Untrack the tablet in the data dir manager so upon the next call to
@@ -392,7 +392,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   ASSERT_OK(AppendCommit(opid));
 
   log::SegmentSequence segments;
-  ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
+  log_->reader()->GetSegmentsSnapshot(&segments);
   fs_manager_->env()->DeleteFile(segments[0]->path());
 
   current_index_ += 2;

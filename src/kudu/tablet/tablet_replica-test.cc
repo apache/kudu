@@ -435,11 +435,11 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
 
   ASSERT_EQ(1, segments.size());
   ASSERT_OK(ExecuteInsertsAndRollLogs(3));
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(4, segments.size());
 
   NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
@@ -460,7 +460,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(2, num_gced) << "earliest needed: " << retention.for_durability;
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 }
 
@@ -476,11 +476,11 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
 
   ASSERT_EQ(1, segments.size());
   ASSERT_OK(ExecuteInsertsAndRollLogs(2));
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(3, segments.size());
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
@@ -491,7 +491,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
   ASSERT_EQ(1, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 
   boost::optional<OpId> id = consensus->GetLastOpId(consensus::RECEIVED_OPID);
@@ -510,13 +510,13 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_OK(ExecuteDeletesAndRollLogs(2));
   NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
   ASSERT_GT(tablet_replica_->log_anchor_registry()->GetAnchorCountForTests(), 0);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(4, segments.size());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
   ASSERT_OK(ExecuteInsertsAndRollLogs(2));
   ASSERT_OK(tablet_replica_->tablet()->Flush());
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(6, segments.size());
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
@@ -524,7 +524,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(1, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
 
   // Flush DMS to release the anchor.
@@ -540,7 +540,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 }
 
@@ -555,11 +555,11 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
 
   ASSERT_EQ(1, segments.size());
   ASSERT_OK(ExecuteInsertsAndRollLogs(4));
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
@@ -615,13 +615,13 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(4, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 
   // We use mutations here, since an MRS Flush() quiesces the tablet, and we
   // want to ensure the only thing "anchoring" is the TransactionTracker.
   ASSERT_OK(ExecuteDeletesAndRollLogs(3));
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   tablet_replica_->tablet()->FlushBiggestDMS();
@@ -637,7 +637,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(0, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
 
   // Now we release the transaction and wait for everything to complete.
@@ -654,7 +654,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
-  ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
+  log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(2, segments.size());
 }
 

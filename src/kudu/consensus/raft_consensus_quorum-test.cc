@@ -436,7 +436,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                                    metric_entity_.get(),
                                    &log_reader));
     log::SegmentSequence segments;
-    ASSERT_OK(log_reader->GetSegmentsSnapshot(&segments));
+    log_reader->GetSegmentsSnapshot(&segments);
 
     LogEntries ret;
     for (const log::SegmentSequence::value_type& entry : segments) {

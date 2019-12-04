@@ -206,7 +206,7 @@ class MultiThreadedLogTest : public LogTestBase {
     shared_ptr<LogReader> reader;
     ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
     SegmentSequence segments;
-    ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
+    reader->GetSegmentsSnapshot(&segments);
 
     for (const SegmentSequence::value_type& entry : segments) {
       ASSERT_OK(entry->ReadEntries(&entries_));
