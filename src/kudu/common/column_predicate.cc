@@ -673,7 +673,7 @@ int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_
   const cpp_type* data = reinterpret_cast<const cpp_type*>(block.data());
   const int n_chunks = block.nrows() / 8;
   for (int i = 0; i < n_chunks; i++) {
-    uint8_t res_8 = 0;;
+    uint8_t res_8 = 0;
     for (int j = 0; j < 8; j++) {
       res_8 |= p(data++) << j;
     }
@@ -733,27 +733,34 @@ void ApplyNullPredicate(const ColumnBlock& block, uint8_t* __restrict__ sel_vec)
 template <DataType PhysicalType>
 void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
                                               SelectionVector* sel) const {
+  using traits = DataTypeTraits<PhysicalType>;
+  using cpp_type = typename traits::cpp_type;
+
   switch (predicate_type()) {
     case PredicateType::Range: {
+      cpp_type local_lower = lower_ ? *static_cast<const cpp_type*>(lower_) : cpp_type();
+      cpp_type local_upper = upper_ ? *static_cast<const cpp_type*>(upper_) : cpp_type();
+
       if (lower_ == nullptr) {
-        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
-          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
+        ApplyPredicate<PhysicalType>(block, sel, [local_upper] (const void* cell) {
+            return traits::Compare(cell, &local_upper) < 0;
         });
       } else if (upper_ == nullptr) {
-        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
-          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        ApplyPredicate<PhysicalType>(block, sel, [local_lower] (const void* cell) {
+            return traits::Compare(cell, &local_lower) >= 0;
         });
       } else {
-        ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
-          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
-                 DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        ApplyPredicate<PhysicalType>(block, sel, [local_lower, local_upper] (const void* cell) {
+            return traits::Compare(cell, &local_upper) < 0 &&
+                   traits::Compare(cell, &local_lower) >= 0;
         });
       }
       return;
     };
     case PredicateType::Equality: {
-      ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
-        return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) == 0;
+      cpp_type local_lower = lower_ ? *static_cast<const cpp_type*>(lower_) : cpp_type();
+      ApplyPredicate<PhysicalType>(block, sel, [local_lower] (const void* cell) {
+            return traits::Compare(cell, &local_lower) == 0;
       });
       return;
     };
@@ -774,7 +781,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       ApplyPredicate<PhysicalType>(block, sel, [this] (const void* cell) {
         return std::binary_search(values_.begin(), values_.end(), cell,
                                   [] (const void* lhs, const void* rhs) {
-                                    return DataTypeTraits<PhysicalType>::Compare(lhs, rhs) < 0;
+                                    return traits::Compare(lhs, rhs) < 0;
                                   });
       });
       return;
