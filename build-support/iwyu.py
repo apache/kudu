@@ -89,7 +89,8 @@ _MUTED_FILES = set([
 _FIX_INCLUDES_STYLE_FLAGS = [
   '--blank_lines',
   '--blank_line_between_c_and_cxx_includes',
-  '--separate_project_includes=kudu/'
+  '--separate_project_includes=kudu/',
+  '--reorder'
 ]
 
 # Directory containin the compilation database
