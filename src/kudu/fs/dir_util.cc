@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/fs/block_manager_util.h"
+#include "kudu/fs/dir_util.h"
 
 #include <cstdint>
 #include <ostream>
@@ -125,22 +125,22 @@ Status CheckHolePunch(Env* env, const string& path) {
   } \
 } while (0)
 
-PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
+DirInstanceMetadataFile::DirInstanceMetadataFile(Env* env,
                                                    string uuid,
-                                                   string block_manager_type,
+                                                   string dir_type,
                                                    string filename)
     : env_(env),
       uuid_(std::move(uuid)),
-      block_manager_type_(std::move(block_manager_type)),
+      dir_type_(std::move(dir_type)),
       filename_(std::move(filename)) {}
 
-PathInstanceMetadataFile::~PathInstanceMetadataFile() {
+DirInstanceMetadataFile::~DirInstanceMetadataFile() {
   if (lock_) {
     WARN_NOT_OK(Unlock(), Substitute("Failed to unlock file $0", filename_));
   }
 }
 
-Status PathInstanceMetadataFile::Create(const set<string>& all_uuids,
+Status DirInstanceMetadataFile::Create(const set<string>& all_uuids,
                                         bool* created_dir) {
   DCHECK(!lock_);
   DCHECK(ContainsKey(all_uuids, uuid_));
@@ -159,7 +159,7 @@ Status PathInstanceMetadataFile::Create(const set<string>& all_uuids,
 
   // If we're initializing the log block manager, check that we support
   // hole-punching.
-  if (block_manager_type_ == "log") {
+  if (dir_type_ == "log") {
     RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(CheckHolePunch(env_, dir_name),
                                         kHolePunchErrorMsg);
   }
@@ -187,17 +187,17 @@ Status PathInstanceMetadataFile::Create(const set<string>& all_uuids,
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->GetBlockSize(created_filename, &block_size),
                                       "failed to check block size");
 
-  // Set up the path set.
-  PathInstanceMetadataPB new_instance;
-  PathSetPB* new_path_set = new_instance.mutable_path_set();
-  new_path_set->set_uuid(uuid_);
-  new_path_set->mutable_all_uuids()->Reserve(all_uuids.size());
+  // Set up the directory set.
+  DirInstanceMetadataPB new_instance;
+  DirSetPB* new_dir_set = new_instance.mutable_dir_set();
+  new_dir_set->set_uuid(uuid_);
+  new_dir_set->mutable_all_uuids()->Reserve(all_uuids.size());
   for (const string& u : all_uuids) {
-    new_path_set->add_all_uuids(u);
+    new_dir_set->add_all_uuids(u);
   }
 
   // And the rest of the metadata.
-  new_instance.set_block_manager_type(block_manager_type_);
+  new_instance.set_dir_type(dir_type_);
   new_instance.set_filesystem_block_size_bytes(block_size);
 
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::WritePBContainerToPath(
@@ -216,19 +216,19 @@ Status PathInstanceMetadataFile::Create(const set<string>& all_uuids,
   return Status::OK();
 }
 
-Status PathInstanceMetadataFile::LoadFromDisk() {
+Status DirInstanceMetadataFile::LoadFromDisk() {
   DCHECK(!lock_) <<
       "Opening a metadata file that's already locked would release the lock";
 
-  unique_ptr<PathInstanceMetadataPB> pb(new PathInstanceMetadataPB());
+  unique_ptr<DirInstanceMetadataPB> pb(new DirInstanceMetadataPB());
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()),
       Substitute("Failed to read metadata file from $0", filename_));
 
-  if (pb->block_manager_type() != block_manager_type_) {
+  if (pb->dir_type() != dir_type_) {
     return Status::IOError(Substitute(
       "existing instance was written using the '$0' format; cannot restart "
       "with a different format type '$1'",
-      pb->block_manager_type(), block_manager_type_));
+      pb->dir_type(), dir_type_));
   }
 
   uint64_t block_size;
@@ -239,12 +239,12 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
         "Expected $0 but was $1", pb->filesystem_block_size_bytes(), block_size));
   }
 
-  uuid_ = pb->path_set().uuid();
+  uuid_ = pb->dir_set().uuid();
   metadata_ = std::move(pb);
   return Status::OK();
 }
 
-Status PathInstanceMetadataFile::Lock() {
+Status DirInstanceMetadataFile::Lock() {
   DCHECK(!lock_);
 
   FileLock* lock;
@@ -256,7 +256,7 @@ Status PathInstanceMetadataFile::Lock() {
   return Status::OK();
 }
 
-Status PathInstanceMetadataFile::Unlock() {
+Status DirInstanceMetadataFile::Unlock() {
   DCHECK(lock_);
 
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->UnlockFile(lock_.release()),

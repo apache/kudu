@@ -29,8 +29,8 @@ add_library(kudu_fs
   block_id.cc
   block_manager.cc
   block_manager_metrics.cc
-  block_manager_util.cc
   data_dirs.cc
+  dir_util.cc
   error_manager.cc
   file_block_manager.cc
   fs_manager.cc
@@ -54,9 +54,9 @@ target_link_libraries(kudu_fs_test_util
 # Tests
 SET_KUDU_TEST_LINK_LIBS(kudu_fs kudu_fs_test_util)
 ADD_KUDU_TEST(block_manager-test)
-ADD_KUDU_TEST(block_manager_util-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(data_dirs-test)
+ADD_KUDU_TEST(dir_util-test)
 ADD_KUDU_TEST(error_manager-test)
 ADD_KUDU_TEST(fs_manager-test)
 if (NOT APPLE)

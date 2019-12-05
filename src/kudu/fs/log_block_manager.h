@@ -33,6 +33,7 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -44,7 +45,6 @@
 
 namespace kudu {
 
-class BlockRecordPB;
 class Env;
 class RWFile;
 

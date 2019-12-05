@@ -17,10 +17,11 @@
 
 #include "kudu/fs/log_block_manager.h"
 
+#include <errno.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <errno.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -34,12 +35,11 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/fs/block_manager_metrics.h"
-#include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_util.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
@@ -541,7 +541,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   bool dead() const { return dead_.Load(); }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   DataDir* data_dir() const { return data_dir_; }
-  const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
+  const DirInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
   // Adjusts the number of blocks being written.
   // Positive means increase, negative means decrease.

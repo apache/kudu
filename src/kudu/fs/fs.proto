@@ -38,32 +38,34 @@ message InstanceMetadataPB {
   // TODO: add a "node type" (TS/Master?)
 }
 
-// Describes a collection of filesystem path instances and the membership of a
-// particular instance in the collection.
+// Describes a collection of filesystem directory instances and the membership
+// of a particular instance in the collection.
 //
-// In a healthy filesystem (see below), a path instance can be referred to via
-// its UUID's position in all_uuids instead of via the UUID itself. This is
+// In a healthy filesystem (see below), a directory instance can be referred to
+// via its UUID's position in all_uuids instead of via the UUID itself. This is
 // useful when there are many such references, as the position is much shorter
 // than the UUID.
-message PathSetPB {
-  // Globally unique identifier for this path instance.
+message DirSetPB {
+  // Globally unique identifier for this directory instance.
   required bytes uuid = 1;
 
-  // All UUIDs in this path instance set. In a healthy filesystem:
-  // 1. There exists an on-disk PathInstanceMetadataPB for each listed UUID, and
-  // 2. Every PathSetPB contains an identical copy of all_uuids.
+  // All UUIDs in this dir instance set. In a healthy filesystem:
+  // 1. There exists an on-disk DirInstanceMetadataPB for each listed UUID, and
+  // 2. Every DirSetPB contains an identical copy of all_uuids.
   repeated bytes all_uuids = 2;
 }
 
-// A filesystem instance can contain multiple paths. One of these structures
-// is persisted in each path when the filesystem instance is created.
-message PathInstanceMetadataPB {
-  // Describes this path instance as well as all of the other path instances
-  // that, taken together, describe a complete set.
-  required PathSetPB path_set = 1;
+// A filesystem instance can contain multiple directories. One of these
+// structures is persisted in each directory when the filesystem instance is
+// created.
+message DirInstanceMetadataPB {
+  // Describes this directory instance as well as all of the other directory
+  // instances that, taken together, describe a complete directory set.
+  required DirSetPB dir_set = 1;
 
-  // Textual representation of the block manager that formatted this path.
-  required string block_manager_type = 2;
+  // Textual representation of the directory type for which this directory was
+  // formatted.
+  required string dir_type = 2;
 
   // Block size on the filesystem where this instance was created. If the
   // instance (and its data) are ever copied to another location, the block

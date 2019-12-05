@@ -38,8 +38,8 @@
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_manager.h"
-#include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/map-util.h"
@@ -840,7 +840,7 @@ TEST_F(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
   };
 
   // Helper to collect the contents of the InstanceMetadataPB and
-  // PathInstanceMetadtaPBs we expect to see in 'data_roots'. We'll read the
+  // DirInstanceMetadataPBs we expect to see in 'data_roots'. We'll read the
   // contents of each instance file from disk and compare them before and after
   // a botched update of the FsManager.
   auto get_added_instance_files = [&] (const vector<string>& data_roots,
@@ -863,8 +863,8 @@ TEST_F(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
         InsertOrDie(&instances, instance_path, SecureDebugString(*pb));
       }
 
-      // Collect the contents of the PathInstanceMetadataPB objects.
-      unique_ptr<PathInstanceMetadataPB> bmi_pb(new PathInstanceMetadataPB);
+      // Collect the contents of the DirInstanceMetadataPB objects.
+      unique_ptr<DirInstanceMetadataPB> bmi_pb(new DirInstanceMetadataPB);
       const auto block_manager_instance = JoinPathSegments(
           JoinPathSegments(root, kDataDirName), kInstanceMetadataFileName);
       s = ReadPBContainerFromPath(env_, block_manager_instance, bmi_pb.get());

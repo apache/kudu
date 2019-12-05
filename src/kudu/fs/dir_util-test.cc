@@ -15,19 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/fs/block_manager_util.h"
+#include "kudu/fs/dir_util.h"
 
-#include <memory>
 #include <ostream>
 #include <string>
-#include <vector>
 
 #include <glog/logging.h>
 #include <google/protobuf/repeated_field.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -36,11 +33,7 @@
 namespace kudu {
 namespace fs {
 
-using google::protobuf::RepeatedPtrField;
 using std::string;
-using std::unique_ptr;
-using std::vector;
-using strings::Substitute;
 
 TEST_F(KuduTest, Lifecycle) {
   string kType = "asdf";
@@ -49,27 +42,27 @@ TEST_F(KuduTest, Lifecycle) {
 
   // Test that the metadata file was created.
   {
-    PathInstanceMetadataFile file(env_, kUuid, kType, kFileName);
+    DirInstanceMetadataFile file(env_, kUuid, kType, kFileName);
     ASSERT_OK(file.Create({ kUuid }));
   }
   ASSERT_TRUE(env_->FileExists(kFileName));
 
   // Test that we could open and parse it.
   {
-    PathInstanceMetadataFile file(env_, kUuid, kType, kFileName);
+    DirInstanceMetadataFile file(env_, kUuid, kType, kFileName);
     ASSERT_OK(file.LoadFromDisk());
-    const PathInstanceMetadataPB* md = file.metadata();
-    ASSERT_EQ(kType, md->block_manager_type());
-    const PathSetPB& path_set = md->path_set();
-    ASSERT_EQ(kUuid, path_set.uuid());
-    ASSERT_EQ(1, path_set.all_uuids_size());
-    ASSERT_EQ(kUuid, path_set.all_uuids(0));
+    const DirInstanceMetadataPB* md = file.metadata();
+    ASSERT_EQ(kType, md->dir_type());
+    const DirSetPB& dir_set = md->dir_set();
+    ASSERT_EQ(kUuid, dir_set.uuid());
+    ASSERT_EQ(1, dir_set.all_uuids_size());
+    ASSERT_EQ(kUuid, dir_set.all_uuids(0));
   }
 
   // Test that expecting a different type of block manager fails.
   {
-    PathInstanceMetadataFile file(env_, kUuid, "other type", kFileName);
-    PathInstanceMetadataPB pb;
+    DirInstanceMetadataFile file(env_, kUuid, "other type", kFileName);
+    DirInstanceMetadataPB pb;
     ASSERT_TRUE(file.LoadFromDisk().IsIOError());
   }
 }
@@ -79,10 +72,10 @@ TEST_F(KuduTest, Locking) {
   const string kFileName = GetTestPath("foo");
   string kUuid = "a_uuid";
 
-  PathInstanceMetadataFile file(env_, kUuid, kType, kFileName);
+  DirInstanceMetadataFile file(env_, kUuid, kType, kFileName);
   ASSERT_OK(file.Create({ kUuid }));
 
-  PathInstanceMetadataFile first(env_, "", kType, kFileName);
+  DirInstanceMetadataFile first(env_, "", kType, kFileName);
   ASSERT_OK(first.LoadFromDisk());
   ASSERT_EQ(kUuid, first.uuid());
   ASSERT_OK(first.Lock());
@@ -90,7 +83,7 @@ TEST_F(KuduTest, Locking) {
   // Note: we must use a death test here because file locking is only
   // disallowed across processes, and death tests spawn child processes.
   ASSERT_DEATH({
-    PathInstanceMetadataFile second(env_, "", kType, kFileName);
+    DirInstanceMetadataFile second(env_, "", kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     CHECK_EQ(kUuid, second.uuid());
     CHECK_OK(second.Lock());
@@ -98,7 +91,7 @@ TEST_F(KuduTest, Locking) {
 
   ASSERT_OK(first.Unlock());
   ASSERT_DEATH({
-    PathInstanceMetadataFile second(env_, "", kType, kFileName);
+    DirInstanceMetadataFile second(env_, "", kType, kFileName);
     CHECK_OK(second.LoadFromDisk());
     CHECK_EQ(kUuid, second.uuid());
     Status s = second.Lock();

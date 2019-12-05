@@ -22,8 +22,8 @@
 
 #include <glog/logging.h>
 
-#include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/port.h"

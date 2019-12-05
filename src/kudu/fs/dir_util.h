@@ -26,30 +26,30 @@
 
 namespace kudu {
 
+class DirInstanceMetadataPB;
 class Env;
 class FileLock;
-class PathInstanceMetadataPB;
 
 namespace fs {
 
 // Reads and writes block manager instance metadata files.
 //
 // Thread-unsafe; access to this object must be externally synchronized.
-class PathInstanceMetadataFile {
+class DirInstanceMetadataFile {
  public:
   // 'env' must remain valid for the lifetime of this class.
   //
   // 'uuid' is the UUID used for this instance file, though the UUID may be
   // changed if we read the instance file from disk and find a different UUID.
-  PathInstanceMetadataFile(Env* env, std::string uuid, std::string block_manager_type,
-                           std::string filename);
+  DirInstanceMetadataFile(Env* env, std::string uuid, std::string dir_type,
+                          std::string filename);
 
-  ~PathInstanceMetadataFile();
+  ~DirInstanceMetadataFile();
 
   // Creates, writes, synchronizes, and closes a new instance metadata file.
   // Fails the PIMF in the case of a failed directory.
   //
-  // 'all_uuids' is all of the unique UUIDs in this instance's path set.
+  // 'all_uuids' is all of the unique UUIDs in this instance's dir set.
   // 'uuid_' must exist in this set. 'created_dir' is set to true if the parent
   // directory of the file was also created during this process.
   //
@@ -79,7 +79,7 @@ class PathInstanceMetadataFile {
   // Sets that the instance failed (e.g. due to a disk failure).
   //
   // If failed, there is no guarantee that the instance will have a 'metadata_'.
-  void SetInstanceFailed(const Status& s = Status::IOError("Path instance failed")) {
+  void SetInstanceFailed(const Status& s = Status::IOError("directory instance failed")) {
     health_status_ = s;
   }
 
@@ -96,7 +96,7 @@ class PathInstanceMetadataFile {
   std::string uuid() const { return uuid_; }
   std::string dir() const { return DirName(filename_); }
   const std::string& path() const { return filename_; }
-  PathInstanceMetadataPB* metadata() const { return metadata_.get(); }
+  DirInstanceMetadataPB* metadata() const { return metadata_.get(); }
 
  private:
   Env* env_;
@@ -111,12 +111,12 @@ class PathInstanceMetadataFile {
   std::string uuid_;
 
   // The type of this instance file.
-  const std::string block_manager_type_;
+  const std::string dir_type_;
 
   // The name of the file associated with this instance.
   const std::string filename_;
 
-  std::unique_ptr<PathInstanceMetadataPB> metadata_;
+  std::unique_ptr<DirInstanceMetadataPB> metadata_;
 
   // In order to prevent multiple Kudu processes from starting up using the
   // same directories, we lock the instance files when starting up.

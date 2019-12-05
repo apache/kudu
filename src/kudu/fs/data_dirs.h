@@ -58,8 +58,8 @@ namespace fs {
 typedef std::unordered_map<int, std::string> UuidByUuidIndexMap;
 typedef std::unordered_map<std::string, int> UuidIndexByUuidMap;
 
-class PathInstanceMetadataFile;
 struct CreateBlockOptions;
+class DirInstanceMetadataFile;
 
 const char kInstanceMetadataFileName[] = "block_manager_instance";
 const char kDataDirName[] = "data";
@@ -68,7 +68,7 @@ namespace internal {
 
 // A DataDirGroup is a group of directories used by an entity for block
 // placement. A group is represented in memory by a list of indices which index
-// into the list of all UUIDs found in a PathSetPB. A group is represented
+// into the list of all UUIDs found in a DirSetPB. A group is represented
 // on-disk as a list of full UUIDs, and as such, when writing or reading from
 // disk, a mapping is needed to translate between index and UUID.
 //
@@ -117,7 +117,7 @@ enum class DataDirFsType {
 // Defines the behavior when opening a directory manager that has an
 // inconsistent or incomplete set of instance files.
 enum UpdateInstanceBehavior {
-  // If the data directories don't match the on-disk path sets, update the
+  // If the data directories don't match the on-disk dir sets, update the
   // on-disk data to match if not in read-only mode.
   UPDATE_AND_IGNORE_FAILURES,
 
@@ -125,8 +125,8 @@ enum UpdateInstanceBehavior {
   // on-disk files fail.
   UPDATE_AND_ERROR_ON_FAILURE,
 
-  // If the data directories don't match the on-disk path sets, continue
-  // without updating the on-disk data.
+  // If the data directories don't match the on-disk dir sets, continue without
+  // updating the on-disk data.
   DONT_UPDATE
 };
 
@@ -144,7 +144,7 @@ class DataDir {
           DataDirMetrics* metrics,
           DataDirFsType fs_type,
           std::string dir,
-          std::unique_ptr<PathInstanceMetadataFile> metadata_file,
+          std::unique_ptr<DirInstanceMetadataFile> metadata_file,
           std::unique_ptr<ThreadPool> pool);
   ~DataDir();
 
@@ -180,7 +180,7 @@ class DataDir {
 
   const std::string& dir() const { return dir_; }
 
-  const PathInstanceMetadataFile* instance() const {
+  const DirInstanceMetadataFile* instance() const {
     return metadata_file_.get();
   }
 
@@ -199,7 +199,7 @@ class DataDir {
   DataDirMetrics* metrics_;
   const DataDirFsType fs_type_;
   const std::string dir_;
-  const std::unique_ptr<PathInstanceMetadataFile> metadata_file_;
+  const std::unique_ptr<DirInstanceMetadataFile> metadata_file_;
   const std::unique_ptr<ThreadPool> pool_;
 
   bool is_shutdown_;
@@ -392,7 +392,7 @@ class DataDirManager {
   // Finds a data directory by uuid index, returning null if it can't be found.
   //
   // More information on uuid indexes and their relation to data directories
-  // can be found next to PathSetPB in fs.proto.
+  // can be found next to DirSetPB in fs.proto.
   DataDir* FindDataDirByUuidIndex(int uuid_idx) const;
 
   // Finds a uuid index by data directory, returning false if it can't be found.
@@ -450,7 +450,7 @@ class DataDirManager {
   // Returns an error if an instance file fails in an irreconcileable way (e.g.
   // the file is locked).
   Status LoadInstances(
-      std::vector<std::unique_ptr<PathInstanceMetadataFile>>* instance_files,
+      std::vector<std::unique_ptr<DirInstanceMetadataFile>>* instance_files,
       bool* has_existing_instances);
 
   // Takes the set of instance files, does some basic verification on them,
@@ -467,7 +467,7 @@ class DataDirManager {
   // If in UPDATE_AND_ERROR_ON_FAILURE mode, a failure to update instances will
   // surface as an error.
   Status CreateNewDirectoriesAndUpdateInstances(
-      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances);
+      std::vector<std::unique_ptr<DirInstanceMetadataFile>> instances);
 
   // Updates the on-disk instance files specified by 'instances_to_update'
   // (presumably those whose 'all_uuids' field doesn't match 'new_all_uuids')
@@ -481,7 +481,7 @@ class DataDirManager {
   // If in UPDATE_AND_ERROR_ON_FAILURE mode, any failure will immediately attempt
   // to clean up any altered state and return with an error.
   Status UpdateHealthyInstances(
-      const std::vector<std::unique_ptr<PathInstanceMetadataFile>>& instances_to_update,
+      const std::vector<std::unique_ptr<DirInstanceMetadataFile>>& instances_to_update,
       const std::set<std::string>& new_all_uuids);
 
   // Returns a random directory in the data dir group specified in 'opts',

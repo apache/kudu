@@ -321,7 +321,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
       if (child == "." || child == "..") {
         continue;
       }
-      PathInstanceMetadataPB instance;
+      DirInstanceMetadataPB instance;
       ASSERT_OK(pb_util::ReadPBContainerFromPath(env_,
                                                  JoinPathSegments(path, child),
                                                  &instance));

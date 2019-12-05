@@ -37,7 +37,7 @@
 #include <google/protobuf/stubs/common.h>
 
 #include "kudu/fs/block_manager.h"
-#include "kudu/fs/block_manager_util.h"
+#include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/integral_types.h"
@@ -165,7 +165,7 @@ DataDir::DataDir(Env* env,
                  DataDirMetrics* metrics,
                  DataDirFsType fs_type,
                  string dir,
-                 unique_ptr<PathInstanceMetadataFile> metadata_file,
+                 unique_ptr<DirInstanceMetadataFile> metadata_file,
                  unique_ptr<ThreadPool> pool)
     : env_(env),
       metrics_(metrics),
@@ -397,7 +397,7 @@ Status DataDirManager::Create() {
   for (const auto& r : canonicalized_data_fs_roots_) {
     RETURN_NOT_OK_PREPEND(r.status, "Could not create directory manager with disks failed");
   }
-  vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
+  vector<unique_ptr<DirInstanceMetadataFile>> loaded_instances;
   bool has_existing_instances;
   RETURN_NOT_OK(LoadInstances(&loaded_instances, &has_existing_instances));
   if (has_existing_instances) {
@@ -412,7 +412,7 @@ Status DataDirManager::Create() {
 }
 
 Status DataDirManager::CreateNewDirectoriesAndUpdateInstances(
-    vector<unique_ptr<PathInstanceMetadataFile>> instances) {
+    vector<unique_ptr<DirInstanceMetadataFile>> instances) {
   CHECK(!opts_.read_only);
   CHECK_NE(UpdateInstanceBehavior::DONT_UPDATE, opts_.update_instances);
 
@@ -448,7 +448,7 @@ Status DataDirManager::CreateNewDirectoriesAndUpdateInstances(
   //
   // Note: we don't bother trying to create/update the instance if the file is
   // otherwise unhealthy.
-  vector<unique_ptr<PathInstanceMetadataFile>> healthy_instances;
+  vector<unique_ptr<DirInstanceMetadataFile>> healthy_instances;
   for (auto& instance : instances) {
     if (instance->healthy()) {
       healthy_instances.emplace_back(std::move(instance));
@@ -466,13 +466,13 @@ Status DataDirManager::CreateNewDirectoriesAndUpdateInstances(
 
   // Go through the healthy instances and look for instances that don't have
   // the full complete set of instance UUIDs.
-  vector<unique_ptr<PathInstanceMetadataFile>> instances_to_update;
+  vector<unique_ptr<DirInstanceMetadataFile>> instances_to_update;
   for (auto& instance : healthy_instances) {
     DCHECK(instance->healthy());
-    const auto& path_set = instance->metadata()->path_set();
+    const auto& dir_set = instance->metadata()->dir_set();
     set<string> instance_uuids;
-    for (int i = 0; i < path_set.all_uuids_size(); i++) {
-      InsertIfNotPresent(&instance_uuids, path_set.all_uuids(i));
+    for (int i = 0; i < dir_set.all_uuids_size(); i++) {
+      InsertIfNotPresent(&instance_uuids, dir_set.all_uuids(i));
     }
     // If an instance file disagrees with the expected UUIDs, rewrite it.
     if (all_uuids != instance_uuids) {
@@ -500,7 +500,7 @@ Status DataDirManager::CreateNewDirectoriesAndUpdateInstances(
 }
 
 Status DataDirManager::UpdateHealthyInstances(
-    const vector<unique_ptr<PathInstanceMetadataFile>>& instances_to_update,
+    const vector<unique_ptr<DirInstanceMetadataFile>>& instances_to_update,
     const set<string>& new_all_uuids) {
   unordered_map<string, string> copies_to_restore;
   unordered_set<string> copies_to_delete;
@@ -548,10 +548,10 @@ Status DataDirManager::UpdateHealthyInstances(
     string copy_filename = instance_filename + kTmpInfix;
 
     // Put together the PB and perform the update.
-    PathInstanceMetadataPB new_pb = *instance->metadata();
-    new_pb.mutable_path_set()->mutable_all_uuids()->Clear();
+    DirInstanceMetadataPB new_pb = *instance->metadata();
+    new_pb.mutable_dir_set()->mutable_all_uuids()->Clear();
     for (const auto& uuid : new_all_uuids) {
-      new_pb.mutable_path_set()->add_all_uuids(uuid);
+      new_pb.mutable_dir_set()->add_all_uuids(uuid);
     }
 
     // We're about to update the file; if we fail midway, we should try to
@@ -587,7 +587,7 @@ Status DataDirManager::UpdateHealthyInstances(
 }
 
 Status DataDirManager::LoadInstances(
-    vector<unique_ptr<PathInstanceMetadataFile>>* instance_files,
+    vector<unique_ptr<DirInstanceMetadataFile>>* instance_files,
     bool* has_existing_instances) {
   LockMode lock_mode;
   if (!FLAGS_fs_lock_data_dirs) {
@@ -598,7 +598,7 @@ Status DataDirManager::LoadInstances(
     lock_mode = LockMode::MANDATORY;
   }
   vector<string> missing_roots_tmp;
-  vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
+  vector<unique_ptr<DirInstanceMetadataFile>> loaded_instances;
   ObjectIdGenerator gen;
   for (int i = 0; i < canonicalized_data_fs_roots_.size(); i++) {
     const auto& root = canonicalized_data_fs_roots_[i];
@@ -608,8 +608,8 @@ Status DataDirManager::LoadInstances(
     // Initialize the instance with a backup UUID. In case the load fails, this
     // will be the UUID for our instnace.
     string backup_uuid = gen.Next();
-    unique_ptr<PathInstanceMetadataFile> instance(
-        new PathInstanceMetadataFile(env_, std::move(backup_uuid), opts_.block_manager_type,
+    unique_ptr<DirInstanceMetadataFile> instance(
+        new DirInstanceMetadataFile(env_, std::move(backup_uuid), opts_.block_manager_type,
                                      instance_filename));
     if (PREDICT_FALSE(!root.status.ok())) {
       instance->SetInstanceFailed(root.status);
@@ -675,11 +675,11 @@ Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<DataDir>>& 
     for (const auto& dd : dds) {
       // Find a healthy instance file and use its set of UUIDs.
       if (dd->instance()->healthy()) {
-        const auto& path_set = dd->instance()->metadata()->path_set();
-        VLOG(1) << Substitute("using path set $0 as reference: $1",
-            dd->instance()->path(), pb_util::SecureDebugString(path_set));
-        for (int idx = 0; idx < path_set.all_uuids_size(); idx++) {
-          const string& uuid = path_set.all_uuids(idx);
+        const auto& dir_set = dd->instance()->metadata()->dir_set();
+        VLOG(1) << Substitute("using dir set $0 as reference: $1",
+            dd->instance()->path(), pb_util::SecureDebugString(dir_set));
+        for (int idx = 0; idx < dir_set.all_uuids_size(); idx++) {
+          const string& uuid = dir_set.all_uuids(idx);
           InsertIfNotPresent(&uuid_to_idx, uuid, idx);
         }
         break;
@@ -691,7 +691,7 @@ Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<DataDir>>& 
           Substitute("instance file is corrupted: $0 unique UUIDs expected, got $1",
                      dds.size(), uuid_to_idx.size()));
     }
-    // Keep track of any dirs that were not referenced in the path set. These
+    // Keep track of any dirs that were not referenced in the dir set. These
     // are presumably from instance files we failed to read. We'll assign them
     // indexes of those that remain.
     vector<DataDir*> unassigned_dirs;
@@ -730,7 +730,7 @@ Status DataDirManager::Open() {
                                               canonicalized_data_fs_roots_.size(), kMaxDataDirs));
   }
 
-  vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
+  vector<unique_ptr<DirInstanceMetadataFile>> loaded_instances;
   // Load the instance files from disk.
   bool has_existing_instances;
   RETURN_NOT_OK_PREPEND(LoadInstances(&loaded_instances, &has_existing_instances),
@@ -762,13 +762,6 @@ Status DataDirManager::Open() {
     auto& instance = loaded_instances[i];
     const string data_dir = instance->dir();
 
-    // Create a per-dir thread pool.
-    unique_ptr<ThreadPool> pool;
-    RETURN_NOT_OK(ThreadPoolBuilder(Substitute("data dir $0", i))
-                  .set_max_threads(1)
-                  .set_trace_metric_prefix("data dirs")
-                  .Build(&pool));
-
     // Figure out what filesystem the data directory is on.
     DataDirFsType fs_type = DataDirFsType::OTHER;
     if (instance->healthy()) {
@@ -792,9 +785,15 @@ Status DataDirManager::Open() {
       }
     }
 
+    // Create a per-dir thread pool.
+    unique_ptr<ThreadPool> pool;
+    RETURN_NOT_OK(ThreadPoolBuilder(Substitute("data dir $0", i))
+                  .set_max_threads(1)
+                  .set_trace_metric_prefix("data dirs")
+                  .Build(&pool));
     unique_ptr<DataDir> dd(new DataDir(
         env_, metrics_.get(), fs_type, data_dir, std::move(instance),
-        unique_ptr<ThreadPool>(pool.release())));
+        std::move(pool)));
     dds.emplace_back(std::move(dd));
   }
 

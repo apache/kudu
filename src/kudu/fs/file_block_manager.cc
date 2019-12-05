@@ -81,8 +81,8 @@ namespace internal {
 //
 // A block ID uniquely locates a block. Every ID is a uint64_t, broken down
 // into multiple logical components:
-// 1. Bytes 0 (MSB) and 1 identify the block's data dir by path set index. See
-//    fs.proto for more details on path sets.
+// 1. Bytes 0 (MSB) and 1 identify the block's data dir by dir set index. See
+//    fs.proto for more details on dir sets.
 // 2. Bytes 2-7 (LSB) uniquely identify the block within the data dir. As more
 //    and more blocks are created in a data dir, the likelihood of a collision
 //    becomes greater. In the event of a collision, the block manager will
