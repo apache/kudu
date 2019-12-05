@@ -39,8 +39,8 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/array_view.h" // IWYU pragma: keep
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"

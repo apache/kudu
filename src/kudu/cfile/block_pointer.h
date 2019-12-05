@@ -22,8 +22,8 @@
 
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

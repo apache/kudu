@@ -30,8 +30,8 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/interval_tree.h"
+#include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
 
 using std::vector;

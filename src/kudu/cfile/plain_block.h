@@ -24,8 +24,8 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/hexdump.h"
 
 namespace kudu {

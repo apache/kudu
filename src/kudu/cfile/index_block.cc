@@ -25,8 +25,8 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/coding-inl.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/protobuf_util.h"
 
