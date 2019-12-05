@@ -189,9 +189,6 @@ The following are known bugs and issues with the current release of Kudu. They w
 be addressed in later releases. Note that this list is not exhaustive, and is meant
 to communicate only the most important known issues.
 
-* If the Kudu master is configured with the `-log_force_fsync_all` option, tablet servers
-  and clients will experience frequent timeouts, and the cluster may become unusable.
-
 * If a tablet server has a very large number of tablets, it may take several minutes
   to start up. It is recommended to limit the number of tablets per server to 1000
   or fewer. Consider this limitation when pre-splitting your tables. If you notice slow
