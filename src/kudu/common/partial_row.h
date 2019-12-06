@@ -44,6 +44,9 @@ class ColumnSchema;
 namespace client {
 class ClientTest_TestProjectionPredicatesFuzz_Test;
 class KuduWriteOperation;
+namespace internal {
+class WriteRpc;
+} // namespace internal
 template<typename KeyTypeWrapper> struct SliceKeysTestSetup;// IWYU pragma: keep
 template<typename KeyTypeWrapper> struct IntKeysTestSetup;  // IWYU pragma: keep
 } // namespace client
@@ -586,6 +589,7 @@ class KUDU_EXPORT KuduPartialRow {
 
  private:
   friend class client::KuduWriteOperation;   // for row_data_.
+  friend class client::internal::WriteRpc;   // for row_data_.
   friend class KeyUtilTest;
   friend class PartitionSchema;
   friend class RowOperationsPBDecoder;

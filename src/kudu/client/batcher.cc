@@ -41,6 +41,7 @@
 #include "kudu/client/write_op-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
@@ -50,7 +51,7 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/request_tracker.h"
@@ -76,7 +77,6 @@ using strings::Substitute;
 
 namespace kudu {
 
-class KuduPartialRow;
 class Schema;
 
 namespace rpc {
@@ -342,7 +342,80 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
 }
 
 WriteRpc::~WriteRpc() {
-  STLDeleteElements(&ops_);
+  // Since the WriteRpc is destructed a while after all of the
+  // InFlightOps and other associated objects were last touched,
+  // and because those operations were not all allocated together,
+  // they're likely to be strewn all around in RAM. This function
+  // then ends up cache-miss-bound.
+  //
+  // Ideally, we could change the allocation pattern to make them
+  // more contiguous, but it's a bit tricky -- this is client code,
+  // so we don't really have great control over how the write ops
+  // themselves are allocated.
+  //
+  // So, instead, we do some prefetching. The pointer graph looks like:
+  //
+  // vector<InFlightOp*>
+  //    [i] InFlightOp* pointer
+  //         \----> InFlightOp instance
+  //                | WriteOp* pointer
+  //                |   \-----> WriteOp instance
+  //                            | KuduPartialRow (embedded)
+  //                            | | isset_bitmap_
+  //                                   \-----> heap allocated memory
+  //
+  //
+  // So, we need to do three "layers" of prefetch. First, prefetch the
+  // InFlightOp instance. Then, prefetch the KuduPartialRow contained by
+  // the WriteOp that it points to. Then, prefetch the isset bitmap that
+  // the PartialRow points to.
+  //
+  // In order to get parallelism here, we need to stagger the prefetches:
+  // the "root" of the tree needs to look farthest in the future, then
+  // prefetch the next level, then prefetch the closest level, before
+  // eventually calling the destructor.
+  //
+  // Experimentally, it seems we get enough benefit from only prefetching
+  // one entry "ahead" in between each.
+  constexpr static int kPrefetchDistance = 1;
+  const int size = ops_.size();
+
+  auto iter = [this, size](int i) {
+    int ifo_prefetch = i + kPrefetchDistance * 3;
+    int op_prefetch = i + kPrefetchDistance * 2;
+    int row_prefetch = i + kPrefetchDistance;
+    if (ifo_prefetch >= 0 && ifo_prefetch < size) {
+      __builtin_prefetch(ops_[ifo_prefetch], 0, PREFETCH_HINT_T0);
+    }
+    if (op_prefetch >= 0 && op_prefetch < size) {
+      const auto* op = ops_[op_prefetch]->write_op.get();
+      if (op) {
+        __builtin_prefetch(&op->row().isset_bitmap_, 0, PREFETCH_HINT_T0);
+      }
+    }
+    if (row_prefetch >= 0 && row_prefetch < size) {
+      const auto* op = ops_[row_prefetch]->write_op.get();
+      if (op) {
+        __builtin_prefetch(op->row().isset_bitmap_, 0, PREFETCH_HINT_T0);
+      }
+    }
+    if (i >= 0) {
+      delete ops_[i];
+    }
+  };
+
+  // Explicitly perform "loop splitting" to avoid the branches in the main
+  // body of the loop.
+  int i = -kPrefetchDistance * 3;
+  while (i < 0) {
+    iter(i++);
+  }
+  while (i < size - kPrefetchDistance * 3) {
+    iter(i++);
+  }
+  while (i < size) {
+    iter(i++);
+  }
 }
 
 string WriteRpc::ToString() const {
