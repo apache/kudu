@@ -175,11 +175,11 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -499,6 +499,12 @@ Status GenerateRowData(Generator* gen, KuduPartialRow* row,
           RETURN_NOT_OK(row->SetStringNoCopy(idx, fixed_string));
         }
         break;
+      case VARCHAR:
+        if (fixed_string.empty()) {
+          RETURN_NOT_OK(row->SetVarchar(idx, gen->Next<string>()));
+        } else {
+          RETURN_NOT_OK(row->SetStringNoCopy(idx, fixed_string));
+        }
       default:
         return Status::InvalidArgument("unknown data type");
     }

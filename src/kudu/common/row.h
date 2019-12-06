@@ -618,6 +618,16 @@ class RowBuilder {
     AddSlice(str);
   }
 
+  void AddVarchar(const Slice &slice) {
+    CheckNextType(VARCHAR);
+    AddSlice(slice);
+  }
+
+  void AddVarchar(const std::string &str) {
+    CheckNextType(VARCHAR);
+    AddSlice(str);
+  }
+
   void AddInt8(int8_t val) {
     CheckNextType(INT8);
     *reinterpret_cast<int8_t *>(&buf_[byte_idx_]) = val;

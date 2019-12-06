@@ -29,8 +29,8 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 #include <google/protobuf/stubs/status.h>
 #include <google/protobuf/stubs/stringpiece.h>
 #include <google/protobuf/util/json_util.h>
@@ -287,7 +287,8 @@ Status LocateRow(const RunnerContext& context) {
         break;
       }
       case KuduColumnSchema::BINARY:
-      case KuduColumnSchema::STRING: {
+      case KuduColumnSchema::STRING:
+      case KuduColumnSchema::VARCHAR: {
         string value;
         RETURN_NOT_OK_PREPEND(
             reader.ExtractString(values[i], /*field=*/nullptr, &value),
@@ -586,6 +587,13 @@ Status ConvertToKuduPartialRow(
         RETURN_NOT_OK(range_bound_partial_row->SetString(col_name, value));
         break;
       }
+      case KuduColumnSchema::VARCHAR: {
+        string value;
+        RETURN_NOT_OK_PREPEND(
+          reader.ExtractString(values[i], /*field=*/nullptr, &value),
+          error_msg);
+        RETURN_NOT_OK(range_bound_partial_row->SetVarchar(col_name, value));
+      }
       case KuduColumnSchema::BOOL:
       case KuduColumnSchema::FLOAT:
       case KuduColumnSchema::DOUBLE:
@@ -714,7 +722,8 @@ Status ParseValueOfType(const string& default_value,
       break;
     }
     case KuduColumnSchema::DataType::BINARY:
-    case KuduColumnSchema::DataType::STRING: {
+    case KuduColumnSchema::DataType::STRING:
+    case KuduColumnSchema::DataType::VARCHAR: {
       string str_value;
       RETURN_NOT_OK_PREPEND(
         reader.ExtractString(values[0], /*field=*/nullptr, &str_value), msg);
@@ -891,6 +900,7 @@ Status ToJsonPartialRow(const RepeatedPtrField<string>& values,
   string joined = JoinMapped(values, [&](const string& v) {
     auto data_type = range_columns[i++].second;
     if (data_type == KuduColumnSchema::STRING ||
+        data_type == KuduColumnSchema::VARCHAR ||
         data_type == KuduColumnSchema::BINARY) {
       return "\"" + v + "\"";
     }
@@ -996,6 +1006,7 @@ Status ParseTableSchema(const SchemaPB& schema,
       string default_v;
       if (column.column_type() == "STRING" ||
           column.column_type() == "BINARY" ||
+          column.column_type() == "VARCHAR" ||
           column.column_type() == "DECIMAL") {
         default_v = "[\"" + column.default_value() + "\"]";
       } else {
