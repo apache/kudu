@@ -598,6 +598,8 @@ Batcher::Batcher(KuduClient* client,
     timeout_(client->default_rpc_timeout()),
     outstanding_lookups_(0),
     buffer_bytes_used_(0) {
+  ops_.set_empty_key(nullptr);
+  ops_.set_deleted_key(reinterpret_cast<InFlightOp*>(-1));
 }
 
 void Batcher::Abort() {

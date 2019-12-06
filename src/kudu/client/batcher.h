@@ -20,8 +20,10 @@
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
+#include <utility>
 #include <vector>
+
+#include <sparsehash/dense_hash_set>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
@@ -42,11 +44,10 @@ class KuduStatusCallback;
 
 namespace internal {
 
-struct InFlightOp;
-
 class ErrorCollector;
 class RemoteTablet;
 class WriteRpc;
+struct InFlightOp;
 
 // A Batcher is the class responsible for collecting row operations, routing them to the
 // correct tablet server, and possibly batching them together for better efficiency.
@@ -202,7 +203,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   KuduStatusCallback* flush_callback_;
 
   // All buffered or in-flight ops.
-  std::unordered_set<InFlightOp*> ops_;
+  google::dense_hash_set<InFlightOp*> ops_;
   // Each tablet's buffered ops.
   typedef std::unordered_map<RemoteTablet*, std::vector<InFlightOp*> > OpsMap;
   OpsMap per_tablet_ops_;
