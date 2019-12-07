@@ -399,7 +399,7 @@ void Log::AppendThread::HandleGroup(vector<LogEntryBatch*> entry_batches) {
   } else {
     TRACE_EVENT0("log", "Callbacks");
     VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
-    SCOPED_WATCH_STACK(100);
+    SCOPED_WATCH_STACK(0);
     for (LogEntryBatch* entry_batch : entry_batches) {
       if (PREDICT_TRUE(!entry_batch->callback().is_null())) {
         entry_batch->callback().Run(Status::OK());
@@ -698,7 +698,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch) {
 
   LOG_SLOW_EXECUTION(WARNING, 50, Substitute("$0Append to log took a long time", LogPrefix())) {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
-    SCOPED_WATCH_STACK(500);
+    SCOPED_WATCH_STACK(0);
 
     RETURN_NOT_OK(active_segment_->WriteEntryBatch(entry_batch_data, codec_));
 

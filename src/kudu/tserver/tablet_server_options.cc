@@ -52,14 +52,18 @@ TabletServerOptions::TabletServerOptions() {
       LOG(FATAL) << "Couldn't parse the tserver_addresses flag('" << FLAGS_tserver_addresses << "'): "
                  << s.ToString();
     }
+
+#ifdef FB_DO_NOT_REMOVE
+// to simplify in FB, we allow rings with single instances.
     if (tserver_addresses.size() < 2) {
       LOG(FATAL) << "At least 2 tservers are required for a distributed config, but "
           "tserver_addresses flag ('" << FLAGS_tserver_addresses << "') only specifies "
                  << tserver_addresses.size() << " tservers.";
     }
+#endif
 
     // TODO(wdberkeley): Un-actionable warning. Link to docs, once they exist.
-    if (tserver_addresses.size() == 2) {
+    if (tserver_addresses.size() <= 2) {
       LOG(WARNING) << "Only 2 tservers are specified by tserver_addresses_flag ('" <<
           FLAGS_tserver_addresses << "'), but minimum of 3 are required to tolerate failures"
           " of any one tserver. It is recommended to use at least 3 tservers.";

@@ -20,6 +20,5 @@ build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh
 
 mkdir -p build/release
 cd build/release
-../../build-support/enable_devtoolset.sh \
-  cmake -DCMAKE_BUILD_TYPE=release ../..
+../../build-support/enable_devtoolset.sh cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j20

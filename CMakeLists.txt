@@ -437,9 +437,9 @@ endif()
 
 # If we still don't know what kind of linking to perform, choose based on
 # build type (developers like fast builds).
+# We do DEBUG builds in static lib mode
 if ("${KUDU_LINK}" STREQUAL "a")
-  if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR
-      "${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
+  if ("${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
     message("Using dynamic linking for ${CMAKE_BUILD_TYPE} builds")
     set(KUDU_LINK "d")
   else()
