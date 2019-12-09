@@ -112,7 +112,7 @@ TAG_FLAG(webserver_tls_min_protocol, advanced);
 DEFINE_bool(webserver_require_spnego, false,
             "Require connections to the web server to authenticate via Kerberos "
             "using SPNEGO.");
-TAG_FLAG(webserver_require_spnego, evolving);
+TAG_FLAG(webserver_require_spnego, stable);
 
 namespace kudu {
 

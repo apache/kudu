@@ -30,7 +30,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/bind.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #ifdef TCMALLOC_ENABLED
@@ -79,6 +78,7 @@ TAG_FLAG(web_log_bytes, advanced);
 TAG_FLAG(web_log_bytes, runtime);
 
 // For configuration dashboard
+DECLARE_bool(webserver_require_spnego);
 DECLARE_string(redact);
 DECLARE_string(rpc_encryption);
 DECLARE_string(rpc_authentication);
@@ -302,6 +302,13 @@ static void ConfigurationHandler(const Webserver::WebRequest& /* req */,
   webserver_redaction["secure"] = boost::iequals(FLAGS_redact, "all");
   webserver_redaction["id"] = "webserver_redaction";
   webserver_redaction["explanation"] = "Configure with --redact. Most secure value is 'all'.";
+
+  EasyJson webserver_spnego = security_configs.PushBack(EasyJson::kObject);
+  webserver_spnego["name"] = "Webserver Kerberos Authentication via SPNEGO";
+  webserver_spnego["value"] = FLAGS_webserver_require_spnego ? "on" : "off";
+  webserver_spnego["secure"] = FLAGS_webserver_require_spnego;
+  webserver_spnego["id"] = "webserver_spnego";
+  webserver_spnego["explanation"] = "Configure with --webserver_require_spnego.";
 }
 
 void AddDefaultPathHandlers(Webserver* webserver) {
