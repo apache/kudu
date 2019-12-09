@@ -147,6 +147,10 @@ TAG_FLAG(raft_attempt_to_replace_replica_without_majority, unsafe);
 
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
+DEFINE_bool(raft_derived_log_mode, false,
+            "When derived log mode is turned on, certain functions"
+            " inside kudu raft become invalid");
+
 // Metrics
 // ---------
 METRIC_DEFINE_counter(server, follower_memory_pressure_rejections,
