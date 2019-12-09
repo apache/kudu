@@ -51,11 +51,10 @@
 
 === Columns
 
-* CHAR, VARCHAR, DATE, and complex types like ARRAY, MAP, and STRUCT are not supported.
+* CHAR, DATE, and complex types like ARRAY, MAP, and STRUCT are not supported.
 
-* Type and nullability of existing columns cannot be changed by altering the table.
-
-* The precision and scale of `DECIMAL` columns cannot be changed by altering the table.
+* Type, nullability and type attributes (i.e. precision and scale of `DECIMAL`,
+  length of `VARCHAR`)of existing columns cannot be changed by altering the table.
 
 * Tables can have a maximum of 300 columns by default.
 

@@ -78,6 +78,7 @@ column types include:
 * decimal (see <<decimal>> for details)
 * UTF-8 encoded string (up to 64KB uncompressed)
 * binary (up to 64KB uncompressed)
+* VARCHAR type with configurable maximum length (up to 64KB uncompressed)
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
 format to provide efficient encoding and serialization. To make the most of
@@ -149,7 +150,7 @@ of the column.
 | int64, unixtime_micros  | plain, bitshuffle, run length  | bitshuffle
 | float, double, decimal  | plain, bitshuffle              | bitshuffle
 | bool                    | plain, run length              | run length
-| string, binary          | plain, prefix, dictionary      | dictionary
+| string, binary, varchar | plain, prefix, dictionary      | dictionary
 |===
 
 [[plain]]
