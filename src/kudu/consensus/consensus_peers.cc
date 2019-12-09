@@ -503,8 +503,10 @@ Peer::~Peer() {
 
 RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                            gscoped_ptr<ConsensusServiceProxy> consensus_proxy)
-    : hostport_(std::move(DCHECK_NOTNULL(hostport))),
-      consensus_proxy_(std::move(DCHECK_NOTNULL(consensus_proxy))) {
+    : hostport_(std::move(hostport)),
+      consensus_proxy_(std::move(consensus_proxy)) {
+  DCHECK(hostport_ != NULL);
+  DCHECK(consensus_proxy_ != NULL);
 }
 
 void RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,

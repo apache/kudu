@@ -270,7 +270,7 @@ void OutboundCall::CallCallback() {
 
   int64_t start_cycles = CycleClock::Now();
   {
-    SCOPED_WATCH_STACK(100);
+    SCOPED_WATCH_STACK(0);
     callback_();
     // Clear the callback, since it may be holding onto reference counts
     // via bound parameters. We do this inside the timer because it's possible

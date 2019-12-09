@@ -117,6 +117,9 @@ class Log : public RefCountedThreadSafe<Log> {
 
   virtual ~Log();
 
+  // Initializes a new one or continues an existing log.
+  virtual Status Init();
+
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
   virtual Status Append(LogEntryPB* entry);
@@ -300,9 +303,6 @@ class Log : public RefCountedThreadSafe<Log> {
       const Schema& schema, uint32_t schema_version,
 #endif
       scoped_refptr<MetricEntity> metric_entity);
-
-  // Initializes a new one or continues an existing log.
-  Status Init();
 
   // Make segments roll over.
   Status RollOver();

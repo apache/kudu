@@ -404,6 +404,7 @@ void TSTabletManager::Shutdown() {
         return;
       }
       case MANAGER_INITIALIZING:
+      case MANAGER_INITIALIZED:
       case MANAGER_RUNNING: {
         LOG(INFO) << "Shutting down tablet manager...";
         state_ = MANAGER_QUIESCING;

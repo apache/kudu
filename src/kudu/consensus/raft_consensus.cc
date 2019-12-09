@@ -198,7 +198,7 @@ RaftConsensus::RaftConsensus(
     ThreadPool* raft_pool)
     : options_(std::move(options)),
       local_peer_pb_(std::move(local_peer_pb)),
-      cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
+      cmeta_manager_(std::move(cmeta_manager)),
       raft_pool_(raft_pool),
       state_(kNew),
       rng_(GetRandomSeed32()),
@@ -210,6 +210,7 @@ RaftConsensus::RaftConsensus(
       shutdown_(false),
       update_calls_for_tests_(0) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
+  DCHECK(cmeta_manager_ != NULL);
 }
 
 Status RaftConsensus::Init() {
@@ -246,11 +247,15 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                             Callback<void(const std::string& reason)> mark_dirty_clbk) {
   DCHECK(metric_entity);
 
-  peer_proxy_factory_ = DCHECK_NOTNULL(std::move(peer_proxy_factory));
-  log_ = DCHECK_NOTNULL(std::move(log));
-  time_manager_ = DCHECK_NOTNULL(std::move(time_manager));
+  peer_proxy_factory_ = std::move(peer_proxy_factory);
+  log_ = std::move(log);
+  time_manager_ = std::move(time_manager);
   round_handler_ = DCHECK_NOTNULL(round_handler);
   mark_dirty_clbk_ = std::move(mark_dirty_clbk);
+
+  DCHECK(peer_proxy_factory_ != NULL);
+  DCHECK(log_ != NULL);
+  DCHECK(time_manager_ != NULL);
 
   term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, CurrentTerm());
   follower_memory_pressure_rejections_ =
@@ -2954,7 +2959,9 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
 
 Status RaftConsensus::CheckSafeToReplicateUnlocked(const ReplicateMsg& msg) const {
   DCHECK(lock_.is_locked());
+#ifdef FB_DO_NOT_REMOVE
   DCHECK(!msg.has_id()) << "Should not have an ID yet: " << SecureShortDebugString(msg);
+#endif
   RETURN_NOT_OK(CheckRunningUnlocked());
   return CheckActiveLeaderUnlocked();
 }
