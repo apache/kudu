@@ -504,13 +504,16 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   #
   # The absence of $PIP_FLAGS is intentional: older versions of pip may not
   # support the flags that we want to use.
-  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 10.0.0b1'
+  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip <10.0.0b1'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
+  #
+  # Setuptools 42.0.0 changes something that causes build_ext to fail with a
+  # missing wheel package. Let's pin to an older version known to work.
+  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >=0.8,<42.0.0'
 
   # One of our dependencies is pandas, installed below. It depends on numpy, and
   # if we don't install numpy directly, the pandas installation will install the
@@ -521,7 +524,7 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # so we must pass in the current values of CC and CXX.
   #
   # See https://github.com/numpy/numpy/releases/tag/v1.12.0 for more details.
-  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy < 1.12.0'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy <1.12.0'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
@@ -538,7 +541,7 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   #
   # pandas 0.18 dropped support for python 2.6. See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
   # for more details.
-  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'pandas < 0.18'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'pandas <0.18'
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
@@ -593,13 +596,13 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # support the flags that we want to use.
   #
   # 1. https://github.com/pypa/pip/issues/6175
-  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 19.0'
+  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip <19.0'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
+  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >=0.8'
 
   # One of our dependencies is pandas, installed below. It depends on numpy, and
   # if we don't install numpy directly, the pandas installation will install the
@@ -611,7 +614,7 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # so we must pass in the current values of CC and CXX.
   #
   # See https://github.com/numpy/numpy/releases/tag/v1.16.0rc1 for more details.
-  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy < 1.16.0'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy <1.16.0'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
