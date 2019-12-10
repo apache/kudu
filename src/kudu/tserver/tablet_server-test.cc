@@ -698,7 +698,7 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
   ASSERT_FALSE(new_dir.empty());
   string new_uuid;
   ASSERT_TRUE(dd_manager->FindUuidByRoot(DirName(new_dir), &new_uuid));
-  dd_manager->MarkDataDirFailedByUuid(new_uuid);
+  dd_manager->MarkDirFailedByUuid(new_uuid);
   ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
 
   // The group should be the updated even after restarting the tablet server.
@@ -707,7 +707,7 @@ TEST_P(TabletServerDiskSpaceTest, TestFullGroupAddsDir) {
   ASSERT_OK(dd_manager->FindDataDirsByTabletId(kTabletId, &dir_group));
   ASSERT_EQ(kNumDirs, dir_group.size());
   ASSERT_TRUE(dd_manager->FindUuidByRoot(DirName(new_dir), &new_uuid));
-  dd_manager->MarkDataDirFailedByUuid(new_uuid);
+  dd_manager->MarkDirFailedByUuid(new_uuid);
   ASSERT_TRUE(dd_manager->IsTabletInFailedDir(kTabletId));
 }
 

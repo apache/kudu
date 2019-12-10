@@ -28,7 +28,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -160,7 +159,7 @@ class BlockManagerStressTest : public KuduTest {
     // If non-standard paths were provided we need to delete them in between
     // test runs.
     if (!FLAGS_block_manager_paths.empty()) {
-      for (const auto& dd : dd_manager_->GetDataRoots()) {
+      for (const auto& dd : dd_manager_->GetRoots()) {
         WARN_NOT_OK(env_->DeleteRecursively(dd),
                     Substitute("Couldn't recursively delete $0", dd));
       }
@@ -510,7 +509,7 @@ void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
 
 template <>
 void BlockManagerStressTest<LogBlockManager>::InjectNonFatalInconsistencies() {
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), rand_seed_);
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), rand_seed_);
   ASSERT_OK(corruptor.Init());
 
   for (int i = 0; i < FLAGS_num_inconsistencies; i++) {

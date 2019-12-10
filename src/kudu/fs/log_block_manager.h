@@ -49,7 +49,7 @@ class Env;
 class RWFile;
 
 namespace fs {
-class DataDir;
+class Dir;
 class DataDirManager;
 class FsErrorManager;
 struct FsReport;
@@ -330,7 +330,7 @@ class LogBlockManager : public BlockManager {
                         LogBlockRefPtr* lb);
 
   // Simple wrapper of Repair(), used as a runnable function in thread.
-  void RepairTask(DataDir* dir, internal::LogBlockContainerLoadResult* result);
+  void RepairTask(Dir* dir, internal::LogBlockContainerLoadResult* result);
 
   // Repairs any inconsistencies for 'dir' described in 'report'.
   //
@@ -341,7 +341,7 @@ class LogBlockManager : public BlockManager {
   //    files compacted.
   //
   // Returns an error if repairing a fatal inconsistency failed.
-  Status Repair(DataDir* dir,
+  Status Repair(Dir* dir,
                 FsReport* report,
                 std::vector<LogBlockRefPtr> need_repunching,
                 std::vector<LogBlockContainerRefPtr> dead_containers,
@@ -365,13 +365,13 @@ class LogBlockManager : public BlockManager {
   // results of consistency checking are written to 'results'.
   //
   // Success or failure is set in 'result_status'.
-  void OpenDataDir(DataDir* dir,
+  void OpenDataDir(Dir* dir,
                    std::vector<std::unique_ptr<internal::LogBlockContainerLoadResult>>* results,
                    Status* result_status);
 
   // Reads records from one log block container in the data directory.
   // The result details will be collected into 'result'.
-  void LoadContainer(DataDir* dir,
+  void LoadContainer(Dir* dir,
                      LogBlockContainerRefPtr container,
                      internal::LogBlockContainerLoadResult* result);
 
@@ -438,7 +438,7 @@ class LogBlockManager : public BlockManager {
 
   // Maps a data directory to an upper bound on the number of blocks that a
   // container residing in that directory should observe, if one is necessary.
-  std::unordered_map<const DataDir*,
+  std::unordered_map<const Dir*,
                      boost::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
@@ -452,7 +452,7 @@ class LogBlockManager : public BlockManager {
   // excluding containers that are either in use or full.
   //
   // Does not own the containers.
-  std::unordered_map<const DataDir*,
+  std::unordered_map<const Dir*,
                      std::deque<LogBlockContainerRefPtr>> available_containers_by_data_dir_;
 
   // Tracks dirty container directories.

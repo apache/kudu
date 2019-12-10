@@ -29,7 +29,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -50,6 +50,7 @@ class MemTracker;
 namespace fs {
 
 class BlockManager;
+class DataDirManager;
 class FsManagerTestBase_TestDuplicatePaths_Test;
 class FsManagerTestBase_TestEIOWhileRunningUpdateDirsTool_Test;
 class FsManagerTestBase_TestIsolatedMetadataDir_Test;

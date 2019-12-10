@@ -29,7 +29,6 @@
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -1515,15 +1514,15 @@ void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
   int uuid_idx;
   CHECK(dd_manager->FindUuidIndexByUuid(uuid, &uuid_idx))
       << Substitute("No data directory found with UUID $0", uuid);
-  if (fs_manager_->dd_manager()->IsDataDirFailed(uuid_idx)) {
+  if (fs_manager_->dd_manager()->IsDirFailed(uuid_idx)) {
     LOG(WARNING) << "Data directory is already marked failed.";
     return;
   }
   // Fail the directory to prevent other tablets from being placed in it.
-  dd_manager->MarkDataDirFailed(uuid_idx);
-  set<string> tablets = dd_manager->FindTabletsByDataDirUuidIdx(uuid_idx);
+  dd_manager->MarkDirFailed(uuid_idx);
+  set<string> tablets = dd_manager->FindTabletsByDirUuidIdx(uuid_idx);
   LOG(INFO) << Substitute("Data dir $0 has $1 tablets", uuid, tablets.size());
-  for (const string& tablet_id : dd_manager->FindTabletsByDataDirUuidIdx(uuid_idx)) {
+  for (const string& tablet_id : dd_manager->FindTabletsByDirUuidIdx(uuid_idx)) {
     FailTabletAndScheduleShutdown(tablet_id);
   }
 }

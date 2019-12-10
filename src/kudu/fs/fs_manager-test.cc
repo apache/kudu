@@ -39,6 +39,7 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
@@ -444,7 +445,7 @@ TEST_F(FsManagerTestBase, TestOpenWithDuplicateInstanceFiles) {
   const string duplicate_dir_instance = JoinPathSegments(
       duplicate_test_dir, kInstanceMetadataFileName);
   ASSERT_OK(env_util::CopyFile(env_,
-        fs_manager()->dd_manager()->FindDataDirByUuidIndex(0)->instance()->path(),
+        fs_manager()->dd_manager()->FindDirByUuidIndex(0)->instance()->path(),
         duplicate_dir_instance, wr_opts));
 
   // This is disallowed, as each directory should have its own unique UUID.
@@ -475,7 +476,7 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
     new_opts.update_instances = check_behavior;
     ReinitFsManagerWithOpts(new_opts);
     Status s = fs_manager()->Open();
-    ASSERT_STR_CONTAINS(s.ToString(), "no healthy data directories found");
+    ASSERT_STR_CONTAINS(s.ToString(), "no healthy directories found");
     ASSERT_TRUE(s.IsNotFound());
 
     // Once we supply the WAL directory as a data directory, we can open successfully.
@@ -529,7 +530,7 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   }
 
   ASSERT_OK(s);
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Now remove the new directory from disk. Kudu should start up with the
   // empty disk and attempt to use it. Upon opening the FS layout, we should
@@ -538,7 +539,7 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   ASSERT_OK(env_->DeleteRecursively(new_root));
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Even at the same mountpoint, the directory will be assigned a new UUID.
   string new_root_uuid_post_update;
@@ -572,7 +573,7 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
 
   // ...except we should be able to successfully create a new FS layout.
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 }
 
 // When we canonicalize a directory, we actually canonicalize the directory's
@@ -598,7 +599,7 @@ TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   FLAGS_env_inject_eio_globs = JoinPathSegments(dir2, "**");
   FLAGS_env_inject_eio = 1.0;
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
   FLAGS_env_inject_eio = 0;
 
   // Now fail the canonicalization by deleting a parent directory. This
@@ -614,13 +615,13 @@ TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
     return;
   }
   ASSERT_OK(s);
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Let's try that again, but with the appropriate mountpoint/directory.
   ASSERT_OK(env_->CreateDir(dir2));
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 }
 
 TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
@@ -763,24 +764,24 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   opts.data_roots = { fs_root_, new_path1 };
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Try to open with a data dir removed; this should succeed, and Kudu should
   // open with only a single data directory.
   opts.data_roots = { fs_root_ };
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDataDirs().size());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // We should be able to add new directories anywhere in the list.
   const string new_path2 = GetTestPath("new_path2");
   opts.data_roots = { new_path2, fs_root_ };
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
-  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Open the FS layout with an existing, failed data dir; this should be fine,
   // but should report a single failed directory.
@@ -788,7 +789,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 }
 
 TEST_F(FsManagerTestBase, TestEIOWhileChangingDirs) {
@@ -934,7 +935,7 @@ TEST_F(FsManagerTestBase, TestReAddRemovedDataDir) {
     ReinitFsManagerWithOpts(opts);
     ASSERT_OK(fs_manager()->Open());
     DataDirManager* dd_manager = fs_manager()->dd_manager();
-    ASSERT_EQ(data_roots.size(), dd_manager->GetDataDirs().size());
+    ASSERT_EQ(data_roots.size(), dd_manager->GetDirs().size());
 
     // Since we haven't deleted any directories or instance files, ensure that
     // our UUIDs match across startups.
@@ -1003,22 +1004,22 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
   opts.update_instances = UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES;
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDirs().size());
 
   // Create a 'speculative' FsManager with the second data directory removed.
   opts.data_roots = { fs_root_ };
   opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDirs().size());
 
   // Do the same thing, but with a new data directory added.
   const string new_path2 = GetTestPath("new_path2");
   opts.data_roots = { fs_root_, new_path1, new_path2 };
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  ASSERT_EQ(3, fs_manager()->dd_manager()->GetDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Neither of those attempts should have changed the on-disk state. Verify
   // this by retrying all three combinations again.
@@ -1031,7 +1032,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
     ReinitFsManagerWithOpts(opts);
     ASSERT_OK(fs_manager()->Open());
     ASSERT_EQ(data_roots.size() == 3 ? 1 : 0,
-              fs_manager()->dd_manager()->GetFailedDataDirs().size());
+              fs_manager()->dd_manager()->GetFailedDirs().size());
   }
 
   // When we allow ourselves to update the disk instances, each open will
@@ -1041,14 +1042,14 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
     opts.data_roots = data_roots;
     ReinitFsManagerWithOpts(opts);
     ASSERT_OK(fs_manager()->Open());
-    ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+    ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 
     // Since the on-disk state has been updated, we should be able to open the
     // speculative directory with no issues.
     opts.update_instances = UpdateInstanceBehavior::DONT_UPDATE;
     ReinitFsManagerWithOpts(opts);
     ASSERT_OK(fs_manager()->Open());
-    ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+    ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
   }
 }
 

@@ -408,12 +408,12 @@ Status FsManager::Open(FsReport* report) {
   if (!dd_manager_) {
     DataDirManagerOptions dm_opts;
     dm_opts.metric_entity = opts_.metric_entity;
-    dm_opts.block_manager_type = opts_.block_manager_type;
     dm_opts.read_only = opts_.read_only;
+    dm_opts.dir_type = opts_.block_manager_type;
     dm_opts.update_instances = opts_.update_instances;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
-          canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));
+          canonicalized_data_fs_roots_, dm_opts, &dd_manager_));
     }
   }
 
@@ -427,7 +427,7 @@ Status FsManager::Open(FsReport* report) {
 
   // Set an initial error handler to mark data directories as failed.
   error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
+      Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
 
   // Finally, initialize and open the block manager.
   InitBlockManager();
@@ -517,7 +517,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   dm_opts.read_only = opts_.read_only;
   LOG_TIMING(INFO, "creating directory manager") {
     RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(
-        env_, canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_),
+        env_, canonicalized_data_fs_roots_, dm_opts, &dd_manager_),
                           "Unable to create directory manager");
   }
 
@@ -625,7 +625,7 @@ const string& FsManager::uuid() const {
 
 vector<string> FsManager::GetDataRootDirs() const {
   // Get the data subdirectory for each data root.
-  return dd_manager_->GetDataDirs();
+  return dd_manager_->GetDirs();
 }
 
 string FsManager::GetTabletMetadataDir() const {

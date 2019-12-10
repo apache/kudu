@@ -16,17 +16,17 @@
 // under the License.
 #include "kudu/tserver/tablet_copy_client.h"
 
+#include <stdlib.h>
+
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <ostream>
-#include <stdlib.h>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -399,7 +399,7 @@ TEST_F(TabletCopyClientTest, TestFailedDiskStopsClient) {
   // metadata directory).
   while (true) {
     if (rand() % 10 == 0) {
-      dd_manager->MarkDataDirFailed(1, "injected failure in non-client thread");
+      dd_manager->MarkDirFailed(1, "injected failure in non-client thread");
       LOG(INFO) << "INJECTING FAILURE";
       break;
     }

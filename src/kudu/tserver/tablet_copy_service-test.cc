@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/tablet_copy-test-base.h"
 
 #include <atomic>
 #include <cstdint>
@@ -27,6 +26,7 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
@@ -46,6 +46,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/tablet_copy-test-base.h"
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tablet_server.h"
@@ -530,7 +531,7 @@ TEST_F(TabletCopyServiceTest, TestDiskFailureDuringSession) {
   // Copy over the block while one of the directories is failed.
   FetchDataResponsePB resp;
   RpcController controller;
-  ASSERT_OK(mini_server_->server()->fs_manager()->dd_manager()->MarkDataDirFailed(1));
+  ASSERT_OK(mini_server_->server()->fs_manager()->dd_manager()->MarkDirFailed(1));
   Status s = DoFetchData(session_id, AsDataTypeId(block_id), nullptr, nullptr, &resp, &controller);
   LOG(INFO) << "Fetch data request responded with: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Unable to get piece of data block");

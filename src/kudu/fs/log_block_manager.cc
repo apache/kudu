@@ -20,7 +20,6 @@
 #include <errno.h>
 
 #include <algorithm>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -40,6 +39,7 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
@@ -364,7 +364,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
 
   // Creates a new block container in 'dir'.
   static Status Create(LogBlockManager* block_manager,
-                       DataDir* dir,
+                       Dir* dir,
                        LogBlockContainerRefPtr* container);
 
   // Opens an existing block container in 'dir'.
@@ -377,7 +377,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // both appear to have no data (e.g. due to a crash just after creating
   // one of them but before writing any records). This is recorded in 'report'.
   static Status Open(LogBlockManager* block_manager,
-                     DataDir* dir,
+                     Dir* dir,
                      FsReport* report,
                      const string& id,
                      LogBlockContainerRefPtr* container);
@@ -540,7 +540,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   }
   bool dead() const { return dead_.Load(); }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
-  DataDir* data_dir() const { return data_dir_; }
+  Dir* data_dir() const { return data_dir_; }
   const DirInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
   // Adjusts the number of blocks being written.
@@ -575,7 +575,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   }
 
  private:
-  LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
+  LogBlockContainer(LogBlockManager* block_manager, Dir* data_dir,
                     unique_ptr<WritablePBContainerFile> metadata_file,
                     shared_ptr<RWFile> data_file);
 
@@ -597,7 +597,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // Note: the status here only represents the result of check.
   static Status CheckContainerFiles(LogBlockManager* block_manager,
                                     FsReport* report,
-                                    const DataDir* dir,
+                                    const Dir* dir,
                                     const string& common_path,
                                     const string& data_path,
                                     const string& metadata_path);
@@ -637,7 +637,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   LogBlockManager* const block_manager_;
 
   // The data directory where the container lives.
-  DataDir* data_dir_;
+  Dir* data_dir_;
 
   const boost::optional<int64_t> max_num_blocks_;
 
@@ -695,7 +695,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
 
 LogBlockContainer::LogBlockContainer(
     LogBlockManager* block_manager,
-    DataDir* data_dir,
+    Dir* data_dir,
     unique_ptr<WritablePBContainerFile> metadata_file,
     shared_ptr<RWFile> data_file)
     : block_manager_(block_manager),
@@ -739,7 +739,7 @@ void LogBlockContainer::HandleError(const Status& s) const {
 } while (0)
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
-                                 DataDir* dir,
+                                 Dir* dir,
                                  LogBlockContainerRefPtr* container) {
   string common_path;
   string metadata_path;
@@ -807,7 +807,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::Open(LogBlockManager* block_manager,
-                               DataDir* dir,
+                               Dir* dir,
                                FsReport* report,
                                const string& id,
                                LogBlockContainerRefPtr* container) {
@@ -845,7 +845,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
 Status LogBlockContainer::CheckContainerFiles(LogBlockManager* block_manager,
                                               FsReport* report,
-                                              const DataDir* dir,
+                                              const Dir* dir,
                                               const string& common_path,
                                               const string& data_path,
                                               const string& metadata_path) {
@@ -1140,7 +1140,7 @@ Status LogBlockContainer::WriteVData(int64_t offset, ArrayView<const Slice> data
                                   return sum + curr.size();
                                 });
   if (offset + data_size > preallocated_offset_) {
-    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshAvailableSpace(DataDir::RefreshMode::ALWAYS));
+    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshAvailableSpace(Dir::RefreshMode::ALWAYS));
   }
   return Status::OK();
 }
@@ -1225,7 +1225,7 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
     int64_t off = std::max(preallocated_offset_, block_start_offset);
     int64_t len = FLAGS_log_container_preallocate_bytes;
     RETURN_NOT_OK_HANDLE_ERROR(data_file_->PreAllocate(off, len, RWFile::CHANGE_FILE_SIZE));
-    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshAvailableSpace(DataDir::RefreshMode::ALWAYS));
+    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshAvailableSpace(Dir::RefreshMode::ALWAYS));
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
                           len, off, ToString());
 
@@ -1990,7 +1990,7 @@ Status LogBlockManager::Open(FsReport* report) {
 
   // Establish (and log) block limits for each data directory using kernel,
   // filesystem, and gflags information.
-  for (const auto& dd : dd_manager_->data_dirs()) {
+  for (const auto& dd : dd_manager_->dirs()) {
     boost::optional<int64_t> limit;
     if (FLAGS_log_container_max_blocks == -1) {
       // No limit, unless this is KUDU-1508.
@@ -1998,7 +1998,7 @@ Status LogBlockManager::Open(FsReport* report) {
       // The log block manager requires hole punching and, of the ext
       // filesystems, only ext4 supports it. Thus, if this is an ext
       // filesystem, it's ext4 by definition.
-      if (buggy_el6_kernel_ && dd->fs_type() == DataDirFsType::EXT) {
+      if (buggy_el6_kernel_ && dd->fs_type() == FsType::EXT) {
         uint64_t fs_block_size =
             dd->instance()->metadata()->filesystem_block_size_bytes();
         bool untested_block_size =
@@ -2028,17 +2028,17 @@ Status LogBlockManager::Open(FsReport* report) {
   }
 
   // Open containers in each data dirs.
-  vector<Status> statuses(dd_manager_->data_dirs().size());
+  vector<Status> statuses(dd_manager_->dirs().size());
   vector<vector<unique_ptr<internal::LogBlockContainerLoadResult>>> container_results(
-      dd_manager_->data_dirs().size());
+      dd_manager_->dirs().size());
   int i = -1;
-  for (const auto& dd : dd_manager_->data_dirs()) {
+  for (const auto& dd : dd_manager_->dirs()) {
     i++;
     int uuid_idx;
-    CHECK(dd_manager_->FindUuidIndexByDataDir(dd.get(), &uuid_idx));
+    CHECK(dd_manager_->FindUuidIndexByDir(dd.get(), &uuid_idx));
     // TODO(awong): store Statuses for each directory in the directory manager
     // so we can avoid these artificial Statuses.
-    if (dd_manager_->IsDataDirFailed(uuid_idx)) {
+    if (dd_manager_->IsDirFailed(uuid_idx)) {
       statuses[i] = Status::IOError("Data directory failed", "", EIO);
       continue;
     }
@@ -2053,16 +2053,16 @@ Status LogBlockManager::Open(FsReport* report) {
   }
 
   // Wait for the opens to complete.
-  for (const auto& dd : dd_manager_->data_dirs()) {
+  for (const auto& dd : dd_manager_->dirs()) {
     dd->WaitOnClosures();
   }
 
   // Check load errors and merge each data dir's container load results, then do repair tasks.
   vector<unique_ptr<internal::LogBlockContainerLoadResult>> dir_results(
-      dd_manager_->data_dirs().size());
-  for (int i = 0; i < dd_manager_->data_dirs().size(); ++i) {
+      dd_manager_->dirs().size());
+  for (int i = 0; i < dd_manager_->dirs().size(); ++i) {
     const auto& s = statuses[i];
-    const auto& dd = dd_manager_->data_dirs()[i];
+    const auto& dd = dd_manager_->dirs()[i];
     RETURN_ON_NON_DISK_FAILURE(dd, s);
     // If open dir error, do not try to repair.
     if (PREDICT_FALSE(!s.ok())) {
@@ -2105,12 +2105,12 @@ Status LogBlockManager::Open(FsReport* report) {
   }
 
   // Wait for the repair tasks to complete.
-  for (const auto& dd : dd_manager_->data_dirs()) {
+  for (const auto& dd : dd_manager_->dirs()) {
     dd->WaitOnClosures();
   }
 
   FsReport merged_report;
-  for (int i = 0; i < dd_manager_->data_dirs().size(); ++i) {
+  for (int i = 0; i < dd_manager_->dirs().size(); ++i) {
     if (PREDICT_FALSE(!dir_results[i])) {
       continue;
     }
@@ -2118,10 +2118,10 @@ Status LogBlockManager::Open(FsReport* report) {
       merged_report.MergeFrom(dir_results[i]->report);
       continue;
     }
-    RETURN_ON_NON_DISK_FAILURE(dd_manager_->data_dirs()[i], dir_results[i]->status);
+    RETURN_ON_NON_DISK_FAILURE(dd_manager_->dirs()[i], dir_results[i]->status);
   }
 
-  if (dd_manager_->GetFailedDataDirs().size() == dd_manager_->data_dirs().size()) {
+  if (dd_manager_->GetFailedDirs().size() == dd_manager_->dirs().size()) {
     return Status::IOError("All data dirs failed to open", "", EIO);
   }
 
@@ -2246,7 +2246,7 @@ void LogBlockManager::RemoveDeadContainer(const string& container_name) {
 
 Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
                                              LogBlockContainerRefPtr* container) {
-  DataDir* dir;
+  Dir* dir;
   RETURN_NOT_OK_EVAL(dd_manager_->GetDirAddIfNecessary(opts, &dir),
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, opts.tablet_id));
 
@@ -2454,10 +2454,10 @@ Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
       error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, container->data_dir()));
 
   // Return early if deleting a block in a failed directory.
-  set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
+  set<int> failed_dirs = dd_manager_->GetFailedDirs();
   if (PREDICT_FALSE(!failed_dirs.empty())) {
     int uuid_idx;
-    CHECK(dd_manager_->FindUuidIndexByDataDir(container->data_dir(), &uuid_idx));
+    CHECK(dd_manager_->FindUuidIndexByDir(container->data_dir(), &uuid_idx));
     if (ContainsKey(failed_dirs, uuid_idx)) {
       LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
                                           block_id.ToString());
@@ -2473,7 +2473,7 @@ Status LogBlockManager::RemoveLogBlock(const BlockId& block_id,
 }
 
 void LogBlockManager::OpenDataDir(
-    DataDir* dir,
+    Dir* dir,
     vector<unique_ptr<internal::LogBlockContainerLoadResult>>* results,
     Status* result_status) {
   // Find all containers and open them.
@@ -2526,7 +2526,7 @@ void LogBlockManager::OpenDataDir(
   }
 }
 
-void LogBlockManager::LoadContainer(DataDir* dir,
+void LogBlockManager::LoadContainer(Dir* dir,
                                     LogBlockContainerRefPtr container,
                                     internal::LogBlockContainerLoadResult* result) {
   // Process the records, building a container-local map for live blocks and
@@ -2709,7 +2709,7 @@ void LogBlockManager::LoadContainer(DataDir* dir,
   }
 }
 
-void LogBlockManager::RepairTask(DataDir* dir, internal::LogBlockContainerLoadResult* result) {
+void LogBlockManager::RepairTask(Dir* dir, internal::LogBlockContainerLoadResult* result) {
   result->status = Repair(dir,
                           &result->report,
                           std::move(result->need_repunching_blocks),
@@ -2732,7 +2732,7 @@ void LogBlockManager::RepairTask(DataDir* dir, internal::LogBlockContainerLoadRe
 } while (0)
 
 Status LogBlockManager::Repair(
-    DataDir* dir,
+    Dir* dir,
     FsReport* report,
     vector<LogBlockRefPtr> need_repunching,
     vector<LogBlockContainerRefPtr> dead_containers,

@@ -159,7 +159,7 @@ class BlockManagerTest : public KuduTest {
                         const shared_ptr<MemTracker>& parent_mem_tracker) {
     if (!dd_manager_) {
       DataDirManagerOptions opts;
-      opts.block_manager_type = block_manager_type<T>();
+      opts.dir_type = block_manager_type<T>();
       // Create a new directory manager if necessary.
       CHECK_OK(DataDirManager::CreateNewForTests(env_, { test_dir_ },
           opts, &dd_manager_));
@@ -180,14 +180,14 @@ class BlockManagerTest : public KuduTest {
     // manager first to enforce this.
     bm_.reset();
     DataDirManagerOptions opts;
-    opts.block_manager_type = block_manager_type<T>();
+    opts.dir_type = block_manager_type<T>();
     opts.metric_entity = metric_entity;
     if (create) {
       RETURN_NOT_OK(DataDirManager::CreateNewForTests(
-          env_, paths, std::move(opts), &dd_manager_));
+          env_, paths, opts, &dd_manager_));
     } else {
       RETURN_NOT_OK(DataDirManager::OpenExistingForTests(
-          env_, paths, std::move(opts), &dd_manager_));
+          env_, paths, opts, &dd_manager_));
     }
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
     RETURN_NOT_OK(bm_->Open(nullptr));
@@ -313,7 +313,7 @@ void BlockManagerTest<LogBlockManager>::RunBlockDistributionTest(const vector<st
 template <>
 void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& paths) {
   // Ensure that each path has an instance file and that it's well-formed.
-  for (const string& path : dd_manager_->GetDataDirs()) {
+  for (const string& path : dd_manager_->GetDirs()) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_EQ(3, children.size());

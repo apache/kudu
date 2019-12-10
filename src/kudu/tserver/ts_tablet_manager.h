@@ -32,6 +32,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -73,7 +74,6 @@ class TabletReportPB;
 
 namespace tablet {
 class TabletMetadata;
-class TabletReplica;
 }
 
 namespace tserver {

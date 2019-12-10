@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -33,13 +34,13 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
@@ -236,7 +237,7 @@ class LogBlockManagerTest : public KuduTest {
     // Populate 'data_files' and 'metadata_files'.
     vector<string> data_files;
     vector<string> metadata_files;
-    for (const string& data_dir : dd_manager_->GetDataDirs()) {
+    for (const string& data_dir : dd_manager_->GetDirs()) {
       vector<string> children;
       ASSERT_OK(env_->GetChildren(data_dir, &children));
       for (const string& child : children) {
@@ -425,7 +426,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
   // Wait for the actual hole punching to take place.
-  for (const auto& data_dir : dd_manager_->data_dirs()) {
+  for (const auto& data_dir : dd_manager_->dirs()) {
     data_dir->WaitOnClosures();
   }
   NO_FATALS(CheckLogMetrics(new_entity,
@@ -472,7 +473,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
   // Wait for the actual hole punching to take place.
-  for (const auto& data_dir : dd_manager_->data_dirs()) {
+  for (const auto& data_dir : dd_manager_->dirs()) {
     data_dir->WaitOnClosures();
   }
   NO_FATALS(CheckLogMetrics(new_entity,
@@ -1167,7 +1168,7 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add a mixture of regular and misaligned blocks to it.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   int num_misaligned_blocks = 0;
   for (int i = 0; i < kNumBlocks; i++) {
@@ -1285,7 +1286,7 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   NO_FATALS(GetContainerNames(&container_names));
 
   // Corrupt one container.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   ASSERT_OK(corruptor.PreallocateFullContainer());
 
@@ -1330,7 +1331,7 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   ASSERT_EQ(0, file_size_on_disk);
 
   // Add some "unpunched blocks" to the container.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumBlocks; i++) {
     ASSERT_OK(corruptor.AddUnpunchedBlockToFullContainer());
@@ -1371,7 +1372,7 @@ TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
   // Create some incomplete containers. The corruptor will select between
   // several variants of "incompleteness" at random (see
   // LBMCorruptor::CreateIncompleteContainer() for details).
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumContainers; i++) {
     ASSERT_OK(corruptor.CreateIncompleteContainer());
@@ -1409,7 +1410,7 @@ TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
   // Add some malformed records. The corruptor will select between
   // several variants of "malformedness" at random (see
   // LBMCorruptor::AddMalformedRecordToContainer for details).
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumRecords; i++) {
     ASSERT_OK(corruptor.AddMalformedRecordToContainer());
@@ -1439,7 +1440,7 @@ TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add some misaligned blocks.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumBlocks; i++) {
     ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
@@ -1478,7 +1479,7 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
   ASSERT_EQ(kNumContainers, container_names.size());
 
   // Add some partial records.
-  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumRecords; i++) {
     ASSERT_OK(corruptor.AddPartialRecordToContainer());
@@ -1681,7 +1682,7 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
 
   // Wire in a callback to fail data directories.
   test_error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
+      Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
   bm_.reset(CreateBlockManager(nullptr));
 
   // Fail one of the directories, chosen randomly.
@@ -1697,7 +1698,7 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
   for (const string& data_dir : report.data_dirs) {
     ASSERT_NE(data_dir, test_dirs[failed_idx]);
   }
-  const set<int>& failed_dirs = dd_manager_->GetFailedDataDirs();
+  const set<int>& failed_dirs = dd_manager_->GetFailedDirs();
   ASSERT_EQ(1, failed_dirs.size());
 
   int uuid_idx;
@@ -1941,7 +1942,7 @@ TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
       }
       ASSERT_OK(transaction->CommitDeletedBlocks(&deleted));
       transaction.reset();
-      for (const auto& data_dir : dd_manager_->data_dirs()) {
+      for (const auto& data_dir : dd_manager_->dirs()) {
         data_dir->WaitOnClosures();
       }
     }
@@ -2007,7 +2008,7 @@ TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
     transaction->AddDeletedBlock(block_id);
     ASSERT_OK(transaction->CommitDeletedBlocks(&deleted));
     transaction.reset();
-    for (const auto& data_dir : dd_manager_->data_dirs()) {
+    for (const auto& data_dir : dd_manager_->dirs()) {
       data_dir->WaitOnClosures();
     }
   };
