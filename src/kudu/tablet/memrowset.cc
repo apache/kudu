@@ -492,18 +492,17 @@ Status MemRowSet::Iterator::NextBlock(RowBlock *dst) {
 Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
   *fetched = 0;
   do {
-    Slice k, v;
     RowBlockRow dst_row = dst->row(*fetched);
 
     // Copy the row into the destination, including projection
     // and relocating slices.
-    // TODO: can we share some code here with CopyRowToArena() from row.h
+    // TODO(todd): can we share some code here with CopyRowToArena() from row.h
     // or otherwise put this elsewhere?
-    iter_->GetCurrentEntry(&k, &v);
+    Slice v = iter_->GetCurrentValue();
     MRSRow row(memrowset_.get(), v);
 
     // Short-circuit if we've exceeded the iteration's upper bound.
-    if (has_upper_bound() && out_of_bounds(k)) {
+    if (has_upper_bound() && out_of_bounds(iter_->GetCurrentKey())) {
       state_ = kFinished;
       break;
     }

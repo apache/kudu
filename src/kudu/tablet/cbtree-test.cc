@@ -15,9 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -26,7 +28,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/concurrent_btree.h"
@@ -42,6 +43,7 @@
 
 using std::string;
 using std::thread;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -259,7 +261,7 @@ void VerifyRange(const CBTree<T> &tree,
 template<class T>
 void InsertAndVerify(Barrier *go_barrier,
                      Barrier *done_barrier,
-                     gscoped_ptr<CBTree<T> > *tree,
+                     unique_ptr<CBTree<T>> *tree,
                      int start_idx,
                      int end_idx) {
   while (true) {
@@ -434,7 +436,7 @@ TEST_F(TestCBTree, TestRacyConcurrentInsert) {
 
 template<class TraitsClass>
 void TestCBTree::DoTestConcurrentInsert() {
-  gscoped_ptr<CBTree<TraitsClass> > tree;
+  unique_ptr<CBTree<TraitsClass>> tree;
 
   int num_threads = 16;
   int ins_per_thread = 30;
@@ -494,7 +496,7 @@ TEST_F(TestCBTree, TestIterator) {
   // now iterate through, making sure we saw all
   // the keys that were inserted
   LOG_TIMING(INFO, "Iterating") {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
       t.NewIterator());
     bool exact;
     ASSERT_TRUE(iter->SeekAtOrAfter(Slice(""), &exact));
@@ -528,7 +530,7 @@ TEST_F(TestCBTree, TestIteratorRewind) {
   ASSERT_TRUE(t.Insert(Slice("key2"), Slice("val")));
   ASSERT_TRUE(t.Insert(Slice("key3"), Slice("val")));
 
-  gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+  unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(t.NewIterator());
   bool exact;
   ASSERT_TRUE(iter->SeekAtOrAfter(Slice(""), &exact));
 
@@ -568,7 +570,7 @@ TEST_F(TestCBTree, TestIteratorRewind) {
 TEST_F(TestCBTree, TestIteratorSeekOnEmptyTree) {
   CBTree<SmallFanoutTraits> t;
 
-  gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+  unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
     t.NewIterator());
   bool exact = true;
   ASSERT_FALSE(iter->SeekAtOrAfter(Slice(""), &exact));
@@ -587,7 +589,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 
   // Seek to before first key should successfully reach first key
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
       t.NewIterator());
 
     bool exact;
@@ -603,7 +605,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
   // Seek to exactly first key should successfully reach first key
   // and set exact = true
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
       t.NewIterator());
 
     bool exact;
@@ -619,7 +621,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
   // Seek to exactly last key should successfully reach last key
   // and set exact = true
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
       t.NewIterator());
 
     bool exact;
@@ -635,7 +637,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 
   // Seek to after last key should fail.
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(
       t.NewIterator());
 
     bool exact;
@@ -653,7 +655,7 @@ TEST_F(TestCBTree, TestIteratorSeekConditions) {
 template<class T>
 static void ScanThread(Barrier *go_barrier,
                        Barrier *done_barrier,
-                       gscoped_ptr<CBTree<T> > *tree) {
+                       unique_ptr<CBTree<T>> *tree) {
   while (true) {
     go_barrier->Wait();
     if (tree->get() == nullptr) return;
@@ -666,7 +668,7 @@ static void ScanThread(Barrier *go_barrier,
 
       faststring prev_key;
 
-      gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter((*tree)->NewIterator());
+      unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter((*tree)->NewIterator());
       bool exact;
       iter->SeekAtOrAfter(Slice(""), &exact);
       while (iter->IsValid()) {
@@ -693,7 +695,7 @@ static void ScanThread(Barrier *go_barrier,
 // other threads repeatedly scan and verify that the results come back
 // in order.
 TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
-  gscoped_ptr<CBTree<SmallFanoutTraits> > tree;
+  unique_ptr<CBTree<SmallFanoutTraits>> tree;
 
   int num_ins_threads = 4;
   int num_scan_threads = 4;
@@ -749,6 +751,27 @@ TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
   }
 }
 
+template<bool VAL_ONLY>
+void DoScan(CBTree<BTreeTraits>* tree, int64_t* count, int64_t* total_len) {
+  unique_ptr<CBTreeIterator<BTreeTraits>> iter(
+      tree->NewIterator());
+  bool exact;
+  iter->SeekAtOrAfter(Slice(""), &exact);
+  while (iter->IsValid()) {
+    (*count)++;
+    Slice v;
+    if (VAL_ONLY) {
+      v = iter->GetCurrentValue();
+    } else {
+      Slice dummy;
+      iter->GetCurrentEntry(&dummy, &v);
+    }
+
+    *total_len += v.size();
+    iter->Next();
+  }
+}
+
 // Check the performance of scanning through a large tree.
 TEST_F(TestCBTree, TestScanPerformance) {
   CBTree<BTreeTraits> tree;
@@ -773,16 +796,23 @@ TEST_F(TestCBTree, TestScanPerformance) {
                                   n_keys, scan_trials,
                                   freeze ? "frozen" : "not frozen")) {
       for (int i = 0; i < 10; i++)  {
-        gscoped_ptr<CBTreeIterator<BTreeTraits> > iter(
-          tree.NewIterator());
-        bool exact;
-        iter->SeekAtOrAfter(Slice(""), &exact);
-        int count = 0;
-        while (iter->IsValid()) {
-          count++;
-          iter->Next();
-        }
+        int64_t count = 0;
+        int64_t total_len = 0;
+        DoScan<false>(&tree, &count, &total_len);
         ASSERT_EQ(count, n_keys);
+        ASSERT_GT(total_len, 0);
+      }
+    }
+
+    LOG_TIMING(INFO, StringPrintf("Scan %d keys %d times (%s, val-only)",
+                                  n_keys, scan_trials,
+                                  freeze ? "frozen" : "not frozen")) {
+      for (int i = 0; i < 10; i++)  {
+        int64_t count = 0;
+        int64_t total_len = 0;
+        DoScan<true>(&tree, &count, &total_len);
+        ASSERT_EQ(count, n_keys);
+        ASSERT_GT(total_len, 0);
       }
     }
   }
@@ -804,7 +834,7 @@ TEST_F(TestCBTree, TestIteratorSeekAtOrBefore) {
   // and set exact = true;
   for (int i = 500; i <= key_num; ++i) {
     string key = Substitute("key$0", i * 2);
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(t.NewIterator());
     bool exact;
     ASSERT_TRUE(iter->SeekAtOrBefore(Slice(key), &exact));
     ASSERT_TRUE(exact);
@@ -817,7 +847,7 @@ TEST_F(TestCBTree, TestIteratorSeekAtOrBefore) {
 
   // Seek to before first key should fail.
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(t.NewIterator());
 
     bool exact;
     ASSERT_FALSE(iter->SeekAtOrBefore(Slice("key0000"), &exact));
@@ -831,7 +861,7 @@ TEST_F(TestCBTree, TestIteratorSeekAtOrBefore) {
   for (int i = 500; i <= key_num - 1; ++i) {
     string key = Substitute("key$0", i * 2 + 1);
     string expect_key = Substitute("key$0", i * 2);
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(t.NewIterator());
     bool exact;
     ASSERT_TRUE(iter->SeekAtOrBefore(Slice(key), &exact));
     ASSERT_FALSE(exact);
@@ -845,7 +875,7 @@ TEST_F(TestCBTree, TestIteratorSeekAtOrBefore) {
   // Seek to after last key should successfully reach last key
   // and set exact = false;
   {
-    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    unique_ptr<CBTreeIterator<SmallFanoutTraits>> iter(t.NewIterator());
 
     bool exact;
     ASSERT_TRUE(iter->SeekAtOrBefore(Slice("key2001"), &exact));

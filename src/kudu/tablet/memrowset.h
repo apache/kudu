@@ -29,6 +29,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
@@ -55,7 +56,6 @@ class RowBlock;
 class RowBlockRow;
 class RowChangeList;
 class ScanSpec;
-struct IteratorStats;
 
 namespace fs {
 struct IOContext;
@@ -507,10 +507,9 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   // NOTE: This method will return a MRSRow with the MemRowSet schema.
   //       The row is NOT projected using the schema specified to the iterator.
-  const MRSRow GetCurrentRow() const {
+  MRSRow GetCurrentRow() const {
     DCHECK_NE(state_, kUninitialized) << "not initted";
-    Slice dummy, mrsrow_data;
-    iter_->GetCurrentEntry(&dummy, &mrsrow_data);
+    Slice mrsrow_data = iter_->GetCurrentValue();
     return MRSRow(memrowset_.get(), mrsrow_data);
   }
 
