@@ -8,7 +8,7 @@ pytest >=2.8,<3.3
 # See https://pypi.org/project/pytest-timeout/#id5 for more details.
 pytest-timeout >=1.1.0,<1.2.1
 
-cython ==0.26.1
+cython ==0.29.14
 six
 unittest2
 pytz
