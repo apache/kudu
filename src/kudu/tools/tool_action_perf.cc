@@ -505,6 +505,7 @@ Status GenerateRowData(Generator* gen, KuduPartialRow* row,
         } else {
           RETURN_NOT_OK(row->SetStringNoCopy(idx, fixed_string));
         }
+        break;
       default:
         return Status::InvalidArgument("unknown data type");
     }

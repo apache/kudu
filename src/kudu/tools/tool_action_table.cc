@@ -593,6 +593,7 @@ Status ConvertToKuduPartialRow(
           reader.ExtractString(values[i], /*field=*/nullptr, &value),
           error_msg);
         RETURN_NOT_OK(range_bound_partial_row->SetVarchar(col_name, value));
+        break;
       }
       case KuduColumnSchema::BOOL:
       case KuduColumnSchema::FLOAT:
