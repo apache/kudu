@@ -19,7 +19,6 @@
 #include <string>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -103,7 +102,6 @@ static int MasterMain(int argc, char** argv) {
   MasterOptions opts;
   Master server(opts);
   CHECK_OK(server.Init());
-
   CHECK_OK(server.Start());
 
   while (true) {

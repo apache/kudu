@@ -228,8 +228,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     }
   }
 
-  RETURN_NOT_OK(SetupTablet(metadata));
-  return Status::OK();
+  return SetupTablet(metadata);
 }
 
 Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
@@ -352,11 +351,22 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
   }
 }
 
-Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata) {
-  shared_ptr<Tablet> tablet;
-  scoped_refptr<Log> log;
+Status SysCatalogTable::SetupTablet(
+    const scoped_refptr<tablet::TabletMetadata>& metadata) {
+
+#define RETURN_NOT_OK_SHUTDOWN(s, m) \
+  do { \
+    const auto& _s = (s);                 \
+    if (PREDICT_FALSE(!_s.ok())) {        \
+      tablet_replica_->SetError(_s);      \
+      tablet_replica_->Shutdown();        \
+      return _s.CloneAndPrepend((m));     \
+    }                                     \
+  } while (0)
 
   InitLocalRaftPeerPB();
+  scoped_refptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK(cmeta_manager_->Load(metadata->tablet_id(), &cmeta));
 
   // TODO(matteo): handle crash mid-creation of tablet? do we ever end up with
   // a partially created tablet here?
@@ -365,49 +375,47 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
       cmeta_manager_,
       local_peer_pb_,
       master_->tablet_apply_pool(),
-      Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
-  Status s = tablet_replica_->Init(master_->raft_pool());
-  if (!s.ok()) {
-    tablet_replica_->SetError(s);
-    tablet_replica_->Shutdown();
-    return s;
-  }
+      Bind(&SysCatalogTable::SysCatalogStateChanged,
+           Unretained(this),
+           metadata->tablet_id())));
+  RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Init(master_->raft_pool()),
+                         "failed to initialize system catalog replica");
 
-  scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager_->Load(metadata->tablet_id(), &cmeta));
-
+  shared_ptr<Tablet> tablet;
+  scoped_refptr<Log> log;
   consensus::ConsensusBootstrapInfo consensus_info;
   tablet_replica_->SetBootstrapping();
-  RETURN_NOT_OK(BootstrapTablet(metadata,
-                                cmeta->CommittedConfig(),
-                                scoped_refptr<clock::Clock>(master_->clock()),
-                                master_->mem_tracker(),
-                                scoped_refptr<rpc::ResultTracker>(),
-                                metric_registry_,
-                                tablet_replica_,
-                                &tablet,
-                                &log,
-                                tablet_replica_->log_anchor_registry(),
-                                &consensus_info));
+  RETURN_NOT_OK_SHUTDOWN(BootstrapTablet(
+      metadata,
+      cmeta->CommittedConfig(),
+      scoped_refptr<clock::Clock>(master_->clock()),
+      master_->mem_tracker(),
+      scoped_refptr<rpc::ResultTracker>(),
+      metric_registry_,
+      tablet_replica_,
+      &tablet,
+      &log,
+      tablet_replica_->log_anchor_registry(),
+      &consensus_info), "failed to bootstrap system catalog");
 
   // TODO(matteo): Do we have a setSplittable(false) or something from the
   // outside is handling split in the TS?
 
-  RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info,
-                                               tablet,
-                                               scoped_refptr<clock::Clock>(master_->clock()),
-                                               master_->messenger(),
-                                               scoped_refptr<rpc::ResultTracker>(),
-                                               log,
-                                               master_->tablet_prepare_pool(),
-                                               master_->dns_resolver()),
-                        "Failed to Start() TabletReplica");
+  RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Start(
+      consensus_info,
+      tablet,
+      scoped_refptr<clock::Clock>(master_->clock()),
+      master_->messenger(),
+      scoped_refptr<rpc::ResultTracker>(),
+      log,
+      master_->tablet_prepare_pool(),
+      master_->dns_resolver()), "failed to start system catalog replica");
 
   tablet_replica_->RegisterMaintenanceOps(master_->maintenance_manager());
 
-  const Schema* schema = tablet->schema();
-  schema_ = SchemaBuilder(*schema).BuildWithoutIds();
+  schema_ = SchemaBuilder(*tablet->schema()).BuildWithoutIds();
   key_schema_ = schema_.CreateKeyProjection();
+
   return Status::OK();
 }
 

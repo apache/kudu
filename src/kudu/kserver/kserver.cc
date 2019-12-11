@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -161,8 +162,7 @@ Status KuduServer::Init() {
 }
 
 Status KuduServer::Start() {
-  RETURN_NOT_OK(ServerBase::Start());
-  return Status::OK();
+  return ServerBase::Start();
 }
 
 void KuduServer::Shutdown() {
