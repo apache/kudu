@@ -182,6 +182,54 @@ class TestSchema(unittest.TestCase):
         with self.assertRaises(kudu.KuduInvalidArgument):
             builder.build()
 
+    def test_varchar(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key')
+         .type('varchar')
+         .primary_key()
+         .nullable(False)
+         .length(10))
+        schema = builder.build()
+
+        column = schema[0]
+        tp = column.type
+        assert tp.name == 'varchar'
+        assert tp.type == kudu.schema.VARCHAR
+        ta = column.type_attributes
+        assert ta.length == 10
+
+    def test_varchar_without_length(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key')
+         .type('varchar')
+         .primary_key()
+         .nullable(False))
+
+        with self.assertRaises(kudu.KuduInvalidArgument):
+            builder.build()
+
+    def test_varchar_invalid_length(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key')
+         .type('varchar')
+         .primary_key()
+         .length(0)
+         .nullable(False))
+
+        with self.assertRaises(kudu.KuduInvalidArgument):
+            builder.build()
+
+    def test_length_on_non_varchar_column(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key')
+         .type('decimal')
+         .primary_key()
+         .nullable(False)
+         .length(10))
+
+        with self.assertRaises(kudu.KuduInvalidArgument):
+            builder.build()
+
     def test_unsupported_col_spec_methods_for_create_table(self):
         builder = kudu.schema_builder()
         builder.add_column('test', 'int64').rename('test')

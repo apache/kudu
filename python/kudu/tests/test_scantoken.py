@@ -268,6 +268,10 @@ class TestScanToken(TestScanBase):
         # Test a binary predicate
         self._test_binary_pred()
 
+    def test_varchar_pred(self):
+        # Test a varchar predicate
+        self._test_varchar_pred()
+
     def test_scan_selection(self):
         """
         This test confirms that setting the scan selection policy on the

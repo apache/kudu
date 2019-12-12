@@ -72,6 +72,7 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         builder.add_column('double_val', type_=kudu.double)
         builder.add_column('int8_val', type_=kudu.int8)
         builder.add_column('binary_val', type_='binary', compression=kudu.COMPRESSION_SNAPPY, encoding='prefix')
+        builder.add_column('varchar_val', type_=kudu.varchar, length=10)
         builder.add_column('float_val', type_=kudu.float)
         builder.set_primary_keys(['key', 'unixtime_micros_val'])
         schema = builder.build()
@@ -103,22 +104,22 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
                 (1, datetime.datetime(2016, 1, 1).replace(tzinfo=pytz.utc), Decimal('111.11'),
                  "Test One", True, 1.7976931348623157 * (10^308), 127,
                  b'\xce\x99\xce\xbf\xcf\x81\xce\xb4\xce\xb1\xce\xbd\xce\xaf\xce\xb1',
-                 3.402823 * (10^38)),
+                 "Test One", 3.402823 * (10^38)),
                 (2, datetime.datetime.utcnow().replace(tzinfo=pytz.utc), Decimal('0.99'),
                  "测试二", False, 200.1, -1,
                  b'\xd0\x98\xd0\xbe\xd1\x80\xd0\xb4\xd0\xb0\xd0\xbd\xd0\xb8\xd1\x8f',
-                 -150.2)
+                 "测试二", -150.2)
             ]
         else:
             self.type_test_rows = [
                 (1, datetime.datetime(2016, 1, 1).replace(tzinfo=pytz.utc),
                  "Test One", True, 1.7976931348623157 * (10 ^ 308), 127,
                  b'\xce\x99\xce\xbf\xcf\x81\xce\xb4\xce\xb1\xce\xbd\xce\xaf\xce\xb1',
-                 3.402823 * (10 ^ 38)),
+                 "Test One", 3.402823 * (10 ^ 38)),
                 (2, datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
                  "测试二", False, 200.1, -1,
                  b'\xd0\x98\xd0\xbe\xd1\x80\xd0\xb4\xd0\xb0\xd0\xbd\xd0\xb8\xd1\x8f',
-                 -150.2)
+                 "测试二", -150.2)
             ]
         session = self.client.new_session()
         for row in self.type_test_rows:
@@ -254,4 +255,12 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
                 self.type_table['binary_val'] == 'Иордания'
             ],
             row_indexes=slice(1, 2)
+        )
+
+    def _test_varchar_pred(self):
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['varchar_val'] == 'Test One'
+            ],
+            row_indexes=slice(0, 1)
         )

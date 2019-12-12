@@ -312,6 +312,9 @@ class TestScanner(TestScanBase):
         # Test a binary predicate
         self._test_binary_pred()
 
+    def test_varchar_pred(self):
+        self._test_varchar_pred()
+
     def test_scan_selection(self):
         """
         This test confirms that setting the scan selection policy on the
@@ -348,7 +351,8 @@ class TestScanner(TestScanBase):
             self.assertEqual(types[5], np.float64)
             self.assertEqual(types[6], np.int8)
             self.assertEqual(types[7], np.object)
-            self.assertEqual(types[8], np.float32)
+            self.assertEqual(types[8], np.object)
+            self.assertEqual(types[9], np.float32)
         else:
             self.assertEqual(types[0], np.int64)
             self.assertEqual(types[1], 'datetime64[ns, UTC]')
@@ -357,7 +361,8 @@ class TestScanner(TestScanBase):
             self.assertEqual(types[4], np.float64)
             self.assertEqual(types[5], np.int8)
             self.assertEqual(types[6], np.object)
-            self.assertEqual(types[7], np.float32)
+            self.assertEqual(types[7], np.object)
+            self.assertEqual(types[8], np.float32)
 
     @pytest.mark.skipif(not (kudu.CLIENT_SUPPORTS_PANDAS),
                         reason="Pandas required to run this test.")
