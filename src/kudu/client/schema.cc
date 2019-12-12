@@ -405,6 +405,9 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
       }
       break;
     case KuduColumnSchema::VARCHAR:
+      if (!data_->length) {
+        return Status::InvalidArgument("no length provided for VARCHAR column", data_->name);
+      }
       if (data_->length.value() < kMinVarcharLength ||
           data_->length.value() > kMaxVarcharLength) {
         return Status::InvalidArgument(
