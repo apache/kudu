@@ -17,6 +17,7 @@
 
 #include "kudu/util/metrics.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -221,11 +222,11 @@ TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
   ASSERT_EQ(5, mem_usage->value());
 }
 
-TEST_F(MetricsTest, SimpleAtomicGaugeMergeTest) {
+TEST_F(MetricsTest, SimpleAtomicGaugeSumTypeMergeTest) {
   scoped_refptr<AtomicGauge<uint64_t> > mem_usage =
-    METRIC_test_gauge.Instantiate(entity_, 2);
+      METRIC_test_gauge.Instantiate(entity_, 2);
   scoped_refptr<AtomicGauge<uint64_t> > mem_usage_for_merge =
-    METRIC_test_gauge.Instantiate(entity_same_attr_, 3);
+      METRIC_test_gauge.Instantiate(entity_same_attr_, 3);
   mem_usage_for_merge->MergeFrom(mem_usage);
   ASSERT_EQ(2, mem_usage->value());
   ASSERT_EQ(5, mem_usage_for_merge->value());
@@ -235,6 +236,38 @@ TEST_F(MetricsTest, SimpleAtomicGaugeMergeTest) {
   ASSERT_EQ(14, mem_usage_for_merge->value());
   mem_usage_for_merge->MergeFrom(mem_usage_for_merge);
   ASSERT_EQ(14, mem_usage_for_merge->value());
+}
+
+TEST_F(MetricsTest, SimpleAtomicGaugeMaxTypeMergeTest) {
+  scoped_refptr<AtomicGauge<uint64_t> > stop_time =
+      METRIC_test_gauge.Instantiate(entity_, 2, MergeType::kMax);
+  scoped_refptr<AtomicGauge<uint64_t> > stop_time_for_merge =
+      METRIC_test_gauge.Instantiate(entity_same_attr_, 3, MergeType::kMax);
+  stop_time_for_merge->MergeFrom(stop_time);
+  ASSERT_EQ(2, stop_time->value());
+  ASSERT_EQ(3, stop_time_for_merge->value());
+  stop_time->IncrementBy(7);
+  stop_time_for_merge->MergeFrom(stop_time);
+  ASSERT_EQ(9, stop_time->value());
+  ASSERT_EQ(9, stop_time_for_merge->value());
+  stop_time_for_merge->MergeFrom(stop_time_for_merge);
+  ASSERT_EQ(9, stop_time_for_merge->value());
+}
+
+TEST_F(MetricsTest, SimpleAtomicGaugeMinTypeMergeTest) {
+  scoped_refptr<AtomicGauge<uint64_t> > start_time =
+      METRIC_test_gauge.Instantiate(entity_, 3, MergeType::kMin);
+  scoped_refptr<AtomicGauge<uint64_t> > start_time_for_merge =
+      METRIC_test_gauge.Instantiate(entity_same_attr_, 5, MergeType::kMin);
+  start_time_for_merge->MergeFrom(start_time);
+  ASSERT_EQ(3, start_time->value());
+  ASSERT_EQ(3, start_time_for_merge->value());
+  start_time->DecrementBy(2);
+  start_time_for_merge->MergeFrom(start_time);
+  ASSERT_EQ(1, start_time->value());
+  ASSERT_EQ(1, start_time_for_merge->value());
+  start_time_for_merge->MergeFrom(start_time_for_merge);
+  ASSERT_EQ(1, start_time_for_merge->value());
 }
 
 METRIC_DEFINE_gauge_int64(test_entity, test_func_gauge, "Test Function Gauge",
