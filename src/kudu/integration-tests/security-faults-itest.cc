@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -192,7 +193,7 @@ TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
     const Status s = server->Restart();
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "kudu-master: process exited on signal 6");
+                        "kudu-master: process exited with non-zero status 3");
   }
   {
     auto server = cluster_->tablet_server(0);
@@ -200,7 +201,7 @@ TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
     const Status s = server->Restart();
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "kudu-tserver: process exited on signal 6");
+                        "kudu-tserver: process exited with non-zero status 3");
   }
 }
 

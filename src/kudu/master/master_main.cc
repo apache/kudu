@@ -23,7 +23,6 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
-#include "kudu/master/master_options.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/init.h"
@@ -66,7 +65,7 @@ GROUP_FLAG_VALIDATOR(hive_metastore_sasl_enabled, ValidateHiveMetastoreSaslEnabl
 } // anonymous namespace
 
 static int MasterMain(int argc, char** argv) {
-  InitKuduOrDie();
+  RETURN_MAIN_NOT_OK(InitKudu(), "InitKudu() failed", 1);
 
   // Reset some default values before parsing gflags.
   FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
@@ -89,7 +88,7 @@ static int MasterMain(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
-    return 1;
+    return 2;
   }
   std::string nondefault_flags = GetNonDefaultFlags(default_flags);
   InitGoogleLoggingSafe(argv[0]);
@@ -99,10 +98,9 @@ static int MasterMain(int argc, char** argv) {
             << "Master server version:\n"
             << VersionInfo::GetAllVersionInfo();
 
-  MasterOptions opts;
-  Master server(opts);
-  CHECK_OK(server.Init());
-  CHECK_OK(server.Start());
+  Master server({});
+  RETURN_MAIN_NOT_OK(server.Init(), "Init() failed", 3);
+  RETURN_MAIN_NOT_OK(server.Start(), "Start() failed", 4);
 
   while (true) {
     SleepFor(MonoDelta::FromSeconds(60));

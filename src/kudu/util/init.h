@@ -14,20 +14,21 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_INIT_H
-#define KUDU_UTIL_INIT_H
 
+#pragma once
+
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 // Return a NotSupported Status if the current CPU does not support the CPU flags
 // required for Kudu.
-Status CheckCPUFlags();
+Status CheckCPUFlags() WARN_UNUSED_RESULT;
 
-// Initialize Kudu, checking that the platform we are running on is supported, etc.
-// Issues a FATAL log message if we fail to init.
-void InitKuduOrDie();
+// Initialize Kudu, checking that the platform we are running on is supported,
+// etc. Returns non-OK status if we fail to init. Calls abort() if it turns out
+// that at least one of the standard descriptors is not open.
+Status InitKudu() WARN_UNUSED_RESULT;
 
 } // namespace kudu
-#endif /* KUDU_UTIL_INIT_H */

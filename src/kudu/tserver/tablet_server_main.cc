@@ -19,13 +19,11 @@
 #include <string>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
@@ -51,7 +49,7 @@ namespace kudu {
 namespace tserver {
 
 static int TabletServerMain(int argc, char** argv) {
-  InitKuduOrDie();
+  RETURN_MAIN_NOT_OK(InitKudu(), "InitKudu() failed", 1);
 
   // Reset some default values before parsing gflags.
   FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
@@ -70,7 +68,7 @@ static int TabletServerMain(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
-    return 1;
+    return 2;
   }
   std::string nondefault_flags = GetNonDefaultFlags(default_flags);
   InitGoogleLoggingSafe(argv[0]);
@@ -80,13 +78,10 @@ static int TabletServerMain(int argc, char** argv) {
             << "Tablet server version:\n"
             << VersionInfo::GetAllVersionInfo();
 
-  TabletServerOptions opts;
-  TabletServer server(opts);
-  CHECK_OK(server.Init());
-
+  TabletServer server({});
+  RETURN_MAIN_NOT_OK(server.Init(), "Init() failed", 3);
   MAYBE_FAULT(FLAGS_fault_before_start);
-
-  CHECK_OK(server.Start());
+  RETURN_MAIN_NOT_OK(server.Start(), "Start() failed", 4);
 
   while (true) {
     SleepFor(MonoDelta::FromSeconds(60));
