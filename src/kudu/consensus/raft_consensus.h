@@ -368,6 +368,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   scoped_refptr<TimeManager> time_manager() const { return time_manager_; }
 
+  // Return the minimum election timeout. Due to backoff and random
+  // jitter, election timeouts may be longer than this.
+  MonoDelta MinimumElectionTimeout() const;
+
   // Returns a copy of the state of the consensus system.
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
   // local replica believes it is the leader of the config, it will include a
@@ -678,10 +682,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the failure detector is unregistered, has no effect.
   void SnoozeFailureDetector(boost::optional<std::string> reason_for_log = boost::none,
                              boost::optional<MonoDelta> delta = boost::none);
-
-  // Return the minimum election timeout. Due to backoff and random
-  // jitter, election timeouts may be longer than this.
-  MonoDelta MinimumElectionTimeout() const;
 
   // Calculates a snooze delta for leader election.
   //
