@@ -14,10 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_FAULT_INJECTION_H
-#define KUDU_UTIL_FAULT_INJECTION_H
+#pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -52,9 +51,11 @@
 // With some probability, return the status described by 'status_expr'.
 // This will not evaluate 'status_expr' if 'fraction_flag' is zero.
 #define MAYBE_RETURN_FAILURE(fraction_flag, status_expr) \
-  if (kudu::fault_injection::MaybeTrue(fraction_flag)) { \
-    RETURN_NOT_OK((status_expr)); \
-  }
+  do { \
+    if (kudu::fault_injection::MaybeTrue(fraction_flag)) { \
+      RETURN_NOT_OK((status_expr)); \
+    } \
+  } while (false)
 
 // Implementation details below.
 // Use the MAYBE_FAULT macro instead.
@@ -92,7 +93,5 @@ inline void MaybeInjectFixedLatency(int32_t latency) {
   DoInjectFixedLatency(latency);
 }
 
-
 } // namespace fault_injection
 } // namespace kudu
-#endif /* KUDU_UTIL_FAULT_INJECTION_H */

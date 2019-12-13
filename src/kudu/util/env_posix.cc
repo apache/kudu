@@ -125,7 +125,7 @@ typedef struct xfs_flock64 {
 #define MAYBE_RETURN_EIO(filename_expr, error_expr) do { \
   const string& f_ = (filename_expr); \
   MAYBE_RETURN_FAILURE(FLAGS_env_inject_eio, \
-      ShouldInject(f_, FLAGS_env_inject_eio_globs) ? (error_expr) : Status::OK()) \
+      ShouldInject(f_, FLAGS_env_inject_eio_globs) ? (error_expr) : Status::OK()); \
 } while (0)
 
 bool ShouldInject(const string& candidate, const string& glob_patterns) {
