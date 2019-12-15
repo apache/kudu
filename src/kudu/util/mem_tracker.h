@@ -113,6 +113,10 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   // Returns true if the try succeeded.
   bool TryConsume(int64_t bytes);
 
+  // Returns true if this tracker could consume 'bytes' without exceeding its
+  // limit, false otherwise.
+  bool CanConsumeNoAncestors(int64_t bytes);
+
   // Decreases consumption of this tracker and its ancestors by 'bytes'.
   //
   // This will also cause the process to periodically trigger tcmalloc "ReleaseMemory"

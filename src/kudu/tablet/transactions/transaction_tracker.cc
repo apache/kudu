@@ -69,6 +69,14 @@ METRIC_DEFINE_gauge_uint64(tablet, alter_schema_transactions_inflight,
 METRIC_DEFINE_counter(tablet, transaction_memory_pressure_rejections,
                       "Transaction Memory Pressure Rejections",
                       kudu::MetricUnit::kTransactions,
+                      "Number of transactions rejected because the tablet's transaction"
+                      "memory usage exceeds the transaction memory limit or the limit"
+                      "of an ancestral tracker.",
+                      kudu::MetricLevel::kWarn);
+
+METRIC_DEFINE_counter(tablet, transaction_memory_limit_rejections,
+                      "Tablet Transaction Memory Limit Rejections",
+                      kudu::MetricUnit::kTransactions,
                       "Number of transactions rejected because the tablet's "
                       "transaction memory limit was reached.",
                       kudu::MetricLevel::kWarn);
@@ -88,7 +96,8 @@ TransactionTracker::Metrics::Metrics(const scoped_refptr<MetricEntity>& entity)
     : GINIT(all_transactions_inflight),
       GINIT(write_transactions_inflight),
       GINIT(alter_schema_transactions_inflight),
-      MINIT(transaction_memory_pressure_rejections) {
+      MINIT(transaction_memory_pressure_rejections),
+      MINIT(transaction_memory_limit_rejections) {
 }
 #undef GINIT
 #undef MINIT
@@ -110,6 +119,9 @@ Status TransactionTracker::Add(TransactionDriver* driver) {
   if (mem_tracker_ && !mem_tracker_->TryConsume(driver_mem_footprint)) {
     if (metrics_) {
       metrics_->transaction_memory_pressure_rejections->Increment();
+      if (!mem_tracker_->CanConsumeNoAncestors(driver_mem_footprint)) {
+        metrics_->transaction_memory_limit_rejections->Increment();
+      }
     }
 
     // May be null in unit tests.

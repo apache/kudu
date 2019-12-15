@@ -43,6 +43,10 @@ class HighWaterMark {
     return max_value_.Load(kMemOrderNoBarrier);
   }
 
+  bool CanIncrementBy(int64_t delta, int64_t max) {
+    return current_value() + delta <= max;
+  }
+
   // If current value + 'delta' is <= 'max', increment current value
   // by 'delta' and return true; return false otherwise.
   bool TryIncrementBy(int64_t delta, int64_t max) {

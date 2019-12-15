@@ -26,6 +26,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -36,8 +37,6 @@ class MemTracker;
 class MonoDelta;
 
 namespace tablet {
-
-class TransactionDriver;
 
 // Each TabletReplica has a TransactionTracker which keeps track of pending transactions.
 // Each "LeaderTransaction" will register itself by calling Add().
@@ -78,6 +77,7 @@ class TransactionTracker {
     scoped_refptr<AtomicGauge<uint64_t> > alter_schema_transactions_inflight;
 
     scoped_refptr<Counter> transaction_memory_pressure_rejections;
+    scoped_refptr<Counter> transaction_memory_limit_rejections;
   };
 
   // Increments relevant metric counters.

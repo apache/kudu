@@ -269,6 +269,13 @@ bool MemTracker::TryConsume(int64_t bytes) {
   return false;
 }
 
+bool MemTracker::CanConsumeNoAncestors(int64_t bytes) {
+  if (limit_ < 0) {
+    return true;
+  }
+  return consumption_.CanIncrementBy(bytes, limit_);
+}
+
 void MemTracker::Release(int64_t bytes) {
   if (bytes < 0) {
     Consume(-bytes);
