@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cinttypes>
-#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -362,9 +361,6 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   int64_t low_io_most_logs_retained_bytes = 0;
   MaintenanceOp* low_io_most_logs_retained_bytes_op = nullptr;
 
-  int64_t most_ram_anchored = 0;
-  MaintenanceOp* most_ram_anchored_op = nullptr;
-
   int64_t most_logs_retained_bytes = 0;
   int64_t most_logs_retained_bytes_ram_anchored = 0;
   MaintenanceOp* most_logs_retained_bytes_ram_anchored_op = nullptr;
@@ -395,14 +391,9 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
                         op->name(), logs_retained_bytes);
     }
 
-    const auto ram_anchored = stats.ram_anchored();
-    if (ram_anchored > most_ram_anchored) {
-      most_ram_anchored_op = op;
-      most_ram_anchored = ram_anchored;
-    }
-
     // We prioritize ops that can free more logs, but when it's the same we pick
     // the one that also frees up the most memory.
+    const auto ram_anchored = stats.ram_anchored();
     if (std::make_pair(logs_retained_bytes, ram_anchored) >
         std::make_pair(most_logs_retained_bytes,
                        most_logs_retained_bytes_ram_anchored)) {
@@ -435,13 +426,24 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   }
 
   // Look at free memory. If it is dangerously low, we must select something
-  // that frees memory -- the op with the most anchored memory.
+  // that frees memory -- ignore the target replay size and flush whichever op
+  // anchors the most WALs (the op should also free memory).
+  //
+  // Why not select the op that frees the most memory? Such a heuristic could
+  // lead to starvation of ops that consume less memory, e.g. we might always
+  // choose to do MRS flushes even when there are small, long-lived DMSes that
+  // are anchoring WALs. Choosing the op that frees the most WALs ensures that
+  // all ops that anchor memory (and also anchor WALs) will eventually be
+  // performed.
   double capacity_pct;
-  if (memory_pressure_func_(&capacity_pct) && most_ram_anchored_op) {
-    string note = StringPrintf("under memory pressure (%.2f%% used, "
-                               "can flush %" PRIu64 " bytes)",
-                               capacity_pct, most_ram_anchored);
-    return {most_ram_anchored_op, std::move(note)};
+  if (memory_pressure_func_(&capacity_pct) && most_logs_retained_bytes_ram_anchored_op) {
+    DCHECK_GT(most_logs_retained_bytes_ram_anchored, 0);
+    string note = StringPrintf("under memory pressure (%.2f%% used), "
+                               "%" PRIu64 " bytes log retention, and flush "
+                               "%" PRIu64 " bytes memory", capacity_pct,
+                               most_logs_retained_bytes,
+                               most_logs_retained_bytes_ram_anchored);
+    return {most_logs_retained_bytes_ram_anchored_op, std::move(note)};
   }
 
   // Look at ops that free up more log retention, and also free up more memory.

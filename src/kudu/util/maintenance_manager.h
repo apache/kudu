@@ -305,6 +305,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
  private:
   FRIEND_TEST(MaintenanceManagerTest, TestLogRetentionPrioritization);
+  FRIEND_TEST(MaintenanceManagerTest, TestPrioritizeLogRetentionUnderMemoryPressure);
   FRIEND_TEST(MaintenanceManagerTest, TestOpFactors);
 
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,

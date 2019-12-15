@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <initializer_list>
 #include <map>
@@ -100,8 +101,10 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
@@ -159,6 +162,7 @@ DEFINE_int32(delete_tablet_bench_num_flushes, 200,
              "Number of disk row sets to flush in the delete tablet benchmark");
 
 DECLARE_bool(crash_on_eio);
+DECLARE_bool(enable_flush_deltamemstores);
 DECLARE_bool(enable_flush_memrowset);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_rowset_compaction);
@@ -172,6 +176,7 @@ DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int32(maintenance_manager_num_threads);
+DECLARE_int32(maintenance_manager_polling_interval_ms);
 DECLARE_int32(memory_pressure_percentage);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
@@ -183,16 +188,17 @@ DECLARE_string(env_inject_full_globs);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
+METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 METRIC_DECLARE_counter(rows_deleted);
 METRIC_DECLARE_counter(scanners_expired);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
-METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_gauge_size(active_scanners);
 METRIC_DECLARE_gauge_size(tablet_active_scanners);
 METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
+METRIC_DECLARE_histogram(flush_dms_duration);
 
 namespace kudu {
 
@@ -903,18 +909,66 @@ class TabletServerMaintenanceMemoryPressureTest : public TabletServerTestBase {
     FLAGS_enable_maintenance_manager = true;
     FLAGS_flush_threshold_secs = 1;
     FLAGS_memory_pressure_percentage = 0;
+    // For the sake of easier setup, slow down our maintenance polling interval.
+    FLAGS_maintenance_manager_polling_interval_ms = 1000;
 
     // While setting up rowsets, disable compactions and flushing. Do this
     // before doing anything so we can have tighter control over the flushing
     // of our rowsets.
     FLAGS_enable_rowset_compaction = false;
+    FLAGS_enable_flush_deltamemstores = false;
     FLAGS_enable_flush_memrowset = false;
     NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
   }
 };
 
+// Regression test for KUDU-3002. Previously, when under memory pressure, we
+// might starve older (usually small) DMS flushes in favor of (usually larger)
+// MRS flushes.
+TEST_F(TabletServerMaintenanceMemoryPressureTest, TestDontStarveDMSWhileUnderMemoryPressure) {
+  // First, set up a rowset with a delta.
+  NO_FATALS(InsertTestRowsDirect(1, 1));
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  NO_FATALS(UpdateTestRowRemote(1, 2));
+
+  // Roll onto a new log segment so our DMS anchors some WAL bytes.
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+
+  // Now start inserting to the tablet so every time we pick a maintenance op,
+  // we'll have a sizeable MRS.
+  std::atomic<bool> keep_inserting(true);
+  thread insert_thread([&] {
+    int cur_row = 2;
+    while (keep_inserting) {
+      // Ignore TSAN warnings that complain about a race in gtest between this
+      // check for fatal failures and the check for fatal failures in the below
+      // AssertEventually.
+      debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
+      NO_FATALS(InsertTestRowsDirect(cur_row++, 1));
+    }
+  });
+  SCOPED_CLEANUP({
+    keep_inserting = false;
+    insert_thread.join();
+  });
+
+  // Wait a bit for the MRS to build up and then enable flushing.
+  SleepFor(MonoDelta::FromSeconds(1));
+  FLAGS_enable_flush_memrowset = true;
+  FLAGS_enable_flush_deltamemstores = true;
+
+  // Despite always having a large MRS, we should eventually flush the DMS,
+  // since it anchors WALs.
+  scoped_refptr<Histogram> dms_flushes =
+      METRIC_flush_dms_duration.Instantiate(tablet_replica_->tablet()->GetMetricEntity());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, dms_flushes->histogram()->TotalCount());
+  });
+}
+
 // Regression test for KUDU-2929. Previously, when under memory pressure, we
-// would never compact, even if there were nothing else to do. We'll simulate
+// would never compact, even if there were something else to do. We'll simulate
 // this by flushing some overlapping rowsets and then making sure we compact.
 TEST_F(TabletServerMaintenanceMemoryPressureTest, TestCompactWhileUnderMemoryPressure) {
   // Insert sets of overlapping rows.

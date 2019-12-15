@@ -363,6 +363,48 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   manager_->UnregisterOp(&op2);
 }
 
+// Test that ops are prioritized correctly when under memory pressure.
+TEST_F(MaintenanceManagerTest, TestPrioritizeLogRetentionUnderMemoryPressure) {
+  StopManager();
+
+  // We should perform these in the order of WAL bytes retained, followed by
+  // amount of memory anchored.
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE);
+  op1.set_logs_retained_bytes(100);
+  op1.set_ram_anchored(100);
+
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE);
+  op2.set_logs_retained_bytes(100);
+  op2.set_ram_anchored(99);
+
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE);
+  op3.set_logs_retained_bytes(99);
+  op3.set_ram_anchored(101);
+
+  indicate_memory_pressure_ = true;
+  manager_->RegisterOp(&op1);
+  manager_->RegisterOp(&op2);
+  manager_->RegisterOp(&op3);
+
+  auto op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op1, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 100 bytes log retention, and "
+                               "flush 100 bytes memory");
+  manager_->UnregisterOp(&op1);
+
+  op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op2, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 100 bytes log retention, and "
+                               "flush 99 bytes memory");
+  manager_->UnregisterOp(&op2);
+
+  op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op3, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 99 bytes log retention, and "
+                               "flush 101 bytes memory");
+  manager_->UnregisterOp(&op3);
+}
+
 // Test retrieving a list of an op's running instances
 TEST_F(MaintenanceManagerTest, TestRunningInstances) {
   TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE);
