@@ -17,8 +17,8 @@
 #ifndef KUDU_TABLET_TABLET_METRICS_H
 #define KUDU_TABLET_TABLET_METRICS_H
 
+#include <cstddef>
 #include <cstdint>
-#include <stddef.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"

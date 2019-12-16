@@ -48,6 +48,7 @@
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/status.h"
@@ -61,7 +62,6 @@ class MaintenanceManager;
 class MaintenanceOp;
 class MaintenanceOpStats;
 class MemTracker;
-class MonoDelta;
 class RowBlock;
 class ScanSpec;
 class Throttler;
@@ -458,6 +458,11 @@ class Tablet {
                      uint64 target_chunk_size,
                      std::vector<KeyRange>* ranges);
 
+  // Update the last read operation timestamp.
+  // NOTE: It's a const function, because we have to call it in Iterator, where Tablet is a const
+  // variable there.
+  void UpdateLastReadTime() const;
+
  private:
   friend class kudu::AlterTableTest;
   friend class Iterator;
@@ -659,6 +664,13 @@ class Tablet {
   static int64_t GetReplaySizeForIndex(int64_t min_log_index,
                                        const ReplaySizeMap& size_map);
 
+  // The elapsed time, in seconds, since the last read operation on this tablet, or since this
+  // Tablet object was created on current tserver if it hasn't been read since then.
+  uint64_t LastReadElapsedSeconds() const;
+
+  // Same as LastReadElapsedSeconds(), but for write operation.
+  uint64_t LastWriteElapsedSeconds() const;
+
   // Test-only lock that synchronizes access to AssignTimestampAndStartTransactionForTests().
   // Tests that use LocalTabletWriter take this lock to synchronize timestamp assignment,
   // transaction start and safe time adjustment.
@@ -751,6 +763,11 @@ class Tablet {
   std::shared_ptr<FlushCompactCommonHooks> common_hooks_;
 
   std::vector<MaintenanceOp*> maintenance_ops_;
+
+  // Lock protecting access to 'last_write_time_' and 'last_read_time_'.
+  mutable rw_spinlock last_rw_time_lock_;
+  MonoTime last_write_time_;
+  mutable MonoTime last_read_time_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

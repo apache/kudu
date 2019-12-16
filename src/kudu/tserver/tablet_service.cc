@@ -27,6 +27,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -2665,19 +2666,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     return s;
   }
 
-  // Update metrics based on this scan request.
-  if (tablet) {
-    // First, the number of rows/cells/bytes actually returned to the user.
-    tablet->metrics()->scanner_rows_returned->IncrementBy(
-        result_collector->NumRowsReturned());
-    tablet->metrics()->scanner_cells_returned->IncrementBy(
-        result_collector->NumRowsReturned() *
-            scanner->client_projection_schema()->num_columns());
-    tablet->metrics()->scanner_bytes_returned->IncrementBy(
-        result_collector->ResponseSize());
-  }
-
-  // Then the number of rows/cells/bytes actually processed. Here we have to dig
+  // Calculate the number of rows/cells/bytes actually processed. Here we have to dig
   // into the per-column iterator stats, sum them up, and then subtract out the
   // total that we already reported in a previous scan.
   vector<IteratorStats> stats_by_col;
@@ -2690,10 +2679,24 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   scanner->set_already_reported_stats(total_stats);
   TRACE_COUNTER_INCREMENT(SCANNER_BYTES_READ_METRIC_NAME, delta_stats.bytes_read);
 
+  // Update metrics based on this scan request.
   if (tablet) {
+    // The number of rows/cells/bytes actually returned to the user.
+    tablet->metrics()->scanner_rows_returned->IncrementBy(
+        result_collector->NumRowsReturned());
+    tablet->metrics()->scanner_cells_returned->IncrementBy(
+        result_collector->NumRowsReturned() *
+            scanner->client_projection_schema()->num_columns());
+    tablet->metrics()->scanner_bytes_returned->IncrementBy(
+        result_collector->ResponseSize());
+
+    // The number of rows/cells/bytes actually processed.
     tablet->metrics()->scanner_rows_scanned->IncrementBy(rows_scanned);
     tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(delta_stats.cells_read);
     tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(delta_stats.bytes_read);
+
+    // Last read timestamp.
+    tablet->UpdateLastReadTime();
   }
 
   *has_more_results = !req->close_scanner() && iter->HasNext() &&
