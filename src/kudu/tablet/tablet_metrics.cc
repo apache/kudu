@@ -133,6 +133,10 @@ METRIC_DEFINE_counter(tablet, mrs_lookups, "MemRowSet Lookups",
                       kudu::MetricUnit::kProbes,
                       "Number of times a MemRowSet was consulted.",
                       kudu::MetricLevel::kDebug);
+METRIC_DEFINE_gauge_uint64(tablet, last_consult_timestamp, "Last Consult Timestamp",
+                           kudu::MetricUnit::kTimestamp,
+                           "Last timestamp of writes or scans on this tablet.",
+                           kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(tablet, bytes_flushed, "Bytes Flushed",
                       kudu::MetricUnit::kBytes,
                       "Amount of data that has been flushed to disk by this tablet.",
@@ -318,6 +322,8 @@ namespace tablet {
 
 #define MINIT(x) x(METRIC_##x.Instantiate(entity))
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
+// TODO(yingchun): Should use kMax type.
+// #define MAXINIT(x) x(METRIC_##x.Instantiate(entity, 0, kMax))
 #define MEANINIT(x) x(METRIC_##x.InstantiateMeanGauge(entity))
 TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
   : MINIT(rows_inserted),
@@ -338,6 +344,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(key_file_lookups),
     MINIT(delta_file_lookups),
     MINIT(mrs_lookups),
+    GINIT(last_consult_timestamp),// TODO(yingchun): Should use MAXINIT.
     MINIT(bytes_flushed),
     MINIT(undo_delta_block_gc_bytes_deleted),
     MINIT(bloom_lookups_per_op),

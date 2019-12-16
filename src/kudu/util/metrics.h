@@ -399,6 +399,7 @@ struct MetricUnit {
     kState,
     kSessions,
     kTablets,
+    kTimestamp,
   };
   static const char* Name(Type unit);
 };

@@ -17,6 +17,8 @@
 
 #include "kudu/tserver/tablet_service.h"
 
+#include <time.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -31,7 +33,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -1207,6 +1208,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
     return;
+  }
+
+  // Update metrics.
+  if (tablet->metrics()) {
+    tablet->metrics()->last_consult_timestamp->set_value(time(nullptr));
   }
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
@@ -2668,7 +2674,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   // Update metrics based on this scan request.
-  if (tablet) {
+  if (tablet->metrics()) {
     // First, the number of rows/cells/bytes actually returned to the user.
     tablet->metrics()->scanner_rows_returned->IncrementBy(
         result_collector->NumRowsReturned());
@@ -2677,6 +2683,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
             scanner->client_projection_schema()->num_columns());
     tablet->metrics()->scanner_bytes_returned->IncrementBy(
         result_collector->ResponseSize());
+    tablet->metrics()->last_consult_timestamp->set_value(time(nullptr));
   }
 
   // Then the number of rows/cells/bytes actually processed. Here we have to dig
@@ -2692,7 +2699,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   scanner->set_already_reported_stats(total_stats);
   TRACE_COUNTER_INCREMENT(SCANNER_BYTES_READ_METRIC_NAME, delta_stats.bytes_read);
 
-  if (tablet) {
+  if (tablet->metrics()) {
     tablet->metrics()->scanner_rows_scanned->IncrementBy(rows_scanned);
     tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(delta_stats.cells_read);
     tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(delta_stats.bytes_read);

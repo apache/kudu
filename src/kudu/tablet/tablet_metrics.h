@@ -17,8 +17,8 @@
 #ifndef KUDU_TABLET_TABLET_METRICS_H
 #define KUDU_TABLET_TABLET_METRICS_H
 
+#include <cstddef>
 #include <cstdint>
-#include <stddef.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
@@ -66,6 +66,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> key_file_lookups;
   scoped_refptr<Counter> delta_file_lookups;
   scoped_refptr<Counter> mrs_lookups;
+  scoped_refptr<AtomicGauge<uint64_t>> last_consult_timestamp;
 
   // Operation stats.
   scoped_refptr<Counter> bytes_flushed;
