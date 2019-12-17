@@ -99,7 +99,7 @@ class Dir {
       std::string dir,
       std::unique_ptr<DirInstanceMetadataFile> metadata_file,
       std::unique_ptr<ThreadPool> pool);
-  ~Dir();
+  virtual ~Dir();
 
   // Shuts down this dir's thread pool, waiting for any closures submitted via
   // ExecClosure() to finish first.
@@ -216,7 +216,7 @@ class DirManager {
   // Returns the root names from the input 'root_list'.
   static std::vector<std::string> GetRootNames(const CanonicalizedRootsList& root_list);
 
-  ~DirManager();
+  virtual ~DirManager();
 
   // Shuts down all directories' thread pools.
   void Shutdown();
