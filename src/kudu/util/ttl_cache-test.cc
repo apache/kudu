@@ -17,7 +17,6 @@
 
 #include "kudu/util/ttl_cache.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +25,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -44,19 +44,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/ttl_cache_metrics.h"
-#include "kudu/util/ttl_cache_test_metrics.h"
 
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(cache_memtracker_approximation_ratio);
-
-METRIC_DECLARE_counter(test_ttl_cache_evictions);
-METRIC_DECLARE_counter(test_ttl_cache_evictions_expired);
-METRIC_DECLARE_counter(test_ttl_cache_hits);
-METRIC_DECLARE_counter(test_ttl_cache_hits_expired);
-METRIC_DECLARE_counter(test_ttl_cache_inserts);
-METRIC_DECLARE_counter(test_ttl_cache_lookups);
-METRIC_DECLARE_counter(test_ttl_cache_misses);
-METRIC_DECLARE_gauge_uint64(test_ttl_cache_memory_usage);
 
 using std::atomic;
 using std::set;
@@ -67,6 +57,69 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+struct TTLCacheTestMetrics : public TTLCacheMetrics {
+  explicit TTLCacheTestMetrics(const scoped_refptr<MetricEntity>& entity);
+};
+
+METRIC_DEFINE_counter(server, test_ttl_cache_inserts,
+                      "TTL Cache Inserts",
+                      kudu::MetricUnit::kEntries,
+                      "Number of entries inserted in the cache",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_lookups,
+                      "TTL Cache Lookups",
+                      kudu::MetricUnit::kEntries,
+                      "Number of entries looked up from the cache",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_evictions,
+                      "TTL Cache Evictions",
+                      kudu::MetricUnit::kEntries,
+                      "Number of entries evicted from the cache",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_evictions_expired,
+                      "TTL Cache Evictions of Expired Entries",
+                      kudu::MetricUnit::kEntries,
+                      "Number of entries that had already expired upon "
+                      "eviction from the cache",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_misses,
+                      "TTL Cache Misses",
+                      kudu::MetricUnit::kEntries,
+                      "Number of lookups that didn't find a cached entry",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_hits,
+                      "TTL Cache Hits",
+                      kudu::MetricUnit::kEntries,
+                      "Number of lookups that found a cached entry",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(server, test_ttl_cache_hits_expired,
+                      "TTL Cache Hits of Expired Entries",
+                      kudu::MetricUnit::kEntries,
+                      "Number of lookups that found an entry, but the entry "
+                      "had already expired at the time of lookup",
+                      kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_uint64(server, test_ttl_cache_memory_usage,
+                           "TTL Cache Memory Usage",
+                           kudu::MetricUnit::kBytes,
+                           "Memory consumed by the cache",
+                           kudu::MetricLevel::kInfo);
+
+#define MINIT(member, x) member = METRIC_##x.Instantiate(entity)
+#define GINIT(member, x) member = METRIC_##x.Instantiate(entity, 0)
+TTLCacheTestMetrics::TTLCacheTestMetrics(
+    const scoped_refptr<MetricEntity>& entity) {
+  MINIT(inserts, test_ttl_cache_inserts);
+  MINIT(lookups, test_ttl_cache_lookups);
+  MINIT(evictions, test_ttl_cache_evictions);
+  MINIT(evictions_expired, test_ttl_cache_evictions_expired);
+  MINIT(cache_hits_caching, test_ttl_cache_hits);
+  MINIT(cache_hits_expired, test_ttl_cache_hits_expired);
+  MINIT(cache_misses_caching, test_ttl_cache_misses);
+  GINIT(cache_usage, test_ttl_cache_memory_usage);
+}
+#undef MINIT
+#undef GINIT
 
 // A class to represent values with constant memory footprint of 1.
 class TestValue {

@@ -227,7 +227,6 @@ set(UTIL_SRCS
   throttler.cc
   trace.cc
   trace_metrics.cc
-  ttl_cache_test_metrics.cc
   user.cc
   url-coding.cc
   version_info.cc
