@@ -77,6 +77,27 @@ DEFINE_int64(web_log_bytes, 1024 * 1024,
 TAG_FLAG(web_log_bytes, advanced);
 TAG_FLAG(web_log_bytes, runtime);
 
+DEFINE_string(metrics_default_level, "debug",
+              "The default severity level to use when filtering the metrics. "
+              "Valid choices are 'debug', 'info', and 'warn'. "
+              "The levels are ordered and lower levels include the levels above them. "
+              "This value can be overridden by passing the level query parameter to the "
+              "'/metrics' endpoint.");
+TAG_FLAG(metrics_default_level, advanced);
+TAG_FLAG(metrics_default_level, runtime);
+TAG_FLAG(metrics_default_level, evolving);
+DEFINE_validator(metrics_default_level, [](const char* flag_name, const string& value) {
+  if (boost::iequals(value, "debug") ||
+      boost::iequals(value, "info") ||
+      boost::iequals(value, "warn")) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("unknown value for --$0 flag: '$1' "
+                           "(expected one of 'debug', 'info', or 'warn')",
+                           flag_name, value);
+  return false;
+});
+
 // For configuration dashboard
 DECLARE_bool(webserver_require_spnego);
 DECLARE_string(redact);
@@ -356,7 +377,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
   filters.entity_ids = ParseArray(req.parsed_args, "ids");
   filters.entity_attrs = ParseArray(req.parsed_args, "attributes");
   filters.entity_metrics = ParseArray(req.parsed_args, "metrics");
-  filters.entity_level = FindWithDefault(req.parsed_args, "level", "debug");
+  filters.entity_level = FindWithDefault(req.parsed_args, "level", FLAGS_metrics_default_level);
   vector<string> merge_rules = ParseArray(req.parsed_args, "merge_rules");
   for (const auto& merge_rule : merge_rules) {
     vector<string> values;
