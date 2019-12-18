@@ -30,6 +30,7 @@
 
 # Docker files.
 !docker/bootstrap-dev-env.sh
+!docker/bootstrap-python-env.sh
 !docker/bootstrap-runtime-env.sh
 !docker/kudu-entrypoint.sh
 

@@ -62,7 +62,11 @@ ARG BASE_OS
 FROM $BASE_OS as dev
 
 COPY ./docker/bootstrap-dev-env.sh /
-RUN ./bootstrap-dev-env.sh && rm bootstrap-dev-env.sh
+COPY ./docker/bootstrap-python-env.sh /
+RUN ./bootstrap-dev-env.sh \
+  && ./bootstrap-python-env.sh \
+  && rm bootstrap-dev-env.sh \
+  && rm bootstrap-python-env.sh
 
 # Common label arguments.
 # VCS_REF is not specified to improve docker caching.
@@ -221,13 +225,20 @@ LABEL name="Apache Kudu Build" \
 # ---- Kudu Python ----
 # Builds a runtime image with the Kudu python client pre-installed.
 #
-FROM dev AS kudu-python
+FROM runtime AS kudu-python
+
+COPY ./docker/bootstrap-python-env.sh /
+RUN ./bootstrap-python-env.sh \
+  && rm bootstrap-python-env.sh
+
+ARG INSTALL_DIR="/opt/kudu"
 
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib64
 WORKDIR $INSTALL_DIR/python
 # Copy the requirements file.
 COPY ./python/requirements.txt requirements.txt
-COPY --from=build /usr/local /usr/local/
+COPY --from=build /usr/local/lib/libkudu_client* /usr/local/lib/
+COPY --from=build /usr/local/include/kudu /usr/local/include/kudu
 COPY --from=build /kudu/python/dist/kudu-python-*.tar.gz .
 RUN pip install -r requirements.txt \
     && rm -rf requirements.txt \
@@ -241,8 +252,8 @@ ARG VCS_TYPE
 ARG VCS_URL
 ARG VERSION
 
-LABEL org.label-schema.name="Apache Kudu Python Client Base" \
-      org.label-schema.description="Builds a runtime image with the Kudu python client pre-installed." \
+LABEL org.label-schema.name="Apache Kudu Python Client" \
+      org.label-schema.description="An image with the Kudu Python client pre-installed." \
       # Common labels.
       org.label-schema.dockerfile=$DOCKERFILE \
       org.label-schema.maintainer=$MAINTAINER \
