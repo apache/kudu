@@ -297,12 +297,11 @@ fetch_and_patch \
  $CURL_PATCHLEVEL \
  "autoreconf -fvi"
 
-CRCUTIL_PATCHLEVEL=1
+CRCUTIL_PATCHLEVEL=0
 fetch_and_patch \
  crcutil-${CRCUTIL_VERSION}.tar.gz \
  $CRCUTIL_SOURCE \
- $CRCUTIL_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch"
+ $CRCUTIL_PATCHLEVEL
 
 LIBUNWIND_PATCHLEVEL=1
 fetch_and_patch \
