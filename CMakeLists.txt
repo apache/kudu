@@ -124,7 +124,10 @@ endif()
 
 # compiler flags that are common across debug/release builds
 #  -msse4.2: Enable sse4.2 compiler intrinsics.
-set(CXX_COMMON_FLAGS "-msse4.2")
+execute_process(COMMAND uname -p OUTPUT_VARIABLE ARCH_NAME)
+if (NOT "${ARCH_NAME}" MATCHES "aarch64")
+  set(CXX_COMMON_FLAGS "-msse4.2")
+endif()
 #  -Wall: Enable all warnings.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
 #  -Wno-sign-compare: suppress warnings for comparison between signed and unsigned
