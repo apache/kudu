@@ -510,7 +510,7 @@ TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(1)); // 1 ms
-  } while (MonoTime::Now().GetDeltaSince(start_time).ToSeconds() < 10);
+  } while ((MonoTime::Now() - start_time).ToSeconds() < 10);
 
   ASSERT_FALSE(resp.session_is_active()) << "Tablet Copy session did not time out!";
 }

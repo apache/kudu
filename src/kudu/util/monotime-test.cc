@@ -106,7 +106,7 @@ TEST(TestMonoTime, TestTimeSpec) {
   ts.tv_sec = 1;
   ts.tv_nsec = 1;
   MonoTime one_sec_one_nano_actual(ts);
-  ASSERT_EQ(0, one_sec_one_nano_expected.GetDeltaSince(one_sec_one_nano_actual).ToNanoseconds());
+  ASSERT_EQ(0, (one_sec_one_nano_expected - one_sec_one_nano_actual).ToNanoseconds());
 
   MonoDelta zero_sec_two_nanos(MonoDelta::FromNanoseconds(2L));
   zero_sec_two_nanos.ToTimeSpec(&ts);
@@ -127,11 +127,9 @@ TEST(TestMonoTime, TestDeltas) {
   alarm(360);
   const MonoDelta max_delta(MonoDelta::FromSeconds(0.1));
   MonoTime prev(MonoTime::Now());
-  MonoTime next;
   MonoDelta cur_delta;
   do {
-    next = MonoTime::Now();
-    cur_delta = next.GetDeltaSince(prev);
+    cur_delta = MonoTime::Now() - prev;
   } while (cur_delta.LessThan(max_delta));
   alarm(0);
 }
@@ -153,11 +151,9 @@ static void DoTestMonoTimePerf() {
   const MonoDelta max_delta(MonoDelta::FromMilliseconds(500));
   uint64_t num_calls = 0;
   MonoTime prev(MonoTime::Now());
-  MonoTime next;
   MonoDelta cur_delta;
   do {
-    next = MonoTime::Now();
-    cur_delta = next.GetDeltaSince(prev);
+    cur_delta = MonoTime::Now() - prev;
     num_calls++;
   } while (cur_delta.LessThan(max_delta));
   LOG(INFO) << "DoTestMonoTimePerf():"
@@ -170,7 +166,7 @@ TEST(TestMonoTime, TestSleepFor) {
   MonoDelta sleep = MonoDelta::FromMilliseconds(100);
   SleepFor(sleep);
   MonoTime end = MonoTime::Now();
-  MonoDelta actualSleep = end.GetDeltaSince(start);
+  MonoDelta actualSleep = end - start;
   ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
 }
 
@@ -186,7 +182,7 @@ TEST(TestMonoTime, TestSleepForOverflow) {
   MonoDelta sleep = MonoDelta::FromNanoseconds(1L << 32);
   SleepFor(sleep);
   MonoTime end = MonoTime::Now();
-  MonoDelta actualSleep = end.GetDeltaSince(start);
+  MonoDelta actualSleep = end - start;
   ASSERT_GE(actualSleep.ToNanoseconds(), sleep.ToNanoseconds());
 }
 

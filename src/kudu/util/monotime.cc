@@ -201,11 +201,7 @@ bool MonoTime::Initialized() const {
 }
 
 MonoDelta MonoTime::GetDeltaSince(const MonoTime &rhs) const {
-  DCHECK(Initialized());
-  DCHECK(rhs.Initialized());
-  int64_t delta(nanos_);
-  delta -= rhs.nanos_;
-  return MonoDelta(delta);
+  return rhs - *this;
 }
 
 void MonoTime::AddDelta(const MonoDelta &delta) {
@@ -328,7 +324,11 @@ MonoTime operator-(const MonoTime& t, const MonoDelta& delta) {
 }
 
 MonoDelta operator-(const MonoTime& t_end, const MonoTime& t_beg) {
-  return t_end.GetDeltaSince(t_beg);
+  DCHECK(t_beg.Initialized());
+  DCHECK(t_end.Initialized());
+  int64_t delta(t_end.nanos_);
+  delta -= t_beg.nanos_;
+  return MonoDelta(delta);
 }
 
 } // namespace kudu

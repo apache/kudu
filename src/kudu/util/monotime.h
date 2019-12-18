@@ -131,6 +131,7 @@ class KUDU_EXPORT MonoDelta {
   static const int64_t kUninitialized;
 
   friend class MonoTime;
+  friend MonoDelta operator-(const class MonoTime&, const class MonoTime&);
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
 
   explicit MonoDelta(int64_t delta);
@@ -169,6 +170,8 @@ class KUDU_EXPORT MonoTime {
 
   /// Select the earliest between the specified time points.
   ///
+  /// @deprecated Use @c use std::min() instead.
+  ///
   /// @param [in] a
   ///   The first MonoTime object to select from.
   /// @param [in] b
@@ -187,11 +190,15 @@ class KUDU_EXPORT MonoTime {
   /// Compute time interval between the point in time specified by this
   /// and the specified object.
   ///
+  /// @deprecated Use @c kudu::operator-(const MonoTime&, const MonoTime&)
+  ///   instead.
+  ///
   /// @param [in] rhs
   ///   The object that corresponds to the left boundary of the time interval,
   ///   where this object corresponds to the right boundary of the interval.
   /// @return The resulting time interval represented as a MonoDelta object.
-  MonoDelta GetDeltaSince(const MonoTime &rhs) const;
+  MonoDelta GetDeltaSince(const MonoTime &rhs) const ATTRIBUTE_DEPRECATED(
+      "use kudu::operator-(const MonoTime&, const MonoTime&) instead");
 
   /// Advance this object's time specification by the specified interval.
   ///
@@ -246,6 +253,7 @@ class KUDU_EXPORT MonoTime {
 
  private:
   friend class MonoDelta;
+  friend MonoDelta operator-(const MonoTime&, const MonoTime&);
   FRIEND_TEST(TestMonoTime, TestTimeSpec);
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
 
@@ -402,8 +410,6 @@ MonoTime KUDU_EXPORT operator+(const MonoTime& t, const MonoDelta& delta);
 MonoTime KUDU_EXPORT operator-(const MonoTime& t, const MonoDelta& delta);
 
 /// Compute the time interval between the specified points in time.
-///
-/// Semantically, this is equivalent to t0.GetDeltaSince(t1).
 ///
 /// @param [in] t_end
 ///   The second point in time.  Semantically corresponds to the end

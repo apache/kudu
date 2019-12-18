@@ -212,7 +212,7 @@ class GenericCalculatorService : public ServiceIf {
 
     LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
-    MonoDelta duration(MonoTime::Now().GetDeltaSince(incoming->GetTimeReceived()));
+    MonoDelta duration(MonoTime::Now() - incoming->GetTimeReceived());
     CHECK_GE(duration.ToMicroseconds(), req.sleep_micros());
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);

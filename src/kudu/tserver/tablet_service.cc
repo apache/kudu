@@ -31,7 +31,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -91,7 +90,6 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
-#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -2713,7 +2711,7 @@ namespace {
 // Helper to clamp a client deadline for a scan to the max supported by the server.
 MonoTime ClampScanDeadlineForWait(const MonoTime& deadline, bool* was_clamped) {
   MonoTime now = MonoTime::Now();
-  if (deadline.GetDeltaSince(now).ToMilliseconds() > FLAGS_scanner_max_wait_ms) {
+  if ((deadline - now).ToMilliseconds() > FLAGS_scanner_max_wait_ms) {
     *was_clamped = true;
     return now + MonoDelta::FromMilliseconds(FLAGS_scanner_max_wait_ms);
   }

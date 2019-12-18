@@ -556,8 +556,7 @@ void ResultTracker::ClientState::GCCompletionRecords(
 }
 
 string ResultTracker::ClientState::ToString() const {
-  auto since_last_heard =
-      MonoTime::Now().GetDeltaSince(last_heard_from);
+  auto since_last_heard = MonoTime::Now() - last_heard_from;
   string result = Substitute("Client State[Last heard from: $0s ago, "
                              "$1 CompletionRecords:",
                              since_last_heard.ToString(),
