@@ -45,31 +45,6 @@ GERRIT_PASSWORD = os.getenv('TIDYBOT_PASSWORD')
 
 GERRIT_URL = "https://gerrit.cloudera.org"
 
-DISABLED_TIDY_CHECKS=[
-    # Although useful in production code, we use magic numbers liberally in
-    # tests, and many would be net less clear as named constants.
-    'readability-magic-numbers',
-
-    # IWYU has specific rules for ordering '-inl.h' include files, i.e.
-    # 'header.h' and its 'header-inl.h' counterpart. It seems in some cases
-    # including 'header-inl.h' before 'header.h' might even lead to compilation
-    # failures. So, IWYU intentionally re-orders them even if 'header-inl.h'
-    # comes before 'header.h' lexicographically in default C locale:
-    #   https://github.com/apache/kudu/blob/ \
-    #     89ce529e945731c48445db4a6f8af11f9f905aab/build-support/iwyu/ \
-    #     fix_includes.py#L1786-L1787
-    #
-    # That ordering contradicts with what clang-tidy recommends when using the
-    # 'llvm-include-order' check. To avoid confusion, let's disable the
-    # 'llvm-include-order'.
-    #
-    # TODO(aserbin): clarify whether it's possible to customize clang-tidy
-    #                behavior w.r.t. the sorting of such header files using
-    #                the format style options described at
-    #                https://clang.llvm.org/docs/ClangFormatStyleOptions.html
-    'llvm-include-order',
-]
-
 def run_tidy(sha="HEAD", is_rev_range=False):
     diff_cmdline = ["git", "diff" if is_rev_range else "show", sha]
 
@@ -79,6 +54,8 @@ def run_tidy(sha="HEAD", is_rev_range=False):
 
     # Produce a separate diff for each file and run clang-tidy-diff on it
     # in parallel.
+    #
+    # Note: this will incorporate any configuration from .clang-tidy.
     def tidy_on_path(path):
         patch_file = tempfile.NamedTemporaryFile()
         cmd = diff_cmdline + [
@@ -87,11 +64,9 @@ def run_tidy(sha="HEAD", is_rev_range=False):
             "--",
             path]
         subprocess.check_call(cmd, stdout=patch_file, cwd=ROOT)
-        checks_arg_value = ",".join([ "-" + c for c in DISABLED_TIDY_CHECKS ])
         cmdline = [CLANG_TIDY_DIFF,
                    "-clang-tidy-binary", CLANG_TIDY,
                    "-p0",
-                   "-checks=" + checks_arg_value,
                    "--",
                    "-DCLANG_TIDY"] + compile_flags.get_flags()
         return subprocess.check_output(
