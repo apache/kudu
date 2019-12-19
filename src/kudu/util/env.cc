@@ -18,16 +18,7 @@ namespace kudu {
 Env::~Env() {
 }
 
-SequentialFile::~SequentialFile() {
-}
-
-RandomAccessFile::~RandomAccessFile() {
-}
-
-WritableFile::~WritableFile() {
-}
-
-RWFile::~RWFile() {
+File::~File() {
 }
 
 FileLock::~FileLock() {

@@ -524,6 +524,7 @@ const char* ResourceLimitTypeToString(Env::ResourceLimitType t) {
       return "running threads per effective uid";
     default: LOG(FATAL) << "Unknown resource limit type";
   }
+  __builtin_unreachable();
 }
 
 int ResourceLimitTypeToUnixRlimit(Env::ResourceLimitType t) {
@@ -532,6 +533,7 @@ int ResourceLimitTypeToUnixRlimit(Env::ResourceLimitType t) {
     case Env::ResourceLimitType::RUNNING_THREADS_PER_EUID: return RLIMIT_NPROC;
     default: LOG(FATAL) << "Unknown resource limit type: " << t;
   }
+  __builtin_unreachable();
 }
 
 #ifdef __APPLE__
@@ -543,6 +545,7 @@ const char* ResourceLimitTypeToMacosRlimit(Env::ResourceLimitType t) {
       return "kern.maxprocperuid";
     default: LOG(FATAL) << "Unknown resource limit type: " << t;
   }
+  __builtin_unreachable();
 }
 #endif
 
@@ -554,7 +557,7 @@ class PosixSequentialFile: public SequentialFile {
  public:
   PosixSequentialFile(string fname, FILE* f)
       : filename_(std::move(fname)), file_(f) {}
-  virtual ~PosixSequentialFile() {
+  ~PosixSequentialFile() {
     int err;
     RETRY_ON_EINTR(err, fclose(file_));
     if (PREDICT_FALSE(err != 0)) {
@@ -603,7 +606,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
  public:
   PosixRandomAccessFile(string fname, int fd)
       : filename_(std::move(fname)), fd_(fd) {}
-  virtual ~PosixRandomAccessFile() {
+  ~PosixRandomAccessFile() {
     int err;
     RETRY_ON_EINTR(err, close(fd_));
     if (PREDICT_FALSE(err != 0)) {
@@ -1070,8 +1073,7 @@ class PosixFileLock : public FileLock {
 
 class PosixEnv : public Env {
  public:
-  PosixEnv();
-  virtual ~PosixEnv() {
+  ~PosixEnv() {
     fprintf(stderr, "Destroying Env::Default()\n");
     exit(1);
   }
@@ -1837,8 +1839,6 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 };
-
-PosixEnv::PosixEnv() {}
 
 }  // namespace
 

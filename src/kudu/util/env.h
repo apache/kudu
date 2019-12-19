@@ -368,16 +368,22 @@ class Env {
   static const char* const kInjectedFailureStatusMsg;
 
  private:
-  // No copying allowed
-  Env(const Env&);
-  void operator=(const Env&);
+  DISALLOW_COPY_AND_ASSIGN(Env);
+};
+
+// A bare-bones abstraction common to all file implementations.
+class File {
+ public:
+  virtual ~File();
+
+  // Returns the filename provided at construction time.
+  virtual const std::string& filename() const = 0;
 };
 
 // A file abstraction for reading sequentially through a file
-class SequentialFile {
+class SequentialFile : public File {
  public:
   SequentialFile() { }
-  virtual ~SequentialFile();
 
   // Read up to "result.size" bytes from the file.
   // Sets "result.data" to the data that was read.
@@ -396,9 +402,6 @@ class SequentialFile {
   //
   // REQUIRES: External synchronization
   virtual Status Skip(uint64_t n) = 0;
-
-  // Returns the filename provided when the SequentialFile was constructed.
-  virtual const std::string& filename() const = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -407,10 +410,9 @@ class SequentialFile {
 // implementations must ensure that any mutable state changes brought on by
 // instance destruction and recreation (i.e. triggered by cache eviction and
 // reloading events) do not affect correctness.
-class RandomAccessFile {
+class RandomAccessFile : public File {
  public:
   RandomAccessFile() { }
-  virtual ~RandomAccessFile();
 
   // Read "result.size" bytes from the file starting at "offset".
   // Copies the resulting data into "result.data".
@@ -440,9 +442,6 @@ class RandomAccessFile {
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
 
-  // Returns the filename provided when the RandomAccessFile was constructed.
-  virtual const std::string& filename() const = 0;
-
   // Returns the approximate memory usage of this RandomAccessFile including
   // the object itself.
   virtual size_t memory_footprint() const = 0;
@@ -469,7 +468,7 @@ struct RandomAccessFileOptions {
 // A file abstraction for sequential writing.  The implementation
 // must provide buffering since callers may append small fragments
 // at a time to the file.
-class WritableFile {
+class WritableFile : public File {
  public:
   enum FlushMode {
     FLUSH_SYNC,
@@ -477,7 +476,6 @@ class WritableFile {
   };
 
   WritableFile() { }
-  virtual ~WritableFile();
 
   virtual Status Append(const Slice& data) = 0;
 
@@ -512,13 +510,8 @@ class WritableFile {
 
   virtual uint64_t Size() const = 0;
 
-  // Returns the filename provided when the WritableFile was constructed.
-  virtual const std::string& filename() const = 0;
-
  private:
-  // No copying allowed
-  WritableFile(const WritableFile&);
-  void operator=(const WritableFile&);
+  DISALLOW_COPY_AND_ASSIGN(WritableFile);
 };
 
 // Creation-time options for RWFile
@@ -547,17 +540,14 @@ struct RWFileOptions {
 // implementations must ensure that any mutable state changes brought on by
 // instance destruction and recreation (i.e. triggered by cache eviction and
 // reloading events) do not affect correctness.
-class RWFile {
+class RWFile : public File {
  public:
   enum FlushMode {
     FLUSH_SYNC,
     FLUSH_ASYNC
   };
 
-  RWFile() {
-  }
-
-  virtual ~RWFile();
+  RWFile() { }
 
   // Read "result.size" bytes from the file starting at "offset".
   // Copies the resulting data into "result.data".
@@ -659,9 +649,6 @@ class RWFile {
   typedef std::map<uint64_t, uint64_t> ExtentMap;
   virtual Status GetExtentMap(ExtentMap* out) const = 0;
 
-  // Returns the filename provided when the RWFile was constructed.
-  virtual const std::string& filename() const = 0;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(RWFile);
 };
@@ -672,9 +659,7 @@ class FileLock {
   FileLock() { }
   virtual ~FileLock();
  private:
-  // No copying allowed
-  FileLock(const FileLock&);
-  void operator=(const FileLock&);
+  DISALLOW_COPY_AND_ASSIGN(FileLock);
 };
 
 // A utility routine: write "data" to the named file.
