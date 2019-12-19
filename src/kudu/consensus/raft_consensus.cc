@@ -31,7 +31,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <google/protobuf/util/message_differencer.h>
 
 #include "kudu/common/timestamp.h"
@@ -238,7 +237,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   round_handler_ = DCHECK_NOTNULL(round_handler);
   mark_dirty_clbk_ = std::move(mark_dirty_clbk);
 
-  term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, CurrentTerm());
+  term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term,
+                                                  CurrentTerm(),
+                                                  MergeType::kMax);
   follower_memory_pressure_rejections_ =
       metric_entity->FindOrCreateCounter(&METRIC_follower_memory_pressure_rejections);
 
@@ -247,7 +248,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                                        failed_elections_since_stable_leader_);
 
   METRIC_time_since_last_leader_heartbeat.InstantiateFunctionGauge(
-    metric_entity, Bind(&RaftConsensus::GetMillisSinceLastLeaderHeartbeat, Unretained(this)))
+      metric_entity,
+      Bind(&RaftConsensus::GetMillisSinceLastLeaderHeartbeat, Unretained(this)),
+      MergeType::kMax)
     ->AutoDetach(&metric_detacher_);
 
   // A single Raft thread pool token is shared between RaftConsensus and
