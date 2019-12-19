@@ -181,8 +181,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
                      scoped_refptr<ReadableLogSegment>* segment);
 
   // Build a readable segment to read entries from the provided path.
-  ReadableLogSegment(std::string path,
-                     std::shared_ptr<RandomAccessFile> readable_file);
+  ReadableLogSegment(std::string path, std::shared_ptr<RWFile> file);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
@@ -225,7 +224,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   }
 
   // Returns the parent directory where log segments are stored.
-  const std::string &path() const {
+  const std::string& path() const {
     return path_;
   }
 
@@ -253,22 +252,22 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
     return footer_;
   }
 
-  const std::shared_ptr<RandomAccessFile> readable_file() const {
-    return readable_file_;
+  std::shared_ptr<RWFile> file() const {
+    return file_;
   }
 
-  const int64_t file_size() const {
+  int64_t file_size() const {
     return file_size_.Load();
   }
 
-  const int64_t first_entry_offset() const {
+  int64_t first_entry_offset() const {
     return first_entry_offset_;
   }
 
   // Returns the full size of the file, if the segment is closed and has
   // a footer, or the offset where the last written, non corrupt entry
   // ends.
-  const int64_t readable_up_to() const;
+  int64_t readable_up_to() const;
 
   // Return the expected length of entry headers in this log segment.
   // Versions of Kudu older than 1.3 used a different log entry header format.
@@ -372,7 +371,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   const std::string path_;
 
-  // The size of the readable file.
+  // The size of the file.
   // This is set by Init(). In the case of a log being written to,
   // this may be increased by UpdateReadableToOffset()
   AtomicInt<int64_t> file_size_;
@@ -385,8 +384,10 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // offset while an async reader is reading the segment's entries.
   AtomicInt<int64_t> readable_to_offset_;
 
-  // a readable file for a log segment (used on replay)
-  const std::shared_ptr<RandomAccessFile> readable_file_;
+  // File handle for a log segment (used on replay).
+  //
+  // Despite being read-write, we only ever use its read methods.
+  const std::shared_ptr<RWFile> file_;
 
   // Compression codec used to decompress entries in this file.
   const CompressionCodec* codec_;
@@ -412,22 +413,13 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 class WritableLogSegment {
  public:
   WritableLogSegment(std::string path,
-                     std::shared_ptr<WritableFile> writable_file);
+                     std::shared_ptr<RWFile> file);
 
   // Opens the segment by writing the header.
-  Status WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header);
+  Status WriteHeader(const LogSegmentHeaderPB& new_header);
 
-  // Closes the segment by writing the footer and then actually closing the
-  // underlying WritableFile.
-  Status WriteFooterAndClose(const LogSegmentFooterPB& footer);
-
-  bool IsClosed() {
-    return IsHeaderWritten() && IsFooterWritten();
-  }
-
-  int64_t Size() const {
-    return writable_file_->Size();
-  }
+  // Finishes the segment by writing the footer.
+  Status WriteFooter(const LogSegmentFooterPB& footer);
 
   // Appends the provided batch of data, including a header
   // and checksum. If 'codec' is not NULL, compresses the batch.
@@ -435,9 +427,9 @@ class WritableLogSegment {
   // Write a compressed entry to the log.
   Status WriteEntryBatch(const Slice& data, const CompressionCodec* codec);
 
-  // Makes sure the I/O buffers in the underlying writable file are flushed.
+  // Makes sure the I/O buffers belonging to the underlying file handle are flushed.
   Status Sync() {
-    return writable_file_->Sync();
+    return file_->Sync();
   }
 
   // Indicate that the segment has not been written for some period of time.
@@ -464,26 +456,30 @@ class WritableLogSegment {
   }
 
   // Returns the parent directory where log segments are stored.
-  const std::string &path() const {
+  const std::string& path() const {
     return path_;
   }
 
-  const int64_t first_entry_offset() const {
+  std::shared_ptr<RWFile> file() const {
+    return file_;
+  }
+
+  int64_t first_entry_offset() const {
     return first_entry_offset_;
   }
 
-  const int64_t written_offset() const {
+  int64_t written_offset() const {
     return written_offset_;
   }
 
  private:
   FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
 
-  // The path to the log file.
+  // The path to the log segment.
   const std::string path_;
 
-  // The writable file to which this LogSegment will be written.
-  const std::shared_ptr<WritableFile> writable_file_;
+  // The file handle belonging to the log segment.
+  const std::shared_ptr<RWFile> file_;
 
   bool is_header_written_;
 

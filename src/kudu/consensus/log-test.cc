@@ -129,11 +129,13 @@ class LogTest : public LogTestBase {
     string fqp = GetTestPath(strings::Substitute("wal-00000000$0", sequence_number));
     unique_ptr<WritableFile> w_log_seg;
     RETURN_NOT_OK(fs_manager_->env()->NewWritableFile(fqp, &w_log_seg));
-    unique_ptr<RandomAccessFile> r_log_seg;
-    RETURN_NOT_OK(fs_manager_->env()->NewRandomAccessFile(fqp, &r_log_seg));
+    unique_ptr<RWFile> r_log_seg;
+    RWFileOptions opts;
+    opts.mode = Env::MUST_EXIST;
+    RETURN_NOT_OK(fs_manager_->env()->NewRWFile(opts, fqp, &r_log_seg));
 
     scoped_refptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(fqp, shared_ptr<RandomAccessFile>(r_log_seg.release())));
+        new ReadableLogSegment(fqp, shared_ptr<RWFile>(r_log_seg.release())));
 
     LogSegmentHeaderPB header;
     header.set_sequence_number(sequence_number);
@@ -322,9 +324,11 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
   OpId op_id = MakeOpId(1, 1);
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
 
-  // Find the entry that we want to corrupt before closing the log.
+  // Find the entry that we want to corrupt and get the active segment path
+  // before closing the log; both will be invalid after.
   LogIndexEntry entry;
   ASSERT_OK(log_->log_index_->GetEntry(4, &entry));
+  string active_segment_path = log_->ActiveSegmentPathForTests();
 
   ASSERT_OK(log_->Close());
 
@@ -340,7 +344,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
     default:
       LOG(FATAL) << "unreachable";
   }
-  ASSERT_OK(CorruptLogFile(env_, log_->ActiveSegmentPathForTests(), type, offset));
+  ASSERT_OK(CorruptLogFile(env_, active_segment_path, type, offset));
 
   // Open a new reader -- we don't reuse the existing LogReader from log_
   // because it has a cached header.

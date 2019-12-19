@@ -328,7 +328,7 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
   DCHECK(init_once_.init_succeeded());
   RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(error_code),
                         "Tablet copy source could not get log segment");
-  ImmutableRandomAccessFileInfo* file_info;
+  ImmutableRWFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
                                    Substitute("log segment $0", segment_seqno),
@@ -425,7 +425,7 @@ Status TabletCopySourceSession::OpenLogSegment(uint64_t segment_seqno) {
   CHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
 
   uint64_t size = log_segment->readable_up_to();
-  Status s = AddImmutableFileToMap(&logs_, segment_seqno, log_segment->readable_file(), size);
+  Status s = AddImmutableFileToMap(&logs_, segment_seqno, log_segment->file(), size);
   if (!s.ok()) {
     s = s.CloneAndPrepend(
             Substitute("Error accessing data for log segment with seqno $0",
@@ -436,7 +436,7 @@ Status TabletCopySourceSession::OpenLogSegment(uint64_t segment_seqno) {
 }
 
 Status TabletCopySourceSession::FindLogSegment(uint64_t segment_seqno,
-                                              ImmutableRandomAccessFileInfo** file_info,
+                                              ImmutableRWFileInfo** file_info,
                                               TabletCopyErrorPB::Code* error_code) {
   if (!FindCopy(logs_, segment_seqno, file_info)) {
     *error_code = TabletCopyErrorPB::WAL_SEGMENT_NOT_FOUND;

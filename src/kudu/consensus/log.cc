@@ -461,22 +461,22 @@ Status SegmentAllocator::Init(
       .set_max_threads(1)
       .Build(&allocation_pool_));
 
-  scoped_refptr<ReadableLogSegment> closed_segment;
-  RETURN_NOT_OK(AllocateSegmentAndRollOver(&closed_segment, new_readable_segment));
-  DCHECK(!closed_segment); // There was no previously active segment.
+  scoped_refptr<ReadableLogSegment> finished_segment;
+  RETURN_NOT_OK(AllocateSegmentAndRollOver(&finished_segment, new_readable_segment));
+  DCHECK(!finished_segment); // There was no previously active segment.
   return Status::OK();
 }
 
 Status SegmentAllocator::AllocateOrRollOverIfNecessary(
     uint32_t write_size_bytes,
-    scoped_refptr<ReadableLogSegment>* closed_segment,
+    scoped_refptr<ReadableLogSegment>* finished_segment,
     scoped_refptr<ReadableLogSegment>* new_readable_segment) {
   bool should_rollover = false;
   // if the size of this entry overflows the current segment, get a new one
   {
     std::lock_guard<RWMutex> l(allocation_lock_);
     if (allocation_state_ == kAllocationNotStarted) {
-      if ((active_segment_->Size() + write_size_bytes + 4) > max_segment_size_) {
+      if ((active_segment_->written_offset() + write_size_bytes + 4) > max_segment_size_) {
         VLOG_WITH_PREFIX(1) << "Max segment size reached. Starting new segment allocation";
         RETURN_NOT_OK(AsyncAllocateSegmentUnlocked());
         if (!opts_->async_preallocate_segments) {
@@ -493,7 +493,7 @@ Status SegmentAllocator::AllocateOrRollOverIfNecessary(
   if (should_rollover) {
     TRACE_COUNTER_SCOPE_LATENCY_US("log_roll");
     LOG_SLOW_EXECUTION(WARNING, 50, Substitute("$0Log roll took a long time", LogPrefix())) {
-      RETURN_NOT_OK(RollOver(closed_segment, new_readable_segment));
+      RETURN_NOT_OK(RollOver(finished_segment, new_readable_segment));
     }
   }
   return Status::OK();
@@ -531,12 +531,11 @@ Status SegmentAllocator::Sync() {
   return Status::OK();
 }
 
-Status SegmentAllocator::CloseCurrentSegment(
-    scoped_refptr<ReadableLogSegment>* closed_segment) {
+Status SegmentAllocator::FinishCurrentSegment(
+    scoped_refptr<ReadableLogSegment>* finished_segment) {
   if (hooks_) {
     RETURN_NOT_OK_PREPEND(hooks_->PreClose(), "PreClose hook failed");
   }
-  RETURN_NOT_OK(Sync());
   if (!footer_.has_min_replicate_index()) {
     VLOG_WITH_PREFIX(1) << "Writing a segment without any REPLICATE message. Segment: "
                         << active_segment_->path();
@@ -545,13 +544,35 @@ Status SegmentAllocator::CloseCurrentSegment(
                       << ": " << pb_util::SecureShortDebugString(footer_);
 
   footer_.set_close_timestamp_micros(GetCurrentTimeMicros());
-  RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer_));
+  RETURN_NOT_OK(active_segment_->WriteFooter(footer_));
+
+  // max_segment_size_ defines the (soft) limit of a segment. When preallocation
+  // is enabled, max_segment_size also defines the amount of space that is
+  // preallocated at segment creation time.
+  //
+  // We finish a segment when the next write would exceed max_segment_size_, at
+  // which point all of the segment's preallocated space has been consumed. In
+  // some cases (e.g. Log::Close), a segment may be finished prematurely. If we
+  // detect that, let's return any excess preallocated space back to the
+  // filesystem by truncating off the end of the segment.
+  if (opts_->preallocate_segments &&
+      active_segment_->written_offset() < max_segment_size_) {
+    RETURN_NOT_OK(active_segment_->file()->Truncate(
+        active_segment_->written_offset()));
+  }
+  RETURN_NOT_OK(Sync());
+
   if (hooks_) {
     RETURN_NOT_OK_PREPEND(hooks_->PostClose(), "PostClose hook failed");
   }
 
-  if (closed_segment) {
-    RETURN_NOT_OK(GetClosedSegment(closed_segment));
+  if (finished_segment) {
+    scoped_refptr<ReadableLogSegment> segment(
+        new ReadableLogSegment(active_segment_->path(), active_segment_->file()));
+    RETURN_NOT_OK(segment->Init(active_segment_->header(),
+                                active_segment_->footer(),
+                                active_segment_->first_entry_offset()));
+    *finished_segment = std::move(segment);
   }
 
   return Status::OK();
@@ -578,29 +599,13 @@ void SegmentAllocator::StopAllocationThread() {
 }
 
 Status SegmentAllocator::AllocateSegmentAndRollOver(
-    scoped_refptr<ReadableLogSegment>* closed_segment,
+    scoped_refptr<ReadableLogSegment>* finished_segment,
     scoped_refptr<ReadableLogSegment>* new_readable_segment) {
   {
     std::lock_guard<RWMutex> l(allocation_lock_);
     RETURN_NOT_OK(AsyncAllocateSegmentUnlocked());
   }
-  return RollOver(closed_segment, new_readable_segment);
-}
-
-Status SegmentAllocator::GetClosedSegment(scoped_refptr<ReadableLogSegment>* readable_segment) {
-  CHECK(active_segment_->IsClosed());
-  shared_ptr<RandomAccessFile> readable_file;
-  RETURN_NOT_OK(
-      OpenFileForRandom(ctx_->fs_manager->env(), active_segment_->path(), &readable_file));
-  scoped_refptr<ReadableLogSegment> segment(
-      new ReadableLogSegment(active_segment_->path(), readable_file));
-  // Note: segment->header() will only contain an initialized PB if we
-  // wrote the header out.
-  RETURN_NOT_OK(segment->Init(active_segment_->header(),
-                              active_segment_->footer(),
-                              active_segment_->first_entry_offset()));
-  *readable_segment = std::move(segment);
-  return Status::OK();
+  return RollOver(finished_segment, new_readable_segment);
 }
 
 void SegmentAllocator::SetSchemaForNextSegment(Schema schema,
@@ -635,15 +640,13 @@ Status SegmentAllocator::AllocateNewSegment() {
     allocation_state_ = kAllocationFinished;
   });
 
-  WritableFileOptions opts;
-  opts.sync_on_close = opts_->force_fsync_all;
   string tmp_suffix = Substitute("$0$1", kTmpInfix, ".newsegmentXXXXXX");
   string path_tmpl = JoinPathSegments(ctx_->log_dir, tmp_suffix);
   VLOG_WITH_PREFIX(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
-  unique_ptr<WritableFile> segment_file;
+  unique_ptr<RWFile> segment_file;
   Env* env = ctx_->fs_manager->env();
-  RETURN_NOT_OK_PREPEND(env->NewTempWritableFile(
-      opts, path_tmpl, &next_segment_path_, &segment_file),
+  RETURN_NOT_OK_PREPEND(env->NewTempRWFile(
+      RWFileOptions(), path_tmpl, &next_segment_path_, &segment_file),
                         "could not create next WAL segment");
   next_segment_file_.reset(segment_file.release());
   VLOG_WITH_PREFIX(1) << "Created next WAL segment, placeholder path: " << next_segment_path_;
@@ -658,7 +661,8 @@ Status SegmentAllocator::AllocateNewSegment() {
                                                       FLAGS_fs_wal_dir_reserved_bytes));
     // TODO (perf) zero the new segments -- this could result in
     // additional performance improvements.
-    RETURN_NOT_OK_PREPEND(next_segment_file_->PreAllocate(max_segment_size_),
+    RETURN_NOT_OK_PREPEND(next_segment_file_->PreAllocate(
+        0, max_segment_size_, RWFile::CHANGE_FILE_SIZE),
                           "could not preallocate next WAL segment");
   }
   return Status::OK();
@@ -680,7 +684,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
 
   // Create a new segment in memory.
   unique_ptr<WritableLogSegment> new_segment(
-      new WritableLogSegment(new_segment_path, std::move(next_segment_file_)));
+      new WritableLogSegment(new_segment_path, next_segment_file_));
 
   // Set up the new header and footer.
   LogSegmentHeaderPB header;
@@ -700,7 +704,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
     RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
     header.set_schema_version(schema_version_);
   }
-  RETURN_NOT_OK_PREPEND(new_segment->WriteHeaderAndOpen(header), "Failed to write header");
+  RETURN_NOT_OK_PREPEND(new_segment->WriteHeader(header), "Failed to write header");
 
   // Open the segment we just created in readable form; it is the caller's
   // responsibility to add it to the reader.
@@ -708,13 +712,8 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
   // TODO(todd): consider using a global FileCache here? With short log segments and
   // lots of tablets, this file descriptor usage may add up.
   {
-    unique_ptr<RandomAccessFile> readable_file;
-
-    RandomAccessFileOptions opts;
-    RETURN_NOT_OK(env->NewRandomAccessFile(opts, new_segment_path, &readable_file));
     scoped_refptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(new_segment_path,
-                               shared_ptr<RandomAccessFile>(readable_file.release())));
+        new ReadableLogSegment(new_segment_path, std::move(next_segment_file_)));
     RETURN_NOT_OK(readable_segment->Init(header, new_segment->first_entry_offset()));
     *new_readable_segment = std::move(readable_segment);
   }
@@ -728,7 +727,7 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
 }
 
 Status SegmentAllocator::RollOver(
-    scoped_refptr<ReadableLogSegment>* closed_segment,
+    scoped_refptr<ReadableLogSegment>* finished_segment,
     scoped_refptr<ReadableLogSegment>* new_readable_segment) {
   SCOPED_LATENCY_METRIC(ctx_->metrics, roll_latency);
 
@@ -739,7 +738,7 @@ Status SegmentAllocator::RollOver(
   // If this isn't the first active segment, close it and return a reopened
   // segment reader so that the caller can update its log reader.
   if (active_segment_) {
-    RETURN_NOT_OK(CloseCurrentSegment(closed_segment));
+    RETURN_NOT_OK(FinishCurrentSegment(finished_segment));
   }
   RETURN_NOT_OK(SwitchToAllocatedSegment(new_readable_segment));
 
@@ -893,13 +892,13 @@ Status Log::WriteBatch(LogEntryBatch* entry_batch) {
     return Status::OK();
   }
 
-  scoped_refptr<ReadableLogSegment> closed_segment;
+  scoped_refptr<ReadableLogSegment> finished_segment;
   scoped_refptr<ReadableLogSegment> new_readable_segment;
   RETURN_NOT_OK(segment_allocator_.AllocateOrRollOverIfNecessary(
-      entry_batch_bytes, &closed_segment, &new_readable_segment));
-  if (closed_segment) {
+      entry_batch_bytes, &finished_segment, &new_readable_segment));
+  if (finished_segment) {
     // Must be done before a new segment is appended.
-    reader_->ReplaceLastSegment(std::move(closed_segment));
+    reader_->ReplaceLastSegment(std::move(finished_segment));
   }
   if (new_readable_segment) {
     reader_->AppendEmptySegment(std::move(new_readable_segment));
@@ -950,12 +949,12 @@ Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
 
 Status Log::AllocateSegmentAndRollOverForTests() {
   std::lock_guard<rw_spinlock> l(segment_idle_lock_);
-  scoped_refptr<ReadableLogSegment> closed_segment;
+  scoped_refptr<ReadableLogSegment> finished_segment;
   scoped_refptr<ReadableLogSegment> new_readable_segment;
   RETURN_NOT_OK(segment_allocator_.AllocateSegmentAndRollOver(
-      &closed_segment, &new_readable_segment));
-  if (closed_segment) {
-    reader_->ReplaceLastSegment(std::move(closed_segment));
+      &finished_segment, &new_readable_segment));
+  if (finished_segment) {
+    reader_->ReplaceLastSegment(std::move(finished_segment));
   }
   reader_->AppendEmptySegment(std::move(new_readable_segment));
   return Status::OK();
@@ -1153,10 +1152,12 @@ Status Log::Close() {
     }
   }
 
-  RETURN_NOT_OK(segment_allocator_.CloseCurrentSegment(/*closed_segment=*/ nullptr));
+  RETURN_NOT_OK(segment_allocator_.FinishCurrentSegment(
+      /*finished_segment=*/ nullptr));
   VLOG_WITH_PREFIX(1) << "Log closed";
 
   // Release FDs held by these objects.
+  segment_allocator_.active_segment_.reset();
   log_index_.reset();
   reader_.reset();
   return Status::OK();

@@ -59,14 +59,14 @@ struct TabletCopySourceMetrics {
   scoped_refptr<AtomicGauge<int32_t>> open_source_sessions;
 };
 
-// Caches file size and holds a shared_ptr reference to a RandomAccessFile.
-// Assumes that the file underlying the RandomAccessFile is immutable.
-struct ImmutableRandomAccessFileInfo {
-  std::shared_ptr<RandomAccessFile> readable;
+// Caches file size and holds a shared_ptr reference to a RWFile.
+// Assumes that the file underlying the RWFile is immutable.
+struct ImmutableRWFileInfo {
+  std::shared_ptr<RWFile> readable;
   int64_t size;
 
-  ImmutableRandomAccessFileInfo(std::shared_ptr<RandomAccessFile> readable,
-                                int64_t size)
+  ImmutableRWFileInfo(std::shared_ptr<RWFile> readable,
+                      int64_t size)
       : readable(std::move(readable)), size(size) {}
 
   Status Read(uint64_t offset, Slice data) const {
@@ -170,7 +170,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
       ImmutableReadableBlockInfo*,
       BlockIdHash,
       BlockIdEqual> BlockMap;
-  typedef std::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
+  typedef std::unordered_map<uint64_t, ImmutableRWFileInfo*> LogMap;
 
   ~TabletCopySourceSession();
 
@@ -194,7 +194,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
 
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(uint64_t segment_seqno,
-                        ImmutableRandomAccessFileInfo** file_info,
+                        ImmutableRWFileInfo** file_info,
                         TabletCopyErrorPB::Code* error_code);
 
   // Unregister log anchor, if it's registered.

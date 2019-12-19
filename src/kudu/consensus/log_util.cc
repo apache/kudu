@@ -41,7 +41,6 @@
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -262,21 +261,23 @@ Status ReadableLogSegment::Open(Env* env,
                                 const string& path,
                                 scoped_refptr<ReadableLogSegment>* segment) {
   VLOG(1) << "Parsing wal segment: " << path;
-  shared_ptr<RandomAccessFile> readable_file;
-  RETURN_NOT_OK_PREPEND(env_util::OpenFileForRandom(env, path, &readable_file),
+  unique_ptr<RWFile> file;
+  RWFileOptions opts;
+  opts.mode = Env::MUST_EXIST;
+  RETURN_NOT_OK_PREPEND(env->NewRWFile(opts, path, &file),
                         "Unable to open file for reading");
 
-  segment->reset(new ReadableLogSegment(path, readable_file));
+  segment->reset(new ReadableLogSegment(path, shared_ptr<RWFile>(file.release())));
   RETURN_NOT_OK_PREPEND((*segment)->Init(), "Unable to initialize segment");
   return Status::OK();
 }
 
 ReadableLogSegment::ReadableLogSegment(
-    std::string path, shared_ptr<RandomAccessFile> readable_file)
+    string path, shared_ptr<RWFile> file)
     : path_(std::move(path)),
       file_size_(0),
       readable_to_offset_(0),
-      readable_file_(std::move(readable_file)),
+      file_(std::move(file)),
       codec_(nullptr),
       is_initialized_(false),
       footer_was_rebuilt_(false) {}
@@ -355,7 +356,7 @@ Status ReadableLogSegment::InitCompressionCodec() {
   return Status::OK();
 }
 
-const int64_t ReadableLogSegment::readable_up_to() const {
+int64_t ReadableLogSegment::readable_up_to() const {
   return readable_to_offset_.Load();
 }
 
@@ -403,7 +404,7 @@ Status ReadableLogSegment::ReadFileSize() {
   // Env uses uint here, even though we generally prefer signed ints to avoid
   // underflow bugs. Use a local to convert.
   uint64_t size;
-  RETURN_NOT_OK_PREPEND(readable_file_->Size(&size), "Unable to read file size");
+  RETURN_NOT_OK_PREPEND(file_->Size(&size), "Unable to read file size");
   file_size_.Store(size);
   if (size == 0) {
     VLOG(1) << "Log segment file $0 is zero-length: " << path();
@@ -428,8 +429,8 @@ Status ReadableLogSegment::ReadHeader() {
   LogSegmentHeaderPB header;
 
   // Read and parse the log segment header.
-  RETURN_NOT_OK_PREPEND(readable_file_->Read(kLogSegmentHeaderMagicAndHeaderLength,
-                                             header_slice),
+  RETURN_NOT_OK_PREPEND(file_->Read(kLogSegmentHeaderMagicAndHeaderLength,
+                                    header_slice),
                         "Unable to read fully");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&header,
@@ -452,7 +453,7 @@ Status ReadableLogSegment::ReadHeader() {
 Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) const {
   uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
   Slice slice(scratch, kLogSegmentHeaderMagicAndHeaderLength);
-  RETURN_NOT_OK(readable_file_->Read(0, slice));
+  RETURN_NOT_OK(file_->Read(0, slice));
   RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
   return Status::OK();
 }
@@ -510,7 +511,7 @@ Status ReadableLogSegment::ReadFooter() {
   LogSegmentFooterPB footer;
 
   // Read and parse the log segment footer.
-  RETURN_NOT_OK_PREPEND(readable_file_->Read(footer_offset, footer_slice),
+  RETURN_NOT_OK_PREPEND(file_->Read(footer_offset, footer_slice),
                         "Footer not found. Could not read fully.");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&footer,
@@ -527,8 +528,8 @@ Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) const {
   Slice slice(scratch, kLogSegmentFooterMagicAndFooterLength);
 
   CHECK_GT(file_size(), kLogSegmentFooterMagicAndFooterLength);
-  RETURN_NOT_OK(readable_file_->Read(file_size() - kLogSegmentFooterMagicAndFooterLength,
-                                     slice));
+  RETURN_NOT_OK(file_->Read(file_size() - kLogSegmentFooterMagicAndFooterLength,
+                            slice));
 
   RETURN_NOT_OK(ParseFooterMagicAndFooterLength(slice, len));
   return Status::OK();
@@ -590,7 +591,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(
        offset += kChunkSize - entry_header_size()) {
     int rem = std::min<int64_t>(file_size() - offset, kChunkSize);
     Slice chunk(buf.get(), rem);
-    RETURN_NOT_OK(readable_file()->Read(offset, chunk));
+    RETURN_NOT_OK(file_->Read(offset, chunk));
 
     // Optimization for the case where a chunk is all zeros -- this is common in the
     // case of pre-allocated files. This avoids a lot of redundant CRC calculation.
@@ -639,7 +640,7 @@ Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header,
   const size_t header_size = entry_header_size();
   uint8_t scratch[header_size];
   Slice slice(scratch, header_size);
-  RETURN_NOT_OK_PREPEND(readable_file()->Read(*offset, slice),
+  RETURN_NOT_OK_PREPEND(file_->Read(*offset, slice),
                         "Could not read log entry header");
 
   *status_detail = DecodeEntryHeader(slice, header);
@@ -717,7 +718,7 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
   }
   tmp_buf->resize(buf_len);
   Slice entry_batch_slice(tmp_buf->data(), header.msg_length_compressed);
-  Status s =  readable_file()->Read(*offset, entry_batch_slice);
+  Status s =  file_->Read(*offset, entry_batch_slice);
 
   if (!s.ok()) return Status::IOError(Substitute("Could not read entry. Cause: $0",
                                                  s.ToString()));
@@ -755,14 +756,14 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
 }
 
 WritableLogSegment::WritableLogSegment(string path,
-                                       shared_ptr<WritableFile> writable_file)
+                                       shared_ptr<RWFile> file)
     : path_(std::move(path)),
-      writable_file_(std::move(writable_file)),
+      file_(std::move(file)),
       is_header_written_(false),
       is_footer_written_(false),
       written_offset_(0) {}
 
-Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header) {
+Status WritableLogSegment::WriteHeader(const LogSegmentHeaderPB& new_header) {
   MAYBE_FAULT(FLAGS_fault_crash_before_write_log_segment_header);
 
   DCHECK(!IsHeaderWritten()) << "Can only call WriteHeader() once";
@@ -776,7 +777,7 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
   PutFixed32(&buf, new_header.ByteSize());
   // Then Serialize the PB.
   pb_util::AppendToString(new_header, &buf);
-  RETURN_NOT_OK(writable_file_->Append(Slice(buf)));
+  RETURN_NOT_OK(file_->Write(0, Slice(buf)));
 
   header_.CopyFrom(new_header);
   first_entry_offset_ = buf.size();
@@ -786,9 +787,8 @@ Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_head
   return Status::OK();
 }
 
-Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer) {
-  TRACE_EVENT1("log", "WritableLogSegment::WriteFooterAndClose",
-               "path", path_);
+Status WritableLogSegment::WriteFooter(const LogSegmentFooterPB& footer) {
+  TRACE_EVENT1("log", "WritableLogSegment::WriteFooter", "path", path_);
   DCHECK(IsHeaderWritten());
   DCHECK(!IsFooterWritten());
   DCHECK(footer.IsInitialized()) << footer.InitializationErrorString();
@@ -798,14 +798,12 @@ Status WritableLogSegment::WriteFooterAndClose(const LogSegmentFooterPB& footer)
   buf.append(kLogSegmentFooterMagicString);
   PutFixed32(&buf, footer.ByteSize());
 
-  RETURN_NOT_OK_PREPEND(writable_file_->Append(Slice(buf)), "Could not write the footer");
+  RETURN_NOT_OK_PREPEND(file_->Write(written_offset_, Slice(buf)),
+                        "Could not write the footer");
 
   footer_.CopyFrom(footer);
-  is_footer_written_ = true;
-
-  RETURN_NOT_OK(writable_file_->Close());
-
   written_offset_ += buf.size();
+  is_footer_written_ = true;
 
   return Status::OK();
 }
@@ -841,7 +839,7 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data,
   Slice slices[2] = {
     Slice(header_buf, arraysize(header_buf)),
     data_to_write };
-  RETURN_NOT_OK(writable_file_->AppendV(slices));
+  RETURN_NOT_OK(file_->WriteV(written_offset_, slices));
   written_offset_ += arraysize(header_buf) + data_to_write.size();
   return Status::OK();
 }

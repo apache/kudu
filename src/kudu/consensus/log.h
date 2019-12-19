@@ -55,7 +55,7 @@ namespace kudu {
 
 class CompressionCodec;
 class FsManager;
-class WritableFile;
+class RWFile;
 
 namespace log {
 
@@ -120,12 +120,12 @@ class SegmentAllocator {
   // 'write_size_bytes' is the expected size of the next write; if the active
   // segment would go above the max segment size, a new segment is allocated.
   //
-  // In the event of a roll over, 'closed_segment' contains a new segment reader
-  // for the just-closed segment (if there was one), and 'new_readable_segment'
-  // contains the newly active segment, reopened for reading.
+  // In the event of a roll over, 'finished_segment' contains a new segment
+  // reader for the just-finished segment (if there was one), and
+  // 'new_readable_segment' contains the newly active segment, reopened for reading.
   Status AllocateOrRollOverIfNecessary(
       uint32_t write_size_bytes,
-      scoped_refptr<ReadableLogSegment>* closed_segment,
+      scoped_refptr<ReadableLogSegment>* finished_segment,
       scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
 
@@ -134,9 +134,9 @@ class SegmentAllocator {
 
   // Syncs the current segment and writes out the footer.
   //
-  // If 'closed_segment' is not null, it will contain a new ReadableLogSegment
-  // corresponding to the segment that was just closed.
-  Status CloseCurrentSegment(scoped_refptr<ReadableLogSegment>* closed_segment);
+  // If 'finished_segment' is not null, it will contain a new ReadableLogSegment
+  // corresponding to the segment that was just finished.
+  Status FinishCurrentSegment(scoped_refptr<ReadableLogSegment>* finished_segment);
 
   // Update the footer based on the written 'batch', e.g. to track the
   // last-written OpId.
@@ -165,16 +165,13 @@ class SegmentAllocator {
   // This is not thread-safe. It is up to the caller to ensure this does not
   // interfere with the append thread's attempts to switch log segments.
   //
-  // If there was a previous active segment, 'closed_segment' contains a new
+  // If there was a previous active segment, 'finished_segment' contains a new
   // segment reader built for that segment.
   //
   // 'new_readable_segment' contains the newly active segment, reopened for reading.
   Status AllocateSegmentAndRollOver(
-      scoped_refptr<ReadableLogSegment>* closed_segment,
+      scoped_refptr<ReadableLogSegment>* finished_segment,
       scoped_refptr<ReadableLogSegment>* new_readable_segment);
-
-  // Returns a readable segment pointing at the most recently closed segment.
-  Status GetClosedSegment(scoped_refptr<ReadableLogSegment>* readable_segment);
 
   // Sets the schema and version to be used for the next allocated segment.
   void SetSchemaForNextSegment(Schema schema, uint32_t version);
@@ -200,11 +197,11 @@ class SegmentAllocator {
   // Waits for any on-going allocation to complete and rolls over onto the
   // allocated segment, swapping out the previous active segment if it existed.
   //
-  // If there was a previous active segment, 'closed_segment' contains a new
+  // If there was a previous active segment, 'finished_segment' contains a new
   // segment reader built for that segment.
   //
   // 'new_readable_segment' contains the newly active segment, reopened for reading.
-  Status RollOver(scoped_refptr<ReadableLogSegment>* closed_segment,
+  Status RollOver(scoped_refptr<ReadableLogSegment>* finished_segment,
                   scoped_refptr<ReadableLogSegment>* new_readable_segment);
 
   // Hooks used to inject faults into the allocator.
@@ -212,7 +209,7 @@ class SegmentAllocator {
 
   // Descriptors for the segment file that should be used as the next active
   // segment.
-  std::shared_ptr<WritableFile> next_segment_file_;
+  std::shared_ptr<RWFile> next_segment_file_;
   std::string next_segment_path_;
 
   // Contains state shared by various Log-related classs.
@@ -235,7 +232,7 @@ class SegmentAllocator {
   bool sync_disabled_;
 
   // A footer being prepared for the current segment.
-  // When the segment is closed, it will be written.
+  // When the segment is finished, it will be written.
   LogSegmentFooterPB footer_;
 
   // The currently active segment being written.
