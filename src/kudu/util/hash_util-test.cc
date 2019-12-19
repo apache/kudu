@@ -39,4 +39,33 @@ TEST(HashUtilTest, TestMurmur2Hash64) {
   ASSERT_EQ(3575930248840144026, hash);
 }
 
+// Test FastHash64/32 returns the expected values for inputs. These tests are
+// duplicated on the Java side to ensure that hash computations are stable
+// across both platforms.
+TEST(HashUtilTest, TestFastHash64) {
+  uint64_t hash;
+
+  hash = HashUtil::FastHash64("ab", 2, 0);
+  ASSERT_EQ(17293172613997361769UL, hash);
+
+  hash = HashUtil::FastHash64("abcdefg", 7, 0);
+  ASSERT_EQ(10206404559164245992UL, hash);
+
+  hash = HashUtil::FastHash64("quick brown fox", 15, 42);
+  ASSERT_EQ(3757424404558187042UL, hash);
+}
+
+TEST(HashUtilTest, TestFastHash32) {
+  uint64_t hash;
+
+  hash = HashUtil::FastHash32("ab", 2, 0);
+  ASSERT_EQ(2564147595U, hash);
+
+  hash = HashUtil::FastHash32("abcdefg", 7, 0);
+  ASSERT_EQ(1497700618U, hash);
+
+  hash = HashUtil::FastHash32("quick brown fox", 15, 42);
+  ASSERT_EQ(1676541068U, hash);
+}
+
 } // namespace kudu
