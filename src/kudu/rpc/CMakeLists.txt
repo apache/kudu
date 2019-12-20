@@ -96,8 +96,7 @@ target_link_libraries(protoc-gen-krpc
     rpc_header_proto
     protoc
     protobuf
-    gutil
-    kudu_util)
+    gutil)
 
 #### RPC test
 PROTOBUF_GENERATE_CPP(
