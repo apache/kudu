@@ -843,6 +843,11 @@ void MeanGauge::MergeFrom(const scoped_refptr<Metric>& other) {
 
 void MeanGauge::WriteValue(JsonWriter* writer) const {
   writer->Double(value());
+
+  writer->String("total_sum");
+  writer->Double(total_sum());
+  writer->String("total_count");
+  writer->Double(total_count());
 }
 
 //

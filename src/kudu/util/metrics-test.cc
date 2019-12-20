@@ -207,6 +207,34 @@ TEST_F(MetricsTest, SimpleMeanGaugeMergeTest) {
   ASSERT_EQ(4, average_usage_for_merge->value());
 }
 
+TEST_F(MetricsTest, TestMeanGaugeJsonPrint) {
+  scoped_refptr<MeanGauge> test_meangauge =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
+  const double kTotalSum = 5.0;
+  const double kTotalCount = 2.0;
+  test_meangauge->set_value(kTotalSum, kTotalCount);
+
+  std::ostringstream out;
+  JsonWriter writer(&out, JsonWriter::PRETTY);
+  CHECK_OK(entity_->WriteAsJson(&writer, MetricJsonOptions()));
+
+  JsonReader reader(out.str());
+  ASSERT_OK(reader.Init());
+  vector<const rapidjson::Value*> metrics;
+  ASSERT_OK(reader.ExtractObjectArray(reader.root(), "metrics", &metrics));
+  ASSERT_EQ(1, metrics.size());
+
+  double total_sum;
+  ASSERT_OK(reader.ExtractDouble(metrics[0], "total_sum", &total_sum));
+  double total_count;
+  ASSERT_OK(reader.ExtractDouble(metrics[0], "total_count", &total_count));
+  double value;
+  ASSERT_OK(reader.ExtractDouble(metrics[0], "value", &value));
+  ASSERT_EQ(total_sum, kTotalSum);
+  ASSERT_EQ(total_count, kTotalCount);
+  ASSERT_EQ(value, kTotalSum/kTotalCount);
+}
+
 METRIC_DEFINE_gauge_uint64(test_entity, test_gauge, "Test uint64 Gauge",
                            MetricUnit::kBytes, "Description of Test Gauge",
                            kudu::MetricLevel::kInfo);
