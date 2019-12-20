@@ -75,15 +75,15 @@
 #elif defined(__APPLE__)
 #include "kudu/gutil/atomicops-internals-macosx.h" // IWYU pragma: export
 #elif defined(__GNUC__) && defined(ARMV6)
-#include "kudu/gutil/atomicops-internals-arm-v6plus.h" // IWYU pragma: export
+#include "kudu/gutil/auxiliary/atomicops-internals-arm-v6plus.h" // IWYU pragma: export
 #elif defined(ARMV3)
-#include "kudu/gutil/atomicops-internals-arm-generic.h" // IWYU pragma: export
+#include "kudu/gutil/auxiliary/atomicops-internals-arm-generic.h" // IWYU pragma: export
 #elif defined(__GNUC__) && (defined(__i386) || defined(__x86_64__))
 #include "kudu/gutil/atomicops-internals-x86.h" // IWYU pragma: export
 #elif defined(__GNUC__) && defined(ARCH_POWERPC64)
 #include "kudu/gutil/atomicops-internals-powerpc.h" // IWYU pragma: export
 #elif defined(OS_WINDOWS)
-#include "kudu/gutil/atomicops-internals-windows.h" // IWYU pragma: export
+#include "kudu/gutil/auxiliary/atomicops-internals-windows.h" // IWYU pragma: export
 #else
 #error You need to implement atomic operations for this architecture
 #endif
