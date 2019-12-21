@@ -122,6 +122,8 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   const std::string& leader_uuid() const;
   void set_leader_uuid(std::string uuid);
 
+  std::pair<std::string, unsigned int> leader_hostport() const;
+
   // Returns the currently active role of the current node.
   RaftPeerPB::Role active_role() const;
 

@@ -179,6 +179,17 @@ void ConsensusMetadata::set_leader_uuid(string uuid) {
   UpdateActiveRole();
 }
 
+std::pair<string, unsigned int> ConsensusMetadata::leader_hostport() const {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  for (const RaftPeerPB& peer : ActiveConfig().peers()) {
+    if (peer.permanent_uuid() == leader_uuid_ && peer.has_last_known_addr()) {
+      const ::kudu::HostPortPB& host_port = peer.last_known_addr();
+      return std::make_pair(host_port.host(), host_port.port());
+    }
+  }
+  return {};
+}
+
 RaftPeerPB::Role ConsensusMetadata::active_role() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return active_role_;
