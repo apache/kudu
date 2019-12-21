@@ -192,8 +192,8 @@ const MonoTime& MonoTime::Earliest(const MonoTime& a, const MonoTime& b) {
   return a;
 }
 
-MonoTime::MonoTime()
-  : nanos_(0) {
+MonoTime::MonoTime() KUDU_MONOTIME_NOEXCEPT
+    : nanos_(0) {
 }
 
 bool MonoTime::Initialized() const {
@@ -238,7 +238,7 @@ MonoTime& MonoTime::operator-=(const MonoDelta& delta) {
   return *this;
 }
 
-MonoTime::MonoTime(const struct timespec &ts) {
+MonoTime::MonoTime(const struct timespec &ts) KUDU_MONOTIME_NOEXCEPT {
   // Monotonic time resets when the machine reboots.  The 64-bit limitation
   // means that we can't represent times larger than 292 years, which should be
   // adequate.
@@ -248,8 +248,8 @@ MonoTime::MonoTime(const struct timespec &ts) {
   nanos_ += ts.tv_nsec;
 }
 
-MonoTime::MonoTime(int64_t nanos)
-  : nanos_(nanos) {
+MonoTime::MonoTime(int64_t nanos) KUDU_MONOTIME_NOEXCEPT
+    : nanos_(nanos) {
 }
 
 double MonoTime::ToSeconds() const {

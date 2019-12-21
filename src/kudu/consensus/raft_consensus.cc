@@ -1414,10 +1414,13 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       return Status::OK();
     }
 
-    // Snooze the failure detector as soon as we decide to accept the message.
+    // As soon as we decide to accept the message:
+    //   * snooze the failure detector
+    //   * prohibit voting for anyone for the minimum election timeout
     // We are guaranteed to be acting as a FOLLOWER at this point by the above
     // sanity check.
     SnoozeFailureDetector();
+    WithholdVotes();
 
     last_leader_communication_time_micros_ = GetMonoTimeMicros();
 
@@ -1434,9 +1437,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // We update the lag metrics here in addition to after appending to the queue so the
     // metrics get updated even when the operation is rejected.
     queue_->UpdateLastIndexAppendedToLeader(request->last_idx_appended_to_leader());
-
-    // Also prohibit voting for anyone for the minimum election timeout.
-    WithholdVotesUnlocked();
 
     // 1 - Early commit pending (and committed) transactions
 
@@ -1601,10 +1601,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // waiting on our own log.
       if (s.IsTimedOut()) {
         SnoozeFailureDetector();
-        {
-          LockGuard l(lock_);
-          WithholdVotesUnlocked();
-        }
+        WithholdVotes();
       }
     } while (s.IsTimedOut());
     RETURN_NOT_OK(s);
@@ -1646,6 +1643,32 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
   response->set_responder_uuid(peer_uuid());
+
+  // If we've heard recently from the leader, then we should ignore the request.
+  // It might be from a "disruptive" server. This could happen in a few cases:
+  //
+  // 1) Network partitions
+  // If the leader can talk to a majority of the nodes, but is partitioned from a
+  // bad node, the bad node's failure detector will trigger. If the bad node is
+  // able to reach other nodes in the cluster, it will continuously trigger elections.
+  //
+  // 2) An abandoned node
+  // It's possible that a node has fallen behind the log GC mark of the leader. In that
+  // case, the leader will stop sending it requests. Eventually, the the configuration
+  // will change to eject the abandoned node, but until that point, we don't want the
+  // abandoned follower to disturb the other nodes.
+  //
+  // 3) Other dynamic scenarios with a stale former leader
+  // This is a generalization of the case 1. It's possible that a stale former
+  // leader detects it's not a leader anymore at some point, but a majority
+  // of replicas has elected a new leader already.
+  //
+  // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
+  // section 4.2.3.
+  if (PREDICT_TRUE(!request->ignore_live_leader()) &&
+      MonoTime::Now() < withhold_votes_until_) {
+    return RequestVoteRespondLeaderIsAlive(request, response);
+  }
 
   // We must acquire the update lock in order to ensure that this vote action
   // takes place between requests.
@@ -1711,27 +1734,11 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
                                    << request->candidate_uuid();
   }
 
-  // If we've heard recently from the leader, then we should ignore the request.
-  // It might be from a "disruptive" server. This could happen in a few cases:
-  //
-  // 1) Network partitions
-  // If the leader can talk to a majority of the nodes, but is partitioned from a
-  // bad node, the bad node's failure detector will trigger. If the bad node is
-  // able to reach other nodes in the cluster, it will continuously trigger elections.
-  //
-  // 2) An abandoned node
-  // It's possible that a node has fallen behind the log GC mark of the leader. In that
-  // case, the leader will stop sending it requests. Eventually, the the configuration
-  // will change to eject the abandoned node, but until that point, we don't want the
-  // abandoned follower to disturb the other nodes.
-  //
-  // 3) Other dynamic scenarios with a stale former leader
-  // This is a generalization of the case 1. It's possible that a stale former
-  // leader detects it's not a leader anymore at some point, but a majority
-  // of replicas has elected a new leader already.
-  //
-  // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
-  // section 4.2.3.
+  // Recheck the heard-from-the-leader condition. There is a slight chance
+  // that a heartbeat from the leader replica registers after the first check
+  // in the very beginning of this method and before lock_ is acquired. This
+  // extra check costs a little, but it helps in avoiding extra election rounds
+  // and disruptive transfers of the replica leadership.
   if (PREDICT_TRUE(!request->ignore_live_leader()) &&
       MonoTime::Now() < withhold_votes_until_) {
     return RequestVoteRespondLeaderIsAlive(request, response);
@@ -2173,14 +2180,13 @@ void RaftConsensus::Stop() {
     if (cmeta_) {
       ClearLeaderUnlocked();
     }
-
-    // If we were the leader, stop witholding votes.
-    if (withhold_votes_until_ == MonoTime::Max()) {
-      withhold_votes_until_ = MonoTime::Min();
-    }
-
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Raft consensus is shut down!";
   }
+
+  // If we were the leader, stop withholding votes.
+  auto max_time = MonoTime::Max();
+  withhold_votes_until_.compare_exchange_strong(max_time, MonoTime::Min());
+
 
   // Shut down things that might acquire locks during destruction.
   if (raft_pool_token_) raft_pool_token_->Shutdown();
@@ -2319,14 +2325,15 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
 
 Status RaftConsensus::RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,
                                                       VoteResponsePB* response) {
-  FillVoteResponseVoteDenied(ConsensusErrorPB::LEADER_IS_ALIVE, response);
-  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
-                          "replica is either leader or believes a valid leader to "
-                          "be alive.",
-                          GetRequestVoteLogPrefixUnlocked(*request),
-                          request->candidate_uuid(),
-                          request->candidate_term());
-  LOG(INFO) << msg;
+  FillVoteResponseVoteDenied(ConsensusErrorPB::LEADER_IS_ALIVE, response,
+                             ResponderTermPolicy::DO_NOT_SET);
+  auto msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
+                        "replica is either leader or believes a valid leader to "
+                        "be alive.",
+                        GetRequestVoteLogPrefixThreadSafe(*request),
+                        request->candidate_uuid(),
+                        request->candidate_term());
+  VLOG(1) << msg;
   StatusToPB(Status::InvalidArgument(msg),
              response->mutable_consensus_error()->mutable_status());
   return Status::OK();
@@ -2876,10 +2883,17 @@ void RaftConsensus::SnoozeFailureDetector(boost::optional<string> reason_for_log
   }
 }
 
-void RaftConsensus::WithholdVotesUnlocked() {
-  DCHECK(lock_.is_locked());
-  withhold_votes_until_ = std::max(withhold_votes_until_,
-                                   MonoTime::Now() + MinimumElectionTimeout());
+void RaftConsensus::WithholdVotes() {
+  MonoTime prev = withhold_votes_until_;
+  MonoTime next = MonoTime::Now() + MinimumElectionTimeout();
+  do {
+    if (prev == MonoTime::Max()) {
+      // Maximum withholding time already. It might be the case if replica
+      // has become a leader already.
+      break;
+    }
+    next = MonoTime::Now() + MinimumElectionTimeout();
+  } while (!withhold_votes_until_.compare_exchange_weak(prev, next));
 }
 
 MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
@@ -3047,7 +3061,7 @@ Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
   return Status::OK();
 }
 
-const int64_t RaftConsensus::CurrentTermUnlocked() const {
+int64_t RaftConsensus::CurrentTermUnlocked() const {
   DCHECK(lock_.is_locked());
   return cmeta_->current_term();
 }
@@ -3067,7 +3081,7 @@ void RaftConsensus::ClearLeaderUnlocked() {
   cmeta_->set_leader_uuid("");
 }
 
-const bool RaftConsensus::HasVotedCurrentTermUnlocked() const {
+bool RaftConsensus::HasVotedCurrentTermUnlocked() const {
   DCHECK(lock_.is_locked());
   return cmeta_->has_voted_for();
 }

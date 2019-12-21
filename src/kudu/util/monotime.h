@@ -35,6 +35,19 @@
 
 #include "kudu/util/kudu_export.h"
 
+
+// The 'noexcept' specifier is recognized by a C++11-capable compiler, but this
+// file is targeted to compile by C++-98 compiler as well. As it turns out,
+// adding 'noexcept' doesn't affect the generated symbols in the exported
+// MonoTime class, so it's safe to turn it on when compiling in the C++11 mode.
+// The 'noexcept' specified is useful in cases when wrapping MonoTime into
+// std::atomic<> and the standard C++ library explicitly requires that.
+#ifdef LANG_CXX11
+#define KUDU_MONOTIME_NOEXCEPT noexcept
+#else
+#define KUDU_MONOTIME_NOEXCEPT
+#endif // #ifdef LANG_CXX11 ... #else ...
+
 namespace kudu {
 
 /// @brief A representation of a time interval.
@@ -182,7 +195,7 @@ class KUDU_EXPORT MonoTime {
 
   /// Build a MonoTime object. The resulting object is not initialized
   /// and not ready to use.
-  MonoTime();
+  MonoTime() KUDU_MONOTIME_NOEXCEPT;
 
   /// @return @c true iff the object is initialized.
   bool Initialized() const;
@@ -257,8 +270,8 @@ class KUDU_EXPORT MonoTime {
   FRIEND_TEST(TestMonoTime, TestTimeSpec);
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
 
-  explicit MonoTime(const struct timespec &ts);
-  explicit MonoTime(int64_t nanos);
+  explicit MonoTime(const struct timespec &ts) KUDU_MONOTIME_NOEXCEPT;
+  explicit MonoTime(int64_t nanos) KUDU_MONOTIME_NOEXCEPT;
   double ToSeconds() const;
   int64_t nanos_;
 };
