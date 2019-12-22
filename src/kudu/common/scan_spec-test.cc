@@ -41,11 +41,21 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;
 
 namespace kudu {
+
+static std::string ToString(const vector<ColumnSchema>& columns) {
+  std::string str;
+  for (const auto& column : columns) {
+    str += column.ToString();
+    str += "\n";
+  }
+  return str;
+}
 
 class TestScanSpec : public KuduTest {
  public:
@@ -136,7 +146,8 @@ class CompositeIntKeysTest : public TestScanSpec {
         Schema({ ColumnSchema("a", INT8),
                  ColumnSchema("b", INT8),
                  ColumnSchema("c", INT8),
-                 ColumnSchema("d", INT8, true) },
+                 ColumnSchema("d", INT8, true),
+                 ColumnSchema("e", INT8) },
                3)) {
   }
 };
@@ -702,6 +713,47 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_WithPredicates) {
     ASSERT_EQ("b NONE", FindOrDie(spec.predicates(), "b").ToString());
     ASSERT_EQ("c >= 3 AND c < 101", FindOrDie(spec.predicates(), "c").ToString());
     ASSERT_EQ(true, spec.CanShortCircuit());
+  }
+}
+
+// Predicates: a = 3 AND 4 <= b AND c IsNotNull And d IsNotNull.
+TEST_F(CompositeIntKeysTest, TestGetMissingColumns) {
+  ScanSpec spec;
+  AddPredicate<int8_t>(&spec, "a", GE, 3);
+  AddPredicate<int8_t>(&spec, "b", GE, 4);
+  spec.AddPredicate(ColumnPredicate::IsNotNull(schema_.column(2)));
+  spec.AddPredicate(ColumnPredicate::IsNotNull(schema_.column(3)));
+  SCOPED_TRACE(spec.ToString(schema_));
+  spec.OptimizeScan(schema_, &arena_, &pool_, true);
+  EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=-128) AND "
+            "b >= 4 AND d IS NOT NULL", spec.ToString(schema_));
+  EXPECT_EQ(2, spec.predicates().size());
+  {
+    // Projection: e.
+    Schema projection({ ColumnSchema("e", INT8) }, 0);
+    vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
+    EXPECT_EQ(2, missing_cols.size());
+    std::string missing_cols_str = ToString(missing_cols);
+    EXPECT_STR_CONTAINS(missing_cols_str, "b INT8");
+    EXPECT_STR_CONTAINS(missing_cols_str, "d INT8");
+  }
+  {
+    // Projection: d e.
+    Schema projection({ ColumnSchema("d", INT8, true),
+                        ColumnSchema("e", INT8) }, 0);
+    vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
+    EXPECT_EQ(1, missing_cols.size());
+    std::string missing_cols_str = ToString(missing_cols);
+    EXPECT_STR_CONTAINS(missing_cols_str, "b INT8");
+  }
+
+  {
+    // Projection: b d e.
+    Schema projection({ ColumnSchema("b", INT8),
+                        ColumnSchema("d", INT8, true),
+                        ColumnSchema("e", INT8) }, 0);
+    vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
+    EXPECT_EQ(0, missing_cols.size());
   }
 }
 

@@ -2698,6 +2698,65 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
             results.back());
 }
 
+TEST_F(TabletServerTest, TestScanWithSimplifiablePredicates) {
+  int num_rows = AllowSlowTests() ? 10000 : 1000;
+  InsertTestRowsDirect(0, num_rows);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+  // Set up a projection without the key columns or the column after the last key column
+  SchemaBuilder sb(schema_);
+  for (int i = 0; i <= schema_.num_key_columns(); i++) {
+    sb.RemoveColumn(schema_.column(i).name());
+  }
+  const Schema& projection = sb.BuildWithoutIds();
+  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+
+  // Set up a key range predicate: 51 <= key < 100
+  ColumnPredicatePB* key_predicate = scan->add_column_predicates();
+  key_predicate->set_column(schema_.column(0).name());
+  ColumnPredicatePB::Range* range = key_predicate->mutable_range();
+  int32_t lower_bound_inclusive = 51;
+  int32_t upper_bound_exclusive = 100;
+  range->mutable_lower()->append(
+    reinterpret_cast<char*>(&lower_bound_inclusive), sizeof(lower_bound_inclusive));
+  range->mutable_upper()->append(
+    reinterpret_cast<char*>(&upper_bound_exclusive), sizeof(upper_bound_exclusive));
+  // Set up is not null predicate for not nullable column.
+  ColumnPredicatePB* is_not_null_predicate = scan->add_column_predicates();
+  is_not_null_predicate->set_column(schema_.column(1).name());
+  is_not_null_predicate->mutable_is_not_null();
+  // Send the call
+  {
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Ensure that the scanner includes correct columns.
+  {
+    auto scan_descriptors = mini_server_->server()->scanner_manager()->ListScans();
+    ASSERT_EQ(1, projection.columns().size());
+    ASSERT_EQ(1, scan_descriptors.size());
+    ASSERT_EQ(projection.columns().size(), scan_descriptors[0].projected_columns.size());
+    ASSERT_EQ(2, scan_descriptors[0].predicates.size());
+    ASSERT_EQ(projection.columns().size(), scan_descriptors[0].iterator_stats.size());
+    ASSERT_EQ(projection.column(0).name(), scan_descriptors[0].iterator_stats[0].first);
+  }
+
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  NO_FATALS(
+    DrainScannerToStrings(resp.scanner_id(), projection, &results));
+  ASSERT_EQ(49, results.size());
+}
+
 // Test for diff scan RPC interface.
 TEST_F(TabletServerTest, TestDiffScan) {
   // Insert 100 rows with the usual pattern.

@@ -21,6 +21,7 @@
 #include <iterator>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -45,6 +46,7 @@ using std::max;
 using std::move;
 using std::pair;
 using std::string;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -157,6 +159,21 @@ void ScanSpec::OptimizeScan(const Schema& schema,
       itr = std::next(itr);
     }
   }
+}
+
+vector<ColumnSchema> ScanSpec::GetMissingColumns(const Schema& projection) {
+  vector<ColumnSchema> missing_cols;
+  unordered_set<string> missing_col_names;
+  for (const auto& entry : predicates_) {
+    const auto& predicate = entry.second;
+    const auto& column_name = predicate.column().name();
+    if (projection.find_column(column_name) == Schema::kColumnNotFound &&
+        !ContainsKey(missing_col_names, column_name)) {
+      missing_cols.push_back(predicate.column());
+      InsertOrDie(&missing_col_names, column_name);
+    }
+  }
+  return missing_cols;
 }
 
 void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,

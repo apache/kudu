@@ -91,6 +91,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -2141,26 +2142,15 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
 
 static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                             const Schema& tablet_schema,
-                            const Schema& projection,
-                            vector<ColumnSchema>* missing_cols,
                             gscoped_ptr<ScanSpec>* spec,
                             const SharedScanner& scanner) {
   gscoped_ptr<ScanSpec> ret(new ScanSpec);
   ret->set_cache_blocks(scan_pb.cache_blocks());
 
-  unordered_set<string> missing_col_names;
-
   // First the column predicates.
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
     boost::optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
-
-    if (projection.find_column(predicate->column().name()) == Schema::kColumnNotFound &&
-        !ContainsKey(missing_col_names, predicate->column().name())) {
-      InsertOrDie(&missing_col_names, predicate->column().name());
-      missing_cols->push_back(predicate->column());
-    }
-
     ret->AddPredicate(std::move(*predicate));
   }
 
@@ -2175,11 +2165,6 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     }
     boost::optional<ColumnSchema> col;
     RETURN_NOT_OK(ColumnSchemaFromPB(pred_pb.column(), &col));
-    if (projection.find_column(col->name()) == Schema::kColumnNotFound &&
-        !ContainsKey(missing_col_names, col->name())) {
-      missing_cols->push_back(*col);
-      InsertOrDie(&missing_col_names, col->name());
-    }
 
     const void* lower_bound = nullptr;
     const void* upper_bound = nullptr;
@@ -2324,11 +2309,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
 
-  // Missing columns will contain the columns that are not mentioned in the
-  // client projection but are actually needed for the scan, such as columns
-  // referred to by predicates.
-  vector<ColumnSchema> missing_cols;
-  s = SetupScanSpec(scan_pb, tablet_schema, projection, &missing_cols, &spec, scanner);
+  s = SetupScanSpec(scan_pb, tablet_schema, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
     return s;
@@ -2338,6 +2319,13 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   spec->OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
   VLOG(3) << "After optimizing scan spec: " << spec->ToString(tablet_schema);
 
+  // Missing columns will contain the columns that are not mentioned in the
+  // client projection but are actually needed for the scan, such as columns
+  // referred to by predicates.
+  //
+  // NOTE: We should build the missing column after optimizing scan which will
+  // remove unnecessary predicates.
+  vector<ColumnSchema> missing_cols = spec->GetMissingColumns(projection);
   if (spec->CanShortCircuit()) {
     VLOG(1) << "short-circuiting without creating a server-side scanner.";
     *has_more_results = false;
@@ -2387,6 +2375,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     }
   }
   projection = projection_builder.BuildWithoutIds();
+  VLOG(3) << "Scan projection: " << projection.ToString(Schema::BASE_INFO);
 
   unique_ptr<RowwiseIterator> iter;
 
