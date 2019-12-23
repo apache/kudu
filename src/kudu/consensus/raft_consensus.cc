@@ -497,11 +497,11 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     // Initialize the VoteCounter.
     int num_voters = CountVoters(active_config);
     int majority_size = MajoritySize(num_voters);
-    gscoped_ptr<VoteCounter> counter(new VoteCounter(num_voters, majority_size));
+    VoteCounter counter(num_voters, majority_size);
 
     // Vote for ourselves.
     bool duplicate;
-    RETURN_NOT_OK(counter->RegisterVote(peer_uuid(), VOTE_GRANTED, &duplicate));
+    RETURN_NOT_OK(counter.RegisterVote(peer_uuid(), VOTE_GRANTED, &duplicate));
     CHECK(!duplicate) << LogPrefixUnlocked()
                       << "Inexplicable duplicate self-vote for term "
                       << CurrentTermUnlocked();
@@ -2421,6 +2421,12 @@ const char* RaftConsensus::State_Name(State state) {
   }
 }
 
+MonoDelta RaftConsensus::MinimumElectionTimeout() {
+  int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
+      FLAGS_raft_heartbeat_interval_ms;
+  return MonoDelta::FromMilliseconds(failure_timeout);
+}
+
 void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   DCHECK(lock_.is_locked());
   failed_elections_since_stable_leader_ = 0;
@@ -2864,12 +2870,6 @@ void RaftConsensus::WithholdVotesUnlocked() {
   DCHECK(lock_.is_locked());
   withhold_votes_until_ = std::max(withhold_votes_until_,
                                    MonoTime::Now() + MinimumElectionTimeout());
-}
-
-MonoDelta RaftConsensus::MinimumElectionTimeout() const {
-  int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
-      FLAGS_raft_heartbeat_interval_ms;
-  return MonoDelta::FromMilliseconds(failure_timeout);
 }
 
 MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {

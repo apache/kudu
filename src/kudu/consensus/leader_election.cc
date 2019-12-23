@@ -18,9 +18,9 @@
 #include "kudu/consensus/leader_election.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -34,7 +34,6 @@
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -47,6 +46,7 @@ namespace kudu {
 namespace consensus {
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -55,16 +55,16 @@ using strings::Substitute;
 ///////////////////////////////////////////////////
 
 VoteCounter::VoteCounter(int num_voters, int majority_size)
-  : num_voters_(num_voters),
-    majority_size_(majority_size),
-    yes_votes_(0),
-    no_votes_(0) {
+    : num_voters_(num_voters),
+      majority_size_(majority_size),
+      yes_votes_(0),
+      no_votes_(0) {
   CHECK_LE(majority_size, num_voters);
   CHECK_GT(num_voters_, 0);
   CHECK_GT(majority_size_, 0);
 }
 
-Status VoteCounter::RegisterVote(const std::string& voter_uuid, ElectionVote vote,
+Status VoteCounter::RegisterVote(const string& voter_uuid, ElectionVote vote,
                                  bool* is_duplicate) {
   // Handle repeated votes.
   if (PREDICT_FALSE(ContainsKey(votes_, voter_uuid))) {
@@ -160,25 +160,23 @@ string VoteCounter::GetElectionSummary() const {
 // ElectionResult
 ///////////////////////////////////////////////////
 
-// Suppress false positive about 'decision' used while uninitialized.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-ElectionResult::ElectionResult(VoteRequestPB vote_request, ElectionVote decision,
-                               ConsensusTerm highest_voter_term, const std::string& message)
-  : vote_request(std::move(vote_request)),
-    decision(decision),
-    highest_voter_term(highest_voter_term),
-    message(message) {
+ElectionResult::ElectionResult(VoteRequestPB request,
+                               ElectionVote election_decision,
+                               ConsensusTerm highest_term,
+                               string msg)
+    : vote_request(std::move(request)),
+      decision(election_decision),
+      highest_voter_term(highest_term),
+      message(std::move(msg)) {
   DCHECK(!message.empty());
 }
-#pragma GCC diagnostic pop
 
 ///////////////////////////////////////////////////
 // LeaderElection::VoterState
 ///////////////////////////////////////////////////
 
 string LeaderElection::VoterState::PeerInfo() const {
-  std::string info = peer_uuid;
+  string info = peer_uuid;
   if (proxy) {
     strings::SubstituteAndAppend(&info, " ($0)", proxy->PeerName());
   }
@@ -192,7 +190,7 @@ string LeaderElection::VoterState::PeerInfo() const {
 LeaderElection::LeaderElection(RaftConfigPB config,
                                PeerProxyFactory* proxy_factory,
                                VoteRequestPB request,
-                               gscoped_ptr<VoteCounter> vote_counter,
+                               VoteCounter vote_counter,
                                MonoDelta timeout,
                                ElectionDecisionCallback decision_callback)
     : has_responded_(false),
@@ -208,7 +206,6 @@ LeaderElection::LeaderElection(RaftConfigPB config,
 LeaderElection::~LeaderElection() {
   std::lock_guard<Lock> guard(lock_);
   DCHECK(has_responded_); // We must always call the callback exactly once.
-  STLDeleteValues(&voter_state_);
 }
 
 void LeaderElection::Run() {
@@ -217,9 +214,9 @@ void LeaderElection::Run() {
   // Initialize voter state tracking.
   vector<string> other_voter_uuids;
   voter_state_.clear();
-  for (const RaftPeerPB& peer : config_.peers()) {
+  for (const auto& peer : config_.peers()) {
     if (request_.candidate_uuid() == peer.permanent_uuid()) {
-      DCHECK_EQ(peer.member_type(), RaftPeerPB::VOTER)
+      DCHECK_EQ(RaftPeerPB::VOTER, peer.member_type())
           << Substitute("non-voter member $0 tried to start an election; "
                         "Raft config {$1}",
                         peer.permanent_uuid(),
@@ -231,18 +228,18 @@ void LeaderElection::Run() {
     }
     other_voter_uuids.emplace_back(peer.permanent_uuid());
 
-    gscoped_ptr<VoterState> state(new VoterState());
+    unique_ptr<VoterState> state(new VoterState);
     state->peer_uuid = peer.permanent_uuid();
     state->proxy_status = proxy_factory_->NewProxy(peer, &state->proxy);
-    InsertOrDie(&voter_state_, peer.permanent_uuid(), state.release());
+    EmplaceOrDie(&voter_state_, peer.permanent_uuid(), std::move(state));
   }
 
   // Ensure that the candidate has already voted for itself.
-  CHECK_EQ(1, vote_counter_->GetTotalVotesCounted()) << "Candidate must vote for itself first";
+  CHECK_EQ(1, vote_counter_.GetTotalVotesCounted()) << "Candidate must vote for itself first";
 
   // Ensure that existing votes + future votes add up to the expected total.
-  CHECK_EQ(vote_counter_->GetTotalVotesCounted() + other_voter_uuids.size(),
-           vote_counter_->GetTotalExpectedVotes())
+  CHECK_EQ(vote_counter_.GetTotalVotesCounted() + other_voter_uuids.size(),
+           vote_counter_.GetTotalExpectedVotes())
       << "Expected different number of voters. Voter UUIDs: ["
       << JoinStringsIterator(other_voter_uuids.begin(), other_voter_uuids.end(), ", ")
       << "]; RaftConfig: {" << pb_util::SecureShortDebugString(config_) << "}";
@@ -258,7 +255,7 @@ void LeaderElection::Run() {
     VoterState* state = nullptr;
     {
       std::lock_guard<Lock> guard(lock_);
-      state = FindOrDie(voter_state_, voter_uuid);
+      state = FindOrDie(voter_state_, voter_uuid).get();
       // Safe to drop the lock because voter_state_ is not mutated outside of
       // the constructor / destructor. We do this to avoid deadlocks below.
     }
@@ -303,17 +300,18 @@ void LeaderElection::CheckForDecision() {
   {
     std::lock_guard<Lock> guard(lock_);
     // Check if the vote has been newly decided.
-    if (!result_ && vote_counter_->IsDecided()) {
+    if (!result_ && vote_counter_.IsDecided()) {
       ElectionVote decision;
-      CHECK_OK(vote_counter_->GetDecision(&decision));
+      CHECK_OK(vote_counter_.GetDecision(&decision));
       const auto election_won = decision == VOTE_GRANTED;
       LOG_WITH_PREFIX(INFO) << Substitute("Election decided. Result: candidate $0. "
                                           "Election summary: $1",
                                           election_won ? "won" : "lost",
-                                          vote_counter_->GetElectionSummary());
+                                          vote_counter_.GetElectionSummary());
       string msg = election_won ?
           "achieved majority votes" : "could not achieve majority";
-      result_.reset(new ElectionResult(request_, decision, highest_voter_term_, msg));
+      result_.reset(new ElectionResult(
+          request_, decision, highest_voter_term_, std::move(msg)));
     }
     // Check whether to respond. This can happen as a result of either getting
     // a majority vote or of something invalidating the election, like
@@ -331,10 +329,10 @@ void LeaderElection::CheckForDecision() {
   }
 }
 
-void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
+void LeaderElection::VoteResponseRpcCallback(const string& voter_uuid) {
   {
     std::lock_guard<Lock> guard(lock_);
-    VoterState* state = FindOrDie(voter_state_, voter_uuid);
+    VoterState* state = FindOrDie(voter_state_, voter_uuid).get();
 
     // Check for RPC errors.
     if (!state->rpc.status().ok()) {
@@ -353,17 +351,16 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
     // If the peer changed their IP address, we shouldn't count this vote since
     // our knowledge of the configuration is in an inconsistent state.
     } else if (PREDICT_FALSE(voter_uuid != state->response.responder_uuid())) {
-      LOG_WITH_PREFIX(DFATAL) << "Received vote response from peer "
-                              << state->PeerInfo() << ": "
-                              << "we thought peer had UUID " << voter_uuid
-                              << " but its actual UUID is "
-                              << state->response.responder_uuid();
+      LOG_WITH_PREFIX(DFATAL) << Substitute(
+          "$0: peer UUID mismatch from VoteRequest(): expected $1; actual $2",
+          state->PeerInfo(), voter_uuid, state->response.responder_uuid());
       RecordVoteUnlocked(*state, VOTE_DENIED);
-
     } else {
       // No error: count actual votes.
-
-      highest_voter_term_ = std::max(highest_voter_term_, state->response.responder_term());
+      if (state->response.has_responder_term()) {
+        highest_voter_term_ = std::max(highest_voter_term_,
+                                       state->response.responder_term());
+      }
       if (state->response.vote_granted()) {
         HandleVoteGrantedUnlocked(*state);
       } else {
@@ -380,8 +377,8 @@ void LeaderElection::RecordVoteUnlocked(const VoterState& state, ElectionVote vo
   DCHECK(lock_.is_locked());
 
   // Record the vote.
-  bool duplicate;
-  Status s = vote_counter_->RegisterVote(state.peer_uuid, vote, &duplicate);
+  bool duplicate = false;
+  const auto s = vote_counter_.RegisterVote(state.peer_uuid, vote, &duplicate);
   if (!s.ok()) {
     LOG_WITH_PREFIX(WARNING) << "Error registering vote for peer "
                              << state.PeerInfo() << ": " << s.ToString();
@@ -397,27 +394,27 @@ void LeaderElection::RecordVoteUnlocked(const VoterState& state, ElectionVote vo
 
 void LeaderElection::HandleHigherTermUnlocked(const VoterState& state) {
   DCHECK(lock_.is_locked());
+  DCHECK(state.response.has_responder_term());
   DCHECK_GT(state.response.responder_term(), election_term());
 
   string msg = Substitute("Vote denied by peer $0 with higher term. Message: $1",
                           state.PeerInfo(),
                           StatusFromPB(state.response.consensus_error().status()).ToString());
-  LOG_WITH_PREFIX(WARNING) << msg;
+  LOG_WITH_PREFIX(INFO) << msg;
 
   if (!result_) {
     LOG_WITH_PREFIX(INFO) << "Cancelling election due to peer responding with higher term";
-    result_.reset(new ElectionResult(request_, VOTE_DENIED,
-                                     state.response.responder_term(), msg));
+    result_.reset(new ElectionResult(
+        request_, VOTE_DENIED, state.response.responder_term(), std::move(msg)));
   }
 }
 
 void LeaderElection::HandleVoteGrantedUnlocked(const VoterState& state) {
   DCHECK(lock_.is_locked());
-  if (!request_.is_pre_election()) {
-    DCHECK_EQ(state.response.responder_term(), election_term());
-  }
   DCHECK(state.response.vote_granted());
-
+  DCHECK(state.response.has_responder_term());
+  DCHECK(request_.is_pre_election() ||
+         state.response.responder_term() == election_term());
   VLOG_WITH_PREFIX(1) << "Vote granted by peer " << state.PeerInfo();
   RecordVoteUnlocked(state, VOTE_GRANTED);
 }
@@ -428,7 +425,8 @@ void LeaderElection::HandleVoteDeniedUnlocked(const VoterState& state) {
 
   // If one of the voters responds with a greater term than our own, and we
   // have not yet triggered the decision callback, it cancels the election.
-  if (state.response.responder_term() > election_term()) {
+  if (state.response.has_responder_term() &&
+      state.response.responder_term() > election_term()) {
     return HandleHigherTermUnlocked(state);
   }
 
@@ -439,7 +437,7 @@ void LeaderElection::HandleVoteDeniedUnlocked(const VoterState& state) {
   RecordVoteUnlocked(state, VOTE_DENIED);
 }
 
-std::string LeaderElection::LogPrefix() const {
+string LeaderElection::LogPrefix() const {
   return Substitute("T $0 P $1 [CANDIDATE]: Term $2 $3election: ",
                     request_.tablet_id(),
                     request_.candidate_uuid(),

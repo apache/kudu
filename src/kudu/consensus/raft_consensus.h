@@ -457,6 +457,13 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   using LockGuard = std::lock_guard<simple_spinlock>;
   using UniqueLock = std::unique_lock<simple_spinlock>;
 
+  // Returns string description for State enum value.
+  static const char* State_Name(State state);
+
+  // Return the minimum election timeout. Due to backoff and random
+  // jitter, election timeouts may be longer than this.
+  static MonoDelta MinimumElectionTimeout();
+
   // Initializes the RaftConsensus object, including loading the consensus
   // metadata.
   Status Init();
@@ -464,9 +471,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Change the lifecycle state of RaftConsensus. The definition of the State
   // enum documents legal state transitions.
   void SetStateUnlocked(State new_state);
-
-  // Returns string description for State enum value.
-  static const char* State_Name(State state);
 
   // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
@@ -648,10 +652,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // 'FLAGS_leader_failure_max_missed_heartbeat_periods' milliseconds.
   // This method is safe to call even it's a leader replica.
   void WithholdVotesUnlocked();
-
-  // Return the minimum election timeout. Due to backoff and random
-  // jitter, election timeouts may be longer than this.
-  MonoDelta MinimumElectionTimeout() const;
 
   // Calculates a snooze delta for leader election.
   //
