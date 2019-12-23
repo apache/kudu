@@ -552,7 +552,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns true if this node is the only voter in the Raft configuration.
   bool IsSingleVoterConfig() const;
 
-  // Return header string for RequestVote log messages. 'lock_' must be held.
+  // Return header string for RequestVote log messages, no 'lock_' is necessary.
+  std::string GetRequestVoteLogPrefixThreadSafe(const VoteRequestPB& request) const;
+
+  // Similar to the method above, but outputs more detailed information on the
+  // metadata of the RaftConsensus object. 'lock_' must be held.
   std::string GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const;
 
   // Fills the response with the current status, if an update was successful.
@@ -568,11 +572,23 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // - Set vote_granted to true.
   void FillVoteResponseVoteGranted(VoteResponsePB* response);
 
+  // Enum for the 'responder_term' parameter of the FillVoterResponseVoteDenied()
+  // method below. Controls whether to populate the 'responder_term' field
+  // in the 'response' output parameter.
+  enum class ResponderTermPolicy {
+    DO_NOT_SET,  // don't set the field
+    SET,          // populate/set the field
+  };
+
   // Fill VoteResponsePB with the following information:
-  // - Update responder_term to current local term.
   // - Set vote_granted to false.
   // - Set consensus_error.code to the given code.
-  void FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code, VoteResponsePB* response);
+  // - Set or leave the responder_term field unset as prescribed by the
+  //   'responder_term' parameter.
+  void FillVoteResponseVoteDenied(
+      ConsensusErrorPB::Code error_code,
+      VoteResponsePB* response,
+      ResponderTermPolicy responder_term_policy = ResponderTermPolicy::SET);
 
   // Respond to VoteRequest that the candidate has an old term.
   Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request, VoteResponsePB* response);
