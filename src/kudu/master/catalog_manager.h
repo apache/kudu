@@ -913,7 +913,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                              const PartitionPB& partition,
                                              const boost::optional<std::string>& dimension_label);
 
-
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo
   // and the replica type fiter specified. Populates locs_pb and returns
   // Status::OK on success.

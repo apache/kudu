@@ -161,14 +161,16 @@ RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
   return GetConsensusRole(peer_uuid, cstate.leader_uuid(), config);
 }
 
-
 RaftPeerPB::Role GetParticipantRole(const RaftPeerPB& peer,
                                     const ConsensusStatePB& cstate) {
   const auto& peer_uuid = peer.permanent_uuid();
+  // Sanity check: make sure the peer is in the committed config.
   DCHECK_NE(RaftPeerPB::NON_PARTICIPANT,
-            GetConsensusRole(peer_uuid, cstate))
-      << "Peer " << peer_uuid << " << not a participant in " << cstate.ShortDebugString();
-
+            GetConsensusRole(peer_uuid,
+                             cstate.leader_uuid(),
+                             cstate.committed_config()))
+      << Substitute("peer $0 is not commited config $1",
+                    peer_uuid, cstate.ShortDebugString());
   switch (peer.member_type()) {
     case RaftPeerPB::VOTER:
       if (peer_uuid == cstate.leader_uuid()) {

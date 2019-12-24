@@ -4827,7 +4827,7 @@ Status CatalogManager::BuildLocationsForTablet(
 
     // Helper function to create a TSInfoPB.
     auto make_tsinfo_pb = [this, &peer]() {
-      unique_ptr<TSInfoPB> tsinfo_pb(new TSInfoPB());
+      unique_ptr<TSInfoPB> tsinfo_pb(new TSInfoPB);
       tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
       shared_ptr<TSDescriptor> ts_desc;
       if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
@@ -4845,19 +4845,18 @@ Status CatalogManager::BuildLocationsForTablet(
       return tsinfo_pb;
     };
 
-    auto role = GetParticipantRole(peer, cstate);
+    const auto role = GetParticipantRole(peer, cstate);
     optional<string> dimension = none;
     if (l_tablet.data().pb.has_dimension_label()) {
       dimension = l_tablet.data().pb.dimension_label();
     }
     if (ts_infos_dict) {
-      int idx = *ComputePairIfAbsent(
+      const auto idx = *ComputePairIfAbsent(
           &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
           [&]() -> pair<StringPiece, int> {
             auto& ts_info_pbs = ts_infos_dict->ts_info_pbs;
-            auto pb = make_tsinfo_pb();
-            int ts_info_idx = ts_info_pbs.size();
-            ts_info_pbs.emplace_back(pb.release());
+            auto ts_info_idx = ts_info_pbs.size();
+            ts_info_pbs.emplace_back(make_tsinfo_pb().release());
             return { ts_info_pbs.back()->permanent_uuid(), ts_info_idx };
           });
 

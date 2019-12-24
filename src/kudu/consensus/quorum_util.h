@@ -81,13 +81,11 @@ RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
 RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
                                   const ConsensusStatePB& cstate);
 
-
 // Same as above, but requires that the given 'peer' is a participant
-// in the active configuration in specified consensus state.
+// in the committed configuration in specified consensus state.
 // If not, it will return incorrect results.
 RaftPeerPB::Role GetParticipantRole(const RaftPeerPB& peer,
                                     const ConsensusStatePB& cstate);
-
 
 // Verifies that the provided configuration is well formed.
 Status VerifyRaftConfig(const RaftConfigPB& config);
