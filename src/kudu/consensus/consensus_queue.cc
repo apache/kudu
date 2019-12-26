@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -29,7 +28,6 @@
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
@@ -800,7 +798,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int num_peers_required,
                                              ReplicaTypes replica_types,
                                              const TrackedPeer* who_caused) {
-
+  DCHECK(queue_lock_.is_locked());
   VLOG_WITH_PREFIX_UNLOCKED(2)
       << Substitute("Updating $0 watermark: Peer ($1) changed from $2 to $3. "
                     "Current value: $4",

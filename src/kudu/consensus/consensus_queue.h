@@ -20,7 +20,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <iosfwd>
+#include <ostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -59,8 +59,8 @@ class ConsensusRequestPB;
 class ConsensusResponsePB;
 class ConsensusStatusPB;
 class PeerMessageQueueObserver;
-class TimeManager;
 class StartTabletCopyRequestPB;
+class TimeManager;
 
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
@@ -126,7 +126,7 @@ class PeerMessageQueue {
     // Check that the terms seen from a given peer only increase
     // monotonically.
     void CheckMonotonicTerms(int64_t term) {
-      DCHECK_GE(term, last_seen_term_);
+      DCHECK_GE(term, last_seen_term_) << "peer info: " << ToString();
       last_seen_term_ = term;
     }
 
