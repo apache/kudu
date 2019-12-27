@@ -15,17 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/time_manager.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
 #include <ostream>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -93,9 +93,10 @@ void TimeManager::SetNonLeaderMode() {
 Status TimeManager::AssignTimestamp(ReplicateMsg* message) {
   Lock l(lock_);
   if (PREDICT_FALSE(mode_ == NON_LEADER)) {
-    return Status::IllegalState(Substitute("Cannot assign timestamp to transaction. Tablet is not "
-                                           "in leader mode. Last heard from a leader: $0 secs ago.",
-                                           last_advanced_safe_time_.ToString()));
+    return Status::IllegalState(Substitute(
+        "Cannot assign timestamp to transaction. Tablet is not "
+        "in leader mode. Last heard from a leader: $0 ago.",
+        (MonoTime::Now() - last_advanced_safe_time_).ToString()));
   }
   Timestamp t;
   switch (GetMessageConsistencyMode(*message)) {
