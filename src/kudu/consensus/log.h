@@ -130,6 +130,9 @@ class Log : public RefCountedThreadSafe<Log> {
       const std::vector<consensus::ReplicateRefPtr>& replicates,
       const StatusCallback& callback);
 
+  // Syncs all state and closes the log.
+  virtual Status Close();
+
   // Append the given commit message, asynchronously.
   //
   // Returns a bad status if the log is already shut down.
@@ -150,9 +153,6 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // The closure submitted to allocation_pool_ to allocate a new segment.
   void SegmentAllocationTask();
-
-  // Syncs all state and closes the log.
-  Status Close();
 
   // Return true if there is any on-disk data for the given tablet.
   static bool HasOnDiskData(FsManager* fs_manager, const std::string& tablet_id);

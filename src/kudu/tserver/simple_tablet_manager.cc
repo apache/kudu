@@ -120,6 +120,13 @@ TSTabletManager::TSTabletManager(TabletServer* server)
 }
 
 TSTabletManager::~TSTabletManager() {
+  // Close cannot be called from the destructor any more.
+  // as Close from Log::~Log will call the base class Close()
+  // Another way to think about it is that Init and Close go in
+  // pairs. If Init is called virtual, Close should also be
+  if (log_) {
+    WARN_NOT_OK(log_->Close(), "Error closing Log");
+  }
 }
 
 Status TSTabletManager::Load(FsManager *fs_manager) {

@@ -1249,7 +1249,7 @@ std::string Log::LogPrefix() const {
 }
 
 Log::~Log() {
-  WARN_NOT_OK(Close(), "Error closing log");
+  // Close() of log is now called from simple_tablet_manager
 }
 
 LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
