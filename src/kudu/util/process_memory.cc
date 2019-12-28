@@ -117,14 +117,11 @@ static bool ValidatePercentage(const char* flagname, int value) {
   return false;
 }
 
-static bool dummy[] = {
-  google::RegisterFlagValidator(&FLAGS_memory_limit_soft_percentage, &ValidatePercentage),
-  google::RegisterFlagValidator(&FLAGS_memory_limit_warn_threshold_percentage, &ValidatePercentage)
+DEFINE_validator(memory_limit_soft_percentage, &ValidatePercentage);
+DEFINE_validator(memory_limit_warn_threshold_percentage, &ValidatePercentage);
 #ifdef TCMALLOC_ENABLED
-  ,google::RegisterFlagValidator(&FLAGS_tcmalloc_max_free_bytes_percentage, &ValidatePercentage)
+DEFINE_validator(tcmalloc_max_free_bytes_percentage, &ValidatePercentage);
 #endif
-};
-
 
 // Wrappers around tcmalloc functionality
 // ------------------------------------------------------------

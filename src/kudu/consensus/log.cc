@@ -167,8 +167,7 @@ static bool ValidateLogsToRetain(const char* flagname, int value) {
                                     flagname, value);
   return false;
 }
-static bool dummy = google::RegisterFlagValidator(
-    &FLAGS_log_min_segments_to_retain, &ValidateLogsToRetain);
+DEFINE_validator(log_min_segments_to_retain, &ValidateLogsToRetain);
 
 namespace kudu {
 namespace log {
