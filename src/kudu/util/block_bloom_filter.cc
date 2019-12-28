@@ -110,7 +110,8 @@ void BlockBloomFilter::BucketInsert(const uint32_t bucket_idx, const uint32_t ha
   }
   for (int i = 0; i < 2; ++i) {
     __m128i new_bucket_sse = _mm_load_si128(reinterpret_cast<__m128i*>(new_bucket + 4 * i));
-    __m128i* existing_bucket = reinterpret_cast<__m128i*>(&directory_[bucket_idx][4 * i]);
+    __m128i* existing_bucket = reinterpret_cast<__m128i*>(
+        &DCHECK_NOTNULL(directory_)[bucket_idx][4 * i]);
     *existing_bucket = _mm_or_si128(*existing_bucket, new_bucket_sse);
   }
 }
@@ -121,7 +122,7 @@ bool BlockBloomFilter::BucketFind(
   for (int i = 0; i < kBucketWords; ++i) {
     BucketWord hval = (kRehash[i] * hash) >> ((1 << kLogBucketWordBits) - kLogBucketWordBits);
     hval = 1U << hval;
-    if (!(directory_[bucket_idx][i] & hval)) {
+    if (!(DCHECK_NOTNULL(directory_)[bucket_idx][i] & hval)) {
       return false;
     }
   }
@@ -168,7 +169,6 @@ void BlockBloomFilter::InsertNoAvx2(const uint32_t hash) noexcept {
 // the advantage of requiring fewer random bits: log2(32) * 8 = 5 * 8 = 40 random bits for
 // a split Bloom filter, but log2(256) * 8 = 64 random bits for a standard Bloom filter.
 void BlockBloomFilter::Insert(const uint32_t hash) noexcept {
-  DCHECK_NOTNULL(directory_);
   always_false_ = false;
   const uint32_t bucket_idx = Rehash32to32(hash) & directory_mask_;
   (this->*bucket_insert_func_ptr_)(bucket_idx, hash);
@@ -178,7 +178,6 @@ bool BlockBloomFilter::Find(const uint32_t hash) const noexcept {
   if (always_false_) {
     return false;
   }
-  DCHECK_NOTNULL(directory_);
   const uint32_t bucket_idx = Rehash32to32(hash) & directory_mask_;
   return (this->*bucket_find_func_ptr_)(bucket_idx, hash);
 }
@@ -190,8 +189,7 @@ Status DefaultBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void
 }
 
 void DefaultBlockBloomFilterBufferAllocator::FreeBuffer(void* ptr) {
-  DCHECK_NOTNULL(ptr);
-  free(ptr);
+  free(DCHECK_NOTNULL(ptr));
 }
 
 DefaultBlockBloomFilterBufferAllocator* DefaultBlockBloomFilterBufferAllocator::GetSingleton() {
