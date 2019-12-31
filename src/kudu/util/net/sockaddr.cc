@@ -27,11 +27,13 @@
 
 #include "kudu/gutil/hash/builtin_type_hash.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/stopwatch.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -128,6 +130,15 @@ Status Sockaddr::LookupHostname(string* hostname) const {
   }
   *hostname = host;
   return Status::OK();
+}
+
+string Sockaddr::ToCommaSeparatedString(const std::vector<Sockaddr>& addrs) {
+  vector<string> addrs_str;
+  addrs_str.reserve(addrs.size());
+  for (const Sockaddr& addr : addrs) {
+    addrs_str.push_back(addr.ToString());
+  }
+  return JoinStrings(addrs_str, ",");
 }
 
 } // namespace kudu

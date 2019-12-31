@@ -248,6 +248,7 @@ public class TestConnectToCluster {
     // add the responses. We then check for the right response.
 
     ConnectToCluster grrm = new ConnectToCluster(MASTERS);
+    grrm.setNumMasters(MASTERS.size());
 
     Callback<Void, ConnectToMasterResponsePB> cb0 = grrm.callbackForNode(MASTERS.get(0));
     Callback<Void, ConnectToMasterResponsePB> cb1 = grrm.callbackForNode(MASTERS.get(1));

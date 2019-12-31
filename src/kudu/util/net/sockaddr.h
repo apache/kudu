@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "kudu/util/status.h"
 
@@ -74,6 +75,10 @@ class Sockaddr {
 
   // Does reverse DNS lookup of the address and stores it in hostname.
   Status LookupHostname(std::string* hostname) const;
+
+  // Takes a vector of Sockaddr objects and returns a comma separated
+  // string containing ip addresses.
+  static std::string ToCommaSeparatedString(const std::vector<Sockaddr>& addrs);
 
   // the default auto-generated copy constructor is fine here
  private:

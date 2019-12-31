@@ -35,6 +35,7 @@
 #include <boost/function.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/authz_token_cache.h"
 #include "kudu/client/master_proxy_rpc.h"
@@ -682,12 +683,14 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
       return;
     }
     if (addrs.size() > 1) {
-      KLOG_EVERY_N_SECS(WARNING, 1)
-          << Substitute("Specified master server address '$0' resolved to "
-                        "multiple IPs. Using $1",
-                        master_server_addr, addrs[0].ToString());
+      KLOG_EVERY_N_SECS(INFO, 1)
+          << Substitute("Specified master server address '$0' resolved to multiple IPs $1. "
+                        "Connecting to each one of them.",
+                        master_server_addr, Sockaddr::ToCommaSeparatedString(addrs));
     }
-    master_addrs_with_names.emplace_back(addrs[0], hp.host());
+    for (const Sockaddr& addr : addrs) {
+      master_addrs_with_names.emplace_back(addr, hp.host());
+    }
   }
 
   // This ensures that no more than one ConnectToClusterRpc of each credentials

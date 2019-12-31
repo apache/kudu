@@ -417,22 +417,19 @@ public class AsyncKuduClient implements AutoCloseable {
    * Get a proxy to send RPC calls to Kudu master at the specified end-point.
    *
    * @param hostPort master end-point
+   * @param inetAddress master ip-address
    * @param credentialsPolicy credentials policy to use for the connection negotiation to the target
    *                          master server
    * @return the proxy object bound to the target master
    */
-  @Nullable
+  @Nonnull
   RpcProxy newMasterRpcProxy(HostAndPort hostPort,
+                             InetAddress inetAddress,
                              Connection.CredentialsPolicy credentialsPolicy) {
     // We should have a UUID to construct ServerInfo for the master, but we have a chicken
     // and egg problem, we first need to communicate with the masters to find out about them,
     // and that's what we're trying to do. The UUID is just used for logging and cache key,
     // so instead we just use concatenation of master host and port, prefixed with "master-".
-    final InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
-    if (inetAddress == null) {
-      // TODO(todd): should we log the resolution failure? throw an exception?
-      return null;
-    }
     return newRpcProxy(
         new ServerInfo(getFakeMasterUuid(hostPort),
                        hostPort,

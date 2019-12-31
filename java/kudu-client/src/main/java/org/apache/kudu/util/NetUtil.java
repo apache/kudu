@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.base.Functions;
@@ -99,16 +100,33 @@ public class NetUtil {
    * or {@code null} if the address couldn't be resolved
    */
   public static InetAddress getInetAddress(final String host) {
+    InetAddress[] addrs = getAllInetAddresses(host);
+    if (addrs != null && addrs.length > 0) {
+      return addrs[0];
+    }
+    return null;
+  }
+
+  /**
+   * Gets a hostname or an IP address and returns an array of InetAddresses.
+   * <p>
+   * <strong>This method can block</strong> as there is no API for
+   * asynchronous DNS resolution in the JDK.
+   * @param host the hostname to resolve
+   * @return an array of InetAddresses for the given hostname,
+   * or {@code null} if the address couldn't be resolved
+   */
+  public static InetAddress[] getAllInetAddresses(final String host) {
     final long start = System.nanoTime();
     try {
-      InetAddress ip = InetAddress.getByName(host);
+      InetAddress[] ipAddrs = InetAddress.getAllByName(host);
       long latency = System.nanoTime() - start;
       if (latency > 500000/*ns*/ && LOG.isDebugEnabled()) {
-        LOG.debug("Resolved IP of `{}' to {} in {}ns", host, ip, latency);
+        LOG.debug("Resolved IP of `{}' to {} in {}ns", host, ipAddrs, latency);
       } else if (latency >= 3000000/*ns*/) {
-        LOG.warn("Slow DNS lookup! Resolved IP of `{}' to {} in {}ns", host, ip, latency);
+        LOG.warn("Slow DNS lookup! Resolved IP of `{}' to {} in {}ns", host, ipAddrs, latency);
       }
-      return ip;
+      return ipAddrs;
     } catch (UnknownHostException e) {
       LOG.error("Failed to resolve the IP of `{}' in {}ns", host, (System.nanoTime() - start));
       return null;
