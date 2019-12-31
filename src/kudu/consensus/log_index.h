@@ -28,6 +28,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class Env;
 namespace log {
 
 // An entry in the index.
@@ -73,11 +74,16 @@ class LogIndex : public RefCountedThreadSafe<LogIndex> {
   // earlier entries.
   void GC(int64_t min_index_to_retain);
 
+  Status OpenAllChunksOnStartup(Env *env);
+
  private:
   friend class RefCountedThreadSafe<LogIndex>;
   ~LogIndex();
 
   class IndexChunk;
+
+  Status OpenAndInsertChunk(int64_t chunk_idx,
+      scoped_refptr<IndexChunk>* chunk);
 
   // Open the on-disk chunk with the given index.
   // Note: 'chunk_idx' is the index of the index chunk, not the index of a log _entry_.

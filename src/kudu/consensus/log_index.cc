@@ -47,9 +47,12 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/env.h"
 
 using std::string;
 using std::vector;
@@ -165,12 +168,59 @@ string LogIndex::GetChunkPath(int64_t chunk_idx) {
   return StringPrintf("%s/index.%09" PRId64, base_dir_.c_str(), chunk_idx);
 }
 
+Status LogIndex::OpenAllChunksOnStartup(Env *env) {
+  DCHECK(env);
+  std::vector<std::string> children;
+  RETURN_NOT_OK(env->GetChildren(base_dir_, &children));
+
+  for (const auto& fname: children) {
+    if (fname.find("index.") != 0) {
+      continue;
+    }
+
+    vector<string> v = strings::Split(fname, ".");
+    if (v.size() != 2) {
+      LOG(INFO) << "Improperly named file in wal directory skipped on recovery: " << fname;
+      continue;
+    }
+
+    int64_t chunk_idx;
+    if (!safe_strto64(v[1], &chunk_idx)) {
+      LOG(INFO) << "Improperly named file in wal directory skipped on recovery: " << fname;
+      continue;
+    }
+
+    VLOG(1) << "Opening index file on startup: " << fname << " for chunk idx " << chunk_idx;
+
+    scoped_refptr<IndexChunk> chunk;
+    RETURN_NOT_OK(OpenAndInsertChunk(chunk_idx, &chunk));
+  }
+
+  return Status::OK();
+}
+
 Status LogIndex::OpenChunk(int64_t chunk_idx, scoped_refptr<IndexChunk>* chunk) {
   string path = GetChunkPath(chunk_idx);
 
   scoped_refptr<IndexChunk> new_chunk(new IndexChunk(path));
   RETURN_NOT_OK(new_chunk->Open());
   chunk->swap(new_chunk);
+  return Status::OK();
+}
+
+Status LogIndex::OpenAndInsertChunk(int64_t chunk_idx,
+    scoped_refptr<IndexChunk>* chunk) {
+  RETURN_NOT_OK_PREPEND(OpenChunk(chunk_idx, chunk),
+                        "Couldn't open index chunk");
+  std::lock_guard<simple_spinlock> l(open_chunks_lock_);
+  if (PREDICT_FALSE(ContainsKey(open_chunks_, chunk_idx))) {
+    // Someone else opened the chunk in the meantime.
+    // We'll just return that one.
+    *chunk = FindOrDie(open_chunks_, chunk_idx);
+    return Status::OK();
+  }
+
+  InsertOrDie(&open_chunks_, chunk_idx, *chunk);
   return Status::OK();
 }
 
@@ -190,21 +240,7 @@ Status LogIndex::GetChunkForIndex(int64_t log_index, bool create,
     return Status::NotFound("chunk not found");
   }
 
-  RETURN_NOT_OK_PREPEND(OpenChunk(chunk_idx, chunk),
-                        "Couldn't open index chunk");
-  {
-    std::lock_guard<simple_spinlock> l(open_chunks_lock_);
-    if (PREDICT_FALSE(ContainsKey(open_chunks_, chunk_idx))) {
-      // Someone else opened the chunk in the meantime.
-      // We'll just return that one.
-      *chunk = FindOrDie(open_chunks_, chunk_idx);
-      return Status::OK();
-    }
-
-    InsertOrDie(&open_chunks_, chunk_idx, *chunk);
-  }
-
-  return Status::OK();
+  return OpenAndInsertChunk(chunk_idx, chunk);
 }
 
 Status LogIndex::AddEntry(const LogIndexEntry& entry) {

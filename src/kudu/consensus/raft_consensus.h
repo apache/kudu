@@ -977,29 +977,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
 
-// After completing bootstrap, some of the results need to be plumbed through
-// into the consensus implementation.
-struct ConsensusBootstrapInfo {
-  ConsensusBootstrapInfo();
-  ~ConsensusBootstrapInfo();
-
-  // The id of the last operation in the log
-  OpId last_id;
-
-  // The id of the last committed operation in the log.
-  OpId last_committed_id;
-
-  // REPLICATE messages which were in the log with no accompanying
-  // COMMIT. These need to be passed along to consensus init in order
-  // to potentially commit them.
-  //
-  // These are owned by the ConsensusBootstrapInfo instance.
-  std::vector<ReplicateMsg*> orphaned_replicates;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ConsensusBootstrapInfo);
-};
-
 // Handler for consensus rounds.
 // An implementation of this handler must be registered prior to consensus
 // start, and is used to:
