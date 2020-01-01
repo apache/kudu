@@ -22,8 +22,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
-#include <iterator>
 #include <initializer_list>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <set>
@@ -430,7 +430,7 @@ class ToolTest : public KuduTest {
     vector<pair<string, string>> expected_columns;
     if (columns.empty()) {
       // If we ran with an empty projection, we'll actually get all the columns.
-      expected_columns = {{ "int32", "key" },
+      expected_columns = {{ "int.*", "key" },
                           { "int32", "int_val" },
                           { "string", "string_val" }};
     } else {
@@ -2258,6 +2258,55 @@ TEST_F(ToolTest, TestLoadgenDatabaseName) {
   ASSERT_STR_CONTAINS(out, "foo.loadgen_auto_");
 }
 
+TEST_F(ToolTest, TestLoadgenKeepAutoTableAndData) {
+  // Run 'perf loadgen' and keep data.
+  // Create a single tablet by setting table_num_hash_partitions and table_num_range_partitions
+  // to 1, then we can easily check sequential rows in the tablet by RunScanTableCheck.
+  NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true",
+                            "--table_num_hash_partitions=1",
+                            "--table_num_range_partitions=1" }));
+  string auto_table_name;
+  NO_FATALS(RunActionStdoutString(Substitute("table list $0",
+      HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())), &auto_table_name));
+
+  // Data is kept.
+  NO_FATALS(RunScanTableCheck(auto_table_name, "", 0, 1999, {}));
+
+  // Run 'perf loadgen' again with sequential mode and delete new generated data.
+  {
+    const vector<string> args = {
+      "perf",
+      "loadgen",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      Substitute("--table_name=$0", auto_table_name),
+      "--seq_start=2000",
+      "--use_random=false",
+      "--run_cleanup=true",
+    };
+    ASSERT_OK(RunKuduTool(args));
+  }
+
+  // Old data is kept and new data is deleted.
+  NO_FATALS(RunScanTableCheck(auto_table_name, "", 0, 1999, {}));
+
+  // Run 'perf loadgen' again with random mode and delete new generated data.
+  {
+    const vector<string> args = {
+      "perf",
+      "loadgen",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      Substitute("--table_name=$0", auto_table_name),
+      "--seq_start=2000",
+      "--use_random=true",
+      "--run_cleanup=true",
+    };
+    ASSERT_OK(RunKuduTool(args));
+  }
+
+  // Old data is kept and new data is deleted.
+  NO_FATALS(RunScanTableCheck(auto_table_name, "", 0, 1999, {}));
+}
+
 TEST_F(ToolTest, TestLoadgenHmsEnabled) {
   ExternalMiniClusterOptions opts;
   opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
@@ -2299,21 +2348,20 @@ TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   const MonoDelta kTimeout = MonoDelta::FromMilliseconds(10);
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
 
-  // Test with misconfigured partitioning. This should fail because we disallow
-  // creating tables with "no" partitioning.
+  // Now let's try running with a single partition.
   vector<string> args(base_args);
   args.emplace_back("--table_num_range_partitions=1");
   args.emplace_back("--table_num_hash_partitions=1");
-  Status s = RunKuduTool(args);
-  ASSERT_FALSE(s.ok());
+  int expected_tablets = 1;
+  ASSERT_OK(RunKuduTool(args));
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
 
   // Now let's try running with a couple range partitions.
   args = base_args;
   args.emplace_back("--table_num_range_partitions=2");
   args.emplace_back("--table_num_hash_partitions=1");
-  int expected_tablets = 2;
+  expected_tablets += 2;
   ASSERT_OK(RunKuduTool(args));
-  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
   ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
 
   // Now let's try running with only hash partitions.
