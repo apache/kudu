@@ -318,6 +318,12 @@ Status TSTabletManager::Start() {
   Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
 
   consensus::ConsensusBootstrapInfo bootstrap_info;
+  // Abstracted logs are supposed to do the log recovery
+  // during Log::Init virtual call. Pass that info to
+  // RaftConsensus::Start now.
+  if (server_->opts().log_factory) {
+    log_->GetRecoveryInfo(&bootstrap_info);
+  }
 
   TRACE("Starting consensus");
   VLOG(2) << "T " << kSysCatalogTabletId << " P " << consensus_->peer_uuid() << ": Peer starting";

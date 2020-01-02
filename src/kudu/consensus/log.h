@@ -69,6 +69,29 @@ struct WritableFileOptions;
 namespace consensus {
 class OpId;
 class ReplicateMsg;
+
+// After completing bootstrap, some of the results need to be plumbed through
+// into the consensus implementation.
+struct ConsensusBootstrapInfo {
+  ConsensusBootstrapInfo();
+  ~ConsensusBootstrapInfo();
+
+  // The id of the last operation in the log
+  OpId last_id;
+
+  // The id of the last committed operation in the log.
+  OpId last_committed_id;
+
+  // REPLICATE messages which were in the log with no accompanying
+  // COMMIT. These need to be passed along to consensus init in order
+  // to potentially commit them.
+  //
+  // These are owned by the ConsensusBootstrapInfo instance.
+  std::vector<ReplicateMsg*> orphaned_replicates;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ConsensusBootstrapInfo);
+};
 }
 
 namespace log {
@@ -132,6 +155,15 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Syncs all state and closes the log.
   virtual Status Close();
+
+  // This is used during Start of RaftConsensus.
+  // During Raft startup a Consensus Bootstrap object is required to
+  // start the instance from where it crashed. In abstracted logs like
+  // MySQL, this bootstrap_info object is populated by log abstraction during
+  // Log::Init and plumbed via this function to RaftConsensus::Start
+  virtual void GetRecoveryInfo(consensus::ConsensusBootstrapInfo *bootstrap_info) {
+    // In base implementation, we don't override the bootstrap_info
+  }
 
   // Append the given commit message, asynchronously.
   //
