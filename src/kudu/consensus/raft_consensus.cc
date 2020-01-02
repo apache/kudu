@@ -1323,6 +1323,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   }
   if (PREDICT_FALSE(!HasLeaderUnlocked())) {
     SetLeaderUuidUnlocked(request->caller_uuid());
+    new_leader_detected_failsafe_ = true;
   }
 
   return Status::OK();
@@ -1335,7 +1336,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                "tablet", options_.tablet_id);
   Synchronizer log_synchronizer;
   StatusCallback sync_status_cb = log_synchronizer.AsStatusCallback();
-
+  // this is a temp variable. reset every time.
+  new_leader_detected_failsafe_ = false;
 
   // The ordering of the following operations is crucial, read on for details.
   //
@@ -1515,6 +1517,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status prepare_status;
     auto iter = messages.begin();
     while (iter != messages.end()) {
+      OperationType op_type = (*iter)->get()->op_type();
+      if (op_type == NO_OP) {
+        new_leader_detected_failsafe_ = false;
+      }
       prepare_status = StartFollowerTransactionUnlocked(*iter);
       if (PREDICT_FALSE(!prepare_status.ok())) {
         break;
@@ -1639,6 +1645,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   VLOG_WITH_PREFIX(2) << "Replica updated. " << ToString()
                       << ". Request: " << SecureShortDebugString(*request);
 
+  if (new_leader_detected_failsafe_) {
+    ScheduleLeaderDetectedCallback();
+  }
   TRACE("UpdateReplicas() finished");
   return Status::OK();
 }
@@ -3100,11 +3109,23 @@ void RaftConsensus::ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg) {
         std::bind(&RaftConsensus::DoNoOpReceivedCallback,
                   shared_from_this(),
                   msg->get()->id())),
-      LogPrefixThreadSafe() + "Unable to run term advancement callback");
+      LogPrefixThreadSafe() + "Unable to run no op received callback");
 }
 
 void RaftConsensus::DoNoOpReceivedCallback(const OpId id) {
   if (norcb_) norcb_(id);
+}
+
+void RaftConsensus::ScheduleLeaderDetectedCallback() {
+  WARN_NOT_OK(
+      raft_pool_token_->SubmitFunc(
+        std::bind(&RaftConsensus::DoLeaderDetectedCallback,
+                  shared_from_this())),
+      LogPrefixThreadSafe() + "Unable to run leader detected callback");
+}
+
+void RaftConsensus::DoLeaderDetectedCallback() {
+  if (ldcb_) ldcb_();
 }
 
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
@@ -3239,6 +3260,10 @@ void RaftConsensus::SetNoOpReceivedCallback(NoOpReceivedCallback norcb) {
   norcb_ = std::move(norcb);
 }
 
+void RaftConsensus::SetLeaderDetectedCallback(LeaderDetectedCallback ldcb) {
+  CHECK(ldcb);
+  ldcb_ = std::move(ldcb);
+}
 ////////////////////////////////////////////////////////////////////////
 // ConsensusBootstrapInfo
 ////////////////////////////////////////////////////////////////////////

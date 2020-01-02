@@ -125,6 +125,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
   typedef std::function<void(int64_t)> TermAdvancementCallback;
   typedef std::function<void(const OpId opId)> NoOpReceivedCallback;
+  typedef std::function<void()> LeaderDetectedCallback;
 
   // Modes for StartElection().
   enum ElectionMode {
@@ -801,6 +802,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg);
   void DoNoOpReceivedCallback(const OpId opid);
 
+  void ScheduleLeaderDetectedCallback();
+  void DoLeaderDetectedCallback();
+
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
   //
@@ -849,6 +853,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void SetElectionDecisionCallback(ElectionDecisionCallback edcb);
   void SetTermAdvancementCallback(TermAdvancementCallback tacb);
   void SetNoOpReceivedCallback(NoOpReceivedCallback norcb);
+  void SetLeaderDetectedCallback(LeaderDetectedCallback ldcb);
 
   const ConsensusOptions options_;
 
@@ -942,6 +947,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   ElectionDecisionCallback edcb_;
   TermAdvancementCallback tacb_;
   NoOpReceivedCallback norcb_;
+  LeaderDetectedCallback ldcb_;
 
   // this is not expected to change after a create of Raft.
   bool disable_noop_;
@@ -961,6 +967,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
   scoped_refptr<AtomicGauge<int64_t>> term_metric_;
   scoped_refptr<AtomicGauge<int64_t>> num_failed_elections_metric_;
+
+  // we use this variable to fire a leader detected callback in
+  // case a NORCB has not been fired previously.
+  // Ensures that we don't miss a leader detection on plain follower
+  // restarts
+  bool new_leader_detected_failsafe_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
