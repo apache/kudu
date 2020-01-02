@@ -50,9 +50,18 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
 
   kudu::consensus::ConsensusRoundHandler *round_handler = nullptr;
 
+  // Election Decision Callback
   std::function<void(const consensus::ElectionResult&)> edcb;
+
+  // Term Advancement Callback
   std::function<void(int64_t)> tacb;
+
+  // No-OP received Callback
   std::function<void(const consensus::OpId id)> norcb;
+
+  // Leader Detected Callback. This should eventually be reconciled
+  // with NORCB.
+  std::function<void()> ldcb;
   bool disable_noop = false;
 
   bool IsDistributed() const;

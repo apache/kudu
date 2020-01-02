@@ -379,6 +379,9 @@ Status TSTabletManager::SetupRaft() {
   if (server_->opts().norcb) {
     consensus_->SetNoOpReceivedCallback(server_->opts().norcb);
   }
+  if (server_->opts().ldcb) {
+    consensus_->SetLeaderDetectedCallback(server_->opts().ldcb);
+  }
   if (server_->opts().disable_noop) {
     consensus_->DisableNoOpEntries();
   }
