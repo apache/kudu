@@ -101,7 +101,7 @@
 // };
 
 
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
 
 // Defines a class member that acts like a mutex. It is used only as a
 // verification tool.

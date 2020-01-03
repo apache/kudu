@@ -40,7 +40,7 @@ using std::string;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
 DEFINE_bool(debug_mutex_collect_stacktrace, false,
             "Whether to collect a stacktrace on Mutex contention in a DEBUG build");
 TAG_FLAG(debug_mutex_collect_stacktrace, advanced);
@@ -50,12 +50,12 @@ TAG_FLAG(debug_mutex_collect_stacktrace, hidden);
 namespace kudu {
 
 Mutex::Mutex()
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   : owning_tid_(0),
     stack_trace_(new StackTrace())
 #endif
 {
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   // In debug, setup attributes for lock error checking.
   pthread_mutexattr_t mta;
   int rv = pthread_mutexattr_init(&mta);
@@ -79,7 +79,7 @@ Mutex::~Mutex() {
 
 bool Mutex::TryAcquire() {
   int rv = pthread_mutex_trylock(&native_handle_);
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   DCHECK(rv == 0 || rv == EBUSY) << ". " << strerror(rv) << ". " << GetOwnerThreadInfo();
   if (rv == 0) {
     CheckUnheldAndMark();
@@ -104,7 +104,7 @@ void Mutex::Acquire() {
   MicrosecondsInt64 start_time = GetMonoTimeMicros();
   int rv = pthread_mutex_lock(&native_handle_);
   DCHECK_EQ(0, rv) << ". " << strerror(rv)
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
                    << ". " << GetOwnerThreadInfo()
 #endif
   ; // NOLINT(whitespace/semicolon)
@@ -115,20 +115,20 @@ void Mutex::Acquire() {
     TRACE_COUNTER_INCREMENT("mutex_wait_us", wait_time);
   }
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   CheckUnheldAndMark();
 #endif
 }
 
 void Mutex::Release() {
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   CheckHeldAndUnmark();
 #endif
   int rv = pthread_mutex_unlock(&native_handle_);
   DCHECK_EQ(0, rv) << ". " << strerror(rv);
 }
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
 void Mutex::AssertAcquired() const {
   DCHECK_EQ(Env::Default()->gettid(), owning_tid_);
 }

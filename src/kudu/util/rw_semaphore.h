@@ -137,7 +137,7 @@ class rw_semaphore {
 
     WaitPendingReaders();
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
     writer_tid_ = Thread::CurrentThreadId();
 #endif // NDEBUG
     RecordLockHolderStack();
@@ -147,7 +147,7 @@ class rw_semaphore {
     // I expect to be the only writer
     DCHECK_EQ(base::subtle::NoBarrier_Load(&state_), kWriteFlag);
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
     writer_tid_ = -1; // Invalid tid.
 #endif // NDEBUG
 
@@ -197,7 +197,7 @@ class rw_semaphore {
 
  private:
   volatile Atomic32 state_;
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   int64_t writer_tid_;
 #endif // NDEBUG
 };
