@@ -153,7 +153,8 @@ class TabletReplicaTest : public KuduTabletTest {
                         Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
                              Unretained(this),
                              tablet()->tablet_id())));
-    ASSERT_OK(tablet_replica_->Init({ /*num_leaders*/nullptr,
+    ASSERT_OK(tablet_replica_->Init({ /*quiescing*/nullptr,
+                                      /*num_leaders*/nullptr,
                                       raft_pool_.get() }));
     // Make TabletReplica use the same LogAnchorRegistry as the Tablet created by the harness.
     // TODO(mpercy): Refactor TabletHarness to allow taking a

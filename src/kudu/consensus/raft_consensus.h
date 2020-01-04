@@ -82,6 +82,10 @@ struct ElectionResult;
 // Context containing resources shared by the Raft consensus instances on a
 // single server.
 struct ServerContext {
+  // Shared boolean that indicates whether the server is quiescing, in which
+  // case this replica should not attempt to become leader.
+  std::atomic<bool>* quiescing;
+
   // Gauge indicating how many Raft tablet leaders are hosted on the server.
   scoped_refptr<AtomicGauge<int32_t>> num_leaders;
 

@@ -379,7 +379,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
   if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
-    RETURN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION));
+    WARN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION),
+                "Couldn't start leader election");
   }
 
   // Report become visible to the Master.
@@ -440,6 +441,9 @@ string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uui
 } // anonymous namespace
 
 Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
+  if (server_ctx_.quiescing && server_ctx_.quiescing->load()) {
+    return Status::IllegalState("leader elections are disabled");
+  }
   const char* const mode_str = ModeString(mode);
 
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",

@@ -192,7 +192,8 @@ class RaftConsensusQuorumTest : public KuduTest {
       RETURN_NOT_OK(GetRaftConfigMember(&config_, fs->uuid(), &local_peer_pb));
 
       shared_ptr<RaftConsensus> peer;
-      ServerContext ctx({ /*num_leaders*/nullptr,
+      ServerContext ctx({ /*quiescing*/nullptr,
+                          /*num_leaders*/nullptr,
                           raft_pool_.get() });
       RETURN_NOT_OK(RaftConsensus::Create(options_,
                                           config_.peers(i),

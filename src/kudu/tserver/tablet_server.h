@@ -14,9 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_SERVER_H
-#define KUDU_TSERVER_TABLET_SERVER_H
+#pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -36,8 +36,8 @@ namespace tserver {
 
 class Heartbeater;
 class ScannerManager;
-class TabletServerPathHandlers;
 class TSTabletManager;
+class TabletServerPathHandlers;
 
 class TabletServer : public kserver::KuduServer {
  public:
@@ -59,8 +59,8 @@ class TabletServer : public kserver::KuduServer {
   // Waits for the tablet server to complete the initialization.
   Status WaitInited();
 
-  virtual Status Start() override;
-  virtual void Shutdown() override;
+  Status Start() override;
+  void Shutdown() override;
 
   std::string ToString() const;
 
@@ -82,6 +82,10 @@ class TabletServer : public kserver::KuduServer {
     return maintenance_manager_.get();
   }
 
+  std::atomic<bool>* mutable_quiescing() {
+    return &quiescing_;
+  }
+
  private:
   friend class TabletServerTestBase;
 
@@ -92,6 +96,8 @@ class TabletServer : public kserver::KuduServer {
   };
 
   TabletServerState state_;
+
+  std::atomic<bool> quiescing_;
 
   // If true, all heartbeats will be seen as failed.
   Atomic32 fail_heartbeats_for_tests_;
@@ -121,4 +127,3 @@ class TabletServer : public kserver::KuduServer {
 
 } // namespace tserver
 } // namespace kudu
-#endif
