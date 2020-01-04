@@ -99,7 +99,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // This must be called before publishing the instance to other threads.
   // If this fails, the TabletReplica instance remains in a NOT_INITIALIZED
   // state.
-  Status Init(ThreadPool* raft_pool);
+  Status Init(consensus::ServerContext server_ctx);
 
   // Starts the TabletReplica, making it available for Write()s. If this
   // TabletReplica is part of a consensus configuration this will connect it to other replicas

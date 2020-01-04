@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -191,10 +192,12 @@ class RaftConsensusQuorumTest : public KuduTest {
       RETURN_NOT_OK(GetRaftConfigMember(&config_, fs->uuid(), &local_peer_pb));
 
       shared_ptr<RaftConsensus> peer;
+      ServerContext ctx({ /*num_leaders*/nullptr,
+                          raft_pool_.get() });
       RETURN_NOT_OK(RaftConsensus::Create(options_,
                                           config_.peers(i),
                                           std::move(cmeta_manager),
-                                          raft_pool_.get(),
+                                          std::move(ctx),
                                           &peer));
       peers_->AddPeer(config_.peers(i).permanent_uuid(), peer);
     }
@@ -245,7 +248,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     const int kLeaderIdx = num - 1;
     shared_ptr<RaftConsensus> leader;
     RETURN_NOT_OK(peers_->GetPeerByIdx(kLeaderIdx, &leader));
-    RETURN_NOT_OK(leader->EmulateElection());
+    RETURN_NOT_OK(leader->EmulateElectionForTests());
     return Status::OK();
   }
 
@@ -823,7 +826,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
 
   shared_ptr<RaftConsensus> leader;
   CHECK_OK(peers_->GetPeerByIdx(kLeaderIdx, &leader));
-  ASSERT_OK(leader->EmulateElection());
+  ASSERT_OK(leader->EmulateElectionForTests());
 
   // Wait for the config round to get committed and count the number
   // of update calls, calls after that will be heartbeats.

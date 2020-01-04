@@ -181,11 +181,11 @@ RaftConsensus::RaftConsensus(
     ConsensusOptions options,
     RaftPeerPB local_peer_pb,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-    ThreadPool* raft_pool)
+    ServerContext server_ctx)
     : options_(std::move(options)),
       local_peer_pb_(std::move(local_peer_pb)),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
-      raft_pool_(raft_pool),
+      server_ctx_(std::move(server_ctx)),
       state_(kNew),
       rng_(GetRandomSeed32()),
       leader_transfer_in_progress_(false),
@@ -211,12 +211,12 @@ RaftConsensus::~RaftConsensus() {
 Status RaftConsensus::Create(ConsensusOptions options,
                              RaftPeerPB local_peer_pb,
                              scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                             ThreadPool* raft_pool,
+                             ServerContext server_ctx,
                              shared_ptr<RaftConsensus>* consensus_out) {
   shared_ptr<RaftConsensus> consensus(RaftConsensus::make_shared(std::move(options),
                                                                  std::move(local_peer_pb),
                                                                  std::move(cmeta_manager),
-                                                                 raft_pool));
+                                                                 std::move(server_ctx)));
   RETURN_NOT_OK_PREPEND(consensus->Init(), "Unable to initialize Raft consensus");
   *consensus_out = std::move(consensus);
   return Status::OK();
@@ -257,7 +257,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
   // raw pointer to the token, to emphasize that RaftConsensus is responsible
   // for destroying the token.
-  raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
+  ThreadPool* raft_pool = server_ctx_.raft_pool;
+  raft_pool_token_ = raft_pool->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
@@ -274,7 +275,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       time_manager_,
       local_peer_pb_,
       options_.tablet_id,
-      raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
+      raft_pool->NewToken(ThreadPool::ExecutionMode::SERIAL),
       info.last_id,
       info.last_committed_id));
 
@@ -393,8 +394,8 @@ bool RaftConsensus::IsRunning() const {
   return state_ == kRunning;
 }
 
-Status RaftConsensus::EmulateElection() {
-  TRACE_EVENT2("consensus", "RaftConsensus::EmulateElection",
+Status RaftConsensus::EmulateElectionForTests() {
+  TRACE_EVENT2("consensus", "RaftConsensus::EmulateElectionForTests",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
 
@@ -676,7 +677,9 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   EndLeaderTransferPeriod();
 
   queue_->RegisterObserver(this);
+  bool was_leader = queue_->IsInLeaderMode();
   RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
+  if (!was_leader && server_ctx_.num_leaders) server_ctx_.num_leaders->Increment();
 
   // Initiate a NO_OP transaction that is sent at the beginning of every term
   // change in raft.
@@ -716,7 +719,11 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
   // Deregister ourselves from the queue. We no longer need to track what gets
   // replicated since we're stepping down.
   queue_->UnRegisterObserver(this);
+  bool was_leader = queue_->IsInLeaderMode();
   queue_->SetNonLeaderMode(cmeta_->ActiveConfig());
+  if (was_leader && server_ctx_.num_leaders) {
+    server_ctx_.num_leaders->IncrementBy(-1);
+  }
   peer_manager_->Close();
 
   return Status::OK();
@@ -2166,7 +2173,13 @@ void RaftConsensus::Stop() {
   if (peer_manager_) peer_manager_->Close();
 
   // We must close the queue after we close the peers.
-  if (queue_) queue_->Close();
+  if (queue_) {
+    // If we were leader, decrement the number of leaders there are now.
+    if (queue_->IsInLeaderMode() && server_ctx_.num_leaders) {
+      server_ctx_.num_leaders->IncrementBy(-1);
+    }
+    queue_->Close();
+  }
 
   {
     ThreadRestrictions::AssertWaitAllowed();

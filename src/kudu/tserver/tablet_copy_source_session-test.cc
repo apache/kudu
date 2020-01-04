@@ -164,7 +164,8 @@ class TabletCopyTest : public KuduTabletTest {
                           Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
                                Unretained(this),
                                tablet()->tablet_id())));
-    ASSERT_OK(tablet_replica_->Init(raft_pool_.get()));
+    ASSERT_OK(tablet_replica_->Init({ /*num_leaders*/nullptr,
+                                      raft_pool_.get() }));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());

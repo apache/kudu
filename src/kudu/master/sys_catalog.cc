@@ -84,6 +84,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -378,7 +379,9 @@ Status SysCatalogTable::SetupTablet(
       Bind(&SysCatalogTable::SysCatalogStateChanged,
            Unretained(this),
            metadata->tablet_id())));
-  RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Init(master_->raft_pool()),
+  // TODO(awong): plumb master_->num_raft_leaders() here.
+  RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Init({ /*num_leaders*/nullptr,
+                                                 master_->raft_pool() }),
                          "failed to initialize system catalog replica");
 
   shared_ptr<Tablet> tablet;

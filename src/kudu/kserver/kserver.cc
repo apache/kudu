@@ -18,7 +18,6 @@
 #include "kudu/kserver/kserver.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
@@ -61,11 +60,14 @@ using kudu::server::ServerBaseOptions;
 using std::string;
 using strings::Substitute;
 
-namespace kudu {
-namespace kserver {
+METRIC_DEFINE_gauge_int32(server, num_raft_leaders,
+                          "Number of Raft Leaders",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablet replicas that are Raft leaders",
+                          kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Length",
-                        MetricUnit::kTasks,
+                        kudu::MetricUnit::kTasks,
                         "Number of operations waiting to be applied to the tablet. "
                         "High queue lengths indicate that the server is unable to process "
                         "operations as fast as they are being written to the WAL.",
@@ -73,7 +75,7 @@ METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Le
                         10000, 2);
 
 METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time",
-                        MetricUnit::kMicroseconds,
+                        kudu::MetricUnit::kMicroseconds,
                         "Time that operations spent waiting in the apply queue before being "
                         "processed. High queue times indicate that the server is unable to "
                         "process operations as fast as they are being written to the WAL.",
@@ -81,12 +83,15 @@ METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time
                         10000000, 2);
 
 METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
-                        MetricUnit::kMicroseconds,
+                        kudu::MetricUnit::kMicroseconds,
                         "Time that operations spent being applied to the tablet. "
                         "High values may indicate that the server is under-provisioned or "
                         "that operations consist of very large batches.",
                         kudu::MetricLevel::kWarn,
                         10000000, 2);
+
+namespace kudu {
+namespace kserver {
 
 namespace {
 
@@ -157,6 +162,8 @@ Status KuduServer::Init() {
                 .set_trace_metric_prefix("raft")
                 .set_max_threads(server_wide_pool_limit)
                 .Build(&raft_pool_));
+
+  num_raft_leaders_ = metric_entity_->FindOrCreateGauge(&METRIC_num_raft_leaders, 0);
 
   return Status::OK();
 }

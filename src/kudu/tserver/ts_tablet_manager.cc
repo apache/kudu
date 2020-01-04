@@ -822,7 +822,8 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
                         Bind(&TSTabletManager::MarkTabletDirty,
                              Unretained(this),
                              tablet_id)));
-  Status s = replica->Init(server_->raft_pool());
+  Status s = replica->Init({ server_->num_raft_leaders(),
+                             server_->raft_pool() });
   if (PREDICT_FALSE(!s.ok())) {
     replica->SetError(s);
     replica->Shutdown();

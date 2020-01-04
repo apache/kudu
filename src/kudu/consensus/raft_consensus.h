@@ -79,6 +79,16 @@ class PendingRounds;
 struct ConsensusBootstrapInfo;
 struct ElectionResult;
 
+// Context containing resources shared by the Raft consensus instances on a
+// single server.
+struct ServerContext {
+  // Gauge indicating how many Raft tablet leaders are hosted on the server.
+  scoped_refptr<AtomicGauge<int32_t>> num_leaders;
+
+  // Threadpool on which to run Raft tasks.
+  ThreadPool* raft_pool;
+};
+
 struct ConsensusOptions {
   std::string tablet_id;
 };
@@ -138,7 +148,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   static Status Create(ConsensusOptions options,
                        RaftPeerPB local_peer_pb,
                        scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                       ThreadPool* raft_pool,
+                       ServerContext server_ctx,
                        std::shared_ptr<RaftConsensus>* consensus_out);
 
   // Starts running the Raft consensus algorithm.
@@ -159,7 +169,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // in the configuration by sending a NO_OP to other peers.
   // This is NOT safe to use in a distributed configuration with failure detection
   // enabled, as it could result in a split-brain scenario.
-  Status EmulateElection();
+  Status EmulateElectionForTests();
 
   // Triggers a leader election.
   Status StartElection(ElectionMode mode, ElectionReason reason);
@@ -389,7 +399,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   RaftConsensus(ConsensusOptions options,
                 RaftPeerPB local_peer_pb,
                 scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                ThreadPool* raft_pool);
+                ServerContext server_ctx);
 
  private:
   friend class RaftConsensusQuorumTest;
@@ -828,7 +838,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Consensus metadata service.
   const scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
 
-  ThreadPool* const raft_pool_;
+  // State shared by Raft instances on a given server.
+  const ServerContext server_ctx_;
 
   // TODO(dralves) hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.

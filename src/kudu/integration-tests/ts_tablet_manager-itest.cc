@@ -29,7 +29,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -88,7 +87,7 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DEFINE_int32(num_election_test_loops, 3,
-             "Number of random EmulateElection() loops to execute in "
+             "Number of random EmulateElectionForTests() loops to execute in "
              "TestReportNewLeaderOnLeaderChange");
 
 using kudu::client::KuduClient;
@@ -290,7 +289,7 @@ class LeadershipChangeReportingTest : public TsTabletManagerITest {
     NO_FATALS(StartCluster(std::move(opts)));
 
     // We need to control elections precisely for this test since we're using
-    // EmulateElection() with a distributed consensus configuration.
+    // EmulateElectionForTests() with a distributed consensus configuration.
     FLAGS_enable_leader_failure_detection = false;
     FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
 
@@ -342,7 +341,7 @@ class LeadershipChangeReportingTest : public TsTabletManagerITest {
     int leader_idx = rand() % tablet_replicas_.size();
     LOG(INFO) << "Electing peer " << leader_idx << "...";
     RaftConsensus* con = CHECK_NOTNULL(tablet_replicas_[leader_idx]->consensus());
-    RETURN_NOT_OK(con->EmulateElection());
+    RETURN_NOT_OK(con->EmulateElectionForTests());
     LOG(INFO) << "Waiting for servers to agree...";
     RETURN_NOT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5), ts_map_,
         tablet_replicas_[leader_idx]->tablet_id(), min_term));
