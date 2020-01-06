@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import java.util.List;
+
 import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.FOLLOWER;
 import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.LEADER;
 import static org.junit.Assert.assertEquals;
@@ -125,68 +127,76 @@ public class TestConnectToCluster {
 
     // Normal case.
     runTest(
-        makeCTMR(LEADER),
-        makeCTMR(FOLLOWER),
-        makeCTMR(FOLLOWER),
+        makeCTMR(LEADER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
         successResponse);
 
     // Permutation works too.
     runTest(
-        makeCTMR(FOLLOWER),
-        makeCTMR(LEADER),
-        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(LEADER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
         successResponse);
 
     // Multiple leaders, that's fine since it might be a TOCTOU situation, or one master
     // is confused. Raft handles this if the client then tries to do something that requires a
     // replication on the master-side.
     runTest(
-        makeCTMR(LEADER),
-        makeCTMR(LEADER),
-        makeCTMR(FOLLOWER),
+        makeCTMR(LEADER, MASTERS),
+        makeCTMR(LEADER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
         successResponse);
 
     // Mixed bag, still works because there's a leader.
     runTest(
         reusableNRE,
-        makeCTMR(FOLLOWER),
-        makeCTMR(LEADER),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(LEADER, MASTERS),
         successResponse);
 
     // All unreachable except one leader, still good.
     runTest(
         reusableNRE,
         reusableNRE,
-        makeCTMR(LEADER),
+        makeCTMR(LEADER, MASTERS),
         successResponse);
 
     // Permutation of the previous.
     runTest(
         reusableNRE,
-        makeCTMR(LEADER),
+        makeCTMR(LEADER, MASTERS),
         reusableNRE,
+        successResponse);
+
+    // Client try to connect three masters, but the cluster is configure with only one master.
+    // If connect to a leader master, success.
+    runTest(
+        reusableNRE,
+        reusableNRE,
+        makeCTMR(LEADER, ImmutableList.of(MASTERS.get(0))),
         successResponse);
 
     // Retry cases.
 
     // Just followers means we retry.
     runTest(
-        makeCTMR(FOLLOWER),
-        makeCTMR(FOLLOWER),
-        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
         retryResponse);
 
     // One NRE but we have responsive masters, retry.
     runTest(
-        makeCTMR(FOLLOWER),
-        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER, MASTERS),
+        makeCTMR(FOLLOWER, MASTERS),
         reusableNRE,
         retryResponse);
 
     // One good master but no leader, retry.
     runTest(
         reusableNRE,
-        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER, MASTERS),
         reusableNRE,
         retryResponse);
 
@@ -194,7 +204,7 @@ public class TestConnectToCluster {
     runTest(
         reusableRE,
         reusableNRE,
-        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER, MASTERS),
         retryResponse);
 
     // All recoverable means retry.
@@ -209,6 +219,14 @@ public class TestConnectToCluster {
         reusableRE,
         reusableNRE,
         reusableNRE,
+        retryResponse);
+
+    // Client try to connect three masters, but the cluster is configure with only one master.
+    // If the master hasn't become a leader, retry.
+    runTest(
+        reusableNRE,
+        reusableNRE,
+        makeCTMR(FOLLOWER, ImmutableList.of(MASTERS.get(0))),
         retryResponse);
 
     // Failure case.
@@ -265,9 +283,14 @@ public class TestConnectToCluster {
     }
   }
 
-  private static ConnectToMasterResponsePB makeCTMR(Metadata.RaftPeerPB.Role role) {
-    return ConnectToMasterResponsePB.newBuilder()
-        .setRole(role)
-        .build();
+  // Helper method to make a ConnectToMasterResponsePB.
+  private static ConnectToMasterResponsePB makeCTMR(Metadata.RaftPeerPB.Role role,
+                                                    List<HostAndPort> masters) {
+    ConnectToMasterResponsePB.Builder b = ConnectToMasterResponsePB.newBuilder();
+    b.setRole(role);
+    for (HostAndPort master : masters) {
+      b.addMasterAddrs(ProtobufHelper.hostAndPortToPB(master));
+    }
+    return b.build();
   }
 }

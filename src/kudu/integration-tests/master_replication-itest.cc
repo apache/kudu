@@ -111,6 +111,33 @@ class MasterReplicationTest : public KuduTest {
     }
   }
 
+  // Shut the cluster down, start initializing the client, and then
+  // bring the cluster back up during the initialization (but before the
+  // timeout can elapse).
+  Status ConnectToClusterDuringStartup(const vector<string>& master_addrs) {
+    // Shut the cluster down and ...
+    cluster_->Shutdown();
+    // ... start the cluster after a delay.
+    scoped_refptr<kudu::Thread> start_thread;
+    RETURN_NOT_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
+                                  &MasterReplicationTest::StartClusterDelayed,
+                                  this,
+                                  1000, // start after 1000 millis.
+                                  &start_thread));
+
+    // The timeouts for both RPCs and operations are increased to cope with slow
+    // clusters (i.e. TSAN builds).
+    shared_ptr<KuduClient> client;
+    KuduClientBuilder builder;
+    builder.master_server_addrs(master_addrs);
+    builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
+    builder.default_rpc_timeout(MonoDelta::FromSeconds(15));
+    Status s = builder.Build(&client);
+
+    RETURN_NOT_OK(ThreadJoiner(start_thread.get()).Join());
+    return s;
+  }
+
   Status CreateClient(shared_ptr<KuduClient>* out) {
     KuduClientBuilder builder;
     for (int i = 0; i < cluster_->num_masters(); i++) {
@@ -201,36 +228,19 @@ TEST_F(MasterReplicationTest, TestTimeoutWhenAllMastersAreDown) {
   cluster_.reset();
 }
 
-// Shut the cluster down, start initializing the client, and then
-// bring the cluster back up during the initialization (but before the
-// timeout can elapse).
 TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   vector<string> master_addrs;
   ListMasterServerAddrs(&master_addrs);
 
-  // Shut the cluster down and ...
-  cluster_->Shutdown();
-  // ... start the cluster after a delay.
-  scoped_refptr<kudu::Thread> start_thread;
-  ASSERT_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
-                                  &MasterReplicationTest::StartClusterDelayed,
-                                  this,
-                                  1000, // start after 1000 millis.
-                                  &start_thread));
-
   // Verify that the client doesn't give up even though the entire
   // cluster is down for a little while.
-  //
-  // The timeouts for both RPCs and operations are increased to cope with slow
-  // clusters (i.e. TSAN builds).
-  shared_ptr<KuduClient> client;
-  KuduClientBuilder builder;
-  builder.master_server_addrs(master_addrs);
-  builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
-  builder.default_rpc_timeout(MonoDelta::FromSeconds(15));
-  EXPECT_OK(builder.Build(&client));
+  EXPECT_OK(ConnectToClusterDuringStartup(master_addrs));
 
-  ASSERT_OK(ThreadJoiner(start_thread.get()).Join());
+  // Verify that if the client was configure with more masters than actual masters
+  // in the cluster, it would also keep retrying to connect to the cluster even though
+  // it couldn't find a leader master for a little while.
+  master_addrs.emplace_back("127.0.0.1:55555");
+  EXPECT_OK(ConnectToClusterDuringStartup(master_addrs));
 }
 
 // Test that every master accepts heartbeats, and that a heartbeat to any

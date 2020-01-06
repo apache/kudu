@@ -349,9 +349,9 @@ void ConnectToClusterRpc::SingleNodeCallback(int master_idx,
       if (resp.role() != RaftPeerPB::LEADER) {
         string msg;
         if (resp.master_addrs_size() > 0 &&
-            resp.master_addrs_size() != addrs_with_names_.size()) {
+            resp.master_addrs_size() > addrs_with_names_.size()) {
           // If we connected to a non-leader, and it responds that the
-          // number of masters in the cluster don't match the client's
+          // number of masters in the cluster is more than the client's
           // view of the number of masters, then it's likely the client
           // is mis-configured (i.e with a subset of the masters).
           // We'll include that info in the error message.

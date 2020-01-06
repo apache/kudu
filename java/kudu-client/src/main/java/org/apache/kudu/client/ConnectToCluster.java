@@ -253,7 +253,7 @@ final class ConnectToCluster {
 
         List<HostPortPB> knownMastersLocal = knownMasters.get();
         if (knownMastersLocal != null &&
-            knownMastersLocal.size() != numMasters) {
+            knownMastersLocal.size() > numMasters) {
           String msg = String.format(
               "Could not connect to a leader master. " +
               "Client configured with %s master(s) (%s) but cluster indicates it expects " +
