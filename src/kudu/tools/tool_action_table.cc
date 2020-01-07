@@ -1006,8 +1006,12 @@ Status ParseTableSchema(const SchemaPB& schema,
         column.column_type(), &type));
     spec->Type(type);
     if (column.has_type_attributes()) {
-      spec->Precision(column.type_attributes().precision());
-      spec->Scale(column.type_attributes().scale());
+      if (type == KuduColumnSchema::DataType::DECIMAL) {
+        spec->Precision(column.type_attributes().precision());
+        spec->Scale(column.type_attributes().scale());
+      } else if (type == KuduColumnSchema::DataType::VARCHAR) {
+        spec->Length(column.type_attributes().length());
+      }
     }
     if (!column.is_nullable()) {
       spec->NotNull();

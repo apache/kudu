@@ -354,9 +354,11 @@ message ColumnPB {
     ZLIB = 4;
   }
   message ColumnAttributesPB {
-    // For decimal columns
+    // For decimal columns.
     optional int32 precision = 1;
     optional int32 scale = 2;
+    // For varchar columns.
+    optional int32 length = 3;
   }
   optional string column_name = 1;
   optional string column_type = 2;
@@ -366,7 +368,7 @@ message ColumnPB {
   optional string comment = 5;
   optional EncodingType encoding = 6;
   optional CompressionType compression = 7;
-  // Column's attribute, used for DECIMAL type column.
+  // Column's attribute, used for DECIMAL and VARCHAR type columns.
   optional ColumnAttributesPB type_attributes = 8;
   // The preferred block size for cfile blocks.
   optional int32 cfile_block_size = 9;

@@ -417,10 +417,10 @@ TEST_F(CreateTableToolTest, TestCreateTable) {
   NO_FATALS(check_good_input(hash_range_table, master_addr, "hash_range_table",
       schema, partition, extra_configs, client.get()));
 
-  // Create a table with decimal column type.
-  string decimal_table = R"(
+  // Create a table with decimal, varchar, and date column types.
+  string type_table = R"(
       {
-          "table_name": "decimal_table",
+          "table_name": "type_table",
           "schema": {
               "columns": [
                   {
@@ -438,6 +438,20 @@ TEST_F(CreateTableToolTest, TestCreateTable) {
                       },
                       "is_nullable": false,
                       "comment": "range key"
+                  },
+                  {
+                      "column_name": "text",
+                      "column_type": "VARCHAR",
+                      "type_attributes": {
+                          "length": 10
+                      },
+                      "is_nullable": false,
+                      "default_value": "hello world"
+                  },
+                  {
+                      "column_name": "create_date",
+                      "column_type": "DATE",
+                      "is_nullable": false
                   },
                   {
                       "column_name": "name",
@@ -461,10 +475,11 @@ TEST_F(CreateTableToolTest, TestCreateTable) {
       }
   )";
   schema = "(\n    id INT64 NOT NULL,\n    score DECIMAL(10, 10) NOT NULL,\n"
-    "    name STRING NOT NULL,\n    PRIMARY KEY (id)\n)";
+           "    text VARCHAR(10) NOT NULL,\n    create_date DATE NOT NULL,\n"
+           "    name STRING NOT NULL,\n    PRIMARY KEY (id)\n)";
   partition = "";
   extra_configs["kudu.table.history_max_age_sec"] = "3600";
-  NO_FATALS(check_good_input(decimal_table, master_addr, "decimal_table",
+  NO_FATALS(check_good_input(type_table, master_addr, "type_table",
       schema, partition, extra_configs, client.get()));
 
   // Create a table using string value instead of int for enum type,

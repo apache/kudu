@@ -718,6 +718,10 @@ string KuduColumnSchema::DataTypeToString(DataType type) {
     *type = UNIXTIME_MICROS;
   } else if (type_uc == "DECIMAL") {
     *type = DECIMAL;
+  } else if (type_uc == "VARCHAR") {
+    *type = VARCHAR;
+  } else if (type_uc == "DATE") {
+    *type = DATE;
   } else {
     s = Status::InvalidArgument(Substitute(
         "data type $0 is not supported", type_str));
