@@ -371,8 +371,10 @@ TEST_P(RaftConsensusNumLeadersMetricTest, TestNumLeadersMetric) {
   vector<string> tablet_ids;
   ASSERT_EVENTUALLY([&] {
     vector<string> tablets;
-    ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablets));
-    ASSERT_EQ(kNumTablets, tablets.size());
+    for (const auto& ts_iter : tablet_servers_) {
+      ASSERT_OK(ListRunningTabletIds(ts_iter.second, kTimeout, &tablets));
+      ASSERT_EQ(kNumTablets, tablets.size());
+    }
     tablet_ids = std::move(tablets);
   });
 
