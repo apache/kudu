@@ -721,7 +721,6 @@ class Tablet {
 
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;
-  FunctionGaugeDetacher metric_detacher_;
 
   std::unique_ptr<Throttler> throttler_;
 
@@ -768,6 +767,10 @@ class Tablet {
   mutable rw_spinlock last_rw_time_lock_;
   MonoTime last_write_time_;
   mutable MonoTime last_read_time_;
+
+  // NOTE: it's important that this is the first member to be destructed. This
+  // ensures we do not attempt to collect metrics while calling the destructor.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

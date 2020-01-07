@@ -401,11 +401,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Thread pool used to delete tablets asynchronously.
   std::unique_ptr<ThreadPool> delete_tablet_pool_;
 
-  FunctionGaugeDetacher metric_detacher_;
-
   // Ensures that we only update stats from a single thread at a time.
   mutable rw_spinlock lock_update_;
   MonoTime next_update_time_;
+
+  // NOTE: it's important that this is the first member to be destructed. This
+  // ensures we do not attempt to collect metrics while calling the destructor.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

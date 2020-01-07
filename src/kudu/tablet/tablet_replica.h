@@ -391,10 +391,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // The result tracker for writes.
   scoped_refptr<rpc::ResultTracker> result_tracker_;
 
-  FunctionGaugeDetacher metric_detacher_;
-
   // Cached stats for the tablet replica.
   ReportedTabletStatsPB stats_pb_;
+
+  // NOTE: it's important that this is the first member to be destructed. This
+  // ensures we do not attempt to collect metrics while calling the destructor.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletReplica);
 };
