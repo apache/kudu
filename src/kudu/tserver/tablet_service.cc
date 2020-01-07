@@ -358,6 +358,18 @@ bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
   return true;
 }
 
+template<class RespClass>
+bool CheckTabletServerQuiescingOrRespond(const TabletServer* server, RespClass* resp,
+                                         rpc::RpcContext* context) {
+  if (PREDICT_FALSE(server->quiescing())) {
+    Status s = Status::ServiceUnavailable("Tablet server is quiescing");
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return false;
+  }
+  return true;
+}
+
 Status GetTabletRef(const scoped_refptr<TabletReplica>& replica,
                     shared_ptr<Tablet>* tablet,
                     TabletServerErrorPB::Code* error_code) {
@@ -1696,6 +1708,9 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   bool has_more_results = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
   if (req->has_new_scan_request()) {
+    if (!CheckTabletServerQuiescingOrRespond(server_, resp, context)) {
+      return;
+    }
     const NewScanRequestPB& scan_pb = req->new_scan_request();
     scoped_refptr<TabletReplica> replica;
     if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp,
@@ -2007,6 +2022,9 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
     }
   }
   if (req->has_new_request()) {
+    if (!CheckTabletServerQuiescingOrRespond(server_, resp, context)) {
+      return;
+    }
     const NewScanRequestPB& new_req = req->new_request();
     scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     scoped_refptr<TabletReplica> replica;

@@ -82,6 +82,10 @@ class TabletServer : public kserver::KuduServer {
     return maintenance_manager_.get();
   }
 
+  bool quiescing() const {
+    return quiescing_;
+  }
+
   std::atomic<bool>* mutable_quiescing() {
     return &quiescing_;
   }

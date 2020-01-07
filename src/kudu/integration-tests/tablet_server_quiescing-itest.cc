@@ -26,6 +26,9 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -34,6 +37,7 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/metrics.h"
@@ -46,9 +50,17 @@ DECLARE_bool(enable_leader_failure_detection);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
+DECLARE_int32(scanner_default_batch_size_bytes);
 DECLARE_int32(raft_heartbeat_interval_ms);
 
+using kudu::client::KuduClient;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduTable;
+using kudu::client::sp::shared_ptr;
+using kudu::tserver::MiniTabletServer;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -75,6 +87,26 @@ class TServerQuiescingITest : public MiniClusterITestBase {
       }
     });
   }
+
+  // Creates a read-write workload that doesn't use a fault-tolerant scanner.
+  // Not using a FT scanner means:
+  // - Remote errors when writing won't automatically be retried, so we must
+  //   permit these if we want to run the workload while restarting a tserver.
+  //   We may get a remote error if the tserver is reachable but shutting down
+  //   (this isn't the case in production where we just kill the process).
+  // - The number of rows returned may not be consistent with what we've
+  //   already written.
+  unique_ptr<TestWorkload> CreateFaultIntolerantRWWorkload() const {
+    unique_ptr<TestWorkload> rw_workload(new TestWorkload(cluster_.get()));
+    rw_workload->set_scanner_fault_tolerant(false);
+    rw_workload->set_num_replicas(cluster_->num_tablet_servers());
+    rw_workload->set_num_read_threads(3);
+    rw_workload->set_num_write_threads(3);
+    rw_workload->set_verify_num_rows(false);
+    // NOTE: this doesn't affect scans at all.
+    rw_workload->set_remote_error_allowed(true);
+    return rw_workload;
+  }
 };
 
 // Test that a quiescing server won't trigger an election by natural means (i.e.
@@ -82,6 +114,7 @@ class TServerQuiescingITest : public MiniClusterITestBase {
 TEST_F(TServerQuiescingITest, TestQuiescingServerDoesntTriggerElections) {
   const int kNumReplicas = 3;
   const int kNumTablets = 10;
+  // This test will change leaders frequently, so set a low Raft heartbeat.
   FLAGS_raft_heartbeat_interval_ms = 100;
   NO_FATALS(StartCluster(kNumReplicas));
 
@@ -147,6 +180,86 @@ TEST_F(TServerQuiescingITest, TestMajorityQuiescingElectsLeader) {
     ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
     ASSERT_EQ(leader_details->uuid(), cluster_->mini_tablet_server(0)->uuid());
   });
+}
+
+// Test that when we're quiescing a tserver, we don't accept new scan requests,
+// Even with non-FT scanners, if we restart a quiescing tserver that has
+// completed its scans, on-going read workloads are not affected.
+TEST_F(TServerQuiescingITest, TestDoesntAllowNewScans) {
+  const int kNumReplicas = 3;
+  // Set a tiny batch size to encourage many batches for a single scan. This
+  // will emulate longer-running scans.
+  FLAGS_scanner_default_batch_size_bytes = 1;
+  NO_FATALS(StartCluster(kNumReplicas));
+
+  // Set up a table with some replicas and start a workload without fault
+  // tolerant scans.
+  auto rw_workload = CreateFaultIntolerantRWWorkload();
+  rw_workload->Setup();
+  rw_workload->Start();
+
+  // Wait for some scans to begin.
+  auto* ts = cluster_->mini_tablet_server(0);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_LT(0, ts->server()->scanner_manager()->CountActiveScanners());
+  });
+
+  // Mark a tablet server as quiescing. It should eventually stop serving scans.
+  *ts->server()->mutable_quiescing() = true;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(0, ts->server()->scanner_manager()->CountActiveScanners());
+  });
+
+  // Stopping the quiesced tablet server shouldn't affect the ongoing read
+  // workload, since there are no scans on that server.
+  ts->Shutdown();
+  NO_FATALS(rw_workload->StopAndJoin());
+}
+
+// Test that when we're doing a leader-only non-FT scan and we quiesce the
+// leaders, we eventually stop seeing scans on that server.
+TEST_F(TServerQuiescingITest, TestDoesntAllowNewScansLeadersOnly) {
+  const int kNumReplicas = 3;
+  // This test will change leaders frequently, so set a low Raft heartbeat.
+  FLAGS_raft_heartbeat_interval_ms = 100;
+  // Set a tiny batch size to encourage many batches for a single scan. This
+  // will emulate long-running scans.
+  FLAGS_scanner_default_batch_size_bytes = 1;
+  NO_FATALS(StartCluster(kNumReplicas));
+
+  // Set up a table with some replicas.
+  auto rw_workload = CreateFaultIntolerantRWWorkload();
+  rw_workload->set_scanner_selection(client::KuduClient::LEADER_ONLY);
+  rw_workload->Setup();
+  rw_workload->Start();
+
+  // Inject a bunch of leader elections to stress leadership changes.
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
+  FLAGS_consensus_inject_latency_ms_in_notifications = FLAGS_raft_heartbeat_interval_ms;
+
+  // Wait for the scans to begin.
+  MiniTabletServer* ts = nullptr;
+  ASSERT_EVENTUALLY([&] {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      auto* tserver = cluster_->mini_tablet_server(i);
+      if (tserver->server()->scanner_manager()->CountActiveScanners() > 0) {
+        ts = tserver;
+        break;
+      }
+    }
+    ASSERT_NE(nullptr, ts);
+  });
+
+  // Mark one of the tablet servers with scans as quiescing. It should
+  // eventually stop serving scans.
+  *ts->server()->mutable_quiescing() = true;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(0, ts->server()->scanner_manager()->CountActiveScanners());
+  });
+  ts->Shutdown();
+
+  // Stopping the quiesced tablet server shouldn't affect the ongoing read workload.
+  NO_FATALS(rw_workload->StopAndJoin());
 }
 
 class TServerQuiescingParamITest : public TServerQuiescingITest,
@@ -224,6 +337,49 @@ TEST_P(TServerQuiescingParamITest, TestNoElectionsForNewReplicas) {
     }
     ASSERT_EQ(kNumTablets, num_leaders);
   });
+}
+
+// Test that scans are opaquely retried when sent to quiescing servers. If all
+// servers are quiescing, the scans will eventually time out; if any are not
+// quiescing, all scans will be directed at the non-quiescing server.
+TEST_P(TServerQuiescingParamITest, TestScansRetry) {
+  const int kNumReplicas = GetParam();
+  NO_FATALS(StartCluster(kNumReplicas));
+  string table_name;
+  {
+    auto rw_workload = CreateFaultIntolerantRWWorkload();
+    rw_workload->Setup();
+    rw_workload->Start();
+    table_name = rw_workload->table_name();
+    while (rw_workload->rows_inserted() < 10000) {
+      SleepFor(MonoDelta::FromMilliseconds(100));
+    }
+    NO_FATALS(rw_workload->StopAndJoin());
+  }
+  // Quiesce every tablet server.
+  for (int i = 0; i < kNumReplicas; i++) {
+    *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
+  }
+  // This should result in a failure to start scanning anything.
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(table_name, &table));
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetTimeoutMillis(1000));
+  {
+    Status s = scanner.Open();
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "exceeded configured scan timeout");
+  }
+
+  // Now stop quiescing one of the servers. Our scans should succeed. Set a
+  // small batch size so our scanner remains active.
+  FLAGS_scanner_default_batch_size_bytes = 1;
+  auto* ts = cluster_->mini_tablet_server(0)->server();
+  *ts->mutable_quiescing() = false;
+  KuduScanBatch batch;
+  ASSERT_OK(scanner.Open());
+  ASSERT_OK(scanner.NextBatch(&batch));
+  ASSERT_EQ(1, ts->scanner_manager()->CountActiveScanners());
 }
 
 INSTANTIATE_TEST_CASE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));

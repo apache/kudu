@@ -61,6 +61,14 @@ class TestWorkload {
   explicit TestWorkload(cluster::MiniCluster* cluster);
   ~TestWorkload();
 
+  void set_scanner_fault_tolerant(bool fault_tolerant) {
+    fault_tolerant_ = fault_tolerant;
+  }
+
+  void set_scanner_selection(client::KuduClient::ReplicaSelection selection) {
+    selection_ = selection;
+  }
+
   void set_payload_bytes(int n) {
     payload_bytes_ = n;
   }
@@ -117,6 +125,12 @@ class TestWorkload {
   // By default, this triggers a CHECK failure.
   void set_not_found_allowed(bool allowed) {
     not_found_allowed_ = allowed;
+  }
+
+  // Set whether we should attempt to verify the number of rows when scanning.
+  // This sort of error may be indicative of a stale read.
+  void set_verify_num_rows(bool should_verify) {
+    verify_num_rows_ = should_verify;
   }
 
   // Whether per-row errors with Status::AlreadyPresent() are allowed.
@@ -245,12 +259,15 @@ class TestWorkload {
   int write_batch_size_;
   int write_interval_millis_;
   int write_timeout_millis_;
+  bool fault_tolerant_;
+  bool verify_num_rows_;
   bool timeout_allowed_;
   bool not_found_allowed_;
   bool already_present_allowed_;
   bool network_error_allowed_;
   bool remote_error_allowed_;
   WritePattern write_pattern_;
+  client::KuduClient::ReplicaSelection selection_;
   client::KuduSchema schema_;
 
   int num_replicas_;
