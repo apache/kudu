@@ -37,7 +37,6 @@ namespace kudu {
 class BlockId;
 class Env;
 class MemTracker;
-class RandomAccessFile;
 
 namespace fs {
 class DataDirManager;
@@ -49,7 +48,6 @@ class FileBlockDeletionTransaction;
 class FileBlockLocation;
 class FileReadableBlock;
 class FileWritableBlock;
-
 struct BlockManagerMetrics;
 } // namespace internal
 
@@ -136,7 +134,7 @@ class FileBlockManager : public BlockManager {
   const BlockManagerOptions opts_;
 
   // Manages files opened for reading.
-  FileCache<RandomAccessFile> file_cache_;
+  FileCache file_cache_;
 
   // For generating block IDs.
   ThreadSafeRandom rand_;

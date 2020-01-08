@@ -46,11 +46,10 @@
 namespace kudu {
 
 class Env;
-class RWFile;
 
 namespace fs {
-class Dir;
 class DataDirManager;
+class Dir;
 class FsErrorManager;
 struct FsReport;
 
@@ -442,7 +441,7 @@ class LogBlockManager : public BlockManager {
                      boost::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
-  FileCache<RWFile> file_cache_;
+  FileCache file_cache_;
 
   // Holds (and owns) all containers loaded from disk.
   std::unordered_map<std::string,
