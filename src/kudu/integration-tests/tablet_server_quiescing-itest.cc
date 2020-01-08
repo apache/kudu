@@ -51,6 +51,7 @@ DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
 DECLARE_int32(scanner_default_batch_size_bytes);
+DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
 
 using kudu::client::KuduClient;
@@ -374,12 +375,23 @@ TEST_P(TServerQuiescingParamITest, TestScansRetry) {
   // Now stop quiescing one of the servers. Our scans should succeed. Set a
   // small batch size so our scanner remains active.
   FLAGS_scanner_default_batch_size_bytes = 1;
+  // Make our scanner expire really quickly so we can test that we can keep the
+  // scanner alive even while the tserver is quiescing.
+  FLAGS_scanner_ttl_ms = 1000;
   auto* ts = cluster_->mini_tablet_server(0)->server();
   *ts->mutable_quiescing() = false;
   KuduScanBatch batch;
   ASSERT_OK(scanner.Open());
   ASSERT_OK(scanner.NextBatch(&batch));
-  ASSERT_EQ(1, ts->scanner_manager()->CountActiveScanners());
+
+  // Keep the scanner alive, even as we're quiescing.
+  const auto past_original_expiration =
+      MonoTime::Now() + MonoDelta::FromMilliseconds(2 * FLAGS_scanner_ttl_ms);
+  while (MonoTime::Now() < past_original_expiration) {
+    ASSERT_EQ(1, ts->scanner_manager()->CountActiveScanners());
+    ASSERT_OK(scanner.KeepAlive());
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
 }
 
 INSTANTIATE_TEST_CASE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));

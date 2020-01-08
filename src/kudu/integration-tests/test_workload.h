@@ -128,7 +128,7 @@ class TestWorkload {
   }
 
   // Set whether we should attempt to verify the number of rows when scanning.
-  // This sort of error may be indicative of a stale read.
+  // An incorrect number of rows may be indicative of a stale read.
   void set_verify_num_rows(bool should_verify) {
     verify_num_rows_ = should_verify;
   }

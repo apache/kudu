@@ -359,8 +359,8 @@ bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
 }
 
 template<class RespClass>
-bool CheckTabletServerQuiescingOrRespond(const TabletServer* server, RespClass* resp,
-                                         rpc::RpcContext* context) {
+bool CheckTabletServerNotQuiescingOrRespond(const TabletServer* server, RespClass* resp,
+                                            rpc::RpcContext* context) {
   if (PREDICT_FALSE(server->quiescing())) {
     Status s = Status::ServiceUnavailable("Tablet server is quiescing");
     SetupErrorAndRespond(resp->mutable_error(), s,
@@ -1708,7 +1708,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   bool has_more_results = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
   if (req->has_new_scan_request()) {
-    if (!CheckTabletServerQuiescingOrRespond(server_, resp, context)) {
+    if (!CheckTabletServerNotQuiescingOrRespond(server_, resp, context)) {
       return;
     }
     const NewScanRequestPB& scan_pb = req->new_scan_request();
@@ -2022,7 +2022,7 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
     }
   }
   if (req->has_new_request()) {
-    if (!CheckTabletServerQuiescingOrRespond(server_, resp, context)) {
+    if (!CheckTabletServerNotQuiescingOrRespond(server_, resp, context)) {
       return;
     }
     const NewScanRequestPB& new_req = req->new_request();
