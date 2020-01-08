@@ -164,6 +164,13 @@ class ScopedDisableRedaction {
   static logging::LogThrottler LOG_THROTTLER;  \
   KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, LOG_THROTTLER, "no-tag")
 
+#define WARN_NOT_OK_EVERY_N_SECS(to_call, warning_prefix, n_secs) do {                 \
+    const ::kudu::Status& _s = (to_call);                                              \
+    if (PREDICT_FALSE(!_s.ok())) {                                                     \
+      KLOG_EVERY_N_SECS(WARNING, n_secs) << (warning_prefix) << ": " << _s.ToString()  \
+                                         << THROTTLE_MSG;                              \
+    }                                                                                  \
+  } while (0)
 
 namespace kudu {
 enum PRIVATE_ThrottleMsg {THROTTLE_MSG};

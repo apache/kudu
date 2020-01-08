@@ -379,8 +379,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
   if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
-    WARN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION),
-                "Couldn't start leader election");
+    WARN_NOT_OK_EVERY_N_SECS(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION),
+                             "Couldn't start leader election", 10);
   }
 
   // Report become visible to the Master.
@@ -650,9 +650,9 @@ void RaftConsensus::ReportFailureDetectedTask() {
   std::unique_lock<simple_spinlock> try_lock(failure_detector_election_lock_,
                                              std::try_to_lock);
   if (try_lock.owns_lock()) {
-    WARN_NOT_OK(StartElection(FLAGS_raft_enable_pre_election ?
+    WARN_NOT_OK_EVERY_N_SECS(StartElection(FLAGS_raft_enable_pre_election ?
         PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED),
-                LogPrefixThreadSafe() + "failed to trigger leader election");
+                             LogPrefixThreadSafe() + "failed to trigger leader election", 10);
   }
 }
 
@@ -2698,8 +2698,8 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   if (was_pre_election) {
     // We just won the pre-election. So, we need to call a real election.
     lock.unlock();
-    WARN_NOT_OK(StartElection(NORMAL_ELECTION, reason),
-                "Couldn't start leader election after successful pre-election");
+    WARN_NOT_OK_EVERY_N_SECS(StartElection(NORMAL_ELECTION, reason),
+                             "Couldn't start leader election after successful pre-election", 10);
   } else {
     // We won a real election. Convert role to LEADER.
     SetLeaderUuidUnlocked(peer_uuid());
