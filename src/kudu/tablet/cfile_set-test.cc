@@ -24,10 +24,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -50,8 +50,10 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/hash.pb.h"
+#include "kudu/util/hash_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -97,9 +99,9 @@ class TestCFileSet : public KuduRowSetTest {
     RowBuilder rb(&schema_);
     for (int i = 0; i < nrows; i++) {
       rb.Reset();
-      rb.AddInt32(i * 2);
-      rb.AddInt32(i * 10);
-      rb.AddInt32(i * 100);
+      rb.AddInt32(i * kRatio[0]);
+      rb.AddInt32(i * kRatio[1]);
+      rb.AddInt32(i * kRatio[2]);
       ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
     }
     ASSERT_OK(rsw.Finish());
@@ -110,27 +112,26 @@ class TestCFileSet : public KuduRowSetTest {
   // bf1_exclude: 1 3 5 7 9 ... (2n + 1)th key for column 1 to form bloom filter.
   // bf2_contain: 0 2 4 6 8 ... (2n)th key for column 2 to form bloom filter.
   // bf2_exclude: 1 3 5 7 9 ... (2n + 1)th key for column 2 to form bloom filter.
-  void FillBloomFilter(int nrows,
-                       BloomFilterBuilder* bf1_contain,
-                       BloomFilterBuilder* bf1_exclude,
-                       BloomFilterBuilder* bf2_contain,
-                       BloomFilterBuilder* bf2_exclude) {
-    int ratio[] = {2, 10, 100};
+  static void FillBloomFilter(int nrows,
+                              BlockBloomFilter* bf1_contain,
+                              BlockBloomFilter* bf1_exclude,
+                              BlockBloomFilter* bf2_contain,
+                              BlockBloomFilter* bf2_exclude) {
     bool add = true;
     for (int i = 0; i < nrows; ++i) {
-      int curr1 = i * ratio[0];
-      int curr2 = i * ratio[1];
+      int curr1 = i * kRatio[0];
+      int curr2 = i * kRatio[1];
       Slice first(reinterpret_cast<const uint8_t*>(&curr1), sizeof(curr1));
       Slice second(reinterpret_cast<const uint8_t*>(&curr2), sizeof(curr2));
-      BloomKeyProbe probe1(first, MURMUR_HASH_2);
-      BloomKeyProbe probe2(second, MURMUR_HASH_2);
+      uint32_t hash1 = HashUtil::ComputeHash32(first, FAST_HASH, 0);
+      uint32_t hash2 = HashUtil::ComputeHash32(second, FAST_HASH, 0);
 
       if (add) {
-        bf1_contain->AddKey(probe1);
-        bf2_contain->AddKey(probe2);
+        bf1_contain->Insert(hash1);
+        bf2_contain->Insert(hash2);
       } else {
-        bf1_exclude->AddKey(probe1);
-        bf2_exclude->AddKey(probe2);
+        bf1_exclude->Insert(hash1);
+        bf2_exclude->Insert(hash2);
       }
       add = !add;
     }
@@ -143,32 +144,33 @@ class TestCFileSet : public KuduRowSetTest {
   // ret2_exclude: to get the key hits in bf2_exclude for column 2.
   // In some case key may hit both contain and exclude bloom filter
   // so we get accurate item hits the bloom filter for test behind.
-  void GetBloomFilterResult(int nrows, BloomFilterBuilder* bf1_contain,
-                            BloomFilterBuilder* bf1_exclude,
-                            BloomFilterBuilder* bf2_contain,
-                            BloomFilterBuilder* bf2_exclude,
-                            vector<size_t>* ret1_contain,
-                            vector<size_t>* ret1_exclude,
-                            vector<size_t>* ret2_contain,
-                            vector<size_t>* ret2_exclude) {
-    int ratio[] = {2, 10, 100};
+  static void GetBloomFilterResult(int nrows,
+                                   BlockBloomFilter* bf1_contain,
+                                   BlockBloomFilter* bf1_exclude,
+                                   BlockBloomFilter* bf2_contain,
+                                   BlockBloomFilter* bf2_exclude,
+                                   vector<size_t>* ret1_contain,
+                                   vector<size_t>* ret1_exclude,
+                                   vector<size_t>* ret2_contain,
+                                   vector<size_t>* ret2_exclude) {
     for (int i = 0; i < nrows; ++i) {
-      int curr1 = i * ratio[0];
-      int curr2 = i * ratio[1];
+      int curr1 = i * kRatio[0];
+      int curr2 = i * kRatio[1];
       Slice first(reinterpret_cast<const uint8_t*>(&curr1), sizeof(curr1));
       Slice second(reinterpret_cast<const uint8_t*>(&curr2), sizeof(curr2));
-      BloomKeyProbe probe1(first, MURMUR_HASH_2);
-      BloomKeyProbe probe2(second, MURMUR_HASH_2);
-      if (BloomFilter(bf1_contain->slice(), bf1_contain->n_hashes()).MayContainKey(probe1)) {
+      uint32_t hash1 = HashUtil::ComputeHash32(first, FAST_HASH, 0);
+      uint32_t hash2 = HashUtil::ComputeHash32(second, FAST_HASH, 0);
+
+      if (bf1_contain->Find(hash1)) {
         ret1_contain->push_back(i);
       }
-      if (BloomFilter(bf1_exclude->slice(), bf1_exclude->n_hashes()).MayContainKey(probe1)) {
+      if (bf1_exclude->Find(hash1)) {
         ret1_exclude->push_back(i);
       }
-      if (BloomFilter(bf2_contain->slice(), bf2_contain->n_hashes()).MayContainKey(probe2)) {
+      if (bf2_contain->Find(hash2)) {
         ret2_contain->push_back(i);
       }
-      if (BloomFilter(bf2_exclude->slice(), bf2_exclude->n_hashes()).MayContainKey(probe2)) {
+      if (bf2_exclude->Find(hash2)) {
         ret2_exclude->push_back(i);
       }
     }
@@ -234,12 +236,12 @@ class TestCFileSet : public KuduRowSetTest {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
           size_t index = row.row_index();
-          vector<size_t>::iterator iter = std::find(target.begin(), target.end(), index);
-          if (iter == target.end()) {
+          auto target_iter = std::find(target.begin(), target.end(), index);
+          if (target_iter == target.end()) {
             FAIL() << "Row " << schema_.DebugRow(row) << " should not have "
                    << "passed predicate ";
           }
-          target.erase(iter);
+          target.erase(target_iter);
         }
       }
     }
@@ -264,6 +266,8 @@ class TestCFileSet : public KuduRowSetTest {
     attr.encoding = RLE;
     return attr;
   }
+
+  static constexpr int kRatio[] = {2, 10, 100};
 
  protected:
   static const int32_t kNoBound;
@@ -471,68 +475,62 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
 
 TEST_F(TestCFileSet, TestBloomFilterPredicates) {
   const int kNumRows = 100;
-  BloomFilterBuilder bfb1_contain(
-          BloomFilterSizing::ByCountAndFPRate(kNumRows, 0.01));
-  double expected_fp_rate1 = bfb1_contain.false_positive_rate();
-  ASSERT_NEAR(expected_fp_rate1, 0.01, 0.002);
-  ASSERT_EQ(9, bfb1_contain.n_bits() / kNumRows);
+  Arena arena(1024);
+  ArenaBlockBloomFilterBufferAllocator allocator(&arena);
 
-  BloomFilterBuilder bfb1_exclude(
-          BloomFilterSizing::ByCountAndFPRate(kNumRows, 0.01));
-  double expected_fp_rate11 = bfb1_exclude.false_positive_rate();
-  ASSERT_NEAR(expected_fp_rate11, 0.01, 0.002);
-  ASSERT_EQ(9, bfb1_exclude.n_bits() / kNumRows);
+  BlockBloomFilter bf1_contain(&allocator);
+  int log_space_bytes1 = BlockBloomFilter::MinLogSpace(kNumRows, 0.01);
+  ASSERT_OK(bf1_contain.Init(log_space_bytes1, FAST_HASH, 0));
+  double expected_fp_rate1 = BlockBloomFilter::FalsePositiveProb(kNumRows, log_space_bytes1);
+  ASSERT_LE(expected_fp_rate1, 0.01);
 
-  BloomFilterBuilder bfb2_contain(
-          BloomFilterSizing::ByCountAndFPRate(kNumRows, 0.01));
-  double expected_fp_rate2 = bfb2_contain.false_positive_rate();
-  ASSERT_NEAR(expected_fp_rate2, 0.01, 0.002);
-  ASSERT_EQ(9, bfb2_contain.n_bits() / kNumRows);
+  BlockBloomFilter bf1_exclude(&allocator);
+  int log_space_bytes11 = BlockBloomFilter::MinLogSpace(kNumRows, 0.01);
+  ASSERT_OK(bf1_exclude.Init(log_space_bytes11, FAST_HASH, 0));
+  double expected_fp_rate11 = BlockBloomFilter::FalsePositiveProb(kNumRows, log_space_bytes11);
+  ASSERT_LE(expected_fp_rate11, 0.01);
 
-  BloomFilterBuilder bfb2_exclude(
-          BloomFilterSizing::ByCountAndFPRate(kNumRows, 0.01));
-  double expected_fp_rate22 = bfb2_exclude.false_positive_rate();
-  ASSERT_NEAR(expected_fp_rate22, 0.01, 0.002);
-  ASSERT_EQ(9, bfb2_exclude.n_bits() / kNumRows);
+  BlockBloomFilter bf2_contain(&allocator);
+  int log_space_bytes2 = BlockBloomFilter::MinLogSpace(kNumRows, 0.01);
+  ASSERT_OK(bf2_contain.Init(log_space_bytes2, FAST_HASH, 0));
+  double expected_fp_rate2 = BlockBloomFilter::FalsePositiveProb(kNumRows, log_space_bytes2);
+  ASSERT_LE(expected_fp_rate2, 0.01);
+
+  BlockBloomFilter bf2_exclude(&allocator);
+  int log_space_bytes22 = BlockBloomFilter::MinLogSpace(kNumRows, 0.01);
+  ASSERT_OK(bf2_exclude.Init(log_space_bytes22, FAST_HASH, 0));
+  double expected_fp_rate22 = BlockBloomFilter::FalsePositiveProb(kNumRows, log_space_bytes22);
+  ASSERT_LE(expected_fp_rate22, 0.01);
 
   WriteTestRowSet(kNumRows);
   vector<size_t> ret1_contain;
   vector<size_t> ret1_exclude;
   vector<size_t> ret2_contain;
   vector<size_t> ret2_exclude;
-  FillBloomFilter(kNumRows, &bfb1_contain, &bfb1_exclude, &bfb2_contain, &bfb2_exclude);
-  GetBloomFilterResult(kNumRows, &bfb1_contain, &bfb1_exclude, &bfb2_contain, &bfb2_exclude,
-                       &ret1_contain, &ret1_exclude, &ret2_contain, &ret2_exclude);
+  FillBloomFilter(kNumRows, &bf1_contain, &bf1_exclude, &bf2_contain, &bf2_exclude);
+  GetBloomFilterResult(kNumRows, &bf1_contain, &bf1_exclude, &bf2_contain,
+                       &bf2_exclude, &ret1_contain, &ret1_exclude, &ret2_contain,
+                       &ret2_exclude);
 
   shared_ptr<CFileSet> fileset;
   ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), MemTracker::GetRootTracker(),
                            nullptr, &fileset));
 
-  vector<ColumnPredicate::BloomFilterInner> bfs;
+
   // BloomFilter of column 0 contain.
-  ColumnPredicate::BloomFilterInner bf1_contain(bfb1_contain.slice(),
-                                                bfb1_contain.n_hashes(), MURMUR_HASH_2);
-  bfs.push_back(bf1_contain);
-  auto pred1_contain = ColumnPredicate::InBloomFilter(schema_.column(0), &bfs, nullptr, nullptr);
+  auto pred1_contain = ColumnPredicate::InBloomFilter(schema_.column(0), {&bf1_contain},
+                                                      nullptr, nullptr);
   DoTestBloomFilterScan(fileset, { pred1_contain }, ret1_contain);
 
   // BloomFilter of column 1 contain.
-  ColumnPredicate::BloomFilterInner bf2_contain(bfb2_contain.slice(),
-                                                bfb2_contain.n_hashes(), MURMUR_HASH_2);
-  bfs.clear();
-  bfs.push_back(bf2_contain);
-  auto pred2_contain = ColumnPredicate::InBloomFilter(schema_.column(1), &bfs, nullptr, nullptr);
+  auto pred2_contain = ColumnPredicate::InBloomFilter(schema_.column(1), {&bf2_contain},
+                                                      nullptr, nullptr);
   DoTestBloomFilterScan(fileset, { pred2_contain }, ret2_contain);
 
   // BloomFilter of column 0 contain and exclude.
-  ColumnPredicate::BloomFilterInner bf1_exclude(bfb1_exclude.slice(),
-                                                bfb1_exclude.n_hashes(), MURMUR_HASH_2);
-  bfs.clear();
-  bfs.push_back(bf1_contain);
-  bfs.push_back(bf1_exclude);
   vector<size_t> ret1_contain_exclude;
-  auto pred1_contain_exclude = ColumnPredicate::InBloomFilter(schema_.column(0),
-                                                              &bfs, nullptr, nullptr);
+  auto pred1_contain_exclude = ColumnPredicate::InBloomFilter(
+      schema_.column(0), {&bf1_contain, &bf1_exclude}, nullptr, nullptr);
   std::set_intersection(ret1_contain.begin(), ret1_contain.end(), ret1_exclude.begin(),
                         ret1_exclude.end(), std::back_inserter(ret1_contain_exclude));
   DoTestBloomFilterScan(fileset, { pred1_contain_exclude }, ret1_contain_exclude);
@@ -548,19 +546,18 @@ TEST_F(TestCFileSet, TestBloomFilterPredicates) {
   int32_t lower_row_index = lower / 2;
   int32_t upper_row_index = upper / 2;
   vector<size_t> ret1_contain_range = ret1_contain;
-  vector<size_t>::iterator left = std::lower_bound(ret1_contain_range.begin(),
-                                  ret1_contain_range.end(), lower_row_index);
+  auto left = std::lower_bound(ret1_contain_range.begin(),
+                               ret1_contain_range.end(), lower_row_index);
   ret1_contain_range.erase(ret1_contain_range.begin(), left); // don't erase left
-  vector<size_t>::iterator right = std::lower_bound(ret1_contain_range.begin(),
-                                   ret1_contain_range.end(), upper_row_index);
+  auto right = std::lower_bound(ret1_contain_range.begin(),
+                                ret1_contain_range.end(), upper_row_index);
   ret1_contain_range.erase(right, ret1_contain_range.end()); // earse right
   auto range = ColumnPredicate::Range(schema_.column(0), &lower, &upper);
   DoTestBloomFilterScan(fileset, { pred1_contain, range }, ret1_contain_range);
 
   // BloomFilter of column 0 contain with Range with column.
-  bfs.clear();
-  bfs.push_back(bf1_contain);
-  auto bf_with_range = ColumnPredicate::InBloomFilter(schema_.column(0), &bfs, &lower, &upper);
+  auto bf_with_range = ColumnPredicate::InBloomFilter(schema_.column(0), {&bf1_contain},
+                                                      &lower, &upper);
   DoTestBloomFilterScan(fileset, { bf_with_range }, ret1_contain_range);
 }
 

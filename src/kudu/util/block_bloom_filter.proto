@@ -19,10 +19,19 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
-// Implemented hash algorithms.
-enum HashAlgorithm {
-  UNKNOWN_HASH = 0;
-  MURMUR_HASH_2 = 1;
-  CITY_HASH = 2;
-  FAST_HASH = 3;
+import "kudu/util/hash.proto";
+import "kudu/util/pb_util.proto";
+
+message BlockBloomFilterPB {
+  // Log2 of the space required for the BlockBloomFilter.
+  optional int32 log_space_bytes = 1;
+  // The bloom filter bitmap.
+  optional bytes bloom_data = 2 [(kudu.REDACT) = true];
+  // Whether the BlockBloomFilter is empty and hence always returns false for lookups.
+  optional bool always_false = 3;
+  // Hash algorithm to generate 32-bit unsigned integer hash values before inserting
+  // in the BlockBloomFilter.
+  optional HashAlgorithm hash_algorithm = 4 [default = FAST_HASH];
+  // Seed used to hash the input values in the hash algorithm.
+  optional uint32 hash_seed = 5 [default = 0];
 }

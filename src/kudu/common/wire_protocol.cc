@@ -47,15 +47,19 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/hash.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
+
+namespace kudu {
+class BlockBloomFilterPB;
+}  // namespace kudu
 
 using google::protobuf::Map;
 using google::protobuf::RepeatedPtrField;
@@ -448,16 +452,6 @@ void CopyPredicateBoundToPB(const ColumnSchema& col, const void* bound_src, stri
   bound_dst->assign(reinterpret_cast<const char*>(src), size);
 }
 
-// Copies a predicate bloom filter data from 'bf_src' into 'bf_dst'.
-void CopyPredicateBloomFilterToPB(const ColumnPredicate::BloomFilterInner& bf_src,
-                                  ColumnPredicatePB::BloomFilter* bf_dst) {
-  bf_dst->set_nhash(bf_src.nhash());
-  const void* src = bf_src.bloom_data().data();
-  size_t size = bf_src.bloom_data().size();
-  bf_dst->mutable_bloom_data()->assign(reinterpret_cast<const char*>(src), size);
-  bf_dst->set_hash_algorithm(bf_src.hash_algorithm());
-}
-
 // Extract a void* pointer suitable for use in a ColumnRangePredicate from the
 // string protobuf bound. This validates that the pb_value has the correct
 // length, copies the data into 'arena', and sets *result to point to it.
@@ -486,20 +480,6 @@ Status CopyPredicateBoundFromPB(const ColumnSchema& schema,
     *result = data_copy;
   }
 
-  return Status::OK();
-}
-
-// Extract BloomFilterInner from bloom data for ColumnBloomFilterPredicate.
-Status CopyPredicateBloomFilterFromPB(const ColumnPredicatePB::BloomFilter& bf_src,
-                                      ColumnPredicate::BloomFilterInner* dst_src,
-                                      Arena* arena) {
-  size_t bloom_data_size = bf_src.bloom_data().size();
-  dst_src->set_nhash(bf_src.nhash());
-  // Copy the data from the protobuf into the Arena.
-  uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(bloom_data_size));
-  memcpy(data_copy, bf_src.bloom_data().data(), bloom_data_size);
-  dst_src->set_bloom_data(Slice(data_copy, bloom_data_size));
-  dst_src->set_hash_algorithm(bf_src.hash_algorithm());
   return Status::OK();
 }
 
@@ -547,9 +527,9 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
     case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
     case PredicateType::InBloomFilter: {
       auto* bloom_filter_pred = pb->mutable_in_bloom_filter();
-      for (const auto& bf : predicate.bloom_filters()) {
-        ColumnPredicatePB::BloomFilter* bloom_filter = bloom_filter_pred->add_bloom_filters();
-        CopyPredicateBloomFilterToPB(bf, bloom_filter);
+      for (const auto* bf_src : predicate.bloom_filters()) {
+        BlockBloomFilterPB* bf_dst = bloom_filter_pred->add_bloom_filters();
+        bf_src->CopyToPB(bf_dst);
       }
       // Form the optional lower and upper bound.
       if (predicate.raw_lower() != nullptr) {
@@ -634,22 +614,19 @@ Status ColumnPredicateFromPB(const Schema& schema,
     };
     case ColumnPredicatePB::kInBloomFilter: {
       const auto& in_bloom_filter = pb.in_bloom_filter();
-      vector<ColumnPredicate::BloomFilterInner> bloom_filters;
+      vector<BlockBloomFilter*> bloom_filters;
       if (in_bloom_filter.bloom_filters_size() == 0) {
-        return Status::InvalidArgument("Invalid in bloom filter predicate on column: "
-                                       "no bloom filter contained", col.name());
+        return Status::InvalidArgument(
+            Substitute("Invalid bloom filter predicate on column: $0. "
+                       "No bloom filters supplied", col.name()));
       }
-      for (const auto& bf : in_bloom_filter.bloom_filters()) {
-        if (!bf.has_nhash()
-            || !bf.has_bloom_data()
-            || !bf.has_hash_algorithm()
-            || bf.hash_algorithm() == UNKNOWN_HASH) {
-          return Status::InvalidArgument("Invalid in bloom filter predicate on column: "
-                                         "missing bloom filter details", col.name());
-        }
-        ColumnPredicate::BloomFilterInner bloom_filter;
-        RETURN_NOT_OK(CopyPredicateBloomFilterFromPB(bf, &bloom_filter, arena));
-        bloom_filters.emplace_back(bloom_filter);
+      auto* allocator = arena->NewObject<ArenaBlockBloomFilterBufferAllocator>(arena);
+      for (const auto& bf_src : in_bloom_filter.bloom_filters()) {
+        auto* block_bloom_filter = arena->NewObject<BlockBloomFilter>(allocator);
+        RETURN_NOT_OK_PREPEND(
+            block_bloom_filter->InitFromPB(bf_src),
+            Substitute("Failed to initialize bloom filter predicate on column: $0", col.name()));
+        bloom_filters.emplace_back(block_bloom_filter);
       }
       // Extract the optional lower and upper bound.
       const void* lower = nullptr;
@@ -660,7 +637,8 @@ Status ColumnPredicateFromPB(const Schema& schema,
       if (in_bloom_filter.has_upper()) {
         RETURN_NOT_OK(CopyPredicateBoundFromPB(col, in_bloom_filter.upper(), arena, &upper));
       }
-      *predicate = ColumnPredicate::InBloomFilter(col, &bloom_filters, lower, upper);
+      *predicate = ColumnPredicate::InBloomFilter(col, std::move(bloom_filters), lower,
+                                                  upper);
       break;
     };
     default: return Status::InvalidArgument("Unknown predicate type for column", col.name());

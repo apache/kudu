@@ -31,8 +31,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/util/bloom_filter.h"
-#include "kudu/util/hash.pb.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -82,9 +81,6 @@ enum class PredicateType {
 // the client side), or a scan iterator (on the server side).
 class ColumnPredicate {
  public:
-
-  class BloomFilterInner;
-
   // Creates a new equality predicate on the column and value.
   //
   // The value is not copied, and must outlive the returned predicate.
@@ -145,8 +141,10 @@ class ColumnPredicate {
   // Create a new BloomFilter predicate for the column.
   //
   // The values are not copied, and must outlive the returned predicate.
-  static ColumnPredicate InBloomFilter(ColumnSchema column, std::vector<BloomFilterInner>* bfs,
-                                       const void* lower, const void* upper);
+  static ColumnPredicate InBloomFilter(ColumnSchema column,
+                                       std::vector<BlockBloomFilter*> bfs,
+                                       const void* lower,
+                                       const void* upper);
 
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);
@@ -218,8 +216,9 @@ class ColumnPredicate {
       case PredicateType::InBloomFilter: {
         return EvaluateCellForBloomFilter<PhysicalType>(cell);
       };
+      default:
+        LOG(FATAL) << "unknown predicate type";
     }
-    LOG(FATAL) << "unknown predicate type";
   }
 
   // Evaluate the predicate on a single cell. Used if the physical type is only known at run-time.
@@ -261,63 +260,9 @@ class ColumnPredicate {
     return values_;
   }
   // Returns bloom filters if this is a bloom filter predicate.
-  const std::vector<BloomFilterInner>& bloom_filters() const {
+  const std::vector<BlockBloomFilter*>& bloom_filters() const {
     return bloom_filters_;
   }
-
-  // This class represents the bloom filter used in predicate.
-  class BloomFilterInner {
-   public:
-
-    BloomFilterInner(Slice bloom_data, size_t nhash, HashAlgorithm hash_algorithm) :
-            bloom_data_(bloom_data),
-            nhash_(nhash),
-            hash_algorithm_(hash_algorithm) {
-    }
-
-    BloomFilterInner() : nhash_(0), hash_algorithm_(CITY_HASH) {}
-
-    const Slice& bloom_data() const {
-      return bloom_data_;
-    }
-
-    size_t nhash() const {
-      return nhash_;
-    }
-
-    HashAlgorithm hash_algorithm() const {
-      return hash_algorithm_;
-    }
-
-    void set_nhash(size_t nhash) {
-      nhash_ = nhash;
-    }
-
-    void set_bloom_data(Slice bloom_data) {
-      bloom_data_ = bloom_data;
-    }
-
-    void set_hash_algorithm(HashAlgorithm hash_algorithm) {
-      hash_algorithm_ = hash_algorithm;
-    }
-
-    bool operator==(const BloomFilterInner& other) const {
-      return (bloom_data_ == other.bloom_data() &&
-              nhash_ == other.nhash() &&
-              hash_algorithm_ == other.hash_algorithm());
-    }
-
-   private:
-
-    // The slice of bloom filter.
-    Slice bloom_data_;
-
-    // The times of hash value used in bloom filter.
-    size_t nhash_;
-
-    // The hash algorithm used in bloom filter.
-    HashAlgorithm hash_algorithm_;
-  };
 
  private:
 
@@ -337,7 +282,7 @@ class ColumnPredicate {
   // Creates a new BloomFilter column predicate.
   ColumnPredicate(PredicateType predicate_type,
                   ColumnSchema column,
-                  std::vector<BloomFilterInner>* bfs,
+                  std::vector<BlockBloomFilter*> bfs,
                   const void* lower,
                   const void* upper);
 
@@ -383,9 +328,8 @@ class ColumnPredicate {
       data = slice->data();
     }
     Slice cell_slice(reinterpret_cast<const uint8_t*>(data), size);
-    for (const auto& bf : bloom_filters_) {
-      BloomKeyProbe probe(cell_slice, bf.hash_algorithm());
-      if (!BloomFilter(bf.bloom_data(), bf.nhash()).MayContainKey(probe)) {
+    for (const auto* bf : bloom_filters_) {
+      if (!bf->Find(cell_slice)) {
         return false;
       }
     }
@@ -431,8 +375,8 @@ class ColumnPredicate {
   // The list of values to check column against if this is an InList predicate.
   std::vector<const void*> values_;
 
-  // The list of bloom filter in this predicate.
-  std::vector<BloomFilterInner> bloom_filters_;
+  // The list of bloom filters in this predicate.
+  std::vector<BlockBloomFilter*> bloom_filters_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

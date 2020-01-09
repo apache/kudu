@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <numeric>
 #include <ostream>
 #include <string>
@@ -37,11 +36,10 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/bitmap.h"
-#include "kudu/util/bloom_filter.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/hexdump.h"
@@ -55,7 +53,6 @@
 
 using std::string;
 using std::tuple;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -634,45 +631,42 @@ class BFWireProtocolTest : public KuduTest {
   BFWireProtocolTest()
       : schema_({ ColumnSchema("col1", INT32)}, 1),
         arena_(1024),
-        n_keys_(100) {
-    bfb1_.reset(new BloomFilterBuilder(BloomFilterSizing::ByCountAndFPRate(n_keys_, 0.01)));
-    bfb2_.reset(new BloomFilterBuilder(BloomFilterSizing::ByCountAndFPRate(n_keys_, 0.01)));
-  }
+        allocator_(&arena_),
+        n_keys_(100),
+        b1_(&allocator_),
+        b2_(&allocator_) {}
 
-  virtual void SetUp() OVERRIDE {
-    double expected_fp_rate1 = bfb1()->false_positive_rate();
-    ASSERT_NEAR(expected_fp_rate1, 0.01, 0.002);
-    ASSERT_EQ(9, bfb1()->n_bits() / n_keys_);
-    double expected_fp_rate2 = bfb2()->false_positive_rate();
-    ASSERT_NEAR(expected_fp_rate2, 0.01, 0.002);
-    ASSERT_EQ(9, bfb2()->n_bits() / n_keys_);
+  void SetUp() override {
+    int log_space_bytes1 = BlockBloomFilter::MinLogSpace(n_keys_, 0.01);
+    ASSERT_OK(b1_.Init(log_space_bytes1, FAST_HASH, 0));
+    ASSERT_LE(BlockBloomFilter::FalsePositiveProb(n_keys_, log_space_bytes1), 0.01);
+
+    int log_space_bytes2 = BlockBloomFilter::MinLogSpace(n_keys_, 0.01);
+    ASSERT_OK(b2_.Init(log_space_bytes2, FAST_HASH, 0));
+    ASSERT_LE(BlockBloomFilter::FalsePositiveProb(n_keys_, log_space_bytes2), 0.01);
+
     for (int i = 0; i < n_keys_; ++i) {
       Slice key_slice(reinterpret_cast<const uint8_t*>(&i), sizeof(i));
-      BloomKeyProbe probe(key_slice, MURMUR_HASH_2);
-      bfb1()->AddKey(probe);
-      bfb2()->AddKey(probe);
+      b1_.Insert(key_slice);
+      b2_.Insert(key_slice);
     }
   }
-
-  BloomFilterBuilder* bfb1() const { return bfb1_.get(); }
-
-  BloomFilterBuilder* bfb2() const { return bfb1_.get(); }
 
 protected:
   Schema schema_;
   Arena arena_;
+  ArenaBlockBloomFilterBufferAllocator allocator_;
   int n_keys_;
-  unique_ptr<BloomFilterBuilder> bfb1_;
-  unique_ptr<BloomFilterBuilder> bfb2_;
+  BlockBloomFilter b1_;
+  BlockBloomFilter b2_;
 };
 
 TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilter) {
   boost::optional<ColumnPredicate> predicate;
   ColumnSchema col1 = schema_.column(0);
   { // Single BloomFilter predicate.
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, nullptr);
+    kudu::ColumnPredicate ibf =
+        kudu::ColumnPredicate::InBloomFilter(col1, {&b1_}, nullptr, nullptr);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
@@ -681,10 +675,8 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilter) {
   }
 
   { // Multi BloomFilter predicate.
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    bfs.emplace_back(bfb2()->slice(), bfb2()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, nullptr);
+    kudu::ColumnPredicate ibf =
+        kudu::ColumnPredicate::InBloomFilter(col1, {&b1_, &b2_}, nullptr, nullptr);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
@@ -698,9 +690,7 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
   ColumnSchema col1 = schema_.column(0);
   { // Simply BloomFilter with lower bound.
     int lower = 1;
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, nullptr);
+    auto ibf = kudu::ColumnPredicate::InBloomFilter(col1, {&b1_}, &lower, nullptr);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
@@ -710,9 +700,7 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
 
   { // Single bloom filter with upper bound.
     int upper = 4;
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, &upper);
+    auto ibf = kudu::ColumnPredicate::InBloomFilter(col1, {&b1_}, nullptr, &upper);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
@@ -723,9 +711,7 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
   { // Single bloom filter with both lower and upper bound.
     int lower = 1;
     int upper = 4;
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, &upper);
+    auto ibf = kudu::ColumnPredicate::InBloomFilter(col1, {&b1_}, &lower, &upper);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
@@ -736,10 +722,8 @@ TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
   { // Multi bloom filter with both lower and upper bound.
     int lower = 1;
     int upper = 4;
-    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
-    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
-    bfs.emplace_back(bfb2()->slice(), bfb2()->n_hashes(), MURMUR_HASH_2);
-    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, &upper);
+    auto ibf = kudu::ColumnPredicate::InBloomFilter(col1, {&b1_, &b2_}, &lower,
+                                                    &upper);
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(ibf, &pb));
     ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));

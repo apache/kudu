@@ -24,13 +24,17 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <ostream>
+#include <string>
 
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/block_bloom_filter.pb.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/memory/arena.h"
+
+using strings::Substitute;
 
 DEFINE_bool(disable_blockbloomfilter_avx2, false,
             "Disable AVX2 operations in BlockBloomFilter. This flag has no effect if the target "
@@ -48,7 +52,9 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
   buffer_allocator_(buffer_allocator),
   log_num_buckets_(0),
   directory_mask_(0),
-  directory_(nullptr) {
+  directory_(nullptr),
+  hash_algorithm_(UNKNOWN_HASH),
+  hash_seed_(0) {
 #ifdef USE_AVX2
   if (has_avx2()) {
     bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
@@ -64,11 +70,16 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
 }
 
 BlockBloomFilter::~BlockBloomFilter() {
-  DCHECK(directory_ == nullptr) <<
-    "Close() should have been called before the object is destroyed.";
+  Close();
 }
 
-Status BlockBloomFilter::Init(const int log_space_bytes) {
+Status BlockBloomFilter::InitInternal(const int log_space_bytes,
+                                      HashAlgorithm hash_algorithm,
+                                      uint32_t hash_seed) {
+  if (!HashUtil::IsComputeHash32Available(hash_algorithm)) {
+    return Status::InvalidArgument(
+        Substitute("Invalid/Unsupported hash algorithm $0", HashAlgorithm_Name(hash_algorithm)));
+  }
   // Since log_space_bytes is in bytes, we need to convert it to the number of tiny
   // Bloom filters we will use.
   log_num_buckets_ = std::max(1, log_space_bytes - kLogBucketByteSize);
@@ -76,7 +87,7 @@ Status BlockBloomFilter::Init(const int log_space_bytes) {
   // must be limited.
   if (log_num_buckets_ > 32) {
     return Status::InvalidArgument(
-        strings::Substitute("Bloom filter too large. log_space_bytes: $0", log_space_bytes));
+        Substitute("Bloom filter too large. log_space_bytes: $0", log_space_bytes));
   }
   // Don't use log_num_buckets_ if it will lead to undefined behavior by a shift
   // that is too large.
@@ -86,7 +97,37 @@ Status BlockBloomFilter::Init(const int log_space_bytes) {
   Close(); // Ensure that any previously allocated memory for directory_ is released.
   RETURN_NOT_OK(buffer_allocator_->AllocateBuffer(alloc_size,
                                                   reinterpret_cast<void**>(&directory_)));
-  memset(directory_, 0, alloc_size);
+  hash_algorithm_ = hash_algorithm;
+  hash_seed_ = hash_seed;
+  return Status::OK();
+}
+
+Status BlockBloomFilter::Init(const int log_space_bytes, HashAlgorithm hash_algorithm,
+                              uint32_t hash_seed) {
+  RETURN_NOT_OK(InitInternal(log_space_bytes, hash_algorithm, hash_seed));
+  DCHECK_NOTNULL(directory_);
+  memset(directory_, 0, directory_size());
+  always_false_ = true;
+  return Status::OK();
+}
+
+Status BlockBloomFilter::InitFromPB(const BlockBloomFilterPB& bf_src) {
+  if (!bf_src.has_log_space_bytes() || !bf_src.has_bloom_data() ||
+      !bf_src.has_hash_algorithm() || !bf_src.has_always_false()) {
+    return Status::InvalidArgument("Missing arguments to initialize BlockBloomFilter.");
+  }
+
+  RETURN_NOT_OK(InitInternal(bf_src.log_space_bytes(), bf_src.hash_algorithm(),
+                             bf_src.hash_seed()));
+  DCHECK_NOTNULL(directory_);
+
+  if (directory_size() != bf_src.bloom_data().size()) {
+    return Status::InvalidArgument(
+        Substitute("Mismatch in BlockBloomFilter source directory size $0 and expected size $1",
+                   bf_src.bloom_data().size(), directory_size()));
+  }
+  memcpy(directory_, bf_src.bloom_data().data(), bf_src.bloom_data().size());
+  always_false_ = bf_src.always_false();
   return Status::OK();
 }
 
@@ -182,10 +223,31 @@ bool BlockBloomFilter::Find(const uint32_t hash) const noexcept {
   return (this->*bucket_find_func_ptr_)(bucket_idx, hash);
 }
 
+void BlockBloomFilter::CopyToPB(BlockBloomFilterPB* bf_dst) const {
+  bf_dst->mutable_bloom_data()->assign(reinterpret_cast<const char*>(directory_), directory_size());
+  bf_dst->set_log_space_bytes(log_space_bytes());
+  bf_dst->set_always_false(always_false_);
+  bf_dst->set_hash_algorithm(hash_algorithm_);
+  bf_dst->set_hash_seed(hash_seed_);
+}
+
+bool BlockBloomFilter::operator==(const BlockBloomFilter& rhs) const {
+  return always_false_ == rhs.always_false_ &&
+      directory_mask_ == rhs.directory_mask_ &&
+      directory_size() == rhs.directory_size() &&
+      hash_algorithm_ == rhs.hash_algorithm_ &&
+      hash_seed_ == rhs.hash_seed_ &&
+      memcmp(directory_, rhs.directory_, directory_size()) == 0;
+}
+
+bool BlockBloomFilter::operator!=(const BlockBloomFilter& rhs) const {
+  return !(rhs == *this);
+}
+
 Status DefaultBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
   int ret_code = posix_memalign(ptr, CACHELINE_SIZE, bytes);
   return ret_code == 0 ? Status::OK() :
-                         Status::RuntimeError(strings::Substitute("bad_alloc. bytes: $0", bytes));
+                         Status::RuntimeError(Substitute("bad_alloc. bytes: $0", bytes));
 }
 
 void DefaultBlockBloomFilterBufferAllocator::FreeBuffer(void* ptr) {
@@ -194,6 +256,17 @@ void DefaultBlockBloomFilterBufferAllocator::FreeBuffer(void* ptr) {
 
 DefaultBlockBloomFilterBufferAllocator* DefaultBlockBloomFilterBufferAllocator::GetSingleton() {
   return Singleton<DefaultBlockBloomFilterBufferAllocator>::get();
+}
+
+Status ArenaBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
+  DCHECK_NOTNULL(arena_);
+  // 16-bytes is the max alignment supported in arena currently whereas CACHELINE_SIZE
+  // is typically 64 bytes on modern CPUs.
+  // TODO(bankim): Needs investigation to support larger alignment values.
+  *ptr = arena_->AllocateBytesAligned(bytes, 16);
+  return *ptr == nullptr ?
+      Status::RuntimeError(Substitute("Arena bad_alloc. bytes: $0", bytes)) :
+      Status::OK();
 }
 
 } // namespace kudu

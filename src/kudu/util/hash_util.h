@@ -18,9 +18,12 @@
 #ifndef KUDU_UTIL_HASH_UTIL_H
 #define KUDU_UTIL_HASH_UTIL_H
 
-#include <stdint.h>
+#include <cstdint>
+#include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/util/hash.pb.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 
@@ -110,6 +113,29 @@ class HashUtil {
     // and lower parts of hashcode.
     uint64_t h = FastHash64(buf, len, seed);
     return h - (h >> 32);
+  }
+
+  // Checks whether 32-bit version of the hash algorithm is available.
+  // Must be kept in sync with ComputeHash32() function.
+  static bool IsComputeHash32Available(HashAlgorithm hash_algorithm) {
+    switch (hash_algorithm) {
+      case FAST_HASH:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Compute 32-bit hash of the supplied data using the specified hash algorithm.
+  // Must be kept in sync with IsComputeHash32Available() function.
+  static uint32_t ComputeHash32(const Slice& data, HashAlgorithm hash_algorithm, uint32_t seed) {
+    // TODO(bankim): Consider adding special handling for zero-length/NULL objects.
+    switch (hash_algorithm) {
+      case FAST_HASH:
+        return FastHash32(data.data(), data.size(), seed);
+      default:
+        LOG(FATAL) << "Not implemented 32-bit hash function: " << hash_algorithm;
+    }
   }
 
  private:

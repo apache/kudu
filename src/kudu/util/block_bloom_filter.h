@@ -28,7 +28,15 @@
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/util/hash.pb.h"
+#include "kudu/util/hash_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+class Arena;
+class BlockBloomFilterPB;
+}  // namespace kudu
 
 DECLARE_bool(disable_blockbloomfilter_avx2);
 
@@ -68,14 +76,20 @@ class BlockBloomFilter {
 
   // Reset the filter state, allocate/reallocate the internal data structures.
   // All calls to Insert() and Find() should only be done between the calls to Init() and
-  // Close().Init and Close are safe to call multiple times.
-  Status Init(int log_space_bytes);
+  // Close(). Init and Close are safe to call multiple times.
+  // BlockBloomFilter offers convenience of both directly inserting 32-bit integers
+  // and letting the Insert()/Find() hash the keys. To avoid mistakes wherein
+  // caller is using specific hash function and directly inserts 32-bit hash values
+  // but misses specifying the hash function in Init() call, default values are not used.
+  // Parameters:
+  // "log_space_bytes": Log2 of the space in bytes for the BloomFilter.
+  // "hash_algorithm": Hash algorithm used to hash the keys to 32-bit integers prior to doing
+  //                   Insert() or Find().
+  // "hash_seed": Seed used to hash the keys.
+  Status Init(int log_space_bytes, HashAlgorithm hash_algorithm, uint32_t hash_seed);
+  // Initialize the BlockBloomFilter by de-serializing the protobuf message.
+  Status InitFromPB(const BlockBloomFilterPB& bf_src);
   void Close();
-
-  // Representation of a filter which allows all elements to pass.
-  static constexpr BlockBloomFilter* const kAlwaysTrueFilter = nullptr;
-
-  bool AlwaysFalse() const { return always_false_; }
 
   // Adds an element to the BloomFilter. The function used to generate 'hash' need not
   // have good uniformity, but it should have low collision probability. For instance, if
@@ -83,10 +97,18 @@ class BlockBloomFilter {
   // this Bloom filter, since the collision probability (the probability that two
   // non-equal values will have the same hash value) is 0.
   void Insert(uint32_t hash) noexcept;
+  // Same as above with convenience of hashing the key.
+  void Insert(const Slice& key) noexcept {
+    Insert(HashUtil::ComputeHash32(key, hash_algorithm_, hash_seed_));
+  }
 
   // Finds an element in the BloomFilter, returning true if it is found and false (with
   // high probability) if it is not.
   bool Find(uint32_t hash) const noexcept;
+  // Same as above with convenience of hashing the key.
+  bool Find(const Slice& key) const noexcept {
+    return Find(HashUtil::ComputeHash32(key, hash_algorithm_, hash_seed_));
+  }
 
   // As more distinct items are inserted into a BloomFilter, the false positive rate
   // rises. MaxNdv() returns the NDV (number of distinct values) at which a BloomFilter
@@ -109,6 +131,12 @@ class BlockBloomFilter {
     DCHECK_GE(log_heap_size, kLogBucketWordBits);
     return sizeof(Bucket) * (1LL << std::max<int>(1, log_heap_size - kLogBucketWordBits));
   }
+
+  // Serializes BlockBloomFilter to protobuf message.
+  void CopyToPB(BlockBloomFilterPB* bf_dst) const;
+
+  bool operator==(const BlockBloomFilter& rhs) const;
+  bool operator!=(const BlockBloomFilter& rhs) const;
 
  private:
   // always_false_ is true when the bloom filter hasn't had any elements inserted.
@@ -144,6 +172,14 @@ class BlockBloomFilter {
 
   Bucket* directory_;
 
+  // Hash algorithm used to hash data to 32-bit value before insertion and lookup.
+  HashAlgorithm hash_algorithm_;
+  // Seed used with hash algorithm.
+  uint32_t hash_seed_;
+
+  // Helper function for public Init() variants.
+  Status InitInternal(int log_space_bytes, HashAlgorithm hash_algorithm, uint32_t hash_seed);
+
   // Same as Insert(), but skips the CPU check and assumes that AVX is not available.
   void InsertNoAvx2(uint32_t hash) noexcept;
 
@@ -171,8 +207,14 @@ class BlockBloomFilter {
   decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
   decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
 
+  // Returns amount of space used in log2 bytes.
+  int log_space_bytes() const {
+    return log_num_buckets_ + kLogBucketByteSize;
+  }
+
+  // Size of the internal directory structure in bytes.
   int64_t directory_size() const {
-    return 1ULL << (log_num_buckets_ + kLogBucketByteSize);
+    return 1ULL << log_space_bytes();
   }
 
   // Detect at run-time whether CPU supports AVX2
@@ -226,6 +268,22 @@ class DefaultBlockBloomFilterBufferAllocator : public BlockBloomFilterBufferAllo
   static DefaultBlockBloomFilterBufferAllocator* GetSingleton();
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultBlockBloomFilterBufferAllocator);
+};
+
+class ArenaBlockBloomFilterBufferAllocator : public BlockBloomFilterBufferAllocatorIf {
+ public:
+  // Arena is expected to remain valid during the lifetime of the allocator.
+  explicit ArenaBlockBloomFilterBufferAllocator(Arena* arena) : arena_(arena) {}
+  ArenaBlockBloomFilterBufferAllocator() : arena_(nullptr) {}
+
+  Status AllocateBuffer(size_t bytes, void** ptr) override;
+
+  void FreeBuffer(void* ptr) override {
+    // NOP. Buffer will be de-allocated when the arena is destructed.
+  }
+
+ private:
+  Arena* arena_;
 };
 
 }  // namespace kudu

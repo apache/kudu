@@ -28,6 +28,7 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
+import "kudu/util/block_bloom_filter.proto";
 import "kudu/util/compression/compression.proto";
 import "kudu/util/hash.proto";
 import "kudu/util/pb_util.proto";
@@ -365,15 +366,6 @@ message ColumnPredicatePB {
   // The predicate column name.
   optional string column = 1;
 
-  // Represent a bloom filter.
-  message BloomFilter {
-    // The hash times for bloom filter.
-    optional int32 nhash = 1;
-    // The bloom filter bitmap.
-    optional bytes bloom_data = 2 [(kudu.REDACT) = true];
-    optional HashAlgorithm hash_algorithm = 3 [default = CITY_HASH];
-  }
-
   message Range {
 
     // Bounds should be encoded as follows:
@@ -410,7 +402,7 @@ message ColumnPredicatePB {
 
   message InBloomFilter {
     // A list of bloom filters for the field.
-    repeated BloomFilter bloom_filters = 1;
+    repeated BlockBloomFilterPB bloom_filters = 1;
 
     // Lower and Upper is optional for InBloomFilter.
     // When use both InBloomFilter and Range predicate for the same column the

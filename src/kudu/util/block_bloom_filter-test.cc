@@ -30,6 +30,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -59,7 +60,7 @@ class BlockBloomFilterTest : public KuduTest {
 
     unique_ptr<BlockBloomFilter> bf(
         new BlockBloomFilter(DefaultBlockBloomFilterBufferAllocator::GetSingleton()));
-    CHECK_OK(bf->Init(log_space_bytes));
+    CHECK_OK(bf->Init(log_space_bytes, FAST_HASH, 0));
     bloom_filters_.emplace_back(move(bf));
     return bloom_filters_.back().get();
   }
@@ -85,10 +86,17 @@ TEST_F(BlockBloomFilterTest, InvalidSpace) {
   BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
   // Random number in the range [38, 64).
   const int log_space_bytes = 38 + rand() % (64 - 38);
-  Status s = bf.Init(log_space_bytes);
+  Status s = bf.Init(log_space_bytes, FAST_HASH, 0);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "Bloom filter too large");
   bf.Close();
+}
+
+TEST_F(BlockBloomFilterTest, InvalidHashAlgorithm) {
+  BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+  Status s = bf.Init(4, UNKNOWN_HASH, 0);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "Invalid/Unsupported hash algorithm");
 }
 
 // We can Insert() hashes into a Bloom filter with different spaces.

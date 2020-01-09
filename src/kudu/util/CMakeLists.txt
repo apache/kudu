@@ -16,6 +16,20 @@
 # under the License.
 
 #######################################
+# block_bloom_filter_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  BLOCK_BLOOM_FILTER_PROTO_SRCS BLOCK_BLOOM_FILTER_PROTO_HDRS BLOCK_BLOOM_FILTER_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES block_bloom_filter.proto)
+ADD_EXPORTABLE_LIBRARY(block_bloom_filter_proto
+  SRCS ${BLOCK_BLOOM_FILTER_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${BLOCK_BLOOM_FILTER_PROTO_TGTS})
+
+#######################################
 # util_compression_proto
 #######################################
 
@@ -265,6 +279,7 @@ else()
 endif()
 
 set(UTIL_LIBS
+  block_bloom_filter_proto
   crcutil
   gflags
   glog
