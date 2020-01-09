@@ -1377,7 +1377,7 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   add_custom_target(generated-headers
-    DEPENDS pb-gen krpc-gen hms_thrift sentry_thrift)
+    DEPENDS pb-gen krpc-gen hms_thrift sentry_thrift gen_version_info)
 endif (UNIX)
 
 ############################################################
