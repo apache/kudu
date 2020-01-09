@@ -19,11 +19,14 @@
 
 #include "kudu/tools/tool_test_util.h"
 
+#include <cstdio>
 #include <ostream>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -31,6 +34,8 @@
 
 using std::string;
 using std::vector;
+using strings::Split;
+using strings::Substitute;
 
 namespace kudu {
 namespace tools {
@@ -62,6 +67,15 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
 
   total_args.insert(total_args.end(), args.begin(), args.end());
   return Subprocess::Call(total_args, in, out, err);
+}
+
+Status RunActionPrependStdoutStderr(const string& arg_str) {
+  string stdout;
+  string stderr;
+  RETURN_NOT_OK_PREPEND(RunKuduTool(Split(arg_str, " ", strings::SkipEmpty()),
+                                    &stdout, &stderr),
+      Substitute("error running '$0': stdout: $1, stderr: $2", arg_str, stdout, stderr));
+  return Status::OK();
 }
 
 } // namespace tools

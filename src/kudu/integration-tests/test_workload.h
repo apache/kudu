@@ -14,11 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
-#define KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -33,12 +33,12 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
-
-class Status;
 
 namespace cluster {
 class MiniCluster;
@@ -60,6 +60,13 @@ class TestWorkload {
 
   explicit TestWorkload(cluster::MiniCluster* cluster);
   ~TestWorkload();
+
+  // Sets whether the read thread should crash if scanning to the cluster fails
+  // for whatever reason. If set to true, errors will be populated in
+  // 'read_errors_'.
+  void set_read_errors_allowed(bool allowed) {
+    read_errors_allowed_ = allowed;
+  }
 
   void set_scanner_fault_tolerant(bool fault_tolerant) {
     fault_tolerant_ = fault_tolerant;
@@ -239,6 +246,12 @@ class TestWorkload {
     return batches_completed_.Load();
   }
 
+  // Returns a copy of the errors seen by the read threads so far.
+  std::vector<Status> read_errors() const {
+    std::lock_guard<simple_spinlock> l(read_error_lock_);
+    return read_errors_;
+  }
+
   client::sp::shared_ptr<client::KuduClient> client() const { return client_; }
 
  private:
@@ -261,6 +274,7 @@ class TestWorkload {
   int write_timeout_millis_;
   bool fault_tolerant_;
   bool verify_num_rows_;
+  bool read_errors_allowed_;
   bool timeout_allowed_;
   bool not_found_allowed_;
   bool already_present_allowed_;
@@ -283,8 +297,10 @@ class TestWorkload {
 
   std::vector<std::thread> threads_;
 
+  mutable simple_spinlock read_error_lock_;
+  std::vector<Status> read_errors_;
+
   DISALLOW_COPY_AND_ASSIGN(TestWorkload);
 };
 
 } // namespace kudu
-#endif /* KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H */

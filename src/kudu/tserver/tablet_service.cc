@@ -18,6 +18,7 @@
 #include "kudu/tserver/tablet_service.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -26,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -53,6 +55,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/consensus/time_manager.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -89,6 +92,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -1007,6 +1011,25 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
                          context);
     return;
   }
+}
+
+void TabletServiceAdminImpl::Quiesce(const QuiesceTabletServerRequestPB* req,
+                                     QuiesceTabletServerResponsePB* resp,
+                                     rpc::RpcContext* context) {
+  if (req->has_quiesce()) {
+    bool quiesce_tserver = req->quiesce();
+    *server_->mutable_quiescing() = quiesce_tserver;
+    LOG(INFO) << Substitute("Tablet server $0 set to $1",
+                            server_->fs_manager()->uuid(),
+                            (quiesce_tserver ? "quiescing" : "not quiescing"));
+  }
+  if (req->return_stats()) {
+    resp->set_num_leaders(server_->num_raft_leaders()->value());
+    resp->set_num_active_scanners(server_->scanner_manager()->CountActiveScanners());
+    LOG(INFO) << Substitute("Tablet server has $0 leaders and $1 scanners",
+        resp->num_leaders(), resp->num_active_scanners());
+  }
+  context->RespondSuccess();
 }
 
 void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,

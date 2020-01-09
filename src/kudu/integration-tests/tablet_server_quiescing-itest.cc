@@ -37,12 +37,14 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -64,6 +66,7 @@ using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
+using kudu::tools::RunActionPrependStdoutStderr;
 using kudu::tserver::MiniTabletServer;
 using std::string;
 using std::unique_ptr;
@@ -353,6 +356,89 @@ TEST_F(TServerQuiescingITest, TestQuiesceLeaderWhileFollowersCatchingUp) {
   });
 }
 
+// Basic test that we see the quiescing state change in the server.
+TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
+  NO_FATALS(StartCluster(1));
+  const auto* ts = cluster_->mini_tablet_server(0);
+  auto rw_workload = CreateFaultIntolerantRWWorkload();
+  rw_workload->Setup();
+  ASSERT_FALSE(ts->server()->quiescing());
+  // First, call the start tool a couple of times.
+  for (int i = 0; i < 2; i++) {
+    ASSERT_OK(RunActionPrependStdoutStderr(
+        Substitute("tserver quiesce start $0", ts->bound_rpc_addr().ToString())));
+    ASSERT_TRUE(ts->server()->quiescing());
+  }
+  ASSERT_OK(RunActionPrependStdoutStderr(
+      Substitute("tserver quiesce stop $0", ts->bound_rpc_addr().ToString())));
+  ASSERT_FALSE(ts->server()->quiescing());
+
+  // Now try starting again but expecting errors.
+  Status s = RunActionPrependStdoutStderr(
+      Substitute("tserver quiesce start $0 --error_if_not_fully_quiesced",
+                 ts->bound_rpc_addr().ToString()));
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "not fully quiesced");
+  ASSERT_TRUE(ts->server()->quiescing());
+}
+
+// Basic test to ensure the quiescing tooling works as expected.
+TEST_F(TServerQuiescingITest, TestQuiesceAndStopTool) {
+  const int kNumReplicas = 3;
+  // Set a tiny batch size to encourage many batches for a single scan. This
+  // will emulate long-running scans.
+  FLAGS_scanner_default_batch_size_bytes = 100;
+  NO_FATALS(StartCluster(kNumReplicas));
+  MiniTabletServer* leader_ts;
+  auto rw_workload = CreateFaultIntolerantRWWorkload();
+  rw_workload->set_scanner_selection(client::KuduClient::LEADER_ONLY);
+  rw_workload->Setup();
+  rw_workload->Start();
+  while (rw_workload->rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+  // Pick a tablet server with a leader.
+  TServerDetails* leader_details;
+  const auto kTimeout = MonoDelta::FromSeconds(10);
+  const string tablet_id = cluster_->mini_tablet_server(0)->ListTablets()[0];
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
+  const string leader_uuid = leader_details->uuid();
+
+  // The tablet server should have some leaders, and will eventually serve some scans.
+  leader_ts = cluster_->mini_tablet_server_by_uuid(leader_uuid);
+  ASSERT_LT(0, leader_ts->server()->num_raft_leaders()->value());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_LT(0, leader_ts->server()->scanner_manager()->CountActiveScanners());
+  });
+
+  // Now quiesce the server. At first, the tool should fail because there are
+  // still leaders on the server, though it should have successfully begun
+  // quiescing.
+  Status s = RunActionPrependStdoutStderr(
+      Substitute("tserver quiesce start $0 --error_if_not_fully_quiesced",
+                 leader_ts->bound_rpc_addr().ToString()));
+  ASSERT_FALSE(s.ok()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not fully quiesced");
+  ASSERT_TRUE(leader_ts->server()->quiescing());
+  // We must retry until the tool returns success, indicating the server is
+  // fully quiesced.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(RunActionPrependStdoutStderr(
+        Substitute("tserver quiesce start $0 --error_if_not_fully_quiesced",
+                   leader_ts->bound_rpc_addr().ToString())));
+  });
+
+  // The server should be quiesced fully.
+  ASSERT_EQ(0, leader_ts->server()->num_raft_leaders()->value());
+  ASSERT_EQ(0, leader_ts->server()->scanner_manager()->CountActiveScanners());
+
+  // The 'stop_quiescing' tool should yield a non-quiescing server.
+  ASSERT_OK(RunActionPrependStdoutStderr(
+      Substitute("tserver quiesce stop $0", leader_ts->bound_rpc_addr().ToString())));
+  ASSERT_FALSE(leader_ts->server()->quiescing());
+  NO_FATALS(rw_workload->StopAndJoin());
+}
+
 class TServerQuiescingParamITest : public TServerQuiescingITest,
                                    public testing::WithParamInterface<int> {};
 
@@ -394,8 +480,8 @@ TEST_P(TServerQuiescingParamITest, TestQuiescingServerRejectsElectionRequests) {
 // Test that if all tservers are quiescing, there will be no leaders elected.
 TEST_P(TServerQuiescingParamITest, TestNoElectionsForNewReplicas) {
   // NOTE: this test will prevent leaders of our new tablets. In practice,
-  // users should have tablet creation not wait to finish if there all tservers
-  // are being quiesced.
+  // users should have tablet creation not wait to finish if all tservers are
+  // being quiesced.
   FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
   const int kNumReplicas = GetParam();
   const int kNumTablets = 10;

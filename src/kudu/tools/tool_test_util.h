@@ -44,5 +44,9 @@ Status RunKuduTool(const std::vector<std::string>& args,
                    std::string* err = nullptr,
                    const std::string& in = "");
 
+// Runs the 'kudu' tool binary with the given argument string, returning an
+// error prepended with stdout and stderr if the run was unsuccessful.
+Status RunActionPrependStdoutStderr(const std::string& arg_str);
+
 } // namespace tools
 } // namespace kudu

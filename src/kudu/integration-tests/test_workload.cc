@@ -72,6 +72,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     write_timeout_millis_(20000),
     fault_tolerant_(true),
     verify_num_rows_(true),
+    read_errors_allowed_(false),
     timeout_allowed_(false),
     not_found_allowed_(false),
     network_error_allowed_(false),
@@ -212,6 +213,19 @@ void TestWorkload::WriteThread() {
   }
 }
 
+#define CHECK_READ_OK(s) do {                               \
+  const Status& __s = (s);                                  \
+  if (read_errors_allowed_) {                               \
+    if (PREDICT_FALSE(!__s.ok())) {                         \
+      std::lock_guard<simple_spinlock> l(read_error_lock_); \
+      read_errors_.emplace_back(__s);                       \
+      return;                                               \
+    }                                                       \
+  } else {                                                  \
+    CHECK_OK(__s);                                          \
+  }                                                         \
+} while (0)
+
 void TestWorkload::ReadThread() {
   shared_ptr<KuduTable> table;
   OpenTable(&table);
@@ -235,16 +249,18 @@ void TestWorkload::ReadThread() {
     }
     size_t row_count = 0;
 
-    CHECK_OK(scanner.Open());
+    CHECK_READ_OK(scanner.Open());
     while (scanner.HasMoreRows()) {
       KuduScanBatch batch;
-      CHECK_OK(scanner.NextBatch(&batch));
+      CHECK_READ_OK(scanner.NextBatch(&batch));
       row_count += batch.NumRows();
     }
 
     CHECK_GE(row_count, expected_min_rows);
   }
 }
+
+#undef CHECK_READ_OK
 
 size_t TestWorkload::GetNumberOfErrors(KuduSession* session) {
   vector<KuduError*> errors;

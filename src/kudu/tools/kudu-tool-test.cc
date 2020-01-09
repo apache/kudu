@@ -1165,6 +1165,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "set_flag.*Change a gflag value",
         "state.*Operate on the state",
         "status.*Get the status",
+        "quiesce.*Operate on the quiescing state",
         "timestamp.*Get the current timestamp",
         "list.*List tablet servers"
     };
@@ -1176,6 +1177,13 @@ TEST_F(ToolTest, TestModeHelp) {
         "exit_maintenance.*End maintenance of the Tablet Server",
     };
     NO_FATALS(RunTestHelp("tserver state", kTServerSetStateModeRegexes));
+  }
+  {
+    const vector<string> kTServerQuiesceModeRegexes = {
+        "start.*Start quiescing the given Tablet Server",
+        "stop.*Stop quiescing a Tablet Server",
+    };
+    NO_FATALS(RunTestHelp("tserver quiesce", kTServerQuiesceModeRegexes));
   }
   {
     const vector<string> kWalModeRegexes = {

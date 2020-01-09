@@ -144,4 +144,30 @@ service TabletServerAdminService {
 
   // Alter a tablet's schema.
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
+
+  // Quiesce the tablet server.
+  rpc Quiesce(QuiesceTabletServerRequestPB) returns (QuiesceTabletServerResponsePB);
+}
+
+message QuiesceTabletServerRequestPB {
+  // Indicates whether the request is to start quiescing or to stop quiescing.
+  // If not set, the tserver's quiescing state will not be changed.
+  optional bool quiesce = 1;
+
+  // Indicates whether to return the number of tablet leaders and active
+  // scanners.
+  optional bool return_stats = 2;
+}
+
+message QuiesceTabletServerResponsePB {
+  // The error, if an error occurred with this request.
+  optional TabletServerErrorPB error = 1;
+
+  // The number of active scanners on the given tablet server. Only returned if
+  // stats were requested.
+  optional int32 num_active_scanners = 2;
+
+  // The number of tablet leaders hosted on the given tablet server. Only
+  // returned if stats were requested.
+  optional int32 num_leaders = 3;
 }
