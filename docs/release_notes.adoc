@@ -39,6 +39,7 @@
 [[rn_1.12.0_deprecations]]
 == Deprecations
 
+Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor release.
 
 [[rn_1.12.0_new_features]]
 == New features
