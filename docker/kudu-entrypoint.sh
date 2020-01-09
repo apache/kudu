@@ -58,8 +58,8 @@ DEFAULT_ARGS="--fs_wal_dir=$SERVICE_DIR \
  --webserver_doc_root=/opt/kudu/www \
  --stderrthreshold=0 \
  --use_hybrid_clock=false"
-MASTER_ARGS=${MASTER_ARGS:="$DEFAULT_ARGS"}
-TSERVER_ARGS=${TSERVER_ARGS:="$DEFAULT_ARGS"}
+MASTER_ARGS=${MASTER_ARGS:=""}
+TSERVER_ARGS=${TSERVER_ARGS:=""}
 
 # Wait until the master hosts can be resolved.
 #
@@ -71,7 +71,7 @@ TSERVER_ARGS=${TSERVER_ARGS:="$DEFAULT_ARGS"}
 # or fail on it's own.
 function wait_for_master_hosts() {
   IFS=","
-  for HOST in "$KUDU_MASTERS"
+  for HOST in $KUDU_MASTERS
   do
     MAX_ATTEMPTS=5
     ATTEMPTS=0
@@ -97,7 +97,7 @@ if [[ "$1" == "master" ]]; then
   if [[ -n "$KUDU_MASTERS" ]]; then
     MASTER_ARGS="--master_addresses=$KUDU_MASTERS $MASTER_ARGS"
   fi
-  exec kudu master run ${MASTER_ARGS}
+  exec kudu master run ${DEFAULT_ARGS} ${MASTER_ARGS}
 elif [[ "$1" == "tserver" ]]; then
   mkdir -p "$SERVICE_DIR"
   wait_for_master_hosts
@@ -106,7 +106,7 @@ elif [[ "$1" == "tserver" ]]; then
   else
     TSERVER_ARGS="--tserver_master_addrs=localhost $TSERVER_ARGS"
   fi
-  exec kudu tserver run ${TSERVER_ARGS}
+  exec kudu tserver run ${DEFAULT_ARGS} ${TSERVER_ARGS}
 elif [[ "$1" == "help" ]]; then
   print_help
   exit 0
