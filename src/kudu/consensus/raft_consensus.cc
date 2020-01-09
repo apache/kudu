@@ -277,6 +277,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       local_peer_pb_,
       options_.tablet_id,
       raft_pool->NewToken(ThreadPool::ExecutionMode::SERIAL),
+      server_ctx_.quiescing,
       info.last_id,
       info.last_committed_id));
 
@@ -913,11 +914,12 @@ void RaftConsensus::NotifyPeerToPromote(const string& peer_uuid) {
 }
 
 void RaftConsensus::NotifyPeerToStartElection(const string& peer_uuid) {
-  LOG(INFO) << "Instructing follower " << peer_uuid << " to start an election";
+  const auto& log_prefix = LogPrefixThreadSafe();
+  LOG(INFO) << log_prefix << ": Instructing follower " << peer_uuid << " to start an election";
   WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryStartElectionOnPeerTask,
                                                      shared_from_this(),
                                                      peer_uuid)),
-              LogPrefixThreadSafe() + "Unable to start TryStartElectionOnPeerTask");
+              log_prefix + "Unable to start TryStartElectionOnPeerTask");
 }
 
 void RaftConsensus::NotifyPeerHealthChange() {
@@ -1002,7 +1004,7 @@ void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid) {
     return;
   }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Signalling peer " << peer_uuid
-                                 << "to start an election";
+                                 << " to start an election";
   WARN_NOT_OK(peer_manager_->StartElection(peer_uuid),
               Substitute("unable to start election on peer $0", peer_uuid));
 }

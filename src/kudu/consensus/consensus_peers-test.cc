@@ -103,6 +103,7 @@ class ConsensusPeersTest : public KuduTest {
         FakeRaftPeerPB(kLeaderUuid),
         kTabletId,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
+        /*server_quiescing*/nullptr,
         MinimumOpId(),
         MinimumOpId()));
 

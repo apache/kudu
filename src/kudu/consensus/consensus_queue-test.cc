@@ -17,16 +17,20 @@
 
 #include "kudu/consensus/consensus_queue.h"
 
-#include <cstddef>
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
@@ -63,6 +67,9 @@ DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 
 using kudu::consensus::HealthReportPB;
+using std::atomic;
+using std::deque;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 
@@ -78,7 +85,8 @@ class ConsensusQueueTest : public KuduTest {
   ConsensusQueueTest()
       : schema_(GetSimpleTestSchema()),
         metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
-        registry_(new log::LogAnchorRegistry) {
+        registry_(new log::LogAnchorRegistry),
+        quiescing_(false) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -90,8 +98,8 @@ class ConsensusQueueTest : public KuduTest {
                             fs_manager_.get(),
                             kTestTablet,
                             schema_,
-                            0, // schema_version
-                            NULL,
+                            /*schema_version*/0,
+                            /*metric_entity*/nullptr,
                             &log_));
     clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
@@ -109,6 +117,7 @@ class ConsensusQueueTest : public KuduTest {
         FakeRaftPeerPB(kLeaderUuid),
         kTestTablet,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
+        &quiescing_,
         replicated_opid,
         committed_opid));
   }
@@ -233,7 +242,104 @@ class ConsensusQueueTest : public KuduTest {
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   unique_ptr<clock::Clock> clock_;
+  atomic<bool> quiescing_;
 };
+
+// Observer of a PeerMessageQueue that tracks the notifications sent to
+// observers.
+class SimpleObserver : public PeerMessageQueueObserver {
+ public:
+  SimpleObserver() = default;
+
+  void NotifyPeerToStartElection(const string& peer_uuid) override {
+    peers_to_start_election_.emplace_back(peer_uuid);
+  }
+
+  // Other notifications aren't implemented. Just no-op.
+  void NotifyCommitIndex(int64_t /*commit_index*/) override {}
+  void NotifyTermChange(int64_t /*term*/) override {}
+  void NotifyFailedFollower(const string& /*peer_uuid*/, int64_t /*term*/,
+                            const string& /*reason*/) override {}
+  void NotifyPeerToPromote(const string& /*peer_uuid*/) override {}
+  void NotifyPeerHealthChange() override {}
+
+ private:
+  FRIEND_TEST(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate);
+
+  // The following track the notifications sent in chronological order.
+  deque<string> peers_to_start_election_;
+};
+
+// Test that the leader consensus queue will only attempt to trigger elections
+// when appropriate.
+TEST_F(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate) {
+  SimpleObserver observer;
+  queue_->RegisterObserver(&observer);
+  RaftConfigPB config = BuildRaftConfigPBForTests(/*num_voters*/2);
+  queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, config);
+  RaftPeerPB follower = MakePeer(kPeerUuid, RaftPeerPB::VOTER);
+  queue_->TrackPeer(follower);
+
+  AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 10);
+  WaitForLocalPeerToAckIndex(10);
+
+  ConsensusResponsePB peer_response;
+  peer_response.set_responder_term(1);
+  peer_response.set_responder_uuid(kPeerUuid);
+  SetLastReceivedAndLastCommitted(&peer_response, MakeOpId(1, 9), MinimumOpId().index());
+
+  int elections_so_far = 0;
+  // Simulates receiving the peer's response and checks that, upon receiving
+  // it, the PeerMessageQueue either did or didn't notify that the peer should
+  // start an election.
+  auto verify_elections = [&] (bool election_happened) {
+    ASSERT_TRUE(queue_->ResponseFromPeer(kPeerUuid, peer_response));
+    // Notifications are communicated via the Raft threadpool, so wait for any
+    // such notifying tasks to finish.
+    raft_pool_->Wait();
+    if (election_happened) {
+      elections_so_far++;
+    }
+    ASSERT_EQ(elections_so_far, observer.peers_to_start_election_.size());
+  };
+  // We haven't begun watching for a successor yet and our conditions aren't
+  // met for this peer to become a leader.
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // Even after waiting for a successor, this peer isn't ready yet.
+  queue_->BeginWatchForSuccessor(boost::none);
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // Once the peer says it's gotten the last-appended op, we should be good to
+  // transfer leadership to it.
+  SetLastReceivedAndLastCommitted(&peer_response, MakeOpId(1, 10), MinimumOpId().index());
+  NO_FATALS(verify_elections(/*election_happened*/true));
+
+  // After we've triggered our election, we shouldn't trigger another.
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // And if we try to step down but specify a different peer, we also won't try
+  // electing the peer in-hand.
+  queue_->BeginWatchForSuccessor(boost::make_optional<string>("different-peer"));
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // Even if we begin quiescing, because we're looking for a specific
+  // successor, we shouldn't see an election.
+  quiescing_ = true;
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // If we stop watching for that successor and we're quiescing, we'll trigger
+  // elections.
+  queue_->EndWatchForSuccessor();
+  for (int i = 0; i < 3; i++) {
+    NO_FATALS(verify_elections(/*election_happened*/true));
+  }
+
+  // If the peer weren't a voter, we would also not trigger elections.
+  config.mutable_peers(1)->set_member_type(RaftPeerPB::NON_VOTER);
+  queue_->SetLeaderMode(10, 1, config);
+  NO_FATALS(verify_elections(/*election_happened*/false));
+}
 
 // Tests that the queue is able to track a peer when it starts tracking a peer
 // after the initial message in the queue. In particular this creates a queue
@@ -928,7 +1034,7 @@ TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
   AppendReplicateMessagesToQueue(queue_.get(), clock_.get(), 1, 10);
   WaitForLocalPeerToAckIndex(10);
 
-  // The committed_index should be MinimumOpId() since UpdateFollowerCommittedIndex
+  // The committed_index should be MinimumOpId() since UpdateFollowerWatermarks
   // has not been called.
   ASSERT_EQ(0, queue_->GetCommittedIndex());
 

@@ -17,6 +17,7 @@
 #include "kudu/consensus/consensus_queue.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -80,6 +81,7 @@ DECLARE_int64(rpc_max_message_size);
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
+using std::atomic;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -174,9 +176,11 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
                                    RaftPeerPB local_peer_pb,
                                    string tablet_id,
                                    unique_ptr<ThreadPoolToken> raft_pool_observers_token,
+                                   const atomic<bool>* server_quiescing,
                                    OpId last_locally_replicated,
                                    const OpId& last_locally_committed)
     : raft_pool_observers_token_(std::move(raft_pool_observers_token)),
+      server_quiescing_(server_quiescing),
       local_peer_pb_(std::move(local_peer_pb)),
       tablet_id_(std::move(tablet_id)),
       successor_watch_in_progress_(false),
@@ -1065,16 +1069,24 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
 void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
                                                   const ConsensusStatusPB& status) {
   DCHECK(queue_lock_.is_locked());
-  if (!successor_watch_in_progress_) {
+  bool server_quiescing = server_quiescing_ && *server_quiescing_;
+  // Only transfer leadership if the local peer has begun looking for a
+  // successor, or if the server is quiescing. Otherwise, exit early.
+  if (!successor_watch_in_progress_ && !server_quiescing) {
     return;
   }
 
-  if (designated_successor_uuid_ && peer.uuid() != designated_successor_uuid_.get()) {
-    return;
-  }
-
+  // Do some basic sanity checks that we can actually transfer leadership to
+  // the given peer.
   if (queue_state_.mode != PeerMessageQueue::LEADER ||
-      peer.last_exchange_status != PeerStatus::OK) {
+      peer.last_exchange_status != PeerStatus::OK ||
+      local_peer_pb_.permanent_uuid() == peer.uuid()) {
+    return;
+  }
+
+  // If looking for a specific successor, ignore peers as appropriate.
+  if (successor_watch_in_progress_ &&
+      designated_successor_uuid_ && peer.uuid() != designated_successor_uuid_.get()) {
     return;
   }
 

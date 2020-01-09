@@ -36,6 +36,7 @@
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
@@ -50,6 +51,8 @@ DECLARE_bool(enable_leader_failure_detection);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
+DECLARE_int32(tablet_copy_download_file_inject_latency_ms);
+DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 DECLARE_int32(scanner_default_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
@@ -137,15 +140,15 @@ TEST_F(TServerQuiescingITest, TestQuiescingServerDoesntTriggerElections) {
   LOG(INFO) << Substitute("Quiescing ts $0", ts->uuid());
   *ts->server()->mutable_quiescing() = true;
 
-  // Cause a bunch of elections.
-  FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
-  FLAGS_consensus_inject_latency_ms_in_notifications = FLAGS_raft_heartbeat_interval_ms;
-
   // Soon enough, elections will occur, and our quiescing server will cease to
   // be leader.
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(0, ts->server()->num_raft_leaders()->value());
   });
+
+  // Cause a bunch of elections.
+  FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
+  FLAGS_consensus_inject_latency_ms_in_notifications = FLAGS_raft_heartbeat_interval_ms;
 
   // When we stop quiescing the server, we should eventually see some
   // leadership return to the server.
@@ -155,11 +158,36 @@ TEST_F(TServerQuiescingITest, TestQuiescingServerDoesntTriggerElections) {
   });
 }
 
+// Test that after quiescing a tablet's leader, leadership will be transferred
+// elsewhere.
+TEST_F(TServerQuiescingITest, TestQuiescingLeaderTransfersLeadership) {
+  const int kNumReplicas = 3;
+  NO_FATALS(StartCluster(kNumReplicas));
+  vector<string> tablet_ids;
+  NO_FATALS(CreateWorkloadTable(/*num_tablets*/1, &tablet_ids));
+  string tablet_id = tablet_ids[0];
+
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  TServerDetails* leader_details;
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
+
+  // Start quiescing the leader.
+  const auto& orig_leader_uuid = leader_details->uuid();
+  auto* leader_ts = cluster_->mini_tablet_server_by_uuid(orig_leader_uuid);
+  *leader_ts->server()->mutable_quiescing() = true;
+
+  // The leader tserver will relinquish leadership soon enough.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
+    ASSERT_NE(orig_leader_uuid, leader_details->uuid());
+  });
+}
+
 // Test that even if a majority of replicas are quiescing, a tablet is still
 // able to elect a leader.
 TEST_F(TServerQuiescingITest, TestMajorityQuiescingElectsLeader) {
   const int kNumReplicas = 3;
-  FLAGS_raft_heartbeat_interval_ms = 50;
+  FLAGS_raft_heartbeat_interval_ms = 100;
   NO_FATALS(StartCluster(kNumReplicas));
   vector<string> tablet_ids;
   NO_FATALS(CreateWorkloadTable(/*num_tablets*/1, &tablet_ids));
@@ -169,10 +197,6 @@ TEST_F(TServerQuiescingITest, TestMajorityQuiescingElectsLeader) {
   for (int i = 1; i < kNumReplicas; i++) {
     *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
   }
-
-  // Cause a bunch of elections.
-  FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
-  FLAGS_consensus_inject_latency_ms_in_notifications = FLAGS_raft_heartbeat_interval_ms;
 
   // Eventually the first tserver will be elected leader.
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
@@ -234,10 +258,6 @@ TEST_F(TServerQuiescingITest, TestDoesntAllowNewScansLeadersOnly) {
   rw_workload->Setup();
   rw_workload->Start();
 
-  // Inject a bunch of leader elections to stress leadership changes.
-  FLAGS_leader_failure_max_missed_heartbeat_periods = 1;
-  FLAGS_consensus_inject_latency_ms_in_notifications = FLAGS_raft_heartbeat_interval_ms;
-
   // Wait for the scans to begin.
   MiniTabletServer* ts = nullptr;
   ASSERT_EVENTUALLY([&] {
@@ -261,6 +281,74 @@ TEST_F(TServerQuiescingITest, TestDoesntAllowNewScansLeadersOnly) {
 
   // Stopping the quiesced tablet server shouldn't affect the ongoing read workload.
   NO_FATALS(rw_workload->StopAndJoin());
+}
+
+// Test that when all followers are behind (e.g. because the others are down),
+// the leader, even while quiescing, will remain leader.
+TEST_F(TServerQuiescingITest, TestQuiesceLeaderWhileFollowersCatchingUp) {
+  const int kNumReplicas = 3;
+  FLAGS_raft_heartbeat_interval_ms = 100;
+  NO_FATALS(StartCluster(kNumReplicas));
+  auto rw_workload = CreateFaultIntolerantRWWorkload();
+  rw_workload->set_num_tablets(1);
+  rw_workload->Setup();
+  rw_workload->Start();
+  while (rw_workload->rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+  TServerDetails* leader_details;
+  const auto kTimeout = MonoDelta::FromSeconds(10);
+  const string tablet_id = cluster_->mini_tablet_server(0)->ListTablets()[0];
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
+  const string leader_uuid = leader_details->uuid();
+
+  // Slow down tablet copies so our leader will be catching up followers long
+  // enough for us to observe.
+  FLAGS_tablet_copy_transfer_chunk_size_bytes = 512;
+  FLAGS_tablet_copy_download_file_inject_latency_ms = 500;
+
+  // Stop our writes and delete the replicas on the follower servers, setting
+  // them up for tablet copies.
+  NO_FATALS(rw_workload->StopAndJoin());
+  for (const auto& ts_and_details : ts_map_) {
+    const auto& ts_uuid = ts_and_details.first;
+    if (ts_uuid != leader_uuid) {
+      const auto* ts_details = ts_and_details.second;
+      ASSERT_OK(DeleteTablet(ts_details, tablet_id,
+                             tablet::TabletDataState::TABLET_DATA_TOMBSTONED,
+                             kTimeout));
+      ASSERT_EVENTUALLY([&] {
+        vector<string> running_tablets;
+        ASSERT_OK(ListRunningTabletIds(ts_details, kTimeout, &running_tablets));
+        ASSERT_EQ(0, running_tablets.size());
+      });
+    }
+  }
+  // Quiesce the leader and wait for a bit. While the leader is catching up
+  // replicas, it shouldn't relinquish leadership.
+  auto* leader_ts = cluster_->mini_tablet_server_by_uuid(leader_uuid);
+  *leader_ts->server()->mutable_quiescing() = true;
+  SleepFor(MonoDelta::FromSeconds(3));
+  ASSERT_EQ(1, leader_ts->server()->num_raft_leaders()->value());
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_details));
+  ASSERT_EQ(leader_uuid, leader_details->uuid());
+
+  // Once we let the copy finish, the leader should relinquish leadership.
+  FLAGS_tablet_copy_download_file_inject_latency_ms = 0;
+  FLAGS_tablet_copy_transfer_chunk_size_bytes = 4 * 1024 * 1024;
+  for (const auto& ts_and_details : ts_map_) {
+    ASSERT_EVENTUALLY([&] {
+      vector<string> running_tablets;
+      ASSERT_OK(ListRunningTabletIds(ts_and_details.second, kTimeout, &running_tablets));
+      ASSERT_EQ(1, running_tablets.size());
+    });
+  }
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(0, leader_ts->server()->num_raft_leaders()->value());
+    TServerDetails* new_leader_details;
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &new_leader_details));
+    ASSERT_NE(leader_uuid, new_leader_details->uuid());
+  });
 }
 
 class TServerQuiescingParamITest : public TServerQuiescingITest,
@@ -392,6 +480,72 @@ TEST_P(TServerQuiescingParamITest, TestScansRetry) {
     ASSERT_OK(scanner.KeepAlive());
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+}
+
+// Test that when all the tablet servers hosting a replica are quiescing, we
+// can still write (assuming a leader had previously been elected).
+TEST_P(TServerQuiescingParamITest, TestWriteWhileAllQuiescing) {
+  const int kNumReplicas = GetParam();
+  NO_FATALS(StartCluster(kNumReplicas));
+  auto start_write_workload = [&] {
+    // Start up a workload with some writes, with no write error tolerance.
+    unique_ptr<TestWorkload> workload(new TestWorkload(cluster_.get()));
+    workload->set_num_replicas(kNumReplicas);
+    workload->set_num_write_threads(3);
+    workload->set_num_tablets(1);
+    workload->Setup();
+    workload->Start();
+    return workload;
+  };
+  auto first_workload = start_write_workload();
+  string tablet_id;
+  ASSERT_EVENTUALLY([&] {
+    vector<string> tablet_ids;
+    tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+    ASSERT_EQ(1, tablet_ids.size());
+    tablet_id = tablet_ids[0];
+  });
+
+  TServerDetails* leader_details;
+  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kLeaderTimeout, &leader_details));
+
+  // Now quiesce all the tablet servers.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
+  }
+
+  // We should continue to write uninterrupted.
+  int start_rows = first_workload->rows_inserted();
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GT(first_workload->rows_inserted(), start_rows + 1000);
+  });
+}
+
+TEST_P(TServerQuiescingParamITest, TestAbruptStepdownWhileAllQuiescing) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const int kNumReplicas = GetParam();
+  NO_FATALS(StartCluster(kNumReplicas));
+  vector<string> tablet_ids;
+  NO_FATALS(CreateWorkloadTable(/*num_tablets*/1, &tablet_ids));
+
+  TServerDetails* leader_details;
+  const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
+  const auto& tablet_id = tablet_ids[0];
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kLeaderTimeout, &leader_details));
+
+  // Now quiesce all the tablet servers.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
+  }
+  // Once we've stepped down, while quiescing, no new leader should be elected.
+  // Wait extra long to be sure.
+  ASSERT_OK(LeaderStepDown(leader_details, tablet_id, kLeaderTimeout));
+  MonoDelta election_timeout = MonoDelta::FromMilliseconds(
+      2 * FLAGS_raft_heartbeat_interval_ms * FLAGS_leader_failure_max_missed_heartbeat_periods);
+  Status s = FindTabletLeader(ts_map_, tablet_id, election_timeout, &leader_details);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
 INSTANTIATE_TEST_CASE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));
