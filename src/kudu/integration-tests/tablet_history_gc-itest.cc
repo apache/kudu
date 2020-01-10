@@ -28,19 +28,18 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
-#include "kudu/clock/hybrid_clock.h"
-#include "kudu/clock/mock_ntp.h"
-#include "kudu/clock/time_service.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
+#include "kudu/clock/time_service.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -230,7 +229,7 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
 
   // Move the clock so all operations are in the past. Then wait until we have
   // no more undo deltas.
-  HybridClock* c = down_cast<HybridClock*>(tablet->clock().get());
+  HybridClock* c = down_cast<HybridClock*>(tablet->clock());
   AddTimeToHybridClock(c, MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(0, tablet->CountUndoDeltasForTests());

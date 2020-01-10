@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "kudu/clock/clock.h"
@@ -78,7 +79,7 @@ class LogicalClock : public Clock {
   }
 
   // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
-  static LogicalClock* CreateStartingAt(const Timestamp& timestamp);
+  static std::unique_ptr<LogicalClock> CreateStartingAt(const Timestamp& timestamp);
 
  private:
   // Should use LogicalClock::CreatingStartingAt()

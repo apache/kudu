@@ -97,14 +97,13 @@ class ServerBase {
 
   const scoped_refptr<MetricEntity>& metric_entity() const { return metric_entity_; }
 
-  MetricRegistry* metric_registry() { return metric_registry_.get(); }
+  MetricRegistry* metric_registry() const { return metric_registry_.get(); }
 
   const scoped_refptr<rpc::ResultTracker>& result_tracker() const { return result_tracker_; }
 
-  // Returns this server's clock.
-  clock::Clock* clock() { return clock_.get(); }
+  clock::Clock* clock() const { return clock_.get(); }
 
-  DnsResolver* dns_resolver() { return dns_resolver_.get(); }
+  DnsResolver* dns_resolver() const { return dns_resolver_.get(); }
 
   // Return a PB describing the status of the server (version info, bound ports, etc)
   Status GetStatusPB(ServerStatusPB* status) const;
@@ -185,7 +184,7 @@ class ServerBase {
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   bool is_first_run_;
 
-  scoped_refptr<clock::Clock> clock_;
+  std::unique_ptr<clock::Clock> clock_;
 
   // The instance identifier of this server.
   gscoped_ptr<NodeInstancePB> instance_pb_;

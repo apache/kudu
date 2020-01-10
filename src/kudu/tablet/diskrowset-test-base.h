@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_LAYER_TEST_BASE_H
-#define KUDU_TABLET_LAYER_TEST_BASE_H
+#pragma once
 
 #include <unistd.h>
 
@@ -340,12 +339,10 @@ class TestRowSet : public KuduRowSetTest {
 
   size_t n_rows_;
   consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
-  scoped_refptr<clock::Clock> clock_;
+  std::unique_ptr<clock::Clock> clock_;
   MvccManager mvcc_;
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 };
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

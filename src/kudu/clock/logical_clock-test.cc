@@ -15,15 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+using std::unique_ptr;
 
 namespace kudu {
 namespace clock {
@@ -35,7 +38,7 @@ class LogicalClockTest : public KuduTest {
   }
 
  protected:
-  scoped_refptr<LogicalClock> clock_;
+  unique_ptr<LogicalClock> clock_;
 };
 
 // Test that two subsequent time reads are monotonically increasing.

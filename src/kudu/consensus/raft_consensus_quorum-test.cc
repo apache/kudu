@@ -216,7 +216,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       unique_ptr<PeerProxyFactory> proxy_factory(
           new LocalTestPeerProxyFactory(peers_.get()));
       scoped_refptr<TimeManager> time_manager(
-          new TimeManager(clock_, Timestamp::kMin));
+          new TimeManager(clock_.get(), Timestamp::kMin));
       unique_ptr<TestTransactionFactory> txn_factory(
           new TestTransactionFactory(logs_[i].get()));
       txn_factory->SetConsensus(peer.get());
@@ -582,7 +582,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<TestPeerMapManager> peers_;
   vector<unique_ptr<TestTransactionFactory>> txn_factories_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;

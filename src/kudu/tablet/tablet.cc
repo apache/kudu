@@ -32,6 +32,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
@@ -214,7 +215,7 @@ TabletComponents::TabletComponents(shared_ptr<MemRowSet> mrs,
 ////////////////////////////////////////////////////////////
 
 Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
-               scoped_refptr<clock::Clock> clock,
+               clock::Clock* clock,
                shared_ptr<MemTracker> parent_mem_tracker,
                MetricRegistry* metric_registry,
                scoped_refptr<LogAnchorRegistry> log_anchor_registry)
@@ -223,7 +224,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     log_anchor_registry_(std::move(log_anchor_registry)),
     mem_trackers_(tablet_id(), std::move(parent_mem_tracker)),
     next_mrs_id_(0),
-    clock_(std::move(clock)),
+    clock_(clock),
     rowsets_flush_sem_(1),
     state_(kInitialized),
     last_write_time_(MonoTime::Now()),

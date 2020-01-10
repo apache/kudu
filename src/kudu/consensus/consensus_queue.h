@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
-#define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -606,5 +604,3 @@ class PeerMessageQueueObserver {
 
 }  // namespace consensus
 }  // namespace kudu
-
-#endif /* KUDU_CONSENSUS_CONSENSUS_QUEUE_H_ */

@@ -25,6 +25,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -72,12 +73,12 @@ ExternalConsistencyMode TimeManager::GetMessageConsistencyMode(const ReplicateMs
   return CLIENT_PROPAGATED;
 }
 
-TimeManager::TimeManager(scoped_refptr<Clock> clock, Timestamp initial_safe_time)
+TimeManager::TimeManager(Clock* clock, Timestamp initial_safe_time)
   : last_serial_ts_assigned_(initial_safe_time),
     last_safe_ts_(initial_safe_time),
     last_advanced_safe_time_(MonoTime::Now()),
     mode_(NON_LEADER),
-    clock_(std::move(clock)) {}
+    clock_(clock) {}
 
 void TimeManager::SetLeaderMode() {
   Lock l(lock_);

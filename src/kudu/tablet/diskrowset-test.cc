@@ -24,11 +24,11 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -723,7 +723,7 @@ class DiffScanRowSetTest : public KuduRowSetTest,
   }
 
   consensus::OpId op_id_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
   MvccManager mvcc_;
 };
 

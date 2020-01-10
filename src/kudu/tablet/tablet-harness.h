@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_REPLICA_HARNESS_H
-#define KUDU_TABLET_TABLET_REPLICA_HARNESS_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -109,13 +108,13 @@ class TabletHarness {
     }
 
     if (options_.clock_type == Options::LOGICAL_CLOCK) {
-      clock_.reset(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
+      clock_ = clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
     } else {
       clock_.reset(new clock::HybridClock());
       RETURN_NOT_OK(clock_->Init());
     }
     tablet_.reset(new Tablet(metadata,
-                             clock_,
+                             clock_.get(),
                              std::shared_ptr<MemTracker>(),
                              metrics_registry_.get(),
                              make_scoped_refptr(new log::LogAnchorRegistry())));
@@ -152,7 +151,7 @@ class TabletHarness {
 
   gscoped_ptr<MetricRegistry> metrics_registry_;
 
-  scoped_refptr<clock::Clock> clock_;
+  std::unique_ptr<clock::Clock> clock_;
   Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   std::shared_ptr<Tablet> tablet_;
@@ -160,4 +159,3 @@ class TabletHarness {
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_TABLET_REPLICA_HARNESS_H */

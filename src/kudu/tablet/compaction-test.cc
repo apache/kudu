@@ -30,7 +30,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -485,7 +484,7 @@ class TestCompaction : public KuduRowSetTest {
   RowBuilder row_builder_;
   char key_buf_[256];
   Arena arena_;
-  scoped_refptr<clock::LogicalClock> clock_;
+  unique_ptr<clock::LogicalClock> clock_;
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;

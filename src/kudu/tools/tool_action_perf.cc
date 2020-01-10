@@ -775,8 +775,7 @@ Status TabletScan(const RunnerContext& context) {
   scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
 
-  scoped_refptr<Clock> clock(
-      LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
+  unique_ptr<Clock> clock(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
   RETURN_NOT_OK(clock->Init());
 
   scoped_refptr<LogAnchorRegistry> registry(new LogAnchorRegistry());
@@ -787,7 +786,7 @@ Status TabletScan(const RunnerContext& context) {
   ConsensusBootstrapInfo cbi;
   RETURN_NOT_OK(tablet::BootstrapTablet(std::move(tmeta),
                                         cmeta->CommittedConfig(),
-                                        std::move(clock),
+                                        clock.get(),
                                         /*mem_tracker=*/ nullptr,
                                         /*result_tracker=*/ nullptr,
                                         /*metric_registry=*/ nullptr,

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/time_manager.h"
+
 #include <memory>
 #include <thread>
 #include <vector>
@@ -22,11 +24,9 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
@@ -34,10 +34,12 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::thread;
+using std::unique_ptr;
+using std::vector;
+
 namespace kudu {
 namespace consensus {
-
-using std::unique_ptr;
 
 class TimeManagerTest : public KuduTest {
  public:
@@ -55,7 +57,7 @@ class TimeManagerTest : public KuduTest {
 
  protected:
   void InitTimeManager(Timestamp initial_safe_time = Timestamp::kMin) {
-    time_manager_.reset(new TimeManager(clock_, initial_safe_time));
+    time_manager_.reset(new TimeManager(clock_.get(), initial_safe_time));
   }
 
   // Returns a latch that allows to wait for TimeManager to consider 'safe_time' safe.
@@ -71,10 +73,10 @@ class TimeManagerTest : public KuduTest {
     return latch;
   }
 
-  scoped_refptr<clock::HybridClock> clock_;
+  unique_ptr<clock::HybridClock> clock_;
   scoped_refptr<TimeManager> time_manager_;
-  std::vector<unique_ptr<CountDownLatch>> latches_;
-  std::vector<std::thread> threads_;
+  vector<unique_ptr<CountDownLatch>> latches_;
+  vector<thread> threads_;
 };
 
 // Tests TimeManager's functionality in non-leader mode and the transition to leader mode.

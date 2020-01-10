@@ -34,7 +34,6 @@
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
@@ -392,7 +391,7 @@ Status SysCatalogTable::SetupTablet(
   RETURN_NOT_OK_SHUTDOWN(BootstrapTablet(
       metadata,
       cmeta->CommittedConfig(),
-      scoped_refptr<clock::Clock>(master_->clock()),
+      master_->clock(),
       master_->mem_tracker(),
       scoped_refptr<rpc::ResultTracker>(),
       metric_registry_,
@@ -408,7 +407,7 @@ Status SysCatalogTable::SetupTablet(
   RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Start(
       consensus_info,
       tablet,
-      scoped_refptr<clock::Clock>(master_->clock()),
+      master_->clock(),
       master_->messenger(),
       scoped_refptr<rpc::ResultTracker>(),
       log,

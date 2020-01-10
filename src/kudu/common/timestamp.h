@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_COMMON_TIMESTAMP_H_
-#define KUDU_COMMON_TIMESTAMP_H_
+#pragma once
 
 #include <cstdint>
 #include <iosfwd>
@@ -137,5 +135,3 @@ inline bool operator>=(const Timestamp& lhs, const Timestamp& rhs) {
 }
 
 } // namespace kudu
-
-#endif /* KUDU_COMMON_TIMESTAMP_H_ */

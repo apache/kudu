@@ -29,7 +29,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -194,7 +193,7 @@ class TabletBootstrap {
  public:
   TabletBootstrap(scoped_refptr<TabletMetadata> tablet_meta,
                   RaftConfigPB committed_raft_config,
-                  scoped_refptr<Clock> clock,
+                  Clock* clock,
                   shared_ptr<MemTracker> mem_tracker,
                   scoped_refptr<ResultTracker> result_tracker,
                   MetricRegistry* metric_registry,
@@ -374,7 +373,7 @@ class TabletBootstrap {
 
   const scoped_refptr<TabletMetadata> tablet_meta_;
   const RaftConfigPB committed_raft_config_;
-  const scoped_refptr<Clock> clock_;
+  Clock* clock_;
   shared_ptr<MemTracker> mem_tracker_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
@@ -442,7 +441,7 @@ void TabletBootstrap::SetStatusMessage(const string& status) {
 
 Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        RaftConfigPB committed_raft_config,
-                       scoped_refptr<Clock> clock,
+                       Clock* clock,
                        shared_ptr<MemTracker> mem_tracker,
                        scoped_refptr<ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,
@@ -455,7 +454,7 @@ Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                "tablet_id", tablet_meta->tablet_id());
   TabletBootstrap bootstrap(std::move(tablet_meta),
                             std::move(committed_raft_config),
-                            std::move(clock),
+                            clock,
                             std::move(mem_tracker),
                             std::move(result_tracker),
                             metric_registry,
@@ -491,14 +490,15 @@ static string DebugInfo(const string& tablet_id,
 TabletBootstrap::TabletBootstrap(
     scoped_refptr<TabletMetadata> tablet_meta,
     RaftConfigPB committed_raft_config,
-    scoped_refptr<Clock> clock, shared_ptr<MemTracker> mem_tracker,
+    Clock* clock,
+    shared_ptr<MemTracker> mem_tracker,
     scoped_refptr<ResultTracker> result_tracker,
     MetricRegistry* metric_registry,
     scoped_refptr<TabletReplica> tablet_replica,
     scoped_refptr<LogAnchorRegistry> log_anchor_registry)
     : tablet_meta_(std::move(tablet_meta)),
       committed_raft_config_(std::move(committed_raft_config)),
-      clock_(std::move(clock)),
+      clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
       result_tracker_(std::move(result_tracker)),
       metric_registry_(metric_registry),

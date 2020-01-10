@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstddef>
@@ -30,7 +29,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
@@ -69,9 +67,13 @@ class Timestamp;
 struct IterWithBounds;
 struct IteratorStats;
 
+namespace clock {
+class Clock;
+} // namespace clock
+
 namespace log {
 class LogAnchorRegistry;
-}
+} // namespace log
 
 namespace tablet {
 
@@ -102,7 +104,7 @@ class Tablet {
   // If 'metric_registry' is non-NULL, then this tablet will create a 'tablet' entity
   // within the provided registry. Otherwise, no metrics are collected.
   Tablet(scoped_refptr<TabletMetadata> metadata,
-         scoped_refptr<clock::Clock> clock,
+         clock::Clock* clock,
          std::shared_ptr<MemTracker> parent_mem_tracker,
          MetricRegistry* metric_registry,
          scoped_refptr<log::LogAnchorRegistry> log_anchor_registry);
@@ -440,7 +442,7 @@ class Tablet {
   // Return true if this RPC is allowed.
   bool ShouldThrottleAllow(int64_t bytes);
 
-  scoped_refptr<clock::Clock> clock() const { return clock_; }
+  clock::Clock* clock() const { return clock_; }
 
   std::string LogPrefix() const;
 
@@ -727,7 +729,7 @@ class Tablet {
   int64_t next_mrs_id_;
 
   // A pointer to the server's clock.
-  scoped_refptr<clock::Clock> clock_;
+  clock::Clock* clock_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;

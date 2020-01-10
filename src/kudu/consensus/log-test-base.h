@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CONSENSUS_LOG_TEST_BASE_H
-#define KUDU_CONSENSUS_LOG_TEST_BASE_H
+#pragma once
 
 #include "kudu/consensus/log.h"
 
@@ -66,7 +65,7 @@ constexpr bool APPEND_ASYNC = false;
 // Append a single batch of 'count' NoOps to the log.
 // If 'size' is not NULL, increments it by the expected increase in log size.
 // Increments 'op_id''s index once for each operation logged.
-inline Status AppendNoOpsToLogSync(const scoped_refptr<clock::Clock>& clock,
+inline Status AppendNoOpsToLogSync(clock::Clock* clock,
                                    Log* log,
                                    consensus::OpId* op_id,
                                    int count,
@@ -104,7 +103,7 @@ inline Status AppendNoOpsToLogSync(const scoped_refptr<clock::Clock>& clock,
   return s.Wait();
 }
 
-inline Status AppendNoOpToLogSync(const scoped_refptr<clock::Clock>& clock,
+inline Status AppendNoOpToLogSync(clock::Clock* clock,
                                   Log* log,
                                   consensus::OpId* op_id,
                                   int* size = nullptr) {
@@ -332,7 +331,7 @@ class LogTestBase : public KuduTest {
   // If non-NULL, and if the write is successful, 'size' is incremented
   // by the size of the written operation.
   Status AppendNoOp(consensus::OpId* op_id, int* size = nullptr) {
-    return AppendNoOpToLogSync(clock_, log_.get(), op_id, size);
+    return AppendNoOpToLogSync(clock_.get(), log_.get(), op_id, size);
   }
 
   // Append a number of no-op entries to the log.
@@ -374,8 +373,8 @@ class LogTestBase : public KuduTest {
   };
 
   const Schema schema_;
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<MetricRegistry> metric_registry_;
+  std::unique_ptr<FsManager> fs_manager_;
+  std::unique_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<Log> log_;
   int64_t current_index_;
@@ -383,10 +382,8 @@ class LogTestBase : public KuduTest {
   // Reusable entries vector that deletes the entries on destruction.
   LogEntries entries_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
-  scoped_refptr<clock::Clock> clock_;
+  std::unique_ptr<clock::Clock> clock_;
 };
 
 } // namespace log
 } // namespace kudu
-
-#endif

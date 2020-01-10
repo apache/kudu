@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/log_cache.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -35,7 +38,6 @@
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log_cache.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -57,6 +59,7 @@
 using std::atomic;
 using std::shared_ptr;
 using std::thread;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -130,10 +133,10 @@ class LogCacheTest : public KuduTest {
   const Schema schema_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<LogCache> cache_;
+  unique_ptr<FsManager> fs_manager_;
+  unique_ptr<LogCache> cache_;
   scoped_refptr<log::Log> log_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
 };
 
 

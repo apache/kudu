@@ -384,7 +384,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   fs_manager_.reset(new FsManager(options.env, std::move(fs_opts)));
 
   if (FLAGS_use_hybrid_clock) {
-    clock_ = new clock::HybridClock();
+    clock_.reset(new clock::HybridClock);
   } else {
     clock_ = clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }

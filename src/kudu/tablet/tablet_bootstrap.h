@@ -29,7 +29,7 @@ class MetricRegistry;
 namespace log {
 class Log;
 class LogAnchorRegistry;
-}
+} // namespace log
 
 namespace consensus {
 class RaftConfigPB;
@@ -42,7 +42,7 @@ class ResultTracker;
 
 namespace clock {
 class Clock;
-}
+} // namespace clock
 
 namespace tablet {
 class Tablet;
@@ -59,7 +59,7 @@ extern const char* kLogRecoveryDir;
 // TSTabletManager.
 Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        consensus::RaftConfigPB committed_raft_config,
-                       scoped_refptr<clock::Clock> clock,
+                       clock::Clock* clock,
                        std::shared_ptr<MemTracker> mem_tracker,
                        scoped_refptr<rpc::ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,

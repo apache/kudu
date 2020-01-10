@@ -17,6 +17,7 @@
 
 #include "kudu/clock/logical_clock.h"
 
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -30,9 +31,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace clock {
-
 METRIC_DEFINE_gauge_uint64(server, logical_clock_timestamp,
                            "Logical Clock Timestamp",
                            kudu::MetricUnit::kUnits,
@@ -43,6 +41,10 @@ using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
+using std::unique_ptr;
+
+namespace kudu {
+namespace clock {
 
 Timestamp LogicalClock::Now() {
   return Timestamp(Barrier_AtomicIncrement(&now_, 1));
@@ -88,9 +90,9 @@ bool LogicalClock::IsAfter(Timestamp t) {
   return base::subtle::Acquire_Load(&now_) >= t.value();
 }
 
-LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
+unique_ptr<LogicalClock> LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
   // initialize at 'timestamp' - 1 so that the  first output value is 'timestamp'.
-  return new LogicalClock(timestamp.value() - 1);
+  return unique_ptr<LogicalClock>(new LogicalClock(timestamp.value() - 1));
 }
 
 uint64_t LogicalClock::GetCurrentTime() {

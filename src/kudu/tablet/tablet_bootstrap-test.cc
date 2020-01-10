@@ -31,7 +31,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
-#include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
@@ -78,6 +77,19 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using kudu::consensus::ConsensusBootstrapInfo;
+using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::MakeOpId;
+using kudu::consensus::OpId;
+using kudu::consensus::ReplicateMsg;
+using kudu::consensus::ReplicateRefPtr;
+using kudu::consensus::kMinimumTerm;
+using kudu::consensus::make_scoped_refptr_replicate;
+using kudu::log::LogAnchorRegistry;
+using kudu::log::LogTestBase;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::tserver::WriteRequestPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -88,23 +100,6 @@ namespace kudu {
 class MemTracker;
 
 namespace tablet {
-
-using clock::Clock;
-using clock::LogicalClock;
-using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataManager;
-using consensus::MakeOpId;
-using consensus::OpId;
-using consensus::ReplicateMsg;
-using consensus::ReplicateRefPtr;
-using consensus::kMinimumTerm;
-using consensus::make_scoped_refptr_replicate;
-using log::Log;
-using log::LogAnchorRegistry;
-using log::LogTestBase;
-using pb_util::SecureShortDebugString;
-using tserver::WriteRequestPB;
 
 class BootstrapTest : public LogTestBase {
  protected:
@@ -170,7 +165,7 @@ class BootstrapTest : public LogTestBase {
     RETURN_NOT_OK(BootstrapTablet(
         meta,
         cmeta->CommittedConfig(),
-        scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+        clock_.get(),
         shared_ptr<MemTracker>(),
         scoped_refptr<rpc::ResultTracker>(),
         nullptr,

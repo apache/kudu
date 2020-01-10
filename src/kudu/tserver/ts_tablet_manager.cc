@@ -31,7 +31,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -1113,7 +1112,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     replica->SetBootstrapping();
     s = BootstrapTablet(replica->tablet_metadata(),
                         replica->consensus()->CommittedConfig(),
-                        scoped_refptr<clock::Clock>(server_->clock()),
+                        server_->clock(),
                         server_->mem_tracker(),
                         server_->result_tracker(),
                         metric_registry_,
@@ -1134,7 +1133,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     TRACE("Starting tablet replica");
     s = replica->Start(bootstrap_info,
                        tablet,
-                       scoped_refptr<clock::Clock>(server_->clock()),
+                       server_->clock(),
                        server_->messenger(),
                        server_->result_tracker(),
                        log,

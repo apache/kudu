@@ -19,11 +19,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -48,6 +48,7 @@ DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(time_source);
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -65,7 +66,7 @@ class HybridClockTest : public KuduTest {
   }
 
  protected:
-  scoped_refptr<HybridClock> clock_;
+  unique_ptr<HybridClock> clock_;
 };
 
 clock::MockNtp* mock_ntp(HybridClock* clock) {
@@ -75,7 +76,7 @@ clock::MockNtp* mock_ntp(HybridClock* clock) {
 TEST(MockHybridClockTest, TestMockedSystemClock) {
   google::FlagSaver saver;
   FLAGS_time_source = "mock";
-  scoped_refptr<HybridClock> clock(new HybridClock);
+  unique_ptr<HybridClock> clock(new HybridClock);
   ASSERT_OK(clock->Init());
   Timestamp timestamp;
   uint64_t max_error_usec;
@@ -109,7 +110,7 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
 TEST(MockHybridClockTest, TestClockDealsWithWrapping) {
   google::FlagSaver saver;
   FLAGS_time_source = "mock";
-  scoped_refptr<HybridClock> clock(new HybridClock);
+  unique_ptr<HybridClock> clock(new HybridClock);
   ASSERT_OK(clock->Init());
   mock_ntp(clock.get())->SetMockClockWallTimeForTests(1000);
 

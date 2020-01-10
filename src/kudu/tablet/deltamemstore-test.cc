@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -49,7 +50,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -161,7 +161,7 @@ class TestDeltaMemStore : public KuduTest {
 
   const Schema schema_;
   shared_ptr<DeltaMemStore> dms_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
   MvccManager mvcc_;
 };
 

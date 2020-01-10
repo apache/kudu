@@ -30,7 +30,6 @@
 #include <boost/optional/optional.hpp> // IWYU pragma: keep
 #include <boost/optional/optional_io.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -916,7 +915,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         FlushSessionOrDie(session_);
         cur_val = pending_val;
         int current_time = down_cast<kudu::clock::LogicalClock*>(
-            tablet()->clock().get())->GetCurrentTime();
+            tablet()->clock())->GetCurrentTime();
         VLOG(1) << "Current time: " << current_time;
         saved_values_[current_time] = cur_val;
         saved_redos_[current_time] = pending_redos;

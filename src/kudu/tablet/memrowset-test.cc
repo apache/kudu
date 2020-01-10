@@ -19,10 +19,12 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -259,7 +261,7 @@ class TestMemRowSet : public KuduTest {
   faststring mutation_buf_;
   const Schema schema_;
   const Schema key_schema_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
   MvccManager mvcc_;
 };
 

@@ -191,7 +191,7 @@ TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
   opid.set_term(1);
   opid.set_index(1);
 
-  AppendNoOpsToLogSync(clock_, log_.get(), &opid, 2);
+  AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2);
 
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_OK(log_->AllocateSegmentAndRollOverForTests());
@@ -1138,7 +1138,7 @@ TEST_F(LogTest, TestAutoStopIdleAppendThread) {
   // after the append long enough for the append thread to shut itself down
   // again.
   ASSERT_EVENTUALLY([&]() {
-      AppendNoOpsToLogSync(clock_, log_.get(), &opid, 2);
+      AppendNoOpsToLogSync(clock_.get(), log_.get(), &opid, 2);
       ASSERT_TRUE(log_->append_thread_active_for_tests());
       debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
       ASSERT_GT(log_->segment_allocator_.active_segment_->compress_buf_.capacity(),

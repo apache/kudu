@@ -94,7 +94,7 @@ class ConsensusPeersTest : public KuduTest {
     clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 
-    scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
+    scoped_refptr<TimeManager> time_manager(new TimeManager(clock_.get(), Timestamp::kMin));
 
     message_queue_.reset(new PeerMessageQueue(
         metric_entity_,
@@ -163,14 +163,14 @@ class ConsensusPeersTest : public KuduTest {
  protected:
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  gscoped_ptr<FsManager> fs_manager_;
+  unique_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
   unique_ptr<ThreadPool> raft_pool_;
-  gscoped_ptr<PeerMessageQueue> message_queue_;
+  unique_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
   LogOptions options_;
   unique_ptr<ThreadPoolToken> raft_pool_token_;
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
   shared_ptr<Messenger> messenger_;
 };
 
@@ -192,7 +192,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
       NewRemotePeer(kFollowerUuid, &remote_peer);
 
   // Append a bunch of messages to the queue
-  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 20);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), 1, 20);
 
   // signal the peer there are requests pending.
   remote_peer->SignalRequest();
@@ -223,7 +223,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   remote_peer2_proxy->DelayResponse();
 
   // Append one message to the queue.
-  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), 1, 1);
 
   OpId first = MakeOpId(0, 1);
 
@@ -247,7 +247,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   }
 
   // Now append another message to the queue
-  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 2, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), 2, 1);
 
   // We should not see it committed, even after 10ms,
   // since only the local peer replicates the message.
@@ -294,7 +294,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
   mock_proxy->set_update_response(peer_resp);
 
   // Add an op to the queue and start sending requests to the peer.
-  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), 1, 1);
   peer->SignalRequest(true);
 
   // We should be able to close the peer even though it has more data pending.
@@ -332,7 +332,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
   initial_resp.mutable_status()->set_last_committed_idx(1);
   mock_proxy->set_update_response(initial_resp);
 
-  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), 1, 1);
   peer->SignalRequest(true);
 
   // Now wait for the message to be replicated, this should succeed since
@@ -347,7 +347,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
 
   // Add a bunch of messages to the queue.
   for (int i = 2; i <= 100; i++) {
-    AppendReplicateMessagesToQueue(message_queue_.get(), clock_, i, 1);
+    AppendReplicateMessagesToQueue(message_queue_.get(), clock_.get(), i, 1);
     peer->SignalRequest(false);
     SleepFor(MonoDelta::FromMilliseconds(2));
   }

@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/mvcc.h"
+
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -28,9 +31,6 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/mvcc.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -38,6 +38,7 @@
 #include "kudu/util/test_util.h"
 
 using std::thread;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -48,8 +49,7 @@ using clock::HybridClock;
 class MvccTest : public KuduTest {
  public:
   MvccTest()
-      : clock_(
-          clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+      : clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
@@ -66,10 +66,10 @@ class MvccTest : public KuduTest {
   }
 
  protected:
-  scoped_refptr<clock::Clock> clock_;
+  unique_ptr<clock::Clock> clock_;
 
   mutable simple_spinlock lock_;
-  gscoped_ptr<MvccSnapshot> result_snapshot_;
+  unique_ptr<MvccSnapshot> result_snapshot_;
 };
 
 TEST_F(MvccTest, TestMvccBasic) {
@@ -182,7 +182,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
 }
 
 TEST_F(MvccTest, TestOutOfOrderTxns) {
-  scoped_refptr<Clock> hybrid_clock(new HybridClock());
+  unique_ptr<Clock> hybrid_clock(new HybridClock);
   ASSERT_OK(hybrid_clock->Init());
   MvccManager mgr;
 
