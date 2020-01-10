@@ -15,9 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Explanation of some Checks are separate since we can't inline comments below.
+# Explanation for why some checks are disabled (separated from the list of
+# checks as we can't inline comments).
 #
 # 'llvm-include-order'
+#
 # IWYU has specific rules for ordering '-inl.h' include files, i.e.
 # 'header.h' and its 'header-inl.h' counterpart. It seems in some cases
 # including 'header-inl.h' before 'header.h' might even lead to compilation
@@ -36,9 +38,20 @@
 #                https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 #
 # 'readability-magic-numbers'
+#
 # Although useful in production code, we use magic numbers liberally in
 # tests, and many would be net less clear as named constants.
-
+#
+# 'misc-non-private-member-variables-in-classes'
+#
+# There are two problems with this diagnostic in the Kudu codebase:
+# 1. structs containing nothing but public data members. Permitted by the Google
+#    Style Guide (GSG) and used liberally in Kudu. We could set
+#    IgnoreClassesWithAllMemberVariablesBeingPublic to ignore them.
+# 2. protected data members. Nominally prohibited, there's a necessary exception
+#    for test fixtures, and that is used extensively in Kudu. Unfortunately
+#    there's no way to customize that aspect of the diagnostic, so we must
+#    disable the entire thing to avoid a deluge of false positives.
 Checks: >-
   -*,
   bugprone-*,
@@ -51,6 +64,7 @@ Checks: >-
   hicpp-noexcept-move,
   -llvm-include-order,
   misc-*,
+  -misc-non-private-member-variables-in-classes,
   -modernize-*,
   modernize-make-shared,
   modernize-pass-by-value,
@@ -83,9 +97,3 @@ CheckOptions:
     value:           CamelCase
   - key:             readability-identifier-naming.GlobalConstantPrefix
     value:           'k'
-  # The Google Style Guide allows for structs to contain public data members.
-  # Unfortunately there doesn't seem to be a way to configure clang-tidy to
-  # permit this, so we allow classes/structs where all data members are public
-  # as a proxy.
-  - key:             misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
-    value:           '1'
