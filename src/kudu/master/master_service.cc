@@ -26,7 +26,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -680,7 +679,7 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     metastore_config->set_hms_uris(FLAGS_hive_metastore_uris);
     metastore_config->set_hms_sasl_enabled(FLAGS_hive_metastore_sasl_enabled);
     string uuid;
-    if (server_->catalog_manager()->HmsCatalog()->GetUuid(&uuid).ok()) {
+    if (server_->catalog_manager()->hms_catalog()->GetUuid(&uuid).ok()) {
       metastore_config->set_hms_uuid(std::move(uuid));
     }
   }

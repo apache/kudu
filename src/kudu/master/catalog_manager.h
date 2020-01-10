@@ -757,7 +757,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // must be initialized before calling this method.
   consensus::RaftPeerPB::Role Role() const;
 
-  hms::HmsCatalog* HmsCatalog() const {
+  hms::HmsCatalog* hms_catalog() const {
     return hms_catalog_.get();
   }
 

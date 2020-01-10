@@ -250,9 +250,8 @@ Status HmsNotificationLogListenerTask::Poll() {
       }
     }
 
-    RETURN_NOT_OK_PREPEND(catalog_manager_->HmsCatalog()->GetNotificationEvents(processed_event_id,
-                                                                                batch_size,
-                                                                                &events),
+    RETURN_NOT_OK_PREPEND(catalog_manager_->hms_catalog()->GetNotificationEvents(
+        processed_event_id, batch_size, &events),
                           "failed to retrieve notification log events");
 
     for (const auto& event : events) {
