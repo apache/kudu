@@ -38,30 +38,15 @@ import sys
 import ycm_core
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "build-support"))
-from compile_flags import get_flags
-
-# These are the compilation flags that will be used in case there's no
-# compilation database set (by default, one is not set).
-flags = get_flags()
-
-# Set this to the absolute path to the folder (NOT the file!) containing the
-# compile_commands.json file to use that instead of 'flags'. See here for
-# more details: http://clang.llvm.org/docs/JSONCompilationDatabase.html
-#
-# Most projects will NOT need to set this to anything; you can just change the
-# 'flags' list of compilation flags. Notice that YCM itself uses that approach.
-compilation_database_folder = ''
-
-if os.path.exists( compilation_database_folder ):
-  database = ycm_core.CompilationDatabase( compilation_database_folder )
-else:
-  database = None
 
 SOURCE_EXTENSIONS = [ '.cpp', '.cxx', '.cc', '.c', '.m', '.mm' ]
 
 def DirectoryOfThisScript():
   return os.path.dirname( os.path.abspath( __file__ ) )
 
+build_latest = os.path.join( DirectoryOfThisScript(), "build", "latest" )
+
+database = ycm_core.CompilationDatabase( build_latest )
 
 def MakeRelativePathsInFlagsAbsolute( flags, working_directory ):
   if not working_directory:
@@ -116,20 +101,15 @@ def GetCompilationInfoForFile( filename ):
 
 
 def FlagsForFile( filename, **kwargs ):
-  if database:
-    # Bear in mind that compilation_info.compiler_flags_ does NOT return a
-    # python list, but a "list-like" StringVec object
-    compilation_info = GetCompilationInfoForFile( filename )
-    if not compilation_info:
-      return None
+  # Bear in mind that compilation_info.compiler_flags_ does NOT return a
+  # python list, but a "list-like" StringVec object
+  compilation_info = GetCompilationInfoForFile( filename )
+  if not compilation_info:
+    return None
 
-    final_flags = MakeRelativePathsInFlagsAbsolute(
-      compilation_info.compiler_flags_,
-      compilation_info.compiler_working_dir_ )
-
-  else:
-    relative_to = DirectoryOfThisScript()
-    final_flags = MakeRelativePathsInFlagsAbsolute( flags, relative_to )
+  final_flags = MakeRelativePathsInFlagsAbsolute(
+    compilation_info.compiler_flags_,
+    compilation_info.compiler_working_dir_ )
 
   return {
     'flags': final_flags,

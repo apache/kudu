@@ -19,7 +19,6 @@
 
 import argparse
 import collections
-import compile_flags
 import json
 import logging
 import multiprocessing
@@ -34,6 +33,8 @@ import tempfile
 from kudu_util import init_logging
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+BUILD_PATH = os.path.join(ROOT, "build", "latest")
 
 CLANG_TIDY_DIFF = os.path.join(
     ROOT, "thirdparty/installed/uninstrumented/share/clang/clang-tidy-diff.py")
@@ -67,8 +68,8 @@ def run_tidy(sha="HEAD", is_rev_range=False):
         cmdline = [CLANG_TIDY_DIFF,
                    "-clang-tidy-binary", CLANG_TIDY,
                    "-p0",
-                   "--",
-                   "-DCLANG_TIDY"] + compile_flags.get_flags()
+                   "-path", BUILD_PATH,
+                   "-extra-arg=-DCLANG_TIDY"]
         return subprocess.check_output(
             cmdline,
             stdin=file(patch_file.name),
