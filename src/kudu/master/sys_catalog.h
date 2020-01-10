@@ -52,7 +52,6 @@ class TabletMetadata;
 
 namespace tserver {
 class WriteRequestPB;
-class WriteResponsePB;
 } // namespace tserver
 
 namespace master {
@@ -245,7 +244,7 @@ class SysCatalogTable {
   Schema BuildTableSchema();
 
   // Returns 'Status::OK()' if the WriteTransaction completed
-  Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
+  Status SyncWrite(const tserver::WriteRequestPB& req);
 
   void SysCatalogStateChanged(const std::string& tablet_id, const std::string& reason);
 

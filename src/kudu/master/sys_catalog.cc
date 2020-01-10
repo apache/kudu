@@ -451,29 +451,31 @@ Status SysCatalogTable::WaitUntilRunning() {
   return Status::OK();
 }
 
-Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *resp) {
+Status SysCatalogTable::SyncWrite(const WriteRequestPB& req) {
   MAYBE_RETURN_FAILURE(FLAGS_sys_catalog_fail_during_write,
                        Status::RuntimeError(kInjectedFailureStatusMsg));
 
   CountDownLatch latch(1);
+  WriteResponsePB resp;
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
-      new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
+      new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp));
   unique_ptr<tablet::WriteTransactionState> tx_state(
       new tablet::WriteTransactionState(tablet_replica_.get(),
-                                        req,
+                                        &req,
                                         nullptr, // No RequestIdPB
-                                        resp));
+                                        &resp));
   tx_state->set_completion_callback(std::move(txn_callback));
 
   RETURN_NOT_OK(tablet_replica_->SubmitWrite(std::move(tx_state)));
   latch.Wait();
 
-  if (resp->has_error()) {
-    return StatusFromPB(resp->error().status());
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
   }
-  if (resp->per_row_errors_size() > 0) {
-    for (const WriteResponsePB::PerRowErrorPB& error : resp->per_row_errors()) {
-      LOG(WARNING) << "row " << error.row_index() << ": " << StatusFromPB(error.error()).ToString();
+  if (resp.per_row_errors_size() > 0) {
+    for (const auto& error : resp.per_row_errors()) {
+      LOG(WARNING) << Substitute(
+          "row $0: $1", error.row_index(), StatusFromPB(error.error()).ToString());
     }
     return Status::Corruption("One or more rows failed to write");
   }
@@ -494,7 +496,6 @@ Status SysCatalogTable::Write(const Actions& actions) {
   TRACE_EVENT0("master", "SysCatalogTable::Write");
 
   WriteRequestPB req;
-  WriteResponsePB resp;
   req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
@@ -521,8 +522,7 @@ Status SysCatalogTable::Write(const Actions& actions) {
     // previous version of the data).
     return Status::OK();
   }
-  RETURN_NOT_OK(SyncWrite(&req, &resp));
-  return Status::OK();
+  return SyncWrite(req);
 }
 
 // ==================================================================
@@ -710,7 +710,6 @@ Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
 Status SysCatalogTable::AddCertAuthorityEntry(
     const SysCertAuthorityEntryPB& entry) {
   WriteRequestPB req;
-  WriteResponsePB resp;
   req.set_tablet_id(kSysCatalogTabletId);
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
@@ -724,13 +723,11 @@ Status SysCatalogTable::AddCertAuthorityEntry(
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 
-  return SyncWrite(&req, &resp);
+  return SyncWrite(req);
 }
 
 Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
   WriteRequestPB req;
-  WriteResponsePB resp;
-
   req.set_tablet_id(kSysCatalogTabletId);
   CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
 
@@ -752,7 +749,7 @@ Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 
-  return SyncWrite(&req, &resp);
+  return SyncWrite(req);
 }
 
 Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
@@ -768,8 +765,7 @@ Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
     enc.Add(RowOperationsPB::DELETE, row);
   }
 
-  WriteResponsePB resp;
-  return SyncWrite(&req, &resp);
+  return SyncWrite(req);
 }
 
 Status SysCatalogTable::WriteTServerState(const string& tserver_id,
@@ -789,8 +785,7 @@ Status SysCatalogTable::WriteTServerState(const string& tserver_id,
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 
-  WriteResponsePB resp;
-  return SyncWrite(&req, &resp);
+  return SyncWrite(req);
 }
 
 Status SysCatalogTable::RemoveTServerState(const string& tserver_id) {
@@ -803,8 +798,7 @@ Status SysCatalogTable::RemoveTServerState(const string& tserver_id) {
   RETURN_NOT_OK(row.SetStringNoCopy(kSysCatalogTableColId, tserver_id));
   enc.Add(RowOperationsPB::DELETE, row);
 
-  WriteResponsePB resp;
-  return SyncWrite(&req, &resp);
+  return SyncWrite(req);
 }
 
 // ==================================================================
