@@ -2435,10 +2435,9 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
       }
       case READ_YOUR_WRITES: // Fallthrough intended
       case READ_AT_SNAPSHOT: {
-        scoped_refptr<consensus::TimeManager> time_manager = replica->time_manager();
-        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, tablet.get(),
-                                 time_manager.get(), &iter, &snap_start_timestamp, snap_timestamp,
-                                 error_code);
+        s = HandleScanAtSnapshot(
+            scan_pb, rpc_context, projection, tablet.get(), replica->time_manager(),
+            &iter, &snap_start_timestamp, snap_timestamp, error_code);
         break;
       }
     }
@@ -2734,7 +2733,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const RpcContext* rpc_context,
                                                const Schema& projection,
                                                Tablet* tablet,
-                                               consensus::TimeManager* time_manager,
+                                               TimeManager* time_manager,
                                                unique_ptr<RowwiseIterator>* iter,
                                                boost::optional<Timestamp>* snap_start_timestamp,
                                                Timestamp* snap_timestamp,

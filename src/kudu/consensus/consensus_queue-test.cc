@@ -97,15 +97,15 @@ class ConsensusQueueTest : public KuduTest {
     ASSERT_OK(clock_->Init());
 
     ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
+    time_manager_.reset(new TimeManager(clock_.get(), Timestamp::kMin));
     CloseAndReopenQueue(MinimumOpId(), MinimumOpId());
   }
 
   void CloseAndReopenQueue(const OpId& replicated_opid, const OpId& committed_opid) {
-    scoped_refptr<TimeManager> time_manager(new TimeManager(clock_.get(), Timestamp::kMin));
     queue_.reset(new PeerMessageQueue(
         metric_entity_,
         log_.get(),
-        time_manager,
+        time_manager_.get(),
         FakeRaftPeerPB(kLeaderUuid),
         kTestTablet,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
@@ -229,6 +229,7 @@ class ConsensusQueueTest : public KuduTest {
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<log::Log> log_;
   unique_ptr<ThreadPool> raft_pool_;
+  unique_ptr<TimeManager> time_manager_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   unique_ptr<clock::Clock> clock_;

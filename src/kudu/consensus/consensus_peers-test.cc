@@ -94,12 +94,12 @@ class ConsensusPeersTest : public KuduTest {
     clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 
-    scoped_refptr<TimeManager> time_manager(new TimeManager(clock_.get(), Timestamp::kMin));
+    time_manager_.reset(new TimeManager(clock_.get(), Timestamp::kMin));
 
     message_queue_.reset(new PeerMessageQueue(
         metric_entity_,
         log_.get(),
-        time_manager,
+        time_manager_.get(),
         FakeRaftPeerPB(kLeaderUuid),
         kTabletId,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
@@ -166,6 +166,7 @@ class ConsensusPeersTest : public KuduTest {
   unique_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
   unique_ptr<ThreadPool> raft_pool_;
+  unique_ptr<TimeManager> time_manager_;
   unique_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
   LogOptions options_;

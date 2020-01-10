@@ -215,7 +215,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       unique_ptr<PeerProxyFactory> proxy_factory(
           new LocalTestPeerProxyFactory(peers_.get()));
-      scoped_refptr<TimeManager> time_manager(
+      unique_ptr<TimeManager> time_manager(
           new TimeManager(clock_.get(), Timestamp::kMin));
       unique_ptr<TestTransactionFactory> txn_factory(
           new TestTransactionFactory(logs_[i].get()));
@@ -226,7 +226,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           boot_info,
           std::move(proxy_factory),
           logs_[i],
-          time_manager,
+          std::move(time_manager),
           txn_factories_.back().get(),
           metric_entity_,
           Bind(&DoNothing)));

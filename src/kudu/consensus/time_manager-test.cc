@@ -27,7 +27,6 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -43,7 +42,7 @@ namespace consensus {
 
 class TimeManagerTest : public KuduTest {
  public:
-  TimeManagerTest() : clock_(new clock::HybridClock()) {}
+  TimeManagerTest() : clock_(new clock::HybridClock) {}
 
   void SetUp() override {
     CHECK_OK(clock_->Init());
@@ -74,7 +73,7 @@ class TimeManagerTest : public KuduTest {
   }
 
   unique_ptr<clock::HybridClock> clock_;
-  scoped_refptr<TimeManager> time_manager_;
+  unique_ptr<TimeManager> time_manager_;
   vector<unique_ptr<CountDownLatch>> latches_;
   vector<thread> threads_;
 };

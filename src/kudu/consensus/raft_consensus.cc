@@ -46,6 +46,7 @@
 #include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
@@ -225,7 +226,7 @@ Status RaftConsensus::Create(ConsensusOptions options,
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                             unique_ptr<PeerProxyFactory> peer_proxy_factory,
                             scoped_refptr<log::Log> log,
-                            scoped_refptr<TimeManager> time_manager,
+                            unique_ptr<TimeManager> time_manager,
                             ConsensusRoundHandler* round_handler,
                             const scoped_refptr<MetricEntity>& metric_entity,
                             Callback<void(const string& reason)> mark_dirty_clbk) {
@@ -272,7 +273,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   unique_ptr<PeerMessageQueue> queue(new PeerMessageQueue(
       metric_entity,
       log_,
-      time_manager_,
+      time_manager_.get(),
       local_peer_pb_,
       options_.tablet_id,
       raft_pool->NewToken(ThreadPool::ExecutionMode::SERIAL),
@@ -288,7 +289,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                                                        raft_pool_token_.get(),
                                                        log_));
 
-  unique_ptr<PendingRounds> pending(new PendingRounds(LogPrefixThreadSafe(), time_manager_));
+  unique_ptr<PendingRounds> pending(new PendingRounds(
+      LogPrefixThreadSafe(), time_manager_.get()));
 
   // Capture a weak_ptr reference into the functor so it can safely handle
   // outliving the consensus instance.

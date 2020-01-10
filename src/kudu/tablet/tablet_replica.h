@@ -29,7 +29,6 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -58,6 +57,7 @@ class Callback;
 
 namespace consensus {
 class ConsensusMetadataManager;
+class TimeManager;
 class TransactionStatusPB;
 }
 
@@ -176,7 +176,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     return tablet_.get();
   }
 
-  scoped_refptr<consensus::TimeManager> time_manager() const {
+  consensus::TimeManager* time_manager() const {
     return consensus_->time_manager();
   }
 

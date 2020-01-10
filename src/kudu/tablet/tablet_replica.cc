@@ -37,6 +37,7 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
@@ -183,7 +184,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
 
     scoped_refptr<MetricEntity> metric_entity;
     unique_ptr<PeerProxyFactory> peer_proxy_factory;
-    scoped_refptr<TimeManager> time_manager;
+    unique_ptr<TimeManager> time_manager;
     {
       std::lock_guard<simple_spinlock> l(lock_);
       CHECK_EQ(BOOTSTRAPPING, state_);

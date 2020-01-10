@@ -152,7 +152,7 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 
 PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    scoped_refptr<log::Log> log,
-                                   scoped_refptr<TimeManager> time_manager,
+                                   TimeManager* time_manager,
                                    RaftPeerPB local_peer_pb,
                                    string tablet_id,
                                    unique_ptr<ThreadPoolToken> raft_pool_observers_token,
@@ -164,7 +164,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
       successor_watch_in_progress_(false),
       log_cache_(metric_entity, std::move(log), local_peer_pb_.permanent_uuid(), tablet_id_),
       metrics_(metric_entity),
-      time_manager_(std::move(time_manager)) {
+      time_manager_(time_manager) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
   DCHECK(local_peer_pb_.has_last_known_addr());
   DCHECK(last_locally_replicated.IsInitialized());

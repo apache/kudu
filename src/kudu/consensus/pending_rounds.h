@@ -22,6 +22,7 @@
 #include <string>
 
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 
@@ -29,7 +30,6 @@ namespace kudu {
 class Status;
 
 namespace consensus {
-class ConsensusRound;
 class TimeManager;
 
 // Tracks the pending consensus rounds being managed by a Raft replica (either leader
@@ -41,7 +41,7 @@ class TimeManager;
 // We should consolidate to "round".
 class PendingRounds {
  public:
-  PendingRounds(std::string log_prefix, scoped_refptr<TimeManager> time_manager);
+  PendingRounds(std::string log_prefix, TimeManager* time_manager);
   ~PendingRounds();
 
   // Set the committed op during startup. This should be done after
@@ -109,7 +109,7 @@ class PendingRounds {
   // The OpId of the round that was last committed. Initialized to MinimumOpId().
   OpId last_committed_op_id_;
 
-  scoped_refptr<TimeManager> time_manager_;
+  TimeManager* time_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(PendingRounds);
 };

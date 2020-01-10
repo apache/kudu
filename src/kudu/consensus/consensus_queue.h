@@ -182,7 +182,7 @@ class PeerMessageQueue {
 
   PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    scoped_refptr<log::Log> log,
-                   scoped_refptr<TimeManager> time_manager,
+                   TimeManager* time_manager,
                    RaftPeerPB local_peer_pb,
                    std::string tablet_id,
                    std::unique_ptr<ThreadPoolToken> raft_pool_observers_token,
@@ -569,7 +569,7 @@ class PeerMessageQueue {
 
   Metrics metrics_;
 
-  scoped_refptr<TimeManager> time_manager_;
+  TimeManager* time_manager_;
 };
 
 // The interface between RaftConsensus and the PeerMessageQueue.

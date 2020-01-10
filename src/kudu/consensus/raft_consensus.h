@@ -37,7 +37,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -76,6 +75,7 @@ class ConsensusRoundHandler;
 class PeerManager;
 class PeerProxyFactory;
 class PendingRounds;
+class TimeManager;
 struct ConsensusBootstrapInfo;
 struct ElectionResult;
 
@@ -161,7 +161,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status Start(const ConsensusBootstrapInfo& info,
                std::unique_ptr<PeerProxyFactory> peer_proxy_factory,
                scoped_refptr<log::Log> log,
-               scoped_refptr<TimeManager> time_manager,
+               std::unique_ptr<TimeManager> time_manager,
                ConsensusRoundHandler* round_handler,
                const scoped_refptr<MetricEntity>& metric_entity,
                Callback<void(const std::string& reason)> mark_dirty_clbk);
@@ -332,7 +332,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Thread-safe.
   const std::string& tablet_id() const;
 
-  scoped_refptr<TimeManager> time_manager() const { return time_manager_; }
+  TimeManager* time_manager() const { return time_manager_.get(); }
 
   // Returns a copy of the state of the consensus system.
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
@@ -864,7 +864,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   std::unique_ptr<ThreadPoolToken> raft_pool_token_;
 
   scoped_refptr<log::Log> log_;
-  scoped_refptr<TimeManager> time_manager_;
+  std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<PeerProxyFactory> peer_proxy_factory_;
 
   // When we receive a message from a remote peer telling us to start a
