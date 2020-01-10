@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_RPC_TEST_BASE_H
-#define KUDU_RPC_RPC_TEST_BASE_H
+#pragma once
 
 #include <algorithm>
 #include <atomic>
@@ -631,7 +630,7 @@ class RpcTestBase : public KuduTest {
     mem_tracker_ = MemTracker::CreateTracker(-1, "result_tracker");
     result_tracker_.reset(new ResultTracker(mem_tracker_));
 
-    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_, result_tracker_));
+    std::unique_ptr<ServiceIf> service(new ServiceClass(metric_entity_, result_tracker_));
     service_name_ = service->service_name();
     scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
     service_pool_ = new ServicePool(std::move(service), metric_entity, service_queue_length_);
@@ -658,4 +657,3 @@ class RpcTestBase : public KuduTest {
 
 } // namespace rpc
 } // namespace kudu
-#endif

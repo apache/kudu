@@ -15,11 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/server/rpc_server.h"
+
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -27,7 +28,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -37,7 +37,6 @@
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
-#include "kudu/server/rpc_server.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -48,6 +47,7 @@ using kudu::rpc::Messenger;
 using kudu::rpc::ServiceIf;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -153,7 +153,7 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
   return Status::OK();
 }
 
-Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
+Status RpcServer::RegisterService(unique_ptr<rpc::ServiceIf> service) {
   CHECK(server_state_ == INITIALIZED ||
         server_state_ == BOUND) << "bad state: " << server_state_;
   string service_name = service->service_name();

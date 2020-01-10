@@ -26,7 +26,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/net/sockaddr.h"
@@ -73,7 +72,7 @@ class RpcServer {
   Status Init(const std::shared_ptr<rpc::Messenger>& messenger) WARN_UNUSED_RESULT;
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
-  Status RegisterService(gscoped_ptr<rpc::ServiceIf> service) WARN_UNUSED_RESULT;
+  Status RegisterService(std::unique_ptr<rpc::ServiceIf> service) WARN_UNUSED_RESULT;
   Status Bind() WARN_UNUSED_RESULT;
   Status Start() WARN_UNUSED_RESULT;
   void Shutdown();

@@ -22,12 +22,10 @@
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -58,6 +56,7 @@
 using std::string;
 using std::shared_ptr;
 using std::make_shared;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace boost {
@@ -368,7 +367,7 @@ void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   reactor->QueueOutboundCall(call);
 }
 
-void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
+void Messenger::QueueInboundCall(unique_ptr<InboundCall> call) {
   // This lock acquisition spans the entirety of the function to avoid having to
   // take a ref on the RpcService. In doing so, we guarantee that the service
   // isn't shut down here, which would be problematic because shutdown is a

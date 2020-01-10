@@ -15,26 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/rpc-test-base.h"
-
 #include <cstddef>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
+#include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
@@ -54,6 +51,7 @@ METRIC_DECLARE_counter(rpcs_queue_overflow);
 
 using std::string;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -178,7 +176,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
 // This bogus service pool leaves the service queue full.
 class BogusServicePool : public ServicePool {
  public:
-  BogusServicePool(gscoped_ptr<ServiceIf> service,
+  BogusServicePool(unique_ptr<ServiceIf> service,
                    const scoped_refptr<MetricEntity>& metric_entity,
                    size_t service_queue_length)
     : ServicePool(std::move(service), metric_entity, service_queue_length) {
@@ -216,7 +214,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   ASSERT_OK(pool->Start(kMaxConcurrency));
   Sockaddr server_addr = pool->bind_address();
 
-  gscoped_ptr<ServiceIf> service(new GenericCalculatorService());
+  unique_ptr<ServiceIf> service(new GenericCalculatorService());
   service_name_ = service->service_name();
   service_pool_ = new BogusServicePool(std::move(service),
                                       server_messenger_->metric_entity(),

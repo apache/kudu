@@ -27,7 +27,6 @@
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
@@ -257,7 +256,7 @@ class Messenger {
   void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // Enqueue a call for processing on the server.
-  void QueueInboundCall(gscoped_ptr<InboundCall> call);
+  void QueueInboundCall(std::unique_ptr<InboundCall> call);
 
   // Queue a cancellation for the given outbound call.
   void QueueCancellation(const std::shared_ptr<OutboundCall> &call);

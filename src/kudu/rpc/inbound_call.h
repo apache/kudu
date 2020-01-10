@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_INBOUND_CALL_H
-#define KUDU_RPC_INBOUND_CALL_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -27,7 +26,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_method.h"
@@ -89,7 +87,7 @@ class InboundCall {
   // 'serialized_request_' member variables. The actual call parameter is
   // not deserialized, as this may be CPU-expensive, and this is called
   // from the reactor thread.
-  Status ParseFrom(gscoped_ptr<InboundTransfer> transfer);
+  Status ParseFrom(std::unique_ptr<InboundTransfer> transfer);
 
   // Return the serialized request parameter protobuf.
   const Slice& serialized_request() const {
@@ -251,7 +249,7 @@ class InboundCall {
   // The transfer that produced the call.
   // This is kept around because it retains the memory referred to
   // by 'serialized_request_' above.
-  gscoped_ptr<InboundTransfer> transfer_;
+  std::unique_ptr<InboundTransfer> transfer_;
 
   // The buffers for serialized response. Set by SerializeResponseBuffer().
   faststring response_hdr_buf_;
@@ -293,5 +291,3 @@ class InboundCall {
 
 } // namespace rpc
 } // namespace kudu
-
-#endif

@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_RPC_BLOCKING_OPS_H
-#define KUDU_RPC_BLOCKING_OPS_H
+#pragma once
 
 namespace google {
 namespace protobuf {
@@ -54,5 +52,3 @@ Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
 
 } // namespace rpc
 } // namespace kudu
-
-#endif  // KUDU_RPC_BLOCKING_OPS_H

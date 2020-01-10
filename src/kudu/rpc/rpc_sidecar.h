@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_RPC_SIDECAR_H
-#define KUDU_RPC_RPC_SIDECAR_H
+#pragma once
 
 #include <memory>
 
@@ -68,6 +67,3 @@ class RpcSidecar {
 
 } // namespace rpc
 } // namespace kudu
-
-
-#endif /* KUDU_RPC_RPC_SIDECAR_H */

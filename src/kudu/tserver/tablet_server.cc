@@ -17,8 +17,8 @@
 
 #include "kudu/tserver/tablet_server.h"
 
+#include <memory>
 #include <ostream>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -43,10 +43,11 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
-using std::string;
-using std::vector;
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
+using std::string;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tserver {
@@ -126,10 +127,10 @@ Status TabletServer::Start() {
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION,
       Bind(&TSTabletManager::FailTabletAndScheduleShutdown, Unretained(tablet_manager_.get())));
 
-  gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
-  gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
-  gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
+  unique_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
+  unique_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
+  unique_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
+  unique_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
       this, tablet_manager_.get()));
 
   RETURN_NOT_OK(RegisterService(std::move(ts_service)));

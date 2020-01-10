@@ -21,7 +21,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -37,7 +36,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -96,17 +94,17 @@ DEFINE_string(location_mapping_cmd, "",
               "using location awareness features this flag should not be set.");
 
 
-using std::min;
-using std::shared_ptr;
-using std::string;
-using std::vector;
-
 using kudu::consensus::RaftPeerPB;
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 using kudu::security::TokenSigner;
 using kudu::tserver::ConsensusServiceImpl;
 using kudu::tserver::TabletCopyServiceImpl;
+using std::min;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -178,10 +176,10 @@ Status Master::StartAsync() {
 
   RETURN_NOT_OK(maintenance_manager_->Start());
 
-  gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(
+  unique_ptr<ServiceIf> impl(new MasterServiceImpl(this));
+  unique_ptr<ServiceIf> consensus_service(
       new ConsensusServiceImpl(this, catalog_manager_.get()));
-  gscoped_ptr<ServiceIf> tablet_copy_service(
+  unique_ptr<ServiceIf> tablet_copy_service(
       new TabletCopyServiceImpl(this, catalog_manager_.get()));
 
   RETURN_NOT_OK(RegisterService(std::move(impl)));

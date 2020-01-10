@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
@@ -143,7 +142,7 @@ class ServerBase {
 
   // Registers a new RPC service. Once Start() is called, the server will
   // process and dispatch incoming RPCs belonging to this service.
-  Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
+  Status RegisterService(std::unique_ptr<rpc::ServiceIf> rpc_impl);
 
   // Unregisters all RPC services. After this function returns, any subsequent
   // incoming RPCs will be rejected.
@@ -174,11 +173,11 @@ class ServerBase {
 
   std::unique_ptr<MinidumpExceptionHandler> minidump_handler_;
   std::shared_ptr<MemTracker> mem_tracker_;
-  gscoped_ptr<MetricRegistry> metric_registry_;
+  std::unique_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<RpcServer> rpc_server_;
-  gscoped_ptr<Webserver> web_server_;
+  std::unique_ptr<FsManager> fs_manager_;
+  std::unique_ptr<RpcServer> rpc_server_;
+  std::unique_ptr<Webserver> web_server_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
@@ -187,7 +186,7 @@ class ServerBase {
   std::unique_ptr<clock::Clock> clock_;
 
   // The instance identifier of this server.
-  gscoped_ptr<NodeInstancePB> instance_pb_;
+  std::unique_ptr<NodeInstancePB> instance_pb_;
 
   // The ACL of users who are allowed to act as superusers.
   security::SimpleAcl superuser_acl_;
@@ -232,7 +231,7 @@ class ServerBase {
 #endif
   CountDownLatch stop_background_threads_latch_;
 
-  gscoped_ptr<ScopedGLogMetrics> glog_metrics_;
+  std::unique_ptr<ScopedGLogMetrics> glog_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
 };

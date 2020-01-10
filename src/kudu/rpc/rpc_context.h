@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_RPC_CONTEXT_H
-#define KUDU_RPC_RPC_CONTEXT_H
+#pragma once
 
 #include <memory>
 #include <stddef.h>
@@ -23,7 +22,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/monotime.h"
@@ -244,11 +242,10 @@ class RpcContext {
  private:
   friend class ResultTracker;
   InboundCall* const call_;
-  const gscoped_ptr<const google::protobuf::Message> request_pb_;
-  const gscoped_ptr<google::protobuf::Message> response_pb_;
+  const std::unique_ptr<const google::protobuf::Message> request_pb_;
+  const std::unique_ptr<google::protobuf::Message> response_pb_;
   scoped_refptr<ResultTracker> result_tracker_;
 };
 
 } // namespace rpc
 } // namespace kudu
-#endif

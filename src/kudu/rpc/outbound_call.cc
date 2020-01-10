@@ -15,11 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/rpc/outbound_call.h"
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -34,7 +35,6 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
@@ -289,7 +289,7 @@ void OutboundCall::CallCallback() {
   }
 }
 
-void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
+void OutboundCall::SetResponse(unique_ptr<CallResponse> resp) {
   call_response_ = std::move(resp);
   Slice r(call_response_->serialized_response());
 
@@ -508,7 +508,7 @@ Status CallResponse::GetSidecar(int idx, Slice* sidecar) const {
   return Status::OK();
 }
 
-Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
+Status CallResponse::ParseFrom(unique_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_,
                                             &serialized_response_));

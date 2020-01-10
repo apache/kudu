@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_RPC_RPC_CONSTANTS_H
-#define KUDU_RPC_RPC_CONSTANTS_H
+#pragma once
 
 #include <cstdint>
 #include <set>
@@ -56,5 +54,3 @@ extern std::set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags;
 
 } // namespace rpc
 } // namespace kudu
-
-#endif // KUDU_RPC_RPC_CONSTANTS_H

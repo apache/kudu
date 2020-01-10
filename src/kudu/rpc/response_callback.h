@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_RPC_RESPONSE_CALLBACK_H
-#define KUDU_RPC_RESPONSE_CALLBACK_H
+#pragma once
 
 #include <boost/function.hpp>
 
@@ -25,7 +23,5 @@ namespace rpc {
 
 typedef boost::function<void()> ResponseCallback;
 
-}
-}
-
-#endif
+} // namespace rpc
+} // namespace kudu

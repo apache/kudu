@@ -32,15 +32,12 @@
 #include <boost/core/ref.hpp>
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
@@ -451,17 +448,16 @@ struct AsyncSleep {
 
 TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   CalculatorServiceProxy p(client_messenger_, server_addr_, server_addr_.host());
-  vector<AsyncSleep*> sleeps;
-  ElementDeleter d(&sleeps);
+  vector<unique_ptr<AsyncSleep>> sleeps;
 
   // Send enough sleep calls to occupy the worker threads.
   for (int i = 0; i < n_worker_threads_; i++) {
-    gscoped_ptr<AsyncSleep> sleep(new AsyncSleep);
+    unique_ptr<AsyncSleep> sleep(new AsyncSleep);
     sleep->rpc.set_timeout(MonoDelta::FromSeconds(1));
     sleep->req.set_sleep_micros(1000*1000); // 1sec
     p.SleepAsync(sleep->req, &sleep->resp, &sleep->rpc,
                  boost::bind(&CountDownLatch::CountDown, &sleep->latch));
-    sleeps.push_back(sleep.release());
+    sleeps.push_back(std::move(sleep));
   }
 
   // We asynchronously sent the RPCs above, but the RPCs might still
@@ -493,7 +489,7 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
     ASSERT_STR_CONTAINS(s.ToString(), "SENT");
   });
 
-  for (AsyncSleep* s : sleeps) {
+  for (const auto& s : sleeps) {
     s->latch.Wait();
   }
 
