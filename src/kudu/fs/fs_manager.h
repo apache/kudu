@@ -72,6 +72,7 @@ namespace tserver {
 class MiniTabletServerTest_TestFsLayoutEndToEnd_Test;
 } // namespace tserver
 
+// Options that control the behavior of FsManager.
 struct FsManagerOpts {
   // Creates a new FsManagerOpts with default values.
   FsManagerOpts();
@@ -138,9 +139,6 @@ class FsManager {
  public:
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
-
-  // Only for unit tests.
-  FsManager(Env* env, const std::string& root_path);
 
   FsManager(Env* env, FsManagerOpts opts);
   ~FsManager();

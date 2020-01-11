@@ -15,18 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/consensus_meta.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
@@ -52,7 +55,7 @@ const int64_t kInitialTerm = 3;
 class ConsensusMetadataTest : public KuduTest {
  public:
   ConsensusMetadataTest()
-    : fs_manager_(env_, GetTestPath("fs_root")) {
+      : fs_manager_(env_, FsManagerOpts(GetTestPath("fs_root"))) {
   }
 
   virtual void SetUp() OVERRIDE {

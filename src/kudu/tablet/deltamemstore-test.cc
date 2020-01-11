@@ -206,7 +206,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
   // Flush the delta file so that the stats get updated.
 
-  FsManager fs(env_, GetTestPath("fs_root"));
+  FsManager fs(env_, FsManagerOpts(GetTestPath("fs_root")));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
   unique_ptr<WritableBlock> block;

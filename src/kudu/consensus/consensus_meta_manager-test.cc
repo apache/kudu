@@ -15,22 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/consensus_meta_manager.h"
+
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using google::protobuf::util::MessageDifferencer;
 
@@ -44,7 +46,7 @@ static const int64_t kInitialTerm = 1;
 class ConsensusMetadataManagerTest : public KuduTest {
  public:
   ConsensusMetadataManagerTest()
-      : fs_manager_(env_, GetTestPath("fs_root")),
+      : fs_manager_(env_, FsManagerOpts(GetTestPath("fs_root"))),
         cmeta_manager_(new ConsensusMetadataManager(&fs_manager_)) {
   }
 

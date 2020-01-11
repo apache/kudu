@@ -153,7 +153,7 @@ class LogTestBase : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
     current_index_ = kStartIndex;
-    fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
+    fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     metric_registry_.reset(new MetricRegistry());
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry_.get(), "log-test-base");
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());

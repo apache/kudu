@@ -84,7 +84,7 @@ class TabletHarness {
     std::pair<PartitionSchema, Partition> partition(CreateDefaultPartition(schema_));
 
     // Build the Tablet
-    fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
+    fs_manager_.reset(new FsManager(options_.env, FsManagerOpts(options_.root_dir)));
     if (first_time) {
       RETURN_NOT_OK(fs_manager_->CreateInitialFileSystemLayout());
     }

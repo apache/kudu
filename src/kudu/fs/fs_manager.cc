@@ -151,19 +151,13 @@ FsManagerOpts::FsManagerOpts(const string& root)
     read_only(false),
     update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {}
 
-FsManager::FsManager(Env* env, const string& root_path)
-  : env_(DCHECK_NOTNULL(env)),
-    opts_(FsManagerOpts(root_path)),
-    error_manager_(new FsErrorManager()),
-    initted_(false) {}
-
 FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
     opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
     initted_(false) {
-DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
-       !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
+  DCHECK(opts_.update_instances == UpdateInstanceBehavior::DONT_UPDATE ||
+         !opts_.read_only) << "FsManager can only be for updated if not in read-only mode";
 }
 
 FsManager::~FsManager() {}

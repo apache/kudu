@@ -1244,7 +1244,7 @@ TEST_F(ToolTest, TestFsCheck) {
   // the other half are deemed missing.
   vector<BlockId> missing_ids;
   {
-    FsManager fs(env_, kTestDir);
+    FsManager fs(env_, FsManagerOpts(kTestDir));
     FsReport report;
     ASSERT_OK(fs.Open(&report));
     std::shared_ptr<BlockDeletionTransaction> deletion_transaction =
@@ -1266,7 +1266,7 @@ TEST_F(ToolTest, TestFsCheck) {
   // Here we check twice to show that if --repair isn't provided, there should
   // be no effect.
   {
-    FsManager fs(env_, kTestDir);
+    FsManager fs(env_, FsManagerOpts(kTestDir));
     FsReport report;
     ASSERT_OK(fs.Open(&report));
     ASSERT_OK(env_->DeleteFile(fs.GetTabletMetadataPath(kTabletId)));
@@ -1304,7 +1304,7 @@ TEST_F(ToolTest, TestFsCheckLiveServer) {
 TEST_F(ToolTest, TestFsFormat) {
   const string kTestDir = GetTestPath("test");
   NO_FATALS(RunActionStdoutNone(Substitute("fs format --fs_wal_dir=$0", kTestDir)));
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.Open());
 
   ObjectIdGenerator generator;
@@ -1319,7 +1319,7 @@ TEST_F(ToolTest, TestFsFormatWithUuid) {
   string original_uuid = generator.Next();
   NO_FATALS(RunActionStdoutNone(Substitute(
       "fs format --fs_wal_dir=$0 --uuid=$1", kTestDir, original_uuid)));
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.Open());
 
   string canonicalized_uuid;
@@ -1332,7 +1332,7 @@ TEST_F(ToolTest, TestFsDumpUuid) {
   const string kTestDir = GetTestPath("test");
   string uuid;
   {
-    FsManager fs(env_, kTestDir);
+    FsManager fs(env_, FsManagerOpts(kTestDir));
     ASSERT_OK(fs.CreateInitialFileSystemLayout());
     ASSERT_OK(fs.Open());
     uuid = fs.uuid();
@@ -1350,7 +1350,7 @@ TEST_F(ToolTest, TestPbcTools) {
   string instance_path;
   {
     ObjectIdGenerator generator;
-    FsManager fs(env_, kTestDir);
+    FsManager fs(env_, FsManagerOpts(kTestDir));
     ASSERT_OK(fs.CreateInitialFileSystemLayout(generator.Next()));
     ASSERT_OK(fs.Open());
     uuid = fs.uuid();
@@ -1501,7 +1501,7 @@ TEST_F(ToolTest, TestPbcTools) {
 TEST_F(ToolTest, TestFsDumpCFile) {
   const int kNumEntries = 8192;
   const string kTestDir = GetTestPath("test");
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -1553,7 +1553,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
 
 TEST_F(ToolTest, TestFsDumpBlock) {
   const string kTestDir = GetTestPath("test");
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -1578,7 +1578,7 @@ TEST_F(ToolTest, TestWalDump) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -1740,7 +1740,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
@@ -1790,7 +1790,7 @@ TEST_F(ToolTest, TestFsDumpTree) {
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
-  FsManager fs(env_, kTestDir);
+  FsManager fs(env_, FsManagerOpts(kTestDir));
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 

@@ -65,7 +65,7 @@ class ConsensusMetadataManagerStressTest : public KuduTest {
  public:
   ConsensusMetadataManagerStressTest()
       : rng_(SeedRandom()),
-        fs_manager_(env_, GetTestPath("fs_root")),
+        fs_manager_(env_, FsManagerOpts(GetTestPath("fs_root"))),
         cmeta_manager_(new ConsensusMetadataManager(&fs_manager_)) {
   }
 

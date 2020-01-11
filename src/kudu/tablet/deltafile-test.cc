@@ -27,7 +27,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -90,7 +89,7 @@ class TestDeltaFile : public KuduTest {
 
  public:
   void SetUp() OVERRIDE {
-    fs_manager_.reset(new FsManager(env_, GetTestPath("fs")));
+    fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs"))));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
   }
