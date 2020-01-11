@@ -151,9 +151,15 @@ include(CompilerInfo)
 
 
 # compiler flags that are common across debug/release builds
-#  -msse4.2: Enable sse4.2 compiler intrinsics.
-execute_process(COMMAND uname -p OUTPUT_VARIABLE ARCH_NAME)
-if (NOT "${ARCH_NAME}" MATCHES "aarch64")
+execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH_NAME)
+if("${ARCH_NAME}" MATCHES "aarch64")
+  # Certain platforms such as ARM do not use signed chars by default
+  # which causes issues with certain bounds checks.
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fsigned-char")
+  # Turn off fp-contract on aarch64 to avoid multiply-add operation result difference.
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -ffp-contract=off")
+else()
+  # -msse4.2: Enable sse4.2 compiler intrinsics.
   set(CXX_COMMON_FLAGS "-msse4.2")
 endif()
 #  -Wall: Enable all warnings.
@@ -409,11 +415,19 @@ if (${KUDU_USE_TSAN})
   # require all code to be position independent, and the easiest way to
   # guarantee that is via dynamic linking (not all 3rd party archives are
   # compiled with -fPIC e.g. boost).
-  if("${KUDU_LINK}" STREQUAL "a")
-    message("Using dynamic linking for TSAN")
-    set(KUDU_LINK "d")
-  elseif("${KUDU_LINK}" STREQUAL "s")
-    message(SEND_ERROR "Cannot use TSAN with static linking")
+  if(NOT "${ARCH_NAME}" MATCHES "aarch64")
+    if("${KUDU_LINK}" STREQUAL "a")
+      message("Using dynamic linking for TSAN")
+      set(KUDU_LINK "d")
+    elseif("${KUDU_LINK}" STREQUAL "s")
+      message(SEND_ERROR "Cannot use TSAN with static linking")
+    endif()
+  else()
+    # workaround for github.com/google/sanitizers/issues/1208
+    # TSAN with dynamic linking cause all of test cases failed on aarch64,
+    # we don't apply ENABLE_DIST_TEST on aarch64, so apply static linking direcly
+    message("Using static linking for TSAN on aarch64")
+    set(KUDU_LINK "s")
   endif()
 endif()
 

@@ -42,6 +42,9 @@
 #define FUTEX_WAKE 1
 #define FUTEX_PRIVATE_FLAG 128
 
+// Note: Instead of making direct system calls that are inlined, we rely
+//       on the syscall() function in glibc to do the right thing.
+
 static bool have_futex;
 static int futex_private_flag = FUTEX_PRIVATE_FLAG;
 

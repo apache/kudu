@@ -31,6 +31,10 @@
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/status.h"
 
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_PRIVATE_FLAG 128
+
 namespace kudu {
 
 template <typename T> class ArrayView;

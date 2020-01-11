@@ -18,8 +18,10 @@
 #ifndef KUDU_COMMON_KEYENCODER_H
 #define KUDU_COMMON_KEYENCODER_H
 
+#ifndef __aarch64__
 #include <emmintrin.h>
 #include <smmintrin.h>
+#endif
 
 #include <climits>
 #include <cstdint>
@@ -244,6 +246,9 @@ struct KeyEncoderTraits<BINARY, Buffer> {
   // REQUIRES: len == 16 or 8
   template<int LEN>
   static bool SSEEncodeChunk(const uint8_t** srcp, uint8_t** dstp) {
+    #ifdef __aarch64__
+    return false;
+    #else
     COMPILE_ASSERT(LEN == 16 || LEN == 8, invalid_length);
     __m128i data;
     if (LEN == 16) {
@@ -280,6 +285,7 @@ struct KeyEncoderTraits<BINARY, Buffer> {
     *dstp += LEN;
     *srcp += LEN;
     return true;
+    #endif //__aarch64__
   }
 
   // Non-SSE loop which encodes 'len' bytes from 'srcp' into 'dst'.

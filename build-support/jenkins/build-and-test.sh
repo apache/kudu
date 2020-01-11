@@ -194,6 +194,7 @@ if [ -n "$BUILD_ID" ]; then
   trap cleanup EXIT
 fi
 
+ARTIFACT_ARCH=$(uname -m)
 # Configure the build
 #
 # ASAN/TSAN can't build the Python bindings because the exported Kudu client
@@ -202,6 +203,12 @@ if [ "$BUILD_TYPE" = "ASAN" ]; then
   USE_CLANG=1
   CMAKE_BUILD=fastdebug
   EXTRA_BUILD_FLAGS="-DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1"
+  # workaround for github.com/google/sanitizers/issues/1208
+  # ASAN with dynamic linking cause all tests fail on aarch64,
+  # we don't apply ENABLE_DIST_TEST on aarch64, so use static linking.
+  if [ "$ARTIFACT_ARCH" = "aarch64" ]; then
+    EXTRA_BUILD_FLAGS="$EXTRA_BUILD_FLAGS -DKUDU_LINK=static"
+  fi
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then

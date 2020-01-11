@@ -201,12 +201,17 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
   size_t rem = num_elems_;
   while (rem >= 4) {
     if (PREDICT_TRUE(p + 16 < limit)) {
+      #ifndef __aarch64__
       p = coding::DecodeGroupVarInt32_SSE(
           p, &dst_ptr[0], &dst_ptr[1], &dst_ptr[2], &dst_ptr[3]);
-
+      #else
+      p = coding::DecodeGroupVarInt32_SlowButSafe(
+          p, &dst_ptr[0], &dst_ptr[1], &dst_ptr[2], &dst_ptr[3]);
+      #endif //__aarch64__
       // The above function should add at most 17 (4 32-bit ints plus a selector byte) to
       // 'p'. Thus, since we checked that (p + 16 < limit) above, we are guaranteed that
       // (p <= limit) now.
+
       DCHECK_LE(p, limit);
     } else {
       p = coding::DecodeGroupVarInt32_SlowButSafe(

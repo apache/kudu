@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import com.google.gradle.osdetector.OsDetector;
 import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -49,6 +50,7 @@ import org.apache.kudu.test.junit.RetryRule;
 
 public class TestKuduBinaryJarExtractor {
 
+  private static final OsDetector DETECTOR = new OsDetector();
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduBinaryJarExtractor.class);
 
   @Rule
@@ -110,7 +112,7 @@ public class TestKuduBinaryJarExtractor {
     properties.setProperty("artifact.version", "1.9.0-SNAPSHOT");
     properties.setProperty("artifact.prefix", "apache-kudu-1.9.0-SNAPSHOT");
     properties.setProperty("artifact.os", os);
-    properties.setProperty("artifact.arch", "x86_64");
+    properties.setProperty("artifact.arch", DETECTOR.getArch());
     properties.store(out, "test");
   }
 

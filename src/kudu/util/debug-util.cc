@@ -43,7 +43,11 @@
 #include <glog/raw_logging.h>
 #ifdef __linux__
 #define UNW_LOCAL_ONLY
+#ifdef __aarch64__
+#include <libunwind-aarch64.h>
+#else
 #include <libunwind.h>
+#endif //__aarch64__
 #endif
 
 #include "kudu/gutil/basictypes.h"
