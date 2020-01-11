@@ -84,6 +84,8 @@
 #include "kudu/gutil/atomicops-internals-powerpc.h" // IWYU pragma: export
 #elif defined(OS_WINDOWS)
 #include "kudu/gutil/auxiliary/atomicops-internals-windows.h" // IWYU pragma: export
+#elif defined(__GNUC__) && defined(__aarch64__)
+#include "kudu/gutil/atomicops-internals-arm64.h" // IWYU pragma: export
 #else
 #error You need to implement atomic operations for this architecture
 #endif

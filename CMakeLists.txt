@@ -151,9 +151,15 @@ include(CompilerInfo)
 
 
 # compiler flags that are common across debug/release builds
-#  -msse4.2: Enable sse4.2 compiler intrinsics.
 execute_process(COMMAND uname -p OUTPUT_VARIABLE ARCH_NAME)
-if (NOT "${ARCH_NAME}" MATCHES "aarch64")
+if ("${ARCH_NAME}" MATCHES "aarch64")
+  # Certain platforms such as ARM do not use signed chars by default
+  # which causes issues with certain bounds checks.
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fsigned-char")
+  # Turn off fp-contract on aarch64 to avoid multiply-add operation result difference.
+  set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -ffp-contract=off")
+else()
+  # -msse4.2: Enable sse4.2 compiler intrinsics.
   set(CXX_COMMON_FLAGS "-msse4.2")
 endif()
 #  -Wall: Enable all warnings.

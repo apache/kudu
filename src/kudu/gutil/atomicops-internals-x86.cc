@@ -22,6 +22,7 @@
 
 // This module gets enough CPU information to optimize the
 // atomicops module on x86.
+#if defined(__i386__) || defined(__x86_64__)
 
 #include "kudu/gutil/atomicops-internals-x86.h"
 
@@ -124,3 +125,4 @@ static void AtomicOps_Internalx86CPUFeaturesInit() {
 #endif
 
 #endif  // GUTIL_ATOMICOPS_INTERNALS_X86_H_
+#endif // __i386__ || __x86_64__

@@ -37,13 +37,20 @@
 #include <iterator>
 #include <memory>
 #include <ostream>
+#include <new>
 #include <string>
 
 #include <glog/logging.h>
 #include <glog/raw_logging.h>
 #ifdef __linux__
 #define UNW_LOCAL_ONLY
+#ifndef __aarch64__
 #include <libunwind.h>
+#else
+#include <bits/types/__sigval_t.h>
+#include <bits/types/siginfo_t.h>
+#include <libunwind-aarch64.h>
+#endif //__aarch64__
 #endif
 
 #include "kudu/gutil/basictypes.h"
@@ -163,6 +170,8 @@ class CompletionFlag {
     sys_futex(reinterpret_cast<int32_t*>(&complete_),
               FUTEX_WAKE | FUTEX_PRIVATE_FLAG,
               INT_MAX, // wake all
+              NULL,
+              NULL,
               0 /* ignored */);
 #endif
   }
@@ -181,7 +190,9 @@ class CompletionFlag {
       sys_futex(reinterpret_cast<int32_t*>(&complete_),
                 FUTEX_WAIT | FUTEX_PRIVATE_FLAG,
                 0, // wait if value is still 0
-                reinterpret_cast<struct kernel_timespec *>(&ts));
+                reinterpret_cast<struct kernel_timespec *>(&ts),
+                NULL,
+                0);
 #else
       sched_yield();
 #endif

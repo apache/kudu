@@ -446,7 +446,8 @@ build_gperftools() {
     $GPERFTOOLS_SOURCE/configure \
     --enable-frame-pointers \
     --with-pic \
-    --prefix=$PREFIX
+    --prefix=$PREFIX \
+    --enable-emergency-malloc
   fixup_libtool
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd

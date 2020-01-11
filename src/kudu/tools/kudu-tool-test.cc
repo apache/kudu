@@ -5558,6 +5558,9 @@ TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
 #ifdef __APPLE__
               Substitute("Network error: Could not connect to the cluster: unable to resolve "
                          "address for bad: nodename nor servname provided, or not known")));
+#elif __aarch64__
+              Substitute("Network error: Could not connect to the cluster: unable to resolve "
+                         "address for bad: Temporary failure in name resolution")));
 #else
               Substitute("Network error: Could not connect to the cluster: unable to resolve "
                          "address for bad: Name or service not known")));

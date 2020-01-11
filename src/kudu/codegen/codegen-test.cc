@@ -381,7 +381,11 @@ TEST_F(CodegenTest, TestDumpMC) {
 
   const vector<string>& msgs = sink.logged_msgs();
   ASSERT_EQ(msgs.size(), 1);
+  #ifndef __aarch64__
   EXPECT_THAT(msgs[0], testing::ContainsRegex("retq"));
+  #else
+  EXPECT_THAT(msgs[0], testing::ContainsRegex("ret"));
+  #endif //__aarch64__
 }
 
 // Basic test for the CompilationManager code cache.

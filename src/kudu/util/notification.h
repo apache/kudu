@@ -25,6 +25,10 @@
 #include "kudu/util/countdown_latch.h"
 #endif
 
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_PRIVATE_FLAG 128
+
 namespace kudu {
 
 // This class defines a `Notification` abstraction, which allows threads
@@ -85,7 +89,7 @@ class Notification {
       if (s == NOTIFIED) return;
       DCHECK_EQ(s, NOT_NOTIFIED_HAS_WAITERS);
       sys_futex(&state_, FUTEX_WAIT | FUTEX_PRIVATE_FLAG, NOT_NOTIFIED_HAS_WAITERS,
-          /* timeout */ nullptr);
+          /* timeout */ nullptr, nullptr, 0);
     }
   }
 
@@ -94,7 +98,7 @@ class Notification {
     DCHECK_NE(s, NOTIFIED) << "may only notify once";
     if (s == NOT_NOTIFIED_HAS_WAITERS) {
       sys_futex(&state_, FUTEX_WAKE | FUTEX_PRIVATE_FLAG, INT_MAX,
-          nullptr /* ignored */);
+          nullptr /* ignored */, nullptr, 0);
     }
   }
 

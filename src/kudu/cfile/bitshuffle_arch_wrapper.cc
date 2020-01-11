@@ -57,7 +57,7 @@ decltype(&bshuf_decompress_lz4) g_bshuf_decompress_lz4;
 // the cost of a 'std::once' call.
 __attribute__((constructor))
 void SelectBitshuffleFunctions() {
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__aarch64__)
   if (CPU().has_avx2()) {
     g_bshuf_compress_lz4_bound = bshuf_compress_lz4_bound_avx2;
     g_bshuf_compress_lz4 = bshuf_compress_lz4_avx2;

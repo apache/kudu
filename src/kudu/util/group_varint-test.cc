@@ -56,6 +56,7 @@ static void DoTestRoundTripGVI32(
 
   const uint8_t *end;
 
+#ifndef __aarch64__
   if (use_sse) {
     end = DecodeGroupVarInt32_SSE(
       buf.data(), &ret[0], &ret[1], &ret[2], &ret[3]);
@@ -63,6 +64,9 @@ static void DoTestRoundTripGVI32(
     end = DecodeGroupVarInt32(
       buf.data(), &ret[0], &ret[1], &ret[2], &ret[3]);
   }
+#else
+  end = DecodeGroupVarInt32(buf.data(), &ret[0], &ret[1], &ret[2], &ret[3]);
+#endif //__aarch64__
 
   ASSERT_EQ(a, ret[0]);
   ASSERT_EQ(b, ret[1]);
