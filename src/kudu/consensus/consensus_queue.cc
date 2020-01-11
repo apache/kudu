@@ -46,6 +46,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
@@ -71,9 +72,10 @@ DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
-DECLARE_int32(consensus_rpc_timeout_ms);
-DECLARE_bool(safe_time_advancement_without_writes);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
+DECLARE_bool(safe_time_advancement_without_writes);
+DECLARE_int32(consensus_rpc_timeout_ms);
+DECLARE_int64(rpc_max_message_size);
 
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
@@ -83,6 +85,22 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
+
+static bool ValidateMaxMessageSizeFlags() {
+  static const int64_t kSizeDelta = 1024;
+  const int64_t raft_max_size = FLAGS_consensus_max_batch_size_bytes;
+  const int64_t rpc_max_size = FLAGS_rpc_max_message_size;
+  if (raft_max_size + kSizeDelta > rpc_max_size) {
+    LOG(ERROR) << strings::Substitute(
+        "--consensus_max_batch_size_bytes is set too high compared with "
+        "--rpc_max_message_size; either increase --rpc_max_message_size "
+        "at least up to $0 or decrease --consensus_max_batch_size_bytes "
+        "down to $1", raft_max_size + kSizeDelta, rpc_max_size - kSizeDelta);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(max_message_size_flags, ValidateMaxMessageSizeFlags);
 
 namespace kudu {
 namespace consensus {
