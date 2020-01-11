@@ -25,6 +25,10 @@
 #include "kudu/util/countdown_latch.h"
 #endif
 
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_PRIVATE_FLAG 128
+
 namespace kudu {
 
 // This class defines a `Notification` abstraction, which allows threads

@@ -384,8 +384,7 @@ linking the kudu binaries and unit tests. The full range of options for `KUDU_LI
 `static`, `dynamic`, and `auto`. The default is `auto` and only the first letter
 matters for the purpose of matching.
 
-NOTE: Dynamic linking is incompatible with ASAN and static linking is incompatible
-with TSAN.
+NOTE: Static linking is incompatible with TSAN.
 
 
 == Developing Kudu in Eclipse

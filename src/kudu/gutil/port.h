@@ -324,6 +324,8 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 // TODO(user) This is the L1 D-cache line size of our Power7 machines.
 // Need to check if this is appropriate for other PowerPC64 systems.
 #define CACHELINE_SIZE 128
+#elif defined(__aarch64__)
+#define CACHELINE_SIZE 64
 #elif defined(__arm__)
 // Cache line sizes for ARM: These values are not strictly correct since
 // cache line sizes depend on implementations, not architectures.  There

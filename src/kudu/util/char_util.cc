@@ -17,8 +17,12 @@
 
 #include "kudu/util/char_util.h"
 
+#ifdef __aarch64__
+#include "kudu/util/sse2neon.h"
+#else
 #include <emmintrin.h>
 #include <smmintrin.h>
+#endif //__aarch64__
 
 #include <algorithm>
 #include <cstring>

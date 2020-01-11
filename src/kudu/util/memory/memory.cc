@@ -20,7 +20,12 @@
 
 #include "kudu/util/memory/memory.h"
 
+#ifdef __aarch64__
+#define _mm_free(p) free(p)
+#define _mm_malloc(a, b) malloc(a)
+#else
 #include <mm_malloc.h>
+#endif //__aarch64__
 
 #include <algorithm>
 #include <cstdlib>
@@ -30,8 +35,8 @@
 
 #include "kudu/util/alignment.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/memory/overwrite.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/overwrite.h"
 
 using std::copy;
 using std::min;

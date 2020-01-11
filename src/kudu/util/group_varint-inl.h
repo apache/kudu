@@ -17,13 +17,18 @@
 #ifndef KUDU_UTIL_GROUP_VARINT_INL_H
 #define KUDU_UTIL_GROUP_VARINT_INL_H
 
-#include <emmintrin.h>
 #ifdef __linux__
 #include <endian.h>
 #endif
+
+#ifdef __aarch64__
+#include "kudu/util/sse2neon.h"
+#else
+#include <emmintrin.h>
 #include <smmintrin.h>
 #include <tmmintrin.h>
 #include <xmmintrin.h>
+#endif //__aarch64__
 
 #include <cstdint>
 #include <cstring>
@@ -123,6 +128,7 @@ inline const uint8_t *DecodeGroupVarInt32_SlowButSafe(
 }
 
 
+#ifndef __aarch64__
 inline void DoExtractM128(__m128i results,
                           uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
 #define SSE_USE_EXTRACT_PS
@@ -202,6 +208,7 @@ inline const uint8_t *DecodeGroupVarInt32_SSE_Add(
   return src;
 }
 
+#endif //__aarch64__
 
 // Append a set of group-varint encoded integers to the given faststring.
 inline void AppendGroupVarInt32(

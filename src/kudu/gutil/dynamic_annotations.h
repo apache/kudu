@@ -57,6 +57,7 @@
 #ifndef __DYNAMIC_ANNOTATIONS_H__
 #define __DYNAMIC_ANNOTATIONS_H__
 
+#include <stddef.h>
 #ifndef DYNAMIC_ANNOTATIONS_ENABLED
 # define DYNAMIC_ANNOTATIONS_ENABLED 0
 #endif
