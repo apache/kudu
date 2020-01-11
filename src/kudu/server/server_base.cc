@@ -17,11 +17,12 @@
 
 #include "kudu/server/server_base.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -38,7 +39,9 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -63,6 +66,8 @@
 #include "kudu/server/webserver.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/flags.h"
@@ -211,6 +216,11 @@ DEFINE_uint64(gc_tcmalloc_memory_interval_seconds, 30,
 TAG_FLAG(gc_tcmalloc_memory_interval_seconds, advanced);
 TAG_FLAG(gc_tcmalloc_memory_interval_seconds, runtime);
 
+DEFINE_uint64(server_max_open_files, 0,
+              "Maximum number of open file descriptors. If 0, Kudu will "
+              "automatically calculate this value. This is a soft limit");
+TAG_FLAG(server_max_open_files, advanced);
+
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
@@ -352,6 +362,41 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
   return shared_ptr<MemTracker>(MemTracker::CreateTracker(-1, id_str));
 }
 
+int64_t GetFileCacheCapacity(Env* env) {
+  // Maximize this process' open file limit first, if possible.
+  static std::once_flag once;
+  std::call_once(once, [&]() {
+    env->IncreaseResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS);
+  });
+
+  uint64_t rlimit =
+      env->GetResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS);
+  // See server_max_open_files.
+  if (FLAGS_server_max_open_files == 0) {
+    // Use file-max as a possible upper bound.
+    faststring buf;
+    uint64_t buf_val;
+    if (ReadFileToString(env, "/proc/sys/fs/file-max", &buf).ok() &&
+        safe_strtou64(buf.ToString(), &buf_val)) {
+      rlimit = std::min(rlimit, buf_val);
+    }
+
+    // Callers of this function expect a signed 64-bit integer, and rlimit
+    // is an uint64_t type, so we need to avoid overflow.
+    // The percentage we currently use is 40% by default, and although in fact
+    // 40% of any value of the `uint64_t` type must be less than `kint64max`,
+    // but the percentage may be adjusted in the future, such as to 60%, so to
+    // prevent accidental overflow, we cap rlimit here.
+    return std::min((rlimit / 5) * 2, static_cast<uint64_t>(kint64max));
+  }
+  LOG_IF(FATAL, FLAGS_server_max_open_files > rlimit) <<
+      Substitute(
+          "Configured open file limit (server_max_open_files) $0 "
+          "exceeds process open file limit (ulimit) $1",
+          FLAGS_server_max_open_files, rlimit);
+  return FLAGS_server_max_open_files;
+}
+
 } // anonymous namespace
 
 ServerBase::ServerBase(string name, const ServerBaseOptions& options,
@@ -362,6 +407,8 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       metric_registry_(new MetricRegistry()),
       metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(),
                                                       metric_namespace)),
+      file_cache_(new FileCache("file cache", options.env,
+                                GetFileCacheCapacity(options.env), metric_entity_)),
       rpc_server_(new RpcServer(options.rpc_opts)),
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
@@ -380,6 +427,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   fs_opts.block_manager_type = options.fs_opts.block_manager_type;
   fs_opts.wal_root = options.fs_opts.wal_root;
   fs_opts.data_roots = options.fs_opts.data_roots;
+  fs_opts.file_cache = file_cache_.get();
   fs_manager_.reset(new FsManager(options.env, std::move(fs_opts)));
 
   if (FLAGS_use_hybrid_clock) {
@@ -443,6 +491,8 @@ Status ServerBase::Init() {
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
 
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
+
+  RETURN_NOT_OK(file_cache_->Init());
 
   fs::FsReport report;
   Status s = fs_manager_->Open(&report);

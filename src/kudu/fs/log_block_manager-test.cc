@@ -55,6 +55,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -81,7 +82,6 @@ DECLARE_double(env_inject_eio);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
-DECLARE_int64(block_manager_max_open_files);
 DECLARE_int64(log_container_max_blocks);
 DECLARE_string(block_manager_preflush_control);
 DECLARE_string(env_inject_eio_globs);
@@ -113,10 +113,14 @@ class LogBlockContainer;
 class LogBlockManagerTest : public KuduTest {
  public:
   LogBlockManagerTest() :
-    test_tablet_name_("test_tablet"),
-    test_block_opts_({ test_tablet_name_ }),
-    test_error_manager_(new FsErrorManager()),
-    bm_(CreateBlockManager(scoped_refptr<MetricEntity>())) {
+      test_tablet_name_("test_tablet"),
+      test_block_opts_({ test_tablet_name_ }),
+      // Use a small file cache (smaller than the number of containers).
+      //
+      // Not strictly necessary except for TestDeleteFromContainerAfterMetadataCompaction.
+      file_cache_("test_cache", env_, 50, scoped_refptr<MetricEntity>()),
+      bm_(CreateBlockManager(scoped_refptr<MetricEntity>())) {
+    CHECK_OK(file_cache_.Init());
   }
 
   void SetUp() override {
@@ -137,10 +141,11 @@ class LogBlockManagerTest : public KuduTest {
       CHECK_OK(DataDirManager::CreateNewForTests(env_, test_data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
+
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
-    return new LogBlockManager(env_, dd_manager_.get(), test_error_manager_.get(),
-                               std::move(opts));
+    return new LogBlockManager(env_, dd_manager_.get(), &error_manager_,
+                               &file_cache_, std::move(opts));
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,
@@ -224,7 +229,8 @@ class LogBlockManagerTest : public KuduTest {
   CreateBlockOptions test_block_opts_;
 
   unique_ptr<DataDirManager> dd_manager_;
-  unique_ptr<FsErrorManager> test_error_manager_;
+  FsErrorManager error_manager_;
+  FileCache file_cache_;
   unique_ptr<LogBlockManager> bm_;
 
  private:
@@ -1506,10 +1512,14 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
   FLAGS_log_container_max_size = 0;
 
   // Create one container.
-  unique_ptr<WritableBlock> block;
-  ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
-  ASSERT_OK(block->Append("a"));
-  ASSERT_OK(block->Close());
+  BlockId block_id;
+  {
+    unique_ptr<WritableBlock> block;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
+    ASSERT_OK(block->Append("a"));
+    ASSERT_OK(block->Close());
+    block_id = block->id();
+  }
   string data_file_name;
   string metadata_file_name;
   NO_FATALS(GetOnlyContainerDataFile(&data_file_name));
@@ -1525,7 +1535,7 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
   {
     shared_ptr<BlockDeletionTransaction> deletion_transaction =
         this->bm_->NewDeletionTransaction();
-    deletion_transaction->AddDeletedBlock(block->id());
+    deletion_transaction->AddDeletedBlock(block_id);
     vector<BlockId> deleted;
     ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   }
@@ -1602,8 +1612,6 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
 TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   // Compact aggressively.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
-  // Use a small file cache (smaller than the number of containers).
-  FLAGS_block_manager_max_open_files = 50;
   // Use a single shard so that we have an accurate max cache capacity
   // regardless of the number of cores on the machine.
   FLAGS_cache_force_single_shard = true;
@@ -1681,7 +1689,7 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
       DataDirManagerOptions(), &dd_manager_));
 
   // Wire in a callback to fail data directories.
-  test_error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
+  error_manager_.SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
   bm_.reset(CreateBlockManager(nullptr));
 
@@ -1990,6 +1998,10 @@ TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
   };
 
   const auto CreateMetadataFile = [&] () {
+    // We're often recreating an existing file, so we must invalidate any
+    // entry in the file cache first.
+    file_cache_.Invalidate(metadata_file_name);
+
     unique_ptr<WritableFile> metadata_file_writer;
     ASSERT_OK(env_->NewWritableFile(metadata_file_name, &metadata_file_writer));
     ASSERT_OK(metadata_file_writer->Append(Slice("a")));
@@ -1997,6 +2009,10 @@ TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
   };
 
   const auto CreateDataFile = [&] () {
+    // We're often recreating an existing file, so we must invalidate any
+    // entry in the file cache first.
+    file_cache_.Invalidate(data_file_name);
+
     unique_ptr<WritableFile> data_file_writer;
     ASSERT_OK(env_->NewWritableFile(data_file_name, &data_file_writer));
     data_file_writer->Close();

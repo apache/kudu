@@ -49,7 +49,9 @@
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/file_cache-test-util.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
@@ -61,7 +63,6 @@
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
-DECLARE_int64(block_manager_max_open_files);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
 
@@ -84,6 +85,7 @@ DEFINE_int32(num_inconsistencies, 16,
 DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "use for block storage. If empty, will use the default unit "
               "test path");
+DEFINE_int32(max_open_files, 32, "Maximum size of the test's file cache");
 
 using std::string;
 using std::shared_ptr;
@@ -117,22 +119,20 @@ template <typename T>
 class BlockManagerStressTest : public KuduTest {
  public:
   BlockManagerStressTest() :
-    rand_seed_(SeedRandom()),
-    stop_latch_(1),
-    test_error_manager_(new FsErrorManager()),
-    test_tablet_name_("test_tablet"),
-    total_blocks_written_(0),
-    total_bytes_written_(0),
-    total_blocks_read_(0),
-    total_bytes_read_(0),
-    total_blocks_deleted_(0) {
+      rand_seed_(SeedRandom()),
+      stop_latch_(1),
+      file_cache_("test_cache", env_, FLAGS_max_open_files,
+                  scoped_refptr<MetricEntity>()),
+      test_tablet_name_("test_tablet"),
+      total_blocks_written_(0),
+      total_bytes_written_(0),
+      total_blocks_read_(0),
+      total_bytes_read_(0),
+      total_blocks_deleted_(0) {
 
     // Increase the number of containers created.
     FLAGS_log_container_max_size = 1 * 1024 * 1024;
     FLAGS_log_container_preallocate_bytes = 1 * 1024 * 1024;
-
-    // Ensure the file cache is under stress too.
-    FLAGS_block_manager_max_open_files = 32;
 
     // Maximize the amount of cleanup triggered by the extra space heuristic.
     FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
@@ -146,16 +146,13 @@ class BlockManagerStressTest : public KuduTest {
 
     // Defer block manager creation until after the above flags are set.
     bm_.reset(CreateBlockManager());
-    bm_->Open(nullptr);
-    dd_manager_->CreateDataDirGroup(test_tablet_name_);
+    CHECK_OK(file_cache_.Init());
+    CHECK_OK(bm_->Open(nullptr));
+    CHECK_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
     CHECK_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
   virtual void TearDown() override {
-    // Ensure the proper destructor order. The directory manager must outlive
-    // the block manager.
-    bm_.reset();
-
     // If non-standard paths were provided we need to delete them in between
     // test runs.
     if (!FLAGS_block_manager_paths.empty()) {
@@ -164,7 +161,6 @@ class BlockManagerStressTest : public KuduTest {
                     Substitute("Couldn't recursively delete $0", dd));
       }
     }
-    dd_manager_.reset();
   }
 
   BlockManager* CreateBlockManager() {
@@ -188,8 +184,8 @@ class BlockManagerStressTest : public KuduTest {
       CHECK_OK(DataDirManager::OpenExistingForTests(env_, data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
-    return new T(env_, dd_manager_.get(), test_error_manager_.get(),
-                 BlockManagerOptions());
+    return new T(env_, dd_manager_.get(), &error_manager_,
+                 &file_cache_, BlockManagerOptions());
   }
 
   void RunTest(double secs) {
@@ -266,14 +262,13 @@ class BlockManagerStressTest : public KuduTest {
   // Protects written_blocks_.
   simple_spinlock lock_;
 
-  // The block manager.
-  unique_ptr<BlockManager> bm_;
-
-  // The directory manager.
   unique_ptr<DataDirManager> dd_manager_;
 
-  // The error manager.
-  unique_ptr<FsErrorManager> test_error_manager_;
+  FsErrorManager error_manager_;
+
+  FileCache file_cache_;
+
+  unique_ptr<BlockManager> bm_;
 
   // Test group of disk to spread data across.
   DataDirGroupPB test_group_pb_;
@@ -484,7 +479,7 @@ void BlockManagerStressTest<T>::DeleterThread() {
 
 template <>
 int BlockManagerStressTest<FileBlockManager>::GetMaxFdCount() const {
-  return FLAGS_block_manager_max_open_files +
+  return FLAGS_max_open_files +
       // Each open block exists outside the file cache.
       (FLAGS_num_writer_threads * FLAGS_block_group_size * FLAGS_block_group_number) +
       // Each reader thread can open a file outside the cache if its lookup
@@ -495,7 +490,7 @@ int BlockManagerStressTest<FileBlockManager>::GetMaxFdCount() const {
 
 template <>
 int BlockManagerStressTest<LogBlockManager>::GetMaxFdCount() const {
-  return FLAGS_block_manager_max_open_files +
+  return FLAGS_max_open_files +
       // If all containers are full, each open block could theoretically
       // result in a new container, which is two files briefly outside the
       // cache (before they are inserted and evict other cached files).

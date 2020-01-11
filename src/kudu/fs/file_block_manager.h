@@ -27,7 +27,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/file_cache.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -36,6 +35,7 @@ namespace kudu {
 
 class BlockId;
 class Env;
+class FileCache;
 class MemTracker;
 
 namespace fs {
@@ -74,6 +74,7 @@ class FileBlockManager : public BlockManager {
   FileBlockManager(Env* env,
                    DataDirManager* dd_manager,
                    FsErrorManager* error_manager,
+                   FileCache* file_cache,
                    BlockManagerOptions opts);
 
   virtual ~FileBlockManager();
@@ -134,7 +135,7 @@ class FileBlockManager : public BlockManager {
   const BlockManagerOptions opts_;
 
   // Manages files opened for reading.
-  FileCache file_cache_;
+  FileCache* file_cache_;
 
   // For generating block IDs.
   ThreadSafeRandom rand_;

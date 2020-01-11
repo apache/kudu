@@ -140,7 +140,8 @@ FsManagerOpts::FsManagerOpts()
     metadata_root(FLAGS_fs_metadata_dir),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {
+    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES),
+    file_cache(nullptr) {
   data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
@@ -149,7 +150,8 @@ FsManagerOpts::FsManagerOpts(const string& root)
     data_roots({ root }),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {}
+    update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES),
+    file_cache(nullptr) {}
 
 FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
@@ -299,10 +301,10 @@ void FsManager::InitBlockManager() {
   bm_opts.read_only = opts_.read_only;
   if (opts_.block_manager_type == "file") {
     block_manager_.reset(new FileBlockManager(
-        env_, dd_manager_.get(), error_manager_.get(), std::move(bm_opts)));
+        env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
   } else {
     block_manager_.reset(new LogBlockManager(
-        env_, dd_manager_.get(), error_manager_.get(), std::move(bm_opts)));
+        env_, dd_manager_.get(), error_manager_.get(), opts_.file_cache, std::move(bm_opts)));
   }
 }
 

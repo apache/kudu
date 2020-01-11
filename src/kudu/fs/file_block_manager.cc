@@ -695,13 +695,13 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
 FileBlockManager::FileBlockManager(Env* env,
                                    DataDirManager* dd_manager,
                                    FsErrorManager* error_manager,
+                                   FileCache* file_cache,
                                    BlockManagerOptions opts)
   : env_(DCHECK_NOTNULL(env)),
     dd_manager_(dd_manager),
     error_manager_(DCHECK_NOTNULL(error_manager)),
     opts_(std::move(opts)),
-    file_cache_("fbm", env_, GetFileCacheCapacityForBlockManager(env_),
-                opts_.metric_entity),
+    file_cache_(file_cache),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
@@ -716,8 +716,6 @@ FileBlockManager::~FileBlockManager() {
 }
 
 Status FileBlockManager::Open(FsReport* report) {
-  RETURN_NOT_OK(file_cache_.Init());
-
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
   set<int> failed_dirs = dd_manager_->GetFailedDirs();
@@ -830,7 +828,13 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
   VLOG(1) << "Opening block with id " << block_id.ToString() << " at " << path;
 
   shared_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_.OpenExistingFile(path, &reader));
+  if (PREDICT_TRUE(file_cache_)) {
+    RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_->OpenExistingFile(path, &reader));
+  } else {
+    unique_ptr<RandomAccessFile> r;
+    RETURN_NOT_OK_FBM_DISK_FAILURE(env_->NewRandomAccessFile(path, &r));
+    reader.reset(r.release());
+  }
   block->reset(new internal::FileReadableBlock(this, block_id, reader));
   return Status::OK();
 }
@@ -854,7 +858,11 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
     return Status::NotFound(
         Substitute("Block $0 not found", block_id.ToString()));
   }
-  RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_.DeleteFile(path));
+  if (PREDICT_TRUE(file_cache_)) {
+    RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_->DeleteFile(path));
+  } else {
+    RETURN_NOT_OK_FBM_DISK_FAILURE(env_->DeleteFile(path));
+  }
 
   // We don't bother fsyncing the parent directory as there's nothing to be
   // gained by ensuring that the deletion is made durable. Even if we did

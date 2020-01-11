@@ -37,7 +37,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/file_cache.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
@@ -46,6 +45,7 @@
 namespace kudu {
 
 class Env;
+class FileCache;
 
 namespace fs {
 class DataDirManager;
@@ -189,6 +189,7 @@ class LogBlockManager : public BlockManager {
   LogBlockManager(Env* env,
                   DataDirManager* dd_manager,
                   FsErrorManager* error_manager,
+                  FileCache* file_cache,
                   BlockManagerOptions opts);
 
   virtual ~LogBlockManager();
@@ -441,7 +442,7 @@ class LogBlockManager : public BlockManager {
                      boost::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
-  FileCache file_cache_;
+  FileCache* file_cache_;
 
   // Holds (and owns) all containers loaded from disk.
   std::unordered_map<std::string,

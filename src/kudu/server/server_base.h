@@ -31,6 +31,7 @@
 namespace kudu {
 
 class DnsResolver;
+class FileCache;
 class FsManager;
 class MemTracker;
 class MetricEntity;
@@ -104,6 +105,8 @@ class ServerBase {
 
   DnsResolver* dns_resolver() const { return dns_resolver_.get(); }
 
+  FileCache* file_cache() const { return file_cache_.get(); }
+
   // Return a PB describing the status of the server (version info, bound ports, etc)
   Status GetStatusPB(ServerStatusPB* status) const;
 
@@ -175,6 +178,7 @@ class ServerBase {
   std::shared_ptr<MemTracker> mem_tracker_;
   std::unique_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
+  std::unique_ptr<FileCache> file_cache_;
   std::unique_ptr<FsManager> fs_manager_;
   std::unique_ptr<RpcServer> rpc_server_;
   std::unique_ptr<Webserver> web_server_;

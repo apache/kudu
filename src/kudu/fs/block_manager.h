@@ -30,10 +30,8 @@
 namespace kudu {
 
 class BlockId;
-class Env;
 class MemTracker;
 class Slice;
-
 template <typename T>
 class ArrayView;
 
@@ -317,10 +315,6 @@ class BlockDeletionTransaction {
   // Returns the first deletion failure that was seen, if any.
   virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) = 0;
 };
-
-// Compute an upper bound for a file cache embedded within a block manager
-// using resource limits obtained from the system.
-int64_t GetFileCacheCapacityForBlockManager(Env* env);
 
 } // namespace fs
 } // namespace kudu

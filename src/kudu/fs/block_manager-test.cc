@@ -50,6 +50,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h" // IWYU pragma: keep
 #include "kudu/util/env.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -119,11 +120,12 @@ template <typename T>
 class BlockManagerTest : public KuduTest {
  public:
   BlockManagerTest() :
-    test_tablet_name_("test_tablet"),
-    test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
-    test_error_manager_(new FsErrorManager()),
-    bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
-                           shared_ptr<MemTracker>())) {
+      test_tablet_name_("test_tablet"),
+      test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
+      file_cache_("test_cache", env_, 1, scoped_refptr<MetricEntity>()),
+      bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
+                             shared_ptr<MemTracker>())) {
+    CHECK_OK(file_cache_.Init());
   }
 
   virtual void SetUp() override {
@@ -167,8 +169,8 @@ class BlockManagerTest : public KuduTest {
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
-    return new T(env_, this->dd_manager_.get(), test_error_manager_.get(),
-                 std::move(opts));
+    return new T(env_, this->dd_manager_.get(), &error_manager_,
+                 &file_cache_, std::move(opts));
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -231,8 +233,9 @@ class BlockManagerTest : public KuduTest {
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
-  unique_ptr<FsErrorManager> test_error_manager_;
+  FsErrorManager error_manager_;
   unique_ptr<DataDirManager> dd_manager_;
+  FileCache file_cache_;
   unique_ptr<T> bm_;
 };
 
