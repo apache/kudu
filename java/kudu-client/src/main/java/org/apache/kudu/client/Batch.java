@@ -142,6 +142,9 @@ class Batch extends KuduRpc<BatchResponse> {
                              (long)builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(UnsafeByteOperations.unsafeWrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
+    if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+      builder.setPropagatedTimestamp(this.propagatedTimestamp);
+    }
     if (authzToken != null) {
       builder.setAuthzToken(authzToken);
     }
