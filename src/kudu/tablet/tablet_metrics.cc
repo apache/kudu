@@ -312,6 +312,7 @@ METRIC_DEFINE_gauge_double(tablet, average_diskrowset_height, "Average DiskRowSe
                            "replica. The larger the average height, the more "
                            "uncompacted the tablet replica is.",
                            kudu::MetricLevel::kInfo);
+METRIC_DECLARE_gauge_size(merged_entities_count_of_tablet);
 
 namespace kudu {
 namespace tablet {
@@ -319,6 +320,7 @@ namespace tablet {
 #define MINIT(x) x(METRIC_##x.Instantiate(entity))
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 #define MEANINIT(x) x(METRIC_##x.InstantiateMeanGauge(entity))
+#define HIDEINIT(x, v) x(METRIC_##x.InstantiateHidden(entity, v))
 TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
   : MINIT(rows_inserted),
     MINIT(rows_upserted),
@@ -363,11 +365,13 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(undo_delta_block_gc_delete_duration),
     MINIT(undo_delta_block_gc_perform_duration),
     MINIT(leader_memory_pressure_rejections),
-    MEANINIT(average_diskrowset_height) {
+    MEANINIT(average_diskrowset_height),
+    HIDEINIT(merged_entities_count_of_tablet, 1) {
 }
 #undef MINIT
 #undef GINIT
 #undef MEANINIT
+#undef HIDEINIT
 
 void TabletMetrics::AddProbeStats(const ProbeStats* stats_array, int len,
                                   Arena* work_arena) {

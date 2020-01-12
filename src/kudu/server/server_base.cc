@@ -420,7 +420,8 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
           MonoDelta::FromSeconds(FLAGS_dns_resolver_cache_ttl_sec))),
       options_(options),
       stop_background_threads_latch_(1) {
-  METRIC_merged_entities_count_of_server.InstantiateHidden(metric_entity_, 1);
+  metric_entity_->NeverRetire(
+      METRIC_merged_entities_count_of_server.InstantiateHidden(metric_entity_, 1));
 
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;

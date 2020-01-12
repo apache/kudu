@@ -20,6 +20,8 @@
 
 #include "kudu/gutil/map-util.h"
 
+METRIC_DECLARE_gauge_size(merged_entities_count_of_table);
+
 namespace kudu {
 namespace master {
 
@@ -36,12 +38,14 @@ METRIC_DEFINE_gauge_uint64(table, live_row_count, "Table Live Row count",
     kudu::MetricLevel::kInfo);
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
-
+#define HIDEINIT(x, v) x(METRIC_##x.InstantiateHidden(entity, v))
 TableMetrics::TableMetrics(const scoped_refptr<MetricEntity>& entity)
   : GINIT(on_disk_size),
-    GINIT(live_row_count) {
+    GINIT(live_row_count),
+    HIDEINIT(merged_entities_count_of_table, 1) {
 }
 #undef GINIT
+#undef HIDEINIT
 
 void TableMetrics::AddTabletNoLiveRowCount(const std::string& tablet_id) {
   std::lock_guard<simple_spinlock> l(lock_);

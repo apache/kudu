@@ -255,7 +255,6 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     METRIC_last_write_elapsed_time.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::LastWriteElapsedSeconds, Unretained(this)), MergeType::kMin)
       ->AutoDetach(&metric_detacher_);
-    METRIC_merged_entities_count_of_tablet.InstantiateHidden(metric_entity_, 1);
   }
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {

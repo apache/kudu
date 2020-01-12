@@ -47,6 +47,7 @@ struct TableMetrics {
 
   scoped_refptr<AtomicGauge<uint64_t>> on_disk_size;
   scoped_refptr<AtomicGauge<uint64_t>> live_row_count;
+  scoped_refptr<AtomicGauge<uint64_t>> merged_entities_count_of_table;
 
   void AddTabletNoLiveRowCount(const std::string& tablet_id);
   void DeleteTabletNoLiveRowCount(const std::string& tablet_id);
