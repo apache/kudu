@@ -63,14 +63,14 @@ METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         kudu::MetricLevel::kInfo,
                         60000000LU, 2);
 
+DECLARE_bool(enable_maintenance_manager);
 DECLARE_int64(log_target_replay_size_mb);
 DECLARE_double(maintenance_op_multiplier);
 DECLARE_int32(max_priority_range);
 
-
 namespace kudu {
 
-static const int kHistorySize = 6;
+static const int kHistorySize = 7;
 static const char kFakeUuid[] = "12345";
 
 class MaintenanceManagerTest : public KuduTest {
@@ -200,8 +200,13 @@ class TestMaintenanceOp : public MaintenanceOp {
     return priority_;
   }
 
+  int remaining_runs() const {
+    std::lock_guard<Mutex> guard(lock_);
+    return remaining_runs_;
+  }
+
  private:
-  Mutex lock_;
+  mutable Mutex lock_;
 
   uint64_t ram_anchored_;
   uint64_t logs_retained_bytes_;
@@ -488,6 +493,32 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   StopManager();
   StartManager(1);
 
+  // Register an op whose sole purpose is to allow us to delay the rest of this
+  // test until we know that the MM scheduler thread is running.
+  TestMaintenanceOp early_op("early", MaintenanceOp::HIGH_IO_USAGE, 0);
+  early_op.set_perf_improvement(1);
+  manager_->RegisterOp(&early_op);
+  // From this point forward if an ASSERT fires, we'll hit a CHECK failure if
+  // we don't unregister an op before it goes out of scope.
+  SCOPED_CLEANUP({
+    manager_->UnregisterOp(&early_op);
+  });
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(0, early_op.remaining_runs());
+  });
+
+  // The MM scheduler thread is now running. It is now safe to use
+  // FLAGS_enable_maintenance_manager to temporarily disable the MM, thus
+  // allowing us to register a group of ops "atomically" and ensuring the op
+  // execution order that this test wants to see.
+  //
+  // Without the "early op" hack above, there's a small chance that the MM
+  // scheduler thread will not have run at all at the time of
+  // FLAGS_enable_maintenance_manager = false, which would cause the thread
+  // to exit entirely instead of sleeping.
+
+  // Ops are listed here in perf improvement order, which is a function of the
+  // op's raw perf improvement as well as its priority.
   TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, -FLAGS_max_priority_range - 1);
   op1.set_perf_improvement(10);
   op1.set_remaining_runs(1);
@@ -508,22 +539,24 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   op4.set_remaining_runs(1);
   op4.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, FLAGS_max_priority_range + 1);
-  op5.set_perf_improvement(10);
+  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, 0);
+  op5.set_perf_improvement(12);
   op5.set_remaining_runs(1);
   op5.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
-  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, 0);
-  op6.set_perf_improvement(12);
+  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, FLAGS_max_priority_range + 1);
+  op6.set_perf_improvement(10);
   op6.set_remaining_runs(1);
   op6.set_sleep_time(MonoDelta::FromMilliseconds(1));
 
+  FLAGS_enable_maintenance_manager = false;
   manager_->RegisterOp(&op1);
   manager_->RegisterOp(&op2);
   manager_->RegisterOp(&op3);
   manager_->RegisterOp(&op4);
   manager_->RegisterOp(&op5);
   manager_->RegisterOp(&op6);
+  FLAGS_enable_maintenance_manager = true;
 
   // From this point forward if an ASSERT fires, we'll hit a CHECK failure if
   // we don't unregister an op before it goes out of scope.
@@ -539,7 +572,7 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   ASSERT_EVENTUALLY([&]() {
     MaintenanceManagerStatusPB status_pb;
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
-    ASSERT_EQ(status_pb.completed_operations_size(), 6);
+    ASSERT_EQ(status_pb.completed_operations_size(), 7);
   });
 
   // Wait for instances to complete by shutting down the maintenance manager.
@@ -550,14 +583,16 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   MaintenanceManagerStatusPB status_pb;
   manager_->GetMaintenanceManagerStatusDump(&status_pb);
   ASSERT_EQ(status_pb.running_operations_size(), 0);
-  ASSERT_EQ(status_pb.completed_operations_size(), 6);
-  // In perf_improvement score ascending order, the latter completed OP will list former.
+
+  // Check that ops were executed in perf improvement order (from greatest to
+  // least improvement). Note that completed ops are listed in _reverse_ execution order.
   list<string> ordered_ops({"op1",
                             "op2",
                             "op3",
                             "op4",
+                            "op5",
                             "op6",
-                            "op5"});
+                            "early"});
   ASSERT_EQ(ordered_ops.size(), status_pb.completed_operations().size());
   for (const auto& instance : status_pb.completed_operations()) {
     ASSERT_EQ(ordered_ops.front(), instance.name());
