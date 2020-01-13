@@ -23,6 +23,7 @@
 #include <iosfwd>
 #include <memory>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -53,13 +54,14 @@ class BlockBloomFilterTest : public KuduTest {
     return result;
   }
 
-  shared_ptr<BlockBloomFilter> CreateBloomFilter(size_t log_space_bytes) {
+  BlockBloomFilter* CreateBloomFilter(size_t log_space_bytes) {
     FLAGS_disable_blockbloomfilter_avx2 = (MakeRand() & 0x1) == 0;
 
-    auto bf = make_shared<BlockBloomFilter>(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+    unique_ptr<BlockBloomFilter> bf(
+        new BlockBloomFilter(DefaultBlockBloomFilterBufferAllocator::GetSingleton()));
     CHECK_OK(bf->Init(log_space_bytes));
-    bloom_filters_.emplace_back(bf);
-    return bf;
+    bloom_filters_.emplace_back(move(bf));
+    return bloom_filters_.back().get();
   }
 
   void TearDown() override {
@@ -69,7 +71,7 @@ class BlockBloomFilterTest : public KuduTest {
   }
 
  private:
-  vector<shared_ptr<BlockBloomFilter>> bloom_filters_;
+  vector<unique_ptr<BlockBloomFilter>> bloom_filters_;
 };
 
 // We can construct (and destruct) Bloom filters with different spaces.
@@ -92,7 +94,7 @@ TEST_F(BlockBloomFilterTest, InvalidSpace) {
 // We can Insert() hashes into a Bloom filter with different spaces.
 TEST_F(BlockBloomFilterTest, Insert) {
   for (int i = 13; i < 17; ++i) {
-    auto bf = CreateBloomFilter(i);
+    auto* bf = CreateBloomFilter(i);
     for (int k = 0; k < (1 << 15); ++k) {
       bf->Insert(MakeRand());
     }
@@ -102,7 +104,7 @@ TEST_F(BlockBloomFilterTest, Insert) {
 // After Insert()ing something into a Bloom filter, it can be found again immediately.
 TEST_F(BlockBloomFilterTest, Find) {
   for (int i = 13; i < 17; ++i) {
-    auto bf = CreateBloomFilter(i);
+    auto* bf = CreateBloomFilter(i);
     for (int k = 0; k < (1 << 15); ++k) {
       const auto to_insert = MakeRand();
       bf->Insert(to_insert);
@@ -115,7 +117,7 @@ TEST_F(BlockBloomFilterTest, Find) {
 TEST_F(BlockBloomFilterTest, CumulativeFind) {
   for (int i = 5; i < 11; ++i) {
     vector<uint32_t> inserted;
-    auto bf = CreateBloomFilter(i);
+    auto* bf = CreateBloomFilter(i);
     for (int k = 0; k < (1 << 10); ++k) {
       const uint32_t to_insert = MakeRand();
       inserted.push_back(to_insert);
@@ -149,7 +151,7 @@ TEST_F(BlockBloomFilterTest, FindInvalid) {
       double fpp = 1.0 / (1 << log_fpp);
       const size_t ndv = 1 << log_ndv;
       const int log_heap_space = BlockBloomFilter::MinLogSpace(ndv, fpp);
-      auto bf = CreateBloomFilter(log_heap_space);
+      auto* bf = CreateBloomFilter(log_heap_space);
       // Fill up a BF with exactly as much ndv as we planned for it:
       for (size_t i = 0; i < ndv; ++i) {
         bf->Insert(shuffled_insert[i]);
