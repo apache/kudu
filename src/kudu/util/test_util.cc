@@ -38,7 +38,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest-spi.h>
 
@@ -290,14 +289,17 @@ void AssertEventually(const std::function<void(void)>& f,
                       AssertBackoff backoff) {
   const MonoTime deadline = MonoTime::Now() + timeout;
   {
-    // Disable --gtest_break_on_failure, or else the assertion failures
-    // inside our attempts will cause the test to SEGV even though we
-    // would like to retry.
+    // Disable gtest's "on failure" behavior, or else the assertion failures
+    // inside our attempts will cause the test to end even though we would
+    // like to retry.
     bool old_break_on_failure = testing::FLAGS_gtest_break_on_failure;
-    auto c = MakeScopedCleanup([old_break_on_failure]() {
+    bool old_throw_on_failure = testing::FLAGS_gtest_throw_on_failure;
+    auto c = MakeScopedCleanup([old_break_on_failure, old_throw_on_failure]() {
       testing::FLAGS_gtest_break_on_failure = old_break_on_failure;
+      testing::FLAGS_gtest_throw_on_failure = old_throw_on_failure;
     });
     testing::FLAGS_gtest_break_on_failure = false;
+    testing::FLAGS_gtest_throw_on_failure = false;
 
     for (int attempts = 0; MonoTime::Now() < deadline; attempts++) {
       // Capture any assertion failures within this scope (i.e. from their function)

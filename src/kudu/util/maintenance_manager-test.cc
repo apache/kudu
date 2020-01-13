@@ -40,6 +40,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -524,19 +525,26 @@ TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
   manager_->RegisterOp(&op5);
   manager_->RegisterOp(&op6);
 
+  // From this point forward if an ASSERT fires, we'll hit a CHECK failure if
+  // we don't unregister an op before it goes out of scope.
+  SCOPED_CLEANUP({
+    manager_->UnregisterOp(&op1);
+    manager_->UnregisterOp(&op2);
+    manager_->UnregisterOp(&op3);
+    manager_->UnregisterOp(&op4);
+    manager_->UnregisterOp(&op5);
+    manager_->UnregisterOp(&op6);
+  });
+
   ASSERT_EVENTUALLY([&]() {
     MaintenanceManagerStatusPB status_pb;
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
     ASSERT_EQ(status_pb.completed_operations_size(), 6);
   });
 
-  // Wait for instances to complete.
-  manager_->UnregisterOp(&op1);
-  manager_->UnregisterOp(&op2);
-  manager_->UnregisterOp(&op3);
-  manager_->UnregisterOp(&op4);
-  manager_->UnregisterOp(&op5);
-  manager_->UnregisterOp(&op6);
+  // Wait for instances to complete by shutting down the maintenance manager.
+  // We can still call GetMaintenanceManagerStatusDump though.
+  StopManager();
 
   // Check that running instances are removed from collection after completion.
   MaintenanceManagerStatusPB status_pb;
