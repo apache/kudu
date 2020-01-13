@@ -18,7 +18,7 @@
 # under the License.
 
 from __future__ import print_function
-from cStringIO import StringIO
+from io import BytesIO
 import glob
 import json
 import logging
@@ -99,8 +99,7 @@ _BUILD_DIR = os.path.join(ROOT, 'build/latest')
 def _get_file_list_from_git():
   upstream_commit = get_upstream_commit()
   out = check_output(["git", "diff", "--name-only", upstream_commit]).splitlines()
-  return [l for l in out if _RE_SOURCE_FILE.search(l)]
-
+  return [l.decode('utf-8') for l in out if _RE_SOURCE_FILE.search(l.decode('utf-8'))]
 
 def _get_paths_from_compilation_db():
   db_path = os.path.join(_BUILD_DIR, 'compile_commands.json')
@@ -128,13 +127,13 @@ def _run_iwyu_tool(paths):
               "%s") % (" ".join(cmdline), output))
 
   try:
-    output = check_output(cmdline, env=env, stderr=subprocess.STDOUT)
+    output = check_output(cmdline, env=env, stderr=subprocess.STDOUT).decode('utf-8')
     if '\nFATAL ERROR: ' in output or \
        'Assertion failed: ' in output or \
        _RE_CLANG_ERROR.search(output):
       crash(output)
     return output
-  except subprocess.CalledProcessError, e:
+  except subprocess.CalledProcessError as e:
     crash(e.output)
 
 
@@ -176,7 +175,7 @@ def _do_iwyu(flags, paths):
     logging.info("Dumping iwyu output to %s", flags.dump_iwyu_output)
     with file(flags.dump_iwyu_output, "w") as f:
       print(iwyu_output, file=f)
-  stream = StringIO(iwyu_output)
+  stream = BytesIO(iwyu_output)
   fixer_flags = _get_fixer_flags(flags)
 
   # Passing None as 'fix_paths' tells the fixer script to process
