@@ -279,6 +279,19 @@ DEFINE_bool(catalog_manager_support_live_row_count, true,
 TAG_FLAG(catalog_manager_support_live_row_count, hidden);
 TAG_FLAG(catalog_manager_support_live_row_count, runtime);
 
+DEFINE_bool(catalog_manager_enable_chunked_tablet_reports, true,
+            "Whether to split the tablet report data received from one tablet "
+            "server into chunks when persisting it in the system catalog. "
+            "The chunking starts at around the maximum allowed RPC size "
+            "controlled by the --rpc_max_message_size flag. When the chunking "
+            "is disabled, a tablet report sent by a tablet server is rejected "
+            "if it would result in an oversized update on the system catalog "
+            "tablet. With the default settings for --rpc_max_message_size, "
+            "the latter can happen only in case of extremely high number "
+            "of tablet replicas per tablet server.");
+TAG_FLAG(catalog_manager_enable_chunked_tablet_reports, advanced);
+TAG_FLAG(catalog_manager_enable_chunked_tablet_reports, runtime);
+
 DEFINE_int64(on_disk_size_for_testing, 0,
              "Mock the on disk size of metrics for testing.");
 TAG_FLAG(on_disk_size_for_testing, hidden);
@@ -1717,15 +1730,17 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   });
 
   // f. Write table and tablets to sys-catalog.
-  SysCatalogTable::Actions actions;
-  actions.table_to_add = table;
-  actions.tablets_to_add = tablets;
-  Status s = sys_catalog_->Write(actions);
-  if (!s.ok()) {
-    s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
-    LOG(WARNING) << s.ToString();
-    CheckIfNoLongerLeaderAndSetupError(s, resp);
-    return s;
+  {
+    SysCatalogTable::Actions actions;
+    actions.table_to_add = table;
+    actions.tablets_to_add = tablets;
+    Status s = sys_catalog_->Write(std::move(actions));
+    if (PREDICT_FALSE(!s.ok())) {
+      s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
+      LOG(WARNING) << s.ToString();
+      CheckIfNoLongerLeaderAndSetupError(s, resp);
+      return s;
+    }
   }
   TRACE("Wrote table and tablets to system table");
 
@@ -2065,16 +2080,19 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
 
     // 3. Update sys-catalog with the removed table and tablet state.
     TRACE("Removing table and tablets from system table");
-    SysCatalogTable::Actions actions;
-    actions.hms_notification_log_event_id = hms_notification_log_event_id;
-    actions.table_to_update = table;
-    actions.tablets_to_update.assign(tablets.begin(), tablets.end());
-    Status s = sys_catalog_->Write(actions);
-    if (!s.ok()) {
-      s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
-      LOG(WARNING) << s.ToString();
-      CheckIfNoLongerLeaderAndSetupError(s, resp);
-      return s;
+    {
+      SysCatalogTable::Actions actions;
+      actions.hms_notification_log_event_id =
+          std::move(hms_notification_log_event_id);
+      actions.table_to_update = table;
+      actions.tablets_to_update.assign(tablets.begin(), tablets.end());
+      Status s = sys_catalog_->Write(std::move(actions));
+      if (PREDICT_FALSE(!s.ok())) {
+        s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
+        LOG(WARNING) << s.ToString();
+        CheckIfNoLongerLeaderAndSetupError(s, resp);
+        return s;
+      }
     }
 
     // 4. Remove the table from the by-name map.
@@ -2664,40 +2682,43 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                                            LocalTimeAsString()));
   }
 
-  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
-  TRACE("Updating metadata on disk");
-  string deletion_msg = "Partition dropped at " + LocalTimeAsString();
-  SysCatalogTable::Actions actions;
-  actions.hms_notification_log_event_id = hms_notification_log_event_id;
-  if (!tablets_to_add.empty() || has_metadata_changes) {
-    // If anything modified the table's persistent metadata, then sync it to the sys catalog.
-    actions.table_to_update = table;
-  }
-  actions.tablets_to_add = tablets_to_add;
-
+  const string deletion_msg = "Partition dropped at " + LocalTimeAsString();
   TabletMetadataGroupLock tablets_to_add_lock(LockMode::WRITE);
   TabletMetadataGroupLock tablets_to_drop_lock(LockMode::RELEASED);
-  tablets_to_add_lock.AddMutableInfos(tablets_to_add);
-  tablets_to_drop_lock.AddMutableInfos(tablets_to_drop);
-  tablets_to_drop_lock.Lock(LockMode::WRITE);
-  for (auto& tablet : tablets_to_drop) {
-    tablet->mutable_metadata()->mutable_dirty()->set_state(SysTabletsEntryPB::DELETED,
-                                                           deletion_msg);
-  }
-  actions.tablets_to_update = tablets_to_drop;
 
-  Status s = sys_catalog_->Write(actions);
-  if (!s.ok()) {
-    s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
-    LOG(WARNING) << s.ToString();
-    CheckIfNoLongerLeaderAndSetupError(s, resp);
-    return s;
+  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
+  TRACE("Updating metadata on disk");
+  {
+    SysCatalogTable::Actions actions;
+    actions.hms_notification_log_event_id =
+        std::move(hms_notification_log_event_id);
+    if (!tablets_to_add.empty() || has_metadata_changes) {
+      // If anything modified the table's persistent metadata, then sync it to the sys catalog.
+      actions.table_to_update = table;
+    }
+    actions.tablets_to_add = tablets_to_add;
+
+    tablets_to_add_lock.AddMutableInfos(tablets_to_add);
+    tablets_to_drop_lock.AddMutableInfos(tablets_to_drop);
+    tablets_to_drop_lock.Lock(LockMode::WRITE);
+    for (auto& tablet : tablets_to_drop) {
+      tablet->mutable_metadata()->mutable_dirty()->set_state(
+          SysTabletsEntryPB::DELETED, deletion_msg);
+    }
+    actions.tablets_to_update = tablets_to_drop;
+
+    Status s = sys_catalog_->Write(std::move(actions));
+    if (PREDICT_FALSE(!s.ok())) {
+      s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
+      LOG(WARNING) << s.ToString();
+      CheckIfNoLongerLeaderAndSetupError(s, resp);
+      return s;
+    }
   }
 
   // 9. Commit the in-memory state.
+  TRACE("Committing alterations to in-memory state");
   {
-    TRACE("Committing alterations to in-memory state");
-
     // Commit new tablet in-memory state. This doesn't require taking the global
     // lock since the new tablets are not yet visible, because they haven't been
     // added to the table or tablet index.
@@ -4268,15 +4289,30 @@ Status CatalogManager::ProcessTabletReport(
   // 12. Write all tablet mutations to the catalog table.
   //
   // SysCatalogTable::Write will short-circuit the case where the data has not
-  // in fact changed since the previous version and avoid any unnecessary mutations.
-  SysCatalogTable::Actions actions;
-  actions.tablets_to_update = std::move(mutated_tablets);
-  Status s = sys_catalog_->Write(actions);
-  if (!s.ok()) {
-    LOG(ERROR) << Substitute(
-        "Error updating tablets from $0: $1. Tablet report was: $2",
-        ts_desc->permanent_uuid(), s.ToString(), SecureShortDebugString(full_report));
-    return s;
+  // in fact changed since the previous version and avoid any unnecessary
+  // mutations. The generated sequence of actions may be split into multiple
+  // writes to the system catalog tablet to keep the size of each write request
+  // under the specified threshold.
+  {
+    SysCatalogTable::Actions actions;
+    actions.tablets_to_update = std::move(mutated_tablets);
+    // Updating the status of replicas on the same tablet server can be safely
+    // chunked. Even if some chunks of the update fails, it should not lead to
+    // bigger inconsistencies than simply not updating the status of a single
+    // replica on that tablet server (i.e., rejecting the whole tablet report).
+    // In addition, the nature of such failures is transient, and it's expected
+    // that the next successfully processed tablet report from the tablet server
+    // will fix the partial update.
+    const auto write_mode = FLAGS_catalog_manager_enable_chunked_tablet_reports
+        ? SysCatalogTable::WriteMode::CHUNKED
+        : SysCatalogTable::WriteMode::ATOMIC;
+    auto s = sys_catalog_->Write(std::move(actions), write_mode);
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(ERROR) << Substitute(
+          "Error updating tablets from $0: $1. Tablet report was: $2",
+          ts_desc->permanent_uuid(), s.ToString(), SecureShortDebugString(full_report));
+      return s;
+    }
   }
 
   // Having successfully written the tablet mutations, this function cannot
@@ -4333,11 +4369,13 @@ Status CatalogManager::StoreLatestNotificationLogEventId(int64_t event_id) {
   DCHECK(hms_catalog_);
   DCHECK_GT(event_id, hms_notification_log_event_id_);
   leader_lock_.AssertAcquiredForReading();
-  SysCatalogTable::Actions actions;
-  actions.hms_notification_log_event_id = event_id;
-  RETURN_NOT_OK_PREPEND(
-      sys_catalog()->Write(actions),
-      "Failed to update processed Hive Metastore notification log ID in the sys catalog table");
+  {
+    SysCatalogTable::Actions actions;
+    actions.hms_notification_log_event_id = event_id;
+    RETURN_NOT_OK_PREPEND(sys_catalog()->Write(std::move(actions)),
+                          "Failed to update processed Hive Metastore "
+                          "notification log ID in the sys catalog table");
+  }
   hms_notification_log_event_id_ = event_id;
   return Status::OK();
 }
@@ -4587,13 +4625,15 @@ void CatalogManager::HandleTabletSchemaVersionReport(
   l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
                               Substitute("Current schema version=$0", current_version));
 
-  SysCatalogTable::Actions actions;
-  actions.table_to_update = table;
-  Status s = sys_catalog_->Write(actions);
-  if (!s.ok()) {
-    LOG_WITH_PREFIX(WARNING)
-        << "An error occurred while updating sys-tables: " << s.ToString();
-    return;
+  {
+    SysCatalogTable::Actions actions;
+    actions.table_to_update = table;
+    Status s = sys_catalog_->Write(std::move(actions));
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG_WITH_PREFIX(WARNING)
+          << "An error occurred while updating sys-tables: " << s.ToString();
+      return;
+    }
   }
 
   l.Commit();
@@ -4671,11 +4711,13 @@ Status CatalogManager::ProcessPendingAssignments(
   }
 
   // Update the sys catalog with the new set of tablets/metadata.
-  SysCatalogTable::Actions actions;
-  actions.tablets_to_add = deferred.tablets_to_add;
-  actions.tablets_to_update = deferred.tablets_to_update;
-  RETURN_NOT_OK_PREPEND(sys_catalog_->Write(actions),
-                        "error persisting updated tablet metadata");
+  {
+    SysCatalogTable::Actions actions;
+    actions.tablets_to_add = deferred.tablets_to_add;
+    actions.tablets_to_update = deferred.tablets_to_update;
+    RETURN_NOT_OK_PREPEND(sys_catalog_->Write(std::move(actions)),
+                          "error persisting updated tablet metadata");
+  }
 
   // Expose tablet metadata changes before the new tablets themselves.
   lock_out.Commit();
@@ -4953,15 +4995,17 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
                                                              replace_msg);
 
   // Persist the changes to the syscatalog table.
-  SysCatalogTable::Actions actions;
-  actions.tablets_to_add.push_back(new_tablet);
-  actions.tablets_to_update.push_back(old_tablet);
-  Status s = sys_catalog_->Write(actions);
-  if (!s.ok()) {
-    s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
-    LOG(WARNING) << s.ToString();
-    CheckIfNoLongerLeaderAndSetupError(s, resp);
-    return s;
+  {
+    SysCatalogTable::Actions actions;
+    actions.tablets_to_add.push_back(new_tablet);
+    actions.tablets_to_update.push_back(old_tablet);
+    Status s = sys_catalog_->Write(std::move(actions));
+    if (PREDICT_FALSE(!s.ok())) {
+      s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
+      LOG(WARNING) << s.ToString();
+      CheckIfNoLongerLeaderAndSetupError(s, resp);
+      return s;
+    }
   }
 
   // Now commit the in-memory state and modify the global tablet map.

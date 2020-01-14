@@ -96,34 +96,37 @@ void DecodedRowOperation::SetFailureStatusOnce(Status s) {
 }
 
 RowOperationsPBEncoder::RowOperationsPBEncoder(RowOperationsPB* pb)
-  : pb_(pb) {
+    : pb_(pb),
+      prev_indirect_data_size_(string::npos),
+      prev_rows_size_(string::npos) {
 }
 
 RowOperationsPBEncoder::~RowOperationsPBEncoder() {
 }
 
-void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartialRow& partial_row) {
+size_t RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type,
+                                   const KuduPartialRow& partial_row) {
   const Schema* schema = partial_row.schema();
 
-  // See wire_protocol.pb for a description of the format.
+  // See wire_protocol.proto for a description of the format.
   string* dst = pb_->mutable_rows();
+  prev_rows_size_ = dst->size();
+  prev_indirect_data_size_ = pb_->mutable_indirect_data()->size();
 
-  // Compute a bound on much space we may need in the 'rows' field.
+  // Compute a bound on how much space we may need in the 'rows' field.
   // Then, resize it to this much space. This allows us to use simple
   // memcpy() calls to copy the data, rather than string->append(), which
   // reduces branches significantly in this fairly hot code path.
   // (std::string::append doesn't get inlined).
   // At the end of the function, we'll resize() the string back down to the
   // right size.
-  int isset_bitmap_size = BitmapSize(schema->num_columns());
-  int null_bitmap_size = ContiguousRowHelper::null_bitmap_size(*schema);
-  int type_size = 1; // type uses one byte
-  int max_size = type_size + schema->byte_size() + isset_bitmap_size + null_bitmap_size;
-  int old_size = dst->size();
-  dst->resize(dst->size() + max_size);
+  size_t isset_bitmap_size;
+  size_t null_bitmap_size;
+  const size_t new_size_estimate = GetRowsFieldSizeEstimate(
+      partial_row, &isset_bitmap_size, &null_bitmap_size);
+  dst->resize(new_size_estimate);
 
-  uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(&(*dst)[old_size]);
-
+  uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(&(*dst)[prev_rows_size_]);
   *dst_ptr++ = static_cast<uint8_t>(op_type);
   memcpy(dst_ptr, partial_row.isset_bitmap_, isset_bitmap_size);
   dst_ptr += isset_bitmap_size;
@@ -133,20 +136,26 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
          null_bitmap_size);
   dst_ptr += null_bitmap_size;
 
+  size_t indirect_data_size_delta = 0;
   ContiguousRow row(schema, partial_row.row_data_);
-  for (int i = 0; i < schema->num_columns(); i++) {
-    if (!partial_row.IsColumnSet(i)) continue;
-    const ColumnSchema& col = schema->column(i);
+  for (auto i = 0; i < schema->num_columns(); ++i) {
+    if (!partial_row.IsColumnSet(i)) {
+      continue;
+    }
 
-    if (col.is_nullable() && row.is_null(i)) continue;
+    const ColumnSchema& col = schema->column(i);
+    if (col.is_nullable() && row.is_null(i)) {
+      continue;
+    }
 
     if (col.type_info()->physical_type() == BINARY) {
+      const size_t indirect_offset = pb_->mutable_indirect_data()->size();
       const Slice* val = reinterpret_cast<const Slice*>(row.cell_ptr(i));
-      size_t indirect_offset = pb_->mutable_indirect_data()->size();
-      pb_->mutable_indirect_data()->append(reinterpret_cast<const char*>(val->data()),
-                                           val->size());
-      Slice to_append(reinterpret_cast<const uint8_t*>(indirect_offset),
-                      val->size());
+      indirect_data_size_delta += val->size();
+      pb_->mutable_indirect_data()->append(
+          reinterpret_cast<const char*>(val->data()), val->size());
+      Slice to_append(
+          reinterpret_cast<const uint8_t*>(indirect_offset), val->size());
       memcpy(dst_ptr, &to_append, sizeof(Slice));
       dst_ptr += sizeof(Slice);
     } else {
@@ -155,7 +164,39 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
     }
   }
 
-  dst->resize(reinterpret_cast<char*>(dst_ptr) - &(*dst)[0]);
+  const size_t rows_size_delta = reinterpret_cast<uintptr_t>(dst_ptr) -
+      reinterpret_cast<uintptr_t>(&(*dst)[prev_rows_size_]);
+  dst->resize(prev_rows_size_ + rows_size_delta);
+
+  return rows_size_delta + indirect_data_size_delta;
+}
+
+void RowOperationsPBEncoder::RemoveLast() {
+  CHECK_NE(string::npos, prev_indirect_data_size_);
+  CHECK_NE(string::npos, prev_rows_size_);
+  pb_->mutable_indirect_data()->resize(prev_indirect_data_size_);
+  pb_->mutable_rows()->resize(prev_rows_size_);
+  prev_indirect_data_size_ = string::npos;
+  prev_rows_size_ = string::npos;
+}
+
+size_t RowOperationsPBEncoder::GetRowsFieldSizeEstimate(
+    const KuduPartialRow& partial_row,
+    size_t* isset_bitmap_size,
+    size_t* isnull_bitmap_size) const {
+  const Schema* schema = partial_row.schema();
+
+  // See wire_protocol.proto for a description of the format.
+  const string* dst = pb_->mutable_rows();
+
+  auto isset_size = BitmapSize(schema->num_columns());
+  auto isnull_size = ContiguousRowHelper::null_bitmap_size(*schema);
+  constexpr auto type_size = 1; // type uses one byte
+  auto max_size = type_size + schema->byte_size() + isset_size + isnull_size;
+
+  *isset_bitmap_size = isset_size;
+  *isnull_bitmap_size = isnull_size;
+  return dst->size() + max_size;
 }
 
 // ------------------------------------------------------------

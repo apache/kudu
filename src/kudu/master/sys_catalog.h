@@ -17,6 +17,7 @@
 #ifndef KUDU_MASTER_SYS_CATALOG_H_
 #define KUDU_MASTER_SYS_CATALOG_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -185,7 +186,25 @@ class SysCatalogTable {
     std::vector<scoped_refptr<TabletInfo>> tablets_to_delete;
     boost::optional<int64_t> hms_notification_log_event_id;
   };
-  Status Write(const Actions& actions);
+
+  // The way how actions are persisted into the system catalog table when
+  // calling the Write() method below.
+  enum class WriteMode {
+    // Write all the actions in a single atomic update to the system
+    // catalog tablet.
+    ATOMIC,
+
+    // Chunk the actions into pieces of maximum size corresponding to the
+    // maximum RPC size limit. This is to allow the leader replica of the system
+    // tablet to propagate the update to followers via Raft UpdateConsensus RPC.
+    CHUNKED,
+  };
+
+  // Persist the specified actions into the system tablet. Set the 'mode' to
+  // WriteMode::CHUNKED to split requests larger than the maximum RPC size
+  // into chunks if non-atomic update is acceptable. In case of chunked mode,
+  // no atomicity is guaranteed while persisting the specified actions.
+  Status Write(Actions actions, WriteMode mode = WriteMode::ATOMIC);
 
   // Scan of the table-related entries.
   Status VisitTables(TableVisitor* visitor);
@@ -292,12 +311,45 @@ class SysCatalogTable {
                       const scoped_refptr<TableInfo>& table);
   void ReqDeleteTable(tserver::WriteRequestPB* req,
                       const scoped_refptr<TableInfo>& table);
-  void ReqAddTablets(tserver::WriteRequestPB* req,
-                     const std::vector<scoped_refptr<TabletInfo>>& tablets);
-  void ReqUpdateTablets(tserver::WriteRequestPB* req,
-                        const std::vector<scoped_refptr<TabletInfo>>& tablets);
-  void ReqDeleteTablets(tserver::WriteRequestPB* req,
-                        const std::vector<scoped_refptr<TabletInfo>>& tablets);
+
+  // These three methods below generate WriteRequestPB to persist the
+  // information on the tablet metadata updates in the system catalog. The size
+  // of the generated write request is limited by the 'max_size' parameter.
+  // The information on the tablets' metadata updates is provided with the
+  // 'tablets' parameter. The 'excess_tablets' output parameter is populated
+  // with elements which didn't fit into the result request due to the sizing
+  // limitations. The result request is returned via the 'req' output parameter.
+  // Note the best effort behavior of these methods: the resulting request
+  // cannot be empty, and the very first row might be over the limit already.
+  // However, that will be caught later by SyncWrite() before actually writing
+  // the generated data into the system tablet.
+  void ReqAddTablets(size_t max_size,
+                     std::vector<scoped_refptr<TabletInfo>> tablets,
+                     std::vector<scoped_refptr<TabletInfo>>* excess_tablets,
+                     tserver::WriteRequestPB* req);
+  void ReqUpdateTablets(size_t max_size,
+                        std::vector<scoped_refptr<TabletInfo>> tablets,
+                        std::vector<scoped_refptr<TabletInfo>>* excess_tablets,
+                        tserver::WriteRequestPB* req);
+  void ReqDeleteTablets(size_t max_size,
+                        std::vector<scoped_refptr<TabletInfo>> tablets,
+                        std::vector<scoped_refptr<TabletInfo>>* excess_tablets,
+                        tserver::WriteRequestPB* req);
+
+  // Generator function used by the ChunkedWrite() method below. The three
+  // methods above (ReqAddTablets, ReqUpdateTablets, and ReqDeleteTablets)
+  // are the generators with corresponding signature.
+  typedef std::function<void(SysCatalogTable&,
+                             size_t,
+                             std::vector<scoped_refptr<TabletInfo>>,
+                             std::vector<scoped_refptr<TabletInfo>>*,
+                             tserver::WriteRequestPB*)> Generator;
+
+  // A method for chunked write into the system tablet.
+  Status ChunkedWrite(const Generator& generator,
+                      size_t max_chunk_size,
+                      std::vector<scoped_refptr<TabletInfo>> tablets_info,
+                      tserver::WriteRequestPB* req);
 
   // Overwrite (upsert) the latest event ID in the table with the provided ID.
   void ReqSetNotificationLogEventId(tserver::WriteRequestPB* req, int64_t event_id);

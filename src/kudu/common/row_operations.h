@@ -44,11 +44,30 @@ class RowOperationsPBEncoder {
   explicit RowOperationsPBEncoder(RowOperationsPB* pb);
   ~RowOperationsPBEncoder();
 
-  // Append this partial row to the protobuf.
-  void Add(RowOperationsPB::Type type, const KuduPartialRow& row);
+  // Whether there is no row operations in the encoded protobuf message.
+  bool empty() const {
+    return pb_->mutable_rows()->empty();
+  }
+
+  // Append this partial row to the protobuf. Returns the size delta for the
+  // underlying protobuf after adding the partial row.
+  size_t Add(RowOperationsPB::Type type, const KuduPartialRow& partial_row);
+
+  // Remove the last added row from the underlying protobuf. Calling this method
+  // more than one time in a row or when no rows were added triggers
+  // CHECK()/abort.
+  void RemoveLast();
 
  private:
+  // Get the size estimation (upper boundary) for encoded RowOperationsPB::rows
+  // after adding the extra row specified.
+  size_t GetRowsFieldSizeEstimate(const KuduPartialRow& partial_row,
+                                  size_t* isset_bitmap_size,
+                                  size_t* isnull_bitmap_size) const;
+
   RowOperationsPB* pb_;
+  std::string::size_type prev_indirect_data_size_;
+  std::string::size_type prev_rows_size_;
 
   DISALLOW_COPY_AND_ASSIGN(RowOperationsPBEncoder);
 };

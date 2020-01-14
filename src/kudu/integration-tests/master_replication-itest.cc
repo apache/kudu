@@ -38,6 +38,8 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -374,13 +376,8 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
   static constexpr auto kNumMasters = 3;
   static constexpr auto kNumTabletServers = 3;
   static constexpr auto kReplicationFactor = 3;
-  // In case of standard builds, shorten the Raft hearbeat and election timeout
-  // intervals to speed up the test.
-#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
+  // Shorten the Raft election timeout intervals to speed up the test.
   static constexpr auto kHbIntervalMs = 500;
-#else
-  static constexpr auto kHbIntervalMs = 200;
-#endif
   static constexpr auto kMaxMissedHbs = 2;
 
   Status Prepare() {
@@ -408,6 +405,10 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
       // Substracting an extra 1K to account for extra fields while wrapping
       // messages to replicate into UpdateConsensus RPC.
       Substitute("--consensus_max_batch_size_bytes=$0", 63 * 1024),
+      // The TabletReports scenario first verifies that master rejects tablet
+      // reports which would lead to oversized updates on the system catalog
+      // tablet, and then it toggles the flag in run time.
+      "--catalog_manager_enable_chunked_tablet_reports=false",
     };
 
     ExternalMiniClusterOptions opts;
@@ -429,6 +430,7 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
     // necessary to create many more tablet replicas in the cluster.
     static const char* const kLabelSuffix =
         "_very_looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
         "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
         "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
         "ooooooooooooooooooooooooooooooooooooooooooooooooonooooog_label_suffix";
@@ -468,6 +470,7 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
 // Make sure leader master rejects AlterTable requests which result in updates
 // on the system tablet which it would not be able to push to its followers
 // due to the limit set by the --rpc_max_message_size flag.
+//
 // This scenario simulates conditions described in KUDU-3036.
 TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
   const string table_name = "table_to_alter";
@@ -500,6 +503,91 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
   ASSERT_EQ(1, val);
 
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// In this scenario, Kudu tablet servers send Kudu master tablet reports which
+// are under the maximum RPC size limit, however the corresponding update
+// on the system tablet would be greater than that if lumping together updates
+// for every tablet. If the --catalog_manager_enable_chunked_tablet_reports
+// flag is set to 'false', Kudu masters should reject such reports. If the
+// flag set to 'true', Kudu masters should chunk the result write request to
+// the system catalog, so corresponding UpdateConsensus RPCs are not rejected
+// by follower masters due to the limit on the maximum RPC size.
+//
+// This scenario simulates conditions described in KUDU-3016.
+TEST_F(MasterReplicationAndRpcSizeLimitTest, TabletReports) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  for (auto idx = 0; idx < 10; ++idx) {
+    ASSERT_OK(CreateTable(Substitute("table_$0", idx), kReplicationFactor));
+  }
+
+  // After fresh start, there should be no rejected writes to the system catalog
+  // tablet yet.
+  int64_t val;
+  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+  ASSERT_EQ(0, val);
+
+  // Stop all masters: they will be restarted later to receive tablet reports.
+  for (auto idx = 0; idx < kNumMasters; ++idx) {
+    cluster_->master(idx)->Shutdown();
+  }
+
+  // Pause and resume tablet servers to make the tablets re-elect their leaders,
+  // so Raft configuration for every tablet is updated in the end of the cycle
+  // because of the fresh Raft terms. The result distribution of leader replicas
+  // makes them concentrated at two tablet servers out of three, which results
+  // in two larger tablet reports.
+  for (auto idx = 0; idx < kNumTabletServers; ++idx) {
+    ASSERT_OK(cluster_->tablet_server(idx)->Pause());
+    // Allow for leader re-election to happen.
+    SleepFor(MonoDelta::FromMilliseconds(3 * kMaxMissedHbs * kHbIntervalMs));
+    ASSERT_OK(cluster_->tablet_server(idx)->Resume());
+    SleepFor(MonoDelta::FromMilliseconds(2 * kHbIntervalMs));
+  }
+
+  // Start all masters. The tablet servers should send full (non-incremental)
+  // tablet reports to the leader master once hearing from it.
+  for (auto idx = 0; idx < kNumMasters; ++idx) {
+    ASSERT_OK(cluster_->master(idx)->Restart());
+  }
+
+  // Since the chunked updates on the system catalog tablet is disabled by
+  // default, masters should reject tablet reports that would result in
+  // oversized updates on the system catalog tablet.
+  ASSERT_EVENTUALLY([&] {
+    int64_t val;
+    ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+    ASSERT_GT(val, 0);
+  });
+
+  for (auto idx = 0; idx < kNumMasters; ++idx) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->master(idx),
+                                "catalog_manager_enable_chunked_tablet_reports",
+                                "true"));
+  }
+
+  ASSERT_OK(cluster_->WaitForTabletServerCount(
+      kNumTabletServers, MonoDelta::FromSeconds(60)));
+
+  // Run a test workload and make sure the system is operable. Prior to
+  // KUDU-3016 fix, the scenario above would lead to a DoS situation.
+  TestWorkload w(cluster_.get());
+  w.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  w.set_num_replicas(kReplicationFactor);
+  w.set_num_write_threads(2);
+  w.set_num_read_threads(2);
+  w.Setup();
+  w.Start();
+  SleepFor(MonoDelta::FromSeconds(3));
+  w.StopAndJoin();
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(
+      w.table_name(), ClusterVerifier::EXACTLY, w.rows_inserted()));
 }
 
 } // namespace master
