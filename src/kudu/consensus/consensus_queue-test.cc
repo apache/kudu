@@ -339,6 +339,23 @@ TEST_F(ConsensusQueueTest, TestTransferLeadershipWhenAppropriate) {
   config.mutable_peers(1)->set_member_type(RaftPeerPB::NON_VOTER);
   queue_->SetLeaderMode(10, 1, config);
   NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // Now undo that.
+  config.mutable_peers(1)->set_member_type(RaftPeerPB::VOTER);
+  queue_->SetLeaderMode(10, 1, config);
+  NO_FATALS(verify_elections(/*election_happened*/true));
+
+  // If the peer reported itself as quiescing, we also wouldn't trigger an
+  // election.
+  peer_response.set_server_quiescing(true);
+  NO_FATALS(verify_elections(/*election_happened*/false));
+
+  // If the peer stops reporting its server as quiescing, elections will start
+  // up again.
+  peer_response.clear_server_quiescing();
+  NO_FATALS(verify_elections(/*election_happened*/true));
+  peer_response.set_server_quiescing(false);
+  NO_FATALS(verify_elections(/*election_happened*/true));
 }
 
 // Tests that the queue is able to track a peer when it starts tracking a peer

@@ -146,6 +146,7 @@ PeerMessageQueue::TrackedPeer::TrackedPeer(RaftPeerPB peer_pb)
       last_exchange_status(PeerStatus::NEW),
       last_communication_time(MonoTime::Now()),
       wal_catchup_possible(true),
+      remote_server_quiescing(false),
       last_overall_health_status(HealthReportPB::UNKNOWN),
       status_log_throttler(std::make_shared<logging::LogThrottler>()),
       last_seen_term_(0) {
@@ -1079,8 +1080,9 @@ void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
   // Do some basic sanity checks that we can actually transfer leadership to
   // the given peer.
   if (queue_state_.mode != PeerMessageQueue::LEADER ||
+      local_peer_pb_.permanent_uuid() == peer.uuid() ||
       peer.last_exchange_status != PeerStatus::OK ||
-      local_peer_pb_.permanent_uuid() == peer.uuid()) {
+      peer.remote_server_quiescing) {
     return;
   }
 
@@ -1154,6 +1156,10 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     // want to immediately send another request as we attempt to sync the log
     // offset between the local leader and the remote peer.
     UpdateExchangeStatus(peer, prev_peer_state, response, &send_more_immediately);
+
+    // If the peer is hosted on a server that is quiescing, note that now.
+    peer->remote_server_quiescing = response.has_server_quiescing() &&
+                                    response.server_quiescing();
 
     // If the reported last-received op for the replica is in our local log,
     // then resume sending entries from that point onward. Otherwise, resume

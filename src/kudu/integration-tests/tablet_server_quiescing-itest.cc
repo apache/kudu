@@ -57,6 +57,8 @@ DECLARE_int32(scanner_default_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
 
+METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_RunLeaderElection);
+
 using kudu::client::KuduClient;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
@@ -514,12 +516,30 @@ TEST_P(TServerQuiescingParamITest, TestWriteWhileAllQuiescing) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
   }
+  // Counts the number of times we were requested to start elections
+  // cluster-wide.
+  auto get_num_elections = [&] () {
+    int num_elections = 0;
+    for (int i = 0; i < kNumReplicas; i++) {
+      auto* ts = cluster_->mini_tablet_server(i)->server();
+      scoped_refptr<Histogram> hist(ts->metric_entity()->FindOrCreateHistogram(
+          &METRIC_handler_latency_kudu_consensus_ConsensusService_RunLeaderElection));
+      num_elections++;
+    }
+    return num_elections;
+  };
+
+  int initial_num_elections = get_num_elections();
+  ASSERT_LT(0, initial_num_elections);
 
   // We should continue to write uninterrupted.
   int start_rows = first_workload->rows_inserted();
   ASSERT_EVENTUALLY([&] {
     ASSERT_GT(first_workload->rows_inserted(), start_rows + 1000);
   });
+
+  // We also should not have triggered any elections.
+  ASSERT_EQ(initial_num_elections, get_num_elections());
 }
 
 TEST_P(TServerQuiescingParamITest, TestAbruptStepdownWhileAllQuiescing) {

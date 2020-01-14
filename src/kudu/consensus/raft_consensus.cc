@@ -1641,6 +1641,9 @@ void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* respons
       last_received_cur_leader_);
   response->mutable_status()->set_last_committed_idx(
       queue_->GetCommittedIndex());
+  if (PREDICT_TRUE(server_ctx_.quiescing) && server_ctx_.quiescing->load()) {
+    response->set_server_quiescing(true);
+  }
 }
 
 void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,

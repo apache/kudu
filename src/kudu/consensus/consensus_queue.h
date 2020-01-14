@@ -167,6 +167,10 @@ class PeerMessageQueue {
     // the local peer's WAL.
     bool wal_catchup_possible;
 
+    // Whether the peer's server is quiescing, which dictates whether the peer
+    // is a candidate for leadership successor.
+    bool remote_server_quiescing;
+
     // The peer's latest overall health status.
     HealthReportPB::HealthStatus last_overall_health_status;
 

@@ -404,6 +404,11 @@ message ConsensusResponsePB {
   // The current consensus status of the receiver peer.
   optional ConsensusStatusPB status = 3;
 
+  // Whether the server that hosts the peer is quiescing. This doesn't
+  // necessarily have any bearing on the state of the Raft peer itself, but it
+  // does indicate that the peer should not be a candidate for leadership.
+  optional bool server_quiescing = 4;
+
   // A generic error message (such as tablet not found), per operation
   // error messages are sent along with the consensus status.
   optional tserver.TabletServerErrorPB error = 999;
