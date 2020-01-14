@@ -1016,7 +1016,7 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
 
   bool is_negotiation_error = false;
   NO_FATALS(DoTestExpectTimeout(
-      p, MonoDelta::FromMilliseconds(100), &is_negotiation_error));
+      p, MonoDelta::FromMilliseconds(100), false, &is_negotiation_error));
   EXPECT_TRUE(is_negotiation_error);
 
   acceptor_thread->Join();
@@ -1305,6 +1305,7 @@ TEST_P(TestRpc, TestCancellation) {
   Proxy p(client_messenger, server_addr, server_addr.host(),
           GenericCalculatorService::static_service_name());
 
+  int timeout_ms = 10;
   for (int i = OutboundCall::READY; i <= OutboundCall::FINISHED_SUCCESS; ++i) {
     FLAGS_rpc_inject_cancellation_state = i;
     switch (i) {
@@ -1315,6 +1316,7 @@ TEST_P(TestRpc, TestCancellation) {
         ASSERT_TRUE(DoTestOutgoingSidecar(p, 0, 0).IsAborted());
         ASSERT_TRUE(DoTestOutgoingSidecar(p, 123, 456).IsAborted());
         ASSERT_TRUE(DoTestOutgoingSidecar(p, 3000 * 1024, 2000 * 1024).IsAborted());
+        DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(timeout_ms), true);
         break;
       case OutboundCall::NEGOTIATION_TIMED_OUT:
       case OutboundCall::TIMED_OUT:
@@ -1342,6 +1344,8 @@ TEST_P(TestRpc, TestCancellation) {
         break;
     }
   }
+  // Sleep briefly to ensure the timeout tests have a chance for the timeouts to trigger.
+  SleepFor(MonoDelta::FromMilliseconds(timeout_ms * 2));
   client_messenger->Shutdown();
 }
 

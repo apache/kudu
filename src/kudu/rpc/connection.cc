@@ -376,7 +376,10 @@ void Connection::CallAwaitingResponse::HandleTimeout(ev::timer &watcher, int rev
 
 void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   DCHECK(reactor_thread_->IsCurrentThread());
-  DCHECK(car->call);
+  if (!car->call) {
+    // The RPC may have been cancelled before the timeout was hit.
+    return;
+  }
   // The timeout timer is stopped by the car destructor exiting Connection::HandleCallResponse()
   DCHECK(!car->call->IsFinished());
 

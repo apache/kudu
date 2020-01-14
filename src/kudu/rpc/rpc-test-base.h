@@ -533,9 +533,10 @@ class RpcTestBase : public KuduTest {
     CHECK_OK(DoTestOutgoingSidecar(p, size1, size2));
   }
 
-  void DoTestExpectTimeout(const Proxy& p,
-                           const MonoDelta& timeout,
-                           bool* is_negotiaton_error = nullptr) {
+  static void DoTestExpectTimeout(const Proxy& p,
+                                  const MonoDelta& timeout,
+                                  bool will_be_cancelled = false,
+                                  bool* is_negotiaton_error = nullptr) {
     SleepRequestPB req;
     SleepResponsePB resp;
     // Sleep for 500ms longer than the call timeout.
@@ -554,13 +555,18 @@ class RpcTestBase : public KuduTest {
     }
 
     int expected_millis = timeout.ToMilliseconds();
-    int elapsed_millis = sw.elapsed().wall_millis();
+    int elapsed_millis = static_cast<int>(sw.elapsed().wall_millis());
 
-    // We shouldn't timeout significantly faster than our configured timeout.
-    EXPECT_GE(elapsed_millis, expected_millis - 10);
+    // We shouldn't timeout significantly faster than our configured timeout, unless the
+    // rpc is cancelled.
+    if (!will_be_cancelled) EXPECT_GE(elapsed_millis, expected_millis - 10);
     // And we also shouldn't take the full time that we asked for
     EXPECT_LT(elapsed_millis * 1000, sleep_micros);
-    EXPECT_TRUE(s.IsTimedOut());
+    if (will_be_cancelled) {
+      EXPECT_TRUE(s.IsAborted());
+    } else {
+      EXPECT_TRUE(s.IsTimedOut());
+    }
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
 
