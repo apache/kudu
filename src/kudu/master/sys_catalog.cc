@@ -94,6 +94,15 @@ DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
 TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
+DECLARE_int64(rpc_max_message_size);
+
+METRIC_DEFINE_counter(server, sys_catalog_oversized_write_requests,
+                      "System Catalog Oversized Write Requests",
+                      kudu::MetricUnit::kRequests,
+                      "Number of oversized write requests to the system "
+                      "catalog tablet rejected since start",
+                      kudu::MetricLevel::kWarn);
+
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusStatePB;
@@ -106,6 +115,7 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
+using std::back_inserter;
 using std::function;
 using std::set;
 using std::shared_ptr;
@@ -123,6 +133,20 @@ class Message;
 
 namespace kudu {
 namespace master {
+
+namespace  {
+
+// An utility function to get the upper limit for the size of a write request
+// into the system tablet represented by WriteRequestPB. The write request is
+// eventually wrapped into ConsensusRequestPB when a leader master propagates
+// the updates to the followers. Wrapping WriteRequestPB into ConsensusRequestPB
+// requires adding extra fields, and 1KB looks like a reasonable estimate
+// for the upper limit of the added delta.
+size_t GetMaxWriteRequestSize() {
+  return std::max<int64_t>(0, FLAGS_rpc_max_message_size - 1024);
+}
+
+} // anonymous namespace
 
 static const char* const kSysCatalogTableColType = "entry_type";
 static const char* const kSysCatalogTableColId = "entry_id";
@@ -162,6 +186,8 @@ SysCatalogTable::SysCatalogTable(Master* master,
       master_(master),
       cmeta_manager_(new ConsensusMetadataManager(master_->fs_manager())),
       leader_cb_(std::move(leader_cb)) {
+  oversized_write_requests_ = master_->metric_entity()->FindOrCreateCounter(
+      &METRIC_sys_catalog_oversized_write_requests);
 }
 
 SysCatalogTable::~SysCatalogTable() {
@@ -216,7 +242,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
                                   peer_addrs_from_opts.end(),
                                   peer_addrs_from_disk.begin(),
                                   peer_addrs_from_disk.end(),
-                                  std::back_inserter(symm_diff));
+                                  back_inserter(symm_diff));
     if (!symm_diff.empty()) {
       string msg = Substitute(
           "on-disk master list ($0) and provided master list ($1) differ. "
@@ -451,9 +477,17 @@ Status SysCatalogTable::WaitUntilRunning() {
 }
 
 Status SysCatalogTable::SyncWrite(const WriteRequestPB& req) {
+  DCHECK(req.has_tablet_id());
+  DCHECK(req.has_schema());
   MAYBE_RETURN_FAILURE(FLAGS_sys_catalog_fail_during_write,
                        Status::RuntimeError(kInjectedFailureStatusMsg));
-
+  const size_t request_size = req.ByteSizeLong();
+  if (request_size > GetMaxWriteRequestSize()) {
+    oversized_write_requests_->Increment();
+    return Status::InvalidArgument(
+        Substitute("write request ($0 bytes in size) is too large for current "
+                   "setting of the --rpc_max_message_size flag", request_size));
+  }
   CountDownLatch latch(1);
   WriteResponsePB resp;
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
@@ -476,7 +510,7 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB& req) {
       LOG(WARNING) << Substitute(
           "row $0: $1", error.row_index(), StatusFromPB(error.error()).ToString());
     }
-    return Status::Corruption("One or more rows failed to write");
+    return Status::Corruption("failed to write one or more rows");
   }
   return Status::OK();
 }

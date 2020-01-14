@@ -408,7 +408,7 @@ TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
   const Status s = master_->catalog_manager()->sys_catalog()->
       AddCertAuthorityEntry(ca_entry);
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
-  ASSERT_EQ("Corruption: One or more rows failed to write", s.ToString());
+  ASSERT_EQ("Corruption: failed to write one or more rows", s.ToString());
 }
 
 } // namespace master

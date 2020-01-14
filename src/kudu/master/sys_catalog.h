@@ -38,6 +38,7 @@
 
 namespace kudu {
 
+class Counter;
 class FsManager;
 class MetricRegistry;
 class RowBlockRow;
@@ -323,6 +324,8 @@ class SysCatalogTable {
   ElectedLeaderCallback leader_cb_;
 
   consensus::RaftPeerPB local_peer_pb_;
+
+  scoped_refptr<Counter> oversized_write_requests_;
 };
 
 } // namespace master

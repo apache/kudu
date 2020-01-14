@@ -19,6 +19,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -29,20 +30,24 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -54,17 +59,23 @@
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
+METRIC_DECLARE_counter(sys_catalog_oversized_write_requests);
+
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
-using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using kudu::consensus::ReplicaManagementInfoPB;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -349,6 +360,147 @@ TEST_F(MasterReplicationTest, TestConnectToFollowerMasterOnly) {
   EXPECT_LE(successes, 1);
 }
 
+// In this test, a Kudu master receives RPC under the maximum size limit,
+// however the corresponding update on the system tablet would be greater than.
+class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
+ public:
+  void SetUp() override {
+    KuduTest::SetUp();
+    ASSERT_OK(Prepare());
+  }
+
+ protected:
+  static constexpr const char* const kKeyColumnName = "key";
+  static constexpr auto kNumMasters = 3;
+  static constexpr auto kNumTabletServers = 3;
+  static constexpr auto kReplicationFactor = 3;
+  // In case of standard builds, shorten the Raft hearbeat and election timeout
+  // intervals to speed up the test.
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
+  static constexpr auto kHbIntervalMs = 500;
+#else
+  static constexpr auto kHbIntervalMs = 200;
+#endif
+  static constexpr auto kMaxMissedHbs = 2;
+
+  Status Prepare() {
+    const vector<string> ts_extra_flags = {
+      // Set custom timings for Raft heartbeats and heard-from-leader timeouts.
+      Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
+      Substitute("--leader_failure_max_missed_heartbeat_periods=$0", kMaxMissedHbs),
+      // This test scenario creates many replicas per tablet server and causes
+      // multiple re-elections, so it's necessary to accommodate for spikes in
+      // Raft heartbeat traffic coming from one tablet server to another,
+      // especially in case of sanitizer builds.
+      "--rpc_service_queue_length=200",
+    };
+    const vector<string> master_extra_flags = {
+      // Set custom timings for Raft heartbeats and heard-from-leader timeouts.
+      Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
+      Substitute("--leader_failure_max_missed_heartbeat_periods=$0", kMaxMissedHbs),
+      // Turn off the validator for the --rpc_max_message_size flag since this
+      // scenario uses non-conventional setting for the flag.
+      "--rpc_max_message_size_enable_validation=false",
+      // Set the maximum size for the master RPC to 64 KiByte.
+      Substitute("--rpc_max_message_size=$0", 64 * 1024),
+      // The updates on the system catalog tablet might be accumulated by Raft
+      // in various scenarios due to connectivity, leadership changes, etc.
+      // Substracting an extra 1K to account for extra fields while wrapping
+      // messages to replicate into UpdateConsensus RPC.
+      Substitute("--consensus_max_batch_size_bytes=$0", 63 * 1024),
+    };
+
+    ExternalMiniClusterOptions opts;
+    opts.num_masters = kNumMasters;
+    opts.num_tablet_servers = kNumTabletServers;
+    opts.extra_master_flags = master_extra_flags;
+    opts.extra_tserver_flags = ts_extra_flags;
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+    RETURN_NOT_OK(cluster_->Start());
+    return cluster_->CreateClient(nullptr, &client_);
+  }
+
+  // Create a table named 'table_name' with pre-defined structure.
+  Status CreateTable(const string& table_name, int replication_factor) {
+    // In this test scenario, long dimension labels are used to make
+    // the corresponding update on the system tablet longer than the incoming
+    // RPC to master (e.g. a tablet report or AlterTable request). In real life,
+    // it's possible to achieve the same by other means, but it would be
+    // necessary to create many more tablet replicas in the cluster.
+    static const char* const kLabelSuffix =
+        "_very_looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "ooooooooooooooooooooooooooooooooooooooooooooooooonooooog_label_suffix";
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    b.AddColumn("string_column")->Type(KuduColumnSchema::STRING);
+    RETURN_NOT_OK(b.Build(&schema_));
+
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    const auto s = table_creator->table_name(table_name)
+        .schema(&schema_)
+        .set_range_partition_columns({ kKeyColumnName })
+        .add_hash_partitions({ kKeyColumnName }, 10)
+        .num_replicas(replication_factor)
+        .dimension_label(table_name + kLabelSuffix)
+        .Create();
+    return s;
+  }
+
+  Status GetMetricValue(const MetricPrototype& metric_proto, int64_t* value) {
+    int leader_idx;
+    RETURN_NOT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+    return itest::GetInt64Metric(
+          cluster_->master(leader_idx)->bound_http_hostport(),
+          &METRIC_ENTITY_server,
+          nullptr,
+          &metric_proto,
+          "value",
+          value);
+  }
+
+  unique_ptr<cluster::ExternalMiniCluster> cluster_;
+  client::sp::shared_ptr<client::KuduClient> client_;
+  KuduSchema schema_;
+};
+
+// Make sure leader master rejects AlterTable requests which result in updates
+// on the system tablet which it would not be able to push to its followers
+// due to the limit set by the --rpc_max_message_size flag.
+// This scenario simulates conditions described in KUDU-3036.
+TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
+  const string table_name = "table_to_alter";
+  ASSERT_OK(CreateTable(table_name, kReplicationFactor));
+
+  // After fresh start, there should be no rejected writes to the system catalog
+  // tablet yet.
+  int64_t val;
+  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+  ASSERT_EQ(0, val);
+
+  unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+  alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow());
+  for (auto i = 0; i < 50; ++i) {
+    unique_ptr<KuduPartialRow> lower(schema_.NewRow());
+    unique_ptr<KuduPartialRow> upper(schema_.NewRow());
+    ASSERT_OK(lower->SetInt64(kKeyColumnName, 10 * i));
+    ASSERT_OK(upper->SetInt64(kKeyColumnName, 10 * (i + 1)));
+    alterer->AddRangePartition(lower.release(), upper.release());
+  }
+  auto s = alterer->timeout(MonoDelta::FromSeconds(30))->Alter();
+
+  // The DDL attempt above (i.e. the Alter() call) produces an oversided write
+  // request to the system catalog tablet. The request should have been rejected
+  // and the corresponding metric incremented.
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "too large for current setting of the "
+                                    "--rpc_max_message_size flag");
+  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+  ASSERT_EQ(1, val);
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
 
 } // namespace master
 } // namespace kudu

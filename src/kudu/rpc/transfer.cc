@@ -36,6 +36,11 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/socket.h"
 
+DEFINE_bool(rpc_max_message_size_enable_validation, true,
+            "Whether to turn off validation for --rpc_max_message_size flag. "
+            "This is a test-only flag.");
+TAG_FLAG(rpc_max_message_size_enable_validation, unsafe);
+
 DEFINE_int64(rpc_max_message_size, (50 * 1024 * 1024),
              "The maximum size of a message that any RPC that the server will accept. "
              "Must be at least 1MB.");
@@ -43,6 +48,9 @@ TAG_FLAG(rpc_max_message_size, advanced);
 TAG_FLAG(rpc_max_message_size, runtime);
 
 static bool ValidateMaxMessageSize(const char* flagname, int64_t value) {
+  if (!FLAGS_rpc_max_message_size_enable_validation) {
+    return true;
+  }
   if (value < 1 * 1024 * 1024) {
     LOG(ERROR) << flagname << " must be at least 1MB.";
     return false;
