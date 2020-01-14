@@ -331,10 +331,8 @@ TEST_F(TabletCopyClientSessionITest, TestTabletCopyWithBusySource) {
 // Test that fails a disk during copies/bootstraps and ensures the tablets are
 // appropriately failed.
 TEST_F(TabletCopyClientSessionITest, TestStopCopyOnClientDiskFailure) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
   const int kNumTablets = 10;
   const MonoDelta kTimeout = MonoDelta::FromSeconds(90);
   ExternalMiniClusterOptions opts;
@@ -345,9 +343,6 @@ TEST_F(TabletCopyClientSessionITest, TestStopCopyOnClientDiskFailure) {
     // complex, concurrent codepaths.
     "--flush_threshold_mb=1",
     "--flush_threshold_secs=1",
-
-    // Ensure we don't crash when we start injecting errors.
-    "--crash_on_eio=false"
   };
 
   // Create a cluster with multiple directories per server so we can fail a
@@ -355,67 +350,66 @@ TEST_F(TabletCopyClientSessionITest, TestStopCopyOnClientDiskFailure) {
   opts.num_data_dirs = 2;
   NO_FATALS(PrepareClusterForTabletCopy(opts, kNumTablets));
 
-  ExternalTabletServer* ext_ts0 = cluster_->tablet_server(0);
-  ExternalTabletServer* ext_ts1 = cluster_->tablet_server(1);
-  TServerDetails* ts0 = ts_map_[ext_ts0->uuid()];
-  TServerDetails* ts1 = ts_map_[ext_ts1->uuid()];
+  ExternalTabletServer* ets_src = cluster_->tablet_server(0);
+  ExternalTabletServer* ets_dst = cluster_->tablet_server(1);
+  TServerDetails* ts_src = ts_map_[ets_src->uuid()];
+  TServerDetails* ts_dst = ts_map_[ets_dst->uuid()];
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kNumTablets, kTimeout, &tablets));
+  ASSERT_OK(WaitForNumTabletsOnTS(ts_src, kNumTablets, kTimeout, &tablets));
   ASSERT_EQ(kNumTablets, tablets.size());
 
   // Wait a bit for some flushes to occur and blocks to appear.
   ASSERT_EVENTUALLY([&] {
     // Each data dir has '.', '..', and 'block_manager_instance'.
-    const string& dir_with_data = JoinPathSegments(ext_ts0->data_dirs()[0], "data");
+    const string& dir_with_data = JoinPathSegments(ets_src->data_dirs()[0], "data");
     ASSERT_GT(inspect_->CountFilesInDir(dir_with_data), 3);
   });
 
   // Now kick off the tablet copies.
   HostPort src_addr;
-  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
+  ASSERT_OK(HostPortFromPB(ts_src->registration.rpc_addresses(0), &src_addr));
   vector<thread> threads;
-  auto CopyTabletWithNum = [&] (int i) {
-    LOG(INFO) << Substitute("Copying over tablet $0 / $1", i + 1, kNumTablets);
+  auto copy_tablet_with_index = [&] (int i) {
+    LOG(INFO) << Substitute("Copying tablet $0 / $1", i + 1, kNumTablets);
     const string& tablet_id = tablets[i].tablet_status().tablet_id();
     // The copy can fail if the tablet in the middle of some maintenance
     // operations, complaining about missing blocks. Just try again.
-    while (!StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+    while (!StartTabletCopy(ts_dst, tablet_id, ts_src->uuid(), src_addr,
            std::numeric_limits<int64_t>::max(), kDefaultTimeout).ok()) {
       SleepFor(MonoDelta::FromMilliseconds(50));
     }
   };
-  for (int i = 0; i < tablets.size() - 1; i++) {
+  for (int i = 0; i < kNumTablets - 1; i++) {
     threads.emplace_back([=] {
-      CopyTabletWithNum(i);
+      copy_tablet_with_index(i);
     });
   }
   for (auto& thread : threads) {
     thread.join();
   }
+  // Wait for all copies to start by waiting for the number of tablets on the
+  // tserver to reach the number of copies we've started. Note: these copies
+  // may still be ongoing.
+  ASSERT_OK(WaitForNumTabletsOnTS(ts_dst, kNumTablets - 1, kDefaultTimeout));
 
   // Inject failures into a directory on the receiving server.
-  const string& dir_to_fail = ext_ts1->data_dirs()[1];
+  const string& dir_to_fail = ets_dst->data_dirs()[1];
   LOG(INFO) << "Injecting failures to " << dir_to_fail;
-  ASSERT_OK(cluster_->SetFlag(ext_ts1, "env_inject_eio_globs",
+  ASSERT_OK(cluster_->SetFlag(ets_dst, "env_inject_eio_globs",
       JoinPathSegments(dir_to_fail, "**")));
 
   // Copy over the last tablet and immediately try failing it.
-  CopyTabletWithNum(kNumTablets - 1);
-  ASSERT_OK(cluster_->SetFlag(ext_ts1, "env_inject_eio", "1"));
+  copy_tablet_with_index(kNumTablets - 1);
+  ASSERT_OK(cluster_->SetFlag(ets_dst, "env_inject_eio", "1"));
 
-  // The injection will attempt to fail all of the tablets on the affected
-  // disk. The last copy may have started after the disk failure and, thus, may
-  // have avoided the failed directory. As such, we can only enforce that most,
-  // not necessarily all, tablets have failed.
+  // The error will result in all of the tablets on the affected disk failing.
   ASSERT_EVENTUALLY([&] {
     int64_t failed_on_ts = 0;
-    ASSERT_OK(itest::GetInt64Metric(ext_ts1->bound_http_hostport(),
+    ASSERT_OK(itest::GetInt64Metric(ets_dst->bound_http_hostport(),
         &METRIC_ENTITY_server, nullptr, &METRIC_tablets_num_failed, "value", &failed_on_ts));
     LOG(INFO) << Substitute("Waiting for tablets to fail: $0 / $1", failed_on_ts, kNumTablets);
-    ASSERT_GE(failed_on_ts, kNumTablets - 1);
-    LOG(INFO) << "Asserted success!";
+    ASSERT_EQ(failed_on_ts, kNumTablets);
   });
-  LOG(INFO) << "Done!";
 }
 
 } // namespace kudu

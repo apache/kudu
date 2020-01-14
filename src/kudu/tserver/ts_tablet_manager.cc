@@ -782,10 +782,17 @@ void TSTabletManager::RunTabletCopy(
     LOG(FATAL) << "Callback invoked twice from TSTabletManager::RunTabletCopy()";
   };
 
-  // From this point onward, we do not notify the caller about progress or success.
+  // From this point onward, we do not notify the caller about progress or
+  // success. That said, if the copy fails for whatever reason, we must make
+  // sure to clean up.
+  Status s;
+  auto fail_tablet = MakeScopedCleanup([&] {
+    replica->SetError(s);
+    replica->Shutdown();
+  });
 
   // Go through and synchronously download the remote blocks and WAL segments.
-  Status s = tc_client.FetchAll(replica);
+  s = tc_client.FetchAll(replica);
   if (!s.ok()) {
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
                                          << kSrcPeerInfo << ": " << s.ToString();
@@ -802,6 +809,7 @@ void TSTabletManager::RunTabletCopy(
                                          << s.ToString();
     return;
   }
+  fail_tablet.cancel();
 
   // Bootstrap and start the fully-copied tablet.
   OpenTablet(replica, deleter);
