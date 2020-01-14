@@ -2042,9 +2042,13 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   const int64_t kMinRejections = 100;
   const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
 
-  // Start the cluster with a low per-tablet transaction memory limit, so that
-  // the test can complete faster.
-  NO_FATALS(BuildAndStart({ "--tablet_transaction_memory_limit_mb=2" }));
+  NO_FATALS(BuildAndStart({
+      // Start the cluster with a low per-tablet transaction memory limit,
+      // so that the test can complete faster.
+      "--tablet_transaction_memory_limit_mb=2",
+      // Make the validator of 'RPC vs transactional memory size' happy.
+      "--rpc_max_message_size=2097152",
+  }));
 
   // Kill both followers.
   TServerDetails* details;

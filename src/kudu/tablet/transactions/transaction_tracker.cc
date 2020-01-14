@@ -37,6 +37,7 @@
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -49,6 +50,8 @@ DEFINE_int64(tablet_transaction_memory_limit_mb, 64,
              "be forced to retry them. If -1, transaction memory tracking is "
              "disabled.");
 TAG_FLAG(tablet_transaction_memory_limit_mb, advanced);
+
+DECLARE_int64(rpc_max_message_size);
 
 METRIC_DEFINE_gauge_uint64(tablet, all_transactions_inflight,
                            "Transactions In Flight",
@@ -84,11 +87,36 @@ METRIC_DEFINE_counter(tablet, transaction_memory_limit_rejections,
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using strings::Substitute;
+
+static bool ValidateTransactionMemoryLimit(const char* flagname, int64_t value) {
+  // -1 is a special value for the  --tablet_transaction_memory_limit_mb flag.
+  if (value < -1) {
+    LOG(ERROR) << Substitute("$0: invalid value for flag $1", value, flagname);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(tablet_transaction_memory_limit_mb, ValidateTransactionMemoryLimit);
+
+static bool ValidateTransactionMemoryAndRpcSize() {
+  const int64_t transaction_max_size =
+      FLAGS_tablet_transaction_memory_limit_mb * 1024 * 1024;
+  const int64_t rpc_max_size = FLAGS_rpc_max_message_size;
+  if (transaction_max_size >= 0 && transaction_max_size < rpc_max_size) {
+    LOG(ERROR) << Substitute(
+        "--tablet_transaction_memory_limit_mb is set too low compared with "
+        "--rpc_max_message_size; increase --tablet_transaction_memory_limit_mb "
+        "at least up to $0", (rpc_max_size + 1024 * 1024 - 1) / (1024 * 1024));
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(transaction_memory_and_rpc_size,
+                     ValidateTransactionMemoryAndRpcSize);
 
 namespace kudu {
 namespace tablet {
-
-using strings::Substitute;
 
 #define MINIT(x) x(METRIC_##x.Instantiate(entity))
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
