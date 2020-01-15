@@ -64,7 +64,7 @@ class RWMutex {
   void WriteUnlock();
   bool TryWriteLock();
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   void AssertAcquired() const;
   void AssertAcquiredForReading() const;
   void AssertAcquiredForWriting() const;
@@ -90,7 +90,7 @@ class RWMutex {
     READER,
     WRITER,
   };
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   void CheckLockState(LockState state) const;
   void MarkForReading();
   void MarkForWriting();
@@ -106,7 +106,7 @@ class RWMutex {
 
   pthread_rwlock_t native_handle_;
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   // Protects reader_tids_ and writer_tid_.
   mutable simple_spinlock tid_lock_;
 

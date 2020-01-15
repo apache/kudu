@@ -33,7 +33,7 @@ class RefCountedBase {
 
  private:
   mutable int ref_count_;
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   mutable bool in_dtor_;
 #endif
 
@@ -57,7 +57,7 @@ class RefCountedThreadSafeBase {
 
  private:
   mutable AtomicRefCount ref_count_;
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   mutable bool in_dtor_;
 #endif
 

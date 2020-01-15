@@ -19,7 +19,7 @@
 
 #include <glog/logging.h>
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/thread.h"
@@ -31,13 +31,15 @@ RWCLock::RWCLock()
   : no_mutators_(&lock_),
     no_readers_(&lock_),
     reader_count_(0),
-#ifdef NDEBUG
-    write_locked_(false) {
-#else
+    write_locked_(false)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
+    ,
     write_locked_(false),
     writer_tid_(0),
     last_writelock_acquire_time_(0) {
   last_writer_backtrace_[0] = '\0';
+#else
+  {
 #endif // NDEBUG
 }
 
@@ -77,7 +79,7 @@ bool RWCLock::HasWriteLock() const {
 
 bool RWCLock::HasWriteLockUnlocked() const {
   lock_.AssertAcquired();
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   return writer_tid_ == Thread::CurrentThreadId();
 #else
   return write_locked_;
@@ -90,7 +92,7 @@ void RWCLock::WriteLock() {
   while (write_locked_) {
     no_mutators_.Wait();
   }
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   last_writelock_acquire_time_ = GetCurrentTimeMicros();
   writer_tid_ = Thread::CurrentThreadId();
   HexStackTraceToString(last_writer_backtrace_, kBacktraceBufSize);
@@ -102,7 +104,7 @@ void RWCLock::WriteUnlock() {
   MutexLock l(lock_);
   DCHECK(HasWriteLockUnlocked());
   write_locked_ = false;
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   writer_tid_ = 0;
   last_writer_backtrace_[0] = '\0';
 #endif // NDEBUG
@@ -125,7 +127,7 @@ void RWCLock::CommitUnlock() {
   DCHECK(!HasReadersUnlocked());
   DCHECK(HasWriteLockUnlocked());
   write_locked_ = false;
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   writer_tid_ = 0;
   last_writer_backtrace_[0] = '\0';
 #endif // NDEBUG

@@ -21,7 +21,7 @@ namespace kudu {
 
 ConditionVariable::ConditionVariable(Mutex* user_lock)
     : user_mutex_(&user_lock->native_handle_)
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
     , user_lock_(user_lock)
 #endif
 {
@@ -49,12 +49,12 @@ ConditionVariable::~ConditionVariable() {
 
 void ConditionVariable::Wait() const {
   ThreadRestrictions::AssertWaitAllowed();
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckHeldAndUnmark();
 #endif
   int rv = pthread_cond_wait(&condition_, user_mutex_);
   DCHECK_EQ(0, rv);
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckUnheldAndMark();
 #endif
 }
@@ -68,7 +68,7 @@ bool ConditionVariable::WaitUntil(const MonoTime& until) const {
     return false;
   }
 
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckHeldAndUnmark();
 #endif
 
@@ -89,7 +89,7 @@ bool ConditionVariable::WaitUntil(const MonoTime& until) const {
   DCHECK(rv == 0 || rv == ETIMEDOUT)
     << "unexpected pthread_cond_timedwait return value: " << rv;
 
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckUnheldAndMark();
 #endif
   return rv == 0;
@@ -104,7 +104,7 @@ bool ConditionVariable::WaitFor(const MonoDelta& delta) const {
     return false;
   }
 
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckHeldAndUnmark();
 #endif
 
@@ -123,7 +123,7 @@ bool ConditionVariable::WaitFor(const MonoDelta& delta) const {
 
   DCHECK(rv == 0 || rv == ETIMEDOUT)
     << "unexpected pthread_cond_timedwait return value: " << rv;
-#if !defined(NDEBUG)
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
   user_lock_->CheckUnheldAndMark();
 #endif
   return rv == 0;
