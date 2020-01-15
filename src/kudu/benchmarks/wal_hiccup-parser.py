@@ -32,7 +32,7 @@ import sys
 
 def main():
     if len(sys.argv) != 2:
-        print "Usage: %s <log output>" % (sys.argv[0],)
+        print("Usage: %s <log output>" % (sys.argv[0],))
         return
     cols = list()
     cols_printed = False
@@ -48,9 +48,9 @@ def main():
             # End of a test result.
             elif "-------" in line and vals is not None:
                 if not cols_printed:
-                    print ",".join(cols)
+                    print(",".join(cols))
                     cols_printed = True
-                print ",".join(vals)
+                print(",".join(vals))
                 vals = None
 
             # Entry in a test result.

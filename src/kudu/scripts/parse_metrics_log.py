@@ -237,9 +237,9 @@ def process(aggregated_prev, aggregated_cur):
     stats = histogram_stats(aggregated_prev, aggregated_cur, metric)
     calc_vals.extend([stats['p50'], stats['p95'], stats['p99'], stats['p999'], stats['max']])
 
-  print (aggregated_cur['ts'] + aggregated_prev['ts'])/2, \
-        cache_ratio, \
-        " ".join(str(x) for x in calc_vals)
+  print((aggregated_cur['ts'] + aggregated_prev['ts'])/2,
+        cache_ratio,
+        " ".join(str(x) for x in calc_vals))
   return aggregated_cur
 
 def main(argv):
@@ -254,13 +254,13 @@ def main(argv):
     simple_headers.append(header + "_p999")
     simple_headers.append(header + "_max")
 
-  print "time cache_hit_ratio", " ".join(simple_headers)
+  print("time cache_hit_ratio", " ".join(simple_headers))
 
   for path in sorted(argv[1:]):
     if path.endswith(".gz"):
       f = gzip.GzipFile(path)
     else:
-      f = file(path)
+      f = open(path)
     for line_number, line in enumerate(f, start=1):
       # Only parse out the "metrics" lines.
       try:

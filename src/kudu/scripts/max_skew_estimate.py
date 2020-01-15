@@ -23,6 +23,10 @@
 import math
 import random
 import sys
+try:
+    xrange  # For Python 2
+except NameError:
+    xrange = range  # For Python 3
 
 # Replicates Random::ReservoirSample from kudu/util/random.h.
 def reservoir_sample(n, sample_size, avoid):
@@ -74,13 +78,13 @@ def generate_max_skew(num_servers, num_tablets, rf):
 def main():
     args = sys.argv
     if len(args) != 5:
-        print "max_skew_estimate.py <num trials> <num servers> <num_tablets> <repl factor>"
+        print("max_skew_estimate.py <num trials> <num servers> <num_tablets> <repl factor>")
         sys.exit(1)
     num_trials, num_servers, num_tablets, rf = int(args[1]), int(args[2]), int(args[3]), int(args[4])
     skews = [generate_max_skew(num_servers, num_tablets, rf) for _ in xrange(num_trials)]
     skews.sort()
     for p in [5, 25, 50, 75, 99]:
-        print "%02d percentile: %d" % (p, percentile(skews, p))
+        print("{:02d} percentile: {:d}".format(p, percentile(skews, p)))
 
 if __name__ == "__main__":
     main()

@@ -289,7 +289,8 @@ class Test(unittest.TestCase):
       base, _ = os.path.splitext(child)
 
       p = LogParser()
-      p.parse_text(file(os.path.join(self._TEST_DIR, child)).read())
+      with open(os.path.join(self._TEST_DIR, child)) as f:
+        p.parse_text(f.read())
       self._do_test(p.text_failure_summary(), base + "-out.txt")
       self._do_test(p.xml_failure_summary(), base + "-out.xml")
 
@@ -297,10 +298,11 @@ class Test(unittest.TestCase):
     path = os.path.join(self._TEST_DIR, filename)
     if self.regenerate:
       print("Regenerating %s" % path)
-      with file(path, "w") as f:
+      with open(path, "w") as f:
         f.write(got_value)
     else:
-      self.assertEquals(got_value, file(path).read())
+      with open(path) as f:
+        self.assertEquals(got_value, f.read())
 
 
 def main():
@@ -312,10 +314,12 @@ def main():
   args = parser.parse_args()
 
   if args.path:
-    in_file = file(args.path)
+    in_file = open(args.path)
   else:
     in_file = sys.stdin
   log_text = in_file.read(MAX_MEMORY)
+  if in_file is not sys.stdin:
+    in_file.close()
   format = args.xml and 'xml' or 'text'
   sys.stdout.write(extract_failure_summary(log_text, format))
 

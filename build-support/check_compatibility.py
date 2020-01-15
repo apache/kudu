@@ -162,9 +162,9 @@ def run_java_acc(src_name, src, dst_name, dst):
                "\n".join(dst_jars))
 
   annotations_path = os.path.join(get_scratch_dir(), "annotations.txt")
-  with file(annotations_path, "w") as f:
+  with open(annotations_path, "w") as f:
     for ann in PUBLIC_ANNOTATIONS:
-      print >>f,  ann
+      print(ann, file=f)
 
   java_acc_path = os.path.join(get_java_acc_dir(), "japi-compliance-checker.pl")
 

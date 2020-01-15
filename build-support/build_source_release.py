@@ -187,7 +187,7 @@ def main():
   run_rat(tarball_path)
 
   print(Colors.GREEN + "Release successfully generated!" + Colors.RESET)
-  print
+  print()
 
 
 if __name__ == "__main__":

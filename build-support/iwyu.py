@@ -173,7 +173,7 @@ def _do_iwyu(flags, paths):
   iwyu_output = _run_iwyu_tool(paths)
   if flags.dump_iwyu_output:
     logging.info("Dumping iwyu output to %s", flags.dump_iwyu_output)
-    with file(flags.dump_iwyu_output, "w") as f:
+    with open(flags.dump_iwyu_output, "w") as f:
       print(iwyu_output, file=f)
   stream = BytesIO(iwyu_output)
   fixer_flags = _get_fixer_flags(flags)

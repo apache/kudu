@@ -69,9 +69,9 @@ def main():
   keys = get_keys(data)
 
   with sys.stdout as f:
-    print >>f, "\t".join(keys)
+    print("\t".join(keys), file=f)
     for row in data:
-      print >>f, "\t".join([str(row.get(k, 0)) for k in keys])
+      print("\t".join([str(row.get(k, 0)) for k in keys]), file=f)
 
 
 if __name__ == "__main__":

@@ -56,9 +56,13 @@ import logging
 import MySQLdb
 import os
 import parse_test_failure
-from StringIO import StringIO
+from io import StringIO
 import threading
 import uuid
+try:
+  xrange  # For Python 2
+except NameError:
+  xrange = range  # For Python 3
 
 def percent_rate(num, denom):
   if denom == 0:

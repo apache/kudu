@@ -53,5 +53,5 @@ for r in resources:
 if not all_ok:
     sys.exit(1)
 
-print 'OK'
+print('OK')
 sys.exit(0)

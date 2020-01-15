@@ -196,7 +196,7 @@ def do_update(branch, gerrit_sha, apache_sha):
   print(Colors.GREEN + "Running: " + Colors.RESET + " ".join(cmd))
   subprocess.check_call(cmd)
   print(Colors.GREEN + "Successfully updated %s to %s" % (branch, gerrit_sha) + Colors.RESET)
-  print
+  print()
 
 
 def main():

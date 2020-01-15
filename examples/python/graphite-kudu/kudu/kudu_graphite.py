@@ -299,6 +299,6 @@ class KuduFinder(object):
         try:
           for node in self._find_nodes_from_pattern(self.kudu_table, query.pattern):
               yield node
-        except Exception, e:
+        except Exception as e:
           log.exception(e)
           raise

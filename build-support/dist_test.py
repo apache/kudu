@@ -388,7 +388,7 @@ def create_task_json(staging,
   Alternatively, if 'retry_all_tests' is True, all tests will be retried.
   """
   tasks = []
-  with file(staging.archive_dump_path(), "r") as isolate_dump:
+  with open(staging.archive_dump_path(), "r") as isolate_dump:
     inmap = json.load(isolate_dump)
 
   # Some versions of 'isolate batcharchive' directly list the items in
@@ -415,7 +415,7 @@ def create_task_json(staging,
     sys.exit(1)
   outmap = {"tasks": tasks}
 
-  with file(staging.tasks_json_path(), "wt") as f:
+  with open(staging.tasks_json_path(), "wt") as f:
     json.dump(outmap, f)
 
 
@@ -655,7 +655,7 @@ def add_java_subparser(subparsers):
   loop.set_defaults(func=loop_java_test)
 
 def dump_base_deps(parser, options):
-  print json.dumps(get_base_deps(create_dependency_extractor()))
+  print(json.dumps(get_base_deps(create_dependency_extractor())))
 
 def add_internal_commands(subparsers):
   p = subparsers.add_parser('internal', help="[Internal commands not for users]")

@@ -258,11 +258,11 @@ def prep_artifact_dirs(config):
   """
 
   if not os.path.exists(config[ARTIFACT_ROOT]):
-    os.makedirs(config[ARTIFACT_ROOT], mode=0755)
+    os.makedirs(config[ARTIFACT_ROOT], mode=0o755)
   if not os.path.exists(config[ARTIFACT_BIN_DIR]):
-    os.makedirs(config[ARTIFACT_BIN_DIR], mode=0755)
+    os.makedirs(config[ARTIFACT_BIN_DIR], mode=0o755)
   if not os.path.exists(config[ARTIFACT_LIB_DIR]):
-    os.makedirs(config[ARTIFACT_LIB_DIR], mode=0755)
+    os.makedirs(config[ARTIFACT_LIB_DIR], mode=0o755)
 
 def copy_file(src, dest):
   """

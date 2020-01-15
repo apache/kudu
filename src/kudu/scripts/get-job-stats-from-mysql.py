@@ -52,7 +52,7 @@ with con:
   days = sys.argv[2]
   cur.execute("select workload, runtime, build_number from kudu_perf_tpch where workload like %s AND curr_date >= DATE_SUB(NOW(), INTERVAL %s DAY) and runtime != 0 ORDER BY workload, build_number, curr_date", (workload, days))
   rows = cur.fetchall()
-  print 'workload', '\t', 'runtime', '\t', 'build_number'
+  print('workload', '\t', 'runtime', '\t', 'build_number')
   for row in rows:
-    print row[0], '\t', row[1], '\t', row[2]
+    print(row[0], '\t', row[1], '\t', row[2])
 

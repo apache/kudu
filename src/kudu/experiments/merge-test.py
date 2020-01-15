@@ -27,6 +27,10 @@ import logging
 import random
 import time
 import unittest
+try:
+  xrange  # For Python 2
+except NameError:
+  xrange = range  # For Python 3
 
 # Adjustable experiment parameters.
 BLOCK_SIZE = 1000

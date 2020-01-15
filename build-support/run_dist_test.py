@@ -50,7 +50,7 @@ def is_elf_binary(path):
   if not os.path.isfile(path) or os.path.islink(path):
     return False
   try:
-    with file(path, "rb") as f:
+    with open(path, "rb") as f:
       magic = f.read(4)
       return magic == "\x7fELF"
   except:
@@ -186,7 +186,7 @@ def main():
     if not os.path.exists(test_tmpdir):
       os.makedirs(test_tmpdir)
     cmd = [find_java()] + args
-    stdout = stderr = file(os.path.join(test_logdir, "test-output.txt"), "w")
+    stdout = stderr = open(os.path.join(test_logdir, "test-output.txt"), "w")
   else:
     raise ValueError("invalid test language: " + options.test_language)
   logging.info("Running command: ", cmd)

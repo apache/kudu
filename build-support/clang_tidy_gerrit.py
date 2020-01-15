@@ -143,10 +143,10 @@ def post_comments(revision_url_base, gerrit_json_obj):
                       auth=(GERRIT_USER, GERRIT_PASSWORD),
                       data=json.dumps(gerrit_json_obj),
                       headers={'Content-Type': 'application/json'})
-    print "Response:"
-    print r.headers
-    print r.status_code
-    print r.text
+    print("Response:")
+    print(r.headers)
+    print(r.status_code)
+    print(r.text)
 
 
 class TestClangTidyGerrit(unittest.TestCase):
@@ -182,7 +182,6 @@ No relevant changes found.
         self.assertEqual("src/kudu/blah.cc", parsed[1]['path'])
 
 
-
 if __name__ == "__main__":
     # Basic setup and argument parsing.
     init_logging()
@@ -197,31 +196,31 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.rev_range and not args.no_gerrit:
-        print >>sys.stderr, "--rev-range works only with --no-gerrit"
+        print("--rev-range works only with --no-gerrit", file=sys.stderr)
         sys.exit(1)
 
     # Find the gerrit revision URL, if applicable.
     if not args.no_gerrit:
         revision_url = get_gerrit_revision_url(args.rev)
-        print revision_url
+        print(revision_url)
 
     # Run clang-tidy and parse the output.
     clang_output = run_tidy(args.rev, args.rev_range)
     logging.info("Clang output")
     logging.info(clang_output)
     if args.no_gerrit:
-        print >>sys.stderr, "Skipping gerrit"
+        print("Skipping gerrit", file=sys.stderr)
         sys.exit(0)
     logging.info("=" * 80)
     parsed = parse_clang_output(clang_output)
     if not parsed:
-        print >>sys.stderr, "No warnings"
+        print("No warnings", file=sys.stderr)
         sys.exit(0)
-    print "Parsed clang warnings:"
-    print json.dumps(parsed, indent=4)
+    print("Parsed clang warnings:")
+    print(json.dumps(parsed, indent=4))
 
     # Post the output as comments to the gerrit URL.
     gerrit_json_obj = create_gerrit_json_obj(parsed)
-    print "Will post to gerrit:"
-    print json.dumps(gerrit_json_obj, indent=4)
+    print("Will post to gerrit:")
+    print(json.dumps(gerrit_json_obj, indent=4))
     post_comments(revision_url, gerrit_json_obj)

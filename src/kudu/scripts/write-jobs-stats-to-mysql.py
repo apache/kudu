@@ -30,7 +30,7 @@ pwd = os.environ["MYSQLPWD"]
 db = os.environ["MYSQLDB"]
 
 con = mdb.connect(host, user, pwd, db)
-print "Connected to mysql"
+print("Connected to mysql")
 with con:
   cur = con.cursor()
   job_name = sys.argv[1]
