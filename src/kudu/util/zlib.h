@@ -29,6 +29,10 @@ namespace zlib {
 // In case of an error, some data may still be appended to 'out'.
 Status Compress(Slice input, std::ostream* out);
 
+// The same as the above, but with a custom level (1-9, where 1 is fastest
+// and 9 is best compression).
+Status CompressLevel(Slice input, int level, std::ostream* out);
+
 // Uncompress the zlib-compressed data in 'compressed', appending the result
 // to 'out'.
 //
