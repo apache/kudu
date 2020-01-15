@@ -418,6 +418,22 @@ Sockaddr ServerBase::first_http_address() const {
 }
 #endif
 
+const security::TlsContext& ServerBase::tls_context() const {
+  return messenger_->tls_context();
+}
+
+security::TlsContext* ServerBase::mutable_tls_context() {
+  return messenger_->mutable_tls_context();
+}
+
+const security::TokenVerifier& ServerBase::token_verifier() const {
+  return messenger_->token_verifier();
+}
+
+security::TokenVerifier* ServerBase::mutable_token_verifier() {
+  return messenger_->mutable_token_verifier();
+}
+
 const NodeInstancePB& ServerBase::instance_pb() const {
   return *DCHECK_NOTNULL(instance_pb_.get());
 }
