@@ -329,10 +329,10 @@ Status LBMCorruptor::AddMisalignedBlockToContainer() {
   uint64_t block_length = rand_.Uniform(fs_block_size * 4);
   block_length -= block_length % sizeof(raw_block_id);
   uint8_t data[block_length];
-  for (int i = 0; i < ARRAYSIZE(data); i += sizeof(raw_block_id)) {
+  for (int i = 0; i < KUDU_ARRAYSIZE(data); i += sizeof(raw_block_id)) {
     memcpy(&data[i], &raw_block_id, sizeof(raw_block_id));
   }
-  RETURN_NOT_OK(data_file->Write(block_offset, Slice(data, ARRAYSIZE(data))));
+  RETURN_NOT_OK(data_file->Write(block_offset, Slice(data, KUDU_ARRAYSIZE(data))));
   RETURN_NOT_OK(data_file->Close());
 
   // Having written out the block, write a corresponding metadata record.

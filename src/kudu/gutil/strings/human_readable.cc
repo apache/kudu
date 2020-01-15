@@ -407,7 +407,7 @@ bool HumanReadableElapsedTime::ToDouble(const string& str, double* value) {
     }
     unit_start = SkipLeadingWhiteSpace(unit_start);
     bool found_unit = false;
-    for (int i = 0; !found_unit && i < ARRAYSIZE(kUnits); ++i) {
+    for (int i = 0; !found_unit && i < KUDU_ARRAYSIZE(kUnits); ++i) {
       const size_t unit_len = strlen(kUnits[i].unit);
       if (strncmp(unit_start, kUnits[i].unit, unit_len) == 0) {
         work_value += factor * kUnits[i].seconds;
