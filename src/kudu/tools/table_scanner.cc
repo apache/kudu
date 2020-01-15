@@ -502,8 +502,9 @@ void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens, Status* threa
     if (out_ && FLAGS_show_values) {
       MutexLock l(output_lock_);
       for (const auto& row : batch) {
-        *out_ << row.ToString() << endl;
+        *out_ << row.ToString() << "\n";
       }
+      out_->flush();
     }
   });
 }
@@ -530,16 +531,6 @@ void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens, Status* thread
   });
 }
 
-void TableScanner::MonitorTask() {
-  MonoTime last_log_time = MonoTime::Now();
-  while (thread_pool_->num_threads() > 1) {    // Some other table scan thread is running.
-    if (MonoTime::Now() - last_log_time >= MonoDelta::FromSeconds(5)) {
-      LOG(INFO) << "Scanned count: " << total_count_.Load();
-      last_log_time = MonoTime::Now();
-    }
-    SleepFor(MonoDelta::FromMilliseconds(100));
-  }
-}
 
 void TableScanner::SetOutput(ostream* out) {
   out_ = out;
@@ -600,7 +591,7 @@ Status TableScanner::StartWork(WorkType type) {
   vector<Status> thread_statuses(FLAGS_num_threads);
 
   RETURN_NOT_OK(ThreadPoolBuilder("table_scan_pool")
-                  .set_max_threads(FLAGS_num_threads + 1)  // add extra 1 thread for MonitorTask
+                  .set_max_threads(FLAGS_num_threads)
                   .set_idle_timeout(MonoDelta::FromMilliseconds(1))
                   .Build(&thread_pool_));
 
@@ -617,8 +608,9 @@ Status TableScanner::StartWork(WorkType type) {
         boost::bind(&TableScanner::CopyTask, this, thread_tokens[i], &thread_statuses[i])));
     }
   }
-  RETURN_NOT_OK(thread_pool_->SubmitFunc(boost::bind(&TableScanner::MonitorTask, this)));
-  thread_pool_->Wait();
+  while (!thread_pool_->WaitFor(MonoDelta::FromSeconds(5))) {
+    LOG(INFO) << "Scanned count: " << total_count_.Load();
+  }
   thread_pool_->Shutdown();
 
   sw.stop();

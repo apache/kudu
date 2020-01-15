@@ -83,7 +83,6 @@ class TableScanner {
                   const std::function<void(const kudu::client::KuduScanBatch& batch)>& cb);
   void ScanTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
   void CopyTask(const std::vector<kudu::client::KuduScanToken*>& tokens, Status* thread_status);
-  void MonitorTask();
 
   Status AddRow(const client::sp::shared_ptr<kudu::client::KuduTable>& table,
                 const kudu::client::KuduSchema& table_schema,
