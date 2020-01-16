@@ -251,7 +251,7 @@ class PeerProxyFactory {
 // PeerProxy implementation that does RPC calls
 class RpcPeerProxy : public PeerProxy {
  public:
-  RpcPeerProxy(gscoped_ptr<HostPort> hostport,
+  RpcPeerProxy(HostPort hostport,
                gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
 
   void UpdateAsync(const ConsensusRequestPB& request,
@@ -277,7 +277,7 @@ class RpcPeerProxy : public PeerProxy {
   std::string PeerName() const override;
 
  private:
-  gscoped_ptr<HostPort> hostport_;
+  const HostPort hostport_;
   gscoped_ptr<ConsensusServiceProxy> consensus_proxy_;
 };
 

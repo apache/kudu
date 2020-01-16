@@ -27,7 +27,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -510,9 +509,9 @@ Peer::~Peer() {
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
-RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
+RpcPeerProxy::RpcPeerProxy(HostPort hostport,
                            gscoped_ptr<ConsensusServiceProxy> consensus_proxy)
-    : hostport_(std::move(DCHECK_NOTNULL(hostport))),
+    : hostport_(std::move(hostport)),
       consensus_proxy_(std::move(DCHECK_NOTNULL(consensus_proxy))) {
 }
 
@@ -548,7 +547,7 @@ void RpcPeerProxy::StartTabletCopyAsync(const StartTabletCopyRequestPB& request,
 }
 
 string RpcPeerProxy::PeerName() const {
-  return hostport_->ToString();
+  return hostport_.ToString();
 }
 
 namespace {
@@ -579,11 +578,11 @@ RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger,
 
 Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
                                      gscoped_ptr<PeerProxy>* proxy) {
-  gscoped_ptr<HostPort> hostport(new HostPort);
-  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()));
+  HostPort hostport;
+  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), &hostport));
   gscoped_ptr<ConsensusServiceProxy> new_proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
-      *hostport, messenger_, dns_resolver_, &new_proxy));
+      hostport, messenger_, dns_resolver_, &new_proxy));
   proxy->reset(new RpcPeerProxy(std::move(hostport), std::move(new_proxy)));
   return Status::OK();
 }
