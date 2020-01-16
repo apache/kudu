@@ -24,7 +24,7 @@
 // expression is true. For example, you could use it to verify the
 // size of a static array:
 //
-//   COMPILE_ASSERT(ARRAYSIZE(content_type_names) == CONTENT_NUM_TYPES,
+//   COMPILE_ASSERT(KUDU_ARRAYSIZE(content_type_names) == CONTENT_NUM_TYPES,
 //                  content_type_names_incorrect_size);
 //
 // or to make sure a struct is smaller than a certain size:
@@ -120,7 +120,7 @@ struct CompileAssert {
 //
 // One caveat is that, for C++03, arraysize() doesn't accept any array of
 // an anonymous type or a type defined inside a function.  In these rare
-// cases, you have to use the unsafe ARRAYSIZE() macro below.  This is
+// cases, you have to use the unsafe KUDU_ARRAYSIZE() macro below.  This is
 // due to a limitation in C++03's template system.  The limitation has
 // been removed in C++11.
 
@@ -140,26 +140,26 @@ char (&ArraySizeHelper(const T (&array)[N]))[N];
 
 #define arraysize(array) (sizeof(ArraySizeHelper(array)))
 
-// ARRAYSIZE performs essentially the same calculation as arraysize,
+// KUDU_ARRAYSIZE performs essentially the same calculation as arraysize,
 // but can be used on anonymous types or types defined inside
 // functions.  It's less safe than arraysize as it accepts some
 // (although not all) pointers.  Therefore, you should use arraysize
 // whenever possible.
 //
-// The expression ARRAYSIZE(a) is a compile-time constant of type
+// The expression KUDU_ARRAYSIZE(a) is a compile-time constant of type
 // size_t.
 //
-// ARRAYSIZE catches a few type errors.  If you see a compiler error
+// KUDU_ARRAYSIZE catches a few type errors.  If you see a compiler error
 //
 //   "warning: division by zero in ..."
 //
-// when using ARRAYSIZE, you are (wrongfully) giving it a pointer.
-// You should only use ARRAYSIZE on statically allocated arrays.
+// when using KUDU_ARRAYSIZE, you are (wrongfully) giving it a pointer.
+// You should only use KUDU_ARRAYSIZE on statically allocated arrays.
 //
 // The following comments are on the implementation details, and can
 // be ignored by the users.
 //
-// ARRAYSIZE(arr) works by inspecting sizeof(arr) (the # of bytes in
+// KUDU_ARRAYSIZE(arr) works by inspecting sizeof(arr) (the # of bytes in
 // the array) and sizeof(*(arr)) (the # of bytes in one array
 // element).  If the former is divisible by the latter, perhaps arr is
 // indeed an array, in which case the division result is the # of
@@ -181,9 +181,9 @@ char (&ArraySizeHelper(const T (&array)[N]))[N];
 //
 // - wan 2005-11-16
 //
-// Starting with Visual C++ 2005, WinNT.h includes ARRAYSIZE.
+// Starting with Visual C++ 2005, WinNT.h includes KUDU_ARRAYSIZE.
 #if !defined(_MSC_VER) || (defined(_MSC_VER) && _MSC_VER < 1400)
-#define ARRAYSIZE(a) \
+#define KUDU_ARRAYSIZE(a) \
   ((sizeof(a) / sizeof(*(a))) / \
    static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
 #endif

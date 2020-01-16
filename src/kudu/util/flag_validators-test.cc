@@ -115,7 +115,7 @@ class FlagsValidatorsDeathTest : public KuduTest {
 
 TEST_F(FlagsValidatorsDeathTest, GroupedSuccessNoFlags) {
   const char* argv[] = { "argv_set_0" };
-  NO_FATALS(RunSuccess(argv, ARRAYSIZE(argv)));
+  NO_FATALS(RunSuccess(argv, KUDU_ARRAYSIZE(argv)));
 }
 
 TEST_F(FlagsValidatorsDeathTest, GroupedSuccessSimple) {

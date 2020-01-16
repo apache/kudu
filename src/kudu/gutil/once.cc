@@ -37,7 +37,7 @@ void GoogleOnceInternalInit(Atomic32 *control, void (*func)(),
   // Short circuit the simplest case to avoid procedure call overhead.
   if (base::subtle::Acquire_CompareAndSwap(control, GOOGLE_ONCE_INTERNAL_INIT,
           GOOGLE_ONCE_INTERNAL_RUNNING) == GOOGLE_ONCE_INTERNAL_INIT ||
-      base::internal::SpinLockWait(control, ARRAYSIZE(trans), trans) ==
+      base::internal::SpinLockWait(control, KUDU_ARRAYSIZE(trans), trans) ==
       GOOGLE_ONCE_INTERNAL_INIT) {
     if (func != nullptr) {
       (*func)();

@@ -47,7 +47,7 @@ struct TestClusterConfig;
 
 #define VERIFY_MOVES(test_config) \
   do { \
-    for (auto idx = 0; idx < ARRAYSIZE((test_config)); ++idx) { \
+    for (auto idx = 0; idx < KUDU_ARRAYSIZE((test_config)); ++idx) { \
       SCOPED_TRACE(Substitute("test config index: $0", idx)); \
       NO_FATALS(VerifyRebalancingMoves((test_config)[idx])); \
     } \

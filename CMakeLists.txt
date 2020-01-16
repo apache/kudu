@@ -1431,7 +1431,7 @@ if (UNIX)
       WORKING_DIRECTORY ${DOXY_CLIENT_DESTDIR}/${CMAKE_INSTALL_PREFIX}
       COMMENT "Generating Kudu C++ client API documentation"
     )
-    add_dependencies(doxy_install_client_alt_destdir kudu_client_exported)
+    #add_dependencies(doxy_install_client_alt_destdir kudu_client_exported)
     add_dependencies(doxygen doxy_install_client_alt_destdir)
     # If doxygen is present, generate doxygen documentation along with 'docs'.
     add_dependencies(docs doxygen)
