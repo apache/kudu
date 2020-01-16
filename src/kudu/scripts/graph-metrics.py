@@ -20,6 +20,9 @@
 # Script which parses a test log for 'metrics: ' lines emited by
 # TimeSeriesCollector, and constructs a graph from them
 
+# Support the print function in Python 2.
+from __future__ import print_function
+
 import os
 import re
 import simplejson

@@ -17,7 +17,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Support the print function in Python 2.
 from __future__ import print_function
+
 from io import StringIO
 import glob
 import json
