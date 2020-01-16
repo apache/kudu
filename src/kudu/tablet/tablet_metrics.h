@@ -103,7 +103,7 @@ struct TabletMetrics {
   scoped_refptr<MeanGauge> average_diskrowset_height;
 
   // Static metrics.
-  scoped_refptr<AtomicGauge<uint64_t>> merged_entities_count_of_tablet;
+  scoped_refptr<AtomicGauge<size_t>> merged_entities_count_of_tablet;
 };
 
 } // namespace tablet
