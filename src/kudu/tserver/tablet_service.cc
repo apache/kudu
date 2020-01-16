@@ -25,9 +25,7 @@
 #include <numeric>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -91,7 +89,6 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
-#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -2160,16 +2157,15 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
 
 static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                             const Schema& tablet_schema,
-                            gscoped_ptr<ScanSpec>* spec,
-                            const SharedScanner& scanner) {
-  gscoped_ptr<ScanSpec> ret(new ScanSpec);
-  ret->set_cache_blocks(scan_pb.cache_blocks());
+                            const SharedScanner& scanner,
+                            ScanSpec* spec) {
+  spec->set_cache_blocks(scan_pb.cache_blocks());
 
   // First the column predicates.
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
     boost::optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
-    ret->AddPredicate(std::move(*predicate));
+    spec->AddPredicate(std::move(*predicate));
   }
 
   // Then the column range predicates.
@@ -2205,19 +2201,18 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     if (pred) {
       VLOG(3) << Substitute("Parsed predicate $0 from $1",
                             pred->ToString(), SecureShortDebugString(scan_pb));
-      ret->AddPredicate(*pred);
+      spec->AddPredicate(*pred);
     }
   }
 
   // Then any encoded key range predicates.
-  RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
+  RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, spec));
 
   // If the scanner has a limit, set it now.
   if (scan_pb.has_limit()) {
-    ret->set_limit(scan_pb.limit());
+    spec->set_limit(scan_pb.limit());
   }
 
-  spec->swap(ret);
   return Status::OK();
 }
 
@@ -2325,17 +2320,16 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     }
   }
 
-  gscoped_ptr<ScanSpec> spec(new ScanSpec);
-
-  s = SetupScanSpec(scan_pb, tablet_schema, &spec, scanner);
+  ScanSpec spec;
+  s = SetupScanSpec(scan_pb, tablet_schema, scanner, &spec);
   if (PREDICT_FALSE(!s.ok())) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
     return s;
   }
 
-  VLOG(3) << "Before optimizing scan spec: " << spec->ToString(tablet_schema);
-  spec->OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
-  VLOG(3) << "After optimizing scan spec: " << spec->ToString(tablet_schema);
+  VLOG(3) << "Before optimizing scan spec: " << spec.ToString(tablet_schema);
+  spec.OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
+  VLOG(3) << "After optimizing scan spec: " << spec.ToString(tablet_schema);
 
   // Missing columns will contain the columns that are not mentioned in the
   // client projection but are actually needed for the scan, such as columns
@@ -2343,16 +2337,18 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   //
   // NOTE: We should build the missing column after optimizing scan which will
   // remove unnecessary predicates.
-  vector<ColumnSchema> missing_cols = spec->GetMissingColumns(projection);
-  if (spec->CanShortCircuit()) {
+  vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
+  if (spec.CanShortCircuit()) {
     VLOG(1) << "short-circuiting without creating a server-side scanner.";
     *has_more_results = false;
     return Status::OK();
   }
 
   // Store the original projection.
-  gscoped_ptr<Schema> orig_projection(new Schema(projection));
-  scanner->set_client_projection_schema(std::move(orig_projection));
+  {
+    unique_ptr<Schema> orig_projection(new Schema(projection));
+    scanner->set_client_projection_schema(std::move(orig_projection));
+  }
 
   // Build a new projection with the projection columns and the missing columns,
   // annotating each column as a key column appropriately.
@@ -2395,8 +2391,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   projection = projection_builder.BuildWithoutIds();
   VLOG(3) << "Scan projection: " << projection.ToString(Schema::BASE_INFO);
 
-  unique_ptr<RowwiseIterator> iter;
-
   // It's important to keep the reference to the tablet for the case when the
   // tablet replica's shutdown is run concurrently with the code below.
   shared_ptr<Tablet> tablet;
@@ -2413,6 +2407,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     return s;
   }
 
+  unique_ptr<RowwiseIterator> iter;
   boost::optional<Timestamp> snap_start_timestamp;
 
   {
@@ -2448,11 +2443,11 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // This copy will be given to the Scanner so it can report its predicates to
   // /scans. The copy is necessary because the original spec will be modified
   // as its predicates are pushed into lower-level iterators.
-  gscoped_ptr<ScanSpec> orig_spec(new ScanSpec(*spec));
+  unique_ptr<ScanSpec> orig_spec(new ScanSpec(spec));
 
   if (PREDICT_TRUE(s.ok())) {
     TRACE_EVENT0("tserver", "iter->Init");
-    s = iter->Init(spec.get());
+    s = iter->Init(&spec);
     if (PREDICT_FALSE(s.IsInvalidArgument())) {
       // Tablet::Iterator::Init() returns InvalidArgument when an invalid
       // projection is specified.

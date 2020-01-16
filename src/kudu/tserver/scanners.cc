@@ -359,11 +359,11 @@ void Scanner::AddTimings(const CpuTimes& elapsed) {
 }
 
 void Scanner::Init(unique_ptr<RowwiseIterator> iter,
-                   gscoped_ptr<ScanSpec> spec) {
+                   unique_ptr<ScanSpec> spec) {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK(!iter_) << "Already initialized";
   iter_ = std::move(iter);
-  spec_.reset(spec.release());
+  spec_ = std::move(spec);
 }
 
 const ScanSpec& Scanner::spec() const {

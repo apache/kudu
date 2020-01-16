@@ -30,6 +30,7 @@
 
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -50,7 +51,6 @@
 namespace kudu {
 
 class RowwiseIterator;
-class Schema;
 class Status;
 class Thread;
 
@@ -203,15 +203,7 @@ class Scanner {
   // Attach an actual iterator and a ScanSpec to this Scanner.
   // Takes ownership of 'iter' and 'spec'.
   void Init(std::unique_ptr<RowwiseIterator> iter,
-            gscoped_ptr<ScanSpec> spec);
-
-  // Return true if the scanner has been initialized (i.e has an iterator).
-  // Once a Scanner is initialized, it is safe to assume that iter() and spec()
-  // return non-NULL for the lifetime of the Scanner object.
-  bool IsInitialized() const {
-    std::lock_guard<simple_spinlock> l(lock_);
-    return iter_ != NULL;
-  }
+            std::unique_ptr<ScanSpec> spec);
 
   RowwiseIterator* iter() {
     return DCHECK_NOTNULL(iter_.get());
@@ -282,8 +274,8 @@ class Scanner {
   // projection is a subset of the iterator's schema -- the iterator's
   // schema needs to include all columns that have predicates, whereas
   // the client may not want to project all of them.
-  void set_client_projection_schema(gscoped_ptr<Schema> client_projection_schema) {
-    client_projection_schema_.swap(client_projection_schema);
+  void set_client_projection_schema(std::unique_ptr<Schema> client_projection_schema) {
+    client_projection_schema_ = std::move(client_projection_schema);
   }
 
   // Returns request's projection schema if it differs from the schema
@@ -332,6 +324,14 @@ class Scanner {
 
   static const std::string kNullTabletId;
 
+  // Return true if the scanner has been initialized (i.e has an iterator).
+  // Once a Scanner is initialized, it is safe to assume that iter() and spec()
+  // return non-NULL for the lifetime of the Scanner object.
+  bool IsInitialized() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return iter_ != nullptr;
+  }
+
   // The unique ID of this scanner.
   const std::string id_;
 
@@ -364,13 +364,13 @@ class Scanner {
   IteratorStats already_reported_stats_;
 
   // The spec used by 'iter_'
-  gscoped_ptr<ScanSpec> spec_;
+  std::unique_ptr<ScanSpec> spec_;
+
+  std::unique_ptr<RowwiseIterator> iter_;
 
   // Stores the request's projection schema, if it differs from the
   // schema used by the iterator.
-  gscoped_ptr<Schema> client_projection_schema_;
-
-  std::unique_ptr<RowwiseIterator> iter_;
+  std::unique_ptr<Schema> client_projection_schema_;
 
   AutoReleasePool autorelease_pool_;
 
