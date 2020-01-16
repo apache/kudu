@@ -18,7 +18,7 @@
 # under the License.
 
 from __future__ import print_function
-from io import BytesIO
+from io import StringIO
 import glob
 import json
 import logging
@@ -175,7 +175,7 @@ def _do_iwyu(flags, paths):
     logging.info("Dumping iwyu output to %s", flags.dump_iwyu_output)
     with open(flags.dump_iwyu_output, "w") as f:
       print(iwyu_output, file=f)
-  stream = BytesIO(iwyu_output)
+  stream = StringIO(iwyu_output)
   fixer_flags = _get_fixer_flags(flags)
 
   # Passing None as 'fix_paths' tells the fixer script to process
