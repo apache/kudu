@@ -308,7 +308,7 @@ Status TSTabletManager::Init(bool is_first_run) {
   return Status::OK();
 }
 
-Status TSTabletManager::Start() {
+Status TSTabletManager::Start(bool is_first_run) {
   CHECK_EQ(state(), MANAGER_INITIALIZED);
 
   // set_state(INITIALIZED);
@@ -318,10 +318,18 @@ Status TSTabletManager::Start() {
   Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
 
   consensus::ConsensusBootstrapInfo bootstrap_info;
-  // Abstracted logs are supposed to do the log recovery
-  // during Log::Init virtual call. Pass that info to
-  // RaftConsensus::Start now.
-  if (server_->opts().log_factory) {
+  // Abstracted logs will do their own log recovery
+  // during Log::Init virtual call. bootstrap_info
+  // is populated during that step. Pass it to RaftConsensus::Start.
+  //
+  // Skip recovery on "is_first_run" because you are creating a
+  // fresh raft instance (the raft metadata directories are new).
+  // This would be the equivalent of what kudu has because is_first_run
+  // also implies that wal directory is empty.
+  // The existing binlog OpId's might have no bearing
+  // on the new ring. We will push the problem of figuring out catchup
+  // and joining the ring to AddInstance implementation.
+  if (!is_first_run && server_->opts().log_factory) {
     log_->GetRecoveryInfo(&bootstrap_info);
   }
 

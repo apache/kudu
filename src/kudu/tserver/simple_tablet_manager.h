@@ -88,7 +88,11 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   // the bootstrap is performed asynchronously.
   Status Init(bool is_first_run);
 
-  Status Start();
+  // Start the raft ring.
+  // At the end of this consensus has been completed and ring should be up
+  // and running.
+  // In case of is_first_run, some parts of bootstrapping are bypassed
+  Status Start(bool is_first_run);
 
   bool IsInitialized() const;
 

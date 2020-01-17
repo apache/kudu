@@ -178,7 +178,7 @@ Status TabletServer::Start() {
     return Status::IllegalState("Tablet manager is not initialized");
   }
 
-  RETURN_NOT_OK_PREPEND(tablet_manager_->Start(),
+  RETURN_NOT_OK_PREPEND(tablet_manager_->Start(is_first_run_),
                         "Unable to start raft in tablet manager");
   google::FlushLogFiles(google::INFO); // Flush the startup messages.
   return Status::OK();
