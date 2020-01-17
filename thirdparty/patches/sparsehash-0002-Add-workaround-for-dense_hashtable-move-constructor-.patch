@@ -1,0 +1,29 @@
+From 517c4bce0f1c30f8868da9bf5a568c4db40e95ea Mon Sep 17 00:00:00 2001
+From: Todd Lipcon <todd@cloudera.com>
+Date: Tue, 21 Jan 2020 13:52:41 -0800
+Subject: [PATCH] Add workaround for dense_hashtable move constructor in gcc
+ 4.8
+
+---
+ sparsehash/internal/densehashtable.h | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/sparsehash/internal/densehashtable.h b/sparsehash/internal/densehashtable.h
+index 72b3607..cc7ff69 100644
+--- a/sparsehash/internal/densehashtable.h
++++ b/sparsehash/internal/densehashtable.h
+@@ -739,7 +739,10 @@ class dense_hashtable {
+   }
+ 
+   dense_hashtable(dense_hashtable&& ht)
+-      : dense_hashtable() {
++      // NOTE: redundantly set num_buckets = 0 for gcc 4.8.x compatibility.
++      // It can't find the dense_hashtable constructor unless at least one
++      // argument is set.
++      : dense_hashtable(0) {
+     swap(ht);
+   }
+ 
+-- 
+2.17.1
+

@@ -191,11 +191,8 @@ size_t ColumnSchema::memory_footprint_including_this() const {
 const int Schema::kColumnNotFound = -1;
 
 Schema::Schema(const Schema& other)
-  : name_to_index_bytes_(0),
-    name_to_index_(/*bucket_count*/ 10,
-                   NameToIndexMap::hasher(),
-                   NameToIndexMap::key_equal(),
-                   NameToIndexMapAllocator(&name_to_index_bytes_)) {
+  : name_to_index_(other.num_columns()) {
+  name_to_index_.set_empty_key(StringPiece());
   CopyFrom(other);
 }
 
@@ -216,7 +213,7 @@ void Schema::CopyFrom(const Schema& other) {
 
   // We can't simply copy name_to_index_ since the StringPiece keys
   // reference the other Schema's ColumnSchema objects.
-  name_to_index_.clear();
+  name_to_index_.clear_no_resize();
   int i = 0;
   for (const ColumnSchema &col : cols_) {
     // The map uses the 'name' string from within the ColumnSchema object.
@@ -233,25 +230,10 @@ Schema::Schema(Schema&& other) noexcept
       col_ids_(std::move(other.col_ids_)),
       max_col_id_(other.max_col_id_),
       col_offsets_(std::move(other.col_offsets_)),
-      name_to_index_bytes_(0),
-      name_to_index_(/*bucket_count*/ 10,
-                     NameToIndexMap::hasher(),
-                     NameToIndexMap::key_equal(),
-                     NameToIndexMapAllocator(&name_to_index_bytes_)),
+      name_to_index_(std::move(other.name_to_index_)),
       id_to_index_(std::move(other.id_to_index_)),
       first_is_deleted_virtual_column_idx_(other.first_is_deleted_virtual_column_idx_),
       has_nullables_(other.has_nullables_) {
-  // 'name_to_index_' uses a customer allocator which holds a pointer to
-  // 'name_to_index_bytes_'. swap() will swap the contents but not the
-  // allocators; std::move will move the allocator[1], which will mean the moved
-  // to value will be holding a pointer to the moved-from's member, which is
-  // wrong and will likely lead to use-after-free. The 'name_to_index_bytes_'
-  // values should also be swapped so both schemas end up in a valid state.
-  //
-  // [1] STLCountingAllocator::propagate_on_container_move_assignment::value
-  //     is std::true_type, which it inherits from the default Allocator.
-  std::swap(name_to_index_bytes_, other.name_to_index_bytes_);
-  name_to_index_.swap(other.name_to_index_);
 }
 
 Schema& Schema::operator=(Schema&& other) noexcept {
@@ -264,18 +246,15 @@ Schema& Schema::operator=(Schema&& other) noexcept {
     id_to_index_ = std::move(other.id_to_index_);
     first_is_deleted_virtual_column_idx_ = other.first_is_deleted_virtual_column_idx_;
     has_nullables_ = other.has_nullables_;
-
-    // See the comment in the move constructor implementation for why we swap.
-    std::swap(name_to_index_bytes_, other.name_to_index_bytes_);
-    name_to_index_.swap(other.name_to_index_);
+    name_to_index_ = std::move(other.name_to_index_);
   }
   return *this;
 }
 
-Status Schema::Reset(const vector<ColumnSchema>& cols,
-                     const vector<ColumnId>& ids,
+Status Schema::Reset(vector<ColumnSchema> cols,
+                     vector<ColumnId> ids,
                      int key_columns) {
-  cols_ = cols;
+  cols_ = std::move(cols);
   num_key_columns_ = key_columns;
 
   if (PREDICT_FALSE(key_columns > cols_.size())) {
@@ -306,8 +285,11 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   col_offsets_.reserve(cols_.size() + 1);  // Include space for total byte size at the end.
   size_t off = 0;
   size_t i = 0;
-  name_to_index_.clear();
+  name_to_index_.clear_no_resize();
   for (const ColumnSchema &col : cols_) {
+    if (col.name().empty()) {
+      return Status::InvalidArgument("column names must be non-empty");
+    }
     // The map uses the 'name' string from within the ColumnSchema object.
     if (!InsertIfNotPresent(&name_to_index_, col.name(), i++)) {
       return Status::InvalidArgument("Duplicate column name", col.name());
@@ -322,14 +304,14 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   col_offsets_.push_back(off);
 
   // Initialize IDs mapping
-  col_ids_ = ids;
+  col_ids_ = std::move(ids);
   id_to_index_.clear();
   max_col_id_ = 0;
-  for (int i = 0; i < ids.size(); ++i) {
-    if (ids[i] > max_col_id_) {
-      max_col_id_ = ids[i];
+  for (int i = 0; i < col_ids_.size(); ++i) {
+    if (col_ids_[i] > max_col_id_) {
+      max_col_id_ = col_ids_[i];
     }
-    id_to_index_.set(ids[i], i);
+    id_to_index_.set(col_ids_[i], i);
   }
 
   RETURN_NOT_OK(FindFirstIsDeletedVirtualColumnIdx(
@@ -371,7 +353,7 @@ Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names
     }
     cols.push_back(column(idx));
   }
-  return out->Reset(cols, ids, 0);
+  return out->Reset(std::move(cols), std::move(ids), 0);
 }
 
 Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& col_ids,
@@ -386,7 +368,7 @@ Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& c
     cols.push_back(column(idx));
     filtered_col_ids.push_back(id);
   }
-  return out->Reset(cols, filtered_col_ids, 0);
+  return out->Reset(std::move(cols), std::move(filtered_col_ids), 0);
 }
 
 Schema Schema::CopyWithColumnIds() const {
@@ -556,7 +538,7 @@ size_t Schema::memory_footprint_excluding_this() const {
   if (col_offsets_.capacity() > 0) {
     size += kudu_malloc_usable_size(col_offsets_.data());
   }
-  size += name_to_index_bytes_;
+  size += name_to_index_.bucket_count() * sizeof(NameToIndexMap::value_type);
   size += id_to_index_.memory_footprint_excluding_this();
 
   return size;
@@ -610,6 +592,9 @@ Status SchemaBuilder::AddColumn(const string& name,
                                 bool is_nullable,
                                 const void *read_default,
                                 const void *write_default) {
+  if (name.empty()) {
+    return Status::InvalidArgument("column name must be non-empty");
+  }
   return AddColumn(ColumnSchema(name, type, is_nullable, read_default, write_default), false);
 }
 
@@ -636,6 +621,9 @@ Status SchemaBuilder::RemoveColumn(const string& name) {
 }
 
 Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_name) {
+  if (new_name.empty()) {
+    return Status::InvalidArgument("column name must be non-empty");
+  }
   // check if 'new_name' is already in use
   if (col_names_.find(new_name) != col_names_.end()) {
     return Status::AlreadyPresent("The column already exists", new_name);

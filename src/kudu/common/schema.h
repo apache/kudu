@@ -23,12 +23,12 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <sparsehash/dense_hash_map>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -452,16 +452,12 @@ class Schema {
 
   Schema()
     : num_key_columns_(0),
-      name_to_index_bytes_(0),
-      // TODO(wdberkeley): C++11 provides a single-argument constructor, but
-      // it's not supported in GCC < 4.9. This (and the other occurrences here
-      // and in schema.cc) can be fixed if we adopt C++14 or a later standard.
-      name_to_index_(/*bucket_count=*/10,
-                     NameToIndexMap::hasher(),
-                     NameToIndexMap::key_equal(),
-                     NameToIndexMapAllocator(&name_to_index_bytes_)),
+      // Initialize for 1 expected element since 0 gets replaced with
+      // the default (32).
+      name_to_index_(1),
       first_is_deleted_virtual_column_idx_(kColumnNotFound),
       has_nullables_(false) {
+    name_to_index_.set_empty_key(StringPiece());
   }
 
   Schema(const Schema& other);
@@ -478,14 +474,11 @@ class Schema {
   // empty schema and then use Reset(...)  so that errors can be
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
-  Schema(const std::vector<ColumnSchema>& cols,
+  Schema(std::vector<ColumnSchema> cols,
          int key_columns)
-    : name_to_index_bytes_(0),
-      name_to_index_(/*bucket_count=*/10,
-                     NameToIndexMap::hasher(),
-                     NameToIndexMap::key_equal(),
-                     NameToIndexMapAllocator(&name_to_index_bytes_)) {
-    CHECK_OK(Reset(cols, key_columns));
+      : name_to_index_(/*expected_max_items_in_table=*/cols.size()) {
+    name_to_index_.set_empty_key(StringPiece());
+    CHECK_OK(Reset(std::move(cols), key_columns));
   }
 
   // Construct a schema with the given information.
@@ -494,30 +487,27 @@ class Schema {
   // empty schema and then use Reset(...)  so that errors can be
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
-  Schema(const std::vector<ColumnSchema>& cols,
-         const std::vector<ColumnId>& ids,
+  Schema(std::vector<ColumnSchema> cols,
+         std::vector<ColumnId> ids,
          int key_columns)
-    : name_to_index_bytes_(0),
-      name_to_index_(/*bucket_count=*/10,
-                     NameToIndexMap::hasher(),
-                     NameToIndexMap::key_equal(),
-                     NameToIndexMapAllocator(&name_to_index_bytes_)) {
-    CHECK_OK(Reset(cols, ids, key_columns));
+      : name_to_index_(/*expected_max_items_in_table=*/cols.size()) {
+    name_to_index_.set_empty_key(StringPiece());
+    CHECK_OK(Reset(std::move(cols), std::move(ids), key_columns));
   }
 
   // Reset this Schema object to the given schema.
   // If this fails, the Schema object is left in an inconsistent
   // state and may not be used.
-  Status Reset(const std::vector<ColumnSchema>& cols, int key_columns) {
+  Status Reset(std::vector<ColumnSchema> cols, int key_columns) {
     std::vector<ColumnId> ids;
-    return Reset(cols, ids, key_columns);
+    return Reset(std::move(cols), ids, key_columns);
   }
 
   // Reset this Schema object to the given schema.
   // If this fails, the Schema object is left in an inconsistent
   // state and may not be used.
-  Status Reset(const std::vector<ColumnSchema>& cols,
-               const std::vector<ColumnId>& ids,
+  Status Reset(std::vector<ColumnSchema> cols,
+               std::vector<ColumnId> ids,
                int key_columns);
 
   // Find the column index corresponding to the given column name,
@@ -732,7 +722,7 @@ class Schema {
       col_ids.assign(col_ids_.begin(), col_ids_.begin() + num_key_columns_);
     }
 
-    return Schema(key_cols, col_ids, num_key_columns_);
+    return Schema(std::move(key_cols), std::move(col_ids), num_key_columns_);
   }
 
   // Return a new Schema which is the same as this one, but with IDs assigned.
@@ -973,17 +963,12 @@ class Schema {
   // ColumnSchema objects inside cols_. This avoids an extra copy of those strings,
   // and also allows us to do lookups on the map using StringPiece keys, sometimes
   // avoiding copies.
-  //
-  // The map is instrumented with a counting allocator so that we can accurately
-  // measure its memory footprint.
-  int64_t name_to_index_bytes_;
-  typedef STLCountingAllocator<std::pair<const StringPiece, size_t> > NameToIndexMapAllocator;
-  typedef std::unordered_map<
+  typedef google::dense_hash_map<
       StringPiece,
       size_t,
-      std::hash<StringPiece>,
-      std::equal_to<StringPiece>,
-      NameToIndexMapAllocator> NameToIndexMap;
+      GoodFastHash<StringPiece>,
+    std::equal_to<StringPiece>> NameToIndexMap;
+
   NameToIndexMap name_to_index_;
 
   IdMapping id_to_index_;

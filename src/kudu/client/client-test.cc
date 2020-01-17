@@ -3853,8 +3853,10 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("int_val")->RenameTo(bad_name);
     Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "invalid column name");
+    EXPECT_TRUE(s.IsInvalidArgument());
+    EXPECT_THAT(s.ToString(), testing::AnyOf(
+        testing::HasSubstr("invalid column name"),
+        testing::HasSubstr("column name must be non-empty")));
   }
 
   // Test that renaming a table to an invalid name throws an error.

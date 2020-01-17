@@ -369,12 +369,13 @@ fetch_and_patch \
  $BREAKPAD_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch"
 
-SPARSEHASH_PATCHLEVEL=2
+SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \
  sparsehash-c11-${SPARSEHASH_VERSION}.tar.gz \
  $SPARSEHASH_SOURCE \
  $SPARSEHASH_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch"
+ "patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch" \
+ "patch -p1 < $TP_DIR/patches/sparsehash-0002-Add-workaround-for-dense_hashtable-move-constructor-.patch"
 
 SPARSEPP_PATCHLEVEL=0
 fetch_and_patch \

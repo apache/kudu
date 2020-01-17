@@ -19,11 +19,11 @@
 
 #include <time.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -391,7 +391,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   for (const ColumnSchemaPB& pb : column_pbs) {
     boost::optional<ColumnSchema> column;
     RETURN_NOT_OK(ColumnSchemaFromPB(pb, &column));
-    columns.push_back(*column);
+    columns.emplace_back(std::move(*column));
     if (pb.is_key()) {
       if (!is_handling_key) {
         return Status::InvalidArgument(
@@ -408,10 +408,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
 
   DCHECK_LE(num_key_columns, columns.size());
 
-  // TODO(perf): could make the following faster by adding a
-  // Reset() variant which actually takes ownership of the column
-  // vector.
-  return schema->Reset(columns, column_ids, num_key_columns);
+  return schema->Reset(std::move(columns), std::move(column_ids), num_key_columns);
 }
 
 Status SchemaToColumnPBs(const Schema& schema,
