@@ -22,7 +22,6 @@ apply plugin: "com.github.spotbugs"   // Performs static code analysis to look f
 apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
 apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
 apply plugin: "scalafmt" // Automatically formats Scala code on each build.
-apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 
 checkstyle {
   toolVersion = versions.checkstyle
@@ -69,25 +68,31 @@ tasks.withType(ScalaCompile) {
   }
 }
 
-// Configure error-prone.
-// Running with '-Derrorprone-fix=...' can instruct error-prone to automatically fix issues.
-tasks.withType(JavaCompile) {
-  options.errorprone {
-    disableWarningsInGeneratedCode = true
-    excludedPaths = '.*/build/generated.*/.*'
-    allErrorsAsWarnings = true
-    def fix = propertyWithDefault("errorprone-fix", "")
-    if (!fix.isEmpty()) {
-      errorproneArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
+// Errorprone doesn't support Java 12+
+// https://github.com/google/error-prone/issues/1106
+if(!JavaVersion.current().isJava12Compatible()) {
+  apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
+
+  // Configure error-prone.
+  // Running with '-Derrorprone-fix=...' can instruct error-prone to automatically fix issues.
+  tasks.withType(JavaCompile) {
+    options.errorprone {
+      disableWarningsInGeneratedCode = true
+      excludedPaths = '.*/build/generated.*/.*'
+      allErrorsAsWarnings = true
+      def fix = propertyWithDefault("errorprone-fix", "")
+      if (!fix.isEmpty()) {
+        errorproneArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
+      }
     }
   }
-}
-dependencies {
-  // Set a specific version of Error Prone
-  errorprone libs.errorProne
-  // Configure Error Prone to use it's own static javac as described here:
-  // https://github.com/tbroyer/gradle-errorprone-plugin#jdk-8-support
-  errorproneJavac libs.errorProneJavac
+  dependencies {
+    // Set a specific version of Error Prone
+    errorprone libs.errorProne
+    // Configure Error Prone to use it's own static javac as described here:
+    // https://github.com/tbroyer/gradle-errorprone-plugin#jdk-8-support
+    errorproneJavac libs.errorProneJavac
+  }
 }
 
 // Define a Java API signature for use by animal-sniffer. It'll enforce that all
