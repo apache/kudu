@@ -25,11 +25,11 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -939,7 +939,8 @@ string ExternalMiniCluster::UuidForTS(int ts_idx) const {
 //------------------------------------------------------------
 
 ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
-    : opts_(std::move(opts)) {
+    : opts_(std::move(opts)),
+      parent_tid_(std::this_thread::get_id()) {
   CHECK(rpc_bind_address().Initialized());
 }
 
@@ -968,6 +969,10 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
 
 Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   CHECK(!process_);
+  const auto this_tid = std::this_thread::get_id();
+  CHECK_EQ(parent_tid_, this_tid)
+    << "Process being started from thread " << this_tid << " which is different"
+    << " from the instantiating thread " << parent_tid_;
 
   vector<string> argv;
 

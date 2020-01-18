@@ -25,6 +25,8 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -609,6 +611,11 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // are used to Restart() the daemon with the same parameters.
   HostPort bound_rpc_;
   HostPort bound_http_;
+
+  // ID of the thread that is spawning the child processes. This should not
+  // change across restarts of the daemon, as forking from different threads
+  // may yield behavior like daemons being killed when the new thread exits.
+  const std::thread::id parent_tid_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalDaemon);
 };
