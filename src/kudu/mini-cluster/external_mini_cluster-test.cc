@@ -64,6 +64,7 @@ enum BuiltInNtp {
   DISABLED = 0,
   ENABLED_SINGLE_SERVER = 1,
   ENABLED_MULTIPLE_SERVERS = 5,
+  ENABLED_CLOUD_INSTANCE_SERVER = -1,
 };
 
 // Beautifies test output if a test scenario fails.
@@ -95,6 +96,8 @@ std::ostream& operator<<(std::ostream& o, BuiltInNtp opt) {
       return o << "BuiltInNtp::ENABLED_SINGLE_SERVER";
     case BuiltInNtp::ENABLED_MULTIPLE_SERVERS:
       return o << "BuiltInNtp::ENABLED_MULTIPLE_SERVERS";
+    case BuiltInNtp::ENABLED_CLOUD_INSTANCE_SERVER:
+      return o << "BuiltInNtp::ENABLED_CLOUD_INSTANCE_SERVER";
   }
   return o;
 }
@@ -119,7 +122,7 @@ INSTANTIATE_TEST_CASE_P(,
         ::testing::Values(BuiltInNtp::DISABLED,
                           BuiltInNtp::ENABLED_SINGLE_SERVER,
                           BuiltInNtp::ENABLED_MULTIPLE_SERVERS,
-                          BuiltInNtp::DISABLED)
+                          BuiltInNtp::ENABLED_CLOUD_INSTANCE_SERVER)
 #endif // #if !defined(NO_CHRONY) ...
                           ));
 
@@ -274,7 +277,13 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
   }
 #if !defined(NO_CHRONY)
-  opts.num_ntp_servers = std::get<2>(param);
+  if (std::get<2>(param) != BuiltInNtp::ENABLED_CLOUD_INSTANCE_SERVER) {
+    opts.num_ntp_servers = std::get<2>(param);
+  } else {
+    opts.num_ntp_servers = 1;
+    opts.extra_master_flags.emplace_back(
+        "--builtin_ntp_client_enable_auto_config_in_cloud=true");
+  }
 #endif
 
   opts.num_masters = 3;

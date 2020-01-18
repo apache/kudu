@@ -22,10 +22,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -41,6 +43,8 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/cloud/instance_detector.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -67,7 +71,6 @@ DEFINE_string(builtin_ntp_servers,
               "The NTP servers used by the built-in NTP client, in format "
               "<FQDN|IP>[:PORT]. These will only be used if the built-in NTP "
               "client is enabled.");
-TAG_FLAG(builtin_ntp_servers, evolving);
 
 // In the 'Best practices' section, RFC 4330 states that 15 seconds is the
 // minimum allowed polling interval.
@@ -82,7 +85,6 @@ DEFINE_uint32(builtin_ntp_poll_interval_ms, 16000,
               "The time between successive polls of a single NTP server "
               "(in milliseconds)");
 TAG_FLAG(builtin_ntp_poll_interval_ms, advanced);
-TAG_FLAG(builtin_ntp_poll_interval_ms, evolving);
 TAG_FLAG(builtin_ntp_poll_interval_ms, runtime);
 
 DEFINE_string(builtin_ntp_client_bind_address, "0.0.0.0",
@@ -93,7 +95,6 @@ DEFINE_string(builtin_ntp_client_bind_address, "0.0.0.0",
               "to customize this flag if getting through a firewall to "
               "reach public NTP servers specified by --builtin_ntp_servers.");
 TAG_FLAG(builtin_ntp_client_bind_address, advanced);
-TAG_FLAG(builtin_ntp_client_bind_address, evolving);
 
 DEFINE_uint32(builtin_ntp_request_timeout_ms, 3000,
               "Timeout for requests sent to NTP servers (in milliseconds)");
@@ -106,9 +107,18 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
 
+DEFINE_bool(builtin_ntp_client_enable_auto_config_in_cloud, false,
+            "Whether to attempt the automatic configuration of the built-in "
+            "NTP client, pointing it to the internal NTP server accessible "
+            "from within a cloud instance");
+TAG_FLAG(builtin_ntp_client_enable_auto_config_in_cloud, advanced);
+TAG_FLAG(builtin_ntp_client_enable_auto_config_in_cloud, experimental);
+
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;
 using kudu::clock::internal::RecordedResponse;
+using kudu::cloud::InstanceDetector;
+using kudu::cloud::InstanceMetadata;
 using std::deque;
 using std::lock_guard;
 using std::string;
@@ -119,10 +129,8 @@ using strings::Substitute;
 namespace kudu {
 namespace clock {
 
-constexpr int kStandardNtpPort = 123;
-
 // Number of seconds between Jan 1 1900 and the unix epoch start.
-constexpr uint64_t kNtpTimestampDelta = 2208988800ull;
+constexpr uint64_t kNtpTimestampDelta = 2208988800ULL;
 
 // Keep the last 8 polls from each server.
 constexpr int kResponsesToRememberPerServer = 8;
@@ -562,9 +570,28 @@ Status BuiltInNtp::InitImpl() {
     // That's the case when this object has been created using the default
     // constructor.
     vector<HostPort> hps;
-    RETURN_NOT_OK_PREPEND(HostPort::ParseStrings(FLAGS_builtin_ntp_servers,
-                                                 kStandardNtpPort, &hps),
-                          "could not parse --builtin_ntp_servers flag");
+    if (FLAGS_builtin_ntp_client_enable_auto_config_in_cloud) {
+      // Try to find the instance-only NTP server and configure the built-in
+      // NTP client with it.
+      InstanceDetector detector;
+      unique_ptr<InstanceMetadata> md;
+      string ntp_server;
+      auto s = detector.Detect(&md).AndThen([&] {
+        return md->GetNtpServer(&ntp_server);
+      }).AndThen([&] {
+        hps.emplace_back(ntp_server, 123);
+        return Status::OK();
+      });
+      WARN_NOT_OK(s, Substitute("auto-configuration of built-in NTP client "
+                                "for cloud instance failed, switching to "
+                                "the default set of NTP servers provided by "
+                                "the --builtin_ntp_servers flag"));
+    }
+    if (hps.empty()) {
+      RETURN_NOT_OK_PREPEND(HostPort::ParseStrings(FLAGS_builtin_ntp_servers,
+                                                   kStandardNtpPort, &hps),
+                            "could not parse --builtin_ntp_servers flag");
+    }
     RETURN_NOT_OK(PopulateServers(std::move(hps)));
   }
   for (const auto& s : servers_) {

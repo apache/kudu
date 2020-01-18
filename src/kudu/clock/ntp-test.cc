@@ -23,6 +23,7 @@
 #endif
 #include <iterator>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,7 +39,11 @@
 #include "kudu/clock/builtin_ntp.h"
 #include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/clock/test/mini_chronyd_test_util.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/cloud/instance_detector.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -49,11 +54,14 @@
 DECLARE_int32(ntp_initial_sync_wait_secs);
 DECLARE_string(builtin_ntp_servers);
 DECLARE_uint32(builtin_ntp_poll_interval_ms);
+DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
 
 using kudu::clock::internal::FindIntersection;
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::RecordedResponse;
 using kudu::clock::internal::kIntervalNone;
+using kudu::clock::kStandardNtpPort;
+using kudu::cloud::InstanceDetector;
 using std::back_inserter;
 using std::copy;
 using std::string;
@@ -679,6 +687,68 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     });
   }
 #endif // #ifndef __APPLE__
+}
+
+// This is a basic scenario to verify that the built-in NTP client is able
+// to synchronize with NTP servers provided by supported cloud environments.
+TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+#ifdef THREAD_SANITIZER
+  // In case of TSAN builds, it takes longer to spawn threads and, overall,
+  // the sanitized version of libcurl works an order of magnitude slower
+  // than the regular version.
+  FLAGS_cloud_metadata_server_request_timeout_ms = 10000;
+#endif
+  InstanceDetector detector(MonoDelta::FromMilliseconds(
+      FLAGS_cloud_metadata_server_request_timeout_ms));
+  unique_ptr<cloud::InstanceMetadata> md;
+  string ntp_server;
+  {
+    auto s = detector.Detect(&md);
+    if (!s.ok()) {
+      ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+      LOG(WARNING) << "test is skipped: non-supported or non-cloud environment";
+      return;
+    }
+  }
+  {
+    auto s = md->GetNtpServer(&ntp_server);
+    if (!s.ok()) {
+      // The only expected error in this case is Status::NotSupported().
+      ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+      LOG(WARNING) << strings::Substitute(
+          "test is skipped: $0 cloud instance doesn't provide NTP server",
+          cloud::TypeToString(md->type()));
+      return;
+    }
+  }
+
+  const vector<HostPort> servers_endpoints = {{ ntp_server, kStandardNtpPort }};
+
+  // All chronyd servers that use the system clock as a reference lock should
+  // present themselves as a set of NTP servers suitable for synchronisation.
+  ASSERT_OK(MiniChronyd::CheckNtpSource(servers_endpoints));
+
+  FLAGS_builtin_ntp_poll_interval_ms = 500;
+  BuiltInNtp c(servers_endpoints);
+  ASSERT_OK(c.Init());
+  ASSERT_EVENTUALLY([&] {
+    uint64_t now_us;
+    uint64_t err_us;
+    ASSERT_OK(c.WalltimeWithError(&now_us, &err_us));
+  });
+
+  // Make sure WalltimeWithError() works with the built-in NTP client once
+  // it has initted/synchronized with the reference NTP server available
+  // from within the cloud instance.
+  for (auto i = 0; i < 5; ++i) {
+    SleepFor(MonoDelta::FromMilliseconds(500));
+    uint64_t now;
+    uint64 error;
+    ASSERT_OK(c.WalltimeWithError(&now, &error));
+    LOG(INFO) << StringPrintf("built-in: " WALLTIME_DIAG_FMT, now, error);
+  }
 }
 
 #endif // #if !defined(NO_CHRONY)

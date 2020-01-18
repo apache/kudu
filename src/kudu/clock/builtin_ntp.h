@@ -43,6 +43,9 @@ namespace internal {
 struct RecordedResponse;
 } // namespace internal
 
+// The starndard NTP port number.
+constexpr const int kStandardNtpPort = 123;
+
 // This time service is based on a simplified NTP client implementation.
 // It's not RFC-compliant yet (RFC 5905). The most important missing pieces are:
 //   * support of iburst/burst operation modes (see KUDU-2937)

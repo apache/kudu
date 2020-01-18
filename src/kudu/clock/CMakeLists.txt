@@ -30,6 +30,7 @@ endif()
 add_library(clock ${CLOCK_SRCS})
 
 target_link_libraries(clock
+  kudu_cloud_util
   kudu_common
   kudu_util)
 
