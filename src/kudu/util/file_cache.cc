@@ -100,16 +100,24 @@ class BaseDescriptor {
   ~BaseDescriptor() {
     VLOG(2) << "Out of scope descriptor with file name: " << filename();
 
-    // The (now expired) weak_ptr remains in 'descriptors_', to be removed by
-    // the next call to RunDescriptorExpiry(). Removing it here would risk a
-    // deadlock on recursive acquisition of 'lock_'.
+    // The destruction of the descriptor indicates that there's no active user
+    // of the file at the moment. However, if the fd is still open in the LRU
+    // cache, should we leave it there, or should we evict it?
+    //
+    // We opt for eviction: your typical filesystem user is more likely to want
+    // the underlying resource released when they're done working with a file
+    // than they are to want the resource to be quickly accessible should the
+    // file be reopened.
+    cache()->Erase(filename());
 
     if (deleted()) {
-      cache()->Erase(filename());
-
       VLOG(1) << "Deleting file: " << filename();
       WARN_NOT_OK(env()->DeleteFile(filename()), "");
     }
+
+    // The (now expired) weak_ptr remains in 'descriptors_', to be removed by
+    // the next call to RunDescriptorExpiry(). Removing it here would risk a
+    // deadlock on recursive acquisition of 'lock_'.
   }
 
   // Insert a pointer to an open file object into the file cache with the

@@ -175,10 +175,10 @@ TYPED_TEST(FileCacheTest, TestBasicOperations) {
     }
   }
 
-  // The descriptors are all out of scope, but the open fds remain in the cache.
-  NO_FATALS(this->AssertFdsAndDescriptors(1, 0));
+  // The descriptors are all out of scope, and so are the cached fds.
+  NO_FATALS(this->AssertFdsAndDescriptors(0, 0));
 
-  // With the cache gone, so are the cached fds.
+  // With the cache gone, nothing changes.
   this->cache_.reset();
   ASSERT_EQ(this->initial_open_fds_, this->CountOpenFds());
 }
@@ -222,8 +222,8 @@ TYPED_TEST(FileCacheTest, TestDeletion) {
   ASSERT_EQ(this->initial_open_fds_, this->CountOpenFds());
 
   // Create a test file, open it, and let it go out of scope before
-  // deleting it. The deletion should evict the fd and close it, despite
-  // happening after the descriptor is gone.
+  // deleting it. The fd is already evicted and closed; this is effectively a
+  // non-cached deletion.
   const string kFile3 = this->GetTestPath("baz");
   const string kData3 = "test data 3";
   ASSERT_OK(this->WriteTestFile(kFile3, kData3));
@@ -232,7 +232,7 @@ TYPED_TEST(FileCacheTest, TestDeletion) {
     ASSERT_OK(this->cache_->OpenExistingFile(kFile3, &f3));
   }
   ASSERT_TRUE(this->env_->FileExists(kFile3));
-  ASSERT_EQ(this->initial_open_fds_ + 1, this->CountOpenFds());
+  ASSERT_EQ(this->initial_open_fds_, this->CountOpenFds());
   ASSERT_OK(this->cache_->DeleteFile(kFile3));
   ASSERT_FALSE(this->env_->FileExists(kFile3));
   ASSERT_EQ(this->initial_open_fds_, this->CountOpenFds());

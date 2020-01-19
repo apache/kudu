@@ -63,7 +63,7 @@ class Thread;
 // The core of the client-facing API is the cache descriptor. A descriptor
 // uniquely identifies an opened file. To a client, a descriptor is just an
 // open file interface of the variety defined in util/env.h. Clients open
-// descriptors via the OpenExisting*() cache methods.
+// descriptors via the OpenExistingFile() cache methods.
 //
 // Descriptors are shared objects; an existing descriptor is handed back to a
 // client if a file with the same name is already opened. To facilitate
@@ -118,9 +118,9 @@ class FileCache {
   // to a file-like interface but interfaces with the cache under the hood to
   // reopen a file as needed during file operations.
   //
-  // The descriptor is opened immediately to verify that the on-disk file can
-  // be opened, but may be closed later if the cache reaches its upper bound on
-  // the number of open files.
+  // The underlying file is opened immediately to verify that it indeed exists,
+  // but may be closed later if the cache reaches its upper bound on the number
+  // of open files. It is also closed when the descriptor's last reference is dropped.
   template <class FileType>
   Status OpenExistingFile(const std::string& file_name,
                           std::shared_ptr<FileType>* file);
@@ -128,7 +128,7 @@ class FileCache {
   // Deletes a file by name through the cache.
   //
   // If there is an outstanding descriptor for the file, the deletion will be
-  // deferred until the last referent is dropped. Otherwise, the file is
+  // deferred until the last reference is dropped. Otherwise, the file is
   // deleted immediately.
   Status DeleteFile(const std::string& file_name);
 
