@@ -498,10 +498,14 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
   const TableMetrics* table_metrics = table->GetMetrics();
   if (table_metrics) {
-    // If the table doesn't support live row counts, the value will be negative.
-    // But the value of disk size will never be negative.
-    (*output)["table_disk_size"] =
-        HumanReadableNumBytes::ToString(table_metrics->on_disk_size->value());
+    // If the table doesn't support 'on disk size' and 'live row count',
+    // we need to show their values as "N/A".
+    if (table_metrics->TableSupportsOnDiskSize()) {
+      (*output)["table_disk_size"] =
+          HumanReadableNumBytes::ToString(table_metrics->on_disk_size->value());
+    } else {
+      (*output)["table_disk_size"] = "N/A";
+    }
     if (table_metrics->TableSupportsLiveRowCount()) {
       (*output)["table_live_row_count"] = table_metrics->live_row_count->value();
     } else {

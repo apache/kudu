@@ -274,8 +274,13 @@ DEFINE_bool(mock_table_metrics_for_testing, false,
 TAG_FLAG(mock_table_metrics_for_testing, hidden);
 TAG_FLAG(mock_table_metrics_for_testing, runtime);
 
+DEFINE_bool(catalog_manager_support_on_disk_size, true,
+            "Whether to enable mock on disk size statistic for tables. For testing only.");
+TAG_FLAG(catalog_manager_support_on_disk_size, hidden);
+TAG_FLAG(catalog_manager_support_on_disk_size, runtime);
+
 DEFINE_bool(catalog_manager_support_live_row_count, true,
-            "Whether to enable mock live row count statistic for tables. For testing only");
+            "Whether to enable mock live row count statistic for tables. For testing only.");
 TAG_FLAG(catalog_manager_support_live_row_count, hidden);
 TAG_FLAG(catalog_manager_support_live_row_count, runtime);
 
@@ -2960,12 +2965,16 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
                                           &table, &l));
 
   if (PREDICT_FALSE(FLAGS_mock_table_metrics_for_testing)) {
-    resp->set_on_disk_size(FLAGS_on_disk_size_for_testing);
+    if (FLAGS_catalog_manager_support_on_disk_size) {
+      resp->set_on_disk_size(FLAGS_on_disk_size_for_testing);
+    }
     if (FLAGS_catalog_manager_support_live_row_count) {
       resp->set_live_row_count(FLAGS_live_row_count_for_testing);
     }
   } else {
-    resp->set_on_disk_size(table->GetMetrics()->on_disk_size->value());
+    if (table->GetMetrics()->TableSupportsOnDiskSize()) {
+      resp->set_on_disk_size(table->GetMetrics()->on_disk_size->value());
+    }
     if (table->GetMetrics()->TableSupportsLiveRowCount()) {
       resp->set_live_row_count(table->GetMetrics()->live_row_count->value());
     }
@@ -4272,14 +4281,21 @@ Status CatalogManager::ProcessTabletReport(
     }
 
     // 10. Process the report's tablet statistics.
-    if (report.has_stats() && report.has_consensus_state()) {
-      DCHECK_EQ(ts_desc->permanent_uuid(), report.consensus_state().leader_uuid());
-
-      // Now the tserver only reports the LEADER replicas its own.
-      // First, update table's stats.
-      tablet->table()->UpdateMetrics(tablet_id, tablet->GetStats(), report.stats());
-      // Then, update tablet's stats.
-      tablet->UpdateStats(report.stats());
+    //
+    // The tserver only reports the LEADER replicas it owns.
+    if (report.has_consensus_state() &&
+        report.consensus_state().leader_uuid() == ts_desc->permanent_uuid()) {
+      if (report.has_stats()) {
+        // For the versions >= 1.11.x, the tserver reports stats. But keep in
+        // mind that 'live_row_count' is not supported for the legacy replicas.
+        tablet->table()->UpdateMetrics(tablet_id, tablet->GetStats(), report.stats());
+        tablet->UpdateStats(report.stats());
+      } else {
+        // For the versions < 1.11.x, the tserver doesn't report stats. Thus,
+        // the metrics from the stats should be hidden, for example, when it's
+        // in the upgrade/downgrade process or in a mixed environment.
+        tablet->table()->InvalidateMetrics(tablet_id);
+      }
     }
   }
 
@@ -5638,52 +5654,114 @@ void TableInfo::UnregisterMetrics() {
 void TableInfo::UpdateMetrics(const string& tablet_id,
                               const tablet::ReportedTabletStatsPB& old_stats,
                               const tablet::ReportedTabletStatsPB& new_stats) {
-  if (metrics_) {
+  if (!metrics_) return;
+
+  if (PREDICT_TRUE(!metrics_->on_disk_size->IsInvisible())) {
     metrics_->on_disk_size->IncrementBy(
-        static_cast<int64_t>(new_stats.on_disk_size())
-        - static_cast<int64_t>(old_stats.on_disk_size()));
-    if (new_stats.has_live_row_count()) {
-      DCHECK(!metrics_->ContainsTabletNoLiveRowCount(tablet_id));
-
-      // The function "IncrementBy" makes the metric visible by validating the epoch.
-      // So, it's very important to skip calling it while the metric is invisible.
-      if (!metrics_->live_row_count->IsInvisible()) {
-        metrics_->live_row_count->IncrementBy(
-            static_cast<int64_t>(new_stats.live_row_count())
-            - static_cast<int64_t>(old_stats.live_row_count()));
+        static_cast<int64_t>(new_stats.on_disk_size()) -
+        static_cast<int64_t>(old_stats.on_disk_size()));
+  } else {
+    // When is the 'on disk size' invisible?
+    // 1. there is a tablet(legacy or not) under the old tserver version;
+    if (metrics_->ContainsTabletNoOnDiskSize(tablet_id)) {
+      metrics_->DeleteTabletNoOnDiskSize(tablet_id);
+      // The tserver version has been updated since the 'on_disk_size' of the
+      // tablet was not supported before but now it is supported, so we need
+      // to check that the metric could be visible.
+      if (metrics_->TableSupportsOnDiskSize()) {
+        DCHECK(new_stats.has_on_disk_size());
+        uint64_t on_disk_size = new_stats.on_disk_size();
+        {
+          std::lock_guard<rw_spinlock> l(lock_);
+          for (const auto& e : tablet_map_) {
+            if (e.first != tablet_id) {
+              on_disk_size += e.second->GetStats().on_disk_size();
+            }
+          }
+        }
+        // Set the metric value and it will be visible again.
+        metrics_->on_disk_size->set_value(static_cast<int64_t>(on_disk_size));
       }
-    } else if (!old_stats.has_on_disk_size()) {
-      // For an existing tablet, either it supports 'live_row_count' or not. Obviously,
-      // it doesn't support this feature in this branch. So we gather the tablet uuid to
-      // make sure later that the table doesn't support this either. But the new_stats
-      // will keep coming, so it's necessary to limit the operation to one time only.
-      // Thus, we use the 'on_disk_size' metric of the old_stats as a switch when it is
-      // transitioned from "uninitialized stats" to "has_on_disk_size()".
-      metrics_->AddTabletNoLiveRowCount(tablet_id);
+    }
+  }
 
-      // Make the metric invisible by invalidating the epoch.
+  if (PREDICT_TRUE(!metrics_->live_row_count->IsInvisible())) {
+    if (new_stats.has_live_row_count()) {
+      metrics_->live_row_count->IncrementBy(
+          static_cast<int64_t>(new_stats.live_row_count()) -
+          static_cast<int64_t>(old_stats.live_row_count()));
+    } else {
+      // The legacy tablet makes the metric invisible by invalidating the epoch.
+      metrics_->AddTabletNoLiveRowCount(tablet_id);
       metrics_->live_row_count->InvalidateEpoch();
     }
+  } else {
+    // When is the 'live row count' invisible?
+    // 1. there is a legacy tablet under the new tserver version;
+    // 2. there is a newly created tablet which has 'live_row_count',
+    //    but the tserver rolls back to the old version;
+    if (metrics_->ContainsTabletNoLiveRowCount(tablet_id) && new_stats.has_live_row_count()) {
+      // It is case 2 and the tserver version has been updated.
+      metrics_->DeleteTabletNoLiveRowCount(tablet_id);
+      if (metrics_->TableSupportsLiveRowCount()) {
+        uint64_t live_row_count = new_stats.live_row_count();
+        {
+          std::lock_guard<rw_spinlock> l(lock_);
+          for (const auto& e : tablet_map_) {
+            if (e.first != tablet_id) {
+              live_row_count += e.second->GetStats().live_row_count();
+            }
+          }
+        }
+        metrics_->live_row_count->set_value(static_cast<int64_t>(live_row_count));
+      }
+    }
+  }
+}
+
+void TableInfo::InvalidateMetrics(const std::string& tablet_id) {
+  if (!metrics_) return;
+  if (!metrics_->ContainsTabletNoOnDiskSize(tablet_id)) {
+    metrics_->AddTabletNoOnDiskSize(tablet_id);
+    metrics_->on_disk_size->InvalidateEpoch();
+  }
+  if (!metrics_->ContainsTabletNoLiveRowCount(tablet_id)) {
+    metrics_->AddTabletNoLiveRowCount(tablet_id);
+    metrics_->live_row_count->InvalidateEpoch();
   }
 }
 
 void TableInfo::RemoveMetrics(const string& tablet_id,
                               const tablet::ReportedTabletStatsPB& old_stats) {
-  if (metrics_) {
-    metrics_->on_disk_size->IncrementBy(-static_cast<int64_t>(old_stats.on_disk_size()));
-    if (old_stats.has_live_row_count()) {
-      DCHECK(!metrics_->ContainsTabletNoLiveRowCount(tablet_id));
-      metrics_->live_row_count->IncrementBy(-static_cast<int64_t>(old_stats.live_row_count()));
-    } else {
-      metrics_->DeleteTabletNoLiveRowCount(tablet_id);
+  DCHECK(lock_.is_locked());
+  if (!metrics_) return;
 
-      // Make the metric visible again after all of the legacy tablets are deleted.
+  if (PREDICT_TRUE(!metrics_->on_disk_size->IsInvisible())) {
+    metrics_->on_disk_size->IncrementBy(-static_cast<int64_t>(old_stats.on_disk_size()));
+  } else {
+    if (metrics_->ContainsTabletNoOnDiskSize(tablet_id)) {
+      metrics_->DeleteTabletNoOnDiskSize(tablet_id);
+      if (metrics_->TableSupportsOnDiskSize()) {
+        uint64_t on_disk_size = 0;
+        for (const auto& e : tablet_map_) {
+          on_disk_size += e.second->GetStats().on_disk_size();
+        }
+        metrics_->on_disk_size->set_value(static_cast<int64_t>(on_disk_size));
+      }
+    }
+  }
+
+  if (PREDICT_TRUE(!metrics_->live_row_count->IsInvisible())) {
+    metrics_->live_row_count->IncrementBy(-static_cast<int64_t>(old_stats.live_row_count()));
+  } else {
+    if (metrics_->ContainsTabletNoLiveRowCount(tablet_id)) {
+      metrics_->DeleteTabletNoLiveRowCount(tablet_id);
       if (metrics_->TableSupportsLiveRowCount()) {
         uint64_t live_row_count = 0;
         for (const auto& e : tablet_map_) {
           live_row_count += e.second->GetStats().live_row_count();
         }
-        metrics_->live_row_count->IncrementBy(static_cast<int64_t>(live_row_count));
+        metrics_->live_row_count->set_value(static_cast<int64_t>(live_row_count));
       }
     }
   }

@@ -5727,9 +5727,11 @@ TEST_F(ToolTest, TestFailedTableCopy) {
   ASSERT_STR_CONTAINS(stderr, "Timed out");
 }
 
-TEST_F(ToolTest, TestGetTableStatisticsLiveRowCountNotSupported) {
+TEST_F(ToolTest, TestGetTableStatisticsNotSupported) {
   ExternalMiniClusterOptions opts;
   opts.extra_master_flags = { "--mock_table_metrics_for_testing=true",
+                              "--on_disk_size_for_testing=77",
+                              "--catalog_manager_support_on_disk_size=false",
                               "--live_row_count_for_testing=99",
                               "--catalog_manager_support_live_row_count=false" };
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
@@ -5745,6 +5747,7 @@ TEST_F(ToolTest, TestGetTableStatisticsLiveRowCountNotSupported) {
                  cluster_->master()->bound_rpc_addr().ToString(),
                  TestWorkload::kDefaultTableName),
       &stdout));
+  ASSERT_STR_CONTAINS(stdout, "on disk size: N/A");
   ASSERT_STR_CONTAINS(stdout, "live row count: N/A");
 }
 

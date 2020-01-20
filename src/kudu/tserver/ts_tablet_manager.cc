@@ -252,8 +252,9 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
     state_(MANAGER_INITIALIZING) {
-  next_update_time_ = MonoTime::Now() +
-      MonoDelta::FromMilliseconds(FLAGS_update_tablet_stats_interval_ms);
+  // A heartbeat msg without statistics will be considered to be from an old
+  // version, thus it's necessary to trigger updating stats as soon as possible.
+  next_update_time_ = MonoTime::Now();
 
   METRIC_tablets_num_not_initialized.InstantiateFunctionGauge(
           server->metric_entity(),
@@ -1350,9 +1351,7 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
     // If we're the leader, report stats.
     if (cstate.leader_uuid() == fs_manager_->uuid()) {
       ReportedTabletStatsPB stats_pb = replica->GetTabletStats();
-      if (stats_pb.has_on_disk_size() || stats_pb.has_live_row_count()) {
-        *reported_tablet->mutable_stats() = std::move(stats_pb);
-      }
+      *reported_tablet->mutable_stats() = std::move(stats_pb);
     }
     *reported_tablet->mutable_consensus_state() = std::move(cstate);
   }
@@ -1628,7 +1627,9 @@ void TSTabletManager::UpdateTabletStatsIfNecessary() {
     replica->UpdateTabletStats(&dirty_tablets);
   }
 
-  MarkTabletsDirty(dirty_tablets, "The tablet statistics have been changed");
+  if (!dirty_tablets.empty()) {
+    MarkTabletsDirty(dirty_tablets, "The tablet statistics have been changed");
+  }
 }
 
 void TSTabletManager::SetNextUpdateTimeForTests() {

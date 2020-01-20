@@ -47,6 +47,26 @@ TableMetrics::TableMetrics(const scoped_refptr<MetricEntity>& entity)
 #undef GINIT
 #undef HIDEINIT
 
+void TableMetrics::AddTabletNoOnDiskSize(const std::string& tablet_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  InsertIfNotPresent(&tablet_ids_no_on_disk_size_, tablet_id);
+}
+
+void TableMetrics::DeleteTabletNoOnDiskSize(const std::string& tablet_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  tablet_ids_no_on_disk_size_.erase(tablet_id);
+}
+
+bool TableMetrics::ContainsTabletNoOnDiskSize(const std::string& tablet_id) const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return ContainsKey(tablet_ids_no_on_disk_size_, tablet_id);
+}
+
+bool TableMetrics::TableSupportsOnDiskSize() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return tablet_ids_no_on_disk_size_.empty();
+}
+
 void TableMetrics::AddTabletNoLiveRowCount(const std::string& tablet_id) {
   std::lock_guard<simple_spinlock> l(lock_);
   InsertIfNotPresent(&tablet_ids_no_live_row_count_, tablet_id);

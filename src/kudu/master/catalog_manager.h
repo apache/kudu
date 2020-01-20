@@ -332,6 +332,9 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
                      const tablet::ReportedTabletStatsPB& old_stats,
                      const tablet::ReportedTabletStatsPB& new_stats);
 
+  // Invalidate stats belonging to 'tablet_id' in the table's metrics.
+  void InvalidateMetrics(const std::string& tablet_id);
+
   // Remove stats belonging to 'tablet_id' from table metrics.
   void RemoveMetrics(const std::string& tablet_id,
                      const tablet::ReportedTabletStatsPB& old_stats);

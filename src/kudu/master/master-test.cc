@@ -63,6 +63,7 @@
 #include "kudu/master/master_options.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
@@ -78,6 +79,7 @@
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -1899,31 +1901,6 @@ TEST_F(MasterTest, TestDuplicateRequest) {
   ASSERT_EQ(task_list.size(), 2);
 }
 
-TEST_F(MasterTest, TestGetTableStatistics) {
-  const char *kTableName = "testtable";
-  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
-  ASSERT_OK(CreateTable(kTableName, kTableSchema));
-
-  // Get table statistics with right name.
-  GetTableStatisticsRequestPB req;
-  GetTableStatisticsResponsePB resp;
-  RpcController controller;
-  req.mutable_table()->set_table_name(kTableName);
-  ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &controller));
-  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
-  ASSERT_EQ(0, resp.on_disk_size());
-  ASSERT_EQ(0, resp.live_row_count());
-
-  FLAGS_mock_table_metrics_for_testing = true;
-  FLAGS_on_disk_size_for_testing = 1024;
-  FLAGS_live_row_count_for_testing = 100;
-  controller.Reset();
-  ASSERT_OK(proxy_->GetTableStatistics(req, &resp, &controller));
-  ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
-  ASSERT_EQ(FLAGS_on_disk_size_for_testing, resp.on_disk_size());
-  ASSERT_EQ(FLAGS_live_row_count_for_testing, resp.live_row_count());
-}
-
 TEST_F(MasterTest, TestHideLiveRowCountInTableMetrics) {
   const char* kTableName = "testtable";
   const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
@@ -1973,7 +1950,6 @@ TEST_F(MasterTest, TestHideLiveRowCountInTableMetrics) {
 
   // Trigger to cause 'live_row_count' visible.
   {
-    tables[0]->RemoveMetrics(tablets.back()->id(), tablet::ReportedTabletStatsPB());
     for (int i = 0; i < 100; ++i) {
       for (int j = 0; j < tablets.size(); ++j) {
         NO_FATALS(call_update_metrics(tablets[j], true));
@@ -1989,6 +1965,40 @@ TEST_F(MasterTest, TestHideLiveRowCountInTableMetrics) {
     ASSERT_STR_CONTAINS(raw, kTableName);
     ASSERT_STR_CONTAINS(raw, "on_disk_size");
     ASSERT_STR_CONTAINS(raw, "live_row_count");
+  }
+}
+
+TEST_F(MasterTest, TestTableStatisticsWithOldVersion) {
+  const char* kTableName = "testtable";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  vector<scoped_refptr<TableInfo>> tables;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
+    ASSERT_OK(master_->catalog_manager()->GetAllTables(&tables));
+    ASSERT_EQ(1, tables.size());
+  }
+  const auto& table = tables[0];
+  vector<scoped_refptr<TabletInfo>> tablets;
+  table->GetAllTablets(&tablets);
+  ASSERT_FALSE(tablets.empty());
+
+  {
+    table->InvalidateMetrics(tablets.back()->id());
+    ASSERT_FALSE(table->GetMetrics()->TableSupportsOnDiskSize());
+    ASSERT_FALSE(table->GetMetrics()->TableSupportsLiveRowCount());
+  }
+  {
+    tablet::ReportedTabletStatsPB old_stats;
+    tablet::ReportedTabletStatsPB new_stats;
+    new_stats.set_on_disk_size(1024);
+    new_stats.set_live_row_count(1000);
+    table->UpdateMetrics(tablets.back()->id(), old_stats, new_stats);
+    ASSERT_TRUE(table->GetMetrics()->TableSupportsOnDiskSize());
+    ASSERT_TRUE(table->GetMetrics()->TableSupportsLiveRowCount());
+    ASSERT_EQ(1024, table->GetMetrics()->on_disk_size->value());
+    ASSERT_EQ(1000, table->GetMetrics()->live_row_count->value());
   }
 }
 

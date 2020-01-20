@@ -964,6 +964,7 @@ class KUDU_EXPORT KuduTableStatistics {
   ~KuduTableStatistics();
 
   /// @return The table's on disk size.
+  ///  -1 is returned if the table doesn't support on_disk_size.
   ///
   /// @note This statistic is pre-replication.
   int64_t on_disk_size() const;

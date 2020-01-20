@@ -120,6 +120,7 @@
 
 DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_support_live_row_count);
+DECLARE_bool(catalog_manager_support_on_disk_size);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
@@ -813,16 +814,17 @@ TEST_F(ClientTest, TestGetTableStatistics) {
     statistics.reset(table_statistics);
   };
 
-  // Master supports live row count.
+  // Master supports 'on disk size' and 'live row count'.
   NO_FATALS(GetTableStatistics());
   ASSERT_EQ(FLAGS_on_disk_size_for_testing, statistics->on_disk_size());
   ASSERT_EQ(FLAGS_live_row_count_for_testing, statistics->live_row_count());
-  // Master doesn't support live row count.
+
+  // Master doesn't support 'on disk size' and 'live row count'.
+  FLAGS_catalog_manager_support_on_disk_size = false;
   FLAGS_catalog_manager_support_live_row_count = false;
   NO_FATALS(GetTableStatistics());
-  ASSERT_EQ(FLAGS_on_disk_size_for_testing, statistics->on_disk_size());
+  ASSERT_EQ(-1, statistics->on_disk_size());
   ASSERT_EQ(-1, statistics->live_row_count());
-  ASSERT_NE(-1, FLAGS_live_row_count_for_testing);
 }
 
 TEST_F(ClientTest, TestBadTable) {

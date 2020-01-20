@@ -17,6 +17,7 @@
 
 #include "kudu/client/client.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <map>
@@ -25,12 +26,12 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
@@ -602,7 +603,8 @@ Status KuduClient::GetTableStatistics(const string& table_name,
     return StatusFromPB(resp.error().status());
   }
   unique_ptr<KuduTableStatistics> table_statistics(new KuduTableStatistics);
-  table_statistics->data_ = new KuduTableStatistics::Data(resp.on_disk_size(),
+  table_statistics->data_ = new KuduTableStatistics::Data(
+      resp.has_on_disk_size() ? boost::optional<int64_t>(resp.on_disk_size()) : boost::none,
       resp.has_live_row_count() ? boost::optional<int64_t>(resp.live_row_count()) : boost::none);
 
   *statistics = table_statistics.release();
@@ -877,7 +879,7 @@ KuduTableStatistics::~KuduTableStatistics() {
 }
 
 int64_t KuduTableStatistics::on_disk_size() const {
-  return data_->on_disk_size_;
+  return data_->on_disk_size_ ? *data_->on_disk_size_ : -1;
 }
 
 int64_t KuduTableStatistics::live_row_count() const {

@@ -17,6 +17,8 @@
 #ifndef KUDU_MASTER_TABLE_METRICS_H
 #define KUDU_MASTER_TABLE_METRICS_H
 
+#include <cstddef>
+
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -49,6 +51,11 @@ struct TableMetrics {
   scoped_refptr<AtomicGauge<uint64_t>> live_row_count;
   scoped_refptr<AtomicGauge<size_t>> merged_entities_count_of_table;
 
+  void AddTabletNoOnDiskSize(const std::string& tablet_id);
+  void DeleteTabletNoOnDiskSize(const std::string& tablet_id);
+  bool ContainsTabletNoOnDiskSize(const std::string& tablet_id) const;
+  bool TableSupportsOnDiskSize() const;
+
   void AddTabletNoLiveRowCount(const std::string& tablet_id);
   void DeleteTabletNoLiveRowCount(const std::string& tablet_id);
   bool ContainsTabletNoLiveRowCount(const std::string& tablet_id) const;
@@ -56,7 +63,9 @@ struct TableMetrics {
 
  private:
   mutable simple_spinlock lock_;
-  // IDs of tablets which do not support reporting live row count.
+  // Identifiers of tablets that do not support reporting on disk size.
+  std::unordered_set<std::string> tablet_ids_no_on_disk_size_;
+  // Identifiers of tablets that do not support reporting live row count.
   std::unordered_set<std::string> tablet_ids_no_live_row_count_;
 };
 

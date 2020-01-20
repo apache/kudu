@@ -33,8 +33,8 @@ using strings::Substitute;
 
 class KuduTableStatistics::Data {
  public:
-  Data(int64_t on_disk_size, boost::optional<int64_t> live_row_count)
-      : on_disk_size_(on_disk_size),
+  Data(boost::optional<int64_t> on_disk_size, boost::optional<int64_t> live_row_count)
+      : on_disk_size_(std::move(on_disk_size)),
         live_row_count_(std::move(live_row_count)) {
   }
 
@@ -44,11 +44,11 @@ class KuduTableStatistics::Data {
   string ToString() const {
     return Substitute("on disk size: $0\n"
                       "live row count: $1\n",
-                      on_disk_size_,
+                      on_disk_size_ ? std::to_string(*on_disk_size_) : "N/A",
                       live_row_count_ ? std::to_string(*live_row_count_) : "N/A");
   }
 
-  const int64_t on_disk_size_;
+  const boost::optional<int64_t> on_disk_size_;
   const boost::optional<int64_t> live_row_count_;
 
  private:
