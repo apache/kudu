@@ -153,7 +153,7 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   vector<string> flags;
   flags.emplace_back("--log_segment_size_mb=1");
   flags.emplace_back("--log_min_segments_to_retain=3");
-  flags.emplace_back("--log_compression_codec=''");
+  flags.emplace_back("--log_compression_codec=no_compression");
   NO_FATALS(StartCluster(flags));
 
   const int kNumTablets = 1;

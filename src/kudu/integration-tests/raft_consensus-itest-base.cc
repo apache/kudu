@@ -26,7 +26,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -181,7 +180,7 @@ void RaftConsensusITestBase::AddFlagsForLogRolls(vector<string>* extra_tserver_f
   //
   // Additionally, we disable log compression, since these tests write a lot of
   // repetitive data to cause the rolls, and compression would make it all tiny.
-  extra_tserver_flags->push_back("--log_compression_codec=none");
+  extra_tserver_flags->push_back("--log_compression_codec=no_compression");
   extra_tserver_flags->push_back("--log_cache_size_limit_mb=1");
   extra_tserver_flags->push_back("--log_segment_size_mb=1");
   extra_tserver_flags->push_back("--log_async_preallocate_segments=false");

@@ -42,7 +42,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
@@ -448,13 +447,9 @@ Status SegmentAllocator::Init(
     uint64_t sequence_number,
     scoped_refptr<ReadableLogSegment>* new_readable_segment) {
   // Init the compression codec.
-  if (!FLAGS_log_compression_codec.empty()) {
-    auto codec_type = GetCompressionCodecType(FLAGS_log_compression_codec);
-    if (codec_type != NO_COMPRESSION) {
-      RETURN_NOT_OK_PREPEND(GetCompressionCodec(codec_type, &codec_),
-                            "could not instantiate compression codec");
-    }
-  }
+  RETURN_NOT_OK_PREPEND(GetCompressionCodec(
+      GetCompressionCodecType(FLAGS_log_compression_codec), &codec_),
+                        "could not instantiate compression codec");
   active_segment_sequence_number_ = sequence_number;
   RETURN_NOT_OK(ThreadPoolBuilder("log-alloc")
       .set_max_threads(1)

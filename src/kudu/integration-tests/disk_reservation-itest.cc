@@ -131,7 +131,7 @@ TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
     "--disable_core_dumps",
     // Disable compression so that our data being written doesn't end up
     // compressed away.
-    "--log_compression_codec=none"
+    "--log_compression_codec=no_compression"
   };
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 

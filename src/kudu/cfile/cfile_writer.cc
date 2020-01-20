@@ -52,7 +52,7 @@
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
 TAG_FLAG(cfile_default_block_size, advanced);
 
-DEFINE_string(cfile_default_compression_codec, "none",
+DEFINE_string(cfile_default_compression_codec, "no_compression",
               "Default cfile block compression codec.");
 TAG_FLAG(cfile_default_compression_codec, advanced);
 
@@ -79,10 +79,6 @@ const int kMagicLength = 8;
 const size_t kChecksumSize = sizeof(uint32_t);
 
 static const size_t kMinBlockSize = 512;
-
-static CompressionType GetDefaultCompressionCodec() {
-  return GetCompressionCodecType(FLAGS_cfile_default_compression_codec);
-}
 
 ////////////////////////////////////////////////////////////
 // CFileWriter
@@ -114,7 +110,7 @@ CFileWriter::CFileWriter(WriterOptions options,
 
   compression_ = options_.storage_attributes.compression;
   if (compression_ == DEFAULT_COMPRESSION) {
-    compression_ = GetDefaultCompressionCodec();
+    compression_ = GetCompressionCodecType(FLAGS_cfile_default_compression_codec);
   }
 
   if (options_.storage_attributes.cfile_block_size <= 0) {

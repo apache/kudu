@@ -430,7 +430,7 @@ TEST_P(LogTestOptionalCompression, TestSegmentRollover) {
 }
 
 TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
-  FLAGS_log_compression_codec = "none";
+  FLAGS_log_compression_codec = "no_compression";
 
   const int kNumEntries = 4;
   ASSERT_OK(BuildLog());
@@ -1054,7 +1054,7 @@ TEST_P(LogTestOptionalCompression, TestReadReplicatesHighIndex) {
 // Test various situations where we expect different segments depending on what the
 // min log index is.
 TEST_F(LogTest, TestGetGCableDataSize) {
-  FLAGS_log_compression_codec = "none";
+  FLAGS_log_compression_codec = "no_compression";
   FLAGS_log_min_segments_to_retain = 2;
   ASSERT_OK(BuildLog());
 

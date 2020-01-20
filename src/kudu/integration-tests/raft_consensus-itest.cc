@@ -815,7 +815,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
     // We write 128KB cells in this test, so bump the limit.
     "--max_cell_size_bytes=1000000",
     // And disable WAL compression so the 128KB cells don't get compressed away.
-    "--log_compression_codec=none"
+    "--log_compression_codec=no_compression"
   };
 
   NO_FATALS(BuildAndStart(kTsFlags));
@@ -2140,7 +2140,7 @@ TEST_F(RaftConsensusITest, TestLargeBatches) {
     // We write 128KB cells in this test, so bump the limit, and disable compression.
     "--max_cell_size_bytes=1000000",
     "--log_segment_size_mb=1",
-    "--log_compression_codec=none",
+    "--log_compression_codec=no_compression",
     "--log_min_segments_to_retain=100", // disable GC of logs.
   };
 
