@@ -80,8 +80,10 @@ class TabletCopyClient {
  public:
 
   // Construct the tablet copy client.
-  // 'fs_manager' and 'messenger' must remain valid until this object is destroyed.
-  TabletCopyClient(std::string tablet_id, FsManager* fs_manager,
+  //
+  // Objects behind raw pointers must remain valid until this object is destroyed.
+  TabletCopyClient(std::string tablet_id,
+                   FsManager* fs_manager,
                    scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                    std::shared_ptr<rpc::Messenger> messenger,
                    TabletCopyClientMetrics* tablet_copy_metrics);

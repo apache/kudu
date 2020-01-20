@@ -24,8 +24,8 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
@@ -33,6 +33,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -148,7 +149,8 @@ TabletCopyClientMetrics::TabletCopyClientMetrics(const scoped_refptr<MetricEntit
       open_client_sessions(METRIC_tablet_copy_open_client_sessions.Instantiate(metric_entity, 0)) {
 }
 
-TabletCopyClient::TabletCopyClient(std::string tablet_id,
+TabletCopyClient::TabletCopyClient(
+    std::string tablet_id,
     FsManager* fs_manager,
     scoped_refptr<ConsensusMetadataManager> cmeta_manager,
     shared_ptr<Messenger> messenger,
@@ -159,7 +161,6 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       messenger_(std::move(messenger)),
       state_(kInitialized),
       replace_tombstoned_tablet_(false),
-      tablet_replica_(nullptr),
       session_idle_timeout_millis_(FLAGS_tablet_copy_begin_session_timeout_ms),
       start_time_micros_(0),
       rng_(GetRandomSeed32()),
@@ -532,10 +533,8 @@ Status TabletCopyClient::DownloadWALs() {
 
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
   // not kept from previous copies and runs.
+  RETURN_NOT_OK(log::Log::DeleteOnDiskData(fs_manager_, tablet_id_));
   string path = fs_manager_->GetTabletWalDir(tablet_id_);
-  if (fs_manager_->env()->FileExists(path)) {
-    RETURN_NOT_OK(fs_manager_->env()->DeleteRecursively(path));
-  }
   RETURN_NOT_OK(fs_manager_->env()->CreateDir(path));
   RETURN_NOT_OK(fs_manager_->env()->SyncDir(DirName(path))); // fsync() parent dir.
 
