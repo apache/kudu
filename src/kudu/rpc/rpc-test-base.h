@@ -559,7 +559,9 @@ class RpcTestBase : public KuduTest {
 
     // We shouldn't timeout significantly faster than our configured timeout, unless the
     // rpc is cancelled.
-    if (!will_be_cancelled) EXPECT_GE(elapsed_millis, expected_millis - 10);
+    if (!will_be_cancelled) {
+      EXPECT_GE(elapsed_millis, expected_millis - 10);
+    }
     // And we also shouldn't take the full time that we asked for
     EXPECT_LT(elapsed_millis * 1000, sleep_micros);
     if (will_be_cancelled) {
