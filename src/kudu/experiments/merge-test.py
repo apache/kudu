@@ -457,7 +457,7 @@ class TestMerges(unittest.TestCase):
       assert list_of_files
       iters = [PagingBlockIterator(FileBlockIterator(f, stats),
                                    stats) for f in list_of_files]
-    logging.info("Starting merge with {}".format(merge_type.__name__))
+    logging.info("Starting merge with {0}".format(merge_type.__name__))
     merge_iter = merge_type(iters)
     logging.info("Initialized iterator")
     results = []
@@ -471,16 +471,16 @@ class TestMerges(unittest.TestCase):
 
       t2 = time.time()
       if t2 - t1 > 10:
-        logging.info("Merged {} elements ({} eps) {}".format(
+        logging.info("Merged {0} elements ({1} eps) {2}".format(
           num_results,
           num_results / (t2 - start),
           repr(stats)))
         t1 = t2
     elapsed = time.time() - start
-    logging.info("Merged {} elements".format(num_results))
+    logging.info("Merged {0} elements".format(num_results))
     if expected_results:
       self.assertEqual(expected_results, results)
-    logging.info("{} with {} input: {}s {}".format(
+    logging.info("{0} with {1} input: {2}s {3}".format(
       merge_type.__name__,
       pattern,
       elapsed,

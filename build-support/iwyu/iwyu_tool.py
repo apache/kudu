@@ -168,7 +168,7 @@ def run_iwyu(cwd, compile_command, iwyu_args, verbose):
     cmd_args = ['include-what-you-use'] + clang_args + extra_args + args.split()
 
     if verbose:
-        print('{}'.format(cmd_args))
+        print('{0}'.format(cmd_args))
 
     return get_output(cwd, cmd_args)
 

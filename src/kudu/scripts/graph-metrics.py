@@ -45,7 +45,7 @@ def parse_data_from(stream, scope):
     try:
       data_points = simplejson.loads(json)
     except:
-      print >>sys.stderr, "bad json:", json
+      print("bad json: " + json, file=sys.stderr)
       raise
     if data_points['scope'] != scope:
       continue

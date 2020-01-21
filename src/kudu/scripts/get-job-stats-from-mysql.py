@@ -54,4 +54,4 @@ with con:
   rows = cur.fetchall()
   print('workload \truntime \tbuild_number')
   for row in rows:
-    print("{} \t{} \t{}".format(row[0], row[1], row[2]))
+    print("{0} \t{1} \t{2}".format(row[0], row[1], row[2]))

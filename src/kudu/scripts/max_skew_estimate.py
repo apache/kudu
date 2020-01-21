@@ -84,7 +84,7 @@ def main():
     skews = [generate_max_skew(num_servers, num_tablets, rf) for _ in xrange(num_trials)]
     skews.sort()
     for p in [5, 25, 50, 75, 99]:
-        print("{:02d} percentile: {:d}".format(p, percentile(skews, p)))
+        print("{0:02d} percentile: {1:d}".format(p, percentile(skews, p)))
 
 if __name__ == "__main__":
     main()
