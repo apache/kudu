@@ -764,42 +764,47 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   //
   // When looping, we delete any created-and-orphaned files.
   do {
-    unique_ptr<RWFile> rwf;
-
-    if (metadata_writer) {
-      block_manager->env()->DeleteFile(metadata_path);
-    }
     common_path = JoinPathSegments(dir->dir(),
                                    block_manager->oid_generator()->Next());
     metadata_path = StrCat(common_path, LogBlockManager::kContainerMetadataFileSuffix);
-    RWFileOptions wr_opts;
-    wr_opts.mode = Env::MUST_CREATE;
-    metadata_status = block_manager->env()->NewRWFile(wr_opts,
-                                                      metadata_path,
-                                                      &rwf);
-    metadata_writer.reset(rwf.release());
-
-    if (data_file) {
-      block_manager->env()->DeleteFile(data_path);
-    }
     data_path = StrCat(common_path, LogBlockManager::kContainerDataFileSuffix);
-    RWFileOptions rw_opts;
-    rw_opts.mode = Env::MUST_CREATE;
-    data_status = block_manager->env()->NewRWFile(rw_opts,
-                                                  data_path,
-                                                  &rwf);
-    data_file.reset(rwf.release());
+
+    if (PREDICT_TRUE(block_manager->file_cache_)) {
+      if (metadata_writer) {
+        WARN_NOT_OK(block_manager->file_cache_->DeleteFile(metadata_path),
+                    "could not delete orphaned metadata file thru file cache");
+      }
+      if (data_file) {
+        WARN_NOT_OK(block_manager->file_cache_->DeleteFile(data_path),
+                    "could not delete orphaned data file thru file cache");
+      }
+      metadata_status = block_manager->file_cache_->OpenFile<Env::MUST_CREATE>(
+          metadata_path, &metadata_writer);
+      data_status = block_manager->file_cache_->OpenFile<Env::MUST_CREATE>(
+          data_path, &data_file);
+    } else {
+      if (metadata_writer) {
+        WARN_NOT_OK(block_manager->env()->DeleteFile(metadata_path),
+                    "could not delete orphaned metadata file");
+      }
+      if (data_file) {
+        WARN_NOT_OK(block_manager->env()->DeleteFile(data_path),
+                    "could not delete orphaned data file");
+      }
+      unique_ptr<RWFile> rwf;
+      RWFileOptions rw_opts;
+
+      rw_opts.mode = Env::MUST_CREATE;
+      metadata_status = block_manager->env()->NewRWFile(
+          rw_opts, metadata_path, &rwf);
+      metadata_writer.reset(rwf.release());
+      data_status = block_manager->env()->NewRWFile(
+          rw_opts, data_path, &rwf);
+      data_file.reset(rwf.release());
+    }
   } while (PREDICT_FALSE(metadata_status.IsAlreadyPresent() ||
                          data_status.IsAlreadyPresent()));
   if (metadata_status.ok() && data_status.ok()) {
-    if (PREDICT_TRUE(block_manager->file_cache_)) {
-      metadata_writer.reset();
-      RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_->OpenExistingFile(
-          metadata_path, &metadata_writer));
-      data_file.reset();
-      RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_->OpenExistingFile(
-          data_path, &data_file));
-    }
     unique_ptr<WritablePBContainerFile> metadata_file(new WritablePBContainerFile(
         std::move(metadata_writer)));
     RETURN_NOT_OK_CONTAINER_DISK_FAILURE(metadata_file->CreateNew(BlockRecordPB()));
@@ -834,10 +839,10 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   shared_ptr<RWFile> metadata_file;
   shared_ptr<RWFile> data_file;
   if (PREDICT_TRUE(block_manager->file_cache_)) {
-    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_->OpenExistingFile(
-        metadata_path, &metadata_file));
-    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_->OpenExistingFile(
-        data_path, &data_file));
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(
+        block_manager->file_cache_->OpenFile<Env::MUST_EXIST>(metadata_path, &metadata_file));
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(
+        block_manager->file_cache_->OpenFile<Env::MUST_EXIST>(data_path, &data_file));
   } else {
     RWFileOptions opts;
     opts.mode = Env::MUST_EXIST;
@@ -1224,7 +1229,7 @@ Status LogBlockContainer::SyncMetadata() {
 Status LogBlockContainer::ReopenMetadataWriter() {
   shared_ptr<RWFile> f;
   if (PREDICT_TRUE(block_manager_->file_cache_)) {
-    RETURN_NOT_OK_HANDLE_ERROR(block_manager_->file_cache_->OpenExistingFile(
+    RETURN_NOT_OK_HANDLE_ERROR(block_manager_->file_cache_->OpenFile<Env::MUST_EXIST>(
         metadata_file_->filename(), &f));
   } else {
     unique_ptr<RWFile> f_uniq;

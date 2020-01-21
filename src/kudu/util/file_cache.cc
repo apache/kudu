@@ -240,55 +240,55 @@ class Descriptor<RWFile> : public RWFile {
 
   Status Read(uint64_t offset, Slice result) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Read(offset, result);
   }
 
   Status ReadV(uint64_t offset, ArrayView<Slice> results) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->ReadV(offset, results);
   }
 
   Status Write(uint64_t offset, const Slice& data) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Write(offset, data);
   }
 
   Status WriteV(uint64_t offset, ArrayView<const Slice> data) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->WriteV(offset, data);
   }
 
   Status PreAllocate(uint64_t offset, size_t length, PreAllocateMode mode) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->PreAllocate(offset, length, mode);
   }
 
   Status Truncate(uint64_t length) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Truncate(length);
   }
 
   Status PunchHole(uint64_t offset, size_t length) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->PunchHole(offset, length);
   }
 
   Status Flush(FlushMode mode, uint64_t offset, size_t length) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Flush(mode, offset, length);
   }
 
   Status Sync() override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Sync();
   }
 
@@ -299,13 +299,13 @@ class Descriptor<RWFile> : public RWFile {
 
   Status Size(uint64_t* size) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->Size(size);
   }
 
   Status GetExtentMap(ExtentMap* out) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
-    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    RETURN_NOT_OK(ReopenFileIfNecessary<Env::MUST_EXIST>(&opened));
     return opened.file()->GetExtentMap(out);
   }
 
@@ -316,14 +316,17 @@ class Descriptor<RWFile> : public RWFile {
  private:
   friend class ::kudu::FileCache;
 
+  template <Env::OpenMode Mode>
   Status Init() {
-    return once_.Init(&Descriptor<RWFile>::InitOnce, this);
+    return once_.Init(&Descriptor<RWFile>::InitOnce<Mode>, this);
   }
 
+  template <Env::OpenMode Mode>
   Status InitOnce() {
-    return ReopenFileIfNecessary(nullptr);
+    return ReopenFileIfNecessary<Mode>(nullptr);
   }
 
+  template <Env::OpenMode Mode>
   Status ReopenFileIfNecessary(ScopedOpenedDescriptor<RWFile>* out) const {
     ScopedOpenedDescriptor<RWFile> found(base_.LookupFromCache());
     CHECK(!base_.invalidated());
@@ -337,7 +340,7 @@ class Descriptor<RWFile> : public RWFile {
 
     // The file was evicted, reopen it.
     RWFileOptions opts;
-    opts.mode = Env::MUST_EXIST;
+    opts.mode = Mode;
     unique_ptr<RWFile> f;
     RETURN_NOT_OK(base_.env()->NewRWFile(opts, base_.filename(), &f));
 
@@ -488,50 +491,112 @@ Status FileCache::Init() {
 }
 
 template <>
-Status FileCache::OpenExistingFile(const string& file_name,
-                                   shared_ptr<RWFile>* file) {
+Status FileCache::DoOpenFile(const string& file_name,
+                             shared_ptr<internal::Descriptor<RWFile>>* file,
+                             bool* created_desc) {
   shared_ptr<internal::Descriptor<RWFile>> d;
+  bool cd;
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST, &rwf_descs_);
+    d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
+                               &rwf_descs_, &cd);
     DCHECK(d);
 
+#ifndef NDEBUG
     // Enforce the invariant that a particular file name may only be used by one
     // descriptor at a time. This is expensive so it's only done in DEBUG mode.
-    DCHECK(!FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE, &raf_descs_));
+    bool ignored;
+    CHECK(!FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE,
+                                  &raf_descs_, &ignored));
+#endif
   }
   if (d->base_.deleted()) {
     return Status::NotFound(kAlreadyDeleted, file_name);
   }
+  *file = std::move(d);
+  *created_desc = cd;
+  return Status::OK();
+}
+
+template <>
+Status FileCache::DoOpenFile(const string& file_name,
+                             shared_ptr<internal::Descriptor<RandomAccessFile>>* file,
+                             bool* created_desc) {
+  shared_ptr<internal::Descriptor<RandomAccessFile>> d;
+  bool cd;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
+                               &raf_descs_, &cd);
+    DCHECK(d);
+
+#ifndef NDEBUG
+    // Enforce the invariant that a particular file name may only be used by one
+    // descriptor at a time. This is expensive so it's only done in DEBUG mode.
+    bool ignored;
+    CHECK(!FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE,
+                                  &rwf_descs_, &ignored));
+#endif
+  }
+  if (d->base_.deleted()) {
+    return Status::NotFound(kAlreadyDeleted, file_name);
+  }
+  *file = std::move(d);
+  *created_desc = cd;
+  return Status::OK();
+}
+
+template <>
+Status FileCache::OpenFile<Env::CREATE_OR_OPEN>(const string& file_name,
+                                                shared_ptr<RWFile>* file) {
+  shared_ptr<internal::Descriptor<RWFile>> d;
+  bool ignored;
+  RETURN_NOT_OK(DoOpenFile(file_name, &d, &ignored));
 
   // Check that the underlying file can be opened (no-op for found descriptors).
-  //
-  // Done outside the lock.
-  RETURN_NOT_OK(d->Init());
+  RETURN_NOT_OK(d->Init<Env::CREATE_OR_OPEN>());
   *file = std::move(d);
   return Status::OK();
 }
 
 template <>
-Status FileCache::OpenExistingFile(const string& file_name,
-                                   shared_ptr<RandomAccessFile>* file) {
-  shared_ptr<internal::Descriptor<RandomAccessFile>> d;
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    d = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST, &raf_descs_);
-    DCHECK(d);
+Status FileCache::OpenFile<Env::MUST_CREATE>(const string& file_name,
+                                             shared_ptr<RWFile>* file) {
+  shared_ptr<internal::Descriptor<RWFile>> d;
+  bool created_desc;
+  RETURN_NOT_OK(DoOpenFile(file_name, &d, &created_desc));
 
-    // Enforce the invariant that a particular file name may only be used by one
-    // descriptor at a time. This is expensive so it's only done in DEBUG mode.
-    DCHECK(!FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE, &rwf_descs_));
-  }
-  if (d->base_.deleted()) {
-    return Status::NotFound(kAlreadyDeleted, file_name);
+  if (!created_desc) {
+    return Status::AlreadyPresent("file already exists", file_name);
   }
 
   // Check that the underlying file can be opened (no-op for found descriptors).
-  //
-  // Done outside the lock.
+  RETURN_NOT_OK(d->Init<Env::MUST_CREATE>());
+  *file = std::move(d);
+  return Status::OK();
+}
+
+template <>
+Status FileCache::OpenFile<Env::MUST_EXIST>(const string& file_name,
+                                            shared_ptr<RWFile>* file) {
+  shared_ptr<internal::Descriptor<RWFile>> d;
+  bool ignored;
+  RETURN_NOT_OK(DoOpenFile(file_name, &d, &ignored));
+
+  // Check that the underlying file can be opened (no-op for found descriptors).
+  RETURN_NOT_OK(d->Init<Env::MUST_EXIST>());
+  *file = std::move(d);
+  return Status::OK();
+}
+
+template <>
+Status FileCache::OpenFile<Env::MUST_EXIST>(const string& file_name,
+                                            shared_ptr<RandomAccessFile>* file) {
+  shared_ptr<internal::Descriptor<RandomAccessFile>> d;
+  bool ignored;
+  RETURN_NOT_OK(DoOpenFile(file_name, &d, &ignored));
+
+  // Check that the underlying file can be opened (no-op for found descriptors).
   RETURN_NOT_OK(d->Init());
   *file = std::move(d);
   return Status::OK();
@@ -543,8 +608,10 @@ Status FileCache::DeleteFile(const string& file_name) {
   // descriptor in the first map.
   {
     std::lock_guard<simple_spinlock> l(lock_);
+    bool ignored;
     {
-      auto d = FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE, &rwf_descs_);
+      auto d = FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE,
+                                      &rwf_descs_, &ignored);
       if (d) {
         if (d->base_.deleted()) {
           return Status::NotFound(kAlreadyDeleted, file_name);
@@ -554,7 +621,8 @@ Status FileCache::DeleteFile(const string& file_name) {
       }
     }
     {
-      auto d = FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE, &raf_descs_);
+      auto d = FindDescriptorUnlocked(file_name, FindMode::DONT_CREATE,
+                                      &raf_descs_, &ignored);
       if (d) {
         if (d->base_.deleted()) {
           return Status::NotFound(kAlreadyDeleted, file_name);
@@ -585,13 +653,14 @@ void FileCache::Invalidate(const string& file_name) {
   shared_ptr<internal::Descriptor<RandomAccessFile>> raf_desc;
   {
     std::lock_guard<simple_spinlock> l(lock_);
+    bool ignored;
     rwf_desc = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
-                                      &rwf_descs_);
+                                      &rwf_descs_, &ignored);
     DCHECK(rwf_desc);
     rwf_desc->base_.MarkInvalidated();
 
     raf_desc = FindDescriptorUnlocked(file_name, FindMode::CREATE_IF_NOT_EXIST,
-                                      &raf_descs_);
+                                      &raf_descs_, &ignored);
     DCHECK(raf_desc);
     raf_desc->base_.MarkInvalidated();
   }
@@ -669,7 +738,8 @@ template <class FileType>
 shared_ptr<internal::Descriptor<FileType>> FileCache::FindDescriptorUnlocked(
     const string& file_name,
     FindMode mode,
-    DescriptorMap<FileType>* descs) {
+    DescriptorMap<FileType>* descs,
+    bool* created_desc) {
   DCHECK(lock_.is_locked());
 
   shared_ptr<internal::Descriptor<FileType>> d;
@@ -682,6 +752,7 @@ shared_ptr<internal::Descriptor<FileType>> FileCache::FindDescriptorUnlocked(
 
       // Descriptor is still valid, return it.
       VLOG(2) << "Found existing descriptor: " << file_name;
+      *created_desc = false;
       return d;
     }
     // Descriptor has expired; erase it and pretend we found nothing.
@@ -692,6 +763,9 @@ shared_ptr<internal::Descriptor<FileType>> FileCache::FindDescriptorUnlocked(
     d = std::make_shared<internal::Descriptor<FileType>>(this, file_name);
     EmplaceOrDie(descs, file_name, d);
     VLOG(2) << "Created new descriptor: " << file_name;
+    *created_desc = true;
+  } else {
+    *created_desc = false;
   }
   return d;
 }

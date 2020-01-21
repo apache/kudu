@@ -28,14 +28,11 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/env.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class Env;
-class RWFile;
-class RandomAccessFile;
 
 namespace internal {
 
@@ -63,7 +60,7 @@ class Thread;
 // The core of the client-facing API is the cache descriptor. A descriptor
 // uniquely identifies an opened file. To a client, a descriptor is just an
 // open file interface of the variety defined in util/env.h. Clients open
-// descriptors via the OpenExistingFile() cache methods.
+// descriptors via the OpenFile() cache methods.
 //
 // Descriptors are shared objects; an existing descriptor is handed back to a
 // client if a file with the same name is already opened. To facilitate
@@ -118,12 +115,27 @@ class FileCache {
   // to a file-like interface but interfaces with the cache under the hood to
   // reopen a file as needed during file operations.
   //
-  // The underlying file is opened immediately to verify that it indeed exists,
-  // but may be closed later if the cache reaches its upper bound on the number
-  // of open files. It is also closed when the descriptor's last reference is dropped.
-  template <class FileType>
-  Status OpenExistingFile(const std::string& file_name,
-                          std::shared_ptr<FileType>* file);
+  // The underlying file is opened immediately to respect 'Mode', but may be
+  // closed later if the cache reaches its upper bound on the number of open
+  // files. It is also closed when the descriptor's last reference is dropped.
+  //
+  // All file types honor a 'Mode' of MUST_EXIST. Some may honor other modes as
+  // well, although transparently reopening evicted files will always use
+  // MUST_EXIST. Different combinations of modes and file types are expressed as
+  // template specializations; if a file type doesn't support a particular mode,
+  // there will be a linker error.
+  //
+  // TODO(adar): The file cache tries to behave as if users were accessing the
+  // underlying POSIX filesystem directly, but its semantics aren't 100% correct
+  // when using modes other than MUST_EXIST. For example, the behavior of
+  // MUST_CREATE and CREATE_OR_OPEN isn't quite right for open files marked for
+  // deletion. In theory we should "unmark" such a file to indicate that it was
+  // recreated, and truncate it so it's empty for the second client, but the
+  // truncation would corrupt the file for the first client. In short, take
+  // great care when using any mode apart from MUST_EXIST.
+  template <Env::OpenMode Mode, class FileType>
+  Status OpenFile(const std::string& file_name,
+                  std::shared_ptr<FileType>* file);
 
   // Deletes a file by name through the cache.
   //
@@ -183,7 +195,10 @@ class FileCache {
   template <class FileType>
   static void ExpireDescriptorsFromMap(DescriptorMap<FileType>* descs);
 
-  // Looks up a descriptor by file name.
+  // Looks up a descriptor by file name or creates a new one (if requested).
+  //
+  // The value of 'created_desc' will be set in accordance with whether a new
+  // descriptor was created.
   //
   // Must be called with 'lock_' held.
   enum class FindMode {
@@ -197,10 +212,18 @@ class FileCache {
   std::shared_ptr<internal::Descriptor<FileType>> FindDescriptorUnlocked(
       const std::string& file_name,
       FindMode mode,
-      DescriptorMap<FileType>* descs);
+      DescriptorMap<FileType>* descs,
+      bool* created_desc);
 
   // Periodically removes expired descriptors from the descriptor maps.
   void RunDescriptorExpiry();
+
+  // Actually opens the file as per OpenFile. Used to encapsulate the bulk of
+  // OpenFile because C++ prohibits partial specialization of template functions.
+  template <class FileType>
+  Status DoOpenFile(const std::string& file_name,
+                    std::shared_ptr<FileType>* file,
+                    bool* created_desc);
 
   // Status message prefix for files that have already been marked as deleted.
   static const char* const kAlreadyDeleted;

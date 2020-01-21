@@ -172,13 +172,13 @@ class FileCacheStressTest : public KuduTest {
         }
         if (HasPrefixString(BaseName(to_open), kRWFPrefix)) {
           shared_ptr<RWFile> rwf;
-          TEST_CHECK_OK(cache_->OpenExistingFile(to_open, &rwf));
+          TEST_CHECK_OK(cache_->OpenFile<Env::MUST_EXIST>(to_open, &rwf));
           rwfs.emplace_back(std::move(rwf));
         } else {
           CHECK(HasPrefixString(BaseName(to_open), kRAFPrefix));
 
           shared_ptr<RandomAccessFile> raf;
-          TEST_CHECK_OK(cache_->OpenExistingFile(to_open, &raf));
+          TEST_CHECK_OK(cache_->OpenFile<Env::MUST_EXIST>(to_open, &raf));
           rafs.emplace_back(std::move(raf));
         }
         FinishedOpen(to_open);

@@ -829,7 +829,8 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 
   shared_ptr<RandomAccessFile> reader;
   if (PREDICT_TRUE(file_cache_)) {
-    RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_->OpenExistingFile(path, &reader));
+    RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_->OpenFile<Env::MUST_EXIST>(
+        path, &reader));
   } else {
     unique_ptr<RandomAccessFile> r;
     RETURN_NOT_OK_FBM_DISK_FAILURE(env_->NewRandomAccessFile(path, &r));
