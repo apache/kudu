@@ -419,12 +419,13 @@ Status SysCatalogTable::SetupTablet(
       cmeta->CommittedConfig(),
       master_->clock(),
       master_->mem_tracker(),
-      scoped_refptr<rpc::ResultTracker>(),
+      /*result_tracker*/nullptr,
       metric_registry_,
+      master_->file_cache(),
       tablet_replica_,
+      tablet_replica_->log_anchor_registry(),
       &tablet,
       &log,
-      tablet_replica_->log_anchor_registry(),
       &consensus_info), "failed to bootstrap system catalog");
 
   // TODO(matteo): Do we have a setSplittable(false) or something from the
@@ -435,7 +436,7 @@ Status SysCatalogTable::SetupTablet(
       tablet,
       master_->clock(),
       master_->messenger(),
-      scoped_refptr<rpc::ResultTracker>(),
+      /*result_tracker*/nullptr,
       log,
       master_->tablet_prepare_pool(),
       master_->dns_resolver()), "failed to start system catalog replica");

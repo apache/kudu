@@ -154,10 +154,11 @@ class RaftConsensusQuorumTest : public KuduTest {
       scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(LogOptions(),
                               fs_manager.get(),
+                              /*file_cache*/nullptr,
                               kTestTablet,
                               schema_,
                               0, // schema_version
-                              nullptr,
+                              /*metric_entity*/nullptr,
                               &log));
       logs_.emplace_back(std::move(log));
       fs_managers_.push_back(std::move(fs_manager));
@@ -435,9 +436,10 @@ class RaftConsensusQuorumTest : public KuduTest {
     log->Close();
     shared_ptr<LogReader> log_reader;
     ASSERT_OK(log::LogReader::Open(fs_managers_[idx].get(),
-                                   scoped_refptr<log::LogIndex>(),
+                                   /*index*/nullptr,
                                    kTestTablet,
                                    metric_entity_.get(),
+                                   /*file_cache*/nullptr,
                                    &log_reader));
     log::SegmentSequence segments;
     log_reader->GetSegmentsSnapshot(&segments);

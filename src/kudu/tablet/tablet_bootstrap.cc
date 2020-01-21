@@ -197,6 +197,7 @@ class TabletBootstrap {
                   shared_ptr<MemTracker> mem_tracker,
                   scoped_refptr<ResultTracker> result_tracker,
                   MetricRegistry* metric_registry,
+                  FileCache* file_cache,
                   scoped_refptr<TabletReplica> tablet_replica,
                   scoped_refptr<LogAnchorRegistry> log_anchor_registry);
 
@@ -377,6 +378,7 @@ class TabletBootstrap {
   shared_ptr<MemTracker> mem_tracker_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
+  FileCache* file_cache_;
   scoped_refptr<TabletReplica> tablet_replica_;
   unique_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
@@ -445,10 +447,11 @@ Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        shared_ptr<MemTracker> mem_tracker,
                        scoped_refptr<ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,
+                       FileCache* file_cache,
                        scoped_refptr<TabletReplica> tablet_replica,
+                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", tablet_meta->tablet_id());
@@ -458,6 +461,7 @@ Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                             std::move(mem_tracker),
                             std::move(result_tracker),
                             metric_registry,
+                            file_cache,
                             std::move(tablet_replica),
                             std::move(log_anchor_registry));
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
@@ -494,6 +498,7 @@ TabletBootstrap::TabletBootstrap(
     shared_ptr<MemTracker> mem_tracker,
     scoped_refptr<ResultTracker> result_tracker,
     MetricRegistry* metric_registry,
+    FileCache* file_cache,
     scoped_refptr<TabletReplica> tablet_replica,
     scoped_refptr<LogAnchorRegistry> log_anchor_registry)
     : tablet_meta_(std::move(tablet_meta)),
@@ -502,6 +507,7 @@ TabletBootstrap::TabletBootstrap(
       mem_tracker_(std::move(mem_tracker)),
       result_tracker_(std::move(result_tracker)),
       metric_registry_(metric_registry),
+      file_cache_(file_cache),
       tablet_replica_(std::move(tablet_replica)),
       log_anchor_registry_(std::move(log_anchor_registry)) {}
 
@@ -720,17 +726,16 @@ Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
   const string recovery_dir = fs_manager->GetTabletWalRecoveryDir(tablet_id);
   RETURN_NOT_OK_PREPEND(LogReader::Open(fs_manager->env(), recovery_dir, log_index, tablet_id,
                                         tablet_->GetMetricEntity().get(),
+                                        file_cache_,
                                         &log_reader_),
                         "Could not open LogReader. Reason");
   return Status::OK();
 }
 
 Status TabletBootstrap::OpenNewLog() {
-  OpId init;
-  init.set_term(0);
-  init.set_index(0);
   RETURN_NOT_OK(Log::Open(LogOptions(),
                           tablet_->metadata()->fs_manager(),
+                          file_cache_,
                           tablet_->tablet_id(),
                           *tablet_->schema(),
                           tablet_->metadata()->schema_version(),

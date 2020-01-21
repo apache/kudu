@@ -25,6 +25,8 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/file_cache.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -37,9 +39,14 @@ using consensus::OpId;
 
 class LogIndexTest : public KuduTest {
  public:
+  LogIndexTest()
+      : file_cache_("test", env_, 1, /*metric_entity*/ nullptr),
+        index_(new LogIndex(env_, &file_cache_, test_dir_)) {
+  }
+
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    index_ = new LogIndex(env_, test_dir_);
+    ASSERT_OK(file_cache_.Init());
   }
 
  protected:
@@ -68,6 +75,7 @@ class LogIndexTest : public KuduTest {
     EXPECT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
+  FileCache file_cache_;
   scoped_refptr<LogIndex> index_;
 };
 

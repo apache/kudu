@@ -75,8 +75,13 @@ Status LogVerifier::ScanForCommittedOpIds(int ts_idx, const string& tablet_id,
 
   shared_ptr<LogReader> reader;
   const string wal_dir = JoinPathSegments(inspector_->WalDirForTS(ts_idx), tablet_id);
-  RETURN_NOT_OK(LogReader::Open(env_, wal_dir, scoped_refptr<log::LogIndex>(), tablet_id,
-                                scoped_refptr<MetricEntity>(), &reader));
+  RETURN_NOT_OK(LogReader::Open(env_,
+                                wal_dir,
+                                /*index*/nullptr,
+                                tablet_id,
+                                /*metric_entity*/nullptr,
+                                /*file_cache*/nullptr,
+                                &reader));
   log::SegmentSequence segs;
   reader->GetSegmentsSnapshot(&segs);
   unique_ptr<log::LogEntryPB> entry;

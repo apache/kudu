@@ -23,6 +23,7 @@
 
 namespace kudu {
 
+class FileCache;
 class MemTracker;
 class MetricRegistry;
 
@@ -63,10 +64,11 @@ Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        std::shared_ptr<MemTracker> mem_tracker,
                        scoped_refptr<rpc::ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,
+                       FileCache* file_cache,
                        scoped_refptr<TabletReplica> tablet_replica,
+                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        std::shared_ptr<Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
-                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);
 
 }  // namespace tablet

@@ -47,6 +47,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
@@ -146,6 +147,8 @@ DEFINE_double(log_inject_io_error_on_preallocate_fraction, 0.0,
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, unsafe);
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, runtime);
 
+// Other flags.
+// -----------------------------
 DEFINE_int64(fs_wal_dir_reserved_bytes, -1,
              "Number of bytes to reserve on the log directory filesystem for "
              "non-Kudu usage. The default, which is represented by -1, is that "
@@ -155,7 +158,12 @@ DEFINE_int64(fs_wal_dir_reserved_bytes, -1,
              "are not currently supported");
 DEFINE_validator(fs_wal_dir_reserved_bytes, [](const char* /*n*/, int64_t v) { return v >= -1; });
 TAG_FLAG(fs_wal_dir_reserved_bytes, runtime);
-TAG_FLAG(fs_wal_dir_reserved_bytes, evolving);
+
+DEFINE_bool(fs_wal_use_file_cache, true,
+            "Whether to use the server-wide file cache for WAL segments and "
+            "WAL index chunks.");
+TAG_FLAG(fs_wal_use_file_cache, runtime);
+TAG_FLAG(fs_wal_use_file_cache, advanced);
 
 // Validate that log_min_segments_to_retain >= 1
 static bool ValidateLogsToRetain(const char* flagname, int value) {
@@ -173,7 +181,6 @@ namespace log {
 
 using consensus::CommitMsg;
 using consensus::ReplicateRefPtr;
-using env_util::OpenFileForRandom;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -634,6 +641,9 @@ Status SegmentAllocator::AllocateNewSegment() {
     allocation_state_ = kAllocationFinished;
   });
 
+  // We could create the new segment file through the cache, but that's tricky
+  // because of the file rename that'll happen later. So instead, we'll create
+  // it outside the cache now, then reopen via the cache when we switch to it.
   string tmp_suffix = Substitute("$0$1", kTmpInfix, ".newsegmentXXXXXX");
   string path_tmpl = JoinPathSegments(ctx_->log_dir, tmp_suffix);
   VLOG_WITH_PREFIX(2) << "Creating temp. file for place holder segment, template: " << path_tmpl;
@@ -676,6 +686,12 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
     RETURN_NOT_OK(env->SyncDir(ctx_->log_dir));
   }
 
+  // Reopen the allocated segment file thru the file cache.
+  if (PREDICT_TRUE(ctx_->file_cache && FLAGS_fs_wal_use_file_cache)) {
+    RETURN_NOT_OK(ctx_->file_cache->OpenFile<Env::MUST_EXIST>(
+        new_segment_path, &next_segment_file_));
+  }
+
   // Create a new segment in memory.
   unique_ptr<WritableLogSegment> new_segment(
       new WritableLogSegment(new_segment_path, next_segment_file_));
@@ -702,9 +718,6 @@ Status SegmentAllocator::SwitchToAllocatedSegment(
 
   // Open the segment we just created in readable form; it is the caller's
   // responsibility to add it to the reader.
-  //
-  // TODO(todd): consider using a global FileCache here? With short log segments and
-  // lots of tablets, this file descriptor usage may add up.
   {
     scoped_refptr<ReadableLogSegment> readable_segment(
         new ReadableLogSegment(new_segment_path, std::move(next_segment_file_)));
@@ -748,6 +761,7 @@ const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
 
 Status Log::Open(LogOptions options,
                  FsManager* fs_manager,
+                 FileCache* file_cache,
                  const string& tablet_id,
                  Schema schema,
                  uint32_t schema_version,
@@ -761,6 +775,7 @@ Status Log::Open(LogOptions options,
   ctx.metric_entity = metric_entity;
   ctx.metrics.reset(metric_entity ? new LogMetrics(metric_entity) : nullptr);
   ctx.fs_manager = fs_manager;
+  ctx.file_cache = file_cache;
   scoped_refptr<Log> new_log(new Log(std::move(options), std::move(ctx), std::move(schema),
                                      schema_version));
   RETURN_NOT_OK(new_log->Init());
@@ -781,14 +796,17 @@ Log::Log(LogOptions options, LogContext ctx, Schema schema, uint32_t schema_vers
 Status Log::Init() {
   CHECK_EQ(kLogInitialized, log_state_);
 
-  // Init the index
-  log_index_.reset(new LogIndex(ctx_.fs_manager->env(), ctx_.log_dir));
+  // Init the index.
+  log_index_.reset(new LogIndex(ctx_.fs_manager->env(),
+                                ctx_.file_cache,
+                                ctx_.log_dir));
 
   // Reader for previous segments.
   RETURN_NOT_OK(LogReader::Open(ctx_.fs_manager,
                                 log_index_,
                                 ctx_.tablet_id,
                                 ctx_.metric_entity.get(),
+                                ctx_.file_cache,
                                 &reader_));
 
   // The case where we are continuing an existing log.
@@ -988,7 +1006,7 @@ int GetPrefixSizeToGC(RetentionIndexes retention_indexes, const SegmentSequence&
 }
 
 void Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
-                                    SegmentSequence* segments_to_gc) const {
+                                  SegmentSequence* segments_to_gc) const {
   reader_->GetSegmentsSnapshot(segments_to_gc);
   segments_to_gc->resize(GetPrefixSizeToGC(retention_indexes, *segments_to_gc));
 }
@@ -1046,7 +1064,7 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
 
     // Now that they are no longer referenced by the Log, delete the files.
     *num_gced = 0;
-    for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
+    for (const auto& segment : segments_to_delete) {
       string ops_str;
       if (segment->HasFooter() && segment->footer().has_min_replicate_index()) {
         DCHECK(segment->footer().has_max_replicate_index());
@@ -1055,7 +1073,13 @@ Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {
                              segment->footer().max_replicate_index());
       }
       LOG_WITH_PREFIX(INFO) << "Deleting log segment in path: " << segment->path() << ops_str;
-      RETURN_NOT_OK(ctx_.fs_manager->env()->DeleteFile(segment->path()));
+      if (PREDICT_TRUE(ctx_.file_cache)) {
+        // Note: the segment files will only be deleted from disk when
+        // segments_to_delete goes out of scope.
+        RETURN_NOT_OK(ctx_.file_cache->DeleteFile(segment->path()));
+      } else {
+        RETURN_NOT_OK(ctx_.fs_manager->env()->DeleteFile(segment->path()));
+      }
       (*num_gced)++;
     }
 
@@ -1170,6 +1194,9 @@ Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
   }
   LOG(INFO) << Substitute("T $0 P $1: Deleting WAL directory at $2",
                           tablet_id, fs_manager->uuid(), wal_dir);
+  // We don't need to delete through the file cache; we're guaranteed that
+  // the log has been closed (though this invariant isn't verifiable here
+  // without additional plumbing).
   RETURN_NOT_OK_PREPEND(env->DeleteRecursively(wal_dir),
                         "Unable to recursively delete WAL dir for tablet " + tablet_id);
   return Status::OK();
@@ -1198,6 +1225,9 @@ Status Log::RemoveRecoveryDirIfExists(FsManager* fs_manager, const string& table
     return Status::OK();
   }
   VLOG(1) << kLogPrefix << "Deleting all files from renamed log recovery directory " << tmp_path;
+  // We don't need to delete through the file cache; we're guaranteed that
+  // the log has been closed (though this invariant isn't verifiable here
+  // without additional plumbing).
   RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
                         "Could not remove renamed recovery dir " + tmp_path);
   VLOG(1) << kLogPrefix << "Completed deletion of old log recovery files and directory "

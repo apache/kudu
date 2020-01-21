@@ -829,10 +829,11 @@ Status TabletScan(const RunnerContext& context) {
                                         /*mem_tracker=*/ nullptr,
                                         /*result_tracker=*/ nullptr,
                                         /*metric_registry=*/ nullptr,
+                                        /*file_cache=*/ nullptr,
                                         /*tablet_replica=*/ nullptr,
+                                        std::move(registry),
                                         &tablet,
                                         &log,
-                                        std::move(registry),
                                         &cbi));
 
   // Tablet has been bootstrapped and opened. We can now scan it.

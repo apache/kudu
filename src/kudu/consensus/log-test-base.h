@@ -44,6 +44,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -51,6 +52,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+METRIC_DECLARE_entity(server);
 METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
@@ -155,7 +157,14 @@ class LogTestBase : public KuduTest {
     current_index_ = kStartIndex;
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
     metric_registry_.reset(new MetricRegistry());
-    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry_.get(), "log-test-base");
+    metric_entity_tablet_ = METRIC_ENTITY_tablet.Instantiate(
+        metric_registry_.get(), "tablet");
+    metric_entity_server_ = METRIC_ENTITY_server.Instantiate(
+        metric_registry_.get(), "server");
+    // Capacity was chosen arbitrarily: high enough to cache multiple files, but
+    // low enough to see some eviction.
+    file_cache_.reset(new FileCache("log-test-base", env_, 5, metric_entity_server_));
+    ASSERT_OK(file_cache_->Init());
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
@@ -171,10 +180,11 @@ class LogTestBase : public KuduTest {
     Schema schema_with_ids = SchemaBuilder(schema_).Build();
     return Log::Open(options_,
                      fs_manager_.get(),
+                     file_cache_.get(),
                      kTestTablet,
                      schema_with_ids,
                      0, // schema_version
-                     metric_entity_.get(),
+                     metric_entity_tablet_.get(),
                      &log_);
   }
 
@@ -375,7 +385,9 @@ class LogTestBase : public KuduTest {
   const Schema schema_;
   std::unique_ptr<FsManager> fs_manager_;
   std::unique_ptr<MetricRegistry> metric_registry_;
-  scoped_refptr<MetricEntity> metric_entity_;
+  std::unique_ptr<FileCache> file_cache_;
+  scoped_refptr<MetricEntity> metric_entity_tablet_;
+  scoped_refptr<MetricEntity> metric_entity_server_;
   scoped_refptr<Log> log_;
   int64_t current_index_;
   LogOptions options_;

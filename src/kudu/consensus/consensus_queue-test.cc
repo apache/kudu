@@ -96,6 +96,7 @@ class ConsensusQueueTest : public KuduTest {
     ASSERT_OK(fs_manager_->Open());
     CHECK_OK(log::Log::Open(log::LogOptions(),
                             fs_manager_.get(),
+                            /*file_cache*/nullptr,
                             kTestTablet,
                             schema_,
                             /*schema_version*/0,

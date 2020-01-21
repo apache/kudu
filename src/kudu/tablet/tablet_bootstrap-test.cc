@@ -96,9 +96,6 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
-
-class MemTracker;
-
 namespace tablet {
 
 class BootstrapTest : public LogTestBase {
@@ -160,19 +157,24 @@ class BootstrapTest : public LogTestBase {
     scoped_refptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK(cmeta_manager_->Load(meta->tablet_id(), &cmeta));
 
+    // Close the existing log to evict any segments from the file cache so that
+    // bootstrap won't access any stale (cached) segments.
+    RETURN_NOT_OK(log_->Close());
+
     scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
         meta,
         cmeta->CommittedConfig(),
         clock_.get(),
-        shared_ptr<MemTracker>(),
-        scoped_refptr<rpc::ResultTracker>(),
-        nullptr,
-        nullptr, // no status listener
+        /*mem_tracker*/nullptr,
+        /*result_tracker*/nullptr,
+        metric_registry_.get(),
+        file_cache_.get(),
+        /*tablet_replica*/nullptr,
+        std::move(log_anchor_registry),
         tablet,
         &log_,
-        log_anchor_registry,
         boot_info));
 
     return Status::OK();

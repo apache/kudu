@@ -54,6 +54,7 @@
 namespace kudu {
 
 class CompressionCodec;
+class FileCache;
 class FsManager;
 class RWFile;
 
@@ -74,6 +75,7 @@ struct LogContext {
   scoped_refptr<MetricEntity> metric_entity;
   std::unique_ptr<LogMetrics> metrics;
   FsManager* fs_manager;
+  FileCache* file_cache;
 
   std::string LogPrefix() const;
 };
@@ -277,7 +279,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // Opens or continues a log and sets 'log' to the newly built Log.
   // After a successful Open() the Log is ready to receive entries.
   static Status Open(LogOptions options,
-                     FsManager *fs_manager,
+                     FsManager* fs_manager,
+                     FileCache* file_cache,
                      const std::string& tablet_id,
                      Schema schema,
                      uint32_t schema_version,

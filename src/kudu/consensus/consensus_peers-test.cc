@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstddef>
+#include "kudu/consensus/consensus_peers.h"
+
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -32,7 +33,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
@@ -85,12 +85,13 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
     ASSERT_OK(Log::Open(options_,
-                       fs_manager_.get(),
-                       kTabletId,
-                       schema_,
-                       0, // schema_version
-                       NULL,
-                       &log_));
+                        fs_manager_.get(),
+                        /*file_cache*/nullptr,
+                        kTabletId,
+                        schema_,
+                        0, // schema_version
+                        /*metric_entity*/nullptr,
+                        &log_));
     clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 

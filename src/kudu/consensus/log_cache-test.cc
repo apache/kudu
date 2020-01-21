@@ -88,10 +88,11 @@ class LogCacheTest : public KuduTest {
     ASSERT_OK(fs_manager_->Open());
     CHECK_OK(log::Log::Open(log::LogOptions(),
                             fs_manager_.get(),
+                            /*file_cache*/nullptr,
                             kTestTablet,
                             schema_,
                             0, // schema_version
-                            nullptr,
+                            /*metric_entity*/nullptr,
                             &log_));
 
     CloseAndReopenCache(MinimumOpId());

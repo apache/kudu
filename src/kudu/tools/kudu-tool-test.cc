@@ -1586,10 +1586,11 @@ TEST_F(ToolTest, TestWalDump) {
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(),
                         &fs,
+                        /*file_cache*/nullptr,
                         kTestTablet,
                         kSchemaWithIds,
                         0, // schema_version
-                        scoped_refptr<MetricEntity>(),
+                        /*metric_entity*/nullptr,
                         &log));
 
     OpId opid = consensus::MakeOpId(1, 1);

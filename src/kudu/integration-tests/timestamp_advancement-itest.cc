@@ -182,8 +182,11 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
     shared_ptr<LogReader> reader;
     RETURN_NOT_OK(LogReader::Open(
        ts->server()->fs_manager(),
-       scoped_refptr<log::LogIndex>(), tablet_id,
-       scoped_refptr<MetricEntity>(), &reader));
+       /*index*/nullptr,
+       tablet_id,
+       /*metric_entity*/nullptr,
+       ts->server()->file_cache(),
+       &reader));
     log::SegmentSequence segs;
     reader->GetSegmentsSnapshot(&segs);
     unique_ptr<log::LogEntryPB> entry;

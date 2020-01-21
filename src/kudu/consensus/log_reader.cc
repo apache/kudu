@@ -84,8 +84,10 @@ Status LogReader::Open(Env* env,
                        const scoped_refptr<LogIndex>& index,
                        const string& tablet_id,
                        const scoped_refptr<MetricEntity>& metric_entity,
+                       FileCache* file_cache,
                        shared_ptr<LogReader>* reader) {
-  auto log_reader = LogReader::make_shared(env, index, tablet_id, metric_entity);
+  auto log_reader = LogReader::make_shared(env, index, tablet_id,
+                                           metric_entity, file_cache);
 
   RETURN_NOT_OK_PREPEND(log_reader->Init(tablet_wal_dir),
                         "Unable to initialize log reader");
@@ -97,16 +99,19 @@ Status LogReader::Open(FsManager* fs_manager,
                        const scoped_refptr<LogIndex>& index,
                        const std::string& tablet_id,
                        const scoped_refptr<MetricEntity>& metric_entity,
+                       FileCache* file_cache,
                        std::shared_ptr<LogReader>* reader) {
   return LogReader::Open(fs_manager->env(), fs_manager->GetTabletWalDir(tablet_id),
-                         index, tablet_id, metric_entity, reader);
+                         index, tablet_id, metric_entity, file_cache, reader);
 }
 
 LogReader::LogReader(Env* env,
                      scoped_refptr<LogIndex> index,
                      string tablet_id,
-                     const scoped_refptr<MetricEntity>& metric_entity)
+                     const scoped_refptr<MetricEntity>& metric_entity,
+                     FileCache* file_cache)
     : env_(env),
+      file_cache_(file_cache),
       log_index_(std::move(index)),
       tablet_id_(std::move(tablet_id)),
       state_(kLogReaderInitialized) {
@@ -146,7 +151,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
     if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
-      Status s = ReadableLogSegment::Open(env_, fqp, &segment);
+      Status s = ReadableLogSegment::Open(env_, file_cache_, fqp, &segment);
       if (s.IsUninitialized()) {
         // This indicates that the segment was created but the writer
         // crashed before the header was successfully written. In this

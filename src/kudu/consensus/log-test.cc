@@ -43,7 +43,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -53,6 +52,7 @@
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -127,15 +127,11 @@ class LogTest : public LogTestBase {
                                        int first_repl_index,
                                        LogReader* reader) {
     string fqp = GetTestPath(strings::Substitute("wal-00000000$0", sequence_number));
-    unique_ptr<WritableFile> w_log_seg;
-    RETURN_NOT_OK(fs_manager_->env()->NewWritableFile(fqp, &w_log_seg));
-    unique_ptr<RWFile> r_log_seg;
-    RWFileOptions opts;
-    opts.mode = Env::MUST_EXIST;
-    RETURN_NOT_OK(fs_manager_->env()->NewRWFile(opts, fqp, &r_log_seg));
+    shared_ptr<RWFile> log_seg;
+    RETURN_NOT_OK(file_cache_->OpenFile<Env::MUST_CREATE>(fqp, &log_seg));
 
     scoped_refptr<ReadableLogSegment> readable_segment(
-        new ReadableLogSegment(fqp, shared_ptr<RWFile>(r_log_seg.release())));
+        new ReadableLogSegment(fqp, std::move(log_seg)));
 
     LogSegmentHeaderPB header;
     header.set_sequence_number(sequence_number);
@@ -350,8 +346,13 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
   // because it has a cached header.
   shared_ptr<LogReader> reader;
   ASSERT_OK(LogReader::Open(fs_manager_.get(),
-                            make_scoped_refptr(new LogIndex(env_, log_->log_dir_)),
-                            kTestTablet, nullptr, &reader));
+                            make_scoped_refptr(new LogIndex(env_,
+                                                            file_cache_.get(),
+                                                            log_->log_dir_)),
+                            kTestTablet,
+                            metric_entity_tablet_,
+                            file_cache_.get(),
+                            &reader));
   ASSERT_EQ(1, reader->num_segments());
 
   SegmentSequence segments;
@@ -412,7 +413,12 @@ TEST_P(LogTestOptionalCompression, TestSegmentRollover) {
   ASSERT_OK(log_->Close());
 
   shared_ptr<LogReader> reader;
-  ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
+  ASSERT_OK(LogReader::Open(fs_manager_.get(),
+                            /*index*/nullptr,
+                            kTestTablet,
+                            metric_entity_tablet_,
+                            file_cache_.get(),
+                            &reader));
   reader->GetSegmentsSnapshot(&segments);
 
   ASSERT_TRUE(segments.back()->HasFooter());
@@ -760,7 +766,12 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
     vector<scoped_refptr<ReadableLogSegment> > segments;
 
     shared_ptr<LogReader> reader;
-    ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
+    ASSERT_OK(LogReader::Open(fs_manager_.get(),
+                              /*index*/nullptr,
+                              kTestTablet,
+                              metric_entity_tablet_,
+                              file_cache_.get(),
+                              &reader));
     reader->GetSegmentsSnapshot(&segments);
 
     for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
@@ -781,9 +792,10 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
 // seg004: 0.30 through 0.39
 TEST_P(LogTestOptionalCompression, TestLogReader) {
   LogReader reader(env_,
-                   scoped_refptr<LogIndex>(),
+                   /*index*/nullptr,
                    kTestTablet,
-                   nullptr);
+                   metric_entity_tablet_,
+                   file_cache_.get());
   reader.InitEmptyReaderForTests();
   ASSERT_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
   ASSERT_OK(AppendNewEmptySegmentToReader(3, 20, &reader));

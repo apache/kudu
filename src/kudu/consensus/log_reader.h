@@ -34,6 +34,7 @@ namespace kudu {
 
 class Counter;
 class Env;
+class FileCache;
 class FsManager;
 class Histogram;
 class MetricEntity;
@@ -73,6 +74,7 @@ class LogReader : public enable_make_shared<LogReader> {
                      const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity,
+                     FileCache* file_cache,
                      std::shared_ptr<LogReader>* reader);
 
   // Same as above, but will use `fs_manager` to determine the default WAL dir
@@ -81,6 +83,7 @@ class LogReader : public enable_make_shared<LogReader> {
                      const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity,
+                     FileCache* file_cache,
                      std::shared_ptr<LogReader>* reader);
 
   // Return the minimum replicate index that is retained in the currently available
@@ -120,8 +123,11 @@ class LogReader : public enable_make_shared<LogReader> {
   std::string ToString() const;
 
  protected:
-  LogReader(Env* env, scoped_refptr<LogIndex> index, std::string tablet_id,
-            const scoped_refptr<MetricEntity>& metric_entity);
+  LogReader(Env* env,
+            scoped_refptr<LogIndex> index,
+            std::string tablet_id,
+            const scoped_refptr<MetricEntity>& metric_entity,
+            FileCache* file_cache);
 
  private:
   FRIEND_TEST(LogTestOptionalCompression, TestLogReader);
@@ -184,6 +190,7 @@ class LogReader : public enable_make_shared<LogReader> {
   void InitEmptyReaderForTests();
 
   Env* env_;
+  FileCache* file_cache_;
   const scoped_refptr<LogIndex> log_index_;
   const std::string tablet_id_;
 

@@ -37,6 +37,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/consensus/opid_util.h"
@@ -45,8 +46,12 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/slice.h"
 
+DECLARE_bool(fs_wal_use_file_cache);
+
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -82,14 +87,14 @@ class LogIndex::IndexChunk : public RefCountedThreadSafe<LogIndex::IndexChunk> {
   IndexChunk(Env* env, string path);
   ~IndexChunk() = default;
 
-  Status Open();
+  Status Open(FileCache* file_cache);
   Status GetEntry(int entry_index, PhysicalEntry* ret) const;
   Status SetEntry(int entry_index, const PhysicalEntry& entry);
 
  private:
   Env* env_;
   const string path_;
-  unique_ptr<RWFile> file_;
+  shared_ptr<RWFile> file_;
 };
 
 LogIndex::IndexChunk::IndexChunk(Env* env, string path)
@@ -97,10 +102,16 @@ LogIndex::IndexChunk::IndexChunk(Env* env, string path)
       path_(std::move(path)) {
 }
 
-Status LogIndex::IndexChunk::Open() {
-  RWFileOptions opts;
-  opts.mode = Env::CREATE_OR_OPEN;
-  RETURN_NOT_OK(env_->NewRWFile(opts, path_, &file_));
+Status LogIndex::IndexChunk::Open(FileCache* file_cache) {
+  if (PREDICT_TRUE(file_cache && FLAGS_fs_wal_use_file_cache)) {
+    RETURN_NOT_OK(file_cache->OpenFile<Env::CREATE_OR_OPEN>(path_, &file_));
+  } else {
+    unique_ptr<RWFile> f;
+    RWFileOptions opts;
+    opts.mode = Env::CREATE_OR_OPEN;
+    RETURN_NOT_OK(env_->NewRWFile(opts, path_, &f));
+    file_.reset(f.release());
+  }
   return file_->Truncate(kChunkFileSize);
 }
 
@@ -124,8 +135,9 @@ Status LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& entr
 // LogIndex
 ////////////////////////////////////////////////////////////
 
-LogIndex::LogIndex(Env* env, string base_dir)
+LogIndex::LogIndex(Env* env, FileCache* file_cache, string base_dir)
     : env_(env),
+      file_cache_(file_cache),
       base_dir_(std::move(base_dir)) {
 }
 
@@ -140,7 +152,7 @@ Status LogIndex::OpenChunk(int64_t chunk_idx, scoped_refptr<IndexChunk>* chunk) 
   string path = GetChunkPath(chunk_idx);
 
   scoped_refptr<IndexChunk> new_chunk(new IndexChunk(env_, path));
-  RETURN_NOT_OK(new_chunk->Open());
+  RETURN_NOT_OK(new_chunk->Open(file_cache_));
   *chunk = std::move(new_chunk);
   return Status::OK();
 }

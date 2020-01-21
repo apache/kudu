@@ -49,16 +49,13 @@ class optional;
 }
 
 namespace kudu {
-class TableExtraConfigPB;
-}  // namespace kudu
-
-namespace kudu {
 
 class FsManager;
 class NodeInstancePB;
 class Partition;
 class PartitionSchema;
 class Schema;
+class TableExtraConfigPB;
 class ThreadPool;
 
 namespace consensus {

@@ -22,11 +22,11 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <utility>
 #include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -43,7 +43,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -51,7 +50,6 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
@@ -204,7 +202,12 @@ class MultiThreadedLogTest : public LogTestBase {
 
   void VerifyLog() {
     shared_ptr<LogReader> reader;
-    ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
+    ASSERT_OK(LogReader::Open(fs_manager_.get(),
+                              /*index*/nullptr,
+                              kTestTablet,
+                              metric_entity_tablet_,
+                              file_cache_.get(),
+                              &reader));
     SegmentSequence segments;
     reader->GetSegmentsSnapshot(&segments);
 

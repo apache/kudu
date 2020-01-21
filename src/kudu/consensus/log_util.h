@@ -44,6 +44,7 @@ DECLARE_bool(log_force_fsync_all);
 namespace kudu {
 
 class CompressionCodec;
+class FileCache;
 
 namespace log {
 
@@ -177,6 +178,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
  public:
   // Factory method to construct a ReadableLogSegment from a file on the FS.
   static Status Open(Env* env,
+                     FileCache* file_cache,
                      const std::string& path,
                      scoped_refptr<ReadableLogSegment>* segment);
 

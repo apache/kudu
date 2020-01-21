@@ -14,7 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tablet/tablet-test-util.h"
+
+#include "kudu/tserver/tablet_copy_source_session.h"
 
 #include <cstdint>
 #include <memory>
@@ -26,7 +27,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
@@ -52,13 +52,13 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
@@ -134,7 +134,10 @@ class TabletCopyTest : public KuduTabletTest {
  protected:
   void SetUpTabletReplica() {
     scoped_refptr<Log> log;
-    ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
+    ASSERT_OK(Log::Open(LogOptions(),
+                        fs_manager(),
+                        /*file_cache=*/ nullptr,
+                        tablet()->tablet_id(),
                         *tablet()->schema(),
                         /*schema_version=*/ 0,
                         /*metric_entity=*/ nullptr,

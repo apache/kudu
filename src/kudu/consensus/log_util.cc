@@ -42,6 +42,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
@@ -65,6 +66,8 @@ TAG_FLAG(log_async_preallocate_segments, advanced);
 DEFINE_double(fault_crash_before_write_log_segment_header, 0.0,
               "Fraction of the time we will crash just before writing the log segment header");
 TAG_FLAG(fault_crash_before_write_log_segment_header, unsafe);
+
+DECLARE_bool(fs_wal_use_file_cache);
 
 using kudu::consensus::OpId;
 using std::string;
@@ -258,16 +261,24 @@ Status LogEntryReader::MakeCorruptionStatus(const Status& status) const {
 ////////////////////////////////////////////////////////////
 
 Status ReadableLogSegment::Open(Env* env,
+                                FileCache* file_cache,
                                 const string& path,
                                 scoped_refptr<ReadableLogSegment>* segment) {
   VLOG(1) << "Parsing wal segment: " << path;
-  unique_ptr<RWFile> file;
-  RWFileOptions opts;
-  opts.mode = Env::MUST_EXIST;
-  RETURN_NOT_OK_PREPEND(env->NewRWFile(opts, path, &file),
-                        "Unable to open file for reading");
+  shared_ptr<RWFile> file;
+  if (PREDICT_TRUE(file_cache && FLAGS_fs_wal_use_file_cache)) {
+    RETURN_NOT_OK_PREPEND(file_cache->OpenFile<Env::MUST_EXIST>(path, &file),
+                          "unable to open file for reading");
+  } else {
+    unique_ptr<RWFile> f;
+    RWFileOptions opts;
+    opts.mode = Env::MUST_EXIST;
+    RETURN_NOT_OK_PREPEND(env->NewRWFile(opts, path, &f),
+                          "Unable to open file for reading");
+    file.reset(f.release());
+  }
 
-  segment->reset(new ReadableLogSegment(path, shared_ptr<RWFile>(file.release())));
+  segment->reset(new ReadableLogSegment(path, std::move(file)));
   RETURN_NOT_OK_PREPEND((*segment)->Init(), "Unable to initialize segment");
   return Status::OK();
 }

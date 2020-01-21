@@ -50,6 +50,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/map-util.h"
@@ -186,8 +187,12 @@ Status ParseHostPortString(const string& hostport_str, HostPort* hostport) {
 Status FindLastLoggedOpId(FsManager* fs, const string& tablet_id,
                           OpId* last_logged_opid) {
   shared_ptr<LogReader> reader;
-  RETURN_NOT_OK(LogReader::Open(fs, scoped_refptr<log::LogIndex>(), tablet_id,
-                                scoped_refptr<MetricEntity>(), &reader));
+  RETURN_NOT_OK(LogReader::Open(fs,
+                                /*index*/nullptr,
+                                tablet_id,
+                                /*metric_entity*/nullptr,
+                                /*file_cache*/nullptr,
+                                &reader));
   SegmentSequence segs;
   reader->GetSegmentsSnapshot(&segs);
   // Reverse iterate the segments to find the 'last replicated' entry quickly.
@@ -521,9 +526,10 @@ Status DumpWals(const RunnerContext& context) {
 
   shared_ptr<LogReader> reader;
   RETURN_NOT_OK(LogReader::Open(fs_manager.get(),
-                                scoped_refptr<LogIndex>(),
+                                /*index*/nullptr,
                                 tablet_id,
-                                scoped_refptr<MetricEntity>(),
+                                /*metric_entity*/nullptr,
+                                /*file_cache*/nullptr,
                                 &reader));
 
   SegmentSequence segments;

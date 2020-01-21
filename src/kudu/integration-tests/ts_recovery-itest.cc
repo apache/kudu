@@ -601,10 +601,11 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
       scoped_refptr<Log> log;
       ASSERT_OK(Log::Open(LogOptions(),
                           fs_manager.get(),
+                          /*file_cache*/nullptr,
                           tablet_id,
                           SchemaBuilder(GetSimpleTestSchema()).Build(),
                           0, // schema_version
-                          nullptr,
+                          /*metric_entity*/nullptr,
                           &log));
 
       // Write a series of negative OpIds.

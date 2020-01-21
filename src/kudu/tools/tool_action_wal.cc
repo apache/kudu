@@ -44,7 +44,10 @@ Status Dump(const RunnerContext& context) {
   const string& segment_path = FindOrDie(context.required_args, kPathArg);
 
   scoped_refptr<ReadableLogSegment> segment;
-  RETURN_NOT_OK(ReadableLogSegment::Open(Env::Default(), segment_path, &segment));
+  RETURN_NOT_OK(ReadableLogSegment::Open(Env::Default(),
+                                         /*file_cache*/nullptr,
+                                         segment_path,
+                                         &segment));
   RETURN_NOT_OK(PrintSegment(segment));
   return Status::OK();
 }

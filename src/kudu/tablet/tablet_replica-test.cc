@@ -28,7 +28,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
@@ -109,9 +108,6 @@ using std::string;
 using std::unique_ptr;
 
 namespace kudu {
-
-class MemTracker;
-
 namespace tablet {
 
 static Schema GetTestSchema() {
@@ -181,9 +177,14 @@ class TabletReplicaTest : public KuduTabletTest {
 
   Status StartReplica(const ConsensusBootstrapInfo& info) {
     scoped_refptr<Log> log;
-    RETURN_NOT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
-                            *tablet()->schema(), tablet()->metadata()->schema_version(),
-                            metric_entity_.get(), &log));
+    RETURN_NOT_OK(Log::Open(LogOptions(),
+                            fs_manager(),
+                            /*file_cache*/nullptr,
+                            tablet()->tablet_id(),
+                            *tablet()->schema(),
+                            tablet()->metadata()->schema_version(),
+                            metric_entity_.get(),
+                            &log));
     tablet_replica_->SetBootstrapping();
     return tablet_replica_->Start(info,
                                   tablet(),
@@ -226,13 +227,14 @@ class TabletReplicaTest : public KuduTabletTest {
     ASSERT_OK(BootstrapTablet(tablet_replica_->tablet_metadata(),
                               cmeta->CommittedConfig(),
                               clock(),
-                              shared_ptr<MemTracker>(),
-                              scoped_refptr<ResultTracker>(),
+                              /*mem_tracker*/nullptr,
+                              /*result_tracker*/nullptr,
                               &metric_registry_,
+                              /*file_cache*/nullptr,
                               tablet_replica_,
+                              tablet_replica_->log_anchor_registry(),
                               &tablet,
                               &log,
-                              tablet_replica_->log_anchor_registry(),
                               &bootstrap_info));
     ASSERT_OK(tablet_replica_->Start(bootstrap_info,
                                      tablet,

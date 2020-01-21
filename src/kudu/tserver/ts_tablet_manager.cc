@@ -1124,10 +1124,11 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
                         server_->mem_tracker(),
                         server_->result_tracker(),
                         metric_registry_,
+                        server_->file_cache(),
                         replica,
+                        replica->log_anchor_registry(),
                         &tablet,
                         &log,
-                        replica->log_anchor_registry(),
                         &bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to bootstrap: "

@@ -29,6 +29,7 @@
 namespace kudu {
 
 class Env;
+class FileCache;
 
 namespace log {
 
@@ -62,7 +63,7 @@ struct LogIndexEntry {
 // See .cc file for implementation notes.
 class LogIndex : public RefCountedThreadSafe<LogIndex> {
  public:
-  LogIndex(Env* env, std::string base_dir);
+  LogIndex(Env* env, FileCache* file_cache, std::string base_dir);
 
   // Record an index entry in the index.
   Status AddEntry(const LogIndexEntry& entry);
@@ -97,6 +98,9 @@ class LogIndex : public RefCountedThreadSafe<LogIndex> {
 
   // Environment with which to do file I/O.
   Env* env_;
+
+  // Optional cache thru which index files are opened.
+  FileCache* file_cache_;
 
   // The base directory where index files are located.
   const std::string base_dir_;
