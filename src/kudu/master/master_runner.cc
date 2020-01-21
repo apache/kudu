@@ -34,8 +34,25 @@ using std::string;
 
 DECLARE_bool(evict_failed_followers);
 
+DECLARE_bool(hive_metastore_sasl_enabled);
+DECLARE_string(keytab_file);
+
 namespace kudu {
 namespace master {
+
+// Validates that if the HMS is configured with SASL enabled, the server has a
+// keytab available. This doesn't use a GROUP_FLAG_VALIDATOR because this check
+// only needs to be run on a server. E.g. tools that run with the HMS don't need
+// to pass in a keytab.
+static Status ValidateHiveMetastoreSaslEnabled() {
+    if (FLAGS_hive_metastore_sasl_enabled &&
+        FLAGS_keytab_file.empty()) {
+        return Status::ConfigurationError("When the Hive Metastore has SASL enabled "
+                                          "(--hive_metastore_sasl_enabled), Kudu must be "
+                                          "configured with a keytab (--keytab_file).");
+    }
+    return Status::OK();
+}
 
 void SetMasterFlagDefaults() {
   // Reset some default values before parsing gflags.
@@ -74,6 +91,8 @@ Status RunMasterServer() {
             << nondefault_flags << '\n'
             << "Master server version:\n"
             << VersionInfo::GetAllVersionInfo();
+
+  RETURN_NOT_OK(ValidateHiveMetastoreSaslEnabled());
 
   Master server({});
   RETURN_NOT_OK(server.Init());
