@@ -64,9 +64,9 @@ public class TestMessageIO {
   @Test
   public void testBasicEchoMessage() throws Exception {
     final String data = "data";
-    final SubprocessRequestPB request = MessageTestUtil.createEchoSubprocessRequest(data);
-    final byte[] message = MessageTestUtil.serializeMessage(request);
-    final SubprocessRequestPB actualRequest = MessageTestUtil.deserializeMessage(
+    final SubprocessRequestPB request = SubprocessTestUtil.createEchoSubprocessRequest(data);
+    final byte[] message = SubprocessTestUtil.serializeMessage(request);
+    final SubprocessRequestPB actualRequest = SubprocessTestUtil.deserializeMessage(
         message, SubprocessRequestPB.parser());
     Assert.assertEquals(request, actualRequest);
   }
@@ -79,7 +79,7 @@ public class TestMessageIO {
   @Test
   public void testSubprocessOutputStream() {
     final String data = "data";
-    final SubprocessRequestPB request = MessageTestUtil.createEchoSubprocessRequest(data);
+    final SubprocessRequestPB request = SubprocessTestUtil.createEchoSubprocessRequest(data);
     final PrintStreamOverload printStreamOverload =
         new PrintStreamOverload(new ByteArrayOutputStream());
     final BufferedOutputStream out = new BufferedOutputStream(

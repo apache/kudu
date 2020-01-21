@@ -17,11 +17,20 @@
 
 package org.apache.kudu.subprocess;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
+import java.util.function.Function;
 
 import com.google.protobuf.Any;
 import com.google.protobuf.Message;
@@ -29,12 +38,85 @@ import com.google.protobuf.Parser;
 
 import org.apache.kudu.subprocess.Subprocess.EchoRequestPB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessRequestPB;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Utility class of common functions used for testing subprocess
- * message processing.
+ * Utility class of common functions used for testing subprocess.
  */
-public class MessageTestUtil {
+public class SubprocessTestUtil {
+  private static final Logger LOG = LoggerFactory.getLogger(SubprocessTestUtil.class);
+  protected static final String[] NO_ARGS = {""};
+  protected static final int TIMEOUT_MS = 1000;
+
+  // Helper functors that can be passed around to ensure we either see an error
+  // or not.
+  protected static final Function<Throwable, Void> NO_ERR = e -> {
+    LOG.error(String.format("Unexpected error: %s", e.getMessage()));
+    fail();
+    return null;
+  };
+  protected final Function<Throwable, Void> HAS_ERR = e -> {
+    assertTrue(e instanceof KuduSubprocessException);
+    return null;
+  };
+
+  // Pipe that we can write to that will feed requests to the subprocess's
+  // input pipe.
+  protected PipedOutputStream requestSenderPipe;
+
+  // Pipe that we can read from that will receive responses from the
+  // subprocess's output pipe.
+  protected final PipedInputStream responseReceiverPipe = new PipedInputStream();
+
+  public static class PrintStreamWithIOException extends PrintStream {
+    public PrintStreamWithIOException(OutputStream out, boolean autoFlush, String encoding)
+            throws UnsupportedEncodingException {
+      super(out, autoFlush, encoding);
+    }
+
+    @Override
+    public boolean checkError() {
+      // Always say that we've got an error.
+      return true;
+    }
+  }
+
+  // Sends a SubprocessRequestPB to the sender pipe, serializing it as
+  // appropriate.
+  public void sendRequestToPipe(Subprocess.SubprocessRequestPB req) throws IOException {
+    requestSenderPipe.write(SubprocessTestUtil.serializeMessage(req));
+  }
+
+  // Receives a response from the receiver pipe and deserializes it into a
+  // SubprocessResponsePB.
+  public Subprocess.SubprocessResponsePB receiveResponse() throws IOException {
+    BufferedInputStream bufferedInput = new BufferedInputStream(responseReceiverPipe);
+    return SubprocessTestUtil.deserializeMessage(bufferedInput, Subprocess.SubprocessResponsePB.parser());
+  }
+
+  // Sets up and returns a SubprocessExecutor with the given error handler and
+  // IO error injection behavior. The SubprocessExecutor will do IO to and from
+  // 'requestSenderPipe' and 'responseReceiverPipe'.
+  public SubprocessExecutor setUpExecutorIO(Function<Throwable, Void> errorHandler,
+                                            boolean injectIOError) throws IOException {
+    // Initialize the pipe that we'll push requests to; feed it into the
+    // executor's input pipe.
+    PipedInputStream inputPipe = new PipedInputStream();
+    requestSenderPipe = new PipedOutputStream(inputPipe);
+    System.setIn(inputPipe);
+
+    // Initialize the pipe that the executor will write to; feed it into the
+    // response pipe that we can read from.
+    PipedOutputStream outputPipe = new PipedOutputStream(responseReceiverPipe);
+    if (injectIOError) {
+      System.setOut(new PrintStreamWithIOException(outputPipe, /*autoFlush*/false, "UTF-8"));
+    } else {
+      System.setOut(new PrintStream(outputPipe));
+    }
+    SubprocessExecutor subprocessExecutor = new SubprocessExecutor(errorHandler);
+    return subprocessExecutor;
+  }
 
   /**
    * Constructs a SubprocessRequestPB message of echo request with the
@@ -91,7 +173,7 @@ public class MessageTestUtil {
    * @return a message
    * @throws IOException if an I/O error occurs
    */
-  static <T extends Message> T deserializeMessage(byte[] bytes, Parser<T> parser)
+  public static <T extends Message> T deserializeMessage(byte[] bytes, Parser<T> parser)
       throws IOException {
     ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
     return deserializeMessage(new BufferedInputStream(inputStream), parser);

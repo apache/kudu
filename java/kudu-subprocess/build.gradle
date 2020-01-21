@@ -19,17 +19,23 @@ apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
+  compile libs.hadoopCommon
   compile libs.protobufJava
   compile libs.protobufJavaUtil
-  compile libs.hadoopCommon
+  compile libs.rangerPlugin
   compile libs.slf4jApi
 
+  // Workaround for RANGER-2749. Remove once resolved.
+  compile "commons-lang:commons-lang:2.6"
+
+  optional libs.jsr305
   optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile libs.junit
   testCompile libs.log4j
   testCompile libs.log4jSlf4jImpl
+  testCompile libs.mockitoCore
 }
 
 // Add protobuf files to the proto source set.
