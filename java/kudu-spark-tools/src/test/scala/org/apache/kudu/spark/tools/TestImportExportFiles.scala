@@ -21,6 +21,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
 
+import com.google.common.collect.ImmutableList
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
@@ -30,7 +31,6 @@ import org.apache.kudu.spark.kudu._
 import org.junit.Assert._
 import org.junit.Before
 import org.junit.Test
-import org.spark_project.guava.collect.ImmutableList
 
 import scala.collection.JavaConverters._
 
