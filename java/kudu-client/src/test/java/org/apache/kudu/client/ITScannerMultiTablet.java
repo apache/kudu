@@ -160,6 +160,7 @@ public class ITScannerMultiTablet {
    * @param isFaultTolerant if true use fault-tolerant scanner, otherwise use non-fault-tolerant one
    * @throws Exception
    */
+  @SuppressWarnings("FutureReturnValueIgnored")
   void clientFaultInjection(boolean isFaultTolerant) throws KuduException {
     KuduScanner scanner = harness.getClient().newScannerBuilder(table)
         .setFaultTolerant(isFaultTolerant)

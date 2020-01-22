@@ -78,6 +78,7 @@ public class TestAuthnTokenReacquireOpen {
     asyncClient = harness.getAsyncClient();
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void dropConnections() {
     for (Connection c : asyncClient.getConnectionListCopy()) {
       c.disconnect();

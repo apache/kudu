@@ -513,33 +513,49 @@ public class KuduClient implements AutoCloseable {
     }
 
     /**
-     * Set the executors which will be used for the embedded Netty boss and workers.
-     * Optional.
-     * If not provided, uses a simple cached threadpool. If either argument is null,
-     * then such a thread pool will be used in place of that argument.
-     * Note: executor's max thread number must be greater or equal to corresponding
-     * worker count, or netty cannot start enough threads, and client will get stuck.
-     * If not sure, please just use CachedThreadPool.
+     * @deprecated the bossExecutor is no longer used and will have no effect if provided
      */
+    @Deprecated
     public KuduClientBuilder nioExecutors(Executor bossExecutor, Executor workerExecutor) {
       clientBuilder.nioExecutors(bossExecutor, workerExecutor);
       return this;
     }
 
     /**
-     * Set the maximum number of boss threads.
+     * Set the executor which will be used for the embedded Netty workers.
+     *
      * Optional.
-     * If not provided, 1 is used.
+     * If not provided, uses a simple cached threadpool. If workerExecutor is null,
+     * then such a thread pool will be used.
+     * Note: executor's max thread number must be greater or equal to corresponding
+     * worker count, or netty cannot start enough threads, and client will get stuck.
+     * If not sure, please just use CachedThreadPool.
      */
+    public KuduClientBuilder nioExecutor(Executor workerExecutor) {
+      clientBuilder.nioExecutor(workerExecutor);
+      return this;
+    }
+
+    /**
+     * @deprecated the bossExecutor is no longer used and will have no effect if provided
+     */
+    @Deprecated
     public KuduClientBuilder bossCount(int bossCount) {
-      clientBuilder.bossCount(bossCount);
+      LOG.info("bossCount is deprecated");
       return this;
     }
 
     /**
      * Set the maximum number of worker threads.
+     * A worker thread performs non-blocking read and write for one or more
+     * Netty Channels in a non-blocking mode.
+     *
      * Optional.
-     * If not provided, (2 * the number of available processors) is used.
+     * If not provided, (2 * the number of available processors) is used. If
+     * this client instance will be used on a machine running many client
+     * instances, it may be wise to lower this count, for example to avoid
+     * resource limits, at the possible cost of some performance of this client
+     * instance.
      */
     public KuduClientBuilder workerCount(int workerCount) {
       clientBuilder.workerCount(workerCount);

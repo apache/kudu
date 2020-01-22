@@ -37,6 +37,7 @@ public class TestConnectionCache {
   public RetryRule retryRule = new RetryRule();
 
   @Test(timeout = 50000)
+  @SuppressWarnings("FutureReturnValueIgnored")
   public void test() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
                                                       .numMasterServers(3)

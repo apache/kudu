@@ -27,10 +27,13 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
@@ -60,18 +63,17 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.UnsafeByteOperations;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerAdapter;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.util.concurrent.Future;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.ietf.jgss.GSSException;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.channel.Channels;
-import org.jboss.netty.channel.MessageEvent;
-import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
-import org.jboss.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,7 +91,7 @@ import org.apache.kudu.util.SecurityUtil;
  * from the pipeline and fires a Negotiator.Success or Negotiator.Failure upstream.
  */
 @InterfaceAudience.Private
-public class Negotiator extends SimpleChannelUpstreamHandler {
+public class Negotiator extends SimpleChannelInboundHandler<CallResponse> {
   private static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
   private final SaslClientCallbackHandler saslCallback = new SaslClientCallbackHandler();
@@ -190,7 +192,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * and add the handler directly to the real ChannelPipeline.
    * Only non-null once TLS is initiated.
    */
-  private DecoderEmbedder<ChannelBuffer> sslEmbedder;
+  private EmbeddedChannel sslEmbedder;
 
   /**
    * The nonce sent from the server to the client, or null if negotiation has
@@ -202,7 +204,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * Future indicating whether the embedded handshake has completed.
    * Only non-null once TLS is initiated.
    */
-  private ChannelFuture sslHandshakeFuture;
+  private Future<Channel> sslHandshakeFuture;
 
   private Certificate peerCert;
 
@@ -231,11 +233,11 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  public void sendHello(Channel channel) {
-    sendNegotiateMessage(channel);
+  public void sendHello(ChannelHandlerContext ctx) {
+    sendNegotiateMessage(ctx);
   }
 
-  private void sendNegotiateMessage(Channel channel) {
+  private void sendNegotiateMessage(ChannelHandlerContext ctx) {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
         .setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
 
@@ -244,7 +246,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
-    if (isLoopbackConnection(channel)) {
+    if (isLoopbackConnection(ctx.channel())) {
       builder.addSupportedFeatures(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY);
     }
 
@@ -265,57 +267,48 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // Java client.
 
     state = State.AWAIT_NEGOTIATE;
-    sendSaslMessage(channel, builder.build());
+    sendSaslMessage(ctx, builder.build());
   }
 
-  private void sendSaslMessage(Channel channel, RpcHeader.NegotiatePB msg) {
-    Preconditions.checkNotNull(channel);
+  @SuppressWarnings("FutureReturnValueIgnored")
+  private void sendSaslMessage(ChannelHandlerContext ctx, RpcHeader.NegotiatePB msg) {
     RpcHeader.RequestHeader.Builder builder = RpcHeader.RequestHeader.newBuilder();
     builder.setCallId(SASL_CALL_ID);
-    Channels.write(channel, new RpcOutboundMessage(builder, msg));
+    ctx.writeAndFlush(new RpcOutboundMessage(builder, msg), ctx.voidPromise());
   }
 
   @Override
-  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws IOException {
-    Object m = evt.getMessage();
-    if (!(m instanceof CallResponse)) {
-      ctx.sendUpstream(evt);
-      return;
-    }
-    handleResponse(ctx.getChannel(), (CallResponse)m);
-  }
-
-  private void handleResponse(Channel chan, CallResponse callResponse) throws IOException {
-    final RpcHeader.ResponseHeader header = callResponse.getHeader();
+  public void channelRead0(ChannelHandlerContext ctx, CallResponse msg) throws IOException {
+    final RpcHeader.ResponseHeader header = msg.getHeader();
     if (header.getIsError()) {
       final RpcHeader.ErrorStatusPB.Builder errBuilder = RpcHeader.ErrorStatusPB.newBuilder();
-      KuduRpc.readProtobuf(callResponse.getPBMessage(), errBuilder);
+      KuduRpc.readProtobuf(msg.getPBMessage(), errBuilder);
       final RpcHeader.ErrorStatusPB error = errBuilder.build();
       LOG.debug("peer {} sent connection negotiation error: {}",
-          chan.getRemoteAddress(), error.getMessage());
+          ctx.channel().remoteAddress(), error.getMessage());
 
       // The upstream code should handle the negotiation failure.
       state = State.FINISHED;
-      chan.getPipeline().remove(this);
-      Channels.fireMessageReceived(chan, new Failure(error));
+      ctx.pipeline().remove(this);
+      ctx.fireChannelRead(new Failure(error));
       return;
     }
 
-    RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
+    RpcHeader.NegotiatePB response = parseSaslMsgResponse(msg);
     // TODO: check that the message type matches the expected one in all
     // of the below implementations.
     switch (state) {
       case AWAIT_NEGOTIATE:
-        handleNegotiateResponse(chan, response);
+        handleNegotiateResponse(ctx, response);
         break;
       case AWAIT_SASL:
-        handleSaslMessage(chan, response);
+        handleSaslMessage(ctx, response);
         break;
       case AWAIT_TOKEN_EXCHANGE:
-        handleTokenExchangeResponse(chan, response);
+        handleTokenExchangeResponse(ctx, response);
         break;
       case AWAIT_TLS_HANDSHAKE:
-        handleTlsMessage(chan, response);
+        handleTlsMessage(ctx, response);
         break;
       default:
         throw new IllegalStateException("received a message in unexpected state: " +
@@ -323,13 +316,14 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void handleSaslMessage(Channel chan, NegotiatePB response) throws IOException {
+  private void handleSaslMessage(ChannelHandlerContext ctx, NegotiatePB response)
+          throws IOException {
     switch (response.getStep()) {
       case SASL_CHALLENGE:
-        handleChallengeResponse(chan, response);
+        handleChallengeResponse(ctx, response);
         break;
       case SASL_SUCCESS:
-        handleSuccessResponse(chan, response);
+        handleSuccessResponse(ctx, response);
         break;
       default:
         throw new IllegalStateException("Wrong negotiation step: " +
@@ -350,7 +344,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     return saslBuilder.build();
   }
 
-  private void handleNegotiateResponse(Channel chan,
+  private void handleNegotiateResponse(ChannelHandlerContext ctx,
                                        RpcHeader.NegotiatePB response) throws IOException {
     Preconditions.checkState(response.getStep() == NegotiateStep.NEGOTIATE,
         "Expected NEGOTIATE message, got {}", response.getStep());
@@ -370,9 +364,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // If we negotiated TLS, then we want to start the TLS handshake; otherwise,
     // we can move directly to the authentication phase.
     if (negotiatedTls) {
-      startTlsHandshake(chan);
+      startTlsHandshake(ctx);
     } else {
-      startAuthentication(chan);
+      startAuthentication(ctx);
     }
   }
 
@@ -385,8 +379,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       return true;
     }
     try {
-      InetAddress local = ((InetSocketAddress)channel.getLocalAddress()).getAddress();
-      InetAddress remote = ((InetSocketAddress)channel.getRemoteAddress()).getAddress();
+      InetAddress local = ((InetSocketAddress)channel.localAddress()).getAddress();
+      InetAddress remote = ((InetSocketAddress)channel.remoteAddress()).getAddress();
       return local.equals(remote);
     } catch (ClassCastException cce) {
       // In the off chance that we have some other type of local/remote address,
@@ -538,7 +532,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   /**
    * Send the initial TLS "ClientHello" message.
    */
-  private void startTlsHandshake(Channel chan) throws SSLException {
+  private void startTlsHandshake(ChannelHandlerContext ctx) throws SSLException {
     SSLEngine engine;
     switch (chosenAuthnType) {
       case SASL:
@@ -566,12 +560,12 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
           "Supported suites: " + Joiner.on(',').join(supported));
     }
     engine.setEnabledCipherSuites(toEnable.toArray(new String[0]));
-    SslHandler handler = new SslHandler(engine);
-    handler.setEnableRenegotiation(false);
-    sslEmbedder = new DecoderEmbedder<>(handler);
-    sslHandshakeFuture = handler.handshake();
+    SharableSslHandler handler = new SharableSslHandler(engine);
+
+    sslEmbedder = new EmbeddedChannel(handler);
+    sslHandshakeFuture = handler.handshakeFuture();
     state = State.AWAIT_TLS_HANDSHAKE;
-    boolean sent = sendPendingOutboundTls(chan);
+    boolean sent = sendPendingOutboundTls(ctx);
     assert sent;
   }
 
@@ -579,15 +573,17 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * Handle an inbound message during the TLS handshake. If this message
    * causes the handshake to complete, triggers the beginning of SASL initiation.
    */
-  private void handleTlsMessage(Channel chan, NegotiatePB response) throws IOException {
+  private void handleTlsMessage(ChannelHandlerContext ctx, NegotiatePB response)
+          throws IOException {
     Preconditions.checkState(response.getStep() == NegotiateStep.TLS_HANDSHAKE);
     Preconditions.checkArgument(!response.getTlsHandshake().isEmpty(),
         "empty TLS message from server");
 
     // Pass the TLS message into our embedded SslHandler.
-    sslEmbedder.offer(ChannelBuffers.copiedBuffer(
+    sslEmbedder.writeInbound(Unpooled.copiedBuffer(
         response.getTlsHandshake().asReadOnlyByteBuffer()));
-    if (sendPendingOutboundTls(chan)) {
+    sslEmbedder.flush();
+    if (sendPendingOutboundTls(ctx)) {
       // Data was sent -- we must continue the handshake process.
       return;
     }
@@ -598,8 +594,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     //
     // NOTE: this takes effect immediately (i.e. the following SASL initiation
     // sequence is encrypted).
-    SslHandler handler = (SslHandler)sslEmbedder.getPipeline().getFirst();
-    Certificate[] certs = handler.getEngine().getSession().getPeerCertificates();
+    SharableSslHandler handler = (SharableSslHandler) sslEmbedder.pipeline().first();
+    handler.resetAdded();
+    Certificate[] certs = handler.engine().getSession().getPeerCertificates();
     if (certs.length == 0) {
       throw new SSLPeerUnverifiedException("no peer cert found");
     }
@@ -609,11 +606,11 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
     // Don't wrap the TLS socket if we are using TLS for authentication only.
     boolean isAuthOnly = serverFeatures.contains(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY) &&
-        isLoopbackConnection(chan);
+        isLoopbackConnection(ctx.channel());
     if (!isAuthOnly) {
-      chan.getPipeline().addFirst("tls", handler);
+      ctx.pipeline().addFirst("tls", handler);
     }
-    startAuthentication(chan);
+    startAuthentication(ctx);
   }
 
   /**
@@ -622,13 +619,17 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    *
    * Otherwise, indicates that the handshake is complete by returning false.
    */
-  private boolean sendPendingOutboundTls(Channel chan) {
+  private boolean sendPendingOutboundTls(ChannelHandlerContext ctx) {
     // The SslHandler can generate multiple TLS messages in response
     // (e.g. ClientKeyExchange, ChangeCipherSpec, ClientFinished).
     // We poll the handler until it stops giving us buffers.
     List<ByteString> bufs = Lists.newArrayList();
-    while (sslEmbedder.peek() != null) {
-      bufs.add(ByteString.copyFrom(sslEmbedder.poll().toByteBuffer()));
+    while (!sslEmbedder.outboundMessages().isEmpty()) {
+      ByteBuf msg = sslEmbedder.readOutbound();
+      bufs.add(ByteString.copyFrom(msg.nioBuffer()));
+      // Release the reference counted ByteBuf to avoid leaks now that we are done with it.
+      // https://netty.io/wiki/reference-counted-objects.html
+      msg.release();
     }
     ByteString data = ByteString.copyFrom(bufs);
     if (sslHandshakeFuture.isDone()) {
@@ -640,7 +641,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       return false;
     } else {
       assert data.size() > 0;
-      sendTunneledTls(chan, data);
+      sendTunneledTls(ctx, data);
       return true;
     }
   }
@@ -649,27 +650,28 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * Send a buffer of data for the TLS handshake, encapsulated in the
    * appropriate TLS_HANDSHAKE negotiation message.
    */
-  private void sendTunneledTls(Channel chan, ByteString buf) {
-    sendSaslMessage(chan, NegotiatePB.newBuilder()
+  private void sendTunneledTls(ChannelHandlerContext ctx, ByteString buf) {
+    sendSaslMessage(ctx, NegotiatePB.newBuilder()
         .setStep(NegotiateStep.TLS_HANDSHAKE)
         .setTlsHandshake(buf)
         .build());
   }
 
-  private void startAuthentication(Channel chan) throws SaslException, NonRecoverableException {
+  private void startAuthentication(ChannelHandlerContext ctx)
+          throws SaslException, NonRecoverableException {
     switch (chosenAuthnType) {
       case SASL:
-        sendSaslInitiate(chan);
+        sendSaslInitiate(ctx);
         break;
       case TOKEN:
-        sendTokenExchange(chan);
+        sendTokenExchange(ctx);
         break;
       default:
         throw new AssertionError("unreachable");
     }
   }
 
-  private void sendTokenExchange(Channel chan) {
+  private void sendTokenExchange(ChannelHandlerContext ctx) {
     // We must not send a token unless we have successfully finished
     // authenticating via TLS.
     Preconditions.checkNotNull(authnToken);
@@ -680,19 +682,20 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         .setStep(NegotiateStep.TOKEN_EXCHANGE)
         .setAuthnToken(authnToken);
     state = State.AWAIT_TOKEN_EXCHANGE;
-    sendSaslMessage(chan, builder.build());
+    sendSaslMessage(ctx, builder.build());
   }
 
-  private void handleTokenExchangeResponse(Channel chan, NegotiatePB response)
+  private void handleTokenExchangeResponse(ChannelHandlerContext ctx, NegotiatePB response)
       throws SaslException {
     Preconditions.checkArgument(response.getStep() == NegotiateStep.TOKEN_EXCHANGE,
         "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
 
     // The token response doesn't have any actual data in it, so we can just move on.
-    finish(chan);
+    finish(ctx);
   }
 
-  private void sendSaslInitiate(Channel chan) throws SaslException, NonRecoverableException {
+  private void sendSaslInitiate(ChannelHandlerContext ctx)
+          throws SaslException, NonRecoverableException {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     if (saslClient.hasInitialResponse()) {
       byte[] initialResponse = evaluateChallenge(new byte[0]);
@@ -701,10 +704,10 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
     builder.addSaslMechanismsBuilder().setMechanism(chosenMech.name());
     state = State.AWAIT_SASL;
-    sendSaslMessage(chan, builder.build());
+    sendSaslMessage(ctx, builder.build());
   }
 
-  private void handleChallengeResponse(Channel chan, RpcHeader.NegotiatePB response)
+  private void handleChallengeResponse(ChannelHandlerContext ctx, RpcHeader.NegotiatePB response)
       throws SaslException, NonRecoverableException {
     byte[] saslToken = evaluateChallenge(response.getToken().toByteArray());
     if (saslToken == null) {
@@ -713,7 +716,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     builder.setToken(UnsafeByteOperations.unsafeWrap(saslToken));
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_RESPONSE);
-    sendSaslMessage(chan, builder.build());
+    sendSaslMessage(ctx, builder.build());
   }
 
   /**
@@ -739,9 +742,10 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void handleSuccessResponse(Channel chan, NegotiatePB response) throws IOException {
+  private void handleSuccessResponse(ChannelHandlerContext ctx, NegotiatePB response)
+          throws IOException {
     Preconditions.checkState(saslClient.isComplete(),
-                             "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
+            "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
     if (chosenMech == SaslMechanism.GSSAPI) {
       if (response.hasNonce()) {
         // Grab the nonce from the server, if it has sent one. We'll send it back
@@ -755,21 +759,22 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       }
     }
 
-    finish(chan);
+    finish(ctx);
   }
 
   /**
    * Marks the negotiation as finished, and sends the connection context to the server.
-   * @param chan the connection channel
+   * @param ctx the connection context
    */
-  private void finish(Channel chan) throws SaslException {
+  @SuppressWarnings("FutureReturnValueIgnored")
+  private void finish(ChannelHandlerContext ctx) throws SaslException {
     state = State.FINISHED;
-    chan.getPipeline().remove(this);
+    ctx.pipeline().remove(this);
 
-    Channels.write(chan, makeConnectionContext());
+    ctx.writeAndFlush(makeConnectionContext(), ctx.voidPromise());
     LOG.debug("Authenticated connection {} using {}/{}",
-        chan, chosenAuthnType, chosenMech);
-    Channels.fireMessageReceived(chan, new Success(serverFeatures));
+            ctx.channel(), chosenAuthnType, chosenMech);
+    ctx.fireChannelRead(new Success(serverFeatures));
   }
 
   private RpcOutboundMessage makeConnectionContext() throws SaslException {
@@ -869,6 +874,41 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
     public Failure(RpcHeader.ErrorStatusPB status) {
       this.status = status;
+    }
+  }
+
+  /**
+   * A hack to allow sharing the SslHandler even though it's not annotated as "Sharable".
+   * We aren't technically sharing it, but when we move it from the EmbeddedChannel to
+   * the actual channel above the sharing validation runs and throws an exception.
+   *
+   * https://netty.io/wiki/new-and-noteworthy-in-4.0.html#well-defined-thread-model
+   * https://netty.io/4.0/api/io/netty/channel/ChannelHandler.Sharable.html
+   *
+   * TODO (ghenke): Remove the need for this reflection.
+   */
+  static class SharableSslHandler extends SslHandler {
+
+    public SharableSslHandler(SSLEngine engine) {
+      super(engine);
+    }
+
+    void resetAdded() {
+      Field addedField = AccessController.doPrivileged((PrivilegedAction<Field>) () -> {
+        try {
+          Class<?> c = ChannelHandlerAdapter.class;
+          Field added = c.getDeclaredField("added");
+          added.setAccessible(true);
+          return added;
+        } catch (NoSuchFieldException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      try {
+        addedField.setBoolean(this, false);
+      } catch (IllegalAccessException e) {
+        throw new RuntimeException(e);
+      }
     }
   }
 }

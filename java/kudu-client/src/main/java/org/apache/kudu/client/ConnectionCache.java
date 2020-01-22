@@ -27,10 +27,9 @@ import javax.annotation.concurrent.GuardedBy;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
+import io.netty.bootstrap.Bootstrap;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.util.HashedWheelTimer;
 
 /**
  * The ConnectionCache is responsible for managing connections to Kudu masters and tablet servers.
@@ -54,11 +53,8 @@ class ConnectionCache {
   /** Security context to use for connection negotiation. */
   private final SecurityContext securityContext;
 
-  /** Timer to monitor read timeouts for connections (used by Netty's ReadTimeoutHandler) */
-  private final HashedWheelTimer timer;
-
-  /** Netty's channel factory to use by connections. */
-  private final ClientSocketChannelFactory channelFactory;
+  /** Netty's bootstrap to use by connections. */
+  private final Bootstrap bootstrap;
 
   /**
    * Container mapping server IP/port into the established connection from the client to the
@@ -71,11 +67,9 @@ class ConnectionCache {
 
   /** Create a new empty ConnectionCache given the specified parameters. */
   ConnectionCache(SecurityContext securityContext,
-                  HashedWheelTimer timer,
-                  ClientSocketChannelFactory channelFactory) {
+                  Bootstrap bootstrap) {
     this.securityContext = securityContext;
-    this.timer = timer;
-    this.channelFactory = channelFactory;
+    this.bootstrap = bootstrap;
   }
 
   /**
@@ -127,8 +121,7 @@ class ConnectionCache {
       if (result == null) {
         result = new Connection(serverInfo,
                                 securityContext,
-                                timer,
-                                channelFactory,
+                                bootstrap,
                                 credentialsPolicy);
         connections.add(result);
         // There can be at most 2 connections to the same destination: one with primary and another

@@ -56,6 +56,11 @@ tasks.withType(Test) {
       jvmArgs += "--add-opens=$module=ALL-UNNAMED"
     }
   }
+  // Enable paranoid Netty leak detection during tests.
+  // https://netty.io/wiki/reference-counted-objects.html#leak-detection-levels
+  if (propertyExists("nettyLeakDetection")) {
+    jvmArgs += "-Dio.netty.leakDetection.level=paranoid"
+  }
 
   // Set a few system properties.
   systemProperty "java.awt.headless", true

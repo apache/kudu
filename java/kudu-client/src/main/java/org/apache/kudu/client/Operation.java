@@ -29,9 +29,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import io.netty.util.Timer;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;

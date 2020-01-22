@@ -28,8 +28,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
+import io.netty.util.Timer;
 import org.apache.yetus.audience.InterfaceAudience;
-import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master;

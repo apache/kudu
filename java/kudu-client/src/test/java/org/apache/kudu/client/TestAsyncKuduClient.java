@@ -111,6 +111,7 @@ public class TestAsyncKuduClient {
     assertEquals(rowCount - numRows, countRowsInScan(scanner));
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void disconnectAndWait() throws InterruptedException {
     for (Connection c : asyncClient.getConnectionListCopy()) {
       c.disconnect();

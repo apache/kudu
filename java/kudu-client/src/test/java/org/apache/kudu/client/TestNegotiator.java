@@ -37,11 +37,14 @@ import javax.net.ssl.SSLException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.ExtensionRegistry;
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
-import org.jboss.netty.handler.ssl.SslHandler;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.ssl.SslHandler;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -49,8 +52,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.client.Negotiator.Success;
+import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
-import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
@@ -63,7 +66,7 @@ import org.apache.kudu.util.SecurityUtil;
 public class TestNegotiator {
   static final Logger LOG = LoggerFactory.getLogger(TestNegotiator.class);
 
-  private DecoderEmbedder<Object> embedder;
+  private EmbeddedChannel embedder;
   private SecurityContext secContext;
   private SSLEngine serverEngine;
 
@@ -107,19 +110,21 @@ public class TestNegotiator {
   private void startNegotiation(boolean fakeLoopback) {
     Negotiator negotiator = new Negotiator("127.0.0.1", secContext, false);
     negotiator.overrideLoopbackForTests = fakeLoopback;
-    embedder = new DecoderEmbedder<>(negotiator);
-    negotiator.sendHello(embedder.getPipeline().getChannel());
+    embedder = new EmbeddedChannel(negotiator);
+    negotiator.sendHello(embedder.pipeline().firstContext());
   }
 
   static CallResponse fakeResponse(ResponseHeader header, Message body) {
-    ChannelBuffer buf = KuduRpc.toChannelBuffer(header, body);
+    ByteBuf buf = Unpooled.buffer();
+    KuduRpc.toByteBuf(buf, header, body);
     buf = buf.slice(4, buf.readableBytes() - 4);
     return new CallResponse(buf);
   }
 
   KeyStore loadTestKeystore() throws Exception {
     KeyStore ks = KeyStore.getInstance("JKS");
-    try (InputStream stream = TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks")) {
+    try (InputStream stream =
+                 TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks")) {
       ks.load(stream, KEYSTORE_PASSWORD);
     }
     return ks;
@@ -142,14 +147,17 @@ public class TestNegotiator {
    * a Negotiation.Success to the pipeline.
    * @return the result
    */
-  private Success assertComplete() {
-    RpcOutboundMessage msg = (RpcOutboundMessage)embedder.poll();
-    ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
+  private Success assertComplete(boolean isTls) throws Exception {
+    RpcOutboundMessage msg = isTls ?
+            unwrapOutboundMessage(embedder.readOutbound(),
+                    RpcHeader.ConnectionContextPB.newBuilder()) :
+            embedder.readOutbound();
+    RpcHeader.ConnectionContextPB connCtx = (RpcHeader.ConnectionContextPB) msg.getBody();
     assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals(System.getProperty("user.name"), connCtx.getDEPRECATEDUserInfo().getRealUser());
 
     // Expect the client to also emit a negotiation Success.
-    Success success = (Success)embedder.poll();
+    Success success = embedder.readInbound();
     assertNotNull(success);
     return success;
   }
@@ -166,25 +174,26 @@ public class TestNegotiator {
    * Simple test case for a PLAIN negotiation.
    */
   @Test
-  public void testNegotiation() {
+  public void testNegotiation() throws Exception {
     startNegotiation(false);
 
     // Expect client->server: NEGOTIATE.
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals(Negotiator.SASL_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
 
     // Respond with NEGOTIATE.
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
           .addSaslMechanisms(SaslMechanism.newBuilder().setMechanism("PLAIN"))
           .setStep(NegotiateStep.NEGOTIATE)
           .build()));
+    embedder.flushInbound();
 
     // Expect client->server: SASL_INITIATE (PLAIN)
-    msg = (RpcOutboundMessage)embedder.poll();
+    msg = embedder.readOutbound();
     body = (NegotiatePB) msg.getBody();
 
     assertEquals(Negotiator.SASL_CALL_ID, msg.getHeaderBuilder().getCallId());
@@ -194,14 +203,15 @@ public class TestNegotiator {
     assertTrue(body.hasToken());
 
     // Respond with SASL_SUCCESS:
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
           .setStep(NegotiateStep.SASL_SUCCESS)
           .build()));
+    embedder.flushInbound();
 
     // Expect client->server: ConnectionContext
-    assertComplete();
+    assertComplete(/*isTls*/ false);
   }
 
   private static void runTasks(SSLEngineResult result,
@@ -253,21 +263,30 @@ public class TestNegotiator {
    * Completes the 3-step TLS handshake, assuming that the client is
    * about to generate the first of the messages.
    */
-  private void runTlsHandshake() throws SSLException {
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+  private void runTlsHandshake(boolean isAuthOnly) throws SSLException {
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.TLS_HANDSHAKE, body.getStep());
 
     // Consume the ClientHello in our fake server, which should generate ServerHello.
-    embedder.offer(runServerStep(serverEngine, body.getTlsHandshake()));
+    embedder.writeInbound(runServerStep(serverEngine, body.getTlsHandshake()));
+    embedder.flushInbound();
 
     // Expect client to generate ClientKeyExchange, ChangeCipherSpec, Finished.
-    msg = (RpcOutboundMessage) embedder.poll();
+    msg = embedder.readOutbound();
     body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.TLS_HANDSHAKE, body.getStep());
 
+    // Now that the handshake is complete, we need to encode RpcOutboundMessages
+    // to ByteBuf to be accepted by the the SslHandler.
+    // This encoder is added to the pipeline by the Connection in normal Negotiator usage.
+    if (!isAuthOnly) {
+      embedder.pipeline().addFirst("encode-outbound", new RpcOutboundMessage.Encoder());
+    }
+
     // Server consumes the above. Should send the TLS "Finished" message.
-    embedder.offer(runServerStep(serverEngine, body.getTlsHandshake()));
+    embedder.writeInbound(runServerStep(serverEngine, body.getTlsHandshake()));
+    embedder.flushInbound();
   }
 
   @Test
@@ -275,32 +294,29 @@ public class TestNegotiator {
     startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included.
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
     assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
 
     // Fake a server response with TLS enabled.
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
           .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
           .addSupportedFeatures(RpcFeatureFlag.TLS)
           .setStep(NegotiateStep.NEGOTIATE)
           .build()));
+    embedder.flushInbound();
 
     // Expect client->server: TLS_HANDSHAKE.
-    runTlsHandshake();
+    runTlsHandshake(/*isAuthOnly*/ false);
 
     // The pipeline should now have an SSL handler as the first handler.
-    assertTrue(embedder.getPipeline().getFirst() instanceof SslHandler);
+    assertTrue(embedder.pipeline().first() instanceof SslHandler);
 
     // The Negotiator should have sent the SASL_INITIATE at this point.
-    // NOTE: in a non-mock environment, this message would now be encrypted
-    // by the newly-added TLS handler. But, with the DecoderEmbedder that we're
-    // using, we don't actually end up processing outbound events. Upgrading
-    // to Netty 4 and using EmbeddedChannel instead would make this more realistic.
-    msg = (RpcOutboundMessage) embedder.poll();
+    msg = unwrapOutboundMessage(embedder.readOutbound(), RpcHeader.NegotiatePB.newBuilder());
     body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
   }
@@ -310,7 +326,7 @@ public class TestNegotiator {
     startNegotiation(true);
 
     // Expect client->server: NEGOTIATE, TLS and TLS_AUTHENTICATION_ONLY included.
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
     assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
@@ -318,7 +334,7 @@ public class TestNegotiator {
         RpcFeatureFlag.TLS_AUTHENTICATION_ONLY));
 
     // Fake a server response with TLS and TLS_AUTHENTICATION_ONLY enabled.
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
           .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
@@ -326,16 +342,17 @@ public class TestNegotiator {
           .addSupportedFeatures(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY)
           .setStep(NegotiateStep.NEGOTIATE)
           .build()));
+    embedder.flushInbound();
 
     // Expect client->server: TLS_HANDSHAKE.
-    runTlsHandshake();
+    runTlsHandshake(/*isAuthOnly*/ true);
 
     // The pipeline should *not* have an SSL handler as the first handler,
     // since we used TLS for authentication only.
-    assertFalse(embedder.getPipeline().getFirst() instanceof SslHandler);
+    assertFalse(embedder.pipeline().first() instanceof SslHandler);
 
     // The Negotiator should have sent the SASL_INITIATE at this point.
-    msg = (RpcOutboundMessage) embedder.poll();
+    msg = embedder.readOutbound();
     body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
   }
@@ -350,7 +367,7 @@ public class TestNegotiator {
     startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included, Token not included.
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals("supported_features: APPLICATION_FEATURE_FLAGS " +
         "supported_features: TLS " +
@@ -369,7 +386,7 @@ public class TestNegotiator {
     startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included, Token included.
-    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    RpcOutboundMessage msg = embedder.readOutbound();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals("supported_features: APPLICATION_FEATURE_FLAGS " +
         "supported_features: TLS " +
@@ -378,7 +395,7 @@ public class TestNegotiator {
         "authn_types { token { } }", TextFormat.shortDebugString(body));
 
     // Fake a server response with TLS enabled and TOKEN chosen.
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
           .addSupportedFeatures(RpcFeatureFlag.TLS)
@@ -386,24 +403,59 @@ public class TestNegotiator {
               AuthenticationTypePB.Token.getDefaultInstance()))
           .setStep(NegotiateStep.NEGOTIATE)
           .build()));
+    embedder.flushInbound();
 
     // Expect to now run the TLS handshake
-    runTlsHandshake();
+    runTlsHandshake(/*isAuthOnly*/ false);
 
     // Expect the client to send the token.
-    msg = (RpcOutboundMessage) embedder.poll();
+    msg = unwrapOutboundMessage(embedder.readOutbound(), RpcHeader.NegotiatePB.newBuilder());
     body = (NegotiatePB) msg.getBody();
     assertEquals("step: TOKEN_EXCHANGE authn_token { }",
         TextFormat.shortDebugString(body));
 
     // Fake a response indicating success.
-    embedder.offer(fakeResponse(
+    embedder.writeInbound(fakeResponse(
         ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
         NegotiatePB.newBuilder()
         .setStep(NegotiateStep.TOKEN_EXCHANGE)
           .build()));
+    embedder.flushInbound();
+
+    // TODO (ghenke): For some reason the SslHandler adds an extra empty message here.
+    // This should be harmless, but it would be good to understand or fix why.
+    ByteBuf empty = embedder.readOutbound();
+    assertEquals(0, empty.readableBytes());
 
     // Should be complete now.
-    assertComplete();
+    assertComplete(/*isTls*/ true);
+  }
+
+  private RpcOutboundMessage unwrapOutboundMessage(ByteBuf wrappedBuf,
+                                                   Message.Builder requestBuilder)
+          throws Exception {
+    // Create an SSL handle to handle unwrapping the ssl message.
+    SslHandler handler = new SslHandler(serverEngine);
+    EmbeddedChannel serverSSLChannel = new EmbeddedChannel(handler);
+
+    // Pass the ssl message through the channel with the ssl handler.
+    serverSSLChannel.writeInbound(wrappedBuf);
+    serverSSLChannel.flushInbound();
+    ByteBuf unwrappedbuf = serverSSLChannel.readInbound();
+
+    // Read the message size and bytes.
+    final int size = unwrappedbuf.readInt();
+    final byte [] bytes = new byte[size];
+    unwrappedbuf.getBytes(unwrappedbuf.readerIndex(), bytes);
+
+    // Parse the message header.
+    final CodedInputStream in = CodedInputStream.newInstance(bytes);
+    RpcHeader.RequestHeader.Builder header = RpcHeader.RequestHeader.newBuilder();
+    in.readMessage(header, ExtensionRegistry.getEmptyRegistry());
+
+    // Parse the request message.
+    in.readMessage(requestBuilder, ExtensionRegistry.getEmptyRegistry());
+
+    return new RpcOutboundMessage(header, requestBuilder.build());
   }
 }

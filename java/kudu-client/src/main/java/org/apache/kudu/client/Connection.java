@@ -36,27 +36,24 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelEvent;
-import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelFutureListener;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.channel.ChannelStateEvent;
-import org.jboss.netty.channel.Channels;
-import org.jboss.netty.channel.DefaultChannelPipeline;
-import org.jboss.netty.channel.ExceptionEvent;
-import org.jboss.netty.channel.MessageEvent;
-import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.SocketChannel;
-import org.jboss.netty.channel.socket.SocketChannelConfig;
-import org.jboss.netty.handler.codec.frame.LengthFieldBasedFrameDecoder;
-import org.jboss.netty.handler.timeout.ReadTimeoutException;
-import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
-import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,7 +76,7 @@ import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-class Connection extends SimpleChannelUpstreamHandler {
+class Connection extends SimpleChannelInboundHandler<Object> {
   /**
    * Authentication credentials policy for negotiating outbound connections. Some requests
    * (e.g. {@link ConnectToMasterRequest}) behave differently depending on the type of credentials
@@ -105,14 +102,14 @@ class Connection extends SimpleChannelUpstreamHandler {
   /** Security context to use for connection negotiation. */
   private final SecurityContext securityContext;
 
-  /** Timer to monitor read timeouts for the connection (used by Netty's ReadTimeoutHandler). */
-  private final HashedWheelTimer timer;
-
   /** Credentials policy to use when authenticating. */
   private final CredentialsPolicy credentialsPolicy;
 
+  /** The Netty client bootstrap used to configure and initialize a connected channel. */
+  private final Bootstrap bootstrap;
+
   /** The underlying Netty's socket channel. */
-  private final SocketChannel channel;
+  private SocketChannel channel;
 
   /**
    * Set to true when disconnect initiated explicitly from the client side. The channelDisconnected
@@ -167,9 +164,9 @@ class Connection extends SimpleChannelUpstreamHandler {
   @GuardedBy("lock")
   private int nextCallId = 0;
 
+  /** The future for the connection attempt. Set only once connect() is called. */
   @Nullable
   @GuardedBy("lock")
-  /** The future for the connection attempt. Set only once connect() is called. */
   private ChannelFuture connectFuture;
 
   /**
@@ -177,8 +174,7 @@ class Connection extends SimpleChannelUpstreamHandler {
    *
    * @param serverInfo the destination server
    * @param securityContext security context to use for connection negotiation
-   * @param timer timer to set up read timeout on the corresponding Netty channel
-   * @param channelFactory Netty factory to create corresponding Netty channel
+   * @param bootstrap Netty bootstrap to create corresponding Netty channel
    * @param credentialsPolicy policy controlling which credentials to use while negotiating on the
    *                          connection to the target server:
    *                          if {@link CredentialsPolicy#PRIMARY_CREDENTIALS}, the authentication
@@ -186,32 +182,20 @@ class Connection extends SimpleChannelUpstreamHandler {
    */
   Connection(ServerInfo serverInfo,
              SecurityContext securityContext,
-             HashedWheelTimer timer,
-             ClientSocketChannelFactory channelFactory,
+             Bootstrap bootstrap,
              CredentialsPolicy credentialsPolicy) {
     this.serverInfo = serverInfo;
     this.securityContext = securityContext;
     this.state = State.NEW;
-    this.timer = timer;
     this.credentialsPolicy = credentialsPolicy;
-
-    final ConnectionPipeline pipeline = new ConnectionPipeline();
-    pipeline.init();
-
-    channel = channelFactory.newChannel(pipeline);
-    SocketChannelConfig config = channel.getConfig();
-    config.setConnectTimeoutMillis(60000);
-    config.setTcpNoDelay(true);
-    // Unfortunately there is no way to override the keep-alive timeout in
-    // Java since the JRE doesn't expose any way to call setsockopt() with
-    // TCP_KEEPIDLE. And of course the default timeout is >2h. Sigh.
-    config.setKeepAlive(true);
+    this.bootstrap = bootstrap.clone();
+    this.bootstrap.handler(new ConnectionChannelInitializer());
   }
 
   /** {@inheritDoc} */
   @Override
-  public void channelConnected(final ChannelHandlerContext ctx,
-                               final ChannelStateEvent e) {
+  @SuppressWarnings("FutureReturnValueIgnored")
+  public void channelActive(final ChannelHandlerContext ctx) {
     lock.lock();
     try {
       if (state == State.TERMINATED) {
@@ -222,56 +206,38 @@ class Connection extends SimpleChannelUpstreamHandler {
     } finally {
       lock.unlock();
     }
-    Channels.write(channel, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
+    ctx.writeAndFlush(Unpooled.wrappedBuffer(CONNECTION_HEADER), ctx.voidPromise());
     Negotiator negotiator = new Negotiator(serverInfo.getAndCanonicalizeHostname(), securityContext,
         (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS));
-    ctx.getPipeline().addBefore(ctx.getName(), "negotiation", negotiator);
-    negotiator.sendHello(channel);
+    ctx.pipeline().addBefore(ctx.name(), "negotiation", negotiator);
+    negotiator.sendHello(ctx);
   }
 
   /** {@inheritDoc} */
   @Override
-  public void handleUpstream(final ChannelHandlerContext ctx,
-                             final ChannelEvent e) throws Exception {
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("{} upstream event {}", getLogPrefix(), e);
-    }
-    super.handleUpstream(ctx, e);
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public void channelDisconnected(final ChannelHandlerContext ctx, final ChannelStateEvent e) {
-    // No need to call super.channelDisconnected(ctx, e) -- there should be nobody in the upstream
-    // pipeline after Connection itself. So, just handle the disconnection event ourselves.
-    cleanup(new RecoverableException(Status.NetworkError("connection disconnected")));
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent e) {
+  public void channelInactive(final ChannelHandlerContext ctx) {
+    LOG.debug("{} handling channelInactive", getLogPrefix());
     String msg = "connection closed";
     // Connection failures are reported as channelClosed() before exceptionCaught() is called.
     // We can detect this case by looking at whether connectFuture has been marked complete
     // and grabbing the exception from there.
     lock.lock();
     try {
-      if (connectFuture != null && connectFuture.getCause() != null) {
-        msg = connectFuture.getCause().toString();
+      if (connectFuture != null && connectFuture.cause() != null) {
+        msg = connectFuture.cause().toString();
       }
     } finally {
       lock.unlock();
     }
-    // No need to call super.channelClosed(ctx, e) -- there should be nobody in the upstream
+    // No need to call super.channelInactive(ctx, e) -- there should be nobody in the upstream
     // pipeline after Connection itself. So, just handle the close event ourselves.
     cleanup(new RecoverableException(Status.NetworkError(msg)));
   }
 
   /** {@inheritDoc} */
   @Override
-  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
-    Object m = evt.getMessage();
-
+  @SuppressWarnings("FutureReturnValueIgnored")
+  public void channelRead0(ChannelHandlerContext ctx, Object m) throws Exception {
     // Process the results of a successful negotiation.
     if (m instanceof Negotiator.Success) {
       lock.lock();
@@ -317,7 +283,7 @@ class Connection extends SimpleChannelUpstreamHandler {
         queuedMessages = null;
 
         // Drop the negotiation timeout handler from the pipeline.
-        ctx.getPipeline().remove(NEGOTIATION_TIMEOUT_HANDLER);
+        ctx.pipeline().remove(NEGOTIATION_TIMEOUT_HANDLER);
 
         // Set the state to READY -- that means the incoming messages should be no longer put into
         // the queuedMessages, but sent to wire right away (see the enqueueMessage() for details).
@@ -343,15 +309,15 @@ class Connection extends SimpleChannelUpstreamHandler {
       } finally {
         lock.unlock();
       }
-      // Calling Channels.close() triggers the cleanup() which will handle the negotiation
+      // Calling close() triggers the cleanup() which will handle the negotiation
       // failure appropriately.
-      Channels.close(evt.getChannel());
+      ctx.close();
       return;
     }
 
     // Some other event which the connection does not handle.
     if (!(m instanceof CallResponse)) {
-      ctx.sendUpstream(evt);
+      ctx.fireChannelRead(m);
       return;
     }
 
@@ -416,10 +382,8 @@ class Connection extends SimpleChannelUpstreamHandler {
 
   /** {@inheritDoc} */
   @Override
-  public void exceptionCaught(final ChannelHandlerContext ctx, final ExceptionEvent event) {
-    Throwable e = event.getCause();
-    Channel c = event.getChannel();
-
+  @SuppressWarnings("FutureReturnValueIgnored")
+  public void exceptionCaught(ChannelHandlerContext ctx, Throwable e) throws Exception {
     KuduException error;
     if (e instanceof KuduException) {
       error = (KuduException) e;
@@ -462,14 +426,16 @@ class Connection extends SimpleChannelUpstreamHandler {
       // have either gotten a ClosedChannelException or an SSLException.
       assert !explicitlyDisconnected;
       String message = String.format("%s unexpected exception from downstream on %s",
-                                     getLogPrefix(), c);
+                                     getLogPrefix(), ctx.channel());
       error = new RecoverableException(Status.NetworkError(message), e);
       LOG.error(message, e);
     }
 
     cleanup(error);
-    if (c.isOpen()) {
-      Channels.close(c);
+    // `ctx` is null when `exceptionCaught` is called from the `connectFuture`
+    // listener in `connect()`.
+    if (ctx != null) {
+      ctx.close();
     }
   }
 
@@ -583,8 +549,20 @@ class Connection extends SimpleChannelUpstreamHandler {
    * @return future object to wait on the disconnect completion, if necessary
    */
   ChannelFuture disconnect() {
-    explicitlyDisconnected = true;
-    return Channels.disconnect(channel);
+    lock.lock();
+    try {
+      LOG.debug("{} disconnecting while in state {}", getLogPrefix(), state);
+      explicitlyDisconnected = true;
+      // No connection has been made yet.
+      if (state == State.NEW) {
+        // Use an EmbeddedChannel to return a valid and immediately completed ChannelFuture.
+        return new EmbeddedChannel().disconnect();
+      } else {
+        return connectFuture.channel().disconnect();
+      }
+    } finally {
+      lock.unlock();
+    }
   }
 
   /**
@@ -617,7 +595,7 @@ class Connection extends SimpleChannelUpstreamHandler {
         deferred.callback(null);
         return;
       }
-      final Throwable t = future.getCause();
+      final Throwable t = future.cause();
       if (t instanceof Exception) {
         deferred.callback(t);
       } else {
@@ -671,12 +649,13 @@ class Connection extends SimpleChannelUpstreamHandler {
    * Start sending the message to the server over the wire. It's crucial to not hold the lock
    * while doing so: see enqueueMessage() and KUDU-1894 for details.
    */
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void sendCallToWire(final RpcOutboundMessage msg) {
     assert !lock.isHeldByCurrentThread();
     if (LOG.isTraceEnabled()) {
       LOG.trace("{} sending {}", getLogPrefix(), msg);
     }
-    Channels.write(channel, msg);
+    channel.writeAndFlush(msg, channel.voidPromise());
   }
 
   /**
@@ -745,10 +724,24 @@ class Connection extends SimpleChannelUpstreamHandler {
   /** Initiate opening TCP connection to the server. */
   @GuardedBy("lock")
   private void connect() {
+    LOG.debug("{} connecting to peer", getLogPrefix());
     Preconditions.checkState(lock.isHeldByCurrentThread());
     Preconditions.checkState(state == State.NEW);
     state = State.CONNECTING;
-    connectFuture = channel.connect(serverInfo.getResolvedAddress());
+    connectFuture = bootstrap.connect(serverInfo.getResolvedAddress());
+    connectFuture.addListener(new GenericFutureListener<Future<? super Void>>() {
+      @Override
+      public void operationComplete(Future<? super Void> future) throws Exception {
+        if (future.isSuccess()) {
+          LOG.debug("{} Successfully connected to peer", getLogPrefix());
+          return;
+        }
+        // If the connection failed, pass the exception to exceptionCaught to be handled.
+        final Throwable t = future.cause();
+        exceptionCaught(null, t);
+      }
+    });
+    channel = (SocketChannel) connectFuture.channel();
   }
 
   /** Enumeration to represent the internal state of the Connection object. */
@@ -811,22 +804,23 @@ class Connection extends SimpleChannelUpstreamHandler {
     }
   }
 
-  /** The helper class to build the Netty's connection pipeline. */
-  private final class ConnectionPipeline extends DefaultChannelPipeline {
-    void init() {
-      super.addFirst("decode-frames", new LengthFieldBasedFrameDecoder(
-          KuduRpc.MAX_RPC_SIZE,
-          0, // length comes at offset 0
-          4, // length prefix is 4 bytes long
-          0, // no "length adjustment"
-          4 /* strip the length prefix */));
-      super.addLast("decode-inbound", new CallResponse.Decoder());
-      super.addLast("encode-outbound", new RpcOutboundMessage.Encoder());
+  private final class ConnectionChannelInitializer extends ChannelInitializer<Channel> {
+    @Override
+    public void initChannel(Channel ch) throws Exception {
+      ChannelPipeline pipeline = ch.pipeline();
+      pipeline.addFirst("decode-frames", new LengthFieldBasedFrameDecoder(
+              KuduRpc.MAX_RPC_SIZE,
+              0, // length comes at offset 0
+              4, // length prefix is 4 bytes long
+              0, // no "length adjustment"
+              4 /* strip the length prefix */));
+      pipeline.addLast("decode-inbound", new CallResponse.Decoder());
+      pipeline.addLast("encode-outbound", new RpcOutboundMessage.Encoder());
       // Add a socket read timeout handler to function as a timeout for negotiation.
       // The handler will be removed once the connection is negotiated.
-      super.addLast(NEGOTIATION_TIMEOUT_HANDLER, new ReadTimeoutHandler(
-          Connection.this.timer, NEGOTIATION_TIMEOUT_MS, TimeUnit.MILLISECONDS));
-      super.addLast("kudu-handler", Connection.this);
+      pipeline.addLast(NEGOTIATION_TIMEOUT_HANDLER,
+              new ReadTimeoutHandler(NEGOTIATION_TIMEOUT_MS, TimeUnit.MILLISECONDS));
+      pipeline.addLast("kudu-handler", Connection.this);
     }
   }
 }

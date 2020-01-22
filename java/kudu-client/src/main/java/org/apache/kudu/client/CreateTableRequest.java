@@ -22,8 +22,8 @@ import java.util.EnumSet;
 import java.util.List;
 
 import com.google.protobuf.Message;
+import io.netty.util.Timer;
 import org.apache.yetus.audience.InterfaceAudience;
-import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;

@@ -58,7 +58,7 @@ shadowJar {
   relocate "org.checkerframework", "org.apache.kudu.shaded.org.checkerframework"
   relocate "org.hamcrest", "org.apache.kudu.shaded.org.hamcrest"
   relocate "org.HdrHistogram", "org.apache.kudu.shaded.org.HdrHistogram"
-  relocate "org.jboss.netty", "org.apache.kudu.shaded.org.jboss.netty"
+  relocate "io.netty", "org.apache.kudu.shaded.io.netty"
   relocate "scopt", "org.apache.kudu.shaded.scopt"
 }
 

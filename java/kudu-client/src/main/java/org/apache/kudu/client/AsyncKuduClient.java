@@ -43,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -56,15 +57,18 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.Timer;
+import io.netty.util.TimerTask;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.channel.socket.nio.NioWorkerPool;
-import org.jboss.netty.util.HashedWheelTimer;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.Timer;
-import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -282,7 +286,7 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   static int FETCH_TABLETS_PER_RANGE_LOOKUP = 1000;
 
-  private final ClientSocketChannelFactory channelFactory;
+  private final Bootstrap bootstrap;
 
   /**
    * This map contains data cached from calls to the master's
@@ -365,7 +369,7 @@ public class AsyncKuduClient implements AutoCloseable {
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
-    this.channelFactory = b.createChannelFactory();
+    this.bootstrap = b.createBootstrap();
     this.masterAddresses = b.masterAddresses;
     this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
         MASTER_TABLE_NAME_PLACEHOLDER, null, null, 1, null);
@@ -377,8 +381,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.requestTracker = new RequestTracker(UUID.randomUUID().toString().replace("-", ""));
 
     this.securityContext = new SecurityContext();
-    this.connectionCache = new ConnectionCache(
-        securityContext, timer, channelFactory);
+    this.connectionCache = new ConnectionCache(securityContext, bootstrap);
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
     this.authzTokenCache = new AuthzTokenCache(this);
   }
@@ -2495,30 +2498,17 @@ public class AsyncKuduClient implements AutoCloseable {
   public Deferred<ArrayList<Void>> shutdown() {
     checkIsClosed();
     closed = true;
-    // This is part of step 3.  We need to execute this in its own thread
-    // because Netty gets stuck in an infinite loop if you try to shut it
-    // down from within a thread of its own thread pool.  They don't want
-    // to fix this so as a workaround we always shut Netty's thread pool
-    // down from another thread.
-    final class ShutdownThread extends Thread {
-      ShutdownThread() {
-        super("AsyncKuduClient@" + AsyncKuduClient.super.hashCode() + " shutdown");
-      }
-
-      @Override
-      public void run() {
-        // This terminates the Executor.
-        channelFactory.releaseExternalResources();
-      }
-    }
 
     // 3. Release all other resources.
     final class ReleaseResourcesCB implements Callback<ArrayList<Void>, ArrayList<Void>> {
       @Override
-      public ArrayList<Void> call(final ArrayList<Void> arg) {
+      @SuppressWarnings("FutureReturnValueIgnored")
+      public ArrayList<Void> call(final ArrayList<Void> arg) throws InterruptedException {
         LOG.debug("Releasing all remaining resources");
         timer.stop();
-        new ShutdownThread().start();
+        // AbstractEventExecutor sets a default `quietPeriod` of 2 seconds and a 15 second timeout.
+        // We disable to quiet period to prevent resource leaks due to clients running forever.
+        bootstrap.config().group().shutdownGracefully(0, 15, TimeUnit.SECONDS);
         return arg;
       }
 
@@ -2620,7 +2610,6 @@ public class AsyncKuduClient implements AutoCloseable {
   @InterfaceStability.Evolving
   public static final class AsyncKuduClientBuilder {
     private static final int DEFAULT_MASTER_PORT = 7051;
-    private static final int DEFAULT_BOSS_COUNT = 1;
     private static final int DEFAULT_WORKER_COUNT = 2 * Runtime.getRuntime().availableProcessors();
 
     private final List<HostAndPort> masterAddresses;
@@ -2629,9 +2618,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     private final HashedWheelTimer timer =
         new HashedWheelTimer(new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
-    private Executor bossExecutor;
     private Executor workerExecutor;
-    private int bossCount = DEFAULT_BOSS_COUNT;
     private int workerCount = DEFAULT_WORKER_COUNT;
     private boolean statisticsDisabled = false;
 
@@ -2707,33 +2694,43 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     /**
-     * Set the executors which will be used for the embedded Netty boss and workers.
-     * Optional.
-     * If not provided, uses a simple cached threadpool. If either argument is null,
-     * then such a thread pool will be used in place of that argument.
-     * Note: executor's max thread number must be greater or equal to corresponding
-     * worker count, or netty cannot start enough threads, and client will get stuck.
-     * If not sure, please just use CachedThreadPool.
+     * @deprecated the bossExecutor is no longer used and will have no effect if provided
      */
+    @Deprecated
     public AsyncKuduClientBuilder nioExecutors(Executor bossExecutor, Executor workerExecutor) {
-      this.bossExecutor = bossExecutor;
       this.workerExecutor = workerExecutor;
       return this;
     }
 
     /**
-     * Set the maximum number of boss threads.
+     * Set the executor which will be used for the embedded Netty workers.
+     *
      * Optional.
-     * If not provided, 1 is used.
+     * If not provided, uses a simple cached threadpool. If workerExecutor is null,
+     * then such a thread pool will be used.
+     * Note: executor's max thread number must be greater or equal to corresponding
+     * worker count, or netty cannot start enough threads, and client will get stuck.
+     * If not sure, please just use CachedThreadPool.
      */
-    public AsyncKuduClientBuilder bossCount(int bossCount) {
-      Preconditions.checkArgument(bossCount > 0, "bossCount should be greater than 0");
-      this.bossCount = bossCount;
+    public AsyncKuduClientBuilder nioExecutor(Executor workerExecutor) {
+      this.workerExecutor = workerExecutor;
       return this;
     }
 
     /**
-     * Set the maximum number of worker threads.
+     * @deprecated the bossExecutor is no longer used and will have no effect if provided
+     */
+    @Deprecated
+    public AsyncKuduClientBuilder bossCount(int bossCount) {
+      LOG.info("bossCount is deprecated");
+      return this;
+    }
+
+    /**
+     * Set the maximum number of Netty worker threads.
+     * A worker thread performs non-blocking read and write for one or more
+     * Netty Channels in a non-blocking mode.
+     *
      * Optional.
      * If not provided, (2 * the number of available processors) is used. If
      * this client instance will be used on a machine running many client
@@ -2748,31 +2745,30 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     /**
-     * Creates the channel factory for Netty. The user can specify the executors, but
+     * Creates the client bootstrap for Netty. The user can specify the executor, but
      * if they don't, we'll use a simple thread pool.
      */
-    private NioClientSocketChannelFactory createChannelFactory() {
-      Executor boss = bossExecutor;
+    private Bootstrap createBootstrap() {
       Executor worker = workerExecutor;
-      if (boss == null || worker == null) {
-        Executor defaultExec = Executors.newCachedThreadPool(
+      if (worker == null) {
+        worker = Executors.newCachedThreadPool(
             new ThreadFactoryBuilder()
                 .setNameFormat("kudu-nio-%d")
                 .setDaemon(true)
                 .build());
-        if (boss == null) {
-          boss = defaultExec;
-        }
-        if (worker == null) {
-          worker = defaultExec;
-        }
       }
-      // Share the timer with the socket channel factory so that it does not
-      // create an internal timer with a non-daemon thread.
-      return new NioClientSocketChannelFactory(boss,
-                                               bossCount,
-                                               new NioWorkerPool(worker, workerCount),
-                                               timer);
+      EventLoopGroup workerGroup = new NioEventLoopGroup(workerCount, worker);
+      Bootstrap b = new Bootstrap();
+      b.group(workerGroup);
+      b.channel(NioSocketChannel.class);
+      b.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 60000);
+      b.option(ChannelOption.TCP_NODELAY, true);
+      // Unfortunately there is no way to override the keep-alive timeout in
+      // Java since the JRE doesn't expose any way to call setsockopt() with
+      // TCP_KEEPIDLE. And of course the default timeout is >2h. Sigh.
+      b.option(ChannelOption.SO_KEEPALIVE, true);
+      b.option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
+      return b;
     }
 
     /**

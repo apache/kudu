@@ -84,6 +84,7 @@ public class TestAuthTokenReacquire {
     asyncClient = harness.getAsyncClient();
   }
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void dropConnections() {
     for (Connection c : asyncClient.getConnectionListCopy()) {
       c.disconnect();
@@ -172,7 +173,7 @@ public class TestAuthTokenReacquire {
     }
     if (!exceptions.isEmpty()) {
       for (Map.Entry<Integer, Throwable> e : exceptions.entrySet()) {
-        LOG.error("exception in thread {}: {}", e.getKey(), e.getValue());
+        LOG.error(String.format("exception in thread %s:", e.getKey()), e.getValue());
       }
       fail("test failed: unexpected errors");
     }

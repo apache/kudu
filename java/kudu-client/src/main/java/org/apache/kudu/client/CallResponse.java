@@ -19,11 +19,11 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.DefaultByteBufHolder;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.yetus.audience.InterfaceAudience;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.handler.codec.oneone.OneToOneDecoder;
 
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.util.Slice;
@@ -33,8 +33,8 @@ import org.apache.kudu.util.Slice;
  * access to sidecars and decoded protobufs from the message.
  */
 @InterfaceAudience.Private
-final class CallResponse {
-  private final ChannelBuffer buf;
+final class CallResponse extends DefaultByteBufHolder {
+  private final ByteBuf buf;
   private final RpcHeader.ResponseHeader header;
   private final int totalResponseSize;
 
@@ -47,11 +47,12 @@ final class CallResponse {
    * read from yet, and will only be accessed by this class.
    *
    * Afterwards, this constructs the RpcHeader from the buffer.
-   * @param buf Channel buffer which call response reads from.
+   * @param buf Byte buffer which call response reads from.
    * @throws IndexOutOfBoundsException if any length prefix inside the
    * response points outside the bounds of the buffer.
    */
-  CallResponse(final ChannelBuffer buf) {
+  CallResponse(final ByteBuf buf) {
+    super(buf);
     this.buf = buf;
 
     this.totalResponseSize = buf.readableBytes();
@@ -142,7 +143,7 @@ final class CallResponse {
 
   // After checking the length, generates a slice for the next 'length'
   // bytes of 'buf'. Advances the buffer's read index by 'length' bytes.
-  private static Slice nextBytes(final ChannelBuffer buf, final int length) {
+  private static Slice nextBytes(final ByteBuf buf, final int length) {
     byte[] payload;
     int offset;
     if (buf.hasArray()) {  // Zero copy.
@@ -158,17 +159,22 @@ final class CallResponse {
   }
 
   /**
-   * Netty channel handler which receives incoming frames (ChannelBuffers)
+   * Netty decoder which receives incoming frames (ByteBuf)
    * and constructs CallResponse objects.
    */
-  static class Decoder extends OneToOneDecoder {
+  static class Decoder extends ByteToMessageDecoder {
+
+    Decoder() {
+      // Only one message is decoded on each read.
+      setSingleDecode(true);
+    }
+
     @Override
-    protected Object decode(ChannelHandlerContext ctx, Channel channel, Object message)
-        throws Exception {
-      if (!(message instanceof ChannelBuffer)) {
-        return message;
-      }
-      return new CallResponse((ChannelBuffer)message);
+    protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) {
+      // Increase the reference count because CallResponse holds onto and uses the ByteBuf.
+      // https://netty.io/wiki/reference-counted-objects.html
+      msg.retain();
+      out.add(new CallResponse(msg));
     }
   }
 

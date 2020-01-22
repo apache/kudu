@@ -22,8 +22,8 @@ import java.util.List;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import io.netty.util.Timer;
 import org.apache.yetus.audience.InterfaceAudience;
-import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Common.KeyRangePB;
 import org.apache.kudu.security.Token;

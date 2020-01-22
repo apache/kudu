@@ -19,9 +19,9 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.MessageToByteEncoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,21 +61,15 @@ class RpcOutboundMessage {
   /**
    * Netty encoder implementation to serialize outbound messages.
    */
-  static class Encoder extends OneToOneEncoder {
+  static class Encoder extends MessageToByteEncoder<RpcOutboundMessage> {
+
     @Override
-    protected Object encode(ChannelHandlerContext ctx, Channel chan,
-        Object obj) throws Exception {
-      if (!(obj instanceof RpcOutboundMessage)) {
-        return obj;
-      }
-      RpcOutboundMessage msg = (RpcOutboundMessage)obj;
+    protected void encode(ChannelHandlerContext ctx, RpcOutboundMessage msg, ByteBuf out) {
       if (LOG.isTraceEnabled()) {
-        LOG.trace("{}: sending RPC {}", chan, msg);
+        LOG.trace("{}: sending RPC {}", ctx.channel(), msg);
       }
-      // TODO(todd): move this impl into this class and remove external
-      // callers.
-      return KuduRpc.toChannelBuffer(msg.getHeaderBuilder().build(),
-          msg.getBody());
+      // TODO(todd): move this impl into this class and remove external callers.
+      KuduRpc.toByteBuf(out, msg.getHeaderBuilder().build(), msg.getBody());
     }
   }
 }

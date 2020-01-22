@@ -189,6 +189,7 @@ public class ITClient {
      * @return true if successfully completed or didn't find a server to disconnect, false it it
      * encountered a failure
      */
+    @SuppressWarnings("FutureReturnValueIgnored")
     private boolean disconnectNode() {
       try {
         final List<Connection> connections = harness.getAsyncClient().getConnectionListCopy();

@@ -39,12 +39,12 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.util.Timeout;
+import io.netty.util.Timer;
+import io.netty.util.TimerTask;
 import org.apache.yetus.audience.InterfaceAudience;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.Timer;
-import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -426,26 +426,22 @@ public abstract class KuduRpc<R> {
   }
 
   // TODO(todd): make this private and have all RPCs send RpcOutboundMessage
-  // instances instead of ChannelBuffers
-  static ChannelBuffer toChannelBuffer(Message header, Message pb) {
+  //  instances instead of ByteBuf
+  static void toByteBuf(ByteBuf out, Message header, Message pb) {
     int totalSize = IPCUtil.getTotalSizeWhenWrittenDelimited(header, pb);
-    byte[] buf = new byte[totalSize + 4];
-    ChannelBuffer chanBuf = ChannelBuffers.wrappedBuffer(buf);
-    chanBuf.clear();
-    chanBuf.writeInt(totalSize);
-    final CodedOutputStream out = CodedOutputStream.newInstance(buf, 4, totalSize);
-    try {
-      out.writeUInt32NoTag(header.getSerializedSize());
-      header.writeTo(out);
+    out.capacity(totalSize + 4);
+    out.writeInt(totalSize);
+    try (ByteBufOutputStream bos = new ByteBufOutputStream(out)) {
+      CodedOutputStream cos = CodedOutputStream.newInstance(bos, totalSize);
+      cos.writeUInt32NoTag(header.getSerializedSize());
+      header.writeTo(cos);
 
-      out.writeUInt32NoTag(pb.getSerializedSize());
-      pb.writeTo(out);
-      out.checkNoSpaceLeft();
+      cos.writeUInt32NoTag(pb.getSerializedSize());
+      pb.writeTo(cos);
+      cos.flush();
     } catch (IOException e) {
       throw new RuntimeException("Cannot serialize the following message " + pb);
     }
-    chanBuf.writerIndex(buf.length);
-    return chanBuf;
   }
 
   /**

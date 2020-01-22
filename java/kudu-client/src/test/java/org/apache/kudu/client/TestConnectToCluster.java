@@ -17,12 +17,12 @@
 
 package org.apache.kudu.client;
 
-import java.util.List;
-
 import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.FOLLOWER;
 import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.LEADER;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
+
+import java.util.List;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
