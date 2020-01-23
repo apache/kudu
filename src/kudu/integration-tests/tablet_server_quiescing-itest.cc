@@ -16,6 +16,7 @@
 // under the License.
 
 #include <atomic>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -67,6 +68,7 @@ using kudu::client::KuduScanner;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::tools::RunActionPrependStdoutStderr;
+using kudu::tools::RunKuduTool;
 using kudu::tserver::MiniTabletServer;
 using std::string;
 using std::unique_ptr;
@@ -359,7 +361,7 @@ TEST_F(TServerQuiescingITest, TestQuiesceLeaderWhileFollowersCatchingUp) {
 // Basic test that we see the quiescing state change in the server.
 TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
   NO_FATALS(StartCluster(1));
-  const auto* ts = cluster_->mini_tablet_server(0);
+  auto* ts = cluster_->mini_tablet_server(0);
   auto rw_workload = CreateFaultIntolerantRWWorkload();
   rw_workload->Setup();
   ASSERT_FALSE(ts->server()->quiescing());
@@ -368,10 +370,42 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
     ASSERT_OK(RunActionPrependStdoutStderr(
         Substitute("tserver quiesce start $0", ts->bound_rpc_addr().ToString())));
     ASSERT_TRUE(ts->server()->quiescing());
+
+    // Running the status tool should report what we expect and not change the
+    // state.
+    string stdout;
+    ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
+                          &stdout));
+    ASSERT_STR_CONTAINS(stdout,
+        " Quiescing | Tablet leader count | Active scanner count\n"
+        "-----------+---------------------+----------------------\n"
+        " true      |       1             |       0");
+    ASSERT_TRUE(ts->server()->quiescing());
   }
   ASSERT_OK(RunActionPrependStdoutStderr(
       Substitute("tserver quiesce stop $0", ts->bound_rpc_addr().ToString())));
+  string stdout;
+  ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
+                        &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+      " Quiescing | Tablet leader count | Active scanner count\n"
+      "-----------+---------------------+----------------------\n"
+      " false     |       1             |       0");
   ASSERT_FALSE(ts->server()->quiescing());
+
+  // Now try getting the status with some scanners.
+  rw_workload->Start();
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
+                          &stdout));
+    ASSERT_STR_CONTAINS(stdout, Substitute(
+        " Quiescing | Tablet leader count | Active scanner count\n"
+        "-----------+---------------------+----------------------\n"
+        " false     |       1             |       $0",
+        ts->server()->scanner_manager()->CountActiveScanners()));
+  });
+  ASSERT_FALSE(ts->server()->quiescing());
+  NO_FATALS(rw_workload->StopAndJoin());
 
   // Now try starting again but expecting errors.
   Status s = RunActionPrependStdoutStderr(

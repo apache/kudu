@@ -163,11 +163,16 @@ message QuiesceTabletServerResponsePB {
   // The error, if an error occurred with this request.
   optional TabletServerErrorPB error = 1;
 
+  // Returns whether the tablet server after having processed the request is
+  // quiescing. This field is returned regardless of whether the server's
+  // quiescing state was changed.
+  optional bool is_quiescing = 2;
+
   // The number of active scanners on the given tablet server. Only returned if
   // stats were requested.
-  optional int32 num_active_scanners = 2;
+  optional int32 num_active_scanners = 3;
 
   // The number of tablet leaders hosted on the given tablet server. Only
   // returned if stats were requested.
-  optional int32 num_leaders = 3;
+  optional int32 num_leaders = 4;
 }

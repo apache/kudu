@@ -1029,6 +1029,7 @@ void TabletServiceAdminImpl::Quiesce(const QuiesceTabletServerRequestPB* req,
     LOG(INFO) << Substitute("Tablet server has $0 leaders and $1 scanners",
         resp->num_leaders(), resp->num_active_scanners());
   }
+  resp->set_is_quiescing(server_->quiescing());
   context->RespondSuccess();
 }
 

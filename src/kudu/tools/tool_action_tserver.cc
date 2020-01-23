@@ -31,6 +31,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
@@ -269,13 +270,31 @@ Status StopQuiescingTServer(const RunnerContext& context) {
   req.set_return_stats(false);
   QuiesceTabletServerResponsePB resp;
   RpcController rpc;
-
   RETURN_NOT_OK(proxy->Quiesce(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
-
   return Status::OK();
+}
+
+Status QuiescingStatus(const RunnerContext& context) {
+  const auto& address = FindOrDie(context.required_args, kTServerAddressArg);
+  unique_ptr<TabletServerAdminServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, tserver::TabletServer::kDefaultPort, &proxy));
+
+  QuiesceTabletServerRequestPB req;
+  req.set_return_stats(true);
+  QuiesceTabletServerResponsePB resp;
+  RpcController rpc;
+  RETURN_NOT_OK(proxy->Quiesce(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  DataTable table({});
+  table.AddColumn("Quiescing", { resp.is_quiescing() ? "true" : "false" });
+  table.AddColumn("Tablet leader count", { IntToString(resp.num_leaders()) });
+  table.AddColumn("Active scanner count", { IntToString(resp.num_active_scanners()) });
+  return table.PrintTo(cout);
 }
 
 } // anonymous namespace
@@ -356,6 +375,12 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddOptionalParameter("timeout_ms")
       .Build();
 
+  unique_ptr<Action> quiescing_status =
+      ActionBuilder("status", &QuiescingStatus)
+      .Description("Output information about the quiescing state of a Tablet "
+                   "Server.")
+      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
+      .Build();
   unique_ptr<Action> start_quiescing =
       ActionBuilder("start", &StartQuiescingTServer)
       .Description("Start quiescing the given Tablet Server. While a Tablet "
@@ -372,6 +397,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .Build();
   unique_ptr<Mode> quiesce = ModeBuilder("quiesce")
       .Description("Operate on the quiescing state of a Kudu Tablet Server.")
+      .AddAction(std::move(quiescing_status))
       .AddAction(std::move(start_quiescing))
       .AddAction(std::move(stop_quiescing))
       .Build();

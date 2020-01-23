@@ -1180,6 +1180,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kTServerQuiesceModeRegexes = {
+        "status.*Output information about the quiescing state",
         "start.*Start quiescing the given Tablet Server",
         "stop.*Stop quiescing a Tablet Server",
     };
