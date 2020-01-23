@@ -63,7 +63,7 @@ typedef OutboundCall::Phase Phase;
 Connection::Connection(ReactorThread *reactor_thread,
                        Sockaddr remote,
                        unique_ptr<Socket> socket,
-                       Direction direction,
+                       ConnectionDirection direction,
                        CredentialsPolicy policy)
     : reactor_thread_(reactor_thread),
       remote_(remote),
@@ -88,7 +88,7 @@ void Connection::EpollRegister(ev::loop_ref& loop) {
   write_io_.set(loop);
   write_io_.set(socket_->GetFd(), ev::WRITE);
   write_io_.set<Connection, &Connection::WriteHandler>(this);
-  if (direction_ == CLIENT && negotiation_complete_) {
+  if (direction_ == ConnectionDirection::CLIENT && negotiation_complete_) {
     write_io_.start();
   }
   read_io_.set(loop);
@@ -308,7 +308,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
 
 void Connection::QueueOutboundCall(shared_ptr<OutboundCall> call) {
   DCHECK(call);
-  DCHECK_EQ(direction_, CLIENT);
+  DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
   DCHECK(reactor_thread_->IsCurrentThread());
 
   if (PREDICT_FALSE(!shutdown_status_.ok())) {
@@ -455,7 +455,7 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   // is set, but in some circumstances may also be called by the
   // reactor thread (e.g. if the service has shut down)
 
-  DCHECK_EQ(direction_, SERVER);
+  DCHECK_EQ(direction_, ConnectionDirection::SERVER);
 
   // If the connection is torn down, then the QueueOutbound() call that
   // eventually runs in the reactor thread will take care of calling
@@ -480,7 +480,7 @@ void Connection::set_confidential(bool is_confidential) {
 }
 
 bool Connection::SatisfiesCredentialsPolicy(CredentialsPolicy policy) const {
-  DCHECK_EQ(direction_, CLIENT);
+  DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
   return (policy == CredentialsPolicy::ANY_CREDENTIALS) ||
       (policy == credentials_policy_);
 }
@@ -520,9 +520,9 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
     }
     DVLOG(3) << ToString() << ": finished reading " << inbound_->data().size() << " bytes";
 
-    if (direction_ == CLIENT) {
+    if (direction_ == ConnectionDirection::CLIENT) {
       HandleCallResponse(std::move(inbound_));
-    } else if (direction_ == SERVER) {
+    } else if (direction_ == ConnectionDirection::SERVER) {
       HandleIncomingCall(std::move(inbound_));
     } else {
       LOG(FATAL) << "Invalid direction: " << direction_;
@@ -680,7 +680,7 @@ std::string Connection::ToString() const {
   // which might concurrently change from another thread.
   return strings::Substitute(
     "$0 $1",
-    direction_ == SERVER ? "server connection from" : "client connection to",
+    direction_ == ConnectionDirection::SERVER ? "server connection from" : "client connection to",
     remote_.ToString());
 }
 
@@ -738,7 +738,7 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
     resp->set_state(RpcConnectionPB::NEGOTIATING);
   }
 
-  if (direction_ == CLIENT) {
+  if (direction_ == ConnectionDirection::CLIENT) {
     for (const car_map_t::value_type& entry : awaiting_response_) {
       CallAwaitingResponse *c = entry.second;
       if (c->call) {
@@ -747,7 +747,7 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
     }
 
     resp->set_outbound_queue_size(num_queued_outbound_transfers());
-  } else if (direction_ == SERVER) {
+  } else if (direction_ == ConnectionDirection::SERVER) {
     if (negotiation_complete_) {
       // It's racy to dump credentials while negotiating, since the Connection
       // object is owned by the negotiation thread at that point.

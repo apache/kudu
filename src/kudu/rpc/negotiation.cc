@@ -288,7 +288,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                                  MonoTime deadline) {
   Status s;
   unique_ptr<ErrorStatusPB> rpc_error;
-  if (conn->direction() == Connection::SERVER) {
+  if (conn->direction() == ConnectionDirection::SERVER) {
     s = DoServerNegotiation(conn.get(), authentication, encryption, deadline);
   } else {
     s = DoClientNegotiation(conn.get(), authentication, encryption, deadline,
@@ -297,7 +297,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
 
   if (PREDICT_FALSE(!s.ok())) {
     string msg = Substitute("$0 connection negotiation failed: $1",
-                            conn->direction() == Connection::SERVER ? "Server" : "Client",
+                            conn->direction() == ConnectionDirection::SERVER ? "Server" : "Client",
                             conn->ToString());
     s = s.CloneAndPrepend(msg);
   }
@@ -316,7 +316,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
     }
   }
 
-  if (conn->direction() == Connection::SERVER && s.IsNotAuthorized()) {
+  if (conn->direction() == ConnectionDirection::SERVER && s.IsNotAuthorized()) {
     LOG(WARNING) << "Unauthorized connection attempt: " << s.message().ToString();
   }
   conn->CompleteNegotiation(std::move(s), std::move(rpc_error));
