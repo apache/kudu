@@ -22,10 +22,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -39,7 +39,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -66,6 +65,7 @@
 #include "kudu/util/thread.h"
 
 DEFINE_bool(skip_scans, false, "Whether to skip the scan part of the test.");
+DEFINE_int32(num_tservers, 1, "Number of tablet servers in the test cluster");
 
 // Test size parameters
 DEFINE_int32(concurrent_inserts, -1, "Number of inserting clients to launch");
@@ -146,7 +146,7 @@ class FullStackInsertScanTest : public KuduTest {
     ASSERT_GE(kNumInsertClients, 0);
     ASSERT_GE(kNumInsertsPerClient, 0);
     NO_FATALS(InitCluster());
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .set_range_partition_columns({ "key" })
@@ -172,7 +172,9 @@ class FullStackInsertScanTest : public KuduTest {
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver, config client options
-    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = FLAGS_num_tservers;
+    cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder builder;
     builder.add_master_server_addr(
@@ -368,7 +370,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   char randstr[kRandomStrMaxLength + 1];
   // Insert in the id's key range
   for (int64_t key = start; key < end; ++key) {
-    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    unique_ptr<KuduInsert> insert(table->NewInsert());
     RandomRow(&rng, insert->mutable_row(), randstr, key, id);
     CHECK_OK(session->Apply(insert.release()));
 
