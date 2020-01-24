@@ -14,9 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_CURL_UTIL_H
-#define KUDU_UTIL_CURL_UTIL_H
 
+#pragma once
+
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -89,12 +90,15 @@ class EasyCurl {
   }
 
  private:
+  static const constexpr size_t kErrBufSize = 256;
+
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
   Status DoRequest(const std::string& url,
                    const std::string* post_data,
                    faststring* dst,
                    const std::vector<std::string>& headers = {});
+
   CURL* curl_;
 
   std::string custom_method_;
@@ -113,9 +117,9 @@ class EasyCurl {
 
   int num_connects_ = 0;
 
+  char errbuf_[kErrBufSize];
+
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };
 
 } // namespace kudu
-
-#endif /* KUDU_UTIL_CURL_UTIL_H */
