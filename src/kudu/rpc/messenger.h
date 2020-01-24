@@ -30,7 +30,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/connection.h"
+#include "kudu/rpc/connection_direction.h"
 #include "kudu/security/security_flags.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
@@ -297,7 +297,7 @@ class Messenger {
   RpcAuthentication authentication() const { return authentication_; }
   RpcEncryption encryption() const { return encryption_; }
 
-  ThreadPool* negotiation_pool(Connection::Direction dir);
+  ThreadPool* negotiation_pool(ConnectionDirection dir);
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
 

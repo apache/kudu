@@ -33,6 +33,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/acceptor_pool.h"
+#include "kudu/rpc/connection_direction.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/outbound_call.h"
@@ -489,12 +490,12 @@ const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_nam
   return service;
 }
 
-ThreadPool* Messenger::negotiation_pool(Connection::Direction dir) {
+ThreadPool* Messenger::negotiation_pool(ConnectionDirection dir) {
   switch (dir) {
-    case Connection::CLIENT: return client_negotiation_pool_.get();
-    case Connection::SERVER: return server_negotiation_pool_.get();
+    case ConnectionDirection::CLIENT: return client_negotiation_pool_.get();
+    case ConnectionDirection::SERVER: return server_negotiation_pool_.get();
   }
-  DCHECK(false) << "Unknown Connection::Direction value: " << dir;
+  DCHECK(false) << "Unknown ConnectionDirection value: " << dir;
   return nullptr;
 }
 

@@ -30,7 +30,7 @@
   if (testing::Test::HasFatalFailure()) { return; }
 
 #define ASSERT_OK(status) do { \
-  const Status& _s = status;        \
+  const auto& _s = status;        \
   if (_s.ok()) { \
     SUCCEED(); \
   } else { \
@@ -39,7 +39,7 @@
 } while (0);
 
 #define EXPECT_OK(status) do { \
-  const Status& _s = status; \
+  const auto& _s = status; \
   if (_s.ok()) { \
     SUCCEED(); \
   } else { \
@@ -50,7 +50,7 @@
 // Like the above, but doesn't record successful
 // tests.
 #define ASSERT_OK_FAST(status) do { \
-  const Status& _s = status; \
+  const auto& _s = status; \
   if (!_s.ok()) { \
     FAIL() << "Bad status: " << _s.ToString(); \
   } \

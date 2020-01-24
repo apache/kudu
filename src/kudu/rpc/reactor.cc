@@ -507,7 +507,7 @@ bool ReactorThread::FindConnection(const ConnectionId& conn_id,
       if (c->Idle()) {
         // Shutdown idle connections to the target destination. Non-idle ones
         // will be taken care of later by the idle connection scanner.
-        DCHECK_EQ(Connection::CLIENT, c->direction());
+        DCHECK_EQ(ConnectionDirection::CLIENT, c->direction());
         c->Shutdown(Status::NetworkError("connection is closed due to non-reuse policy"));
         it = client_conns_.erase(it);
         continue;
@@ -551,7 +551,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
 
   // Register the new connection in our map.
   *conn = new Connection(
-      this, conn_id.remote(), std::move(new_socket), Connection::CLIENT, cred_policy);
+      this, conn_id.remote(), std::move(new_socket), ConnectionDirection::CLIENT, cred_policy);
   (*conn)->set_outbound_connection_id(conn_id);
 
   // Kick off blocking client connection negotiation.
@@ -649,7 +649,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
   conn->Shutdown(conn_status, std::move(rpc_error));
 
   // Unlink connection from lists.
-  if (conn->direction() == Connection::CLIENT) {
+  if (conn->direction() == ConnectionDirection::CLIENT) {
     const auto range = client_conns_.equal_range(conn->outbound_connection_id());
     CHECK(range.first != range.second) << "Couldn't find connection " << conn->ToString();
     // The client_conns_ container is a multi-map.
@@ -660,7 +660,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
       }
       ++it;
     }
-  } else if (conn->direction() == Connection::SERVER) {
+  } else if (conn->direction() == ConnectionDirection::SERVER) {
     auto it = server_conns_.begin();
     while (it != server_conns_.end()) {
       if ((*it).get() == conn) {
@@ -832,7 +832,7 @@ void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   unique_ptr<Socket> new_socket(new Socket(socket->Release()));
   auto task = new RegisterConnectionTask(
-      new Connection(&thread_, remote, std::move(new_socket), Connection::SERVER));
+      new Connection(&thread_, remote, std::move(new_socket), ConnectionDirection::SERVER));
   ScheduleReactorTask(task);
 }
 

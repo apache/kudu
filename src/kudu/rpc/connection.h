@@ -35,6 +35,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/connection_direction.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -77,13 +78,6 @@ enum class CredentialsPolicy;
 //
 class Connection : public RefCountedThreadSafe<Connection> {
  public:
-  enum Direction {
-    // This host is sending calls via this connection.
-    CLIENT,
-    // This host is receiving calls via this connection.
-    SERVER
-  };
-
   // Create a new Connection.
   // reactor_thread: the reactor that owns us.
   // remote: the address of the remote end
@@ -92,7 +86,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   Connection(ReactorThread *reactor_thread,
              Sockaddr remote,
              std::unique_ptr<Socket> socket,
-             Direction direction,
+             ConnectionDirection direction,
              CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS);
 
   // Set underlying socket to non-blocking (or blocking) mode.
@@ -138,14 +132,14 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   // Set the user credentials for an outbound connection.
   void set_outbound_connection_id(ConnectionId conn_id) {
-    DCHECK_EQ(direction_, CLIENT);
+    DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
     DCHECK(!outbound_connection_id_);
     outbound_connection_id_ = std::move(conn_id);
   }
 
   // Get the user credentials which will be used to log in.
   const ConnectionId& outbound_connection_id() const {
-    DCHECK_EQ(direction_, CLIENT);
+    DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
     DCHECK(outbound_connection_id_);
     return *outbound_connection_id_;
   }
@@ -182,7 +176,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Safe to be called from other threads.
   std::string ToString() const;
 
-  Direction direction() const { return direction_; }
+  ConnectionDirection direction() const { return direction_; }
 
   Socket* socket() { return socket_.get(); }
 
@@ -211,25 +205,25 @@ class Connection : public RefCountedThreadSafe<Connection> {
   }
 
   void set_remote_user(RemoteUser user) {
-    DCHECK_EQ(direction_, SERVER);
+    DCHECK_EQ(direction_, ConnectionDirection::SERVER);
     remote_user_ = std::move(user);
   }
 
   const RemoteUser& remote_user() const {
-    DCHECK_EQ(direction_, SERVER);
+    DCHECK_EQ(direction_, ConnectionDirection::SERVER);
     return remote_user_;
   }
 
   // Whether the connection is scheduled for shutdown.
   bool scheduled_for_shutdown() const {
-    DCHECK_EQ(direction_, CLIENT);
+    DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
     return scheduled_for_shutdown_;
   }
 
   // Mark the connection as scheduled to be shut down. Reactor does not dispatch
   // new calls on such a connection.
   void set_scheduled_for_shutdown() {
-    DCHECK_EQ(direction_, CLIENT);
+    DCHECK_EQ(direction_, ConnectionDirection::CLIENT);
     scheduled_for_shutdown_ = true;
   }
 
@@ -315,7 +309,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   RemoteUser remote_user_;
 
   // whether we are client or server
-  Direction direction_;
+  ConnectionDirection direction_;
 
   // The last time we read or wrote from the socket.
   MonoTime last_activity_time_;
