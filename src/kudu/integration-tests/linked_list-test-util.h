@@ -15,7 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#pragma once
+
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <list>
 #include <memory>
@@ -32,14 +35,12 @@
 #include "kudu/client/write_op.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/hdr_histogram.h"
@@ -230,7 +231,7 @@ class LinkedListChainGenerator {
     int64_t this_key = (Rand64() << 16) | chain_idx_;
     int64_t ts = GetCurrentTimeMicros();
 
-    gscoped_ptr<client::KuduInsert> insert(table->NewInsert());
+    std::unique_ptr<client::KuduInsert> insert(table->NewInsert());
     CHECK_OK(insert->mutable_row()->SetInt64(kKeyColumnName, this_key));
     CHECK_OK(insert->mutable_row()->SetInt64(kInsertTsColumnName, ts));
     CHECK_OK(insert->mutable_row()->SetInt64(kLinkColumnName, prev_key_));
@@ -364,7 +365,7 @@ class PeriodicWebUIChecker {
 
   ~PeriodicWebUIChecker() {
     LOG(INFO) << "Shutting down curl thread";
-    is_running_.Store(false);
+    is_running_ = false;
     if (checker_) {
       checker_->Join();
     }
@@ -376,12 +377,12 @@ class PeriodicWebUIChecker {
     // Set some timeout so that if the page deadlocks, we fail the test.
     curl.set_timeout(MonoDelta::FromSeconds(120));
     faststring dst;
-    LOG(INFO) << "Curl thread will poll the following URLs every " << period_.ToMilliseconds()
-        << " ms: ";
-    for (std::string url : urls_) {
+    LOG(INFO) << strings::Substitute(
+        "curl thread will poll the following URLs every $0", period_.ToString());
+    for (const auto& url : urls_) {
       LOG(INFO) << url;
     }
-    while (is_running_.Load()) {
+    while (is_running_) {
       // Poll all of the URLs.
       const MonoTime start = MonoTime::Now();
       bool compression_enabled = true;
@@ -393,7 +394,9 @@ class PeriodicWebUIChecker {
         if (s.ok()) {
           CHECK_GT(dst.length(), 0);
         }
-        CHECK(!s.IsTimedOut()) << "timed out fetching url " << url;
+        CHECK(!s.IsTimedOut()) << strings::Substitute(
+            "could not fetch $0 ($1 compression, $2 connections): $3",
+            url, compression_enabled ? "gzip" : "no", curl.num_connects(), s.ToString());
       }
       // Sleep until the next period
       const MonoDelta elapsed = MonoTime::Now() - start;
@@ -405,7 +408,7 @@ class PeriodicWebUIChecker {
   }
 
   const MonoDelta period_;
-  AtomicBool is_running_;
+  std::atomic<bool> is_running_;
   scoped_refptr<Thread> checker_;
   std::vector<std::string> urls_;
 };
@@ -460,7 +463,7 @@ std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
 std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
   std::vector<int64_t> ret;
   ret.reserve(num_tablets_ - 1);
-  int64_t increment = kint64max / num_tablets_;
+  const int64_t increment = kint64max / num_tablets_;
   for (int64_t i = 1; i < num_tablets_; i++) {
     ret.push_back(i * increment);
   }
@@ -468,7 +471,8 @@ std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
 }
 
 Status LinkedListTester::CreateLinkedListTable() {
-  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  std::unique_ptr<client::KuduTableCreator> table_creator(
+      client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   RETURN_NOT_OK_PREPEND(table_creator->table_name(table_name_)
@@ -495,16 +499,16 @@ Status LinkedListTester::LoadLinkedList(
   MonoTime start = MonoTime::Now();
   MonoTime deadline = start + run_for;
 
-  client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<client::KuduSession> session(client_->NewSession());
   session->SetTimeoutMillis(60000 /* 60 seconds */);
   RETURN_NOT_OK_PREPEND(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH),
                         "Couldn't set flush mode");
 
   ScopedRowUpdater updater(table.get());
-  std::vector<LinkedListChainGenerator*> chains;
-  ElementDeleter d(&chains);
+  std::vector<std::unique_ptr<LinkedListChainGenerator>> chains;
+  chains.reserve(num_chains_);
   for (int i = 0; i < num_chains_; i++) {
-    chains.push_back(new LinkedListChainGenerator(i));
+    chains.emplace_back(new LinkedListChainGenerator(i));
   }
 
   MonoDelta sample_interval = MonoDelta::FromMicroseconds(run_for.ToMicroseconds() / num_samples);
@@ -536,7 +540,7 @@ Status LinkedListTester::LoadLinkedList(
       }
       return Status::OK();
     }
-    for (LinkedListChainGenerator* chain : chains) {
+    for (const auto& chain : chains) {
       RETURN_NOT_OK_PREPEND(chain->GenerateNextInsert(table.get(), session.get()),
                             "Unable to generate next insert into linked list chain");
     }
@@ -550,7 +554,7 @@ Status LinkedListTester::LoadLinkedList(
 
     if (enable_mutation_) {
       // Rows have been inserted; they're now safe to update.
-      for (LinkedListChainGenerator* chain : chains) {
+      for (const auto& chain : chains) {
         updater.to_update()->Put(chain->prev_key());
       }
     }
@@ -633,9 +637,9 @@ Status LinkedListTester::VerifyLinkedListRemote(
     // tserver. Do this only once.
     if (snapshot_timestamp != kSnapshotAtNow && !cb_called) {
       client::KuduTabletServer* kts_ptr;
-      scanner.GetCurrentServer(&kts_ptr);
-      gscoped_ptr<client::KuduTabletServer> kts(kts_ptr);
-      const std::string down_ts = kts->uuid();
+      RETURN_NOT_OK(scanner.GetCurrentServer(&kts_ptr));
+      std::unique_ptr<client::KuduTabletServer> kts(kts_ptr);
+      const auto& down_ts = kts->uuid();
       LOG(INFO) << "Calling callback on tserver " << down_ts;
       RETURN_NOT_OK(cb(down_ts));
       cb_called = true;
