@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/util/hash.pb.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -45,6 +46,7 @@ class BlockBloomFilterTest : public KuduTest {
  public:
   void SetUp() override {
     SeedRandom();
+    allocator_ = DefaultBlockBloomFilterBufferAllocator::GetSingleton();
   }
   // Make a random uint32_t, avoiding the absent high bit and the low-entropy low bits
   // produced by rand().
@@ -58,8 +60,7 @@ class BlockBloomFilterTest : public KuduTest {
   BlockBloomFilter* CreateBloomFilter(size_t log_space_bytes) {
     FLAGS_disable_blockbloomfilter_avx2 = (MakeRand() & 0x1) == 0;
 
-    unique_ptr<BlockBloomFilter> bf(
-        new BlockBloomFilter(DefaultBlockBloomFilterBufferAllocator::GetSingleton()));
+    unique_ptr<BlockBloomFilter> bf(new BlockBloomFilter(allocator_));
     CHECK_OK(bf->Init(log_space_bytes, FAST_HASH, 0));
     bloom_filters_.emplace_back(move(bf));
     return bloom_filters_.back().get();
@@ -70,6 +71,9 @@ class BlockBloomFilterTest : public KuduTest {
       bf->Close();
     }
   }
+
+ protected:
+  DefaultBlockBloomFilterBufferAllocator* allocator_;
 
  private:
   vector<unique_ptr<BlockBloomFilter>> bloom_filters_;
@@ -82,8 +86,26 @@ TEST_F(BlockBloomFilterTest, Constructor) {
   }
 }
 
+TEST_F(BlockBloomFilterTest, Clone) {
+  Arena arena(1024);
+  ArenaBlockBloomFilterBufferAllocator arena_allocator(&arena);
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_clone = arena_allocator.Clone();
+
+  for (int log_space_bytes = 1; log_space_bytes <= 20; ++log_space_bytes) {
+    auto* bf = CreateBloomFilter(log_space_bytes);
+    int max_elems = BlockBloomFilter::MaxNdv(log_space_bytes, 0.01 /* fpp */);
+    while (max_elems-- > 0) {
+      bf->Insert(MakeRand());
+    }
+    unique_ptr<BlockBloomFilter> bf_clone;
+    ASSERT_OK(bf->Clone(allocator_clone.get(), &bf_clone));
+    ASSERT_NE(nullptr, bf_clone);
+    ASSERT_EQ(*bf_clone, *bf);
+  }
+}
+
 TEST_F(BlockBloomFilterTest, InvalidSpace) {
-  BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+  BlockBloomFilter bf(allocator_);
   // Random number in the range [38, 64).
   const int log_space_bytes = 38 + rand() % (64 - 38);
   Status s = bf.Init(log_space_bytes, FAST_HASH, 0);
@@ -93,7 +115,7 @@ TEST_F(BlockBloomFilterTest, InvalidSpace) {
 }
 
 TEST_F(BlockBloomFilterTest, InvalidHashAlgorithm) {
-  BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+  BlockBloomFilter bf(allocator_);
   Status s = bf.Init(4, UNKNOWN_HASH, 0);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "Invalid/Unsupported hash algorithm");

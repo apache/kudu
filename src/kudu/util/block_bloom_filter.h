@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -30,6 +31,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/hash_util.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -89,6 +91,14 @@ class BlockBloomFilter {
   Status Init(int log_space_bytes, HashAlgorithm hash_algorithm, uint32_t hash_seed);
   // Initialize the BlockBloomFilter by de-serializing the protobuf message.
   Status InitFromPB(const BlockBloomFilterPB& bf_src);
+
+  // Clones the BlockBloomFilter using the supplied "allocator". The allocator is expected
+  // to remain valid during the lifetime of the cloned BlockBloomFilter.
+  // On success, returns Status::OK with cloned BlockBloomFilter in "bf_out" output parameter.
+  // On failure, returns error status.
+  Status Clone(BlockBloomFilterBufferAllocatorIf* allocator,
+               std::unique_ptr<BlockBloomFilter>* bf_out) const;
+
   void Close();
 
   // Adds an element to the BloomFilter. The function used to generate 'hash' need not
@@ -253,28 +263,42 @@ class BlockBloomFilter {
 // Generic interface to allocate and de-allocate memory for the BlockBloomFilter.
 class BlockBloomFilterBufferAllocatorIf {
  public:
+  virtual ~BlockBloomFilterBufferAllocatorIf() = default;
   virtual Status AllocateBuffer(size_t bytes, void** ptr) = 0;
   virtual void FreeBuffer(void* ptr) = 0;
+  // Clones the allocator.
+  virtual std::shared_ptr<BlockBloomFilterBufferAllocatorIf> Clone() const = 0;
 };
 
-class DefaultBlockBloomFilterBufferAllocator : public BlockBloomFilterBufferAllocatorIf {
+// Default allocator implemented as Singleton.
+class DefaultBlockBloomFilterBufferAllocator :
+    public BlockBloomFilterBufferAllocatorIf,
+    public enable_make_shared<DefaultBlockBloomFilterBufferAllocator> {
  public:
-  // Required for Singleton.
-  DefaultBlockBloomFilterBufferAllocator() = default;
+  static std::shared_ptr<DefaultBlockBloomFilterBufferAllocator> GetSingletonSharedPtr();
+  static DefaultBlockBloomFilterBufferAllocator* GetSingleton();
+  ~DefaultBlockBloomFilterBufferAllocator() override = default;
 
   Status AllocateBuffer(size_t bytes, void** ptr) override;
   void FreeBuffer(void* ptr) override;
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> Clone() const override;
 
-  static DefaultBlockBloomFilterBufferAllocator* GetSingleton();
+ protected:
+  // Protected default constructor to allow using make_shared()
+  DefaultBlockBloomFilterBufferAllocator() = default;
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultBlockBloomFilterBufferAllocator);
 };
 
 class ArenaBlockBloomFilterBufferAllocator : public BlockBloomFilterBufferAllocatorIf {
  public:
-  // Arena is expected to remain valid during the lifetime of the allocator.
-  explicit ArenaBlockBloomFilterBufferAllocator(Arena* arena) : arena_(arena) {}
-  ArenaBlockBloomFilterBufferAllocator() : arena_(nullptr) {}
+  // Default constructor with arena that's owned by the allocator.
+  ArenaBlockBloomFilterBufferAllocator();
+
+  // "arena" is expected to remain valid during the lifetime of the allocator.
+  explicit ArenaBlockBloomFilterBufferAllocator(Arena* arena);
+
+  ~ArenaBlockBloomFilterBufferAllocator() override;
 
   Status AllocateBuffer(size_t bytes, void** ptr) override;
 
@@ -282,8 +306,15 @@ class ArenaBlockBloomFilterBufferAllocator : public BlockBloomFilterBufferAlloca
     // NOP. Buffer will be de-allocated when the arena is destructed.
   }
 
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> Clone() const override {
+    return std::make_shared<ArenaBlockBloomFilterBufferAllocator>();
+  };
+
  private:
   Arena* arena_;
+  bool is_arena_owned_;
+
+  DISALLOW_COPY_AND_ASSIGN(ArenaBlockBloomFilterBufferAllocator);
 };
 
 }  // namespace kudu

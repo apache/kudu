@@ -28,12 +28,13 @@
 
 #include <gflags/gflags.h>
 
-#include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_bloom_filter.pb.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
+using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 
 DEFINE_bool(disable_blockbloomfilter_avx2, false,
@@ -128,6 +129,20 @@ Status BlockBloomFilter::InitFromPB(const BlockBloomFilterPB& bf_src) {
   }
   memcpy(directory_, bf_src.bloom_data().data(), bf_src.bloom_data().size());
   always_false_ = bf_src.always_false();
+  return Status::OK();
+}
+
+Status BlockBloomFilter::Clone(BlockBloomFilterBufferAllocatorIf* allocator,
+                               unique_ptr<BlockBloomFilter>* bf_out) const {
+  unique_ptr<BlockBloomFilter> bf_clone(new BlockBloomFilter(allocator));
+
+  RETURN_NOT_OK(bf_clone->InitInternal(log_space_bytes(), hash_algorithm_, hash_seed_));
+  DCHECK_NOTNULL(bf_clone->directory_);
+  CHECK_EQ(bf_clone->directory_size(), directory_size());
+  memcpy(bf_clone->directory_, directory_, bf_clone->directory_size());
+  bf_clone->always_false_ = always_false_;
+
+  *bf_out = std::move(bf_clone);
   return Status::OK();
 }
 
@@ -244,6 +259,25 @@ bool BlockBloomFilter::operator!=(const BlockBloomFilter& rhs) const {
   return !(rhs == *this);
 }
 
+shared_ptr<DefaultBlockBloomFilterBufferAllocator>
+    DefaultBlockBloomFilterBufferAllocator::GetSingletonSharedPtr() {
+  // Meyer's Singleton.
+  // Static variable initialization is thread-safe in C++11.
+  static shared_ptr<DefaultBlockBloomFilterBufferAllocator> instance =
+      DefaultBlockBloomFilterBufferAllocator::make_shared();
+
+  return instance;
+}
+
+DefaultBlockBloomFilterBufferAllocator* DefaultBlockBloomFilterBufferAllocator::GetSingleton() {
+  return GetSingletonSharedPtr().get();
+}
+
+shared_ptr<BlockBloomFilterBufferAllocatorIf>
+    DefaultBlockBloomFilterBufferAllocator::Clone() const {
+  return GetSingletonSharedPtr();
+}
+
 Status DefaultBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
   int ret_code = posix_memalign(ptr, CACHELINE_SIZE, bytes);
   return ret_code == 0 ? Status::OK() :
@@ -254,8 +288,20 @@ void DefaultBlockBloomFilterBufferAllocator::FreeBuffer(void* ptr) {
   free(DCHECK_NOTNULL(ptr));
 }
 
-DefaultBlockBloomFilterBufferAllocator* DefaultBlockBloomFilterBufferAllocator::GetSingleton() {
-  return Singleton<DefaultBlockBloomFilterBufferAllocator>::get();
+ArenaBlockBloomFilterBufferAllocator::ArenaBlockBloomFilterBufferAllocator(Arena* arena) :
+  arena_(DCHECK_NOTNULL(arena)),
+  is_arena_owned_(false) {
+}
+
+ArenaBlockBloomFilterBufferAllocator::ArenaBlockBloomFilterBufferAllocator() :
+  arena_(new Arena(1024)),
+  is_arena_owned_(true) {
+}
+
+ArenaBlockBloomFilterBufferAllocator::~ArenaBlockBloomFilterBufferAllocator() {
+  if (is_arena_owned_) {
+    delete arena_;
+  }
 }
 
 Status ArenaBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
