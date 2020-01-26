@@ -20,13 +20,20 @@ function(APPEND_LINKER_FLAGS)
   # Search candidate linkers in the order of decreasing speed and functionality.
   # In particular, lld is the best choice since it's quite fast and supports
   # ThinLTO, etc.
-  foreach(candidate_linker lld "${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld.lld" gold default)
+  #
+  # On macOS, LLD from third-party ${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld64.lld
+  # isn't fully functional yet: it doesn't support -U option, etc.
+  if (NOT APPLE)
+    set(linkers "lld" "${THIRDPARTY_TOOLCHAIN_DIR}/bin/ld.lld" "gold")
+  endif()
+  list(APPEND linkers "default")
+  foreach(candidate_linker ${linkers})
     if(candidate_linker STREQUAL "default")
-      set(candidate_flag "")
+      set(candidate_flags "")
     else()
-      set(candidate_flag "-fuse-ld=${candidate_linker}")
+      set(candidate_flags "-fuse-ld=${candidate_linker}")
     endif()
-    GET_LINKER_VERSION("${candidate_flag}")
+    GET_LINKER_VERSION("${candidate_flags}")
     if(NOT LINKER_FOUND)
       continue()
     endif()
@@ -72,7 +79,7 @@ function(APPEND_LINKER_FLAGS)
       message(WARNING "Cannot use lld < 10.0.0 with TSAN/ASAN/UBSAN. Skipping...")
       continue()
     endif()
-    set(linker_flags "${candidate_flag}")
+    set(linker_flags "${candidate_flags}")
     break()
   endforeach()
 
@@ -90,65 +97,85 @@ endfunction()
 #
 # Sets the following variables:
 #   LINKER_FOUND: true/false
-#   LINKER_FAMILY: lld/ld/gold
+# When LINKER_FOUND is true, additionally sets the following variables:
+#   LINKER_FAMILY: lld/ld/gold on Linux, ld64 on macOS
 #   LINKER_VERSION: version number of the linker
 # Any additional arguments are passed verbatim into the C++ compiler invocation.
 function(GET_LINKER_VERSION)
   if(ARGN)
-    message(STATUS "Checking linker version with cflags: ${ARGN}")
+    message(STATUS "Checking linker version with flags: ${ARGN}")
   else()
     message(STATUS "Checking linker version when not specifying any flags")
   endif()
-  execute_process(COMMAND ${CMAKE_CXX_COMPILER} "-Wl,--version" ${ARGN}
-    ERROR_QUIET
-    OUTPUT_VARIABLE LINKER_OUTPUT)
-  if (LINKER_OUTPUT MATCHES "GNU gold")
-    # We're expecting LINKER_OUTPUT to look like one of these:
+  if (APPLE)
+    set(ld_version_flag "-v,-bundle")
+  else()
+    set(ld_version_flag "--version")
+  endif()
+  execute_process(
+    COMMAND ${CMAKE_CXX_COMPILER} "-Wl,${ld_version_flag}" ${ARGN}
+    ERROR_VARIABLE LINKER_STDERR
+    OUTPUT_VARIABLE LINKER_STDOUT
+    RESULT_VARIABLE LINKER_EXITCODE)
+  if (NOT LINKER_EXITCODE EQUAL 0)
+    set(LINKER_FOUND FALSE)
+  elseif (LINKER_STDOUT MATCHES "GNU gold")
+    # We're expecting LINKER_STDOUT to look like one of these:
     #   GNU gold (version 2.24) 1.11
     #   GNU gold (GNU Binutils for Ubuntu 2.30) 1.15
-    if (NOT "${LINKER_OUTPUT}" MATCHES "GNU gold \\([^\\)]*\\) (([0-9]+\\.?)+)")
+    if (NOT "${LINKER_STDOUT}" MATCHES "GNU gold \\([^\\)]*\\) (([0-9]+\\.?)+)")
       message(SEND_ERROR "Could not extract GNU gold version. "
-        "Linker version output: ${LINKER_OUTPUT}")
+        "Linker version output: ${LINKER_STDOUT}")
     endif()
+    set(LINKER_FOUND TRUE)
     set(LINKER_FAMILY "gold")
     set(LINKER_VERSION "${CMAKE_MATCH_1}")
-    set(LINKER_FOUND TRUE)
-  elseif (LINKER_OUTPUT MATCHES "GNU ld")
-    # We're expecting LINKER_OUTPUT to look like one of these:
+  elseif (LINKER_STDOUT MATCHES "GNU ld")
+    # We're expecting LINKER_STDOUT to look like one of these:
     #   GNU ld (GNU Binutils for Ubuntu) 2.30
     #   GNU ld version 2.20.51.0.2-5.42.el6 20100205
     #   GNU ld version 2.25.1-22.base.el7
-    if (NOT "${LINKER_OUTPUT}" MATCHES "GNU ld version (([0-9]+\\.?)+)" AND
-        NOT "${LINKER_OUTPUT}" MATCHES "GNU ld \\([^\\)]*\\) (([0-9]+\\.?)+)")
+    if (NOT "${LINKER_STDOUT}" MATCHES "GNU ld version (([0-9]+\\.?)+)" AND
+        NOT "${LINKER_STDOUT}" MATCHES "GNU ld \\([^\\)]*\\) (([0-9]+\\.?)+)")
       message(SEND_ERROR "Could not extract GNU ld version. "
-        "Linker version output: ${LINKER_OUTPUT}")
+        "Linker version output: ${LINKER_STDOUT}")
     endif()
+    set(LINKER_FOUND TRUE)
     set(LINKER_FAMILY "ld")
     set(LINKER_VERSION "${CMAKE_MATCH_1}")
-    set(LINKER_FOUND TRUE)
-  elseif (LINKER_OUTPUT MATCHES "LLD")
+  elseif (LINKER_STDOUT MATCHES "LLD")
     # Sample:
     #   LLD 9.0.0 (example.com:kudu.git a5848a4c3c8c72a1ac823182e87cd1f6c31ddc15) (compatible with GNU linkers)
-    if (NOT "${LINKER_OUTPUT}" MATCHES "LLD (([0-9]+\\.?)+)")
+    if (NOT "${LINKER_STDOUT}" MATCHES "LLD (([0-9]+\\.?)+)")
       message(SEND_ERROR "Could not extract lld version. "
-        "Linker version output: ${LINKER_OUTPUT}")
+        "Linker version output: ${LINKER_STDOUT}")
     endif()
+    set(LINKER_FOUND TRUE)
     set(LINKER_FAMILY "lld")
     set(LINKER_VERSION "${CMAKE_MATCH_1}")
+  elseif (LINKER_STDERR MATCHES "PROJECT:ld64")
+    # ld64 outputs the versioning information into stderr.
+    # Sample:
+    #   @(#)PROGRAM:ld  PROJECT:ld64-409.12
+    if (NOT "${LINKER_STDERR}" MATCHES "PROJECT:ld64-([0-9]+\\.[0-9]+)")
+      message(SEND_ERROR "Could not extract ld64 version. "
+        "Linker version output: ${LINKER_STDOUT}")
+    endif()
     set(LINKER_FOUND TRUE)
+    set(LINKER_FAMILY "ld64")
+    set(LINKER_VERSION "${CMAKE_MATCH_1}")
   else()
-    set(LINKER_FAMILY "")
-    set(LINKER_VERSION "")
     set(LINKER_FOUND FALSE)
   endif()
 
-  if(LINKER_FOUND)
-    message(STATUS "Found linker: ${LINKER_FAMILY} version ${LINKER_VERSION}")
-  else()
-    message(STATUS "Linker not found")
-  endif()
   # Propagate the results to the caller.
   set(LINKER_FOUND "${LINKER_FOUND}" PARENT_SCOPE)
   set(LINKER_FAMILY "${LINKER_FAMILY}" PARENT_SCOPE)
   set(LINKER_VERSION "${LINKER_VERSION}" PARENT_SCOPE)
+
+  if (LINKER_FOUND)
+    message(STATUS "Found linker: ${LINKER_FAMILY} version ${LINKER_VERSION}")
+  else()
+    message(STATUS "Linker not found")
+  endif()
 endfunction()
