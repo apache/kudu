@@ -75,6 +75,19 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+namespace {
+
+// Some of these tests will set a low Raft timeout to move election traffic
+// along more quickly. When built with TSAN, this can lead to timeouts, so ease
+// up a bit.
+#ifdef THREAD_SANITIZER
+  constexpr int kLowRaftTimeout = 300;
+#else
+  constexpr int kLowRaftTimeout = 100;
+#endif
+
+} // anonymous namespace
+
 namespace kudu {
 namespace itest {
 
@@ -126,7 +139,7 @@ TEST_F(TServerQuiescingITest, TestQuiescingServerDoesntTriggerElections) {
   const int kNumReplicas = 3;
   const int kNumTablets = 10;
   // This test will change leaders frequently, so set a low Raft heartbeat.
-  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_raft_heartbeat_interval_ms = kLowRaftTimeout;
   NO_FATALS(StartCluster(kNumReplicas));
 
   // Set up a table with some replicas.
@@ -194,7 +207,7 @@ TEST_F(TServerQuiescingITest, TestQuiescingLeaderTransfersLeadership) {
 // able to elect a leader.
 TEST_F(TServerQuiescingITest, TestMajorityQuiescingElectsLeader) {
   const int kNumReplicas = 3;
-  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_raft_heartbeat_interval_ms = kLowRaftTimeout;
   NO_FATALS(StartCluster(kNumReplicas));
   vector<string> tablet_ids;
   NO_FATALS(CreateWorkloadTable(/*num_tablets*/1, &tablet_ids));
@@ -253,7 +266,7 @@ TEST_F(TServerQuiescingITest, TestDoesntAllowNewScans) {
 TEST_F(TServerQuiescingITest, TestDoesntAllowNewScansLeadersOnly) {
   const int kNumReplicas = 3;
   // This test will change leaders frequently, so set a low Raft heartbeat.
-  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_raft_heartbeat_interval_ms = kLowRaftTimeout;
   // Set a tiny batch size to encourage many batches for a single scan. This
   // will emulate long-running scans.
   FLAGS_scanner_default_batch_size_bytes = 1;
@@ -294,7 +307,7 @@ TEST_F(TServerQuiescingITest, TestDoesntAllowNewScansLeadersOnly) {
 // the leader, even while quiescing, will remain leader.
 TEST_F(TServerQuiescingITest, TestQuiesceLeaderWhileFollowersCatchingUp) {
   const int kNumReplicas = 3;
-  FLAGS_raft_heartbeat_interval_ms = 100;
+  FLAGS_raft_heartbeat_interval_ms = kLowRaftTimeout;
   NO_FATALS(StartCluster(kNumReplicas));
   auto rw_workload = CreateFaultIntolerantRWWorkload();
   rw_workload->set_num_tablets(1);
@@ -364,6 +377,7 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
   auto* ts = cluster_->mini_tablet_server(0);
   auto rw_workload = CreateFaultIntolerantRWWorkload();
   rw_workload->Setup();
+  rw_workload->set_num_read_threads(1);
   ASSERT_FALSE(ts->server()->quiescing());
   // First, call the start tool a couple of times.
   for (int i = 0; i < 2; i++) {
@@ -670,6 +684,7 @@ TEST_P(TServerQuiescingParamITest, TestAbruptStepdownWhileAllQuiescing) {
   vector<string> tablet_ids;
   NO_FATALS(CreateWorkloadTable(/*num_tablets*/1, &tablet_ids));
 
+  // Ensure we get a leader.
   TServerDetails* leader_details;
   const auto kLeaderTimeout = MonoDelta::FromSeconds(10);
   const auto& tablet_id = tablet_ids[0];
@@ -679,13 +694,30 @@ TEST_P(TServerQuiescingParamITest, TestAbruptStepdownWhileAllQuiescing) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     *cluster_->mini_tablet_server(i)->server()->mutable_quiescing() = true;
   }
-  // Once we've stepped down, while quiescing, no new leader should be elected.
-  // Wait extra long to be sure.
-  ASSERT_OK(LeaderStepDown(leader_details, tablet_id, kLeaderTimeout));
-  MonoDelta election_timeout = MonoDelta::FromMilliseconds(
-      2 * FLAGS_raft_heartbeat_interval_ms * FLAGS_leader_failure_max_missed_heartbeat_periods);
-  Status s = FindTabletLeader(ts_map_, tablet_id, election_timeout, &leader_details);
-  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  // Abruptly step down our tablet servers. We could find the leader and just
+  // step it down, but it's hard to guarantee that the found leader is of the
+  // latest term.
+  //
+  // So to be sure, try on all our replicas -- eventually we'll step down on
+  // the latest leader, and we won't be able to elect a new leader since all
+  // servers are quiescing.
+  ASSERT_EVENTUALLY([&] {
+    bool stepped_down = false;
+    for (const auto& ts_and_details : ts_map_) {
+      Status s = LeaderStepDown(ts_and_details.second, tablet_id, kLeaderTimeout);
+      if (s.ok()) {
+        stepped_down = true;
+        break;
+      }
+      LOG(INFO) << Substitute("Request to step down failed on $0: $1",
+                              ts_and_details.first, s.ToString());
+    }
+    ASSERT_TRUE(stepped_down);
+
+    // There should be no leaders.
+    Status s = FindTabletLeader(ts_map_, tablet_id, kLeaderTimeout, &leader_details);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  });
 }
 
 INSTANTIATE_TEST_CASE_P(NumReplicas, TServerQuiescingParamITest, ::testing::Values(1, 3));
