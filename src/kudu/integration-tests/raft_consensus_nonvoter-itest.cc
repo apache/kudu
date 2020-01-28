@@ -858,8 +858,13 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
   FLAGS_num_replicas = kInitialReplicasNum;
   NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
   ASSERT_FALSE(tablet_replicas_.empty());
-  ASSERT_OK(StartElection(tablet_replicas_.begin()->second, tablet_id_, kTimeout));
-  ASSERT_OK(WaitUntilLeader(tablet_replicas_.begin()->second, tablet_id_, kTimeout));
+  ASSERT_EVENTUALLY([&]() {
+    const MonoDelta kElectionTimeout = MonoDelta::FromSeconds(3);
+    ASSERT_OK(StartElection(
+        tablet_replicas_.begin()->second, tablet_id_, kElectionTimeout));
+    ASSERT_OK(WaitUntilLeader(
+        tablet_replicas_.begin()->second, tablet_id_, kElectionTimeout));
+  });
 
   ASSERT_EQ(4, tablet_servers_.size());
   ASSERT_EQ(kInitialReplicasNum, tablet_replicas_.size());
