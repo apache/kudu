@@ -34,6 +34,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 using std::vector;
@@ -111,13 +112,9 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
                               "disk_reserved_override_prefix_2_bytes_free_for_testing", "0"));
 
   // Wait for crash due to inability to flush or compact.
-  Status s;
-  for (int i = 0; i < 10; i++) {
-    s = cluster_->tablet_server(0)->WaitForFatal(MonoDelta::FromSeconds(1));
-    if (s.ok()) break;
-    LOG(INFO) << "Rows inserted: " << workload.rows_inserted();
-  }
-  ASSERT_OK(s);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(cluster_->tablet_server(0)->WaitForFatal(MonoDelta::FromSeconds(1)));
+  });
   workload.StopAndJoin();
 }
 
