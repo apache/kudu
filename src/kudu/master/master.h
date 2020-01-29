@@ -142,12 +142,12 @@ class Master : public kserver::KuduServer {
   std::unique_ptr<CatalogManager> catalog_manager_;
   std::unique_ptr<MasterPathHandlers> path_handlers_;
 
-  // For initializing the catalog manager.
-  std::unique_ptr<ThreadPool> init_pool_;
-
   // The status of the master initialization. This is set
   // by the async initialization task.
   Promise<Status> init_status_;
+
+  // For initializing the catalog manager.
+  std::unique_ptr<ThreadPool> init_pool_;
 
   MasterOptions opts_;
 

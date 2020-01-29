@@ -249,6 +249,7 @@ void Master::Shutdown() {
     UnregisterAllServices();
 
     // 2. Shut down the master's subsystems.
+    init_pool_->Shutdown();
     maintenance_manager_->Shutdown();
     catalog_manager_->Shutdown();
     fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
