@@ -157,7 +157,8 @@ function(GET_LINKER_VERSION)
     # ld64 outputs the versioning information into stderr.
     # Sample:
     #   @(#)PROGRAM:ld  PROJECT:ld64-409.12
-    if (NOT "${LINKER_STDERR}" MATCHES "PROJECT:ld64-([0-9]+\\.[0-9]+)")
+    #   @(#)PROGRAM:ld  PROJECT:ld64-530
+    if (NOT "${LINKER_STDERR}" MATCHES "PROJECT:ld64-([0-9]+(\\.[0-9]+)?)")
       message(SEND_ERROR "Could not extract ld64 version. "
         "Linker version output: ${LINKER_STDOUT}")
     endif()
