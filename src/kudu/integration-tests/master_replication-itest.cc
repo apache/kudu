@@ -76,6 +76,7 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::itest::GetInt64Metric;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -453,13 +454,12 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
   Status GetMetricValue(const MetricPrototype& metric_proto, int64_t* value) {
     int leader_idx;
     RETURN_NOT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-    return itest::GetInt64Metric(
-          cluster_->master(leader_idx)->bound_http_hostport(),
-          &METRIC_ENTITY_server,
-          nullptr,
-          &metric_proto,
-          "value",
-          value);
+    return GetInt64Metric(cluster_->master(leader_idx)->bound_http_hostport(),
+                          &METRIC_ENTITY_server,
+                          nullptr,
+                          &metric_proto,
+                          "value",
+                          value);
   }
 
   unique_ptr<cluster::ExternalMiniCluster> cluster_;
@@ -493,14 +493,29 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
   }
   auto s = alterer->timeout(MonoDelta::FromSeconds(30))->Alter();
 
-  // The DDL attempt above (i.e. the Alter() call) produces an oversided write
+  // The DDL attempt above (i.e. the Alter() call) produces an oversized write
   // request to the system catalog tablet. The request should have been rejected
   // and the corresponding metric incremented.
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "too large for current setting of the "
                                     "--rpc_max_message_size flag");
-  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
-  ASSERT_EQ(1, val);
+
+  // Leader master can change after the ALTER TABLE request above and the time
+  // when collecting the metric value below. To avoid flakiness, get the
+  // readings for the metric from each master and verify the result.
+  int64_t sum = 0;
+  for (auto idx = 0; idx < kNumMasters; ++idx) {
+    int64_t val;
+    ASSERT_OK(GetInt64Metric(cluster_->master(idx)->bound_http_hostport(),
+                             &METRIC_ENTITY_server,
+                             nullptr,
+                             &METRIC_sys_catalog_oversized_write_requests,
+                             "value",
+                             &val));
+    ASSERT_LE(val, 1);
+    sum += val;
+  }
+  ASSERT_EQ(1, sum);
 
   NO_FATALS(cluster_->AssertNoCrashes());
 }
