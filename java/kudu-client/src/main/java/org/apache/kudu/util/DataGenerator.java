@@ -19,9 +19,9 @@ package org.apache.kudu.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Base64;
 import java.util.List;
 import java.util.Random;
-import javax.xml.bind.DatatypeConverter;
 
 import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -148,7 +148,7 @@ public class DataGenerator {
   public static String randomString(int length, Random random) {
     byte[] bytes = new byte[length];
     random.nextBytes(bytes);
-    return DatatypeConverter.printBase64Binary(bytes);
+    return Base64.getEncoder().encodeToString(bytes);
   }
 
   /**
