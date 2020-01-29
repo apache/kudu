@@ -650,8 +650,6 @@ build_mustache() {
 }
 
 build_curl() {
-  # Configure for a fairly minimal install - we only use this for testing
-  # so we just need HTTP/HTTPS with GSSAPI support (for SPNEGO testing).
   CURL_BDIR=$TP_BUILD_DIR/$CURL_NAME$MODE_SUFFIX
   mkdir -p $CURL_BDIR
   pushd $CURL_BDIR
@@ -666,15 +664,25 @@ build_curl() {
     export KRB5CONFIG=$KRB5CONFIG_LOCATION
   fi
 
-  # Note: curl shows a message asking for CPPFLAGS to be used for include
-  # directories, not CFLAGS.
+  # In the scope of using libcurl in Kudu tests and other simple scenarios,
+  # not so much functionality is needed as of now, so configure for a fairly
+  # minimal install. For testing, we need HTTP/HTTPS with GSSAPI support
+  # (GSSAPI is needed for SPNEGO testing). Also, cookies might be useful
+  # to test the new functionality introduced in Impala's embedded Web server
+  # recently if Kudu is to pick up the new functionality as well.
+  #
+  # NOTE: curl shows a message asking for CPPFLAGS to be used for include
+  #       directories, not CFLAGS.
+  #
   CFLAGS="$EXTRA_CFLAGS" \
     CPPFLAGS="$EXTRA_CPPFLAGS $OPENSSL_CFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS $OPENSSL_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     $CURL_SOURCE/configure \
     --prefix=$PREFIX \
+    --disable-alt-svc \
     --disable-dict \
+    --disable-doh \
     --disable-file \
     --disable-ftp \
     --disable-gopher \
@@ -682,9 +690,15 @@ build_curl() {
     --disable-ipv6 \
     --disable-ldap \
     --disable-ldaps \
+    --disable-libcurl-option \
     --disable-manual \
+    --disable-mime \
+    --disable-netrc \
+    --disable-parsedate \
     --disable-pop3 \
+    --disable-progress-meter \
     --disable-rtsp \
+    --disable-smb \
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
