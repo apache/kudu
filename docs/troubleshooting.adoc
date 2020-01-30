@@ -106,19 +106,24 @@ link:administration.html#change_dir_config[Changing Directory Configurations] do
 [[ntp]]
 === NTP Clock Synchronization
 
-For the master and tablet server daemons, the server's clock must be synchronized using NTP.
-In addition, the *maximum clock error* (not to be mistaken with the estimated error)
-be below a configurable threshold. The default value is 10 seconds, but it can be set with the flag
-`--max_clock_sync_error_usec`.
+The local clock of the machine where Kudu master or tablet server is running
+must be synchronized using the Network Time Protocol (NTP) if using the `system`
+time source. The time source is controlled by the `--time_source` flag and
+by default is set to `system`.
 
-If NTP is not installed, or if the clock is reported as unsynchronized, Kudu will not
-start, and will emit a message such as:
+Kudu requires the *maximum clock error* (not to be mistaken with the estimated
+error) of the NTP-synchronized clock be below a configurable threshold.
+The default threshold value is 10 seconds and it can be customized using the
+`--max_clock_sync_error_usec` flag.
+
+When running with the `system` time source, Kudu will not start and will emit
+a message such as below if the local clock is reported unsynchronized:
 
 ----
 F0924 20:24:36.336809 14550 hybrid_clock.cc:191 Couldn't get the current time: Clock unsynchronized. Status: Service unavailable: Error reading clock. Clock considered unsynchronized.
 ----
 
-If NTP is installed and synchronized, but the maximum clock error is too high,
+If the machine's clock is synchronized, but the maximum clock error is too high,
 the user will see a message such as:
 
 ----
@@ -131,10 +136,13 @@ or
 Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).
 ----
 
-==== Installing NTP
+==== Installing NTP-related Packages
 
+Kudu has been well tested to work on machines whose clock is synchronized with
+`ntpd`, the NTP server from ubiquitous NTP suite.
 
-To install NTP, use the appropriate command for your operating system:
+To install `ntpd` and other NTP-related utilities, use the appropriate command
+for your operating system:
 [cols="1,1", options="header"]
 |===
 | OS | Command
@@ -142,18 +150,68 @@ To install NTP, use the appropriate command for your operating system:
 | RHEL/CentOS | `sudo yum install ntp`
 |===
 
-If NTP is installed but not running, start it using one of these commands:
+If `ntpd` is installed but not running, start it using one of these commands
+(don't forget to run `ntpdate` first):
 [cols="1,1", options="header"]
 |===
 | OS | Command
 | Debian/Ubuntu | `sudo service ntp restart`
-| RHEL/CentOS | `sudo /etc/init.d/ntpd restart`
+| RHEL/CentOS | `sudo service ntpd restart`
 |===
 
-====  Monitoring NTP Status
+Make sure `ntpdate` is in the list of services running when the machine starts:
+`ntpdate` should be run prior starting `ntpd` to avoid long synchronization
+delay of the machine's local clock with the true time. The smaller the offset
+between local machine's clock and the true time, the faster the NTP server can
+synchronize the clock.
 
-When NTP is installed, you can monitor the synchronization status by running
-`ntptime`. For example, a healthy system may report:
+When talking about the 'synchronization' with true time using NTP, we are
+referring to a couple of things:
+- the synchronization status of the NTP server which drives the local clock
+  of the machine
+- the synchronization status of the local machine's clock itself as reported
+  by the kernel's NTP discipline
+
+The former can be retrieved using the `ntpstat`, `ntpq`, and `ntpdc` utilities
+(they are included in the `ntp` package). The latter can be retrieved using the
+`ntptime` utility (the `ntptime` utility is also a part of the `ntp` package).
+For more information, see the manual pages of the mentioned utilities and
+the paragraph below.
+
+Sometimes it takes too long to synchronize the machine's local clock with the
+true time even if the `ntpstat` utility reports that the NTP daemon is
+synchronized with one of the reference NTP servers. This manifests as the
+following: the utilities which report on the synchronization status of the NTP
+daemon claim that all is well, but `ntptime` claims that the status of the
+local clock is unsynchronized and Kudu tablet servers and masters refuse to
+start, outputting an error like the one mentioned above. This situation often
+happens if the `ntpd` is run with the `-x` option. According to the manual
+page of `ntpd`, the `-x` flag configures the NTP server to only slew the clock.
+Without `-x`, the NTP server would do a step adjustment instead:
+
+----
+  -x     Normally, the time is slewed if the offset is less than the
+         step threshold, which is 128 ms by default, and stepped if
+         above the threshold. This option sets the threshold to 600 s,
+         which is well within the accuracy window to set the clock manually.
+         Note: Since the slew rate of typical Unix kernels is limited to
+         0.5 ms/s, each second of	adjustment requires an amortization
+         interval of 2000 s. Thus, an adjustment as much as 600 s
+         will take almost 14 days to complete.
+----
+
+In such cases, removing the `-x` option will help synchronize the local clock
+faster.
+
+More information on best practices and examples of practical resolution of
+various NTP synchronization issues can be found found at
+link:https://www.redhat.com/en/blog/avoiding-clock-drift-vms[clock-drift]
+
+====  Monitoring Clock Synchronization Status
+
+When the `ntp` package is installed, you can monitor the synchronization status
+of the machine's clock by running `ntptime`. For example, a system
+with a local clock that is synchronized may report:
 
 ----
 ntp_gettime() returns code 0 (OK)
@@ -167,14 +225,15 @@ ntp_adjtime() returns code 0 (OK)
   time constant 10, precision 0.001 us, tolerance 500 ppm,
 ----
 
-In particular, note the following most important pieces of output:
+Note the following most important pieces of output:
 
-- `maximum error 22455 us`: this value is well under the 10-second maximum error required
-  by Kudu.
-- `status 0x2001 (PLL,NANO)`: this indicates a healthy synchronization status.
+- `maximum error 22455 us`: this value is well under the 10-second maximum
+  error required by Kudu.
+- `status 0x2001 (PLL,NANO)`: this indicates the local clock is synchronized
+  with the true time up to the maximum error above
 
-In contrast, a system without NTP properly configured and running will output
-something like the following:
+In contrast, a system with unsynchronized local clock would report something
+like the following:
 
 ----
 ntp_gettime() returns code 5 (ERROR)
@@ -188,11 +247,32 @@ ntp_adjtime() returns code 5 (ERROR)
   time constant 10, precision 1.000 us, tolerance 500 ppm,
 ----
 
-Note the `UNSYNC` status and the 16-second maximum error.
+The `UNSYNC` status means the local clock is not synchronized with the
+true time. Because of that, the maximum reported error doesn't convey any
+meaningful estimation of the actual error.
 
-If more detailed information is needed, the `ntpq` or `ntpdc` tools
-can be used to dump further information about which network time servers
-are currently acting as sources:
+The `ntpstat` utility reports a summary on the synchronization status of
+the NTP daemon itself. For example, a system which have `ntpd` running and
+synchronized with one of its reference servers may report:
+
+----
+$ ntpstat
+synchronised to NTP server (172.18.7.3) at stratum 4
+   time correct to within 160 ms
+   polling server every 1024 s
+----
+
+Keep in mind that the synchronization status of the NTP daemon itself doesn't
+reflect the synchronization status of the local clock. The way NTP daemon
+drives the local clock is subject to many constraints, and it may take the NTP
+daemon some time to synchronize the local clock after it itself has latched
+to one of the reference servers.
+
+If more detailed information is needed on the synchronization status of the
+NTP server (but not the synchronization status of the local clock), the `ntpq`
+or `ntpdc` tools can be used to get detailed information about what NTP server
+is currently acting as the source of the true time and which are considered
+as candidates (either viable or not):
 
 ----
 $ ntpq -nc lpeers
@@ -205,14 +285,7 @@ $ ntpq -nc lpeers
 -69.195.159.158  128.138.140.44   2 u    9   64    1   53.885   -0.016   0.013
 *216.218.254.202 .CDMA.           1 u    6   64    1    1.475   -0.400   0.012
 +129.250.35.250  249.224.99.213   2 u    7   64    1    1.342   -0.640   0.018
- 45.76.244.193   216.239.35.4     2 u    6   64    1   17.380   -0.754   0.051
- 69.89.207.199   212.215.1.157    2 u    5   64    1   57.796   -3.411   0.059
- 171.66.97.126   .GPSs.           1 u    4   64    1    1.024   -0.374   0.018
- 66.228.42.59    211.172.242.174  3 u    3   64    1   72.409    0.895   0.964
- 91.189.89.198   17.253.34.125    2 u    2   64    1  135.195   -0.329   0.171
- 162.210.111.4   216.218.254.202  2 u    1   64    1   28.570    0.693   0.306
- 199.102.46.80   .GPS.            1 u    2   64    1   55.652   -0.039   0.019
- 91.189.89.199   17.253.34.125    2 u    1   64    1  135.265   -0.413   0.037
+
 $ ntpq -nc opeers
      remote           local      st t when poll reach   delay   offset    disp
 ==============================================================================
@@ -223,30 +296,31 @@ $ ntpq -nc opeers
 -69.195.159.158  10.17.100.238    2 u   13   64    1   53.885   -0.016 187.561
 *216.218.254.202 10.17.100.238    1 u   10   64    1    1.475   -0.400 187.543
 +129.250.35.250  10.17.100.238    2 u   11   64    1    1.342   -0.640 187.588
- 45.76.244.193   10.17.100.238    2 u   10   64    1   17.380   -0.754 187.596
- 69.89.207.199   10.17.100.238    2 u    9   64    1   57.796   -3.411 187.541
- 171.66.97.126   10.17.100.238    1 u    8   64    1    1.024   -0.374 187.578
- 66.228.42.59    10.17.100.238    3 u    7   64    1   72.409    0.895 187.589
- 91.189.89.198   10.17.100.238    2 u    6   64    1  135.195   -0.329 187.584
- 162.210.111.4   10.17.100.238    2 u    5   64    1   28.570    0.693 187.606
- 199.102.46.80   10.17.100.238    1 u    4   64    1   55.652   -0.039 187.587
- 91.189.89.199   10.17.100.238    2 u    3   64    1  135.265   -0.413 187.621
 ----
 
 TIP: Both `lpeers` and `opeers` may be helpful as `lpeers` lists refid and
 jitter, while `opeers` lists clock dispersion.
 
+==== Using `chrony` for Time Synchronization
+
+Some operating systems offer `chronyd` as an alternative to `ntpd` for network
+time synchronization (the OS package is called `chrony` and contains both the
+NTP server `chronyd` and the `chronyc` utility).
+
+If using `chronyd` for time synchronization at Kudu nodes, the `rtcsync` option
+must be enabled in `chrony.conf`. Without `rtcsync`, the local machine's clock
+will always be reported as unsynchronized and Kudu masters and tablet servers
+will not be able to start. The following
+link:https://github.com/mlichvar/chrony/blob/994409a03697b8df68115342dc8d1e7ceeeb40bd/sys_timex.c#L162-L166[code]
+explains the observed behavior of `chronyd` when setting the synchronization
+status of the clock on Linux.
 
 [NOTE]
 ====
-.Using `chrony` for time synchronization
-
-Some operating systems offer `chrony` as an alternative to `ntpd` for network time
-synchronization. Kudu has been tested most thoroughly using `ntpd` and use of
-`chrony` is considered experimental.
-
-In order to use `chrony` for synchronization, `chrony.conf` must be configured
-with the `rtcsync` option.
+Kudu has been tested most thoroughly using `ntpd` and using `chronyd` is
+viable as well, but it's still considered experimental at this time. Check out
+link:https://issues.apache.org/jira/browse/KUDU-2573[KUDU-2573] for status
+updates and more information on this topic.
 ====
 
 ==== NTP Configuration Best Practices
@@ -254,56 +328,97 @@ with the `rtcsync` option.
 In order to provide stable time synchronization with low maximum error, follow
 these best NTP configuration best practices.
 
-*Always configure at least four time sources for NTP.* In addition to providing
-redundancy in case one or more time sources becomes unavailable, The NTP protocol is
-designed to increase its accuracy with a diversity of sources. Even if your organization
-provides one or more local time servers, configuring additional remote servers is highly
-recommended for a robust setup.
+*Run ntpdate prior to running NTP server.* If the offset of the local
+clock is too far from the true time, it can take a long time before the NTP
+server synchronizes the local clock, even if it's allowed to perform step
+adjustments.
 
-*Pick servers in your server's local geography.* For example, if your servers are located
-in Europe, pick servers from the European NTP pool. If your servers are running in a public
-cloud environment, consult the cloud provider's documentation for a recommended NTP setup.
-Many cloud providers offer highly accurate clock synchronization as a service.
+*In certain public cloud environments, use the highly-available NTP server
+accessible via link-local IP address or other dedicated NTP server provided
+as a service.* If your cluster is running in a public cloud environment,
+consult the cloud provider's documentation for the recommended NTP setup.
+Both AWS and GCE clouds offer dedicated highly available NTP servers accessible
+from within a cloud instance via link-local IP address.
 
-*Use the `iburst` option for faster synchronization at startup*. The `iburst` option
-instructs `ntpd` to send an initial "burst" of time queries at startup. This typically
-results in a faster time synchronization when a machine restarts.
+*Unless using highly-available NTP reference server accessible via link-local
+address, always configure at least four time sources for NTP server at the
+local machine.* In addition to providing redundancy in case one of time sources
+becomes unavailable, this might make the configuration more robust since the
+NTP is designed to increase its accuracy with a diversity of sources in networks
+with higher round-trip times and jitter.
 
-An example NTP server list may appear as follows:
+*Use the `iburst` option for faster synchronization at startup*. The `iburst`
+option instructs `ntpd` to send an initial "burst" of time queries at startup.
+This results in a faster synchronization of the `ntpd` with its reference
+servers upon startup.
+
+*If the maximum clock error goes beyond the default threshold set by Kudu
+(10 seconds), consider setting lower value for the `maxpoll` option for every
+NTP server in `ntp.conf`*. For example, consider setting the `maxpoll` to 7
+which will cause the NTP daemon to make requests to the corresponding NTP
+server at least every 128 seconds. The default maximum poll interval is 10
+(1024 seconds).
+
+[NOTE]
+====
+If using custom `maxpoll` interval, don't set `maxpoll` too low (e.g., lower
+than 6) to avoid flooding NTP servers, especially the public ones. Otherwise
+they may blacklist the client (i.e. the `ntpd` daemon at your machine) and cease
+providing NTP service at all. If in doubt, consult the `ntp.conf` manual page.
+====
+
+A few examples of `ntpd` configuration files:
 
 ----
-# Use my organization's internal NTP servers.
-server ntp1.myorg.internal iburst
-server ntp2.myorg.internal iburst
-# Provide several public pool servers for
-# redundancy and robustness.
-server 0.pool.ntp.org iburst
-server 1.pool.ntp.org iburst
-server 2.pool.ntp.org iburst
-server 3.pool.ntp.org iburst
+# Use my organization's internal NTP server (server in a local network).
+server ntp1.myorg.internal iburst maxpoll 7
+# Add servers from the NTP public pool for redundancy and robustness.
+server 0.pool.ntp.org iburst maxpoll 8
+server 1.pool.ntp.org iburst maxpoll 8
+server 2.pool.ntp.org iburst maxpoll 8
+server 3.pool.ntp.org iburst maxpoll 8
 ----
 
-TIP: After configuring NTP, use the `ntpq` tool described above to verify that `ntpd` was
-able to connect to a variety of peers. If no public peers appear, it is possiblbe that
-the NTP protocol is being blocked by a firewall or other network connectivity issue.
+----
+# AWS case: use dedicated NTP server available via link-local IP address.
+server 169.254.169.123 iburst
+----
+
+----
+# GCE case: use dedicated NTP server available from within cloud instance.
+server metadata.google.internal iburst
+----
+
+TIP: After configuring `ntpd`, first run the `ntpdate` tool with the same set
+of NTP servers (it's assumed that `ntpd` is not running when the `ntpdate` tool
+is run). Make sure the tool reports success: check its exit status and output.
+In case of issues connecting to the NTP servers, make sure NTP traffic is not
+being blocked by a firewall (NTP generates UDP traffic on port 123 by default)
+or other network connectivity issue. Then start the `ntpd` daemon and use the
+`ntpq` tool described above to verify that the NTP daemon is able to connect
+to its reference servers.
 
 ==== Troubleshooting NTP Stability Problems
 
-As of Kudu 1.6.0, Kudu daemons are able to continue to operate during a brief loss of
-NTP synchronization. If NTP synchronization is lost for several hours, however, daemons
-may crash. If a daemon crashes due to NTP synchronization issues, consult the `ERROR` log
-for a dump of related information which may help to diagnose the issue.
+As of Kudu 1.6.0, Kudu daemons are able to continue to operate during a brief
+loss of clock synchronization. If clock synchronization is lost for several
+hours, daemons may crash. If a daemon crashes due to clock synchronization
+issues, consult the `ERROR` log for a dump of related information which may
+help to diagnose the issue.
 
 TIP: Kudu 1.5.0 and earlier versions were less resilient to brief NTP outages. In
 addition, they contained a link:https://issues.apache.org/jira/browse/KUDU-2209[bug]
 which could cause Kudu to incorrectly measure the maximum error, resulting in
 crashes. If you experience crashes related to clock synchronization on these
-earlier versions of Kudu and it appears that the system's NTP configuration is correct,
-consider upgrading to Kudu 1.6.0 or later.
+earlier versions of Kudu and it appears that the system's NTP configuration
+is correct, consider upgrading to Kudu 1.6.0 or later.
 
-TIP: NTP requires a network connection and may take a few minutes to synchronize the clock
-at startup. In some cases a spotty network connection may make NTP report the clock as unsynchronized.
-A common, though temporary, workaround for this is to restart NTP with one of the commands above.
+TIP: If using other than link-local NTP server, it may take some time for `ntpd`
+to synchronize with one of its reference servers in case of network connectivity
+issues. In case of a spotty network between the machine and the reference NTP
+servers, `ntpd` may become unsynchronized with its reference NTP servers. If
+that happens, consider finding other set of reference NTP servers: the best
+bet is to use NTP servers in the local network or *.pool.ntp.org servers.
 
 [[disk_space_usage]]
 == Disk Space Usage
@@ -315,7 +430,6 @@ it uses. This means that some tools may inaccurately report the disk space
 used by Kudu. For example, the size listed by `ls -l` does not accurately
 reflect the disk space used by Kudu data files:
 
-[source,bash]
 ----
 $ ls -lh /data/kudu/tserver/data
 total 117M
@@ -340,7 +454,6 @@ file's disk space usage.
 
 The `du` and `df` utilities report the actual disk space usage by default.
 
-[source,bash]
 ----
 $ du -h /data/kudu/tserver/data
 118M   /data/kudu/tserver/data
@@ -348,7 +461,6 @@ $ du -h /data/kudu/tserver/data
 
 The apparent size can be shown with the `--apparent-size` flag to `du`.
 
-[source,bash]
 ----
 $ du -h --apparent-size /data/kudu/tserver/data
 1.7G  /data/kudu/tserver/data
@@ -374,7 +486,6 @@ It is also possible to force Kudu to create a minidump without killing the
 process by sending a `USR1` signal to the `kudu-tserver` or `kudu-master`
 process. For example:
 
-[source,bash]
 ----
 sudo pkill -USR1 kudu-tserver
 ----
@@ -571,7 +682,6 @@ Kudu provides a set of useful metrics for evaluating the performance of the
 block cache, which can be found on the `/metrics` endpoint of the web UI. An
 example set:
 
-[source,json]
 ----
 {
   "name": "block_cache_inserts",
