@@ -570,3 +570,14 @@ Non-alterable Column Types:: Kudu does not allow the type of a column to be
 altered.
 
 Partition Splitting:: Partitions cannot be split or merged after table creation.
+
+Deleted row disk space is not reclaimed:: The disk space occupied by a deleted
+row is only reclaimable via compaction, and only when the deletion's age
+exceeds the "tablet history maximum age" (controlled by the
+`--tablet_history_max_age_sec` flag). Furthermore, Kudu currently only schedules
+compactions in order to improve read/write performance; a tablet will never be
+compacted purely to reclaim disk space. As such, range partitioning should be
+used when it is expected that large swaths of rows will be discarded. With range
+partitioning, individual partitions may be dropped to discard data and reclaim
+disk space.  See link:https://issues.apache.org/jira/browse/KUDU-1625[KUDU-1625]
+for details.
