@@ -81,5 +81,5 @@ deleted rows. However, at the time of writing, this is not implemented because
 it appears to be prone to causing write amplification.
 
 UndoDeltaBlockGCOp, in contrast, only removes delta history associated with a
-row. If a row is deleted, UndoDeltaBlockGCO0p will not remove the row's base
+row. If a row is deleted, UndoDeltaBlockGCOp will not remove the row's base
 data or the final REDO record indicating its deletion.
