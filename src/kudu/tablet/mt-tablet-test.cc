@@ -37,10 +37,12 @@
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
@@ -61,6 +63,7 @@ DEFINE_int32(num_slowreader_threads, 1, "Number of 'slow' reader threads to laun
 DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch");
 DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
 DEFINE_int32(num_undo_delta_gc_threads, 1, "Number of undo delta gc threads to launch");
+DEFINE_int32(num_deleted_rowset_gc_threads, 1, "Number of deleted rowset gc threads to launch");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(num_flush_delta_threads, 1, "Number of delta flusher reader threads to launch");
 DEFINE_int32(num_minor_compact_deltas_threads, 1,
@@ -81,6 +84,10 @@ using std::vector;
 
 namespace kudu {
 namespace tablet {
+
+namespace {
+const MonoDelta kBackgroundOpInterval = MonoDelta::FromMilliseconds(100);
+} // anonymous namespace
 
 template<class SETUP>
 class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
@@ -113,8 +120,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
                                    TabletHarness::Options::ClockType::LOGICAL_CLOCK)
     : TabletTestBase<SETUP>(clock_type),
       running_insert_count_(FLAGS_num_insert_threads),
-      ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) {
-  }
+      ts_collector_(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) {}
 
   void InsertThread(int tid) {
     CountDownOnScopeExit dec_count(&running_insert_count_);
@@ -308,13 +314,12 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     }
   }
 
-  void FlushDeltasThread(int tid) {
-    int wait_time = 100;
+  void FlushDeltasThread(int /*tid*/) {
     while (running_insert_count_.count() > 0) {
       CHECK_OK(tablet()->FlushBiggestDMS());
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+      running_insert_count_.WaitFor(kBackgroundOpInterval);
     }
   }
 
@@ -327,30 +332,27 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   }
 
   void CompactDeltas(RowSet::DeltaCompactionType type) {
-    int wait_time = 100;
     while (running_insert_count_.count() > 0) {
       VLOG(1) << "Compacting worst deltas";
       CHECK_OK(tablet()->CompactWorstDeltas(type));
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+      running_insert_count_.WaitFor(kBackgroundOpInterval);
     }
   }
 
-  void CompactThread(int tid) {
-    int wait_time = 100;
+  void CompactThread(int /*tid*/) {
     while (running_insert_count_.count() > 0) {
       CHECK_OK(tablet()->Compact(Tablet::COMPACT_NO_FLAGS));
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+      running_insert_count_.WaitFor(kBackgroundOpInterval);
     }
   }
 
   void DeleteAncientUndoDeltasThread(int /*tid*/) {
-    int wait_time = 100;
     while (running_insert_count_.count() > 0) {
-      MonoDelta time_budget = MonoDelta::FromMilliseconds(wait_time);
+      MonoDelta time_budget = kBackgroundOpInterval;
       int64_t bytes_in_ancient_undos = 0;
       CHECK_OK(tablet()->InitAncientUndoDeltas(time_budget, &bytes_in_ancient_undos));
       VLOG(1) << "Found " << bytes_in_ancient_undos << " bytes of ancient delta undos";
@@ -364,8 +366,24 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       }
 
       // Wait, unless the inserters are all done.
-      running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(wait_time));
+      running_insert_count_.WaitFor(kBackgroundOpInterval);
     }
+  }
+
+  // Thread that looks for rowsets that are ancient and fully deleted, GCing
+  // those that are.
+  void DeleteAncientDeletedRowsetsThreads(int /*tid*/) {
+    do {
+      int64_t bytes_in_ancient_deleted_rowsets = 0;
+      CHECK_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes_in_ancient_deleted_rowsets));
+      VLOG(1) << Substitute("Found $0 bytes in ancient, fully deleted rowsets",
+                            bytes_in_ancient_deleted_rowsets);
+      if (bytes_in_ancient_deleted_rowsets > 0) {
+        CHECK_OK(tablet()->DeleteAncientDeletedRowsets());
+        LOG(INFO) << Substitute("Deleted $0 bytes found in ancient, fully deleted rowsets",
+                                bytes_in_ancient_deleted_rowsets);
+      }
+    } while (!running_insert_count_.WaitFor(kBackgroundOpInterval));
   }
 
   // Thread which cycles between inserting and deleting a test row, each time
@@ -556,18 +574,28 @@ TYPED_TEST(MultiThreadedHybridClockTabletTest, UpdateNoMergeCompaction) {
   FLAGS_flusher_initial_frequency_ms = 1;
   FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01F;
   FLAGS_tablet_delta_store_minor_compact_max = 10;
+
+  // Start up our background op threads, targeting the creation of delta files.
   this->StartThreads(FLAGS_num_flush_threads,
                      [this](int i) { this->FlushThread(i); });
   this->StartThreads(FLAGS_num_flush_delta_threads,
                      [this](int i) { this->FlushDeltasThread(i); });
   this->StartThreads(FLAGS_num_major_compact_deltas_threads,
                      [this](int i) { this->MajorCompactDeltasThread(i); });
+  this->StartThreads(FLAGS_num_undo_delta_gc_threads,
+                     [this](int i) { this->DeleteAncientUndoDeltasThread(i); });
+  this->StartThreads(FLAGS_num_deleted_rowset_gc_threads,
+                     [this](int i) { this->DeleteAncientDeletedRowsetsThreads(i); });
+  // Start our workload threads, targeting the creation of deltas that we can
+  // eventually GC.
   this->StartThreads(10,
                      [this](int i) { this->DeleteAndReinsertCycleThread(i); });
   this->StartThreads(10,
                      [this](int i) { this->StubbornlyUpdateSameRowThread(i); });
-  this->StartThreads(FLAGS_num_undo_delta_gc_threads,
-                     [this](int i) { this->DeleteAncientUndoDeltasThread(i); });
+
+  // For good measure, we'll also start a thread that scans.
+  this->StartThreads(FLAGS_num_summer_threads,
+                     [this](int i) { this->SummerThread(i); });
 
   // Run very quickly in dev builds, longer in slow builds.
   float runtime_seconds = AllowSlowTests() ? 2 : 0.1;

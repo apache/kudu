@@ -873,6 +873,22 @@ Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient
   return delta_tracker_->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark, bytes);
 }
 
+Status DiskRowSet::IsDeletedAndFullyAncient(Timestamp ancient_history_mark,
+                                            bool* deleted_and_ancient) {
+  uint64_t live_row_count = 0;
+  RETURN_NOT_OK(CountLiveRows(&live_row_count));
+  if (live_row_count > 0) {
+    *deleted_and_ancient = false;
+    return Status::OK();
+  }
+  // NOTE: this estimate might not read from disk and may thus return false
+  // despite having ancient on-disk data. That's sufficient because false
+  // negatives are OK for the purposes of GCing deleted rowsets -- we just
+  // won't delete them.
+  *deleted_and_ancient = delta_tracker_->EstimateAllRedosAreAncient(ancient_history_mark);
+  return Status::OK();
+}
+
 Status DiskRowSet::InitUndoDeltas(Timestamp ancient_history_mark,
                                   MonoTime deadline,
                                   const IOContext* io_context,

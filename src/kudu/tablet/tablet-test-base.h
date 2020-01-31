@@ -339,6 +339,14 @@ class TabletTestBase : public KuduTabletTest {
     InsertOrUpsertTestRows(RowOperationsPB::UPSERT, first_row, count, val, ts);
   }
 
+  // Deletes 'count' rows, starting with 'first_row'.
+  void DeleteTestRows(int64_t first_row, int64_t count) {
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    for (auto i = first_row; i < first_row + count; i++) {
+      CHECK_OK(DeleteTestRow(&writer, i));
+    }
+  }
+
   void InsertOrUpsertTestRows(RowOperationsPB::Type type,
                               int64_t first_row,
                               int64_t count,

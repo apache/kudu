@@ -219,6 +219,13 @@ class RowSet {
   // Compact delta stores if more than one.
   virtual Status MinorCompactDeltaStores(const fs::IOContext* io_context) = 0;
 
+  // Returns whether the rowset contains no live rows and is fully ancient (its
+  // newest update is older than 'ancient_history_mark').
+  //
+  // This may return false negatives, but should not return false positives.
+  virtual Status IsDeletedAndFullyAncient(Timestamp ancient_history_mark,
+                                          bool* deleted_and_ancient) = 0;
+
   // Estimate the number of bytes in ancient undo delta stores. This may be an
   // overestimate. The argument 'ancient_history_mark' must be valid (it may
   // not be equal to Timestamp::kInvalidTimestamp).
@@ -471,6 +478,13 @@ class DuplicatingRowSet : public RowSet {
                                                      int64_t* bytes) OVERRIDE {
     DCHECK(bytes);
     *bytes = 0;
+    return Status::OK();
+  }
+
+  Status IsDeletedAndFullyAncient(Timestamp /*ancient_history_mark*/,
+                                  bool* deleted_and_ancient) override {
+    DCHECK(deleted_and_ancient);
+    *deleted_and_ancient = false;
     return Status::OK();
   }
 

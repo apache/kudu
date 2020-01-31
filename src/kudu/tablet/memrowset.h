@@ -393,6 +393,13 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
+  Status IsDeletedAndFullyAncient(Timestamp /*ancient_history_mark*/,
+                                  bool* deleted_and_ancient) override {
+    DCHECK(deleted_and_ancient);
+    *deleted_and_ancient = false;
+    return Status::OK();
+  }
+
   Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
                         MonoTime /*deadline*/,
                         const fs::IOContext* /*io_context*/,

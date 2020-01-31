@@ -14,10 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+#pragma once
 
-#ifndef KUDU_TABLET_TABLET_MM_OPS_H_
-#define KUDU_TABLET_TABLET_MM_OPS_H_
-
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -159,8 +158,39 @@ class UndoDeltaBlockGCOp : public TabletOpBase {
   DISALLOW_COPY_AND_ASSIGN(UndoDeltaBlockGCOp);
 };
 
+// MaintenanceOp to garbage-collect entire rowsets that are fully deleted and
+// older than the ancient history mark.
+class DeletedRowsetGCOp : public TabletOpBase {
+ public:
+  explicit DeletedRowsetGCOp(Tablet* tablet);
+
+  // Estimate the number of bytes from rowsets that have been fully deleted and
+  // exist entirely before the AHM (i.e. their most recent update happened
+  // before the AHM).
+  void UpdateStats(MaintenanceOpStats* stats) override;
+
+  // If this op is already running, we shouldn't run it again.
+  bool Prepare() override {
+    bool false_ref = false;
+    return running_.compare_exchange_strong(false_ref, true);
+  }
+
+  // Deletes ancient deleted rowsets from disk.
+  void Perform() override;
+
+  // Metrics for this op.
+  scoped_refptr<Histogram> DurationHistogram() const override;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
+ private:
+  std::string LogPrefix() const;
+
+  // Used to ensure only a single instance of this op is scheduled per tablet
+  // at a time.
+  std::atomic<bool> running_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeletedRowsetGCOp);
+};
 
 } // namespace tablet
 } // namespace kudu
 
-#endif /* KUDU_TABLET_TABLET_MM_OPS_H_ */

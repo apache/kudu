@@ -70,6 +70,7 @@ struct TabletMetrics {
 
   // Operation stats.
   scoped_refptr<Counter> bytes_flushed;
+  scoped_refptr<Counter> deleted_rowset_gc_bytes_deleted;
   scoped_refptr<Counter> undo_delta_block_gc_bytes_deleted;
 
   scoped_refptr<Histogram> bloom_lookups_per_op;
@@ -84,6 +85,8 @@ struct TabletMetrics {
   scoped_refptr<AtomicGauge<uint32_t> > flush_dms_running;
   scoped_refptr<AtomicGauge<uint32_t> > flush_mrs_running;
   scoped_refptr<AtomicGauge<uint32_t> > compact_rs_running;
+  scoped_refptr<AtomicGauge<int64_t> > deleted_rowset_estimated_retained_bytes;
+  scoped_refptr<AtomicGauge<uint32_t> > deleted_rowset_gc_running;
   scoped_refptr<AtomicGauge<uint32_t> > delta_minor_compact_rs_running;
   scoped_refptr<AtomicGauge<uint32_t> > delta_major_compact_rs_running;
   scoped_refptr<AtomicGauge<uint32_t> > undo_delta_block_gc_running;
@@ -92,6 +95,7 @@ struct TabletMetrics {
   scoped_refptr<Histogram> flush_dms_duration;
   scoped_refptr<Histogram> flush_mrs_duration;
   scoped_refptr<Histogram> compact_rs_duration;
+  scoped_refptr<Histogram> deleted_rowset_gc_duration;
   scoped_refptr<Histogram> delta_minor_compact_rs_duration;
   scoped_refptr<Histogram> delta_major_compact_rs_duration;
   scoped_refptr<Histogram> undo_delta_block_gc_init_duration;

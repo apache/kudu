@@ -17,9 +17,9 @@
 
 #include "kudu/tablet/deltamemstore.h"
 
+#include <algorithm>
 #include <memory>
 #include <ostream>
-#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
@@ -74,6 +74,7 @@ DeltaMemStore::DeltaMemStore(int64_t id,
                              shared_ptr<MemTracker> parent_tracker)
   : id_(id),
     rs_id_(rs_id),
+    highest_timestamp_(Timestamp::kMin),
     allocator_(new MemoryTrackingBufferAllocator(
         HeapBufferAllocator::Get(), std::move(parent_tracker))),
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, allocator_)),
@@ -123,6 +124,8 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     deleted_row_count_.Increment();
   }
 
+  std::lock_guard<simple_spinlock> l(ts_lock_);
+  highest_timestamp_ = std::max(highest_timestamp_, timestamp);
   return Status::OK();
 }
 

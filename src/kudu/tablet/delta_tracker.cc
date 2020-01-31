@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <glog/logging.h>
 
@@ -444,6 +445,26 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
                                                        io_context, REDO, FLUSH_METADATA),
                         "DeltaTracker: CompactStores: Unable to commit delta update");
   return Status::OK();
+}
+
+bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
+  shared_ptr<DeltaStore> newest_redo;
+  std::lock_guard<rw_spinlock> lock(component_lock_);
+  const boost::optional<Timestamp> dms_highest_timestamp =
+      dms_ ? dms_->highest_timestamp() : boost::none;
+  if (dms_highest_timestamp) {
+    return *dms_highest_timestamp < ancient_history_mark;
+  }
+
+  // If we don't have a DMS or our DMS hasn't been written to at all, look at
+  // the newest redo store.
+  if (!redo_delta_stores_.empty()) {
+    newest_redo = redo_delta_stores_.back();
+  }
+  // TODO(awong): keep the delta stats cached after flushing a DMS so a flush
+  // doesn't invalidate this rowset.
+  return newest_redo && newest_redo->Initted() &&
+      newest_redo->delta_stats().max_timestamp() < ancient_history_mark;
 }
 
 Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,

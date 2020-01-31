@@ -52,6 +52,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/result_tracker.h"
+#include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -76,7 +77,9 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
+DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(tablet_history_max_age_sec);
 
 METRIC_DECLARE_entity(tablet);
 
@@ -115,7 +118,8 @@ static Schema GetTestSchema() {
 class TabletReplicaTest : public KuduTabletTest {
  public:
   TabletReplicaTest()
-      : KuduTabletTest(GetTestSchema()),
+      : KuduTabletTest(GetTestSchema(),
+                       TabletHarness::Options::ClockType::HYBRID_CLOCK),
         insert_counter_(0),
         delete_counter_(0),
         dns_resolver_(new DnsResolver) {
@@ -341,22 +345,20 @@ class TabletReplicaTest : public KuduTabletTest {
   // Execute insert requests and roll log after each one.
   Status ExecuteInsertsAndRollLogs(int num_inserts) {
     for (int i = 0; i < num_inserts; i++) {
-      unique_ptr<WriteRequestPB> req(new WriteRequestPB());
-      RETURN_NOT_OK(GenerateSequentialInsertRequest(GetTestSchema(), req.get()));
-      RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
+      WriteRequestPB req;
+      RETURN_NOT_OK(GenerateSequentialInsertRequest(GetTestSchema(), &req));
+      RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), req));
     }
-
     return Status::OK();
   }
 
   // Execute delete requests and roll log after each one.
   Status ExecuteDeletesAndRollLogs(int num_deletes) {
     for (int i = 0; i < num_deletes; i++) {
-      unique_ptr<WriteRequestPB> req(new WriteRequestPB());
-      CHECK_OK(GenerateSequentialDeleteRequest(req.get()));
-      CHECK_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
+      WriteRequestPB req;
+      RETURN_NOT_OK(GenerateSequentialDeleteRequest(&req));
+      RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), req));
     }
-
     return Status::OK();
   }
 
@@ -795,6 +797,45 @@ TEST_F(TabletReplicaTest, TestLiveRowCountMetric) {
   const int kNumDelete = rand.Next() % kNumInsert;
   ASSERT_OK(ExecuteDeletesAndRollLogs(kNumDelete));
   ASSERT_EQ(kNumInsert - kNumDelete, live_row_count->value());
+}
+
+TEST_F(TabletReplicaTest, TestRestartAfterGCDeletedRowsets) {
+  FLAGS_enable_maintenance_manager = false;
+  FLAGS_tablet_history_max_age_sec = 1;
+  const int kNumRows = 10;
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+  auto* tablet = tablet_replica_->tablet();
+  // Metrics are already registered so pass a dummy lambda.
+  auto live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
+      tablet->GetMetricEntity(), [] () { return 0; });
+
+  // Insert some rows and flush so we get a DRS.
+  ASSERT_OK(ExecuteInsertsAndRollLogs(kNumRows));
+  ASSERT_OK(tablet->Flush());
+  ASSERT_OK(ExecuteDeletesAndRollLogs(kNumRows));
+  ASSERT_EQ(1, tablet->num_rowsets());
+  ASSERT_EQ(0, live_row_count->value());
+  SleepFor(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
+
+  // Insert some fresh rows so we can validate that we don't GC everything.
+  ASSERT_OK(ExecuteInsertsAndRollLogs(kNumRows));
+  ASSERT_OK(tablet->Flush());
+  ASSERT_EQ(2, tablet->num_rowsets());
+  ASSERT_EQ(kNumRows, live_row_count->value());
+
+  // Now GC what we can. The first rowset should be gone.
+  ASSERT_OK(tablet->DeleteAncientDeletedRowsets());
+  ASSERT_EQ(1, tablet->num_rowsets());
+  ASSERT_EQ(kNumRows, live_row_count->value());
+
+  // Restart and ensure we can get online okay.
+  NO_FATALS(RestartReplica());
+  tablet = tablet_replica_->tablet();
+  ASSERT_EQ(1, tablet->num_rowsets());
+  live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
+      tablet->GetMetricEntity(), [] () { return 0; });
+  ASSERT_EQ(kNumRows, live_row_count->value());
 }
 
 } // namespace tablet

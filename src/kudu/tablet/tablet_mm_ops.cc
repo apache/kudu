@@ -76,6 +76,13 @@ DEFINE_bool(enable_undo_delta_block_gc, true,
 TAG_FLAG(enable_undo_delta_block_gc, runtime);
 TAG_FLAG(enable_undo_delta_block_gc, unsafe);
 
+DEFINE_bool(enable_deleted_rowset_gc, true,
+    "Whether to enable garbage collection of fully deleted rowsets. Disabling "
+    "deleted rowset garbage collection may increase disk space usage for workloads "
+    "that involve a high number of deletes. Only deleted rowsets that are entirely "
+    "considered ancient history (see --tablet_history_max_age_sec) are deleted.");
+TAG_FLAG(enable_deleted_rowset_gc, runtime);
+
 using std::string;
 using strings::Substitute;
 
@@ -384,6 +391,47 @@ scoped_refptr<AtomicGauge<uint32_t>> UndoDeltaBlockGCOp::RunningGauge() const {
 }
 
 std::string UndoDeltaBlockGCOp::LogPrefix() const {
+  return tablet_->LogPrefix();
+}
+
+DeletedRowsetGCOp::DeletedRowsetGCOp(Tablet* tablet)
+    : TabletOpBase(Substitute("DeletedRowSetGCOp($0)", tablet->tablet_id()),
+                   MaintenanceOp::HIGH_IO_USAGE, tablet),
+      running_(false) {
+}
+
+void DeletedRowsetGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (!FLAGS_enable_deleted_rowset_gc) {
+    stats->set_runnable(false);
+    return;
+  }
+  if (running_.load()) {
+    VLOG(1) << LogPrefix() << " not updating stats: already running";
+    stats->set_runnable(false);
+    return;
+  }
+  int64_t estimated_retained_bytes = 0;
+  WARN_NOT_OK(tablet_->GetBytesInAncientDeletedRowsets(&estimated_retained_bytes),
+              "Unable to count bytes in ancient, deleted rowsets");
+  stats->set_data_retained_bytes(estimated_retained_bytes);
+  stats->set_runnable(estimated_retained_bytes > 0);
+}
+
+void DeletedRowsetGCOp::Perform() {
+  WARN_NOT_OK(tablet_->DeleteAncientDeletedRowsets(),
+      Substitute("$0GC of deleted rowsets failed", LogPrefix()));
+  running_.store(false);
+}
+
+scoped_refptr<Histogram> DeletedRowsetGCOp::DurationHistogram() const {
+  return tablet_->metrics()->deleted_rowset_gc_duration;
+}
+
+scoped_refptr<AtomicGauge<uint32_t>> DeletedRowsetGCOp::RunningGauge() const {
+  return tablet_->metrics()->deleted_rowset_gc_running;
+}
+
+std::string DeletedRowsetGCOp::LogPrefix() const {
   return tablet_->LogPrefix();
 }
 

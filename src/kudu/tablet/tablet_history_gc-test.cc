@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -97,8 +98,17 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     NO_FLUSH
   };
 
+  // Helper functions that mutate rows in batches of keys:
+  //   [0, rows_per_rowset)
+  //   [rows_per_rowset, 2*rows_per_rowset)
+  //   ...
+  //   [(num_rowsets - 1)*rows_per_rowset, num_rowsets*rows_per_rowset)
+  //
+  // ...flushing MRS or DMS (depending on the workload) in between batches.
   void InsertOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset);
   void UpdateOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset, int32_t val);
+  void DeleteOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset, bool flush_dms);
+
   void AddTimeToHybridClock(MonoDelta delta) {
     uint64_t now = HybridClock::GetPhysicalValueMicros(clock()->Now());
     uint64_t new_time = now + delta.ToMicroseconds();
@@ -107,25 +117,38 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   // Specify row regex to match on. Empty string means don't match anything.
   void VerifyDebugDumpRowsMatch(const string& pattern) const;
 
-  int64_t TotalNumRows() const { return num_rowsets_ * rows_per_rowset_; }
+  // Returns the total number of rows there should be after inserting rows.
+  int64_t TotalNumRows() const { return kNumRowsets * rows_per_rowset_; }
 
-  TestRowVerifier GenRowsEqualVerifier(int32_t expected_val) {
-    return [=](int32_t key, int32_t val) -> bool { return val == expected_val; };
+  // Returns a functor that returns whether all rows have 'expected_val' for
+  // their values.
+  static TestRowVerifier GenRowsEqualVerifier(int32_t expected_val) {
+    return [=](int32_t /*key*/, int32_t val) -> bool { return val == expected_val; };
   }
-
   const TestRowVerifier kRowsEqual0 = GenRowsEqualVerifier(0);
   const TestRowVerifier kRowsEqual1 = GenRowsEqualVerifier(1);
   const TestRowVerifier kRowsEqual2 = GenRowsEqualVerifier(2);
 
   const int kStartRow = 0;
-  int num_rowsets_ = 3;
+  const int kNumRowsets = 3;
   int64_t rows_per_rowset_ = 300;
 };
 
 void TabletHistoryGcTest::InsertOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset) {
   for (int rowset_id = 0; rowset_id < num_rowsets; rowset_id++) {
-    InsertTestRows(rowset_id * rows_per_rowset, rows_per_rowset, 0);
+    InsertTestRows(rowset_id * rows_per_rowset, rows_per_rowset, /*val*/0);
     ASSERT_OK(tablet()->Flush());
+  }
+  ASSERT_EQ(num_rowsets, tablet()->num_rowsets());
+}
+
+void TabletHistoryGcTest::DeleteOriginalRows(int64_t num_rowsets,
+    int64_t rows_per_rowset, bool flush_dms) {
+  for (int rowset_id = 0; rowset_id < num_rowsets; rowset_id++) {
+    NO_FATALS(DeleteTestRows(rowset_id * rows_per_rowset, rows_per_rowset));
+    if (flush_dms) {
+      ASSERT_OK(tablet()->FlushAllDMSForTests());
+    }
   }
   ASSERT_EQ(num_rowsets, tablet()->num_rowsets());
 }
@@ -155,7 +178,7 @@ void TabletHistoryGcTest::VerifyDebugDumpRowsMatch(const string& pattern) const 
 TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
   FLAGS_tablet_history_max_age_sec = 1; // Keep history for 1 second.
 
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
   Timestamp time_after_insert = clock()->Now();
 
@@ -169,7 +192,7 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
       ASSERT_OK(UpdateTestRow(&writer, row_idx, val));
     }
     // We must flush the DMS before major compaction can operate on these REDOs.
-    for (int i = 0; i < num_rowsets_; i++) {
+    for (int i = 0; i < kNumRowsets; i++) {
       tablet()->FlushBiggestDMS();
     }
     post_update_ts[val - 1] = clock()->Now();
@@ -189,7 +212,7 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual2));
 
   // Run major delta compaction.
-  for (int i = 0; i < num_rowsets_; i++) {
+  for (int i = 0; i < kNumRowsets; i++) {
     ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
   }
 
@@ -209,10 +232,9 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMajorDeltaCompaction) {
 TEST_F(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns) {
   FLAGS_tablet_history_max_age_sec = 100;
 
-  num_rowsets_ = 3;
   rows_per_rowset_ = 20;
 
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
 
   LocalTabletWriter writer(tablet().get(), &client_schema_);
@@ -223,7 +245,7 @@ TEST_F(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns) {
     ASSERT_OK_FAST(row.SetInt32(2, 2));
     ASSERT_OK_FAST(writer.Update(row));
   }
-  for (int i = 0; i < num_rowsets_; i++) {
+  for (int i = 0; i < kNumRowsets; i++) {
     tablet()->FlushBiggestDMS();
   }
 
@@ -231,7 +253,7 @@ TEST_F(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns) {
 
   vector<std::shared_ptr<RowSet>> rowsets;
   tablet()->GetRowSetsForTests(&rowsets);
-  for (int i = 0; i < num_rowsets_; i++) {
+  for (int i = 0; i < kNumRowsets; i++) {
     DiskRowSet* drs = down_cast<DiskRowSet*>(rowsets[i].get());
     vector<ColumnId> col_ids_to_compact = { schema_.column_id(2) };
     ASSERT_OK(drs->MajorCompactDeltaStoresWithColumnIds(col_ids_to_compact, nullptr,
@@ -306,7 +328,7 @@ TEST_F(TabletHistoryGcTest, TestUndoGCOnMergeCompaction) {
   FLAGS_tablet_history_max_age_sec = 1; // Keep history for 1 second.
 
   Timestamp time_before_insert = clock()->Now();
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
 
   // The earliest thing we can see is an empty tablet.
@@ -327,7 +349,7 @@ TEST_F(TabletHistoryGcTest, TestUndoGCOnMergeCompaction) {
 TEST_F(TabletHistoryGcTest, TestRowRemovalGCOnMergeCompaction) {
   FLAGS_tablet_history_max_age_sec = 100; // Keep history for 100 seconds.
 
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(VerifyTestRowsWithVerifier(kStartRow, TotalNumRows(), kRowsEqual0));
 
   Timestamp prev_time = clock()->Now();
@@ -366,7 +388,7 @@ TEST_F(TabletHistoryGcTest, TestRowRemovalGCOnMergeCompaction) {
 TEST_F(TabletHistoryGcTest, TestNoUndoGCUntilAncientHistoryMark) {
   FLAGS_tablet_history_max_age_sec = 1000; // 1000 seconds before we GC history.
 
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
 
   Timestamp prev_time = clock()->Now();
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(2)));
@@ -383,7 +405,7 @@ TEST_F(TabletHistoryGcTest, TestNoUndoGCUntilAncientHistoryMark) {
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, TotalNumRows(), prev_time,
                                                    kRowsEqual0));
 
-  for (int i = 0; i < num_rowsets_; i++) {
+  for (int i = 0; i < kNumRowsets; i++) {
     ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION));
     ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
   }
@@ -429,11 +451,10 @@ TEST_F(TabletHistoryGcTest, TestGhostRowsNotRevived) {
 // non-GCed rows in each rowset.
 TEST_F(TabletHistoryGcTest, TestGcOnAlternatingRows) {
   FLAGS_tablet_history_max_age_sec = 100;
-  num_rowsets_ = 3;
   rows_per_rowset_ = 5;
 
   LocalTabletWriter writer(tablet().get(), &client_schema_);
-  for (int rowset_id = 0; rowset_id < num_rowsets_; rowset_id++) {
+  for (int rowset_id = 0; rowset_id < kNumRowsets; rowset_id++) {
     for (int i = 0; i < rows_per_rowset_; i++) {
       int32_t row_key = rowset_id * rows_per_rowset_ + i;
       ASSERT_OK(InsertTestRow(&writer, row_key, 0));
@@ -580,22 +601,22 @@ class TabletHistoryGcNoMaintMgrTest : public TabletHistoryGcTest {
 TEST_F(TabletHistoryGcNoMaintMgrTest, TestUndoDeltaBlockGc) {
   FLAGS_tablet_history_max_age_sec = 1000;
 
-  NO_FATALS(InsertOriginalRows(num_rowsets_, rows_per_rowset_));
-  ASSERT_EQ(num_rowsets_, tablet()->CountUndoDeltasForTests());
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  ASSERT_EQ(kNumRowsets, tablet()->CountUndoDeltasForTests());
 
   // Generate a bunch of redo deltas and then compact them into undo deltas.
   constexpr int kNumMutationsPerRow = 5;
   for (int i = 0; i < kNumMutationsPerRow; i++) {
     SCOPED_TRACE(i);
-    ASSERT_EQ((i + 1) * num_rowsets_, tablet()->CountUndoDeltasForTests());
+    ASSERT_EQ((i + 1) * kNumRowsets, tablet()->CountUndoDeltasForTests());
     NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(1)));
-    NO_FATALS(UpdateOriginalRows(num_rowsets_, rows_per_rowset_, i));
+    NO_FATALS(UpdateOriginalRows(kNumRowsets, rows_per_rowset_, i));
     ASSERT_OK(tablet()->MajorCompactAllDeltaStoresForTests());
-    ASSERT_EQ((i + 2) * num_rowsets_, tablet()->CountUndoDeltasForTests());
+    ASSERT_EQ((i + 2) * kNumRowsets, tablet()->CountUndoDeltasForTests());
   }
 
   ASSERT_EQ(0, tablet()->CountRedoDeltasForTests());
-  const int expected_undo_blocks = (kNumMutationsPerRow + 1) * num_rowsets_;
+  const int expected_undo_blocks = (kNumMutationsPerRow + 1) * kNumRowsets;
   ASSERT_EQ(expected_undo_blocks, tablet()->CountUndoDeltasForTests());
 
   // There will be uninitialized undos so we will estimate that there may be
@@ -637,6 +658,60 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestUndoDeltaBlockGc) {
   ASSERT_EQ(bytes_deleted, tablet()->metrics()->undo_delta_block_gc_bytes_deleted->value());
   ASSERT_EQ(2, tablet()->metrics()->undo_delta_block_gc_init_duration->TotalCount());
   ASSERT_EQ(1, tablet()->metrics()->undo_delta_block_gc_delete_duration->TotalCount());
+}
+
+TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithRedoFiles) {
+  FLAGS_tablet_history_max_age_sec = 1000;
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  ASSERT_EQ(kNumRowsets, tablet()->CountUndoDeltasForTests());
+
+  NO_FATALS(DeleteOriginalRows(kNumRowsets, rows_per_rowset_, /*flush_dms*/true));
+  ASSERT_EQ(kNumRowsets, tablet()->CountRedoDeltasForTests());
+
+  // TODO(awong): keep the delta stats cached after flushing a DMS so we don't
+  // have to scan to read stats.
+  NO_FATALS(VerifyTestRows(0, 0));
+
+  // We shouldn't have any ancient rowsets since we haven't passed the AHM.
+  int64_t bytes = 0;
+  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+  ASSERT_EQ(0, bytes);
+
+  // Try to delete ancient deleted rowsets. This should effectively no-op.
+  ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+  ASSERT_EQ(kNumRowsets, tablet()->CountUndoDeltasForTests());
+  ASSERT_EQ(kNumRowsets, tablet()->CountRedoDeltasForTests());
+  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+  ASSERT_EQ(0, bytes);
+  const auto* metrics = tablet()->metrics();
+  ASSERT_EQ(0, metrics->deleted_rowset_gc_bytes_deleted->value());
+  ASSERT_EQ(0, metrics->deleted_rowset_gc_duration->TotalCount());
+
+  // Move the clock so all rowsets are ancient. Our GC should succeed and we
+  // should be left with no rowsets.
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
+  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+  ASSERT_LT(0, bytes);
+  ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+  ASSERT_EQ(0, tablet()->CountUndoDeltasForTests());
+  ASSERT_EQ(0, tablet()->CountRedoDeltasForTests());
+
+  // Check that these show up.
+  ASSERT_EQ(bytes, metrics->deleted_rowset_gc_bytes_deleted->value());
+  ASSERT_EQ(1, metrics->deleted_rowset_gc_duration->TotalCount());
+}
+
+TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithDMS) {
+  FLAGS_tablet_history_max_age_sec = 1000;
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  NO_FATALS(DeleteOriginalRows(kNumRowsets, rows_per_rowset_, /*flush_dms*/false));
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
+  int64_t bytes = 0;
+  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+  ASSERT_LT(0, bytes);
+  ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+  ASSERT_EQ(bytes, tablet()->metrics()->deleted_rowset_gc_bytes_deleted->value());
+  ASSERT_EQ(1, tablet()->metrics()->deleted_rowset_gc_duration->TotalCount());
 }
 
 } // namespace tablet

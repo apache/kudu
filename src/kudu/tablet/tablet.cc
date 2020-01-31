@@ -1476,6 +1476,14 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
   maintenance_ops.push_back(undo_delta_block_gc_op.release());
 
+  // The deleted rowset GC operation relies on live rowset counting. If this
+  // tablet doesn't support such counting, do not register the op.
+  if (metadata_->supports_live_row_count()) {
+    unique_ptr<MaintenanceOp> deleted_rowset_gc_op(new DeletedRowsetGCOp(this));
+    maint_mgr->RegisterOp(deleted_rowset_gc_op.get());
+    maintenance_ops.push_back(deleted_rowset_gc_op.release());
+  }
+
   std::lock_guard<simple_spinlock> l(state_lock_);
   maintenance_ops_.swap(maintenance_ops);
 }
@@ -2305,6 +2313,87 @@ Status Tablet::InitAncientUndoDeltas(MonoDelta time_budget, int64_t* bytes_in_an
                                     tablet_init_duration.ToString());
 
   if (bytes_in_ancient_undos) *bytes_in_ancient_undos = tablet_bytes_in_ancient_undos;
+  return Status::OK();
+}
+
+Status Tablet::GetBytesInAncientDeletedRowsets(int64_t* bytes_in_ancient_deleted_rowsets) {
+  Timestamp ancient_history_mark;
+  if (!Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
+    VLOG_WITH_PREFIX(1) << "Cannot get ancient history mark. "
+                           "The clock is likely not a hybrid clock";
+    *bytes_in_ancient_deleted_rowsets = 0;
+    return Status::OK();
+  }
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  int64_t bytes = 0;
+  {
+    std::lock_guard<std::mutex> csl(compact_select_lock_);
+    for (const auto& rowset : comps->rowsets->all_rowsets()) {
+      if (!rowset->IsAvailableForCompaction()) {
+        continue;
+      }
+      bool deleted_and_ancient = false;
+      RETURN_NOT_OK(rowset->IsDeletedAndFullyAncient(ancient_history_mark, &deleted_and_ancient));
+      if (deleted_and_ancient) {
+        bytes += rowset->OnDiskSize();
+      }
+    }
+  }
+  metrics_->deleted_rowset_estimated_retained_bytes->set_value(bytes);
+  *bytes_in_ancient_deleted_rowsets = bytes;
+  return Status::OK();
+}
+
+Status Tablet::DeleteAncientDeletedRowsets() {
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
+  const MonoTime start_time = MonoTime::Now();
+  Timestamp ancient_history_mark;
+  if (!Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
+    VLOG_WITH_PREFIX(1) << "Cannot get ancient history mark. "
+                           "The clock is likely not a hybrid clock";
+    return Status::OK();
+  }
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  // We'll take our the rowsets' locks to ensure we don't GC the rowsets while
+  // they're being compacted.
+  RowSetVector to_delete;
+  int num_unavailable_for_delete = 0;
+  vector<std::unique_lock<std::mutex>> rowset_locks;
+  int64_t bytes_deleted = 0;
+  {
+    std::lock_guard<std::mutex> csl(compact_select_lock_);
+    for (const auto& rowset : comps->rowsets->all_rowsets()) {
+      // Check if this rowset has been locked by a compaction. If so, we
+      // shouldn't attempt to delete it.
+      if (!rowset->IsAvailableForCompaction()) {
+        num_unavailable_for_delete++;
+        continue;
+      }
+      bool deleted_and_empty = false;
+      RETURN_NOT_OK(rowset->IsDeletedAndFullyAncient(ancient_history_mark, &deleted_and_empty));
+      if (deleted_and_empty) {
+        // If we intend on deleting the rowset, take its lock so concurrent
+        // compactions don't try to select it for compactions.
+        std::unique_lock<std::mutex> l(*rowset->compact_flush_lock(), std::try_to_lock);
+        CHECK(l.owns_lock());
+        to_delete.emplace_back(rowset);
+        rowset_locks.emplace_back(std::move(l));
+        bytes_deleted += rowset->OnDiskSize();
+      }
+    }
+  }
+  if (to_delete.empty()) {
+    return Status::OK();
+  }
+  RETURN_NOT_OK(HandleEmptyCompactionOrFlush(
+      to_delete, TabletMetadata::kNoMrsFlushed));
+  metrics_->deleted_rowset_gc_bytes_deleted->IncrementBy(bytes_deleted);
+  metrics_->deleted_rowset_gc_duration->Increment((MonoTime::Now() - start_time).ToMilliseconds());
   return Status::OK();
 }
 

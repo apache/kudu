@@ -71,6 +71,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;
+using kudu::client::KuduInsert;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
@@ -87,6 +88,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(enable_flush_deltamemstores);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_rowset_compaction);
 DECLARE_string(time_source);
@@ -111,6 +113,20 @@ class TabletHistoryGcITest : public MiniClusterITestBase {
     uint64_t new_time = now + delta.ToMicroseconds();
     auto* ntp = down_cast<clock::MockNtp*>(clock->time_service());
     ntp->SetMockClockWallTimeForTests(new_time);
+  }
+
+  // Inserts to the given default workload table the given number of rows.
+  static Status InsertRowsToTable(KuduTable* table, KuduSession* session,
+                           int start_key, int num_rows) {
+    for (int32_t row_idx = 0; row_idx < num_rows; row_idx++) {
+      unique_ptr<KuduInsert> insert(table->NewInsert());
+      KuduPartialRow* row = insert->mutable_row();
+      RETURN_NOT_OK(row->SetInt32(0, start_key + row_idx));
+      RETURN_NOT_OK(row->SetInt32(1, 0));
+      RETURN_NOT_OK(row->SetString(2, ""));
+      RETURN_NOT_OK(session->Apply(insert.release()));
+    }
+    return session->Flush();
   }
 };
 
@@ -183,18 +199,8 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
   ASSERT_EQ(1, tablet_replicas.size());
   std::shared_ptr<Tablet> tablet = tablet_replicas[0]->shared_tablet();
 
-  const int32_t kNumRows = AllowSlowTests() ? 100 : 10;
-
-  // Insert a few rows.
-  for (int32_t row_key = 0; row_key < kNumRows; row_key++) {
-    unique_ptr<client::KuduInsert> insert(table->NewInsert());
-    KuduPartialRow* row = insert->mutable_row();
-    ASSERT_OK_FAST(row->SetInt32(0, row_key));
-    ASSERT_OK_FAST(row->SetInt32(1, 0));
-    ASSERT_OK_FAST(row->SetString(2, ""));
-    ASSERT_OK_FAST(session->Apply(insert.release()));
-  }
-  ASSERT_OK_FAST(session->Flush());
+  const int32_t kNumRows = 100;
+  ASSERT_OK(InsertRowsToTable(table.get(), session.get(), /*start_key*/0, kNumRows));
 
   // Update rows in a loop; wait until some undo deltas are generated.
   int32_t row_value = 0;
@@ -275,6 +281,76 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
   });
 }
 
+TEST_F(TabletHistoryGcITest, TestDeletedRowsetGc) {
+  // Disable merge compactions, since they may also cull deleted rowsets.
+  FLAGS_enable_rowset_compaction = false;
+  FLAGS_enable_flush_deltamemstores = false; // Don't flush DMS so we don't have to init deltafiles.
+  FLAGS_flush_threshold_secs = 0; // Flush as aggressively as possible.
+  FLAGS_maintenance_manager_num_threads = 4; // Encourage concurrency.
+  FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.
+  FLAGS_tablet_history_max_age_sec = 1000;
+  FLAGS_time_source = "mock"; // Allow moving the clock.
+  NO_FATALS(StartCluster(1)); // Single-node cluster.
+
+  // Create a tablet.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+  MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(1, tablet_replicas.size());
+  std::shared_ptr<Tablet> tablet = tablet_replicas[0]->shared_tablet();
+
+  // Insert some rows.
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
+  shared_ptr<KuduSession> session = client_->NewSession();
+  const int32_t kNumRows = 100;
+  ASSERT_OK(InsertRowsToTable(table.get(), session.get(), /*start_key*/0, kNumRows));
+
+  // Flush what's in memory to ensure we have at least one DRS.
+  ASSERT_OK(tablet->Flush());
+  ASSERT_GT(tablet->num_rowsets(), 0);
+
+  // Now delete and flush to ensure we have some deltafiles.
+  for (int32_t row_key = 0; row_key < kNumRows; row_key++) {
+    unique_ptr<client::KuduDelete> del(table->NewDelete());
+    KuduPartialRow* row = del->mutable_row();
+    ASSERT_OK(row->SetInt32(0, row_key));
+    ASSERT_OK(session->Apply(del.release()));
+  }
+  ASSERT_OK(session->Flush());
+  uint64_t measured_size_before_gc;
+  ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
+                                                         &measured_size_before_gc));
+  // Move forward the clock so our rowsets are all considered ancient.
+  HybridClock* c = down_cast<HybridClock*>(tablet->clock());
+  AddTimeToHybridClock(c, MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
+
+  // Eventually a deleted rowset GC op will run in the background.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(0, tablet->num_rowsets());
+  });
+  // We should see a reduction in space.
+  // NOTE: we ASSERT_EVENTUALLY because hole punching is asynchronous and so we
+  // might not see an immediate decrease in file size.
+  ASSERT_EVENTUALLY([&] {
+    uint64_t measured_size_after_gc;
+    ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
+                                                           &measured_size_after_gc));
+    ASSERT_LT(measured_size_after_gc, measured_size_before_gc);
+  });
+
+  // With no DRSs, we shouldn't see running ops.
+  ASSERT_EQ(0, tablet->metrics()->deleted_rowset_estimated_retained_bytes->value());
+  ASSERT_EQ(0, tablet->metrics()->deleted_rowset_gc_running->value());
+  ASSERT_GT(tablet->metrics()->deleted_rowset_gc_duration->TotalCount(), 0);
+  // NOTE: we could try checking this matches the before/after sizes, but
+  // there's a chance the delete raced with other delta background ops.
+  ASSERT_GT(tablet->metrics()->deleted_rowset_gc_bytes_deleted->value(), 0);
+}
+
 // Whether a MaterializedTestRow is deleted or not.
 enum IsDeleted {
   NOT_DELETED,
@@ -314,6 +390,7 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
     kMergeCompaction,
     kRedoDeltaCompaction,
     kUndoDeltaBlockGc,
+    kDeletedRowsetGc,
     kMoveTimeForward,
     kStartScan,
     kNumActions, // Count of items in this enum. Keep as last entry.
@@ -848,6 +925,15 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
         }
         VLOG(1) << "UNDO delta block GC deleted " << blocks_deleted
                 << " blocks and " << bytes_deleted << " bytes";
+        break;
+      }
+      case kDeletedRowsetGc: {
+        VLOG(1) << "Running deleted rowset GC";
+        int64_t bytes_to_delete = 0;
+        ASSERT_OK(tablet->GetBytesInAncientDeletedRowsets(&bytes_to_delete));
+        VLOG(1) << Substitute("Found $0 bytes in ancient, deleted rowsets",
+                              bytes_to_delete);
+        ASSERT_OK(tablet->DeleteAncientDeletedRowsets());
         break;
       }
       case kMoveTimeForward: {

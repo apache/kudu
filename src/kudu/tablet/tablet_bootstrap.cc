@@ -1706,13 +1706,17 @@ bool FlushedStoresSnapshot::IsMemStoreActive(const MemStoreTargetPB& target) con
       // If we have no data about this DRS, then there are two cases:
       //
       // 1) The DRS has already been flushed, but then later got removed because
-      // it got compacted away. Since it was flushed, we don't need to replay it.
+      //    it got compacted away or culled because it was empty. In the former
+      //    case, the deltas should have been reflected in the new compaction
+      //    output, and in the latter, all the rows in the rowset have been
+      //    deleted and there's nothing to replay.
       //
-      // 2) The DRS was in the process of being written, but haven't yet flushed the
-      // TabletMetadata update that includes it. We only write to an in-progress DRS like
-      // this when we are in the 'duplicating' phase of a compaction. In that case,
-      // the other duplicated 'target' should still be present in the metadata, and we
-      // can base our decision based on that one.
+      // 2) The DRS was in the process of being written, but haven't yet
+      //    flushed the TabletMetadata update that includes it. We only write
+      //    to an in-progress DRS like this when we are in the 'duplicating'
+      //    phase of a compaction. In that case, the other duplicated 'target'
+      //    should still be present in the metadata, and we can base our
+      //    decision based on that one.
       return false;
     }
 

@@ -333,10 +333,31 @@ class Tablet {
   // Find and delete all undo delta blocks that have a maximum op timestamp
   // prior to the current ancient history mark. If this method returns OK, the
   // number of blocks and bytes deleted are returned in the out-parameters.
+  //
+  // Returns an error if the metadata update fails. Upon failure, no in-memory
+  // state is change.
   Status DeleteAncientUndoDeltas(int64_t* blocks_deleted = nullptr,
                                  int64_t* bytes_deleted = nullptr);
 
-  // Count the number of deltas in the tablet. Only used for tests.
+  // Returns the number of bytes potentially used by rowsets that have no live
+  // rows and are entirely ancient.
+  //
+  // These checks may not touch on-disk block data if we can determine from the
+  // live row count that the rowsets aren't fully deleted, or from the DMS that
+  // the latest update is not considered ancient. If there is no DMS, looks at
+  // the newest redo but doesn't initialize it. As such, since we may miss out
+  // on counting rowsets we haven't initialized yet, this may be an
+  // underestimate.
+  Status GetBytesInAncientDeletedRowsets(int64_t* bytes_in_ancient_deleted_rowsets);
+
+  // Finds and GCs all fully deleted rowsets that have a maximum op timestamp
+  // prior to the current ancient history mark.
+  //
+  // Returns an error if the metadata update fails. Upon failure, no in-memory
+  // state is change.
+  Status DeleteAncientDeletedRowsets();
+
+  // Counts the number of deltas in the tablet. Only used for tests.
   int64_t CountUndoDeltasForTests() const;
   int64_t CountRedoDeltasForTests() const;
 

@@ -398,6 +398,9 @@ class DiskRowSet : public RowSet {
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
                                                      int64_t* bytes) override;
 
+  Status IsDeletedAndFullyAncient(Timestamp ancient_history_mark,
+                                  bool* deleted_and_ancient) override;
+
   Status InitUndoDeltas(Timestamp ancient_history_mark,
                         MonoTime deadline,
                         const fs::IOContext* io_context,

@@ -175,6 +175,12 @@ class DeltaTracker {
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
                                                      int64_t* bytes);
 
+  // Returns whether all redo (DMS and newest redo delta file) are ancient
+  // (i.e. that the redo with the highest timestamp is older than the AHM).
+  // This is an estimate, since if the newest redo file has not yet been
+  // initted, this will return a false negative.
+  bool EstimateAllRedosAreAncient(Timestamp ancient_history_mark);
+
   // See RowSet::InitUndoDeltas().
   Status InitUndoDeltas(Timestamp ancient_history_mark,
                         MonoTime deadline,

@@ -151,6 +151,12 @@ METRIC_DEFINE_counter(tablet, undo_delta_block_gc_bytes_deleted,
                       "Does not include bytes garbage collected during compactions.",
                       kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_counter(tablet, deleted_rowset_gc_bytes_deleted,
+                      "Deleted Rowsets GC Bytes Deleted",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes deleted by garbage-collecting deleted rowsets.",
+                      kudu::MetricLevel::kDebug);
+
 METRIC_DEFINE_histogram(tablet, bloom_lookups_per_op, "Bloom Lookups per Operation",
                         kudu::MetricUnit::kProbes,
                         "Tracks the number of bloom filter lookups performed by each "
@@ -249,6 +255,18 @@ METRIC_DEFINE_gauge_int64(tablet, undo_delta_block_estimated_retained_bytes,
   "May be an overestimate.",
   kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_gauge_uint32(tablet, deleted_rowset_gc_running,
+  "Deleted Rowset GC Running",
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of deleted rowset GC operations currently running.",
+  kudu::MetricLevel::kDebug);
+
+METRIC_DEFINE_gauge_int64(tablet, deleted_rowset_estimated_retained_bytes,
+  "Estimated Deletable Bytes Retained in Deleted Rowsets",
+  kudu::MetricUnit::kBytes,
+  "Estimated bytes of deletable data in deleted rowsets for this tablet.",
+  kudu::MetricLevel::kDebug);
+
 METRIC_DEFINE_histogram(tablet, flush_dms_duration,
   "DeltaMemStore Flush Duration",
   kudu::MetricUnit::kMilliseconds,
@@ -305,6 +323,13 @@ METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_perform_duration,
   kudu::MetricLevel::kInfo,
   60000LU, 1);
 
+METRIC_DEFINE_histogram(tablet, deleted_rowset_gc_duration,
+  "Deleted Rowset GC Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent running the maintenance operation to GC deleted rowsets.",
+  kudu::MetricLevel::kInfo,
+  60000LU, 1);
+
 METRIC_DEFINE_counter(tablet, leader_memory_pressure_rejections,
   "Leader Memory Pressure Rejections",
   kudu::MetricUnit::kRequests,
@@ -347,6 +372,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(delta_file_lookups),
     MINIT(mrs_lookups),
     MINIT(bytes_flushed),
+    MINIT(deleted_rowset_gc_bytes_deleted),
     MINIT(undo_delta_block_gc_bytes_deleted),
     MINIT(bloom_lookups_per_op),
     MINIT(key_file_lookups_per_op),
@@ -358,6 +384,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     GINIT(flush_dms_running),
     GINIT(flush_mrs_running),
     GINIT(compact_rs_running),
+    GINIT(deleted_rowset_estimated_retained_bytes),
+    GINIT(deleted_rowset_gc_running),
     GINIT(delta_minor_compact_rs_running),
     GINIT(delta_major_compact_rs_running),
     GINIT(undo_delta_block_gc_running),
@@ -365,6 +393,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(flush_dms_duration),
     MINIT(flush_mrs_duration),
     MINIT(compact_rs_duration),
+    MINIT(deleted_rowset_gc_duration),
     MINIT(delta_minor_compact_rs_duration),
     MINIT(delta_major_compact_rs_duration),
     MINIT(undo_delta_block_gc_init_duration),
