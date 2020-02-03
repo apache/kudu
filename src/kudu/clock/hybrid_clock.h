@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/time_service.h"
@@ -31,6 +32,9 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class HostPort;
+
 namespace clock {
 
 // The HybridTime clock.
@@ -43,6 +47,7 @@ class HybridClock : public Clock {
   // metric entity.
   explicit HybridClock(const scoped_refptr<MetricEntity>& metric_entity);
 
+  // Should be called only once.
   Status Init() override;
 
   // Obtains the timestamp corresponding to the current time.
@@ -162,6 +167,23 @@ class HybridClock : public Clock {
   }
 
  private:
+  enum class TimeSource {
+    // Internal Kudu clock synchronized by built-in NTP client.
+    NTP_SYNC_BUILTIN,
+
+    // Local machine clock synchronized by NTP.
+    NTP_SYNC_SYSTEM,
+
+    // Local machine clock with no requirement of NTP synchronization.
+    UNSYNC_SYSTEM,
+
+    // Mock clock (used for tests only).
+    MOCK,
+
+    // Unknown/invalid time source.
+    UNKNOWN,
+  };
+
   // How many bits to left shift a microseconds clock read. The remainder
   // of the timestamp will be reserved for logical values. Left shifting 12 bits
   // gives us 12 bits for the logical value and should still keep accurate
@@ -170,6 +192,24 @@ class HybridClock : public Clock {
 
   // Mask to extract the pure logical bits.
   static constexpr const uint64_t kLogicalBitMask = (1 << kBitsToShift) - 1;
+
+  // Convert time source to string representation.
+  static const char* TimeSourceToString(HybridClock::TimeSource time_source);
+
+  // Select particular time source for the hybrid clock given the
+  // 'time_source_str' parameter which can be a pseudo-source such as 'auto'.
+  // On success, the 'time_source' output parameter contains time source that
+  // determines particular time service to use, and the 'builtin_ntp_servers'
+  // contains NTP servers for the built-in NTP client if the 'builtin' time
+  // source is selected.
+  static Status SelectTimeSource(const std::string& time_source_str,
+                                 TimeSource* time_source,
+                                 std::vector<HostPort>* builtin_ntp_servers);
+
+  // Initialize hybrid clock with the specified time source.
+  // The 'builtin_ntp_servers' is used in case of TimeSource::BUILTIN_NTP_SYNC.
+  Status InitWithTimeSource(TimeSource time_source,
+                            std::vector<HostPort> builtin_ntp_servers);
 
   // Variant of NowWithError() that requires 'lock_' to be held already.
   void NowWithErrorUnlocked(Timestamp* timestamp, uint64_t* max_error_usec);

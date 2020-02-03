@@ -43,8 +43,6 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/cloud/instance_detector.h"
-#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -107,20 +105,9 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
 
-DEFINE_bool(builtin_ntp_client_enable_auto_config, false,
-            "Whether to try auto-discovery of servers for the built-in NTP "
-            "client. E.g., in case of AWS and GCE cloud instances, use the "
-            "dedicated NTP server provided by the cloud instance. If "
-            "auto-discovery fails, the built-in NTP client falls back to using "
-            "servers specified by the --builtin_ntp_servers flag.");
-TAG_FLAG(builtin_ntp_client_enable_auto_config, advanced);
-TAG_FLAG(builtin_ntp_client_enable_auto_config, experimental);
-
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;
 using kudu::clock::internal::RecordedResponse;
-using kudu::cloud::InstanceDetector;
-using kudu::cloud::InstanceMetadata;
 using std::deque;
 using std::lock_guard;
 using std::string;
@@ -570,30 +557,14 @@ Status BuiltInNtp::InitImpl() {
 
   if (servers_.empty()) {
     // That's the case when this object has been created using the default
-    // constructor.
+    // constructor. In this case, the set of NTP servers is taken from the
+    // --builtin_ntp_servers flag.
     vector<HostPort> hps;
-    if (FLAGS_builtin_ntp_client_enable_auto_config) {
-      // Try to find the instance-only NTP server and configure the built-in
-      // NTP client with it.
-      InstanceDetector detector;
-      unique_ptr<InstanceMetadata> md;
-      string ntp_server;
-      auto s = detector.Detect(&md).AndThen([&] {
-        return md->GetNtpServer(&ntp_server);
-      }).AndThen([&] {
-        hps.emplace_back(ntp_server, 123);
-        return Status::OK();
-      });
-      WARN_NOT_OK(s, Substitute("auto-configuration of the built-in NTP client "
-                                "failed: falling back to the set of servers "
-                                "provided by the --builtin_ntp_servers flag"));
-    }
-    if (hps.empty()) {
-      RETURN_NOT_OK_PREPEND(HostPort::ParseStrings(FLAGS_builtin_ntp_servers,
-                                                   kStandardNtpPort, &hps),
-                            "could not parse --builtin_ntp_servers flag");
-    }
+    RETURN_NOT_OK_PREPEND(HostPort::ParseStrings(FLAGS_builtin_ntp_servers,
+                                                 kStandardNtpPort, &hps),
+                          "could not parse --builtin_ntp_servers flag");
     RETURN_NOT_OK(PopulateServers(std::move(hps)));
+    DCHECK(!servers_.empty());
   }
   for (const auto& s : servers_) {
     RETURN_NOT_OK(s->Init());

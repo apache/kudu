@@ -380,5 +380,19 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
 }
 #endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
 
+// A simple scenario to verify that 'auto' is recognized as one of the possible
+// time sources: the auto-selection works and the resulting hybrid clock
+// is functional.
+TEST_F(HybridClockTest, TimeSourceAutoSelection) {
+  FLAGS_time_source = "auto";
+  HybridClock clock(metric_entity_);
+  ASSERT_OK(clock.Init());
+  Timestamp timestamp[2];
+  uint64_t max_error_usec[2];
+  clock.NowWithError(&timestamp[0], &max_error_usec[0]);
+  clock.NowWithError(&timestamp[1], &max_error_usec[1]);
+  ASSERT_LE(timestamp[0].value(), timestamp[1].value());
+}
+
 }  // namespace clock
 }  // namespace kudu

@@ -18,9 +18,11 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
@@ -35,17 +37,31 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/cloud/instance_detector.h"
+#include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
+using kudu::clock::BuiltInNtp;
+using kudu::cloud::InstanceDetector;
+using kudu::cloud::InstanceMetadata;
 using kudu::Status;
 using std::string;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
+
+#define TIME_SOURCE_AUTO "auto"
+#define TIME_SOURCE_NTP_SYNC_BUILTIN "builtin"
+#define TIME_SOURCE_NTP_SYNC_SYSTEM "system"
+#define TIME_SOURCE_UNSYNC_SYSTEM "system_unsync"
+#define TIME_SOURCE_MOCK "mock"
 
 DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
              "Maximum allowed clock synchronization error as reported by NTP "
@@ -62,29 +78,49 @@ TAG_FLAG(use_hybrid_clock, hidden);
 // This requires local machine clock to be NTP-synchronized.
 DEFINE_string(time_source,
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-              "system",
+              TIME_SOURCE_NTP_SYNC_SYSTEM,
 #else
-              "system_unsync",
+              TIME_SOURCE_UNSYNC_SYSTEM,
 #endif
               "The time source that HybridClock should use. Must be one of "
-              "'builtin', "
+              TIME_SOURCE_AUTO ", "
+              TIME_SOURCE_NTP_SYNC_BUILTIN ", "
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-              "'system', "
+              TIME_SOURCE_NTP_SYNC_SYSTEM ", "
 #endif
-              "'system_unsync', or 'mock' "
-              "('system_unsync' and 'mock' are for tests only)");
+              TIME_SOURCE_UNSYNC_SYSTEM " (toy clusters/testing only), "
+              TIME_SOURCE_MOCK " (testing only). "
+              "When set to " TIME_SOURCE_AUTO ", "
+              "the system automatically picks one of the following depending "
+              "on the environment: "
+              TIME_SOURCE_NTP_SYNC_BUILTIN ", "
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+              TIME_SOURCE_NTP_SYNC_SYSTEM ", "
+#endif
+              TIME_SOURCE_UNSYNC_SYSTEM ", where in case of picking "
+              TIME_SOURCE_NTP_SYNC_BUILTIN " the built-in NTP client is "
+              "configured with dedicated NTP server(s) provided by the "
+              "environment.");
 TAG_FLAG(time_source, evolving);
 DEFINE_validator(time_source, [](const char* flag_name, const string& value) {
-  if (boost::iequals(value, "builtin") ||
+  if (boost::iequals(value, TIME_SOURCE_AUTO) ||
+      boost::iequals(value, TIME_SOURCE_NTP_SYNC_BUILTIN) ||
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-      boost::iequals(value, "system") ||
+      boost::iequals(value, TIME_SOURCE_NTP_SYNC_SYSTEM) ||
 #endif
-      boost::iequals(value, "system_unsync") ||
-      boost::iequals(value, "mock")) {
+      boost::iequals(value, TIME_SOURCE_UNSYNC_SYSTEM) ||
+      boost::iequals(value, TIME_SOURCE_MOCK)) {
     return true;
   }
   LOG(ERROR) << Substitute("unknown value for --$0 flag: '$1' "
-                           "(expected one of 'system', 'builtin', or 'mock')",
+                           "(expected one of "
+                           TIME_SOURCE_AUTO ", "
+                           TIME_SOURCE_NTP_SYNC_BUILTIN ", "
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+                           TIME_SOURCE_NTP_SYNC_SYSTEM ", "
+#endif
+                           TIME_SOURCE_UNSYNC_SYSTEM ", "
+                           TIME_SOURCE_MOCK ")",
                            flag_name, value);
   return false;
 });
@@ -104,13 +140,15 @@ DECLARE_bool(unlock_unsafe_flags);
 //
 // The validator makes it necessary to explicitly enable unsafe flags
 // (i.e. set the --unlock_unsafe_flags flag to 'true') if configuring
-// --time_source to be 'system_unsync' or 'mock': these timesources are for
-// experimental and test clusters only.
+// --time_source with the timesources targeted for experimental and test only
+// clusters.
 bool ValidateTimeSource() {
-  if ((FLAGS_time_source == "system_unsync" ||
-       FLAGS_time_source == "mock") && !FLAGS_unlock_unsafe_flags) {
+  if (!FLAGS_unlock_unsafe_flags && (
+        FLAGS_time_source == TIME_SOURCE_UNSYNC_SYSTEM ||
+        FLAGS_time_source == TIME_SOURCE_MOCK)) {
     LOG(ERROR) << "--unlock_unsafe_flags should be set if configuring "
-                  "--time_source to be 'system_unsync' or 'mock'";
+                  "--time_source to be "
+                  TIME_SOURCE_UNSYNC_SYSTEM " or " TIME_SOURCE_MOCK;
     return false;
   }
   return true;
@@ -191,69 +229,13 @@ HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
 }
 
 Status HybridClock::Init() {
-  if (boost::iequals(FLAGS_time_source, "mock")) {
-    time_service_.reset(new clock::MockNtp);
-#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
-  } else if (boost::iequals(FLAGS_time_source, "system")) {
-    time_service_.reset(new clock::SystemNtp);
-#endif
-  } else if (boost::iequals(FLAGS_time_source, "system_unsync")) {
-    time_service_.reset(new clock::SystemUnsyncTime);
-  } else if (boost::iequals(FLAGS_time_source, "builtin")) {
-    time_service_.reset(new clock::BuiltInNtp);
-  } else {
-    return Status::InvalidArgument("invalid NTP source", FLAGS_time_source);
-  }
-  RETURN_NOT_OK(time_service_->Init());
-
-  // Make sure the underlying clock service is available (e.g., for NTP-based
-  // clock make sure it's synchronized with its NTP source). If requested, wait
-  // up to the specified timeout for the clock to become ready to use.
-  const auto wait_s = FLAGS_ntp_initial_sync_wait_secs;
-  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(wait_s);
-  bool need_log = true;
-  Status s;
-  uint64_t now_usec;
-  uint64_t error_usec;
-  int poll_backoff_ms = 1;
-  do {
-    s = time_service_->WalltimeWithError(&now_usec, &error_usec);
-    if (!s.IsServiceUnavailable()) {
-      break;
-    }
-    if (need_log) {
-      // Log about what's going on, just once.
-      if (wait_s > 0) {
-        LOG(INFO) << Substitute("waiting up to --ntp_initial_sync_wait_secs=$0 "
-                                "seconds for the clock to synchronize", wait_s);
-      } else {
-        LOG(INFO) << Substitute("not waiting for clock synchronization: "
-                                "--ntp_initial_sync_wait_secs=$0 is nonpositive",
-                                wait_s);
-      }
-      need_log = false;
-    }
-    SleepFor(MonoDelta::FromMilliseconds(poll_backoff_ms));
-    poll_backoff_ms = std::min(2 * poll_backoff_ms, 1000);
-  } while (MonoTime::Now() < deadline);
-
-  if (!s.ok()) {
-    time_service_->DumpDiagnostics(/* log= */nullptr);
-    return s.CloneAndPrepend("timed out waiting for clock synchronisation");
-  }
-
-  LOG(INFO) << Substitute("HybridClock initialized: "
-                          "now $0 us; error $1 us; skew $2 ppm",
-                          now_usec, error_usec, time_service_->skew_ppm());
-  {
-    // We typically don't expect other threads to access an object until after
-    // its Init() is called, but there is nothing preventing some other thread
-    // accessing clock-related metrics via the metrics registry before Init()
-    // is called.
-    std::lock_guard<decltype(lock_)> lock(lock_);
-    state_ = kInitialized;
-  }
-  return Status::OK();
+  TimeSource time_source = TimeSource::UNKNOWN;
+  vector<HostPort> builtin_ntp_servers;
+  RETURN_NOT_OK(SelectTimeSource(
+      FLAGS_time_source, &time_source, &builtin_ntp_servers));
+  LOG(INFO) << Substitute("auto-selected time source: $0",
+                          TimeSourceToString(time_source));
+  return InitWithTimeSource(time_source, std::move(builtin_ntp_servers));
 }
 
 Timestamp HybridClock::Now() {
@@ -444,6 +426,138 @@ void HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
                         Stringify(*timestamp), *max_error_usec);
 }
 
+Status HybridClock::SelectTimeSource(const string& time_source_str,
+                                     TimeSource* time_source,
+                                     vector<HostPort>* builtin_ntp_servers) {
+  TimeSource result_time_source = TimeSource::UNKNOWN;
+  vector<HostPort> result_builtin_ntp_servers;
+  if (boost::iequals(time_source_str, TIME_SOURCE_AUTO)) {
+    InstanceDetector detector;
+    unique_ptr<InstanceMetadata> md;
+    const auto s = detector.Detect(&md);
+    string ntp_server;
+    if (s.ok() && md->GetNtpServer(&ntp_server).ok()) {
+      // Select the built-in NTP client. If the auto-configuration of the
+      // built-in NTP client enabled, use the dedicated NTP server provided
+      // by the hosting environment.
+      DCHECK(!ntp_server.empty());
+      result_builtin_ntp_servers.emplace_back(
+          ntp_server, clock::kStandardNtpPort);
+      result_time_source = TimeSource::NTP_SYNC_BUILTIN;
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+    } else {
+      // For the 'auto' time source, in case of environment that's known not
+      // to provide a dedicated NTP server, select TimeSource::NTP_SYNC_SYSTEM,
+      // if supported.
+      result_time_source = TimeSource::NTP_SYNC_SYSTEM;
+#endif
+    }
+
+    // Finally, fallback to TimeSource::SYSTEM_UNSYNC. This is an option only
+    // for non-production platforms, such as macOS.
+    if (result_time_source == TimeSource::UNKNOWN) {
+      result_time_source = TimeSource::UNSYNC_SYSTEM;
+      LOG(WARNING) << Substitute(
+          "falling back '$0' time source for hybrid clock",
+          TimeSourceToString(result_time_source));
+    }
+  } else if (boost::iequals(time_source_str, TIME_SOURCE_MOCK)) {
+    result_time_source = TimeSource::MOCK;
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+  } else if (boost::iequals(time_source_str, TIME_SOURCE_NTP_SYNC_SYSTEM)) {
+    result_time_source = TimeSource::NTP_SYNC_SYSTEM;
+#endif
+  } else if (boost::iequals(time_source_str, TIME_SOURCE_UNSYNC_SYSTEM)) {
+    result_time_source = TimeSource::UNSYNC_SYSTEM;
+  } else if (boost::iequals(time_source_str, TIME_SOURCE_NTP_SYNC_BUILTIN)) {
+    result_time_source = TimeSource::NTP_SYNC_BUILTIN;
+  } else {
+    return Status::InvalidArgument("invalid time source", time_source_str);
+  }
+
+  *time_source = result_time_source;
+  *builtin_ntp_servers = std::move(result_builtin_ntp_servers);
+  return Status::OK();
+}
+
+Status HybridClock::InitWithTimeSource(TimeSource time_source,
+                                       vector<HostPort> builtin_ntp_servers) {
+  DCHECK_EQ(kNotInitialized, state_);
+
+  switch (time_source) {
+    case TimeSource::NTP_SYNC_BUILTIN:
+      time_service_.reset(builtin_ntp_servers.empty()
+                          ? new clock::BuiltInNtp
+                          : new clock::BuiltInNtp(std::move(builtin_ntp_servers)));
+      break;
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+    case TimeSource::NTP_SYNC_SYSTEM:
+      time_service_.reset(new clock::SystemNtp);
+      break;
+#endif
+    case TimeSource::UNSYNC_SYSTEM:
+      time_service_.reset(new clock::SystemUnsyncTime);
+      break;
+    case TimeSource::MOCK:
+      time_service_.reset(new clock::MockNtp);
+      break;
+    default:
+      return Status::InvalidArgument("invalid time source for hybrid clock",
+                                     TimeSourceToString(time_source));
+  }
+  RETURN_NOT_OK(time_service_->Init());
+
+  // Make sure the underlying clock service is available (e.g., for NTP-based
+  // clock make sure it's synchronized with its NTP source). If requested, wait
+  // up to the specified timeout for the clock to become ready to use.
+  const auto wait_s = FLAGS_ntp_initial_sync_wait_secs;
+  const auto deadline = MonoTime::Now() + MonoDelta::FromSeconds(wait_s);
+  bool need_log = true;
+  Status s;
+  uint64_t now_usec;
+  uint64_t error_usec;
+  int poll_backoff_ms = 1;
+  do {
+    s = time_service_->WalltimeWithError(&now_usec, &error_usec);
+    if (!s.IsServiceUnavailable()) {
+      break;
+    }
+    if (need_log) {
+      // Log about what's going on, just once.
+      if (wait_s > 0) {
+        LOG(INFO) << Substitute("waiting up to --ntp_initial_sync_wait_secs=$0 "
+                                "seconds for the clock to synchronize", wait_s);
+      } else {
+        LOG(INFO) << Substitute("not waiting for clock synchronization: "
+                                "--ntp_initial_sync_wait_secs=$0 is nonpositive",
+                                wait_s);
+      }
+      need_log = false;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(poll_backoff_ms));
+    poll_backoff_ms = std::min(2 * poll_backoff_ms, 1000);
+  } while (MonoTime::Now() < deadline);
+
+  if (!s.ok()) {
+    time_service_->DumpDiagnostics(/* log= */nullptr);
+    return s.CloneAndPrepend("timed out waiting for clock synchronisation");
+  }
+
+  LOG(INFO) << Substitute("HybridClock initialized: "
+                          "now $0 us; error $1 us; skew $2 ppm",
+                          now_usec, error_usec, time_service_->skew_ppm());
+
+  {
+    // We typically don't expect other threads to access an object until after
+    // its Init() is called, but there is nothing preventing some other thread
+    // accessing clock-related metrics via the metrics registry before Init()
+    // is called.
+    std::lock_guard<decltype(lock_)> lock(lock_);
+    state_ = kInitialized;
+  }
+  return Status::OK();
+}
+
 Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   auto read_time_before = MonoTime::Now();
   Status s = time_service_->WalltimeWithError(now_usec, error_usec);
@@ -580,6 +694,22 @@ string HybridClock::StringifyTimestamp(const Timestamp& timestamp) {
   return Substitute("P: $0 usec, L: $1",
                     GetPhysicalValueMicros(timestamp),
                     GetLogicalValue(timestamp));
+}
+
+// Convert time source to string representation.
+const char* HybridClock::TimeSourceToString(TimeSource time_source) {
+  switch (time_source) {
+    case TimeSource::NTP_SYNC_BUILTIN:
+      return TIME_SOURCE_NTP_SYNC_BUILTIN;
+    case TimeSource::NTP_SYNC_SYSTEM:
+      return TIME_SOURCE_NTP_SYNC_SYSTEM;
+    case TimeSource::UNSYNC_SYSTEM:
+      return TIME_SOURCE_UNSYNC_SYSTEM;
+    case TimeSource::MOCK:
+      return TIME_SOURCE_MOCK;
+    default:
+      return "unknown";
+  }
 }
 
 }  // namespace clock
