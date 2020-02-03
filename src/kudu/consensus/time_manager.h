@@ -120,9 +120,6 @@ class TimeManager {
   // Returns Status::OK() if it safe time advanced past 'timestamp' before 'deadline'
   // Returns Status::TimeOut() if deadline elapsed without safe time moving enough.
   // Returns Status::ServiceUnavailable() is the request should be retried somewhere else.
-  //
-  // TODO(KUDU-1127) make this return another status if safe time is too far back in the past
-  // or hasn't moved in a long time.
   Status WaitUntilSafe(Timestamp timestamp, const MonoTime& deadline);
 
   // Returns the current safe time.
@@ -196,7 +193,7 @@ class TimeManager {
   mutable simple_spinlock lock_;
 
   // Vector of waiters to be notified when the safe time advances.
-  mutable std::vector<WaitingState*> waiters_;
+  std::vector<WaitingState*> waiters_;
 
   // The last serial timestamp that was assigned.
   Timestamp last_serial_ts_assigned_;

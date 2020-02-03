@@ -265,17 +265,15 @@ void TimeManager::AdvanceSafeTimeAndWakeUpWaitersUnlocked(Timestamp safe_time) {
   last_safe_ts_ = safe_time;
   last_advanced_safe_time_ = MonoTime::Now();
 
-  if (PREDICT_FALSE(!waiters_.empty())) {
-    auto iter = waiters_.begin();
-    while (iter != waiters_.end()) {
-      WaitingState* waiter = *iter;
-      if (IsTimestampSafeUnlocked(waiter->timestamp)) {
-        iter = waiters_.erase(iter);
-        waiter->latch->CountDown();
-        continue;
-      }
-      iter++;
+  auto iter = waiters_.begin();
+  while (iter != waiters_.end()) {
+    WaitingState* waiter = *iter;
+    if (IsTimestampSafeUnlocked(waiter->timestamp)) {
+      iter = waiters_.erase(iter);
+      waiter->latch->CountDown();
+      continue;
     }
+    ++iter;
   }
 }
 
