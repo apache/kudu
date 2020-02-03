@@ -18,9 +18,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -135,7 +137,6 @@ class Rebalancer {
 
   // Represents a concrete move of a replica from one tablet server to another.
   // Formed logically from a TableReplicaMove by specifying a tablet for the move.
-  // Originally from "tools/rebalancer.h"
   struct ReplicaMove {
     std::string tablet_uuid;
     std::string ts_uuid_from;
@@ -150,10 +151,44 @@ class Rebalancer {
   };
 
   // A helper type: key is tablet UUID which corresponds to value.tablet_uuid.
-  // Originally from "tools/rebalancer.h"
   typedef std::unordered_map<std::string, ReplicaMove> MovesInProgress;
 
   explicit Rebalancer(Config config);
+
+  // Filter the list of candidate tablets to make sure the location
+  // of the destination server would not contain the majority of replicas
+  // after the move. The 'tablet_ids' is an in-out parameter.
+  static Status FilterCrossLocationTabletCandidates(
+      const std::unordered_map<std::string, std::string>& location_by_ts_id,
+      const TabletsPlacementInfo& placement_info,
+      const TableReplicaMove& move,
+      std::vector<std::string>* tablet_ids);
+
+  // Given high-level move-some-tablet-replica-for-a-table information from the
+  // rebalancing algorithm, find appropriate tablet replicas to move between the
+  // specified tablet servers. The set of result tablet UUIDs is output
+  // into the 'tablet_ids' container (note: the container is first cleared).
+  // The source and destination replicas can then be determined by the elements
+  // of the 'tablet_ids' container and tablet server UUIDs TableReplicaMove::from
+  // and TableReplica::to correspondingly. If no suitable tablet replicas are found,
+  // 'tablet_ids' will be empty.
+  static void FindReplicas(const TableReplicaMove& move,
+                           const ClusterRawInfo& raw_info,
+                           std::vector<std::string>* tablet_ids);
+
+  // Convert the 'raw' information about the cluster into information suitable
+  // for the input of the high-level rebalancing algorithm.
+  // The 'moves_in_progress' parameter contains information on the replica moves
+  // which have been scheduled by a caller and still in progress: those are
+  // considered as successfully completed and applied to the 'raw_info' when
+  // building ClusterBalanceInfo for the specified 'raw_info' input. The idea
+  // is to prevent the algorithm outputting the same moves again while some
+  // of the moves recommended at prior steps are still in progress.
+  // The result cluster balance information is output into the 'info' parameter.
+  // The 'info' output parameter cannot be null.
+  Status BuildClusterInfo(const ClusterRawInfo& raw_info,
+                          const MovesInProgress& moves_in_progress,
+                          ClusterInfo* info) const;
 
  protected:
   // Helper class to find and schedule next available rebalancing move operation
@@ -200,50 +235,41 @@ class Rebalancer {
 
   friend class KsckResultsToClusterBalanceInfoTest;
 
-  // Given high-level move-some-tablet-replica-for-a-table information from the
-  // rebalancing algorithm, find appropriate tablet replicas to move between the
-  // specified tablet servers. The set of result tablet UUIDs is output
-  // into the 'tablet_ids' container (note: the container is first cleared).
-  // The source and destination replicas are determined by the elements of the
-  // 'tablet_ids' container and tablet server UUIDs TableReplicaMove::from and
-  // TableReplica::to correspondingly. If no suitable tablet replicas are found,
-  // 'tablet_ids' will be empty.
-  static void FindReplicas(const TableReplicaMove& move,
-                           const ClusterRawInfo& raw_info,
-                           std::vector<std::string>* tablet_ids);
-
   // Filter move operations in 'replica_moves': remove all operations that would
   // involve moving replicas of tablets which are in 'scheduled_moves'. The
   // 'replica_moves' cannot be null.
   static void FilterMoves(const MovesInProgress& scheduled_moves,
                           std::vector<ReplicaMove>* replica_moves);
 
-  // Filter the list of candidate tablets to make sure the location
-  // of the destination server would not contain the majority of replicas
-  // after the move. The 'tablet_ids' is an in-out parameter.
-  static Status FilterCrossLocationTabletCandidates(
-      const std::unordered_map<std::string, std::string>& location_by_ts_id,
-      const TabletsPlacementInfo& placement_info,
-      const TableReplicaMove& move,
-      std::vector<std::string>* tablet_ids);
-
-  // Convert the 'raw' information about the cluster into information suitable
-  // for the input of the high-level rebalancing algorithm.
-  // The 'moves_in_progress' parameter contains information on the replica moves
-  // which have been scheduled by a caller and still in progress: those are
-  // considered as successfully completed and applied to the 'raw_info' when
-  // building ClusterBalanceInfo for the specified 'raw_info' input. The idea
-  // is to prevent the algorithm outputting the same moves again while some
-  // of the moves recommended at prior steps are still in progress.
-  // The result cluster balance information is output into the 'info' parameter.
-  // The 'info' output parameter cannot be null.
-  Status BuildClusterInfo(const ClusterRawInfo& raw_info,
-                          const MovesInProgress& moves_in_progress,
-                          ClusterInfo* info) const;
-
   // Configuration for the rebalancer.
   const Config config_;
 };
+
+// Hold information about a tablet's replication factor and replicas.
+struct TabletExtraInfo {
+  int replication_factor;
+  int num_voters;
+};
+
+// Populate a 'tablet_id' --> 'target tablet replication factor' map.
+void BuildTabletExtraInfoMap(
+    const ClusterRawInfo& raw_info,
+    std::unordered_map<std::string, TabletExtraInfo>* extra_info_by_tablet_id);
+
+// For a given table, find a tablet replica on a specified tserver to move
+// to another. Given the requested 'move', shuffle the table's tablet_ids
+// and select the first tablet that doesn't currently have any replicas in
+// 'tablets_in_move'. Add the tablet's id to 'tablets_in_move' and add
+// information about this move to 'replica_moves'. If the chosen tablet is
+// overreplicated, no destination tserver is specified, in case it is better
+// to just remove it from the replica distribution entirely.
+Status SelectReplicaToMove(
+    const TableReplicaMove& move,
+    const std::unordered_map<std::string, TabletExtraInfo>& extra_info_by_tablet_id,
+    std::mt19937* random_generator,
+    std::vector<std::string> tablet_ids,
+    std::unordered_set<std::string>* tablets_in_move,
+    std::vector<Rebalancer::ReplicaMove>* replica_moves);
 
 } // namespace rebalance
 } // namespace kudu

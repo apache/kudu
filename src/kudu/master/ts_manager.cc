@@ -205,6 +205,18 @@ int TSManager::GetCount() const {
   return servers_by_id_.size();
 }
 
+int TSManager::GetLiveCount() const {
+  shared_lock<rw_spinlock> l(lock_);
+  int live_count = 0;
+  for (const auto& entry : servers_by_id_) {
+    const shared_ptr<TSDescriptor>& ts = entry.second;
+    if (!ts->PresumedDead()) {
+      live_count++;
+    }
+  }
+  return live_count;
+}
+
 unordered_set<string> TSManager::GetUuidsToIgnoreForUnderreplication() const {
   unordered_set<string> uuids;
   shared_lock<RWMutex> tsl(ts_state_lock_);

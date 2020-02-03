@@ -97,7 +97,7 @@ class TokenSigningPublicKeyPB;
 
 namespace tserver {
 class TsTabletManagerITest_TestTableStats_Test;
-}
+} // namespace tserver
 
 namespace tablet {
 class TabletReplica;
@@ -106,6 +106,7 @@ class TabletReplica;
 namespace master {
 
 class AuthzProvider;
+class AutoRebalancerTask;
 class CatalogManagerBgTasks;
 class HmsNotificationLogListenerTask;
 class Master;
@@ -145,8 +146,8 @@ struct PersistentTabletInfo {
 // of data are in PersistentTabletInfo above, and typically accessed using
 // TabletMetadataLock. For example:
 //
-//   TabletInfo* table = ...;
-//   TabletMetadataLock l(tablet, TableMetadataLock::READ);
+//   TabletInfo* tablet = ...;
+//   TabletMetadataLock l(tablet, TabletMetadataLock::READ);
 //   if (l.data().is_running()) { ... }
 //
 // The non-persistent information about the tablet is protected by an internal
@@ -768,6 +769,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     return authz_provider_.get();
   }
 
+  master::AutoRebalancerTask* auto_rebalancer() const {
+    return auto_rebalancer_.get();
+  }
+
   // Returns the normalized form of the provided table name.
   //
   // If the HMS integration is configured and the table name is a valid HMS
@@ -790,6 +795,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // This test exclusively acquires the leader_lock_ directly.
   FRIEND_TEST(kudu::client::ServiceUnavailableRetryClientTest, CreateTable);
 
+  friend class AutoRebalancerTest;
   friend class TableLoader;
   friend class TabletLoader;
 
@@ -1107,6 +1113,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   std::unique_ptr<HmsNotificationLogListenerTask> hms_notification_log_listener_;
 
   std::unique_ptr<master::AuthzProvider> authz_provider_;
+
+  std::unique_ptr<AutoRebalancerTask> auto_rebalancer_;
 
   enum State {
     kConstructed,

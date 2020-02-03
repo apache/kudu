@@ -65,13 +65,16 @@ using kudu::cluster_summary::TabletSummary;
 using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::MasterServiceProxy;
+using kudu::rebalance::BuildTabletExtraInfoMap;
 using kudu::rebalance::ClusterInfo;
 using kudu::rebalance::ClusterRawInfo;
 using kudu::rebalance::PlacementPolicyViolationInfo;
 using kudu::rebalance::Rebalancer;
+using kudu::rebalance::SelectReplicaToMove;
 using kudu::rebalance::ServersByCountMap;
 using kudu::rebalance::TableBalanceInfo;
 using kudu::rebalance::TableReplicaMove;
+using kudu::rebalance::TabletExtraInfo;
 using kudu::rebalance::TabletsPlacementInfo;
 
 using std::accumulate;
@@ -938,29 +941,8 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
     RETURN_NOT_OK(BuildTabletsPlacementInfo(raw_info, scheduled_moves_, &tpi));
   }
 
-  // Build 'tablet_id' --> 'target tablet replication factor' map.
-  struct TabletExtraInfo {
-    int replication_factor;
-    int num_voters;
-  };
   unordered_map<string, TabletExtraInfo> extra_info_by_tablet_id;
-  {
-    unordered_map<string, int> replication_factors_by_table;
-    for (const auto& s : raw_info.table_summaries) {
-      EmplaceOrDie(&replication_factors_by_table, s.id, s.replication_factor);
-    }
-    for (const auto& s : raw_info.tablet_summaries) {
-      int num_voters = 0;
-      for (const auto& rs : s.replicas) {
-        if (rs.is_voter) {
-          ++num_voters;
-        }
-      }
-      const auto rf = FindOrDie(replication_factors_by_table, s.table_id);
-      EmplaceOrDie(&extra_info_by_tablet_id,
-                   s.id, TabletExtraInfo{rf, num_voters});
-    }
-  }
+  BuildTabletExtraInfoMap(raw_info, &extra_info_by_tablet_id);
 
   // The number of operations to output by the algorithm. Those will be
   // translated into concrete tablet replica movement operations, the output of
@@ -996,42 +978,12 @@ Status RebalancerTool::AlgoBasedRunner::GetNextMovesImpl(
       RETURN_NOT_OK(FilterCrossLocationTabletCandidates(
           cluster_info.locality.location_by_ts_id, tpi, move, &tablet_ids));
     }
-    // Shuffle the set of the tablet identifiers: that's to achieve even spread
-    // of moves across tables with the same skew.
-    std::shuffle(tablet_ids.begin(), tablet_ids.end(), random_generator_);
-    string move_tablet_id;
-    for (const auto& tablet_id : tablet_ids) {
-      if (!ContainsKey(tablets_in_move, tablet_id)) {
-        // For now, choose the very first tablet that does not have replicas
-        // in move. Later on, additional logic might be added to find
-        // the best candidate.
-        move_tablet_id = tablet_id;
-        break;
-      }
-    }
-    if (move_tablet_id.empty()) {
-      LOG(WARNING) << Substitute(
-          "table $0: could not find any suitable replica to move "
-          "from server $1 to server $2", move.table_id, move.from, move.to);
-      continue;
-    }
-    Rebalancer::ReplicaMove move_info;
-    move_info.tablet_uuid = move_tablet_id;
-    move_info.ts_uuid_from = move.from;
-    const auto& extra_info = FindOrDie(extra_info_by_tablet_id, move_tablet_id);
-    if (extra_info.replication_factor < extra_info.num_voters) {
-      // The number of voter replicas is greater than the target replication
-      // factor. It might happen the replica distribution would be better
-      // if just removing the source replica. Anyway, once a replica is removed,
-      // the system will automatically add a new one, if needed, where the new
-      // replica will be placed to have balanced replica distribution.
-      move_info.ts_uuid_to = "";
-    } else {
-      move_info.ts_uuid_to = move.to;
-    }
-    replica_moves->emplace_back(std::move(move_info));
-    // Mark the tablet as 'has a replica in move'.
-    tablets_in_move.emplace(move_tablet_id);
+    // This will return Status::NotFound if no replica can be moved.
+    // In that case, we just continue through the loop.
+    WARN_NOT_OK(SelectReplicaToMove(move, extra_info_by_tablet_id,
+                                    &random_generator_, std::move(tablet_ids),
+                                    &tablets_in_move, replica_moves),
+                "No replica could be moved this iteration");
   }
 
   return Status::OK();
@@ -1211,7 +1163,7 @@ bool RebalancerTool::ReplaceBasedRunner::ScheduleNextMove(bool* has_errors,
     return false;
   }
 
-  // Find a move that's doesn't have its tserver UUID in scheduled_moves_.
+  // Find a move that doesn't have its tserver UUID in scheduled_moves_.
   const auto s = SetReplace(client_,
                             move_info.tablet_uuid,
                             move_info.ts_uuid_from,

@@ -34,6 +34,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 
 set(MASTER_SRCS
   authz_provider.cc
+  auto_rebalancer.cc
   catalog_manager.cc
   hms_notification_log_listener.cc
   location_cache.cc
@@ -69,6 +70,7 @@ target_link_libraries(master
   kudu_thrift
   kudu_util
   master_proto
+  rebalance
   rpc_header_proto
   security
   server_process
@@ -80,12 +82,15 @@ target_link_libraries(master
 SET_KUDU_TEST_LINK_LIBS(
   kudu_client
   kudu_curl_util
+  itest_util
   master
   master_proto
+  mini_cluster
   mini_hms
   mini_kdc
   mini_sentry)
 
+ADD_KUDU_TEST(auto_rebalancer-test)
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(hms_notification_log_listener-test)
 ADD_KUDU_TEST(location_cache-test DATA_FILES ../scripts/first_argument.sh)

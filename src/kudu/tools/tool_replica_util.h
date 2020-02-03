@@ -94,11 +94,11 @@ Status GetTabletLeader(
     bool* is_no_leader = nullptr);
 
 // Whether the replica move operation from 'from_ts_uuid' to 'to_ts_uuid'
-// server is complete (i.e. succeeded of failed) for the tablet identified by
+// server is complete (i.e. succeeded or failed) for the tablet identified by
 // 'tablet_id'. Neither 'is_complete' nor 'completion_status' output parameter
 // can be null. If the function returns Status::OK() and the replica move is
 // complete, the 'is_complete' parameter is set to 'true' and the
-// 'completion_status' contains correspoding move status: Status::OK()
+// 'completion_status' contains corresponding move status: Status::OK()
 // if the move succeeded or non-OK status if it failed.
 //
 // The function returns Status::OK() if the 'is_complete' and

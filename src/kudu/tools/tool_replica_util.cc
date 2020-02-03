@@ -764,4 +764,3 @@ Status Is343SchemeCluster(const vector<string>& master_addresses,
 
 } // namespace tools
 } // namespace kudu
-

@@ -23,6 +23,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <random>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -462,6 +463,72 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
   return Status::OK();
 }
 
+void BuildTabletExtraInfoMap(
+    const ClusterRawInfo& raw_info,
+    std::unordered_map<std::string, TabletExtraInfo>* extra_info_by_tablet_id) {
+  unordered_map<string, int> replication_factors_by_table;
+  for (const auto& s : raw_info.table_summaries) {
+    EmplaceOrDie(&replication_factors_by_table, s.id, s.replication_factor);
+  }
+  for (const auto& s : raw_info.tablet_summaries) {
+    int num_voters = 0;
+    for (const auto& rs : s.replicas) {
+      if (rs.is_voter) {
+        ++num_voters;
+      }
+    }
+    const auto rf = FindOrDie(replication_factors_by_table, s.table_id);
+    EmplaceOrDie(extra_info_by_tablet_id,
+                 s.id, TabletExtraInfo{rf, num_voters});
+  }
+}
+
+Status SelectReplicaToMove(
+    const TableReplicaMove& move,
+    const unordered_map<string, TabletExtraInfo>& extra_info_by_tablet_id,
+    std::mt19937* random_generator,
+    vector<string> tablet_ids,
+    unordered_set<string>* tablets_in_move,
+    vector<Rebalancer::ReplicaMove>* replica_moves) {
+
+  // Shuffle the set of the tablet identifiers: that's to achieve even spread
+  // of moves across tables with the same skew.
+  std::shuffle(tablet_ids.begin(), tablet_ids.end(), *random_generator);
+  string move_tablet_id;
+  for (const auto& tablet_id : tablet_ids) {
+    if (!ContainsKey(*tablets_in_move, tablet_id)) {
+      // For now, choose the very first tablet that does not have replicas
+      // in move. Later on, additional logic might be added to find
+      // the best candidate.
+      move_tablet_id = tablet_id;
+      break;
+    }
+  }
+  if (move_tablet_id.empty()) {
+    return Status::NotFound(Substitute(
+        "table $0: could not find any suitable replica to move "
+        "from server $1 to server $2", move.table_id, move.from, move.to));
+  }
+  Rebalancer::ReplicaMove move_info;
+  move_info.tablet_uuid = move_tablet_id;
+  move_info.ts_uuid_from = move.from;
+  const auto& extra_info = FindOrDie(extra_info_by_tablet_id, move_tablet_id);
+  if (extra_info.replication_factor < extra_info.num_voters) {
+    // The number of voter replicas is greater than the target replication
+    // factor. It might happen the replica distribution would be better
+    // if just removing the source replica. Anyway, once a replica is removed,
+    // the system will automatically add a new one, if needed, where the new
+    // replica will be placed to have balanced replica distribution.
+    move_info.ts_uuid_to = "";
+  } else {
+    move_info.ts_uuid_to = move.to;
+  }
+  replica_moves->emplace_back(std::move(move_info));
+  // Mark the tablet as 'has a replica in move'.
+  tablets_in_move->emplace(std::move(move_tablet_id));
+
+  return Status::OK();
+}
 
 } // namespace rebalance
 } // namespace kudu

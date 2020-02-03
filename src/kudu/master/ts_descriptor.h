@@ -168,6 +168,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
  private:
   FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
+  friend class AutoRebalancerTest;
   friend class PlacementPolicyTest;
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
@@ -176,6 +177,10 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   Status ResolveSockaddr(Sockaddr* addr, std::string* host) const;
 
   void DecayRecentReplicaCreationsUnlocked();
+
+  void AssignLocationForTesting(std::string loc) {
+    location_ = std::move(loc);
+  }
 
   mutable rw_spinlock lock_;
 

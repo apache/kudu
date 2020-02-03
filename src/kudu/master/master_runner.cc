@@ -37,6 +37,9 @@ DECLARE_bool(evict_failed_followers);
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_string(keytab_file);
 
+DECLARE_bool(auto_rebalancing_enabled);
+DECLARE_bool(raft_prepare_replacement_before_eviction);
+
 namespace kudu {
 namespace master {
 

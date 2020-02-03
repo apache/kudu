@@ -98,6 +98,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/master/authz_provider.h"
+#include "kudu/master/auto_rebalancer.h"
 #include "kudu/master/default_authz_provider.h"
 #include "kudu/master/hms_notification_log_listener.h"
 #include "kudu/master/master.h"
@@ -307,6 +308,11 @@ DEFINE_int64(live_row_count_for_testing, 0,
 TAG_FLAG(live_row_count_for_testing, hidden);
 TAG_FLAG(live_row_count_for_testing, runtime);
 
+DEFINE_bool(auto_rebalancing_enabled, false,
+            "Whether auto-rebalancing is enabled.");
+TAG_FLAG(auto_rebalancing_enabled, advanced);
+TAG_FLAG(auto_rebalancing_enabled, experimental);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 
@@ -325,6 +331,20 @@ static bool ValidateRangerSentryFlags() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(ranger_sentry_flags, ValidateRangerSentryFlags);
+
+// Validates that if auto-rebalancing is enabled, the cluster uses 3-4-3 replication
+// (the --raft_prepare_replacement_before_eviction flag must be set to true).
+static bool Validate343SchemeEnabledForAutoRebalancing()  {
+  if (FLAGS_auto_rebalancing_enabled &&
+      !FLAGS_raft_prepare_replacement_before_eviction) {
+    LOG(ERROR) << "If enabling auto-rebalancing, Kudu must be configured"
+                  " with --raft_prepare_replacement_before_eviction.";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(auto_rebalancing_flags,
+                     Validate343SchemeEnabledForAutoRebalancing);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
@@ -801,16 +821,23 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
+  if (FLAGS_auto_rebalancing_enabled) {
+    unique_ptr<AutoRebalancerTask> task(
+        new AutoRebalancerTask(this, master_->ts_manager()));
+    RETURN_NOT_OK_PREPEND(task->Init(), "failed to initialize auto-rebalancing task");
+    auto_rebalancer_ = std::move(task);
+  }
+
   if (hms::HmsCatalog::IsEnabled()) {
     vector<HostPortPB> master_addrs_pb;
     RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addrs_pb));
 
     string master_addresses = JoinMapped(
-        master_addrs_pb,
-        [] (const HostPortPB& hostport) {
-          return Substitute("$0:$1", hostport.host(), hostport.port());
-        },
-        ",");
+      master_addrs_pb,
+      [] (const HostPortPB& hostport) {
+        return Substitute("$0:$1", hostport.host(), hostport.port());
+      },
+      ",");
 
     // The leader_lock_ isn't really intended for this (it's for serializing
     // new leadership initialization against regular catalog manager operations)
@@ -1325,6 +1352,10 @@ void CatalogManager::Shutdown() {
   if (hms_catalog_) {
     hms_notification_log_listener_->Shutdown();
     hms_catalog_->Stop();
+  }
+
+  if (auto_rebalancer_) {
+    auto_rebalancer_->Shutdown();
   }
 
   // Mark all outstanding table tasks as aborted and wait for them to fail.
