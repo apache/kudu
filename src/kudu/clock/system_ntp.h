@@ -16,7 +16,6 @@
 // under the License.
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -38,9 +37,7 @@ class SystemNtp : public TimeService {
  public:
   SystemNtp();
 
-  Status Init() override {
-    return Status::OK();
-  }
+  Status Init() override;
 
   Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
 
@@ -51,14 +48,9 @@ class SystemNtp : public TimeService {
   void DumpDiagnostics(std::vector<std::string>* log) const override;
 
  private:
-  // The scaling factor used to obtain ppms. From the adjtimex source:
-  // "scale factor used by adjtimex freq param.  1 ppm = 65536"
-  static const double kAdjtimexScalingFactor;
-
-  static const uint64_t kMicrosPerSec;
-
-  // The skew rate in PPM reported by the kernel.
-  std::atomic<int64_t> skew_ppm_;
+  // The maximum possible clock frequency skew rate reported by the kernel,
+  // parts-per-million (PPM).
+  int64_t skew_ppm_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemNtp);
 };

@@ -23,8 +23,11 @@ set(CLOCK_SRCS
   mock_ntp.cc
   system_unsync_time.cc)
 
-if (NOT APPLE)
+# Darwin 17 (macOS High Sierra, ver. 10.13.6) and higher supports get_ntptime()
+if (NOT APPLE OR ${CMAKE_SYSTEM_VERSION} VERSION_GREATER_EQUAL "17.0.0")
   set(CLOCK_SRCS ${CLOCK_SRCS} system_ntp.cc)
+  set_source_files_properties(hybrid_clock.cc
+    PROPERTIES COMPILE_DEFINITIONS "KUDU_HAS_SYSTEM_TIME_SOURCE=1")
 endif()
 
 add_library(clock ${CLOCK_SRCS})

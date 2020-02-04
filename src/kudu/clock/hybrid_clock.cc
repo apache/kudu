@@ -59,14 +59,25 @@ TAG_FLAG(use_hybrid_clock, hidden);
 
 // Use the 'system' time source by default in standard (non-test) environment.
 // This requires local machine clock to be NTP-synchronized.
-DEFINE_string(time_source, "system",
+DEFINE_string(time_source,
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+              "system",
+#else
+              "system_unsync",
+#endif
               "The time source that HybridClock should use. Must be one of "
-              "'builtin', 'system', 'system_unsync', or 'mock' "
+              "'builtin', "
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
+              "'system', "
+#endif
+              "'system_unsync', or 'mock' "
               "('system_unsync' and 'mock' are for tests only)");
 TAG_FLAG(time_source, evolving);
 DEFINE_validator(time_source, [](const char* flag_name, const string& value) {
   if (boost::iequals(value, "builtin") ||
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
       boost::iequals(value, "system") ||
+#endif
       boost::iequals(value, "system_unsync") ||
       boost::iequals(value, "mock")) {
     return true;
@@ -132,11 +143,9 @@ HybridClock::HybridClock()
 Status HybridClock::Init() {
   if (boost::iequals(FLAGS_time_source, "mock")) {
     time_service_.reset(new clock::MockNtp);
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
   } else if (boost::iequals(FLAGS_time_source, "system")) {
-#ifndef __APPLE__
     time_service_.reset(new clock::SystemNtp);
-#else
-    time_service_.reset(new clock::SystemUnsyncTime);
 #endif
   } else if (boost::iequals(FLAGS_time_source, "system_unsync")) {
     time_service_.reset(new clock::SystemUnsyncTime);
