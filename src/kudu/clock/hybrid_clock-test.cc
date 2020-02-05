@@ -352,7 +352,7 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
 }
 
-#ifndef __APPLE__
+#if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
 TEST_F(HybridClockTest, TestNtpDiagnostics) {
   FLAGS_time_source = "system";
   clock_.reset(new HybridClock);
@@ -365,7 +365,7 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   ASSERT_STR_MATCHES(s, "(ntp_gettime\\(\\) returns code |chronyc -n tracking)");
   ASSERT_STR_MATCHES(s, "(ntpq -n |chronyc -n sources)");
 }
-#endif
+#endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
 
 }  // namespace clock
 }  // namespace kudu
