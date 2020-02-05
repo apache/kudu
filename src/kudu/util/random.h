@@ -206,6 +206,21 @@ inline double Random::Normal(double mean, double std_dev) {
   return nd(gen);
 }
 
+// Generate next random integer with data-type specified by IntType template
+// parameter which must be a 32-bit or 64-bit integer. This constexpr function
+// is useful when generating random numbers in a loop with template parameter
+// and avoids the run-time cost of determining Next32() v/s Next64() in RNG.
+//
+// Note: This constexpr function can't be a member function of
+// Random/ThreadSafeRandom class because it invokes non-const member function.
+template<typename IntType, class RNG>
+constexpr IntType GetNextRandom(RNG* rand) {
+  static_assert(
+      std::is_integral<IntType>::value && (sizeof(IntType) == 4 || sizeof(IntType) == 8),
+      "Only 32-bit and 64-bit integers supported");
+  return sizeof(IntType) == 4 ? rand->Next32() : rand->Next64();
+}
+
 }  // namespace kudu
 
 #endif  // KUDU_UTIL_RANDOM_H_

@@ -17,14 +17,19 @@
 
 #include "kudu/util/random_util.h"
 
+#include <cstdint>
 #include <cstring>
 #include <ostream>
+#include <unordered_set>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
+
+using std::unordered_set;
 
 namespace kudu {
 
@@ -70,6 +75,35 @@ TEST_F(RandomUtilTest, TestRandomString) {
   memset(start, '\0', kLenMax);
   RandomString(start, 0, &rng_);
   CheckEmpty(start, 0, 0, kLenMax);
+}
+
+template<typename IntType>
+class TemplateRandomUtilTest : public RandomUtilTest {
+ public:
+  void RunCreateRandomUniqueIntegers() {
+    static constexpr int kMaxNumVals = 1000;
+    for (int i = 0; i < kNumTrials; ++i) {
+      unordered_set<IntType> avoid;
+      for (int j = 0; j < i; ++j) {
+        avoid.insert(j);
+      }
+      int num_vals = rng_.Uniform(kMaxNumVals);
+      auto vals = CreateRandomUniqueIntegers<IntType>(num_vals, avoid, &rng_);
+      ASSERT_EQ(num_vals, vals.size());
+      for (const auto& v : vals) {
+        ASSERT_FALSE(ContainsKey(avoid, v));
+      }
+    }
+  }
+};
+
+// Testing with char, short data-types will result in compile-time error, as expected.
+// Hence no run-time unit tests for non-32/64-bit integers.
+typedef ::testing::Types<int32_t, uint32_t, int64_t, uint64_t> IntTypes;
+TYPED_TEST_CASE(TemplateRandomUtilTest, IntTypes);
+
+TYPED_TEST(TemplateRandomUtilTest, RunCreateRandomUniqueIntegers) {
+  this->RunCreateRandomUniqueIntegers();
 }
 
 } // namespace kudu

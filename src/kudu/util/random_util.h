@@ -22,11 +22,12 @@
 
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
-namespace kudu {
+#include "kudu/util/random.h"
 
-class Random;
+namespace kudu {
 
 // Writes exactly n random bytes to dest using the parameter Random generator.
 // Note RandomString() does not null-terminate its strings, though '\0' could
@@ -96,6 +97,29 @@ void ReservoirSample(const Collection& c, int k, const Set& avoid,
       (*result)[j] = elem;
     }
   }
+}
+
+// Generates random and unique 32-bit or 64-bit integers that are not present in
+// the "avoid" set.
+template<typename IntType, class Set, class RNG>
+std::unordered_set<IntType> CreateRandomUniqueIntegers(const int num_values,
+                                                       const Set& avoid,
+                                                       RNG* rand) {
+  static_assert(
+      std::is_integral<IntType>::value && (sizeof(IntType) == 4 || sizeof(IntType) == 8),
+      "Only 32-bit and 64-bit integers generated");
+
+  std::unordered_set<IntType> result;
+  while (result.size() < num_values) {
+    const IntType val = GetNextRandom<IntType>(rand);
+    if (ContainsKey(avoid, val)) {
+      continue;
+    }
+    if (!ContainsKey(result, val)) {
+      result.insert(val);
+    }
+  }
+  return result;
 }
 
 } // namespace kudu
