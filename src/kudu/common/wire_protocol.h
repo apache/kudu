@@ -165,8 +165,8 @@ Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb,
 // The original data may be destroyed safely after this returns.
 //
 // This only converts those rows whose selection vector entry is true.
-// If 'client_projection_schema' is not NULL, then only columns specified in
-// 'client_projection_schema' will be projected to 'data_buf'.
+// If 'projection_schema' is not NULL, then only columns specified in
+// 'projection_schema' will be projected to 'data_buf'.
 //
 // If 'pad_unixtime_micros_to_16_bytes' is true, UNIXTIME_MICROS slots in the projection
 // schema will be padded to the right by 8 (zero'd) bytes for a total of 16 bytes.
