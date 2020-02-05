@@ -49,22 +49,19 @@ namespace clock {
 
 namespace {
 
+// Convert the clock state returned by ntp_gettime() into Status.
 Status NtpStateToStatus(int rc) {
+  // According to http://man7.org/linux/man-pages/man3/ntp_gettime.3.html,
+  // ntp_gettime() never fails if given correct pointer to the output argument.
+  PCHECK(rc >= 0);
   switch (rc) {
     case TIME_OK:
       return Status::OK();
-    case -1: // generic error
-      {
-        int err = errno;
-        // From 'man 2 adjtimex', ntp_adjtime failure implies an improper 'tx'.
-        return Status::InvalidArgument(
-            "Error reading clock. ntp_adjtime() failed", ErrnoToString(err));
-      }
     case TIME_ERROR:
       return Status::ServiceUnavailable(
-          PREDICT_FALSE(FLAGS_inject_unsync_time_errors) ?
-          "Injected clock unsync error" :
-          "Error reading clock. Clock considered unsynchronized");
+          PREDICT_FALSE(FLAGS_inject_unsync_time_errors)
+          ? "Injected clock unsync error"
+          : "Error reading clock. Clock considered unsynchronized");
     default:
       // TODO(dralves): what to do about leap seconds? see KUDU-146
       KLOG_FIRST_N(ERROR, 1)
@@ -109,11 +106,22 @@ SystemNtp::SystemNtp()
 Status SystemNtp::Init() {
   timex tx;
   tx.modes = 0; // set mode to 0 for read-only query
-  RETURN_NOT_OK(NtpStateToStatus(ntp_adjtime(&tx)));
+  int rc = ntp_adjtime(&tx);
+  // From http://man7.org/linux/man-pages/man2/adjtimex.2.html,
+  // the failure implies invalid pointer for 'tx', which cannot be the case.
+  // However, there were reports that with old version of Docker it might return
+  // EPERM even if 'tx.mode' is set to 0; see KUDU-2000 for details.
+  if (PREDICT_FALSE(rc == -1)) {
+    int err = errno;
+    return Status::RuntimeError("ntp_adjtime() failed", ErrnoToString(err));
+  }
+
   // The unit of the reported tolerance is ppm with 16-bit fractional part:
   // 65536 is 1 ppm (see http://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
   // for details).
   skew_ppm_ = tx.tolerance / 65536;
+  VLOG(1) << "ntp_adjtime(): tolerance is " << tx.tolerance;
+
   return Status::OK();
 }
 
@@ -121,12 +129,10 @@ Status SystemNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   if (PREDICT_FALSE(FLAGS_inject_unsync_time_errors)) {
     return NtpStateToStatus(TIME_ERROR);
   }
-  // Read the time. This will return an error if the clock is not synchronized.
+  // Read the clock and convert its state into status. This will return an error
+  // if the clock is not synchronized.
   ntptimeval tv;
-  const int rc = ntp_gettime(&tv);
-  // ntp_gettime() never fails according to its manual page.
-  PCHECK(rc != -1);
-  RETURN_NOT_OK(NtpStateToStatus(rc));
+  RETURN_NOT_OK(NtpStateToStatus(ntp_gettime(&tv)));
   uint64_t now = static_cast<uint64_t>(tv.time.tv_sec) * 1000000;
 #ifdef __APPLE__
   now += tv.time.tv_nsec / 1000;
