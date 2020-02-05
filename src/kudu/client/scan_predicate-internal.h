@@ -91,6 +91,32 @@ class ComparisonPredicateData : public KuduPredicate::Data {
   gscoped_ptr<KuduValue> val_;
 };
 
+// An InBloomFilter predicate for selecting values present in the vector of Bloom filters.
+class InBloomFilterPredicateData : public KuduPredicate::Data {
+ public:
+  InBloomFilterPredicateData(ColumnSchema col,
+                             std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters,
+                             std::unique_ptr<KuduValue> lower = nullptr,
+                             std::unique_ptr<KuduValue> upper = nullptr)
+      : col_(std::move(col)),
+        bloom_filters_(std::move(bloom_filters)),
+        lower_(std::move(lower)),
+        upper_(std::move(upper)) {
+  }
+
+  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
+
+  InBloomFilterPredicateData* Clone() const override;
+
+ private:
+  Status CheckTypeAndGetPointer(KuduValue* val_in, void** val_out) const;
+
+  ColumnSchema col_;
+  std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters_;
+  std::unique_ptr<KuduValue> lower_;
+  std::unique_ptr<KuduValue> upper_;
+};
+
 // A list predicate for a column and a list of constant values.
 class InListPredicateData : public KuduPredicate::Data {
  public:
@@ -159,6 +185,36 @@ class IsNullPredicateData : public KuduPredicate::Data {
   friend class KuduScanner;
 
   ColumnSchema col_;
+};
+
+class KuduBloomFilterBuilder::Data {
+ public:
+  Data();
+  ~Data() = default;
+
+  size_t num_keys_;
+  double false_positive_probability_;
+  HashAlgorithm hash_algorithm_;
+  uint32_t hash_seed_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Data);
+};
+
+class KuduBloomFilter::Data {
+ public:
+  Data() = default;
+  ~Data() = default;
+  std::unique_ptr<Data> Clone() const;
+
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_;
+  std::unique_ptr<BlockBloomFilter> bloom_filter_;
+
+ private:
+  Data(std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator,
+       std::unique_ptr<BlockBloomFilter> bloom_filter);
+
+  DISALLOW_COPY_AND_ASSIGN(Data);
 };
 
 } // namespace client

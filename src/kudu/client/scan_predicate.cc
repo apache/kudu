@@ -17,11 +17,14 @@
 
 #include "kudu/client/scan_predicate.h"
 
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
+#include "kudu/client/hash-internal.h"
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
@@ -32,10 +35,13 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/status.h"
 
 using boost::optional;
 using std::move;
+using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -146,6 +152,140 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
   spec->AddPredicate(ColumnPredicate::InList(col_, &vals_list));
 
   return Status::OK();
+}
+
+Status InBloomFilterPredicateData::CheckTypeAndGetPointer(KuduValue* val_in,
+                                                          void** val_out) const {
+  return val_in->data_->CheckTypeAndGetPointer(col_.name(),
+                                               col_.type_info()->type(),
+                                               col_.type_attributes(),
+                                               val_out);
+}
+
+Status InBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
+  void* lower_void = nullptr;
+  if (lower_) {
+    RETURN_NOT_OK(CheckTypeAndGetPointer(lower_.get(), &lower_void));
+  }
+
+  void* upper_void = nullptr;
+  if (upper_) {
+    RETURN_NOT_OK(CheckTypeAndGetPointer(upper_.get(), &upper_void));
+  }
+
+  // Extract the BlockBloomFilters.
+  vector<BlockBloomFilter*> block_bloom_filters;
+  block_bloom_filters.reserve(bloom_filters_.size());
+  for (const auto& bf : bloom_filters_) {
+    block_bloom_filters.push_back(bf->data_->bloom_filter_.get());
+  }
+
+  spec->AddPredicate(ColumnPredicate::InBloomFilter(col_, std::move(block_bloom_filters),
+                                                    lower_void, upper_void));
+  return Status::OK();
+}
+
+InBloomFilterPredicateData* client::InBloomFilterPredicateData::Clone() const {
+  unique_ptr<KuduValue> lower_clone;
+  if (lower_) {
+    lower_clone.reset(lower_->Clone());
+  }
+  unique_ptr<KuduValue> upper_clone;
+  if (upper_) {
+    upper_clone.reset(upper_->Clone());
+  }
+
+  vector<unique_ptr<KuduBloomFilter>> bloom_filter_clones;
+  bloom_filter_clones.reserve(bloom_filters_.size());
+  for (const auto& bf : bloom_filters_) {
+    bloom_filter_clones.emplace_back(bf->Clone());
+  }
+
+  return new InBloomFilterPredicateData(col_, std::move(bloom_filter_clones),
+                                        std::move(lower_clone), std::move(upper_clone));
+}
+
+KuduBloomFilter::KuduBloomFilter()  {
+  data_ = new Data();
+}
+
+KuduBloomFilter::KuduBloomFilter(Data* other_data) :
+   data_(CHECK_NOTNULL(other_data)) {
+}
+
+KuduBloomFilter::~KuduBloomFilter() {
+  delete data_;
+}
+
+KuduBloomFilter* KuduBloomFilter::Clone() const {
+  unique_ptr<Data> data_clone = data_->Clone();
+  return new KuduBloomFilter(data_clone.release());
+}
+
+void KuduBloomFilter::Insert(const Slice& key) {
+  DCHECK_NOTNULL(data_->bloom_filter_)->Insert(key);
+}
+
+KuduBloomFilterBuilder::Data::Data() :
+    num_keys_(0),
+    false_positive_probability_(0.01),
+    hash_algorithm_(FAST_HASH),
+    hash_seed_(0) {
+}
+
+KuduBloomFilterBuilder::KuduBloomFilterBuilder(size_t num_keys) {
+  data_ = new Data;
+  data_->num_keys_ = num_keys;
+}
+
+KuduBloomFilterBuilder::~KuduBloomFilterBuilder() {
+  delete data_;
+}
+
+KuduBloomFilterBuilder& KuduBloomFilterBuilder::false_positive_probability(double fpp) {
+  data_->false_positive_probability_ = fpp;
+  return *this;
+}
+
+KuduBloomFilterBuilder& KuduBloomFilterBuilder::hash_algorithm(HashAlgorithm hash_algorithm) {
+  data_->hash_algorithm_ = hash_algorithm;
+  return *this;
+}
+
+KuduBloomFilterBuilder& KuduBloomFilterBuilder::hash_seed(uint32_t hash_seed) {
+  data_->hash_seed_ = hash_seed;
+  return *this;
+}
+
+Status KuduBloomFilterBuilder::Build(KuduBloomFilter** bloom_filter_out) {
+  unique_ptr<KuduBloomFilter> bf(new KuduBloomFilter());
+  bf->data_->allocator_ = DefaultBlockBloomFilterBufferAllocator::GetSingletonSharedPtr();
+  bf->data_->bloom_filter_ = unique_ptr<BlockBloomFilter>(
+      new BlockBloomFilter(bf->data_->allocator_.get()));
+
+  int log_space_bytes = BlockBloomFilter::MinLogSpace(data_->num_keys_,
+                                                      data_->false_positive_probability_);
+  RETURN_NOT_OK(bf->data_->bloom_filter_->Init(
+      log_space_bytes, ToInternalHashAlgorithm(data_->hash_algorithm_), data_->hash_seed_));
+
+  *bloom_filter_out = bf.release();
+  return Status::OK();
+}
+
+KuduBloomFilter::Data::Data(shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator,
+                            unique_ptr<BlockBloomFilter> bloom_filter) :
+    allocator_(std::move(allocator)),
+    bloom_filter_(std::move(bloom_filter)) {
+}
+
+unique_ptr<KuduBloomFilter::Data> KuduBloomFilter::Data::Clone() const {
+  shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_clone =
+      CHECK_NOTNULL(allocator_->Clone());
+  unique_ptr<BlockBloomFilter> bloom_filter_clone;
+  CHECK_OK(bloom_filter_->Clone(allocator_clone.get(), &bloom_filter_clone));
+
+  return unique_ptr<KuduBloomFilter::Data>(
+      new Data(std::move(allocator_clone), std::move(bloom_filter_clone)));
 }
 
 } // namespace client

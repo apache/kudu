@@ -90,8 +90,6 @@ class KuduWriteOperation;
 class ResourceMetrics;
 
 namespace internal {
-template <class ReqClass, class RespClass>
-class AsyncLeaderMasterRpc; // IWYU pragma: keep
 class Batcher;
 class ErrorCollector;
 class GetTableSchemaRpc;
@@ -102,6 +100,8 @@ class RemoteTabletServer;
 class ReplicaController;
 class RetrieveAuthzTokenRpc;
 class WriteRpc;
+template <class ReqClass, class RespClass>
+class AsyncLeaderMasterRpc; // IWYU pragma: keep
 } // namespace internal
 
 /// Install a callback for internal client logging.
@@ -1085,6 +1085,41 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   KuduPredicate* NewComparisonPredicate(const Slice& col_name,
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
+
+  /// Create a new IN Bloom filter predicate which can be used for scanners on
+  /// this table.
+  ///
+  /// A Bloom filter is a space-efficient probabilistic data structure used to
+  /// test set membership with a possibility of false positive matches.
+  /// See @c KuduBloomFilter for creating Bloom filters.
+  ///
+  /// IN list predicate can be used with small number of values; on the other
+  /// hand with IN Bloom filter predicate large number of values can be tested
+  /// for membership in a space-efficient manner.
+  ///
+  /// @param [in] col_name
+  ///   Name of the column to which the predicate applies.
+  /// @param [in] bloom_filters
+  ///   Vector of Bloom filters that contain the values inserted to match
+  ///   against the column. The column value must match against all the
+  ///   supplied Bloom filters to be returned by the scanner. On return,
+  ///   regardless of success or error, the returned predicate will take
+  ///   ownership of the pointers contained in @c bloom_filters.
+  /// @param [in] lower_bound_inclusive
+  /// @param [in] upper_bound_exclusive
+  ///   Optional [lower_bound, upper_bound) filters where type of the bound
+  ///   must correspond to the value of the column to which the predicate is
+  ///   to be applied.
+  /// @return Raw pointer to an IN Bloom filter predicate. The caller owns the
+  ///   predicate until it is passed into KuduScanner::AddConjunctPredicate().
+  ///   In the case of an error (e.g. an invalid column name),
+  ///   a non-NULL value is still returned. The error will be returned when
+  ///   attempting to add this predicate to a KuduScanner.
+  KuduPredicate* NewInBloomFilterPredicate(
+      const Slice& col_name,
+      std::vector<KuduBloomFilter*>* bloom_filters,
+      KuduValue* lower_bound_inclusive = NULL, // NOLINT(modernize-use-nullptr)
+      KuduValue* upper_bound_exclusive = NULL); // NOLINT(modernize-use-nullptr)
 
   /// Create a new IN list predicate which can be used for scanners on this
   /// table.

@@ -36,6 +36,7 @@ set(CLIENT_SRCS
   client-internal.cc
   error_collector.cc
   error-internal.cc
+  hash.cc
   master_rpc.cc
   master_proxy_rpc.cc
   meta_cache.cc
@@ -176,6 +177,7 @@ install(TARGETS kudu_client_exported
 install(FILES
   callbacks.h
   client.h
+  hash.h
   row_result.h
   scan_batch.h
   scan_predicate.h
