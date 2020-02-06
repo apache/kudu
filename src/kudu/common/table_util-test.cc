@@ -51,7 +51,7 @@ TEST(TestTableUtil, TestParseHiveTableIdentifier) {
 
   EXPECT_TRUE(ParseHiveTableIdentifier("", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier(".", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(ParseHiveTableIdentifier("no-table", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(ParseHiveTableIdentifier("no_table", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier("lots.of.tables", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier(".no_table", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier("no_table.", &db, &tbl).IsInvalidArgument());
@@ -60,6 +60,86 @@ TEST(TestTableUtil, TestParseHiveTableIdentifier) {
   EXPECT_TRUE(ParseHiveTableIdentifier("white space.no", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier("unicode☃tables.no", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier(string("\0.\0", 3), &db, &tbl).IsInvalidArgument());
+}
+
+TEST(TestTableUtil, TestRangerTableIdentifier) {
+  string db;
+  Slice tbl;
+  string table;
+  bool default_database;
+
+  table = "foo.bar";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("foo", db);
+  EXPECT_EQ("bar", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "99bottles.my_awesome/table/22";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("99bottles", db);
+  EXPECT_EQ("my_awesome/table/22", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "99/bottles.my_awesome/table/22";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("99/bottles", db);
+  EXPECT_EQ("my_awesome/table/22", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "_leading_underscore.trailing_underscore_";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("_leading_underscore", db);
+  EXPECT_EQ("trailing_underscore_", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "foo";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("default", db);
+  EXPECT_EQ("foo", tbl);
+  EXPECT_TRUE(default_database);
+
+  table = "default.foo";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("default", db);
+  EXPECT_EQ("foo", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "lots.of.tables";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("lots", db);
+  EXPECT_EQ("of.tables", tbl);
+  EXPECT_FALSE(default_database);
+
+  table = "db_name..table_name";
+  EXPECT_OK(ParseRangerTableIdentifier(table, &db, &tbl, &default_database));
+  EXPECT_EQ("db_name", db);
+  EXPECT_EQ(".table_name", tbl);
+  EXPECT_FALSE(default_database);
+
+  EXPECT_TRUE(ParseRangerTableIdentifier("", &db, &tbl, &default_database)
+      .IsInvalidArgument());
+  EXPECT_TRUE(ParseRangerTableIdentifier(".", &db, &tbl, &default_database)
+      .IsInvalidArgument());
+  EXPECT_OK(ParseRangerTableIdentifier("no_table", &db, &tbl,
+                                       &default_database));
+  EXPECT_OK(ParseRangerTableIdentifier("lots.of.tables", &db, &tbl,
+                                       &default_database));
+  EXPECT_TRUE(ParseRangerTableIdentifier("no_table.", &db, &tbl,
+                                         &default_database)
+      .IsInvalidArgument());
+  EXPECT_TRUE(ParseRangerTableIdentifier(".no_database", &db, &tbl,
+                                         &default_database)
+      .IsInvalidArgument());
+  EXPECT_OK(ParseRangerTableIdentifier("punctuation?.yes", &db, &tbl,
+                                       &default_database));
+  EXPECT_OK(ParseRangerTableIdentifier("white space.yes", &db, &tbl,
+                                       &default_database));
+  EXPECT_OK(ParseRangerTableIdentifier("unicode☃tables.yes", &db, &tbl,
+                                       &default_database));
+  EXPECT_OK(ParseRangerTableIdentifier("unicode.☃tables.yes", &db, &tbl,
+                                       &default_database));
+  EXPECT_OK(ParseRangerTableIdentifier(string("\0.\0", 3), &db, &tbl,
+                                       &default_database));
 }
 
 } // namespace kudu

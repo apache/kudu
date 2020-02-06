@@ -20,24 +20,38 @@
 #include <string>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/gutil/strings/charset.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-using boost::optional;
+DEFINE_string(ranger_default_database, "default",
+              "Name of the default database which is used in the Ranger "
+              "authorization context when the database name is not specified "
+              "in the table name. Ranger makes no difference between "
+              "<ranger_default_database>.<table> and <table>, so privileges "
+              "granted on <table> in <ranger_default_database> are applied to"
+              "both <ranger_default_database>.<table> and <table> in Kudu.");
+
 using std::string;
 
 namespace kudu {
 
-const char* const kInvalidTableError = "when the Hive Metastore integration "
+const char* const kInvalidHiveTableError = "when the Hive Metastore integration "
     "is enabled, Kudu table names must be a period ('.') separated database and table name "
     "identifier pair, each containing only ASCII alphanumeric characters, '_', and '/'";
+
+const char* const kInvalidRangerTableError = "when Ranger authorization is enabled, "
+    "Kudu table names must not begin with a period ('.') and if they contain a period, there "
+    "must be other characters after the first one, as the first period is treated as a separator "
+    "between the database and table name. The table and the database name can't be empty.";
+
+const char kSeparator = '.';
 
 Status ParseHiveTableIdentifier(const string& table_name,
                                 Slice* hms_database,
                                 Slice* hms_table) {
-  const char kSeparator = '.';
   strings::CharSet charset("abcdefghijklmnopqrstuvwxyz"
                            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                            "0123456789"
@@ -50,17 +64,50 @@ Status ParseHiveTableIdentifier(const string& table_name,
       if (c == kSeparator && !separator_idx) {
         separator_idx = idx;
       } else {
-        return Status::InvalidArgument(kInvalidTableError, table_name);
+        return Status::InvalidArgument(kInvalidHiveTableError, table_name);
       }
     }
   }
   if (!separator_idx || *separator_idx == 0 || *separator_idx == table_name.size() - 1) {
-    return Status::InvalidArgument(kInvalidTableError, table_name);
+    return Status::InvalidArgument(kInvalidHiveTableError, table_name);
   }
 
   *hms_database = Slice(table_name.data(), *separator_idx);
   *hms_table = Slice(table_name.data() + *separator_idx + 1,
                      table_name.size() - *separator_idx - 1);
+  return Status::OK();
+}
+
+Status ParseRangerTableIdentifier(const string& table_name,
+                                  string* ranger_database,
+                                  Slice* ranger_table,
+                                  bool* default_database) {
+  auto separator_idx = boost::make_optional<int>(false, 0);
+  for (int idx = 0; idx < table_name.size(); ++idx) {
+    char c = table_name[idx];
+    if (c == kSeparator) {
+      separator_idx = idx;
+      break;
+    }
+  }
+
+  if (separator_idx) {
+    if (*separator_idx == 0 || *separator_idx == table_name.size() - 1) {
+      return Status::InvalidArgument(kInvalidRangerTableError, table_name);
+    }
+    *ranger_database = table_name.substr(0, *separator_idx);
+    *ranger_table = Slice(table_name.data() + *separator_idx + 1,
+                          table_name.size() - *separator_idx - 1);
+  } else {
+    *ranger_database = FLAGS_ranger_default_database;
+    *ranger_table = Slice(table_name.data());
+  }
+  *default_database = !separator_idx;
+
+  if (ranger_table->empty()) {
+    return Status::InvalidArgument(kInvalidRangerTableError, table_name);
+  }
+
   return Status::OK();
 }
 

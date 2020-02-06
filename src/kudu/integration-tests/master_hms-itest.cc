@@ -16,9 +16,11 @@
 // under the License.
 
 #include <algorithm>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -173,7 +175,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   table_alterer.reset(client_->NewTableAlterer("db.a"));
   s = table_alterer->RenameTo("foo")->Alter();
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), kInvalidTableError);
+  ASSERT_STR_CONTAINS(s.ToString(), kInvalidHiveTableError);
 
   // Attempt to rename the Kudu table to a non-existent database.
   table_alterer.reset(client_->NewTableAlterer("db.a"));
