@@ -565,9 +565,11 @@ class RpcTestBase : public KuduTest {
     // And we also shouldn't take the full time that we asked for
     EXPECT_LT(elapsed_millis * 1000, sleep_micros);
     if (will_be_cancelled) {
-      EXPECT_TRUE(s.IsAborted());
+      // Cancellation is best effort, so even if we cancel the rpc it may still end up
+      // with a timed out status.
+      EXPECT_TRUE(s.IsAborted() || s.IsTimedOut()) << s.ToString();
     } else {
-      EXPECT_TRUE(s.IsTimedOut());
+      EXPECT_TRUE(s.IsTimedOut()) << s.ToString();
     }
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
