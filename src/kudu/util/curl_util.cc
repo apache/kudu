@@ -132,6 +132,9 @@ Status EasyCurl::DoRequest(const string& url,
   if (verbose_) {
     CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_VERBOSE, 1));
   }
+  if (fail_on_http_error_) {
+    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_FAILONERROR, 1));
+  }
 
   // Add headers if specified.
   struct curl_slist* curl_headers = nullptr;

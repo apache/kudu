@@ -84,6 +84,14 @@ class EasyCurl {
     custom_method_ = std::move(m);
   }
 
+  // Whether to return an error if server responds with HTTP code >= 400.
+  // By default, curl returns the returned content and the response code
+  // since it's handy in case of auth-related HTTP response codes such as
+  // 401 and 407. See 'man CURLOPT_FAILONERROR' for details.
+  void set_fail_on_http_error(bool fail_on_http_error) {
+    fail_on_http_error_ = fail_on_http_error;
+  }
+
   // Returns the number of new connections created to achieve the previous transfer.
   int num_connects() const {
     return num_connects_;
@@ -112,6 +120,9 @@ class EasyCurl {
   bool use_spnego_ = false;
 
   bool verbose_ = false;
+
+  // The default setting for CURLOPT_FAILONERROR in libcurl is 0 (false).
+  bool fail_on_http_error_ = false;
 
   MonoDelta timeout_;
 

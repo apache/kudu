@@ -153,6 +153,7 @@ Status InstanceMetadata::Fetch(const string& url,
   }
   EasyCurl curl;
   curl.set_timeout(timeout);
+  curl.set_fail_on_http_error(true);
   faststring resp;
   RETURN_NOT_OK(curl.FetchURL(url, &resp, headers));
   if (out) {
