@@ -1344,4 +1344,67 @@ public class TestKuduClient {
     assertTrue("Missing warning:\n" + loggedText,
                loggedText.contains("this is unsafe"));
   }
+
+  @Test(timeout = 100000)
+  public void testSchemaDriftPattern() throws Exception {
+    KuduTable table = client.createTable(
+            TABLE_NAME, createManyStringsSchema(), getBasicCreateTableOptions().setWait(false));
+    KuduSession session = client.newSession();
+
+    // Insert a row.
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addString("key", "key_0");
+    row.addString("c1", "c1_0");
+    row.addString("c2", "c2_0");
+    row.addString("c3", "c3_0");
+    row.addString("c4", "c4_0");
+    OperationResponse resp = session.apply(insert);
+    assertFalse(resp.hasRowError());
+
+    // Insert a row with an extra column.
+    boolean retried = false;
+    while (true) {
+      try {
+        Insert insertExtra = table.newInsert();
+        PartialRow rowExtra = insertExtra.getRow();
+        rowExtra.addString("key", "key_1");
+        rowExtra.addString("c1", "c1_1");
+        rowExtra.addString("c2", "c2_1");
+        rowExtra.addString("c3", "c2_1");
+        rowExtra.addString("c4", "c2_1");
+        rowExtra.addString("c5", "c5_1");
+        OperationResponse respExtra = session.apply(insertExtra);
+        assertFalse(respExtra.hasRowError());
+        break;
+      } catch (IllegalArgumentException e) {
+        if (retried) {
+          throw e;
+        }
+        // Add the missing column and retry.
+        if (e.getMessage().contains("Unknown column")) {
+          client.alterTable(TABLE_NAME, new AlterTableOptions()
+                  .addNullableColumn("c5", Type.STRING));
+          // We need to re-open the table to ensure it has the new schema.
+          table = client.openTable(TABLE_NAME);
+          retried = true;
+        } else {
+          throw e;
+        }
+      }
+    }
+    // Make sure we actually retried.
+    assertTrue(retried);
+
+    // Insert a row with the old schema.
+    Insert insertOld = table.newInsert();
+    PartialRow rowOld = insertOld.getRow();
+    rowOld.addString("key", "key_3");
+    rowOld.addString("c1", "c1_3");
+    rowOld.addString("c2", "c2_3");
+    rowOld.addString("c3", "c3_3");
+    rowOld.addString("c4", "c4_3");
+    OperationResponse respOld = session.apply(insertOld);
+    assertFalse(respOld.hasRowError());
+  }
 }

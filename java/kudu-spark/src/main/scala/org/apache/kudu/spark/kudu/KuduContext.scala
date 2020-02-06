@@ -45,6 +45,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
+import org.apache.kudu.spark.kudu.SparkUtil.kuduSchema
 import org.apache.kudu.spark.kudu.SparkUtil._
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
@@ -335,6 +336,31 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val schema = data.schema
     // Get the client's last propagated timestamp on the driver.
     val lastPropagatedTimestamp = syncClient.getLastPropagatedTimestamp
+
+    if (writeOptions.handleSchemaDrift) {
+      val kuduSchema = syncClient.openTable(tableName).getSchema
+      val newColumns = schema.fields.filter(f => !kuduSchema.hasColumn(f.name))
+      if (!newColumns.isEmpty) {
+        log.info(
+          s"adding ${newColumns.length} columns to table '$tableName' to handle schema drift")
+        val alter = new AlterTableOptions()
+        newColumns.foreach { col =>
+          alter.addNullableColumn(col.name, sparkTypeToKuduType(col.dataType))
+        }
+        try {
+          syncClient.alterTable(tableName, alter)
+        } catch {
+          case e: KuduException =>
+            // Ignore the exception if the column already exists due to concurrent
+            // applications attempting to handle schema drift.
+            if (e.getStatus.isAlreadyPresent) {
+              log.info(s"column already exists in table '$tableName' while handling schema drift")
+            } else {
+              throw e
+            }
+        }
+      }
+    }
 
     // Convert to an RDD and map the InternalRows to Rows.
     // This avoids any corruption as reported in SPARK-26880.

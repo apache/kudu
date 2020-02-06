@@ -32,6 +32,9 @@ import org.apache.kudu.spark.kudu.KuduWriteOptions._
  *                   partitioning of the target Kudu table
  * @param repartitionSort if set to true, the data will also be sorted while being
  *                   repartitioned. This is only used if repartition is true.
+ * @param handleSchemaDrift if set to true, when fields with names that are not in
+ *                          the target Kudu table are encountered, the Kudu table
+ *                          will be altered to include new columns for those fields.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
@@ -39,11 +42,13 @@ case class KuduWriteOptions(
     ignoreDuplicateRowErrors: Boolean = defaultIgnoreDuplicateRowErrors,
     ignoreNull: Boolean = defaultIgnoreNull,
     repartition: Boolean = defaultRepartition,
-    repartitionSort: Boolean = defaultRepartitionSort)
+    repartitionSort: Boolean = defaultRepartitionSort,
+    handleSchemaDrift: Boolean = defaultHandleSchemaDrift)
 
 object KuduWriteOptions {
   val defaultIgnoreDuplicateRowErrors: Boolean = false
   val defaultIgnoreNull: Boolean = false
   val defaultRepartition: Boolean = false
   val defaultRepartitionSort: Boolean = true
+  val defaultHandleSchemaDrift: Boolean = false
 }

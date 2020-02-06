@@ -69,6 +69,7 @@ class DefaultSource
   val BATCH_SIZE = "kudu.batchSize"
   val KEEP_ALIVE_PERIOD_MS = "kudu.keepAlivePeriodMs"
   val SPLIT_SIZE_BYTES = "kudu.splitSizeBytes"
+  val HANDLE_SCHEMA_DRIFT = "kudu.handleSchemaDrift"
 
   /**
    * A nice alias for the data source so that when specifying the format
@@ -203,7 +204,14 @@ class DefaultSource
       parameters.get(REPARTITION).map(_.toBoolean).getOrElse(defaultRepartition)
     val repartitionSort =
       parameters.get(REPARTITION_SORT).map(_.toBoolean).getOrElse(defaultRepartitionSort)
-    KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull, repartition, repartitionSort)
+    val handleSchemaDrift =
+      parameters.get(HANDLE_SCHEMA_DRIFT).map(_.toBoolean).getOrElse(defaultHandleSchemaDrift)
+    KuduWriteOptions(
+      ignoreDuplicateRowErrors,
+      ignoreNull,
+      repartition,
+      repartitionSort,
+      handleSchemaDrift)
   }
 
   private def getMasterAddrs(parameters: Map[String, String]): String = {

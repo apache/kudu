@@ -35,9 +35,11 @@ import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.function.ThrowingRunnable;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnSchema.CompressionAlgorithm;
@@ -156,6 +158,18 @@ public class TestAlterTable {
         ", INT32 addNullable=101, INT32 addNullableDef=NULL");
     Collections.sort(expected);
     assertArrayEquals(expected.toArray(new String[0]), actual.toArray(new String[0]));
+
+    NonRecoverableException thrown =
+            Assert.assertThrows(NonRecoverableException.class, new ThrowingRunnable() {
+              @Override
+              public void run() throws Exception {
+                // Add duplicate column
+                client.alterTable(tableName, new AlterTableOptions()
+                        .addNullableColumn("addNullable", Type.INT32));
+              }
+            });
+    Assert.assertTrue(thrown.getStatus().isAlreadyPresent());
+    Assert.assertTrue(thrown.getMessage().contains("The column already exists"));
   }
 
   @Test
@@ -522,5 +536,32 @@ public class TestAlterTable {
 
     table = client.openTable(tableName);
     assertTrue(table.getExtraConfig().isEmpty());
+  }
+
+  @Test
+  @KuduTestHarness.MasterServerConfig(flags = { "--max_num_columns=10" })
+  public void testAlterExceedsColumnLimit() throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      columns.add(new ColumnSchema.ColumnSchemaBuilder(Integer.toString(i), Type.INT32)
+              .key(i == 0)
+              .build());
+    }
+    Schema schema = new Schema(columns);
+    CreateTableOptions createOptions =
+            new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("0"));
+    client.createTable(tableName, schema, createOptions);
+
+    NonRecoverableException thrown =
+            Assert.assertThrows(NonRecoverableException.class, new ThrowingRunnable() {
+              @Override
+              public void run() throws Exception {
+                client.alterTable(tableName,
+                        new AlterTableOptions().addNullableColumn("11", Type.INT32));
+              }
+            });
+    Assert.assertTrue(thrown.getStatus().isInvalidArgument());
+    Assert.assertTrue(thrown.getMessage()
+            .contains("number of columns 11 is greater than the permitted maximum 10"));
   }
 }
