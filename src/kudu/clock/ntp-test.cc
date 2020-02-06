@@ -700,8 +700,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
   // than the regular version.
   FLAGS_cloud_metadata_server_request_timeout_ms = 10000;
 #endif
-  InstanceDetector detector(MonoDelta::FromMilliseconds(
-      FLAGS_cloud_metadata_server_request_timeout_ms));
+  InstanceDetector detector;
   unique_ptr<cloud::InstanceMetadata> md;
   string ntp_server;
   {
@@ -713,6 +712,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
     }
   }
   {
+    ASSERT_NE(nullptr, md.get());
     auto s = md->GetNtpServer(&ntp_server);
     if (!s.ok()) {
       // The only expected error in this case is Status::NotSupported().

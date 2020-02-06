@@ -25,7 +25,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cloud/instance_metadata.h"
 #include "kudu/util/condition_variable.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
@@ -38,28 +37,26 @@ namespace cloud {
 // machines/instances run by public cloud vendors.
 class InstanceDetector {
  public:
-  // Instantiate the detector using the specified timeout for auto-detection of
-  // the type of the cloud environment it's run at.
-  explicit InstanceDetector(MonoDelta timeout = MonoDelta::FromSeconds(1));
+  // Instantiate the detector for all known types of cloud instances.
+  InstanceDetector();
 
   // The destructor awaits for the detector threads to join (if any spawn).
   virtual ~InstanceDetector();
 
   // Perform the auto-detection of a cloud instance this object is running at.
-  // This method must not be invoked more than once.
-  // It's a synchronous call and it can take some time to complete (see
-  // the parameters of the constructor to specify timeout for the operation).
-  // On success, returns Status::OK() and provides the instance's metadata
-  // object via the 'metadata' output parameter. In case of a failure, no
-  // valid metadata is provided in the 'metadata' output parameter, and this
-  // method returns
-  //   * Status::NotFound() if the auto-detection didn't recognize any known
-  //                        instance types: the auto-detection was run in a
-  //                        non-cloud environment (most likely) or at a VM
-  //                        of unknown/not-yet-supported cloud type
-  //   * Status::TimedOut() if the specified auto-detection timeout was too
-  //                        short to identify at least one known cloud type;
-  //                        the auto-detection results should not be trusted
+  // This method must not be invoked more than once. It's a synchronous call
+  // and it can take some time to complete. On success, returns Status::OK()
+  // and provides the instance's metadata object via the 'metadata' output
+  // parameter. In case of a failure, no valid metadata is provided in the
+  // 'metadata' output parameter, and this method returns
+  //
+  //   * Status::NotFound()   if the auto-detection didn't recognize any known
+  //                          instance types: most likely, the auto-detection
+  //                          was run in a non-cloud environment or at a VM of
+  //                          unknown/not-yet-supported cloud type
+  //
+  //   * other non-OK status  an unexpected error happened while trying to
+  //                          determine the type of the environment
   //
   // TODO(aserbin): do we need async version of this method?
   Status Detect(std::unique_ptr<InstanceMetadata>* metadata) WARN_UNUSED_RESULT;
@@ -70,8 +67,6 @@ class InstanceDetector {
   // Get metadata for the specified instance. In case of success, store the
   // specified index 'idx' in 'result_detector_idx_' field.
   void GetInstanceInfo(InstanceMetadata* imd, size_t idx);
-
-  const MonoDelta timeout_;
 
   // Mutex and associated condition variable.
   Mutex mutex_;

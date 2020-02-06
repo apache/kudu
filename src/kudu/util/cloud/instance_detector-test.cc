@@ -4,7 +4,6 @@
 
 #include "kudu/util/cloud/instance_detector.h"
 
-#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -15,7 +14,6 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cloud/instance_metadata.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
@@ -43,8 +41,7 @@ TEST(InstanceDetectorTest, Basic) {
   // error even if the server responds in a timely manner.
   FLAGS_cloud_metadata_server_request_timeout_ms = 10000;
 #endif
-  InstanceDetector detector(MonoDelta::FromMilliseconds(
-      FLAGS_cloud_metadata_server_request_timeout_ms));
+  InstanceDetector detector;
   unique_ptr<InstanceMetadata> metadata;
   const auto s = detector.Detect(&metadata);
 
@@ -55,8 +52,8 @@ TEST(InstanceDetectorTest, Basic) {
   if (s_aws.ok() || s_azure.ok() || s_gce.ok()) {
     ASSERT_TRUE(s.ok()) << s.ToString();
     ASSERT_NE(nullptr, metadata.get());
-    LOG(INFO) << Substitute("detected $0 environment, VM id: $1",
-                            TypeToString(metadata->type()), metadata->id());
+    LOG(INFO) << Substitute("detected $0 environment",
+                            TypeToString(metadata->type()));
   } else {
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     ASSERT_EQ(nullptr, metadata.get());
@@ -79,18 +76,17 @@ TEST(InstanceDetectorTest, Basic) {
 }
 
 // If the timeout for auto-detection is set too low, the detector should return
-// Status::TimedOut().
+// Status::NotFound(). Even if the timeout is set too low to get a response
+// from the metadata servers, the detector has no other choice but to rely
+// on the results from the metadata fetchers.
 TEST(InstanceDetectorTest, Timeout) {
-  // Try both no-time and very short interval.
-  for (const auto& interval : { MonoDelta::FromNanoseconds(0),
-                                MonoDelta::FromNanoseconds(1), } ) {
-    SCOPED_TRACE(Substitute("timeout interval '$0'", interval.ToString()));
-    InstanceDetector detector(interval);
-    unique_ptr<InstanceMetadata> metadata;
-    const auto s = detector.Detect(&metadata);
-    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
-    ASSERT_EQ(nullptr, metadata.get());
-  }
+  // Set very short interval for the timeout.
+  FLAGS_cloud_metadata_server_request_timeout_ms = 1;
+  InstanceDetector detector;
+  unique_ptr<InstanceMetadata> metadata;
+  const auto s = detector.Detect(&metadata);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_EQ(nullptr, metadata.get());
 }
 
 }  // namespace cloud

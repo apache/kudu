@@ -26,7 +26,6 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cloud/instance_metadata.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 
 using std::unique_ptr;
@@ -37,17 +36,16 @@ namespace cloud {
 
 const size_t InstanceDetector::kNoIdx = std::numeric_limits<size_t>::max();
 
-InstanceDetector::InstanceDetector(MonoDelta timeout)
-    : timeout_(timeout),
-      cv_(&mutex_),
+InstanceDetector::InstanceDetector()
+    : cv_(&mutex_),
       num_running_detectors_(0),
       result_detector_idx_(kNoIdx) {
   detectors_.push_back(
-    { unique_ptr<InstanceMetadata>(new AwsInstanceMetadata), nullptr });
+      { unique_ptr<InstanceMetadata>(new AwsInstanceMetadata), nullptr });
   detectors_.push_back(
-    { unique_ptr<InstanceMetadata>(new AzureInstanceMetadata), nullptr });
+      { unique_ptr<InstanceMetadata>(new AzureInstanceMetadata), nullptr });
   detectors_.push_back(
-    { unique_ptr<InstanceMetadata>(new GceInstanceMetadata), nullptr });
+      { unique_ptr<InstanceMetadata>(new GceInstanceMetadata), nullptr });
 }
 
 InstanceDetector::~InstanceDetector() {
@@ -59,7 +57,6 @@ InstanceDetector::~InstanceDetector() {
 }
 
 Status InstanceDetector::Detect(unique_ptr<InstanceMetadata>* metadata) {
-  const auto deadline = MonoTime::Now() + timeout_;
   {
     // An extra sanity check.
     MutexLock lock(mutex_);
@@ -86,13 +83,7 @@ Status InstanceDetector::Detect(unique_ptr<InstanceMetadata>* metadata) {
   {
     MutexLock lock(mutex_);
     while (result_detector_idx_ == kNoIdx && num_running_detectors_ > 0) {
-      if (!cv_.WaitUntil(deadline)) {
-        break;
-      }
-    }
-    if (deadline < MonoTime::Now()) {
-      return Status::TimedOut(
-          "could not retrieve instance metadata before the deadline");
+      cv_.Wait();
     }
     if (result_detector_idx_ != kNoIdx) {
       CHECK_LT(result_detector_idx_, detectors_.size());

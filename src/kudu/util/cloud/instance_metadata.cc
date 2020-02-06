@@ -26,6 +26,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -34,9 +35,9 @@
 
 // The timeout should be high enough to work effectively, but as low as possible
 // to avoid slowing down detection of running in non-cloud environments. As of
-// now, the metadata servers of major public cloud providers is robust enough
+// now, the metadata servers of major public cloud providers are robust enough
 // to send the response in a fraction of a second.
-DEFINE_uint32(cloud_metadata_server_request_timeout_ms, 500,
+DEFINE_uint32(cloud_metadata_server_request_timeout_ms, 1000,
               "Timeout for HTTP/HTTPS requests to the instance metadata server "
               "(in milliseconds)");
 TAG_FLAG(cloud_metadata_server_request_timeout_ms, advanced);
@@ -90,6 +91,17 @@ DEFINE_string(cloud_gce_instance_id_url,
 TAG_FLAG(cloud_gce_instance_id_url, advanced);
 TAG_FLAG(cloud_gce_instance_id_url, runtime);
 
+DEFINE_validator(cloud_metadata_server_request_timeout_ms,
+                 [](const char* name, const uint32_t val) {
+  if (val == 0) {
+    LOG(ERROR) << strings::Substitute(
+        "unlimited timeout for metadata requests (value $0 for flag --$1) "
+        "is not allowed", val, name);
+    return false;
+  }
+  return true;
+});
+
 using std::string;
 using std::vector;
 
@@ -113,44 +125,43 @@ const char* TypeToString(CloudType type) {
   }
 }
 
-InstanceMetadataBase::InstanceMetadataBase()
+InstanceMetadata::InstanceMetadata()
     : is_initialized_(false) {
 }
 
-Status InstanceMetadataBase::Init() {
+Status InstanceMetadata::Init() {
   // As of now, fetching the instance identifier from metadata service is
   // the criterion for successful initialization of the instance metadata.
   DCHECK(!is_initialized_);
-  RETURN_NOT_OK(FetchInstanceId(&id_));
-  DCHECK(!id_.empty());
+  RETURN_NOT_OK(FetchInstanceId(nullptr));
   is_initialized_ = true;
   return Status::OK();
 }
 
-const string& InstanceMetadataBase::id() const {
-  CHECK(is_initialized_);
-  return id_;
-}
-
-MonoDelta InstanceMetadataBase::request_timeout() const {
+MonoDelta InstanceMetadata::request_timeout() const {
   return MonoDelta::FromMilliseconds(
       FLAGS_cloud_metadata_server_request_timeout_ms);
 }
 
-Status InstanceMetadataBase::Fetch(const string& url,
-                                   MonoDelta timeout,
-                                   const vector<string>& headers,
-                                   string* out) {
-  DCHECK(out);
+Status InstanceMetadata::Fetch(const string& url,
+                               MonoDelta timeout,
+                               const vector<string>& headers,
+                               string* out) {
+  if (timeout.ToMilliseconds() == 0) {
+    return Status::NotSupported(
+        "unlimited timeout is not supported when retrieving instance metadata");
+  }
   EasyCurl curl;
   curl.set_timeout(timeout);
   faststring resp;
   RETURN_NOT_OK(curl.FetchURL(url, &resp, headers));
-  *out = resp.ToString();
+  if (out) {
+    *out = resp.ToString();
+  }
   return Status::OK();
 }
 
-Status InstanceMetadataBase::FetchInstanceId(string* id) {
+Status InstanceMetadata::FetchInstanceId(string* id) {
   return Fetch(instance_id_url(), request_timeout(), request_headers(), id);
 }
 
