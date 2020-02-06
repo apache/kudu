@@ -71,6 +71,21 @@ Status NtpStateToStatus(int rc) {
   }
 }
 
+// Check if the specified code corresponds to an error returned by ntp_adjtime()
+// and convert it into Status.
+Status CheckForNtpAdjtimeError(int rc) {
+  // From http://man7.org/linux/man-pages/man2/adjtimex.2.html,
+  // the failure implies invalid pointer for its output parameter of the 'timex'
+  // type. It cannot be the case in the code below. However, there were reports
+  // that with old version of Docker it might return EPERM even if 'tx.mode'
+  // is set to 0; see KUDU-2000 for details.
+  if (PREDICT_FALSE(rc == -1)) {
+    int err = errno;
+    return Status::RuntimeError("ntp_adjtime() failed", ErrnoToString(err));
+  }
+  return Status::OK();
+}
+
 void TryRun(vector<string> cmd, vector<string>* log) {
   string exe;
   Status s = FindExecutable(cmd[0], {"/sbin", "/usr/sbin/"}, &exe);
@@ -104,23 +119,15 @@ SystemNtp::SystemNtp()
 }
 
 Status SystemNtp::Init() {
-  timex tx;
-  tx.modes = 0; // set mode to 0 for read-only query
-  int rc = ntp_adjtime(&tx);
-  // From http://man7.org/linux/man-pages/man2/adjtimex.2.html,
-  // the failure implies invalid pointer for 'tx', which cannot be the case.
-  // However, there were reports that with old version of Docker it might return
-  // EPERM even if 'tx.mode' is set to 0; see KUDU-2000 for details.
-  if (PREDICT_FALSE(rc == -1)) {
-    int err = errno;
-    return Status::RuntimeError("ntp_adjtime() failed", ErrnoToString(err));
-  }
+  timex t;
+  t.modes = 0; // set mode to 0 for read-only query
+  RETURN_NOT_OK(CheckForNtpAdjtimeError(ntp_adjtime(&t)));
 
   // The unit of the reported tolerance is ppm with 16-bit fractional part:
   // 65536 is 1 ppm (see http://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
   // for details).
-  skew_ppm_ = tx.tolerance / 65536;
-  VLOG(1) << "ntp_adjtime(): tolerance is " << tx.tolerance;
+  skew_ppm_ = t.tolerance / 65536;
+  VLOG(1) << "ntp_adjtime(): tolerance is " << t.tolerance;
 
   return Status::OK();
 }
@@ -131,16 +138,25 @@ Status SystemNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   }
   // Read the clock and convert its state into status. This will return an error
   // if the clock is not synchronized.
-  ntptimeval tv;
-  RETURN_NOT_OK(NtpStateToStatus(ntp_gettime(&tv)));
-  uint64_t now = static_cast<uint64_t>(tv.time.tv_sec) * 1000000;
 #ifdef __APPLE__
-  now += tv.time.tv_nsec / 1000;
+  ntptimeval t;
+  RETURN_NOT_OK(NtpStateToStatus(ntp_gettime(&t)));
+  uint64_t now = static_cast<uint64_t>(t.time.tv_sec) * 1000000 +
+      t.time.tv_nsec / 1000;
 #else
-  now += tv.time.tv_usec;
+  timex t;
+  t.modes = 0; // set mode to 0 for read-only query
+  const int rc = ntp_adjtime(&t);
+  RETURN_NOT_OK(CheckForNtpAdjtimeError(rc));
+  RETURN_NOT_OK(NtpStateToStatus(rc));
+  if (t.status & STA_NANO) {
+    t.time.tv_usec /= 1000;
+  }
+  uint64_t now = static_cast<uint64_t>(t.time.tv_sec) * 1000000 +
+      t.time.tv_usec;
 #endif
+  *error_usec = t.maxerror;
   *now_usec = now;
-  *error_usec = tv.maxerror;
   return Status::OK();
 }
 
