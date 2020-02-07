@@ -28,6 +28,9 @@ import "kudu/common/wire_protocol.proto";
 // EchoResponsePB simply echoes the data in EchoRequestPB as a response.
 message EchoRequestPB {
   required string data = 1;
+
+  // Optional amount of time in milliseconds to sleep for.
+  optional int32 sleep_ms = 2;
 }
 message EchoResponsePB {
   required string data = 1;
