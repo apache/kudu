@@ -19,13 +19,23 @@ find_path(YAML_INCLUDE_DIR yaml-cpp/yaml.h
   # make sure we don't accidentally pick up a different version
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
+
 find_library(YAML_STATIC_LIB libyaml-cpp.a
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(YAML_SHARED_LIB libyaml-cpp.so
+
+set(__CURRENT_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+if (APPLE)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".dylib")
+else()
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".so")
+endif()
+find_library(YAML_SHARED_LIB yaml-cpp
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${__CURRENT_FIND_LIBRARY_SUFFIXES})
+unset(__CURRENT_FIND_LIBRARY_SUFFIXES)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(YAML REQUIRED_VARS
-    YAML_STATIC_LIB YAML_SHARED_LIB YAML_INCLUDE_DIR)
+  YAML_STATIC_LIB YAML_SHARED_LIB YAML_INCLUDE_DIR)
