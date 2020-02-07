@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -46,6 +48,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/security/kinit_context.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/server/server_base.pb.h"
@@ -395,6 +398,42 @@ TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
   ASSERT_STR_CONTAINS(stderr, Substitute(
       "cannot use private key file with world-readable permissions: $0",
       credentials_name));
+}
+
+// Test that our Kinit implementation can handle corrupted credential caches.
+TEST_F(SecurityITest, TestCorruptKerberosCC) {
+  ASSERT_OK(StartCluster());
+  string admin_keytab = cluster_->kdc()->GetKeytabPathForPrincipal("test-admin");
+  ASSERT_OK(cluster_->kdc()->CreateKeytabForExistingPrincipal("test-admin"));
+
+  security::KinitContext kinit_ctx;
+  ASSERT_OK(kinit_ctx.Kinit(admin_keytab, "test-admin"));
+
+  // Truncate at different lengths to exercise different failure modes, e.g. failed to
+  // read header, some credentials missing.
+  for (int trunc_len : {10, 75, 500}) {
+    // Truncate the credential cache so that it no longer contains a valid ticket for
+    // "test-admin".
+    const char* cc_path = getenv("KRB5CCNAME");
+    SCOPED_TRACE(Substitute("Truncating ccache at '$0' to $1", cc_path, trunc_len));
+    {
+      RWFileOptions opts;
+      opts.mode = Env::MUST_EXIST;
+      unique_ptr<RWFile> cc_file;
+      ASSERT_OK(env_->NewRWFile(opts, cc_path, &cc_file));
+      ASSERT_OK(cc_file->Truncate(trunc_len));
+    }
+
+    // With corrupt cache, we shouldn't be able to open connection.
+    Status s = TrySetFlagOnTS();
+    EXPECT_FALSE(s.ok());
+    ASSERT_STR_CONTAINS(s.ToString(), "server requires authentication, but client does "
+        "not have Kerberos credentials available");
+
+    // Renewal should fix the corrupted credential cache and allow secure connections.
+    ASSERT_OK(kinit_ctx.DoRenewal());
+    ASSERT_OK(TrySetFlagOnTS());
+  }
 }
 
 Status AssignIPToClient(bool external) {

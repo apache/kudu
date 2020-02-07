@@ -287,15 +287,18 @@ Status MiniKdc::RandomizePrincipalKey(const string& spn) {
 
 Status MiniKdc::CreateKeytabForExistingPrincipal(const string& spn) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating keytab for $0", spn));
-  string kt_path = spn;
-  StripString(&kt_path, "/", '_');
-  kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
-
+  string kt_path = GetKeytabPathForPrincipal(spn);
   string kadmin;
   RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
   RETURN_NOT_OK(Subprocess::Call(MakeArgv({
           kadmin, "-q", Substitute("xst -norandkey -k $0 $1", kt_path, spn)})));
   return Status::OK();
+}
+
+string MiniKdc::GetKeytabPathForPrincipal(const string& spn) const {
+  string kt_path = spn;
+  StripString(&kt_path, "/", '_');
+  return JoinPathSegments(options_.data_root, kt_path) + ".keytab";
 }
 
 Status MiniKdc::Kinit(const string& username) {

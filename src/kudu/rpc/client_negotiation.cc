@@ -47,6 +47,7 @@
 #include "kudu/security/gssapi.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -793,6 +794,12 @@ int ClientNegotiation::SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecr
 }
 
 Status ClientNegotiation::CheckGSSAPI() {
+  // Disable leak checking in this function to work around memory leak in libgssapi_krb5
+  // when opening a corrupt credential cache fails:
+  // https://krbdev.mit.edu/rt/Ticket/Display.html?id=8437.
+  // Fixed in MIT Kerberos 1.13.7, 1.14.4 and 1.15.
+  debug::ScopedLeakCheckDisabler disable_leak_checks;
+
   OM_uint32 major, minor;
   gss_cred_id_t cred = GSS_C_NO_CREDENTIAL;
 

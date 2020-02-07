@@ -100,6 +100,9 @@ class MiniKdc {
   // 'spn' is the desired service principal name (e.g. "kudu/foo.example.com").
   Status CreateKeytabForExistingPrincipal(const std::string& spn);
 
+  // Returns the path where CreateKeytabForExistingPrincipal creates the keytab.
+  std::string GetKeytabPathForPrincipal(const std::string& spn) const;
+
   // Kinit a user to the mini KDC.
   Status Kinit(const std::string& username) WARN_UNUSED_RESULT;
 
