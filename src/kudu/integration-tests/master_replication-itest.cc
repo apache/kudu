@@ -451,15 +451,23 @@ class MasterReplicationAndRpcSizeLimitTest : public KuduTest {
     return s;
   }
 
-  Status GetMetricValue(const MetricPrototype& metric_proto, int64_t* value) {
-    int leader_idx;
-    RETURN_NOT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-    return GetInt64Metric(cluster_->master(leader_idx)->bound_http_hostport(),
-                          &METRIC_ENTITY_server,
-                          nullptr,
-                          &metric_proto,
-                          "value",
-                          value);
+  // Get sum of values for the specified metric across all masters in the
+  // cluster.
+  Status GetMetric(const MetricPrototype& metric_proto, int64_t* sum) {
+    int64_t result = 0;
+    for (auto idx = 0; idx < kNumMasters; ++idx) {
+      int64_t val;
+      RETURN_NOT_OK(GetInt64Metric(cluster_->master(idx)->bound_http_hostport(),
+                                   &METRIC_ENTITY_server,
+                                   nullptr,
+                                   &metric_proto,
+                                   "value",
+                                   &val));
+      CHECK_GE(val, 0);
+      result += val;
+    }
+    *sum = result;
+    return Status::OK();
   }
 
   unique_ptr<cluster::ExternalMiniCluster> cluster_;
@@ -478,9 +486,11 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
 
   // After fresh start, there should be no rejected writes to the system catalog
   // tablet yet.
-  int64_t val;
-  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
-  ASSERT_EQ(0, val);
+  {
+    int64_t val;
+    ASSERT_OK(GetMetric(METRIC_sys_catalog_oversized_write_requests, &val));
+    ASSERT_EQ(0, val);
+  }
 
   unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
   alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow());
@@ -501,21 +511,12 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, AlterTable) {
                                     "--rpc_max_message_size flag");
 
   // Leader master can change after the ALTER TABLE request above and the time
-  // when collecting the metric value below. To avoid flakiness, get the
-  // readings for the metric from each master and verify the result.
-  int64_t sum = 0;
-  for (auto idx = 0; idx < kNumMasters; ++idx) {
+  // when collecting the metric value below.
+  {
     int64_t val;
-    ASSERT_OK(GetInt64Metric(cluster_->master(idx)->bound_http_hostport(),
-                             &METRIC_ENTITY_server,
-                             nullptr,
-                             &METRIC_sys_catalog_oversized_write_requests,
-                             "value",
-                             &val));
-    ASSERT_LE(val, 1);
-    sum += val;
+    ASSERT_OK(GetMetric(METRIC_sys_catalog_oversized_write_requests, &val));
+    ASSERT_EQ(1, val);
   }
-  ASSERT_EQ(1, sum);
 
   NO_FATALS(cluster_->AssertNoCrashes());
 }
@@ -540,7 +541,7 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, TabletReports) {
   // After fresh start, there should be no rejected writes to the system catalog
   // tablet yet.
   int64_t val;
-  ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+  ASSERT_OK(GetMetric(METRIC_sys_catalog_oversized_write_requests, &val));
   ASSERT_EQ(0, val);
 
   // Stop all masters: they will be restarted later to receive tablet reports.
@@ -572,7 +573,7 @@ TEST_F(MasterReplicationAndRpcSizeLimitTest, TabletReports) {
   // oversized updates on the system catalog tablet.
   ASSERT_EVENTUALLY([&] {
     int64_t val;
-    ASSERT_OK(GetMetricValue(METRIC_sys_catalog_oversized_write_requests, &val));
+    ASSERT_OK(GetMetric(METRIC_sys_catalog_oversized_write_requests, &val));
     ASSERT_GT(val, 0);
   });
 
