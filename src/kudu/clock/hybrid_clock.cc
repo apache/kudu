@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -95,6 +96,26 @@ DEFINE_int32(ntp_initial_sync_wait_secs, 60,
              "crashing if it starts before NTP can synchronize the clock.");
 TAG_FLAG(ntp_initial_sync_wait_secs, advanced);
 TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
+
+DECLARE_bool(unlock_unsafe_flags);
+
+// This group flag validator is a guardrail to help using proper time source
+// in production.
+//
+// The validator makes it necessary to explicitly enable unsafe flags
+// (i.e. set the --unlock_unsafe_flags flag to 'true') if configuring
+// --time_source to be 'system_unsync' or 'mock': these timesources are for
+// experimental and test clusters only.
+bool ValidateTimeSource() {
+  if ((FLAGS_time_source == "system_unsync" ||
+       FLAGS_time_source == "mock") && !FLAGS_unlock_unsafe_flags) {
+    LOG(ERROR) << "--unlock_unsafe_flags should be set if configuring "
+                  "--time_source to be 'system_unsync' or 'mock'";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(time_source_guardrail, ValidateTimeSource);
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",

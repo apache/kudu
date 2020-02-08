@@ -158,6 +158,7 @@ MASTER_RPC_PORT=7051
 mkdir -p "$BASE_DIR/master/logs"
 "$OUTPUT_DIR/kudu-master" \
   --unlock_experimental_flags \
+  --unlock_unsafe_flags \
   --default_num_replicas=1 \
   --log_dir="$BASE_DIR/master/logs" \
   --fs_wal_dir="$BASE_DIR/master/wals" \
@@ -172,6 +173,7 @@ TSERVER_RPC_PORT=7050
 mkdir -p "$BASE_DIR/ts/logs"
 "$OUTPUT_DIR/kudu-tserver" \
   --unlock_experimental_flags \
+  --unlock_unsafe_flags \
   --heartbeat_interval_ms=200 \
   --heartbeat_rpc_timeout_ms=1000 \
   --log_dir="$BASE_DIR/ts/logs" \
