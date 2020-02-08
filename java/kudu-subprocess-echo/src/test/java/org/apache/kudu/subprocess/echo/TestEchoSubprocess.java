@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -35,9 +36,9 @@ import org.junit.rules.RuleChain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.subprocess.KuduSubprocessException;
 import org.apache.kudu.subprocess.MessageIO;
 import org.apache.kudu.subprocess.MessageTestUtil;
-import org.apache.kudu.subprocess.KuduSubprocessException;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.test.junit.RetryRule;
 
@@ -46,12 +47,12 @@ import org.apache.kudu.test.junit.RetryRule;
  */
 public class TestEchoSubprocess {
   private static final Logger LOG = LoggerFactory.getLogger(TestEchoSubprocess.class);
-  private static final Function<Throwable, Object> NO_ERR = e -> {
+  private static final Function<Throwable, Void> NO_ERR = e -> {
     LOG.error(String.format("Unexpected error: %s", e.getMessage()));
-    Assert.assertTrue(false);
+    Assert.fail();
     return null;
   };
-  private static final Function<Throwable, Object> HAS_ERR = e -> {
+  private static final Function<Throwable, Void> HAS_ERR = e -> {
     Assert.assertTrue(e instanceof KuduSubprocessException);
     return null;
   };
@@ -68,8 +69,9 @@ public class TestEchoSubprocess {
 
 
   public static class PrintStreamWithIOException extends PrintStream {
-    public PrintStreamWithIOException(OutputStream out) {
-      super(out);
+    public PrintStreamWithIOException(OutputStream out, boolean autoFlush, String encoding)
+            throws UnsupportedEncodingException {
+      super(out, autoFlush, encoding);
     }
 
     @Override
@@ -81,7 +83,7 @@ public class TestEchoSubprocess {
   void runEchoSubprocess(InputStream in,
                          PrintStream out,
                          String[] args,
-                         Function<Throwable, Object> errorHandler,
+                         Function<Throwable, Void> errorHandler,
                          boolean injectInterrupt)
       throws InterruptedException, ExecutionException, TimeoutException {
     System.setIn(in);
@@ -103,7 +105,8 @@ public class TestEchoSubprocess {
     final byte[] messageBytes = MessageTestUtil.serializeMessage(
         MessageTestUtil.createEchoSubprocessRequest(message));
     final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out = new PrintStream(new ByteArrayOutputStream());
+    final PrintStream out =
+            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
     runEchoSubprocess(in, out, args, NO_ERR, /* injectInterrupt= */false);
   }
@@ -115,7 +118,8 @@ public class TestEchoSubprocess {
   public void testMsgWithEmptyPayload() throws Exception {
     final byte[] emptyPayload = MessageIO.intToBytes(0);
     final InputStream in = new ByteArrayInputStream(emptyPayload);
-    final PrintStream out = new PrintStream(new ByteArrayOutputStream());
+    final PrintStream out =
+            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
     runEchoSubprocess(in, out, args, NO_ERR, /* injectInterrupt= */false);
   }
@@ -127,7 +131,8 @@ public class TestEchoSubprocess {
   public void testMalformedMsg() throws Exception {
     final byte[] messageBytes = "malformed".getBytes(StandardCharsets.UTF_8);
     final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out = new PrintStream(new ByteArrayOutputStream());
+    final PrintStream out =
+            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
     thrown.expect(ExecutionException.class);
     thrown.expectMessage("Unable to read the protobuf message");
@@ -144,7 +149,8 @@ public class TestEchoSubprocess {
     final byte[] messageBytes = MessageTestUtil.serializeMessage(
         MessageTestUtil.createEchoSubprocessRequest(message));
     final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out = new PrintStreamWithIOException(new ByteArrayOutputStream());
+    final PrintStream out =
+            new PrintStreamWithIOException(new ByteArrayOutputStream(), false, "UTF-8");
     // Only use one writer task to avoid get TimeoutException instead for
     // writer tasks that haven't encountered any exceptions.
     final String[] args = {"-w", "1"};
@@ -163,7 +169,8 @@ public class TestEchoSubprocess {
     final byte[] messageBytes = MessageTestUtil.serializeMessage(
         MessageTestUtil.createEchoSubprocessRequest(message));
     final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out = new PrintStream(new ByteArrayOutputStream());
+    final PrintStream out =
+            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
     thrown.expect(ExecutionException.class);
     thrown.expectMessage("Unable to put the message to the queue");

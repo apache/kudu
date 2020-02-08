@@ -105,7 +105,7 @@ public class ExportCsvMapper extends Mapper<NullWritable, RowResult, NullWritabl
           buf.append(value.getBoolean(i));
           break;
         case DATE:
-          buf.append(value.getInt(i));
+          buf.append(value.getDate(i).toString());
           break;
         default:
           buf.append("<unknown type!>");

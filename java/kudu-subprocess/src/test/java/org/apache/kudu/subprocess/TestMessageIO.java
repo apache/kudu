@@ -49,7 +49,7 @@ public class TestMessageIO {
   //
   // See https://stackoverflow.com/q/28846088 for more information.
   @Rule
-  public RuleChain chain = RuleChain.outerRule(retryRule).around(thrown);
+  public RuleChain chainRule = RuleChain.outerRule(retryRule).around(thrown);
 
   public static class PrintStreamOverload extends PrintStream {
     public PrintStreamOverload(OutputStream out) {

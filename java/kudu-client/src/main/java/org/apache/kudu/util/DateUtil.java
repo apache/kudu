@@ -32,7 +32,7 @@ public class DateUtil {
   /**
    * Check whether the date is within the range '0001-01-01':'9999-12-31'
    *
-   * @param the number days since the Unix epoch
+   * @param days the number days since the Unix epoch
    */
   public static void checkDateWithinRange(long days) {
     if (days < MIN_DATE_VALUE || days > MAX_DATE_VALUE) {
@@ -57,7 +57,7 @@ public class DateUtil {
   /**
    * Converts a number of days since the Unix epoch to a {@link java.sql.Date}.
    *
-   * @param the number of days since the Unix epoch
+   * @param days the number of days since the Unix epoch
    * @return the corresponding Date
    */
   public static Date epochDaysToSqlDate(int days) {
@@ -68,7 +68,7 @@ public class DateUtil {
   /**
    * Transforms a number of days since the Unix epoch into a string according the ISO-8601 format.
    *
-   * @param the number of days since the Unix epoch
+   * @param days the number of days since the Unix epoch
    * @return a string, in the format: YYYY-MM-DD
    */
   public static String epochDaysToDateString(int days) {

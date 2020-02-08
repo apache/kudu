@@ -32,7 +32,7 @@ public class HashUtil {
    * @param seed seed to compute the hash
    * @return computed 64-bit hash value
    */
-  public static long FastHash64(final byte[] buf, int len, long seed) {
+  public static long fastHash64(final byte[] buf, int len, long seed) {
     final long m = 0x880355f21e6d1965L;
     long h = seed ^ (len * m);
     long v;
@@ -45,12 +45,13 @@ public class HashUtil {
           ((long)buf[pos + 3] << 24) + ((long)buf[pos + 4] << 32) +
           ((long)buf[pos + 5] << 40) + ((long)buf[pos + 6] << 48) +
           ((long)buf[pos + 7] << 56);
-      h ^= FastHashMix(v);
+      h ^= fastHashMix(v);
       h *= m;
     }
 
     v = 0;
     int pos2 = len8 * 8;
+    //CHECKSTYLE:OFF
     switch (len & 7) {
       case 7:
         v ^= (long)buf[pos2 + 6] << 48;
@@ -72,12 +73,14 @@ public class HashUtil {
       // fall through
       case 1:
         v ^= buf[pos2];
-        h ^= FastHashMix(v);
+        h ^= fastHashMix(v);
         h *= m;
     }
+    //CHECKSTYLE:ON
 
-    return FastHashMix(h);
+    return fastHashMix(h);
   }
+
 
   /**
    * Compute 32-bit FastHash of the supplied data backed by byte array.
@@ -90,19 +93,19 @@ public class HashUtil {
    * @param seed seed to compute the hash
    * @return computed 32-bit hash value
    */
-  public static int FastHash32(final byte[] buf, int len, int seed) {
+  public static int fastHash32(final byte[] buf, int len, int seed) {
     // the following trick converts the 64-bit hashcode to Fermat
     // residue, which shall retain information from both the higher
     // and lower parts of hashcode.
-    long h = FastHash64(buf, len, seed);
+    long h = fastHash64(buf, len, seed);
     return (int)(h - (h >>> 32));
   }
 
   // Compression function for Merkle-Damgard construction.
-  private static long FastHashMix(long h) {
+  private static long fastHashMix(long h) {
     h ^= h >>> 23;
     h *= 0x2127599bf4325c37L;
     h ^= h >>> 47;
     return h;
   }
-};
+}

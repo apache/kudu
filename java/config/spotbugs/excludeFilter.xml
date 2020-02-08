@@ -112,14 +112,16 @@
             <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE" />
             <!-- Tests don't need to worry about serialization compatibility. -->
             <Bug pattern="SE_NO_SERIALVERSIONID" />
+            <!-- Often tests testing exceptions have "exception" in the name. -->
+            <Bug pattern="NM_CLASS_NOT_EXCEPTION" />
             <!-- Tests use i % 2 == 1 frequently to alternate behavior. -->
             <!-- TODO: converting these into negated "check for even" and remove. -->
             <Bug pattern="IM_BAD_CHECK_FOR_ODD" />
-            <!-- The retry rule doesn't need to be read.
-            This naming scheme should be used for all RetryRule usage to avoid SpotBugs issues.
+            <!-- Junit rules don't need to be read.
+            This naming scheme should be used for all Junit Rule usage to avoid SpotBugs issues.
             -->
             <And>
-                <Field name="~.*retryRule" />
+                <Field name="~.*Rule" />
                 <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD" />
             </And>
             <!-- We generally don't care about minor performance issues in tests. -->
@@ -232,6 +234,24 @@
         <!-- Adjusts TableLocationsCache.ticker for testing purposes.  -->
         <Class name="org.apache.kudu.client.TestTableLocationsCache"/>
         <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD" />
+    </Match>
+    <Match>
+        <!-- This is a private API and a null array is expected/handled. -->
+        <Class name="org.apache.kudu.util.NetUtil"/>
+        <Method name="getAllInetAddresses" />
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+    <Match>
+        <Class name="org.apache.kudu.util.HashUtil"/>
+        <Method name="fastHash64" />
+        <Or>
+            <!-- This is the expected behavior. -->
+            <Bug pattern="BIT_ADD_OF_SIGNED_BYTE" />
+            <!-- The fallthrough is intended and documented. -->
+            <Bug pattern="SF_SWITCH_FALLTHROUGH" />
+            <!-- All cases are handled. -->
+            <Bug pattern="SF_SWITCH_NO_DEFAULT" />
+        </Or>
     </Match>
 
     <!-- kudu-client-tools exclusions -->

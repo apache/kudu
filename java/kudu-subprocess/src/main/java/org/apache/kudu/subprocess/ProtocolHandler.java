@@ -29,12 +29,12 @@ import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
 /**
  * Protocol that represents how to handle a protobuf message.
  *
- * @param <Request> The request protobuf message
- * @param <Response> The response protobuf message
+ * @param <RequestT> The request protobuf message
+ * @param <ResponseT> The response protobuf message
  */
 @InterfaceAudience.Private
-public abstract class ProtocolHandler<Request extends Message,
-                                      Response extends Message> {
+public abstract class ProtocolHandler<RequestT extends Message,
+                                      ResponseT extends Message> {
 
   /**
    * Processes the given SubprocessRequestPB message according to the
@@ -49,8 +49,8 @@ public abstract class ProtocolHandler<Request extends Message,
     Preconditions.checkNotNull(request);
     SubprocessResponsePB.Builder builder = SubprocessResponsePB.newBuilder();
     builder.setId(request.getId());
-    Class<Request> requestType = getRequestClass();
-    Response resp = createResponse(request.getRequest().unpack(requestType));
+    Class<RequestT> requestType = getRequestClass();
+    ResponseT resp = createResponse(request.getRequest().unpack(requestType));
     builder.setResponse(Any.pack(resp));
     return builder.build();
   }
@@ -61,12 +61,12 @@ public abstract class ProtocolHandler<Request extends Message,
    * @param request the request message
    * @return a response
    */
-  protected abstract Response createResponse(Request request);
+  protected abstract ResponseT createResponse(RequestT request);
 
   /**
    * Gets the class instance of request message.
    *
    * @return the request class instance
    */
-  protected abstract Class<Request> getRequestClass();
+  protected abstract Class<RequestT> getRequestClass();
 }

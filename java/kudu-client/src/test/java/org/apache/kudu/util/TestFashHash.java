@@ -20,9 +20,10 @@ package org.apache.kudu.util;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 
-import org.apache.kudu.test.junit.RetryRule;
 import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 /**
  * Test FastHash64/32 returns the expected values for inputs.
@@ -38,13 +39,13 @@ public class TestFashHash {
   public void testFastHash64() {
     long hash;
 
-    hash = HashUtil.FastHash64("ab".getBytes(UTF_8), 2, 0);
+    hash = HashUtil.fastHash64("ab".getBytes(UTF_8), 2, 0);
     assertEquals(Long.parseUnsignedLong("17293172613997361769"), hash);
 
-    hash = HashUtil.FastHash64("abcdefg".getBytes(UTF_8), 7, 0);
+    hash = HashUtil.fastHash64("abcdefg".getBytes(UTF_8), 7, 0);
     assertEquals(Long.parseUnsignedLong("10206404559164245992"), hash);
 
-    hash = HashUtil.FastHash64("quick brown fox".getBytes(UTF_8), 15, 42);
+    hash = HashUtil.fastHash64("quick brown fox".getBytes(UTF_8), 15, 42);
     assertEquals(Long.parseUnsignedLong("3757424404558187042"), hash);
   }
 
@@ -52,13 +53,13 @@ public class TestFashHash {
   public void testFastHash32() {
     int hash;
 
-    hash = HashUtil.FastHash32("ab".getBytes(UTF_8), 2, 0);
+    hash = HashUtil.fastHash32("ab".getBytes(UTF_8), 2, 0);
     assertEquals(Integer.parseUnsignedInt("2564147595"), hash);
 
-    hash = HashUtil.FastHash32("abcdefg".getBytes(UTF_8), 7, 0);
+    hash = HashUtil.fastHash32("abcdefg".getBytes(UTF_8), 7, 0);
     assertEquals(Integer.parseUnsignedInt("1497700618"), hash);
 
-    hash = HashUtil.FastHash32("quick brown fox".getBytes(UTF_8), 15, 42);
+    hash = HashUtil.fastHash32("quick brown fox".getBytes(UTF_8), 15, 42);
     assertEquals(Integer.parseUnsignedInt("1676541068"), hash);
   }
 }

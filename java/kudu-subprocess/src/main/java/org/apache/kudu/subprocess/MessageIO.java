@@ -82,20 +82,20 @@ public class MessageIO {
    * stream into the specified byte array, starting at the offset <code>0</code>.
    * If it fails to read the specified size, <code>IOException</code> is thrown.
    *
-   * @return the message in byte array.
    * @throws EOFException if the end of the stream has been reached
    * @throws IOException if this input stream has been closed, an I/O
    *                     error occurs, or fail to read the specified size
    */
-  private void doRead(byte bytes[], int size) throws EOFException, IOException {
+  private void doRead(byte[] bytes, int size) throws EOFException, IOException {
     Preconditions.checkNotNull(bytes);
     int read = in.read(bytes, 0, size);
     if (read == -1) {
       throw new EOFException("the end of the stream has been reached");
-    } else if (read != size)
+    } else if (read != size) {
       throw new IOException(
-          String.format("unable to receive message, expected (%d) bytes " +
-                        "but read (%d) bytes", size, read));
+              String.format("unable to receive message, expected (%d) bytes " +
+                            "but read (%d) bytes", size, read));
+    }
   }
 
   /**

@@ -86,8 +86,8 @@ public class TestSecurity {
     }
     if (opts.contains(Option.SHORT_TOKENS_AND_TICKETS)) {
       mcb.addMasterServerFlag("--authn_token_validity_seconds=" + TICKET_LIFETIME_SECS)
-         .kdcRenewLifetime(RENEWABLE_LIFETIME_SECS + "s")
-         .kdcTicketLifetime(TICKET_LIFETIME_SECS + "s");
+              .kdcRenewLifetime(RENEWABLE_LIFETIME_SECS + "s")
+              .kdcTicketLifetime(TICKET_LIFETIME_SECS + "s");
     }
     miniCluster = mcb.numMasterServers(3)
         .numTabletServers(opts.contains(Option.START_TSERVERS) ? 3 : 0)

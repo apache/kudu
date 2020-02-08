@@ -158,6 +158,16 @@ final class CallResponse extends DefaultByteBufHolder {
     return new Slice(payload, offset, length);
   }
 
+  @Override
+  public boolean equals(Object o) {
+    return super.equals(o);
+  }
+
+  @Override
+  public int hashCode() {
+    return super.hashCode();
+  }
+
   /**
    * Netty decoder which receives incoming frames (ByteBuf)
    * and constructs CallResponse objects.

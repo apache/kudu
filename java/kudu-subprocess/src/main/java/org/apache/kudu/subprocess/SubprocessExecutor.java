@@ -20,14 +20,16 @@ package org.apache.kudu.subprocess;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -48,20 +50,20 @@ import org.slf4j.LoggerFactory;
 @InterfaceAudience.Private
 public class SubprocessExecutor {
   private static final Logger LOG = LoggerFactory.getLogger(SubprocessExecutor.class);
-  private final Function<Throwable, Object> errorHandler;
+  private final Function<Throwable, Void> errorHandler;
   private boolean injectInterrupt = false;
 
   public SubprocessExecutor() {
     errorHandler = (t) -> {
-      // Exit the program with a nonzero status code if unexpected exception(s)
-      // thrown by the reader or writer tasks.
-      System.exit(1);
-      return null;
+      // If unexpected exception(s) are thrown by the reader or writer tasks,
+      // this error handler wraps the throwable in a runtime exception and rethrows,
+      // causing the program to exit with a nonzero status code.
+      throw new RuntimeException(t);
     };
   }
 
   @VisibleForTesting
-  public SubprocessExecutor(Function<Throwable, Object> errorHandler) {
+  public SubprocessExecutor(Function<Throwable, Void> errorHandler) {
     this.errorHandler = errorHandler;
   }
 
@@ -70,7 +72,7 @@ public class SubprocessExecutor {
    *
    * @param args the subprocess arguments
    * @param protocolHandler the subprocess protocol handler
-   * @param timeoutMs the maximum time to wait for subproces tasks to finish, -1 means
+   * @param timeoutMs the maximum time to wait for subprocess tasks to finish, -1 means
    *                  no time out and the tasks will continue execute until it finishes
    * @throws ExecutionException if any tasks of the subprocess completed exceptionally
    * @throws InterruptedException if the current thread was interrupted while waiting
@@ -100,16 +102,16 @@ public class SubprocessExecutor {
 
       // Start a single reader thread and run the task asynchronously.
       MessageReader reader = new MessageReader(inboundQueue, messageIO, injectInterrupt);
-      CompletableFuture readerFuture = CompletableFuture.runAsync(reader, readerService);
+      CompletableFuture<Void> readerFuture = CompletableFuture.runAsync(reader, readerService);
       readerFuture.exceptionally(errorHandler);
 
       // Start multiple writer threads and run the tasks asynchronously.
       MessageWriter writer = new MessageWriter(inboundQueue, messageIO, protocolHandler);
-      CompletableFuture[] writerFutures = new CompletableFuture[maxWriterThread];
+      List<CompletableFuture<Void>> writerFutures = new ArrayList<>();
       for (int i = 0; i < maxWriterThread; i++) {
-        CompletableFuture writerFuture = CompletableFuture.runAsync(writer, writerService);
+        CompletableFuture<Void> writerFuture = CompletableFuture.runAsync(writer, writerService);
         writerFuture.exceptionally(errorHandler);
-        writerFutures[i] = writerFuture;
+        writerFutures.add(writerFuture);
       }
 
       // Wait until the tasks finish execution. -1 means the reader (or writer) tasks
@@ -117,10 +119,10 @@ public class SubprocessExecutor {
       // to run forever, e.g. in tests, wait for the specified timeout.
       if (timeoutMs == -1) {
         readerFuture.join();
-        CompletableFuture.allOf(writerFutures).join();
+        CompletableFuture.allOf(writerFutures.toArray(new CompletableFuture[0])).join();
       } else {
         readerFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
-        CompletableFuture.allOf(writerFutures)
+        CompletableFuture.allOf(writerFutures.toArray(new CompletableFuture[0]))
                          .get(timeoutMs, TimeUnit.MILLISECONDS);
       }
     } catch (IOException e) {

@@ -416,7 +416,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private int width;
 
       @Override
-      protected void setup(Context context) throws KuduException {
+      protected void setup(Mapper.Context context) throws KuduException {
         id = "Job: " + context.getJobID() + " Task: " + context.getTaskAttemptID();
         Configuration conf = context.getConfiguration();
         CommandLineParser parser = new CommandLineParser(conf);
@@ -440,13 +440,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       }
 
       @Override
-      protected void cleanup(Context context) throws KuduException {
+      protected void cleanup(Mapper.Context context) throws KuduException {
         session.close();
         client.shutdown();
       }
 
       @Override
-      protected void map(BytesWritable key, NullWritable value, Context output) throws IOException {
+      protected void map(BytesWritable key, NullWritable value, Mapper.Context output)
+              throws IOException {
         current[position] = new byte[key.getLength()];
         System.arraycopy(key.getBytes(), 0, current[position], 0, key.getLength());
         if (++position == current.length) {
@@ -490,7 +491,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         first[first.length - 1] = ez;
       }
 
-      private void persist(Context output, byte[][] data, boolean update) throws KuduException {
+      private void persist(Mapper.Context output, byte[][] data, boolean update)
+              throws KuduException {
         for (int i = 0; i < data.length; i++) {
           Operation put = update ? table.newUpdate() : table.newInsert();
           PartialRow row = put.getRow();
@@ -690,11 +692,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       }
     }
 
-    public static class VerifyReducer extends Reducer<BytesWritable,BytesWritable,Text,Text> {
+    public static class VerifyReducer extends Reducer<BytesWritable, BytesWritable, Text, Text> {
       private ArrayList<byte[]> refs = new ArrayList<>();
 
       @Override
-      public void reduce(BytesWritable key, Iterable<BytesWritable> values, Context context)
+      public void reduce(BytesWritable key, Iterable<BytesWritable> values,
+                         Reducer<BytesWritable, BytesWritable, Text, Text>.Context context)
           throws IOException, InterruptedException {
 
         int defCount = 0;
@@ -1089,7 +1092,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private List<Pair<Long, Long>> headsCache;
 
       @Override
-      protected void setup(Context context) throws KuduException {
+      protected void setup(Mapper.Context context) throws KuduException {
         Configuration conf = context.getConfiguration();
         CommandLineParser parser = new CommandLineParser(conf);
         client = parser.getClient();
@@ -1138,14 +1141,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         do {
           RowResult prev = nextNode(prevKeyOne, prevKeyTwo);
           if (prev == null) {
-            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            context.getCounter(Updater.Counts.BROKEN_LINKS).increment(1);
             LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " doesn't exist");
             break;
           }
 
           // It's possible those columns are null, let's not break trying to read them.
           if (prev.isNull(0) || prev.isNull(1)) {
-            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            context.getCounter(Updater.Counts.BROKEN_LINKS).increment(1);
             LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " isn't referencing anywhere");
             break;
           }
@@ -1160,7 +1163,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           }
 
           if (prevCount != currentCount) {
-            context.getCounter(Counts.BAD_UPDATE_COUNTS).increment(1);
+            context.getCounter(Updater.Counts.BAD_UPDATE_COUNTS).increment(1);
             LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " has a wrong updateCount, " +
                 prevCount + " instead of " + currentCount);
             // Game over, there's corruption.
@@ -1168,14 +1171,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           }
 
           if (!prevClient.equals(client)) {
-            context.getCounter(Counts.BROKEN_LINKS).increment(1);
+            context.getCounter(Updater.Counts.BROKEN_LINKS).increment(1);
             LOG.warn(getStringFromKeys(prevKeyOne, prevKeyTwo) + " has the wrong client, " +
                 "bad reference? Bad client= " + prevClient);
             break;
           }
 
           updateRow(prevKeyOne, prevKeyTwo, newCount);
-          context.getCounter(Counts.UPDATED_NODES).increment(1);
+          context.getCounter(Updater.Counts.UPDATED_NODES).increment(1);
           if (prevKeyOne % 10 == 0) {
             context.progress();
           }
@@ -1184,7 +1187,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         } while (headKeyOne != prevKeyOne && headKeyTwo != prevKeyTwo);
 
         updateStatCounters(context, newCount);
-        context.getCounter(Counts.UPDATED_LINKS).increment(1);
+        context.getCounter(Updater.Counts.UPDATED_LINKS).increment(1);
       }
 
       /**
@@ -1217,19 +1220,19 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
             // TODO We didn't event get the first node?
             break;
           case 1:
-            context.getCounter(Counts.FIRST_UPDATE).increment(1);
+            context.getCounter(Updater.Counts.FIRST_UPDATE).increment(1);
             break;
           case 2:
-            context.getCounter(Counts.SECOND_UPDATE).increment(1);
+            context.getCounter(Updater.Counts.SECOND_UPDATE).increment(1);
             break;
           case 3:
-            context.getCounter(Counts.THIRD_UPDATE).increment(1);
+            context.getCounter(Updater.Counts.THIRD_UPDATE).increment(1);
             break;
           case 4:
-            context.getCounter(Counts.FOURTH_UPDATE).increment(1);
+            context.getCounter(Updater.Counts.FOURTH_UPDATE).increment(1);
             break;
           default:
-            context.getCounter(Counts.MORE_THAN_FOUR_UPDATES).increment(1);
+            context.getCounter(Updater.Counts.MORE_THAN_FOUR_UPDATES).increment(1);
             break;
         }
       }
@@ -1281,8 +1284,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       if (success) {
         // Let's not continue looping if we have broken linked lists.
-        Counter brokenLinks = counters.findCounter(Counts.BROKEN_LINKS);
-        Counter badUpdates = counters.findCounter(Counts.BAD_UPDATE_COUNTS);
+        Counter brokenLinks = counters.findCounter(Updater.Counts.BROKEN_LINKS);
+        Counter badUpdates = counters.findCounter(Updater.Counts.BAD_UPDATE_COUNTS);
         if (brokenLinks.getValue() > 0 || badUpdates.getValue() > 0) {
           LOG.error("Corruption was detected, see the job's counters. Ending the update loop.");
           success = false;
