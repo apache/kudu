@@ -702,6 +702,8 @@ build_curl() {
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
+    --without-libidn2 \
+    --without-libpsl \
     --without-librtmp \
     --without-libssh2 \
     --with-gssapi
