@@ -31,15 +31,15 @@ dependencies {
   compile "com.github.ben-manes:gradle-versions-plugin:0.27.0"
   compile "com.github.jengelman.gradle.plugins:shadow:5.2.0"
   compile "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.6.2"
-  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.10"
-  compile "com.netflix.nebula:nebula-clojure-plugin:9.1.1"
-  compile "com.github.spotbugs:spotbugs-gradle-plugin:2.0.1"
+  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.11"
+  compile "com.netflix.nebula:nebula-clojure-plugin:9.4.0"
+  compile "com.github.spotbugs:spotbugs-gradle-plugin:3.0.0"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
   compile "net.ltgt.gradle:gradle-errorprone-plugin:1.1.1"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.5.0"
   compile "com.google.code.gson:gson:2.8.6"
   compile "cz.alenkacz:gradle-scalafmt:1.7.2"
-  compile "com.google.guava:guava:28.1-jre"
+  compile "com.google.guava:guava:28.2-jre"
 }
 
 // Compiler configuration
