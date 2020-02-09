@@ -42,3 +42,12 @@ sourceSets {
     }
   }
 }
+
+// kudu-subprocess has no public Javadoc.
+javadoc {
+  enabled = false
+}
+
+// Skip publishing kudu-subprocess artifact because it's not intended for external use.
+uploadArchives.enabled = false
+install.enabled = false
