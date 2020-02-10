@@ -20,9 +20,10 @@ package org.apache.kudu;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
+import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.function.ThrowingRunnable;
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
 import org.apache.kudu.test.junit.RetryRule;
@@ -33,9 +34,6 @@ public class TestColumnSchema {
 
   @Rule
   public RetryRule retryRule = new RetryRule();
-
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
 
   @Test
   public void testToString() {
@@ -105,17 +103,27 @@ public class TestColumnSchema {
 
   @Test
   public void testOutOfRangeVarchar() throws Exception {
-    expectedException.expect(IllegalArgumentException.class);
-    expectedException.expectMessage("VARCHAR's length must be set and between 1 and 65535");
-    new ColumnSchemaBuilder("col1", Type.VARCHAR)
-      .typeAttributes(CharUtil.typeAttributes(70000)).build();
+    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        new ColumnSchemaBuilder("col1", Type.VARCHAR)
+                .typeAttributes(CharUtil.typeAttributes(70000)).build();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage()
+            .contains("VARCHAR's length must be set and between 1 and 65535"));
   }
 
   @Test
   public void testVarcharWithoutLength() throws Exception {
-    expectedException.expect(IllegalArgumentException.class);
-    expectedException.expectMessage("VARCHAR's length must be set and between 1 and 65535");
-    new ColumnSchemaBuilder("col1", Type.VARCHAR).build();
+    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        new ColumnSchemaBuilder("col1", Type.VARCHAR).build();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage()
+            .contains("VARCHAR's length must be set and between 1 and 65535"));
   }
 
 }

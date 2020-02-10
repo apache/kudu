@@ -37,11 +37,11 @@ import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.schema.MessageType;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.RuleChain;
+import org.junit.function.ThrowingRunnable;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -78,15 +78,8 @@ public class ITImportParquetPreCheck {
     schema = new Schema(columns);
   }
 
-  public KuduTestHarness harness = new KuduTestHarness();
-  public ExpectedException thrown = ExpectedException.none();
-
-  // ExpectedException misbehaves when combined with other rules; we use a
-  // RuleChain to beat it into submission.
-  //
-  // See https://stackoverflow.com/q/28846088 for more information.
   @Rule
-  public RuleChain chain = RuleChain.outerRule(harness).around(thrown);
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Before
   public void setUp() throws Exception {
@@ -112,16 +105,21 @@ public class ITImportParquetPreCheck {
     String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" +
       harness.getMasterAddressesAsString(), TABLE_NAME, data.toString()};
 
-    thrown.expect(IllegalArgumentException.class);
-    thrown.expectMessage("The column column1_i does not exist in Parquet schema");
-
-    GenericOptionsParser parser = new GenericOptionsParser(conf, args);
-    Job job =
-        ImportParquet.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
-    job.waitForCompletion(true);
+    Throwable thrown = Assert.assertThrows(IllegalArgumentException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        GenericOptionsParser parser = new GenericOptionsParser(conf, args);
+        Job job = ImportParquet.createSubmittableJob(parser.getConfiguration(),
+                parser.getRemainingArgs());
+        job.waitForCompletion(true);
+      }
+    });
+    Assert.assertTrue(thrown.getMessage()
+            .contains("The column column1_i does not exist in Parquet schema"));
 
     KuduTable openTable = harness.getClient().openTable(TABLE_NAME);
-    assertEquals(0, countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
+    assertEquals(0,
+            countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
   }
 
   @SuppressWarnings("deprecation")

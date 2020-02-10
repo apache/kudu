@@ -30,8 +30,7 @@ import com.google.common.primitives.Bytes;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.RuleChain;
+import org.junit.function.ThrowingRunnable;
 
 import org.apache.kudu.subprocess.Subprocess.SubprocessRequestPB;
 import org.apache.kudu.test.junit.RetryRule;
@@ -41,15 +40,8 @@ import org.apache.kudu.test.junit.RetryRule;
  */
 public class TestMessageIO {
 
-  public ExpectedException thrown = ExpectedException.none();
-  public RetryRule retryRule = new RetryRule();
-
-  // ExpectedException misbehaves when combined with other rules; we use a
-  // RuleChain to beat it into submission.
-  //
-  // See https://stackoverflow.com/q/28846088 for more information.
   @Rule
-  public RuleChain chainRule = RuleChain.outerRule(retryRule).around(thrown);
+  public RetryRule retryRule = new RetryRule();
 
   public static class PrintStreamOverload extends PrintStream {
     public PrintStreamOverload(OutputStream out) {
@@ -94,10 +86,14 @@ public class TestMessageIO {
         new SubprocessOutputStream(printStreamOverload));
     final MessageIO messageIO = new MessageIO(
         SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT, /* in= */null, out);
-    thrown.expect(IOException.class);
-    thrown.expectMessage(SubprocessOutputStream.WRITE_ERR);
-    printStreamOverload.setError();
-    messageIO.writeMessage(request);
+    Throwable thrown = Assert.assertThrows(IOException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        printStreamOverload.setError();
+        messageIO.writeMessage(request);
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains(SubprocessOutputStream.WRITE_ERR));
   }
 
   /**
@@ -113,9 +109,13 @@ public class TestMessageIO {
     BufferedInputStream in = new BufferedInputStream(byteInputStream);
     MessageIO messageIO = new MessageIO(SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT,
                                         in, /* out= */null);
-    thrown.expect(IOException.class);
-    thrown.expectMessage("exceeds maximum message size");
-    messageIO.readBytes();
+    Throwable thrown = Assert.assertThrows(IOException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        messageIO.readBytes();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("exceeds maximum message size"));
   }
 
   /**
@@ -131,8 +131,12 @@ public class TestMessageIO {
     BufferedInputStream in = new BufferedInputStream(new ByteArrayInputStream(malformedMessage));
     MessageIO messageIO = new MessageIO(SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT,
                                         in, /* out= */null);
-    thrown.expect(IOException.class);
-    thrown.expectMessage("unable to receive message");
-    messageIO.readBytes();
+    Throwable thrown = Assert.assertThrows(IOException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        messageIO.readBytes();
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("unable to receive message"));
   }
 }

@@ -31,8 +31,7 @@ import java.util.function.Function;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.RuleChain;
+import org.junit.function.ThrowingRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,16 +56,8 @@ public class TestEchoSubprocess {
     return null;
   };
 
-  public ExpectedException thrown = ExpectedException.none();
-  public RetryRule retryRule = new RetryRule();
-
-  // ExpectedException misbehaves when combined with other rules; we use a
-  // RuleChain to beat it into submission.
-  //
-  // See https://stackoverflow.com/q/28846088 for more information.
   @Rule
-  public RuleChain chain = RuleChain.outerRule(retryRule).around(thrown);
-
+  public RetryRule retryRule = new RetryRule();
 
   public static class PrintStreamWithIOException extends PrintStream {
     public PrintStreamWithIOException(OutputStream out, boolean autoFlush, String encoding)
@@ -134,9 +125,13 @@ public class TestEchoSubprocess {
     final PrintStream out =
             new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
-    thrown.expect(ExecutionException.class);
-    thrown.expectMessage("Unable to read the protobuf message");
-    runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
+    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("Unable to read the protobuf message"));
   }
 
   /**
@@ -154,9 +149,13 @@ public class TestEchoSubprocess {
     // Only use one writer task to avoid get TimeoutException instead for
     // writer tasks that haven't encountered any exceptions.
     final String[] args = {"-w", "1"};
-    thrown.expect(ExecutionException.class);
-    thrown.expectMessage("Unable to write the protobuf message");
-    runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
+    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("Unable to write the protobuf messag"));
   }
 
   /**
@@ -172,8 +171,12 @@ public class TestEchoSubprocess {
     final PrintStream out =
             new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     final String[] args = {""};
-    thrown.expect(ExecutionException.class);
-    thrown.expectMessage("Unable to put the message to the queue");
-    runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */true);
+    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */true);
+      }
+    });
+    Assert.assertTrue(thrown.getMessage().contains("Unable to put the message to the queue"));
   }
 }
