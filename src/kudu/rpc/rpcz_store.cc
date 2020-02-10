@@ -20,6 +20,7 @@
 #include <algorithm>  // IWYU pragma: keep
 #include <array>
 #include <cstdint>
+#include <map>
 #include <mutex> // for unique_lock
 #include <ostream>
 #include <string>
@@ -261,13 +262,12 @@ void RpczStore::LogTrace(InboundCall* call) {
       return;
     }
   }
-
-  if (PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
+  if (duration_ms > FLAGS_rpc_duration_too_long_ms ||
+      PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
+    const auto flags = (duration_ms > FLAGS_rpc_duration_too_long_ms)
+        ? Trace::INCLUDE_ALL : Trace::INCLUDE_TIME_DELTAS;
     LOG(INFO) << call->ToString() << " took " << duration_ms << "ms. Trace:";
-    call->trace()->Dump(&LOG(INFO), true);
-  } else if (duration_ms > FLAGS_rpc_duration_too_long_ms) {
-    LOG(INFO) << call->ToString() << " took " << duration_ms << "ms. "
-              << "Request Metrics: " << call->trace()->MetricsAsJSON();
+    call->trace()->Dump(&LOG(INFO), flags);
   }
 }
 
