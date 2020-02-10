@@ -1070,7 +1070,8 @@ find_package(CURL REQUIRED)
 include_directories(SYSTEM ${CURL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(curl
   STATIC_LIB "${CURL_STATIC_LIB}"
-  SHARED_LIB "${CURL_SHARED_LIB}")
+  SHARED_LIB "${CURL_SHARED_LIB}"
+  DEPS zlib)
 
 ## crcutil
 find_package(Crcutil REQUIRED)
