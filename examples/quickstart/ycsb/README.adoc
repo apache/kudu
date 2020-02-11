@@ -1,0 +1,98 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= YCSB Quickstart
+
+Below is a brief example running YCSB against Apache Kudu.
+
+NOTE: A Kudu quickstart cluster should not be used for real-world performance analysis.
+However, the steps shown here can be used to run YCSB against a real Kudu cluster.
+
+== Start the Kudu Quickstart Environment
+
+See the Apache Kudu
+link:https://kudu.apache.org/docs/quickstart.html[quickstart documentation]
+to setup and run the Kudu quickstart environment.
+
+
+== Download YCSB
+
+[source,bash]
+----
+mkdir YCSB
+pushd YCSB
+curl -LO https://github.com/brianfrankcooper/YCSB/releases/download/0.17.0/ycsb-0.17.0.tar.gz
+tar xfv ycsb-0.17.0.tar.gz --strip-components=1
+popd
+----
+
+
+== Load and Run a YCSB workload
+
+Next, run the YCSB workload against the loaded data. See the
+https://github.com/brianfrankcooper/YCSB/wiki/Running-a-Workload[YSCB "Running a Workload" documentation]
+for more details on the steps and options when running a workload.
+
+NOTE: There are various https://github.com/brianfrankcooper/YCSB/blob/master/workloads[workloads]
+available in YCSB. See the comment at the top of each workload file for more details.
+
+[source,bash]
+----
+pushd YCSB
+# Load the data
+./bin/ycsb.sh load kudu -P workloads/workloada -s \
+   -p kudu_master_addresses="localhost:7051,localhost:7151,localhost:7251" \
+   -p recordcount=100000 \
+   -p table=workloada \
+   -p kudu_table_num_replicas=3
+# Run the workload
+./bin/ycsb.sh run kudu -P workloads/workloada -s \
+   -p kudu_master_addresses="localhost:7051,localhost:7151,localhost:7251" \
+   -p operationcount=100000 \
+   -p table=workloada \
+   -p kudu_table_num_replicas=3
+popd
+----
+
+
+== Clean up
+
+To clean up the data after running a workload you can destroy the entire
+quickstart cluster as documented link:https://kudu.apache.org/docs/quickstart.html#_destroying_the_cluster[here].
+Alternatively, you can drop the table used for the workload using the Kudu command line tools:
+
+[source,bash]
+----
+docker exec -it $(docker ps -aqf "name=kudu-master-1") /bin/bash
+kudu table list kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251
+kudu table delete kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251 workloada
+exit
+----
+
+
+== Using a different client version
+
+In order to change the Kudu client version used by YCSB, you need to replace your YCSB install
+with a clone of the repository and a custom build that specifies the desired Kudu version.
+
+[source,bash]
+----
+git clone https://github.com/brianfrankcooper/YCSB.git
+pushd YCSB
+mvn -Psource-run -pl site.ycsb:kudu-binding -am clean package -DskipTests -Dkudu.version=1.12.0-SNAPSHOT
+popd
+----
