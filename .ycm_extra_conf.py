@@ -114,4 +114,10 @@ def FlagsForFile( filename, **kwargs ):
   return {
     'flags': final_flags,
     'do_cache': True
+    # TODO(mpercy): Also return override_filename for new ycmd?
   }
+
+def Settings( **kwargs ):
+  """ Latest YCM looks for Settings() instead of FlagsForFile(). """
+  if kwargs[ 'language' ] == 'cfamily':
+    return FlagsForFile( kwargs['filename'] )
