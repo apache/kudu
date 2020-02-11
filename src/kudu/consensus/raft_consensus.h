@@ -43,7 +43,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/consensus/time_manager.h"
+#include "kudu/consensus/routing.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -76,6 +76,7 @@ class Callback;
 
 namespace rpc {
 class PeriodicTimer;
+class RpcContext;
 }
 
 namespace tserver {
@@ -345,6 +346,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
                             boost::optional<ServerErrorPB::Code>* error_code);
 
+  // Change the proxy topology.
+  Status ChangeProxyTopology(const ChangeProxyTopologyRequestPB& req);
+
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.
   // Returns boost::none if RaftConsensus was not properly initialized.
@@ -448,6 +452,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   int64_t MetadataOnDiskSize() const;
 
   int64_t GetMillisSinceLastLeaderHeartbeat() const;
+
+  // Returns true if the request is intended to be proxied.
+  bool IsProxyRequest(const ConsensusRequestPB* request) const;
+
+  // Handle proxy RPC request.
+  // This method is intended to be executed on an RPC worker thread.
+  void HandleProxyRequest(const ConsensusRequestPB* request,
+                          ConsensusResponsePB* response,
+                          rpc::RpcContext* context);
 
  protected:
   RaftConsensus(ConsensusOptions options,
@@ -884,6 +897,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Consensus metadata persistence object.
   scoped_refptr<ConsensusMetadata> cmeta_;
+
+  // Proxy routing peristence object.
+  std::shared_ptr<DurableRoutingTable> routing_table_;
 
   // Threadpool token for constructing requests to peers, handling RPC callbacks, etc.
   std::unique_ptr<ThreadPoolToken> raft_pool_token_;

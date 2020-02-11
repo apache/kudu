@@ -40,6 +40,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
@@ -65,7 +66,6 @@ class ConsensusRequestPB;
 class ConsensusResponsePB;
 class ConsensusStatusPB;
 class PeerMessageQueueObserver;
-class TimeManager;
 #ifdef FB_DO_NOT_REMOVE
 class StartTabletCopyRequestPB;
 #endif
@@ -375,6 +375,13 @@ class PeerMessageQueue {
   void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid,
       const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn);
   void EndWatchForSuccessor();
+
+  // TODO(mpercy): It's probably not safe in general to access a queue's log
+  // cache via bare pointer, since (IIRC) a queue will be reconstructed
+  // transitioning to/from leader. Check this.
+  LogCache* log_cache() {
+    return &log_cache_;
+  }
 
  private:
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);

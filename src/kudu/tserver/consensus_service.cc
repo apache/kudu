@@ -133,11 +133,11 @@ static void SetupErrorAndRespond(ServerErrorPB* error,
 namespace {
 
 template<class ReqClass, class RespClass>
-bool CheckUuidMatchOrRespond(TSTabletManager* tablet_manager,
-                             const char* method_name,
-                             const ReqClass* req,
-                             RespClass* resp,
-                             rpc::RpcContext* context) {
+bool CheckUuidMatchOrRespondGeneric(TSTabletManager* tablet_manager,
+                                    const char* method_name,
+                                    const ReqClass* req,
+                                    RespClass* resp,
+                                    rpc::RpcContext* context) {
   const string& local_uuid = tablet_manager->NodeInstance().permanent_uuid();
   if (PREDICT_FALSE(!req->has_dest_uuid())) {
     // Maintain compat in release mode, but complain.
@@ -162,6 +162,39 @@ bool CheckUuidMatchOrRespond(TSTabletManager* tablet_manager,
   }
   return true;
 }
+
+template<class ReqClass, class RespClass>
+bool CheckUuidMatchOrRespond(TSTabletManager* tablet_manager,
+                             const char* method_name,
+                             const ReqClass* req,
+                             RespClass* resp,
+                             rpc::RpcContext* context) {
+  return CheckUuidMatchOrRespondGeneric(tablet_manager, method_name, req, resp, context);
+}
+
+template<>
+bool CheckUuidMatchOrRespond(TSTabletManager* tablet_manager,
+                             const char* method_name,
+                             const ConsensusRequestPB* req,
+                             ConsensusResponsePB* resp,
+                             rpc::RpcContext* context) {
+  const string& local_uuid = tablet_manager->NodeInstance().permanent_uuid();
+  if (req->has_proxy_dest_uuid()) {
+    if (PREDICT_FALSE(req->proxy_dest_uuid() != local_uuid)) {
+      Status s = Status::InvalidArgument(Substitute("$0: Wrong proxy UUID requested. "
+                                                    "Local UUID: $1. Requested UUID: $2",
+                                                    method_name, local_uuid, req->proxy_dest_uuid()));
+      LOG(WARNING) << s.ToString() << ": from " << context->requestor_string()
+                  << ": " << SecureShortDebugString(*req);
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           ServerErrorPB::WRONG_SERVER_UUID, context);
+      return false;
+    }
+    return true;
+  }
+  return CheckUuidMatchOrRespondGeneric(tablet_manager, method_name, req, resp, context);
+}
+
 
 template<class RespClass>
 bool GetConsensusOrRespond(TSTabletManager* tablet_manager,
@@ -251,6 +284,13 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   // Submit the update directly to the TabletReplica's RaftConsensus instance.
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(tablet_manager_, resp, context, &consensus)) return;
+
+  // Fast path for proxy requests.
+  if (consensus->IsProxyRequest(req)) {
+    consensus->HandleProxyRequest(req, resp, context);
+    return;
+  }
+
   Status s = consensus->Update(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
     // Clear the response first, since a partially-filled response could
@@ -350,6 +390,23 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
     return;
   }
   context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::ChangeProxyTopology(const consensus::ChangeProxyTopologyRequestPB* req,
+                                              consensus::ChangeProxyTopologyResponsePB* resp,
+                                              rpc::RpcContext* context) {
+  LOG(INFO) << "Received ChangeProxyTopology RPC: " << SecureDebugString(*req)
+            << " from " << context->requestor_string();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "ChangeProxyTopology", req, resp, context)) {
+    return;
+  }
+
+  shared_ptr<RaftConsensus> consensus;
+  if (!GetConsensusOrRespond(tablet_manager_, resp, context, &consensus)) {
+    return;
+  }
+
+  HandleResponse(req, resp, context, consensus->ChangeProxyTopology(*req));
 }
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
