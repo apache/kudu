@@ -282,7 +282,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   } else {
     opts.num_ntp_servers = 1;
     opts.extra_master_flags.emplace_back(
-        "--builtin_ntp_client_enable_auto_config_in_cloud=true");
+        "--builtin_ntp_client_enable_auto_config=true");
   }
 #endif
 

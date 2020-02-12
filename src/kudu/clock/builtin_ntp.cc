@@ -70,7 +70,7 @@ DEFINE_string(builtin_ntp_servers,
               "3.pool.ntp.org",
               "The NTP servers used by the built-in NTP client, in format "
               "<FQDN|IP>[:PORT]. These will only be used if the built-in NTP "
-              "client is enabled.");
+              "client is enabled (i.e. if setting --time_source=builtin).");
 
 // In the 'Best practices' section, RFC 4330 states that 15 seconds is the
 // minimum allowed polling interval.
@@ -107,12 +107,14 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
 
-DEFINE_bool(builtin_ntp_client_enable_auto_config_in_cloud, false,
-            "Whether to attempt the automatic configuration of the built-in "
-            "NTP client, pointing it to the internal NTP server accessible "
-            "from within a cloud instance");
-TAG_FLAG(builtin_ntp_client_enable_auto_config_in_cloud, advanced);
-TAG_FLAG(builtin_ntp_client_enable_auto_config_in_cloud, experimental);
+DEFINE_bool(builtin_ntp_client_enable_auto_config, false,
+            "Whether to try auto-discovery of servers for the built-in NTP "
+            "client. E.g., in case of AWS and GCE cloud instances, use the "
+            "dedicated NTP server provided by the cloud instance. If "
+            "auto-discovery fails, the built-in NTP client falls back to using "
+            "servers specified by the --builtin_ntp_servers flag.");
+TAG_FLAG(builtin_ntp_client_enable_auto_config, advanced);
+TAG_FLAG(builtin_ntp_client_enable_auto_config, experimental);
 
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;
@@ -570,7 +572,7 @@ Status BuiltInNtp::InitImpl() {
     // That's the case when this object has been created using the default
     // constructor.
     vector<HostPort> hps;
-    if (FLAGS_builtin_ntp_client_enable_auto_config_in_cloud) {
+    if (FLAGS_builtin_ntp_client_enable_auto_config) {
       // Try to find the instance-only NTP server and configure the built-in
       // NTP client with it.
       InstanceDetector detector;
@@ -582,10 +584,9 @@ Status BuiltInNtp::InitImpl() {
         hps.emplace_back(ntp_server, 123);
         return Status::OK();
       });
-      WARN_NOT_OK(s, Substitute("auto-configuration of built-in NTP client "
-                                "for cloud instance failed, switching to "
-                                "the default set of NTP servers provided by "
-                                "the --builtin_ntp_servers flag"));
+      WARN_NOT_OK(s, Substitute("auto-configuration of the built-in NTP client "
+                                "failed: falling back to the set of servers "
+                                "provided by the --builtin_ntp_servers flag"));
     }
     if (hps.empty()) {
       RETURN_NOT_OK_PREPEND(HostPort::ParseStrings(FLAGS_builtin_ntp_servers,
