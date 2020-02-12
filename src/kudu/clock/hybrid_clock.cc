@@ -117,16 +117,37 @@ bool ValidateTimeSource() {
 }
 GROUP_FLAG_VALIDATOR(time_source_guardrail, ValidateTimeSource);
 
-METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
-                           "Hybrid Clock Timestamp",
-                           kudu::MetricUnit::kMicroseconds,
-                           "Hybrid clock timestamp.",
-                           kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_bool(server, hybrid_clock_extrapolating,
+                         "Hybrid Clock Is Being Extrapolated",
+                         kudu::MetricUnit::kState,
+                         "Whether HybridClock timestamps are extrapolated "
+                         "because of inability to read the underlying clock",
+                         kudu::MetricLevel::kWarn);
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_error,
                            "Hybrid Clock Error",
                            kudu::MetricUnit::kMicroseconds,
-                           "Server clock maximum error.",
+                           "Server clock maximum error",
                            kudu::MetricLevel::kInfo);
+METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
+                           "Hybrid Clock Timestamp",
+                           kudu::MetricUnit::kMicroseconds,
+                           "Hybrid clock timestamp",
+                           kudu::MetricLevel::kInfo);
+METRIC_DEFINE_histogram(server, hybrid_clock_max_errors,
+                        "Hybrid Clock Maximum Errors",
+                        kudu::MetricUnit::kMilliseconds,
+                        "The statistics on the maximum error of the underlying "
+                        "clock",
+                         kudu::MetricLevel::kInfo,
+                        20000, 3);
+METRIC_DEFINE_histogram(server, hybrid_clock_extrapolation_intervals,
+                        "Intervals of Hybrid Clock Extrapolation",
+                        kudu::MetricUnit::kSeconds,
+                        "The statistics on the duration of intervals when the "
+                        "underlying clock was extrapolated instead of using "
+                        "the direct readings",
+                        kudu::MetricLevel::kWarn,
+                        10000, 3);
 
 namespace kudu {
 namespace clock {
@@ -153,6 +174,12 @@ HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
     : next_timestamp_(0),
       state_(kNotInitialized) {
   DCHECK(metric_entity);
+  max_errors_histogram_ =
+      METRIC_hybrid_clock_max_errors.Instantiate(metric_entity);
+  extrapolation_intervals_histogram_ =
+      METRIC_hybrid_clock_extrapolation_intervals.Instantiate(metric_entity);
+  extrapolating_ = metric_entity->FindOrCreateGauge(
+      &METRIC_hybrid_clock_extrapolating, false, MergeType::kMax);
   METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
       metric_entity,
       Bind(&HybridClock::NowForMetrics, Unretained(this)))->
@@ -418,12 +445,13 @@ void HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
 }
 
 Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
-  bool is_extrapolated = false;
   auto read_time_before = MonoTime::Now();
   Status s = time_service_->WalltimeWithError(now_usec, error_usec);
   auto read_time_after = MonoTime::Now();
 
+  bool is_extrapolated = false;
   if (PREDICT_TRUE(s.ok())) {
+    max_errors_histogram_->Increment(*error_usec / 1000);
     // We got a good clock read. Remember this in case the clock later becomes
     // unsynchronized and we need to extrapolate from here.
     //
@@ -448,6 +476,13 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
         MonoDelta::FromMicroseconds(read_time_error_us);
 
     std::unique_lock<decltype(last_clock_read_lock_)> l(last_clock_read_lock_);
+    if (is_extrapolating_) {
+      is_extrapolating_ = false;
+      extrapolating_->set_value(is_extrapolating_);
+      uint64_t duration_us = (*now_usec > last_clock_read_physical_)
+          ? (*now_usec - last_clock_read_physical_) : 0;
+      extrapolation_intervals_histogram_->Increment(duration_us / 1000000);
+    }
     if (!last_clock_read_time_.Initialized() ||
         last_clock_read_time_ < read_time_max_likelihood) {
       last_clock_read_time_ = read_time_max_likelihood;
@@ -458,6 +493,10 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
     // We failed to read the clock. Extrapolate the new time based on our
     // last successful read.
     std::unique_lock<decltype(last_clock_read_lock_)> l(last_clock_read_lock_);
+    if (!is_extrapolating_) {
+      is_extrapolating_ = true;
+      extrapolating_->set_value(is_extrapolating_);
+    }
     if (!last_clock_read_time_.Initialized()) {
       RETURN_NOT_OK_PREPEND(s, "could not read system time source");
     }
@@ -468,10 +507,11 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
     *error_usec = last_clock_read_error_ + accum_error_us;
     is_extrapolated = true;
     l.unlock();
-    // Log after unlocking to minimize the lock hold time.
-    KLOG_EVERY_N_SECS(ERROR, 1) << "Unable to read clock for last "
-                                << time_since_last_read.ToString() << ": " << s.ToString();
 
+    // Log after unlocking to minimize the lock hold time.
+    KLOG_EVERY_N_SECS(ERROR, 1) << Substitute(
+        "unable to read clock for last $0: $1",
+        time_since_last_read.ToString(), s.ToString());
   }
 
   // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec

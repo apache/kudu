@@ -197,16 +197,19 @@ class HybridClock : public Clock {
   simple_spinlock lock_;
 
   // The next timestamp to be generated from this clock, assuming that
-  // the physical clock hasn't advanced beyond the value stored here. Guarded
-  // by 'lock_'.
+  // the physical clock hasn't advanced beyond the value stored here.
+  // Protected by 'lock_'.
   uint64_t next_timestamp_;
 
   // The last valid clock reading we got from the time source, along
-  // with the monotime that we took that reading.
-  simple_spinlock last_clock_read_lock_;
+  // with the monotime that we took that reading. The 'is_extrapolating' field
+  // tracks whether extrapolated or real readings of the underlying clock are
+  // used to generate hybrid timestamps.
+  simple_spinlock last_clock_read_lock_;  // protects four fields below
   MonoTime last_clock_read_time_;
   uint64_t last_clock_read_physical_;
   uint64_t last_clock_read_error_;
+  bool is_extrapolating_ = false;
 
   // The state of the object. Guarded by 'lock_'.
   enum State {
@@ -214,6 +217,23 @@ class HybridClock : public Clock {
     kInitialized
   };
   State state_;
+
+  // Whether the hybrid clock is extrapolating the readings of the underlying
+  // clock instead of using the real ones. It's important to know whether
+  // the extrapolation is happening, but 'extrapolation_intervals_histogram_'
+  // metric doesn't allow for exposing this fact prior to the end of current
+  // extrapolation interval.
+  scoped_refptr<AtomicGauge<bool>> extrapolating_;
+
+  // Stats on the underlying clock's 'maximum clock' metric sampled every
+  // NowWithError() call (essentially, every call when requesting a hybrid clock
+  // timestamp).
+  scoped_refptr<Histogram> max_errors_histogram_;
+
+  // Stats on time intervals when the underlying clock was extrapolated
+  // instead of using the actual readings. Extrapolation happens when an attempt
+  // to read the clock yields an error (clock might be unsynchronized, etc.).
+  scoped_refptr<Histogram> extrapolation_intervals_histogram_;
 
   // Clock metrics are set to detach to their last value. This means
   // that, during our destructor, we'll need to access other class members

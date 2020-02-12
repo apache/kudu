@@ -492,9 +492,7 @@ Status ServerBase::Init() {
   // so we're less likely to get into a partially initialized state on disk during startup
   // if we're having clock problems.
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
-
   RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
-
   RETURN_NOT_OK(file_cache_->Init());
 
   fs::FsReport report;

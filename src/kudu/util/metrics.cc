@@ -897,7 +897,7 @@ HistogramPrototype::HistogramPrototype(const MetricPrototype::CtorArgs& args,
   : MetricPrototype(args),
     max_trackable_value_(max_trackable_value),
     num_sig_digits_(num_sig_digits) {
-  // Better to crash at definition time that at instantiation time.
+  // Better to crash at definition time than at instantiation time.
   CHECK(HdrHistogram::IsValidHighestTrackableValue(max_trackable_value))
       << Substitute("Invalid max trackable value on histogram $0: $1",
                     args.name_, max_trackable_value);
