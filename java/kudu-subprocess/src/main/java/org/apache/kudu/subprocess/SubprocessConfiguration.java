@@ -33,8 +33,8 @@ import org.apache.yetus.audience.InterfaceAudience;
 public class SubprocessConfiguration {
   private int queueSize;
   private static final int QUEUE_SIZE_DEFAULT = 100;
-  private int maxWriterThreads;
-  private static final int MAX_WRITER_THREADS_DEFAULT = 3;
+  private int maxMsgParserThreads;
+  private static final int MAX_MSG_PARSER_THREADS_DEFAULT = 3;
   private int maxMsgBytes;
 
   @VisibleForTesting
@@ -53,11 +53,11 @@ public class SubprocessConfiguration {
   }
 
   /**
-   * @return the maximum number of threads in the writer thread pool, or the
-   * default value if not provided
+   * @return the maximum number of threads in the message parser thread pool,
+   * or the default value if not provided
    */
-  int getMaxWriterThreads() {
-    return maxWriterThreads;
+  int getMaxMsgParserThreads() {
+    return maxMsgParserThreads;
   }
 
   /**
@@ -85,10 +85,10 @@ public class SubprocessConfiguration {
     queueSizeOpt.setRequired(false);
     options.addOption(queueSizeOpt);
 
-    final String maxWriterThreadsLongOpt = "maxWriterThreads";
+    final String maxMsgParserThreadsLongOpt = "maxMsgParserThreads";
     Option maxThreadsOpt = new Option(
-        "w", maxWriterThreadsLongOpt, /* hasArg= */true,
-        "Maximum number of threads in the writer thread pool for subprocess");
+        "p", maxMsgParserThreadsLongOpt, /* hasArg= */true,
+        "Maximum number of threads in the message parser thread pool for subprocess");
     maxThreadsOpt.setRequired(false);
     options.addOption(maxThreadsOpt);
 
@@ -103,12 +103,12 @@ public class SubprocessConfiguration {
     try {
       CommandLine cmd = parser.parse(options, args);
       String queueSize = cmd.getOptionValue(queueSizeLongOpt);
-      String maxWriterThreads = cmd.getOptionValue(maxWriterThreadsLongOpt);
+      String maxParserThreads = cmd.getOptionValue(maxMsgParserThreadsLongOpt);
       String maxMsgBytes = cmd.getOptionValue(maxMsgBytesLongOpt);
       this.queueSize = queueSize == null ?
           QUEUE_SIZE_DEFAULT : Integer.parseInt(queueSize);
-      this.maxWriterThreads = maxWriterThreads == null ?
-          MAX_WRITER_THREADS_DEFAULT : Integer.parseInt(maxWriterThreads);
+      this.maxMsgParserThreads = maxParserThreads == null ?
+          MAX_MSG_PARSER_THREADS_DEFAULT : Integer.parseInt(maxParserThreads);
       this.maxMsgBytes = maxMsgBytes == null ?
           MAX_MESSAGE_BYTES_DEFAULT : Integer.parseInt(maxMsgBytes);
     } catch (ParseException e) {

@@ -24,10 +24,12 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
+import com.google.common.primitives.Bytes;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.subprocess.KuduSubprocessException;
 import org.apache.kudu.subprocess.MessageIO;
 import org.apache.kudu.subprocess.MessageTestUtil;
+import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.test.junit.RetryRule;
 
@@ -124,10 +127,10 @@ public class TestEchoSubprocess {
     final InputStream in = new ByteArrayInputStream(messageBytes);
     final PrintStream out =
             new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    final String[] args = {""};
     Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
+        final String[] args = {""};
         runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
       }
     });
@@ -146,12 +149,10 @@ public class TestEchoSubprocess {
     final InputStream in = new ByteArrayInputStream(messageBytes);
     final PrintStream out =
             new PrintStreamWithIOException(new ByteArrayOutputStream(), false, "UTF-8");
-    // Only use one writer task to avoid get TimeoutException instead for
-    // writer tasks that haven't encountered any exceptions.
-    final String[] args = {"-w", "1"};
     Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
+        final String[] args = {""};
         runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
       }
     });
@@ -169,14 +170,46 @@ public class TestEchoSubprocess {
         MessageTestUtil.createEchoSubprocessRequest(message));
     final InputStream in = new ByteArrayInputStream(messageBytes);
     final PrintStream out =
-            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    final String[] args = {""};
+        new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
     Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
       @Override
       public void run() throws Exception {
+        final String[] args = {""};
         runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */true);
       }
     });
     Assert.assertTrue(thrown.getMessage().contains("Unable to put the message to the queue"));
+  }
+
+  /**
+   * Verifies when <code>MessageWriter</code> task is blocking on writing the message,
+   * <code>MessageParser</code> task can continue processing the requests without
+   * blocking.
+   */
+  @Test
+  public void testMessageParser() throws Exception  {
+    final byte[] messageBytes = Bytes.concat(
+        MessageTestUtil.serializeMessage(MessageTestUtil.createEchoSubprocessRequest("a")),
+        MessageTestUtil.serializeMessage(MessageTestUtil.createEchoSubprocessRequest("b")));
+    final InputStream in = new ByteArrayInputStream(messageBytes);
+    final PrintStream out =
+        new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
+    final SubprocessExecutor[] executors = new SubprocessExecutor[1];
+    System.setIn(in);
+    System.setOut(out);
+    Assert.assertThrows(TimeoutException.class, new ThrowingRunnable() {
+      @Override
+      public void run() throws Exception {
+        final String[] args = {""};
+        executors[0] = new SubprocessExecutor(NO_ERR);
+        // Block the message write for 1000 Ms.
+        executors[0].blockWriteMs(1000);
+        executors[0].run(args, new EchoProtocolHandler(), /* timeoutMs= */500);
+      }
+    });
+
+    // Verify that the message have been processed and placed to outbound queue.
+    BlockingQueue<SubprocessResponsePB> outboundQueue = executors[0].getOutboundQueue();
+    Assert.assertEquals(1, outboundQueue.size());
   }
 }

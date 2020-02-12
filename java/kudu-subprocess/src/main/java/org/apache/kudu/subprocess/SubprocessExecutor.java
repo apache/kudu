@@ -37,21 +37,27 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
+
 /**
  * The {@link SubprocessExecutor} class,
  *    1. parses the command line to get the configuration,
  *    2. has a single reader thread that continuously reads protobuf-based
- *       messages from the standard input and puts the messages to a FIFO
+ *       messages from standard input and puts the messages to a FIFO inbound
  *       blocking queue,
- *    3. has multiple writer threads that continuously retrieve the messages
- *       from the queue, process them and write the responses to the
- *       standard output.
+ *    3. has multiple parser threads that continuously retrieve the messages
+ *       from the inbound queue, process them and put the responses to a FIFO
+ *       outbound blocking queue,
+ *    4. has a single writer thread that continuously retrieves the responses
+ *       from the outbound queue, and writes the responses to standard output.
  */
 @InterfaceAudience.Private
 public class SubprocessExecutor {
   private static final Logger LOG = LoggerFactory.getLogger(SubprocessExecutor.class);
   private final Function<Throwable, Void> errorHandler;
   private boolean injectInterrupt = false;
+  private long blockWriteMs = -1;
+  private BlockingQueue<SubprocessResponsePB> outboundQueue;
 
   public SubprocessExecutor() {
     errorHandler = (t) -> {
@@ -82,13 +88,15 @@ public class SubprocessExecutor {
   public void run(String[] args, ProtocolHandler protocolHandler, long timeoutMs)
       throws InterruptedException, ExecutionException, TimeoutException {
     SubprocessConfiguration conf = new SubprocessConfiguration(args);
-    int maxWriterThread = conf.getMaxWriterThreads();
+    int maxMsgParserThread = conf.getMaxMsgParserThreads();
     int queueSize = conf.getQueueSize();
     int maxMessageBytes = conf.getMaxMessageBytes();
 
     BlockingQueue<byte[]> inboundQueue = new ArrayBlockingQueue<>(queueSize, /* fair= */true);
+    outboundQueue = new ArrayBlockingQueue<>(queueSize, /* fair= */true);
     ExecutorService readerService = Executors.newSingleThreadExecutor();
-    ExecutorService writerService = Executors.newFixedThreadPool(maxWriterThread);
+    ExecutorService parserService = Executors.newFixedThreadPool(maxMsgParserThread);
+    ExecutorService writerService = Executors.newSingleThreadExecutor();
 
     // Wrap the system output in a SubprocessOutputStream so IOExceptions
     // from system output are propagated up instead of being silently swallowed.
@@ -105,24 +113,31 @@ public class SubprocessExecutor {
       CompletableFuture<Void> readerFuture = CompletableFuture.runAsync(reader, readerService);
       readerFuture.exceptionally(errorHandler);
 
-      // Start multiple writer threads and run the tasks asynchronously.
-      MessageWriter writer = new MessageWriter(inboundQueue, messageIO, protocolHandler);
-      List<CompletableFuture<Void>> writerFutures = new ArrayList<>();
-      for (int i = 0; i < maxWriterThread; i++) {
-        CompletableFuture<Void> writerFuture = CompletableFuture.runAsync(writer, writerService);
-        writerFuture.exceptionally(errorHandler);
-        writerFutures.add(writerFuture);
+      // Start multiple message parser threads and run the tasks asynchronously.
+      MessageParser parser = new MessageParser(inboundQueue, outboundQueue, protocolHandler);
+      List<CompletableFuture<Void>> parserFutures = new ArrayList<>();
+      for (int i = 0; i < maxMsgParserThread; i++) {
+        CompletableFuture<Void> parserFuture = CompletableFuture.runAsync(parser, parserService);
+        parserFuture.exceptionally(errorHandler);
+        parserFutures.add(parserFuture);
       }
 
-      // Wait until the tasks finish execution. -1 means the reader (or writer) tasks
-      // continue the execution until finish. In cases where we don't want the tasks
-      // to run forever, e.g. in tests, wait for the specified timeout.
+      // Start a single writer thread and run the task asynchronously.
+      MessageWriter writer = new MessageWriter(outboundQueue, messageIO, blockWriteMs);
+      CompletableFuture<Void> writerFuture = CompletableFuture.runAsync(writer, writerService);
+      writerFuture.exceptionally(errorHandler);
+
+      // Wait until the tasks finish execution. -1 means the reader (parser, or writer)
+      // tasks continue the execution until finish. In cases where we don't want the
+      // tasks to run forever, e.g. in tests, wait for the specified timeout.
       if (timeoutMs == -1) {
         readerFuture.join();
-        CompletableFuture.allOf(writerFutures.toArray(new CompletableFuture[0])).join();
+        writerFuture.join();
+        CompletableFuture.allOf(parserFutures.toArray(new CompletableFuture[0])).join();
       } else {
         readerFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
-        CompletableFuture.allOf(writerFutures.toArray(new CompletableFuture[0]))
+        writerFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+        CompletableFuture.allOf(parserFutures.toArray(new CompletableFuture[0]))
                          .get(timeoutMs, TimeUnit.MILLISECONDS);
       }
     } catch (IOException e) {
@@ -131,10 +146,26 @@ public class SubprocessExecutor {
   }
 
   /**
+   * Returns the outbound message queue.
+   */
+  @VisibleForTesting
+  public BlockingQueue<SubprocessResponsePB> getOutboundQueue() {
+    return outboundQueue;
+  }
+
+  /**
    * Sets the interruption flag to true.
    */
   @VisibleForTesting
   public void interrupt() {
     injectInterrupt = true;
+  }
+
+  /**
+   * Blocks the message write for the given milliseconds.
+   */
+  @VisibleForTesting
+  public void blockWriteMs(long blockWriteMs) {
+    this.blockWriteMs = blockWriteMs;
   }
 }

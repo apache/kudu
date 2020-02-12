@@ -21,7 +21,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -30,7 +29,7 @@ import org.slf4j.LoggerFactory;
 /**
  * The {@link MessageReader} class,
  *   1. processes a message that reads from the underlying input stream.
- *   2. and then puts it to the incoming message queue.
+ *   2. and then puts it to the inbound message queue.
  *
  * Since {@link MessageIO#readBytes()} is not atomic, the implementation
  * of MessageReader is not thread-safe, and thus MessageReader should not
@@ -41,9 +40,7 @@ class MessageReader implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(MessageReader.class);
   private final BlockingQueue<byte[]> inboundQueue;
   private final MessageIO messageIO;
-
-  @VisibleForTesting
-  private boolean injectInterrupt;
+  private final boolean injectInterrupt;
 
   MessageReader(BlockingQueue<byte[]> inboundQueue,
                 MessageIO messageIO,
@@ -77,22 +74,12 @@ class MessageReader implements Runnable {
         throw new KuduSubprocessException("Unable to read the protobuf message", e);
       }
 
-      // Put the message to the queue. If encountered InterruptedException
-      // during the put, consider it to be fatal (as a signal to shutdown
-      // the task), and propagate it up the call stack. Log a warning for
-      // empty message which is not expected.
+      // Log a warning for empty message which is not expected.
       if (data.length == 0) {
         LOG.warn("Empty message received.");
         continue;
       }
-      try {
-        inboundQueue.put(data);
-        if (LOG.isDebugEnabled()) {
-          LOG.debug("Message: {} has been put on the queue", data);
-        }
-      } catch (InterruptedException e) {
-        throw new KuduSubprocessException("Unable to put the message to the queue", e);
-      }
+      QueueUtil.put(inboundQueue, data);
     }
   }
 }

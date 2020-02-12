@@ -77,7 +77,7 @@ public class TestMessageIO {
    * <code>IOException</code>.
    */
   @Test
-  public void testSubprocessOutputStream() throws Exception {
+  public void testSubprocessOutputStream() {
     final String data = "data";
     final SubprocessRequestPB request = MessageTestUtil.createEchoSubprocessRequest(data);
     final PrintStreamOverload printStreamOverload =
@@ -101,7 +101,7 @@ public class TestMessageIO {
    * bytes size should cause expected error.
    */
   @Test
-  public void testMalformedMessageExceedMaxBytes() throws Exception {
+  public void testMalformedMessageExceedMaxBytes() {
     byte[] size = MessageIO.intToBytes(SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT + 1);
     byte[] body = new byte[0];
     byte[] malformedMessage = Bytes.concat(size, body);
@@ -123,7 +123,7 @@ public class TestMessageIO {
    * and body (not enough data in the body) should cause expected error.
    */
   @Test
-  public void testMalformedMessageMismatchSize() throws Exception {
+  public void testMalformedMessageMismatchSize() {
     byte[] size = MessageIO.intToBytes(100);
     byte[] body = new byte[10];
     Arrays.fill(body, (byte)0);
