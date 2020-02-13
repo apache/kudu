@@ -62,9 +62,14 @@ class HybridClock : public Clock {
   Status Update(const Timestamp& to_update) override;
 
   // HybridClock supports all external consistency modes.
-  bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) override;
+  bool SupportsExternalConsistencyMode(
+      ExternalConsistencyMode /* mode */) const override {
+    return true;
+  }
 
-  bool HasPhysicalComponent() const override;
+  bool HasPhysicalComponent() const override {
+    return true;
+  }
 
   MonoDelta GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const override;
 
@@ -157,6 +162,18 @@ class HybridClock : public Clock {
   }
 
  private:
+  // How many bits to left shift a microseconds clock read. The remainder
+  // of the timestamp will be reserved for logical values. Left shifting 12 bits
+  // gives us 12 bits for the logical value and should still keep accurate
+  // microseconds time until 2100+
+  static constexpr const int kBitsToShift = 12;
+
+  // Mask to extract the pure logical bits.
+  static constexpr const uint64_t kLogicalBitMask = (1 << kBitsToShift) - 1;
+
+  // Variant of NowWithError() that requires 'lock_' to be held already.
+  void NowWithErrorUnlocked(Timestamp* timestamp, uint64_t* max_error_usec);
+
   // Obtains the current wallclock time and maximum error in microseconds,
   // and checks if the clock is synchronized.
   //
@@ -176,10 +193,12 @@ class HybridClock : public Clock {
   // service.
   std::unique_ptr<clock::TimeService> time_service_;
 
+  // Guards access to 'state_' and 'next_timestamp_'.
   simple_spinlock lock_;
 
   // The next timestamp to be generated from this clock, assuming that
-  // the physical clock hasn't advanced beyond the value stored here.
+  // the physical clock hasn't advanced beyond the value stored here. Guarded
+  // by 'lock_'.
   uint64_t next_timestamp_;
 
   // The last valid clock reading we got from the time source, along
@@ -189,18 +208,11 @@ class HybridClock : public Clock {
   uint64_t last_clock_read_physical_;
   uint64_t last_clock_read_error_;
 
-  // How many bits to left shift a microseconds clock read. The remainder
-  // of the timestamp will be reserved for logical values.
-  static const int kBitsToShift;
-
-  // Mask to extract the pure logical bits.
-  static const uint64_t kLogicalBitMask;
-
+  // The state of the object. Guarded by 'lock_'.
   enum State {
     kNotInitialized,
     kInitialized
   };
-
   State state_;
 
   // Clock metrics are set to detach to their last value. This means

@@ -74,7 +74,7 @@ class LogicalClock : public Clock {
   uint64_t GetCurrentTime();
 
   // Logical clock doesn't support COMMIT_WAIT.
-  bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) override {
+  bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) const override {
     return mode != COMMIT_WAIT;
   }
 

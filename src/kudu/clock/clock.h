@@ -63,7 +63,7 @@ class Clock {
   }
 
   // Indicates whether this clock supports the required external consistency mode.
-  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) = 0;
+  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) const = 0;
 
   // Indicates whether the clock has a physical component to its timestamps
   // (wallclock time).
