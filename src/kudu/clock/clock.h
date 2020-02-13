@@ -103,9 +103,6 @@ class Clock {
   // to Now() would return a higher value than t).
   virtual bool IsAfter(Timestamp t) = 0;
 
-  // Register the clock metrics in the given entity.
-  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) = 0;
-
   // Strigifies the provided timestamp according to this clock's internal format.
   virtual std::string Stringify(Timestamp timestamp) = 0;
 };

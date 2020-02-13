@@ -33,7 +33,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
-#include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
@@ -88,7 +87,6 @@ using kudu::client::KuduUpdate;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
 using kudu::cluster::ExternalMiniClusterOptions;
-using kudu::clock::Clock;
 using kudu::clock::HybridClock;
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::ConsensusMetadataManager;
@@ -590,8 +588,11 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     ASSERT_OK(fs_manager->Open());
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
         new ConsensusMetadataManager(fs_manager.get()));
-    unique_ptr<Clock> clock(new HybridClock);
-    ASSERT_OK(clock->Init());
+    MetricRegistry metric_registry;
+    auto metric_entity(METRIC_ENTITY_server.Instantiate(&metric_registry,
+                                                        "ts-recoverty-itest"));
+    HybridClock clock(metric_entity);
+    ASSERT_OK(clock.Init());
 
     OpId opid;
     opid.set_term(kOverflowedIndexValue);
@@ -610,7 +611,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 
       // Write a series of negative OpIds.
       // This will cause a crash, but only after they have been written to disk.
-      ASSERT_OK(AppendNoOpsToLogSync(clock.get(), log.get(), &opid, kNumOverflowedEntriesToWrite));
+      ASSERT_OK(AppendNoOpsToLogSync(&clock, log.get(), &opid, kNumOverflowedEntriesToWrite));
     }, "Check failed: log_index > 0");
 
     // Before restarting the tablet server, delete the initial log segment from

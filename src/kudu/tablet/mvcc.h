@@ -297,7 +297,7 @@ class MvccManager {
   FRIEND_TEST(MvccTest, TestTxnAbort);
   FRIEND_TEST(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit);
   FRIEND_TEST(MvccTest, TestWaitForApplyingTransactionsToCommit);
-  FRIEND_TEST(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights);
+  FRIEND_TEST(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights);
   FRIEND_TEST(MvccTest, TestDontWaitAfterClose);
 
   enum TxnState {

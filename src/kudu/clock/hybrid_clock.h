@@ -39,7 +39,9 @@ namespace clock {
 // since NTP clock error is not available.
 class HybridClock : public Clock {
  public:
-  HybridClock();
+  // Create an instance, registering HybridClock's metrics with the specified
+  // metric entity.
+  explicit HybridClock(const scoped_refptr<MetricEntity>& metric_entity);
 
   Status Init() override;
 
@@ -58,8 +60,6 @@ class HybridClock : public Clock {
 
   // Updates the clock with a timestamp originating on another machine.
   Status Update(const Timestamp& to_update) override;
-
-  void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) override;
 
   // HybridClock supports all external consistency modes.
   bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) override;
@@ -152,7 +152,7 @@ class HybridClock : public Clock {
   // separated.
   static std::string StringifyTimestamp(const Timestamp& timestamp);
 
-  clock::TimeService* time_service() {
+  clock::TimeService* time_service() const {
     return time_service_.get();
   }
 
@@ -176,7 +176,7 @@ class HybridClock : public Clock {
   // service.
   std::unique_ptr<clock::TimeService> time_service_;
 
-  mutable simple_spinlock lock_;
+  simple_spinlock lock_;
 
   // The next timestamp to be generated from this clock, assuming that
   // the physical clock hasn't advanced beyond the value stored here.
@@ -184,7 +184,7 @@ class HybridClock : public Clock {
 
   // The last valid clock reading we got from the time source, along
   // with the monotime that we took that reading.
-  mutable simple_spinlock last_clock_read_lock_;
+  simple_spinlock last_clock_read_lock_;
   MonoTime last_clock_read_time_;
   uint64_t last_clock_read_physical_;
   uint64_t last_clock_read_error_;

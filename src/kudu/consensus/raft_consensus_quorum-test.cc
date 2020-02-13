@@ -31,7 +31,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -119,9 +118,9 @@ class RaftConsensusQuorumTest : public KuduTest {
   typedef vector<unique_ptr<LogEntryPB>> LogEntries;
 
   RaftConsensusQuorumTest()
-    : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(1))),
-      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
-      schema_(GetSimpleTestSchema()) {
+      : clock_(Timestamp(1)),
+        metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
+        schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;
     FLAGS_enable_leader_failure_detection = false;
     CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
@@ -217,7 +216,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       unique_ptr<PeerProxyFactory> proxy_factory(
           new LocalTestPeerProxyFactory(peers_.get()));
       unique_ptr<TimeManager> time_manager(
-          new TimeManager(clock_.get(), Timestamp::kMin));
+          new TimeManager(&clock_, Timestamp::kMin));
       unique_ptr<TestTransactionFactory> txn_factory(
           new TestTransactionFactory(logs_[i].get()));
       txn_factory->SetConsensus(peer.get());
@@ -274,7 +273,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
-    msg->set_timestamp(clock_->Now().ToUint64());
+    msg->set_timestamp(clock_.Now().ToUint64());
 
     shared_ptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
@@ -584,7 +583,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<TestPeerMapManager> peers_;
   vector<unique_ptr<TestTransactionFactory>> txn_factories_;
-  unique_ptr<clock::Clock> clock_;
+  clock::LogicalClock clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
@@ -962,7 +961,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
 
   // Send a request with the next index.
   ReplicateMsg* replicate = req.add_ops();
-  replicate->set_timestamp(clock_->Now().ToUint64());
+  replicate->set_timestamp(clock_.Now().ToUint64());
   OpId* id = replicate->mutable_id();
   id->set_term(last_op_id.term());
   id->set_index(last_op_id.index() + 1);

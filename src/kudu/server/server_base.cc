@@ -433,9 +433,10 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   fs_manager_.reset(new FsManager(options.env, std::move(fs_opts)));
 
   if (FLAGS_use_hybrid_clock) {
-    clock_.reset(new clock::HybridClock);
+    clock_.reset(new clock::HybridClock(metric_entity_));
   } else {
-    clock_ = clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
+    clock_.reset(new clock::LogicalClock(Timestamp::kInitialTimestamp,
+                                         metric_entity_));
   }
 
   if (FLAGS_webserver_enabled) {
@@ -544,7 +545,6 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK(rpc_server_->Bind());
-  clock_->RegisterMetrics(metric_entity_);
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 

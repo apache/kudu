@@ -17,7 +17,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 #include "kudu/clock/clock.h"
@@ -47,6 +46,9 @@ namespace clock {
 // NOTE: this class is thread safe.
 class LogicalClock : public Clock {
  public:
+  // Create logical clock starting with the given timestamp.
+  explicit LogicalClock(const Timestamp& timestamp,
+                        const scoped_refptr<MetricEntity>& metric_entity = {});
 
   Status Init() override { return Status::OK(); }
 
@@ -65,8 +67,6 @@ class LogicalClock : public Clock {
 
   bool IsAfter(Timestamp t) override;
 
-  void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) override;
-
   std::string Stringify(Timestamp timestamp) override;
 
   // Used to get the timestamp without incrementing the logical component.
@@ -78,13 +78,7 @@ class LogicalClock : public Clock {
     return mode != COMMIT_WAIT;
   }
 
-  // Creates a logical clock whose first output value on a Now() call is 'timestamp'.
-  static std::unique_ptr<LogicalClock> CreateStartingAt(const Timestamp& timestamp);
-
  private:
-  // Should use LogicalClock::CreatingStartingAt()
-  explicit LogicalClock(Timestamp::val_type initial_time) : now_(initial_time) {}
-
   base::subtle::Atomic64 now_;
 
   FunctionGaugeDetacher metric_detacher_;

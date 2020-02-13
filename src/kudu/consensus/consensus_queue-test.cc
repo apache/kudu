@@ -84,7 +84,10 @@ class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
       : schema_(GetSimpleTestSchema()),
-        metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
+        metric_entity_server_(METRIC_ENTITY_server.Instantiate(
+            &metric_registry_, "consensus-queue-test::server")),
+        metric_entity_tablet_(METRIC_ENTITY_tablet.Instantiate(
+            &metric_registry_, "consensus-queue-test::tablet")),
         registry_(new log::LogAnchorRegistry),
         quiescing_(false) {
   }
@@ -102,7 +105,7 @@ class ConsensusQueueTest : public KuduTest {
                             /*schema_version*/0,
                             /*metric_entity*/nullptr,
                             &log_));
-    clock_.reset(new clock::HybridClock());
+    clock_.reset(new clock::HybridClock(metric_entity_server_));
     ASSERT_OK(clock_->Init());
 
     ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
@@ -112,7 +115,7 @@ class ConsensusQueueTest : public KuduTest {
 
   void CloseAndReopenQueue(const OpId& replicated_opid, const OpId& committed_opid) {
     queue_.reset(new PeerMessageQueue(
-        metric_entity_,
+        metric_entity_tablet_,
         log_.get(),
         time_manager_.get(),
         FakeRaftPeerPB(kLeaderUuid),
@@ -234,9 +237,10 @@ class ConsensusQueueTest : public KuduTest {
 
  protected:
   const Schema schema_;
-  gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
-  scoped_refptr<MetricEntity> metric_entity_;
+  scoped_refptr<MetricEntity> metric_entity_server_;
+  scoped_refptr<MetricEntity> metric_entity_tablet_;
+  gscoped_ptr<FsManager> fs_manager_;
   scoped_refptr<log::Log> log_;
   unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<TimeManager> time_manager_;

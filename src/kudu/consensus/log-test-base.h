@@ -156,7 +156,7 @@ class LogTestBase : public KuduTest {
     KuduTest::SetUp();
     current_index_ = kStartIndex;
     fs_manager_.reset(new FsManager(env_, FsManagerOpts(GetTestPath("fs_root"))));
-    metric_registry_.reset(new MetricRegistry());
+    metric_registry_.reset(new MetricRegistry);
     metric_entity_tablet_ = METRIC_ENTITY_tablet.Instantiate(
         metric_registry_.get(), "tablet");
     metric_entity_server_ = METRIC_ENTITY_server.Instantiate(
@@ -168,7 +168,7 @@ class LogTestBase : public KuduTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
-    clock_.reset(new clock::HybridClock());
+    clock_.reset(new clock::HybridClock(metric_entity_server_));
     ASSERT_OK(clock_->Init());
   }
 

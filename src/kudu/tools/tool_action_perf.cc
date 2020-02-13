@@ -186,7 +186,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
-#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
@@ -241,7 +240,6 @@ using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
-using kudu::clock::Clock;
 using kudu::clock::LogicalClock;
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::ConsensusMetadata;
@@ -814,8 +812,8 @@ Status TabletScan(const RunnerContext& context) {
   scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
 
-  unique_ptr<Clock> clock(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp));
-  RETURN_NOT_OK(clock->Init());
+  LogicalClock clock(Timestamp::kInitialTimestamp);
+  RETURN_NOT_OK(clock.Init());
 
   scoped_refptr<LogAnchorRegistry> registry(new LogAnchorRegistry());
 
@@ -825,7 +823,7 @@ Status TabletScan(const RunnerContext& context) {
   ConsensusBootstrapInfo cbi;
   RETURN_NOT_OK(tablet::BootstrapTablet(std::move(tmeta),
                                         cmeta->CommittedConfig(),
-                                        clock.get(),
+                                        &clock,
                                         /*mem_tracker=*/ nullptr,
                                         /*result_tracker=*/ nullptr,
                                         /*metric_registry=*/ nullptr,

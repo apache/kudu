@@ -109,12 +109,12 @@ static const size_t kSmallRollThreshold = 1024; // 1KB
 class TestCompaction : public KuduRowSetTest {
  public:
   TestCompaction()
-    : KuduRowSetTest(CreateSchema()),
-      op_id_(consensus::MaximumOpId()),
-      row_builder_(&schema_),
-      arena_(32*1024),
-      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
-      log_anchor_registry_(new log::LogAnchorRegistry()) {
+      : KuduRowSetTest(CreateSchema()),
+        op_id_(consensus::MaximumOpId()),
+        row_builder_(&schema_),
+        arena_(32*1024),
+        clock_(Timestamp::kInitialTimestamp),
+        log_anchor_registry_(new log::LogAnchorRegistry()) {
   }
 
   static Schema CreateSchema() {
@@ -137,7 +137,7 @@ class TestCompaction : public KuduRowSetTest {
   // The 'nullable_val' column is set to either NULL (when val is odd)
   // or 'val' (when val is even).
   void InsertRow(MemRowSet *mrs, int row_key, int32_t val) {
-    ScopedTransaction tx(&mvcc_, clock_->Now());
+    ScopedTransaction tx(&mvcc_, clock_.Now());
     tx.StartApplying();
     InsertRowInTransaction(mrs, tx, row_key, val);
     tx.Commit();
@@ -188,7 +188,7 @@ class TestCompaction : public KuduRowSetTest {
   }
 
   void UpdateRow(RowSet *rowset, int row_key, int32_t new_val) {
-    ScopedTransaction tx(&mvcc_, clock_->Now());
+    ScopedTransaction tx(&mvcc_, clock_.Now());
     tx.StartApplying();
     UpdateRowInTransaction(rowset, tx, row_key, new_val);
     tx.Commit();
@@ -243,7 +243,7 @@ class TestCompaction : public KuduRowSetTest {
   }
 
   void DeleteRow(RowSet* rowset, int row_key) {
-    ScopedTransaction tx(&mvcc_, clock_->Now());
+    ScopedTransaction tx(&mvcc_, clock_.Now());
     tx.StartApplying();
     DeleteRowInTransaction(rowset, tx, row_key);
     tx.Commit();
@@ -484,7 +484,7 @@ class TestCompaction : public KuduRowSetTest {
   RowBuilder row_builder_;
   char key_buf_[256];
   Arena arena_;
-  unique_ptr<clock::LogicalClock> clock_;
+  clock::LogicalClock clock_;
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
@@ -663,7 +663,7 @@ void TestCompaction::AddExpectedDelete(Mutation** current_head, Timestamp ts) {
   faststring buf;
   RowChangeListEncoder enc(&buf);
   enc.SetToDelete();
-  if (ts == Timestamp::kInvalidTimestamp) ts = Timestamp(clock_->GetCurrentTime());
+  if (ts == Timestamp::kInvalidTimestamp) ts = Timestamp(clock_.GetCurrentTime());
   Mutation* mutation = Mutation::CreateInArena(&arena_,
                                                ts,
                                                enc.as_changelist());
@@ -682,7 +682,7 @@ void TestCompaction::AddExpectedUpdate(Mutation** current_head, int32_t val) {
     enc.AddColumnUpdate(schema_.column(2), schema_.column_id(2), nullptr);
   }
   Mutation* mutation = Mutation::CreateInArena(&arena_,
-                                               Timestamp(clock_->GetCurrentTime()),
+                                               Timestamp(clock_.GetCurrentTime()),
                                                enc.as_changelist());
   mutation->set_next(*current_head);
   *current_head = mutation;
@@ -698,7 +698,8 @@ void TestCompaction::AddExpectedReinsert(Mutation** current_head, int32_t val) {
   } else {
     enc.EncodeColumnMutation(schema_.column(2), schema_.column_id(2), nullptr);
   }
-  Mutation* mutation = Mutation::CreateInArena(&arena_, Timestamp(clock_->GetCurrentTime()),
+  Mutation* mutation = Mutation::CreateInArena(&arena_,
+                                               Timestamp(clock_.GetCurrentTime()),
                                                enc.as_changelist());
   mutation->set_next(*current_head);
   *current_head = mutation;
@@ -857,7 +858,7 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
     shared_ptr<MemRowSet> mrs;
     ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
-    ScopedTransaction tx(&mvcc_, clock_->Now());
+    ScopedTransaction tx(&mvcc_, clock_.Now());
     tx.StartApplying();
     DeleteRowInTransaction(rs1.get(), tx, 1);
     InsertRowInTransaction(mrs.get(), tx, 1, 2);

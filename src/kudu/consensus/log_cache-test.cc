@@ -66,6 +66,7 @@ using strings::Substitute;
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);
 
+METRIC_DECLARE_entity(server);
 METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
@@ -77,8 +78,11 @@ static const char* kTestTablet = "test-tablet";
 class LogCacheTest : public KuduTest {
  public:
   LogCacheTest()
-    : schema_(GetSimpleTestSchema()),
-      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "LogCacheTest")) {
+      : schema_(GetSimpleTestSchema()),
+        metric_entity_server_(METRIC_ENTITY_server.Instantiate(
+            &metric_registry_, "LogCacheTest::server")),
+        metric_entity_tablet_(METRIC_ENTITY_tablet.Instantiate(
+            &metric_registry_, "LogCacheTest::tablet")) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -96,7 +100,7 @@ class LogCacheTest : public KuduTest {
                             &log_));
 
     CloseAndReopenCache(MinimumOpId());
-    clock_.reset(new clock::HybridClock());
+    clock_.reset(new clock::HybridClock(metric_entity_server_));
     ASSERT_OK(clock_->Init());
   }
 
@@ -105,7 +109,7 @@ class LogCacheTest : public KuduTest {
   }
 
   void CloseAndReopenCache(const OpId& preceding_id) {
-    cache_.reset(new LogCache(metric_entity_,
+    cache_.reset(new LogCache(metric_entity_tablet_,
                               log_.get(),
                               kPeerUuid,
                               kTestTablet));
@@ -133,7 +137,8 @@ class LogCacheTest : public KuduTest {
 
   const Schema schema_;
   MetricRegistry metric_registry_;
-  scoped_refptr<MetricEntity> metric_entity_;
+  scoped_refptr<MetricEntity> metric_entity_server_;
+  scoped_refptr<MetricEntity> metric_entity_tablet_;
   unique_ptr<FsManager> fs_manager_;
   unique_ptr<LogCache> cache_;
   scoped_refptr<log::Log> log_;

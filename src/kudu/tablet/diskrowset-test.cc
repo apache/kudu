@@ -33,7 +33,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
@@ -412,7 +411,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   RowChangeListEncoder update(&update_buf);
   for (uint32_t i = 2; i <= 5; i++) {
     {
-      ScopedTransaction tx(&mvcc_, clock_->Now());
+      ScopedTransaction tx(&mvcc_, clock_.Now());
       tx.StartApplying();
       update.Reset();
       update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &i);
@@ -658,7 +657,7 @@ TEST_F(TestRowSet, TestGCAncientStores) {
   // Delete all the UNDO deltas. There shouldn't be any delta stores left.
   int64_t blocks_deleted;
   int64_t bytes_deleted;
-  ASSERT_OK(dt->DeleteAncientUndoDeltas(clock_->Now(), nullptr, &blocks_deleted, &bytes_deleted));
+  ASSERT_OK(dt->DeleteAncientUndoDeltas(clock_.Now(), nullptr, &blocks_deleted, &bytes_deleted));
   ASSERT_GT(blocks_deleted, 0);
   ASSERT_GT(bytes_deleted, 0);
   ASSERT_EQ(0, dt->CountUndoDeltaStores());
@@ -710,7 +709,7 @@ class DiffScanRowSetTest : public KuduRowSetTest,
   DiffScanRowSetTest()
       : KuduRowSetTest(CreateTestSchema()),
         op_id_(consensus::MaximumOpId()),
-        clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+        clock_(Timestamp::kInitialTimestamp) {
   }
 
  protected:
@@ -723,7 +722,7 @@ class DiffScanRowSetTest : public KuduRowSetTest,
   }
 
   consensus::OpId op_id_;
-  unique_ptr<clock::Clock> clock_;
+  clock::LogicalClock clock_;
   MvccManager mvcc_;
 };
 
@@ -850,7 +849,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     RowSetKeyProbe probe(rb.row());
 
     // Apply the mutation.
-    ScopedTransaction tx(&mvcc_, clock_->Now());
+    ScopedTransaction tx(&mvcc_, clock_.Now());
     tx.StartApplying();
     ProbeStats stats;
     OperationResultPB result;

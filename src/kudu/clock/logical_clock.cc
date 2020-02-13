@@ -46,6 +46,17 @@ using std::unique_ptr;
 namespace kudu {
 namespace clock {
 
+LogicalClock::LogicalClock(const Timestamp& timestamp,
+                           const scoped_refptr<MetricEntity>& metric_entity)
+    : now_(timestamp.value() - 1) {
+  if (metric_entity) {
+    METRIC_logical_clock_timestamp.InstantiateFunctionGauge(
+        metric_entity,
+        Bind(&LogicalClock::GetCurrentTime, Unretained(this)))->
+            AutoDetachToLastValue(&metric_detacher_);
+  }
+}
+
 Timestamp LogicalClock::Now() {
   return Timestamp(Barrier_AtomicIncrement(&now_, 1));
 }
@@ -90,21 +101,9 @@ bool LogicalClock::IsAfter(Timestamp t) {
   return base::subtle::Acquire_Load(&now_) >= t.value();
 }
 
-unique_ptr<LogicalClock> LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
-  // initialize at 'timestamp' - 1 so that the  first output value is 'timestamp'.
-  return unique_ptr<LogicalClock>(new LogicalClock(timestamp.value() - 1));
-}
-
 uint64_t LogicalClock::GetCurrentTime() {
   // We don't want reading metrics to change the clock.
   return NoBarrier_Load(&now_);
-}
-
-void LogicalClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) {
-  METRIC_logical_clock_timestamp.InstantiateFunctionGauge(
-      metric_entity,
-      Bind(&LogicalClock::GetCurrentTime, Unretained(this)))
-    ->AutoDetachToLastValue(&metric_detacher_);
 }
 
 std::string LogicalClock::Stringify(Timestamp timestamp) {

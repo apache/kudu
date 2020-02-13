@@ -54,17 +54,18 @@
 #include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);
+METRIC_DECLARE_entity(server);
 
-namespace kudu {
-namespace consensus {
-
-using log::Log;
-using log::LogOptions;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
+using kudu::log::Log;
+using kudu::log::LogOptions;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+
+namespace kudu {
+namespace consensus {
 
 const char* kTabletId = "test-peers-tablet";
 const char* kLeaderUuid = "peer-0";
@@ -73,8 +74,11 @@ const char* kFollowerUuid = "peer-1";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test")),
-      schema_(GetSimpleTestSchema()) {
+      : metric_entity_server_(METRIC_ENTITY_server.Instantiate(
+            &metric_registry_, "consensus-peer-test::server")),
+        metric_entity_tablet_(METRIC_ENTITY_tablet.Instantiate(
+            &metric_registry_, "consensus-peer-test::tablet")),
+        schema_(GetSimpleTestSchema()) {
     CHECK_OK(ThreadPoolBuilder("test-raft-pool").Build(&raft_pool_));
     raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   }
@@ -92,13 +96,13 @@ class ConsensusPeersTest : public KuduTest {
                         0, // schema_version
                         /*metric_entity*/nullptr,
                         &log_));
-    clock_.reset(new clock::HybridClock());
+    clock_.reset(new clock::HybridClock(metric_entity_server_));
     ASSERT_OK(clock_->Init());
 
     time_manager_.reset(new TimeManager(clock_.get(), Timestamp::kMin));
 
     message_queue_.reset(new PeerMessageQueue(
-        metric_entity_,
+        metric_entity_tablet_,
         log_.get(),
         time_manager_.get(),
         FakeRaftPeerPB(kLeaderUuid),
@@ -164,7 +168,8 @@ class ConsensusPeersTest : public KuduTest {
 
  protected:
   MetricRegistry metric_registry_;
-  scoped_refptr<MetricEntity> metric_entity_;
+  scoped_refptr<MetricEntity> metric_entity_server_;
+  scoped_refptr<MetricEntity> metric_entity_tablet_;
   unique_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
   unique_ptr<ThreadPool> raft_pool_;

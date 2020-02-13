@@ -111,7 +111,6 @@ class KuduTabletTest : public KuduTest {
   void CreateTestTablet(const std::string& root_dir = "") {
     std::string dir = root_dir.empty() ? GetTestPath("fs_root") : root_dir;
     TabletHarness::Options opts(dir);
-    opts.enable_metrics = true;
     opts.clock_type = clock_type_;
     bool first_time = harness_ == nullptr;
     harness_.reset(new TabletHarness(schema_, opts));

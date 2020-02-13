@@ -155,10 +155,18 @@ const int HybridClock::kBitsToShift = 12;
 // This mask gives us back the logical bits.
 const uint64_t HybridClock::kLogicalBitMask = (1 << kBitsToShift) - 1;
 
-
-HybridClock::HybridClock()
+HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
     : next_timestamp_(0),
       state_(kNotInitialized) {
+  DCHECK(metric_entity);
+  METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
+      metric_entity,
+      Bind(&HybridClock::NowForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+  METRIC_hybrid_clock_error.InstantiateFunctionGauge(
+      metric_entity,
+      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
 }
 
 Status HybridClock::Init() {
@@ -253,7 +261,6 @@ Status HybridClock::GetGlobalLatest(Timestamp* t) {
 }
 
 void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
-
   DCHECK_EQ(state_, kInitialized) << "Clock not initialized. Must call Init() first.";
 
   uint64_t now_usec;
@@ -513,17 +520,6 @@ uint64_t HybridClock::ErrorForMetrics() {
   std::lock_guard<simple_spinlock> lock(lock_);
   NowWithError(&now, &error);
   return error;
-}
-
-void HybridClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) {
-  METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
-      metric_entity,
-      Bind(&HybridClock::NowForMetrics, Unretained(this)))
-    ->AutoDetachToLastValue(&metric_detacher_);
-  METRIC_hybrid_clock_error.InstantiateFunctionGauge(
-      metric_entity,
-      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))
-    ->AutoDetachToLastValue(&metric_detacher_);
 }
 
 string HybridClock::Stringify(Timestamp timestamp) {
