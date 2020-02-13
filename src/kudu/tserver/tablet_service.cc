@@ -1721,10 +1721,13 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   }
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
-  unique_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
-  unique_ptr<faststring> indirect_data(new faststring(batch_size_bytes * 11 / 10));
+  // TODO(todd): use a chain of faststrings instead of a single one to avoid
+  // allocating this large buffer. Large buffer allocations are slow and
+  // potentially wasteful.
+  faststring rows_data(batch_size_bytes * 11 / 10);
+  faststring indirect_data(batch_size_bytes * 11 / 10);
   RowwiseRowBlockPB data;
-  ScanResultCopier collector(&data, rows_data.get(), indirect_data.get());
+  ScanResultCopier collector(&data, &rows_data, &indirect_data);
 
   bool has_more_results = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
@@ -1777,7 +1780,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   resp->mutable_data()->set_rows_sidecar(rows_idx);
 
   // Add indirect data as a sidecar, if applicable.
-  if (indirect_data->size() > 0) {
+  if (indirect_data.size() > 0) {
     int indirect_idx;
     CHECK_OK(context->AddOutboundSidecar(
         RpcSidecar::FromFaststring(std::move(indirect_data)), &indirect_idx));

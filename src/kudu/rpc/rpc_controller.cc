@@ -30,8 +30,6 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/util/slice.h"
-
 
 using std::unique_ptr;
 using strings::Substitute;
@@ -146,7 +144,7 @@ Status RpcController::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   if (outbound_sidecars_.size() >= TransferLimits::kMaxSidecars) {
     return Status::RuntimeError("All available sidecars already used");
   }
-  int64_t sidecar_bytes = car->AsSlice().size();
+  int64_t sidecar_bytes = car->TotalSize();
   if (outbound_sidecars_total_bytes_ >
       TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes) {
     return Status::RuntimeError(Substitute("Total size of sidecars $0 would exceed limit $1",

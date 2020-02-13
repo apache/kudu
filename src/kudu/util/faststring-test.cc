@@ -123,4 +123,59 @@ TEST_F(FaststringTest, TestAppend_ExponentiallyExpand) {
   }
 }
 
+TEST_F(FaststringTest, TestMoveConstruct) {
+  for (int string_size = 0;
+       string_size < faststring::kInitialCapacity + 10;
+       string_size++) {
+    string test_str(string_size, 'a');
+    faststring f1;
+    f1.append(test_str);
+    faststring f2 = std::move(f1);
+    // NOTE: NOLINT here since we are purposefully checking the behavior
+    // of 'f1' after it was moved.
+    ASSERT_EQ(0, f1.size()); // NOLINT(*)
+    ASSERT_EQ(test_str, f2.ToString()); // NOLINT(*)
+    ASSERT_NE(f1.data(), f2.data()); // NOLINT(*)
+    f1.CheckInvariants(); // NOLINT(*)
+    f2.CheckInvariants();
+  }
+}
+
+TEST_F(FaststringTest, TestMoveAssignment) {
+  for (int string_size = 0;
+       string_size < faststring::kInitialCapacity + 10;
+       string_size++) {
+    string test_str(string_size, 'a');
+
+    faststring f1;
+    f1.append(test_str);
+
+    // Move to 'f2' by assignment operator.
+    faststring f2;
+    f2 = std::move(f1);
+    ASSERT_EQ(test_str, f2.ToString());
+    ASSERT_EQ(0, f1.size()); // NOLINT(*)
+    f1.CheckInvariants(); // NOLINT(*)
+    f2.CheckInvariants(); // NOLINT(*)
+
+    // Move back to f1.
+    f1 = std::move(f2);
+    ASSERT_EQ(0, f2.size()); // NOLINT(*)
+    ASSERT_EQ(test_str, f1.ToString());
+    f1.CheckInvariants(); // NOLINT(*)
+    f2.CheckInvariants(); // NOLINT(*)
+
+    // Check self-move doesn't have any effect.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wself-move"
+    f1 = std::move(f1); // NOLINT(*)
+#pragma clang diagnostic pop
+    ASSERT_EQ(0, f2.size()); // NOLINT(*)
+    ASSERT_EQ(test_str, f1.ToString());
+    f1.CheckInvariants(); // NOLINT(*)
+    f2.CheckInvariants(); // NOLINT(*)
+  }
+}
+
+
 } // namespace kudu

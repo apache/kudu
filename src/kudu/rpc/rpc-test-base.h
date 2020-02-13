@@ -20,6 +20,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/acceptor_pool.h"
@@ -147,22 +148,30 @@ class GenericCalculatorService : public ServiceIf {
       LOG(FATAL) << "couldn't parse: " << param.ToDebugString();
     }
 
-    std::unique_ptr<faststring> first(new faststring);
-    std::unique_ptr<faststring> second(new faststring);
+    faststring first;
 
     Random r(req.random_seed());
-    first->resize(req.size1());
-    RandomString(first->data(), req.size1(), &r);
+    first.resize(req.size1());
+    RandomString(first.data(), req.size1(), &r);
 
-    second->resize(req.size2());
-    RandomString(second->data(), req.size2(), &r);
+    // The second string gets sent in two separate buffers, which get
+    // concatenated on the client side.
+    faststring second_data;
+    second_data.resize(req.size2());
+    RandomString(second_data.data(), second_data.size(), &r);
+
+    std::vector<faststring> second(2);
+    second[0].append(second_data.data(), second_data.size() / 3);
+    second[1].append(second_data.data() + second[0].size(),
+                     second_data.size() - second[0].size());
 
     SendTwoStringsResponsePB resp;
     int idx1, idx2;
     CHECK_OK(incoming->AddOutboundSidecar(
             RpcSidecar::FromFaststring(std::move(first)), &idx1));
+
     CHECK_OK(incoming->AddOutboundSidecar(
-            RpcSidecar::FromFaststring(std::move(second)), &idx2));
+            RpcSidecar::FromFaststrings(std::move(second)), &idx2));
     resp.set_sidecar1(idx1);
     resp.set_sidecar2(idx2);
 

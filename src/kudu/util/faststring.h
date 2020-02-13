@@ -21,6 +21,8 @@
 #include <cstring>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -53,6 +55,25 @@ class faststring {
       capacity_ = capacity;
     }
     ASAN_POISON_MEMORY_REGION(data_, capacity_);
+  }
+
+  faststring(faststring&& other) noexcept
+      : faststring() {
+    *this = std::move(other);
+  }
+
+  faststring& operator=(faststring&& other) noexcept {
+    if (this == &other) return *this;
+
+    if (other.data_ == other.initial_data_) {
+      assign_copy(other.data(), other.size());
+      other.clear();
+    } else {
+      len_ = other.len_;
+      capacity_ = other.capacity_;
+      data_ = other.release();
+    }
+    return *this;
   }
 
   ~faststring() {
@@ -222,6 +243,14 @@ class faststring {
   std::string ToString() const {
     return std::string(reinterpret_cast<const char *>(data()),
                        len_);
+  }
+
+  // Check various internal invariants. Used by tests.
+  void CheckInvariants() {
+    CHECK_LE(len_, capacity_);
+    if (data_ == initial_data_) {
+      CHECK_EQ(capacity_, kInitialCapacity);
+    }
   }
 
  private:

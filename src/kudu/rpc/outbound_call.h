@@ -16,7 +16,6 @@
 // under the License.
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -104,8 +103,7 @@ class OutboundCall {
 
   // Serialize the call for the wire. Requires that SetRequestPayload()
   // is called first. This is called from the Reactor thread.
-  // Returns the number of slices in the serialized call.
-  size_t SerializeTo(TransferPayload* slices);
+  void SerializeTo(TransferPayload* slices);
 
   // Mark in the call that cancellation has been requested. If the call hasn't yet
   // started sending or has finished sending the RPC request but is waiting for a

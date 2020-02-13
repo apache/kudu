@@ -25,6 +25,7 @@
 #include <limits>
 #include <set>
 
+#include <boost/container/vector.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -160,34 +161,26 @@ string InboundTransfer::StatusAsString() const {
 }
 
 OutboundTransfer* OutboundTransfer::CreateForCallRequest(int32_t call_id,
-                                                         const TransferPayload &payload,
-                                                         size_t n_payload_slices,
+                                                         TransferPayload payload,
                                                          TransferCallbacks *callbacks) {
-  return new OutboundTransfer(call_id, payload, n_payload_slices, callbacks);
+  return new OutboundTransfer(call_id, std::move(payload), callbacks);
 }
 
-OutboundTransfer* OutboundTransfer::CreateForCallResponse(const TransferPayload &payload,
-                                                          size_t n_payload_slices,
+OutboundTransfer* OutboundTransfer::CreateForCallResponse(TransferPayload payload,
                                                           TransferCallbacks *callbacks) {
-  return new OutboundTransfer(kInvalidCallId, payload, n_payload_slices, callbacks);
+  return new OutboundTransfer(kInvalidCallId, std::move(payload), callbacks);
 }
 
 OutboundTransfer::OutboundTransfer(int32_t call_id,
-                                   const TransferPayload &payload,
-                                   size_t n_payload_slices,
+                                   TransferPayload payload,
                                    TransferCallbacks *callbacks)
-  : cur_slice_idx_(0),
+  : payload_slices_(std::move(payload)),
+    cur_slice_idx_(0),
     cur_offset_in_slice_(0),
     callbacks_(callbacks),
     call_id_(call_id),
     started_(false),
     aborted_(false) {
-
-  n_payload_slices_ = n_payload_slices;
-  CHECK_LE(n_payload_slices_, payload_slices_.size());
-  for (int i = 0; i < n_payload_slices; i++) {
-    payload_slices_[i] = payload[i];
-  }
 }
 
 OutboundTransfer::~OutboundTransfer() {
@@ -205,10 +198,10 @@ void OutboundTransfer::Abort(const Status &status) {
 }
 
 Status OutboundTransfer::SendBuffer(Socket &socket) {
-  CHECK_LT(cur_slice_idx_, n_payload_slices_);
+  CHECK_LT(cur_slice_idx_, payload_slices_.size());
 
   started_ = true;
-  int n_iovecs = n_payload_slices_ - cur_slice_idx_;
+  int n_iovecs = payload_slices_.size() - cur_slice_idx_;
   struct iovec iovec[n_iovecs];
   {
     int offset_in_slice = cur_offset_in_slice_;
@@ -226,7 +219,7 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
 
   // Adjust our accounting of current writer position.
-  for (int i = cur_slice_idx_; i < n_payload_slices_; i++) {
+  for (int i = cur_slice_idx_; i < payload_slices_.size(); i++) {
     Slice &slice = payload_slices_[i];
     int rem_in_slice = slice.size() - cur_offset_in_slice_;
     DCHECK_GE(rem_in_slice, 0);
@@ -243,11 +236,11 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
     }
   }
 
-  if (cur_slice_idx_ == n_payload_slices_) {
+  if (cur_slice_idx_ == payload_slices_.size()) {
     callbacks_->NotifyTransferFinished();
     DCHECK_EQ(0, cur_offset_in_slice_);
   } else {
-    DCHECK_LT(cur_slice_idx_, n_payload_slices_);
+    DCHECK_LT(cur_slice_idx_, payload_slices_.size());
     DCHECK_LT(cur_offset_in_slice_, payload_slices_[cur_slice_idx_].size());
   }
 
@@ -259,7 +252,7 @@ bool OutboundTransfer::TransferStarted() const {
 }
 
 bool OutboundTransfer::TransferFinished() const {
-  if (cur_slice_idx_ == n_payload_slices_) {
+  if (cur_slice_idx_ == payload_slices_.size()) {
     DCHECK_EQ(0, cur_offset_in_slice_); // sanity check
     return true;
   }
@@ -272,7 +265,7 @@ string OutboundTransfer::HexDump() const {
   }
 
   string ret;
-  for (int i = 0; i < n_payload_slices_; i++) {
+  for (int i = 0; i < payload_slices_.size(); i++) {
     ret.append(payload_slices_[i].ToDebugString());
   }
   return ret;
@@ -280,8 +273,8 @@ string OutboundTransfer::HexDump() const {
 
 int32_t OutboundTransfer::TotalLength() const {
   int32_t ret = 0;
-  for (int i = 0; i < n_payload_slices_; i++) {
-    ret += payload_slices_[i].size();
+  for (const auto& s : payload_slices_) {
+    ret += s.size();
   }
   return ret;
 }

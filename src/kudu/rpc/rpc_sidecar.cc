@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <google/protobuf/repeated_field.h>
 
@@ -29,6 +30,7 @@
 #include "kudu/util/status.h"
 
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace rpc {
@@ -39,22 +41,44 @@ namespace rpc {
 class SliceSidecar : public RpcSidecar {
  public:
   explicit SliceSidecar(Slice slice) : slice_(slice) { }
-  Slice AsSlice() const override { return slice_; }
-
+  void AppendSlices(TransferPayload* payload) const override {
+    payload->push_back(slice_);
+  }
+  size_t TotalSize() const override {
+    return slice_.size();
+  }
  private:
   const Slice slice_;
 };
 
 class FaststringSidecar : public RpcSidecar {
  public:
-  explicit FaststringSidecar(unique_ptr<faststring> data) : data_(std::move(data)) { }
-  Slice AsSlice() const override { return *data_; }
+  explicit FaststringSidecar(faststring data) {
+    data_.emplace_back(std::move(data));
+  }
+  explicit FaststringSidecar(vector<faststring> data) : data_(std::move(data)) { }
 
+  void AppendSlices(TransferPayload* payload) const override {
+    for (const auto& fs : data_) {
+      payload->push_back(Slice(fs));
+    }
+  }
+  size_t TotalSize() const override {
+    size_t ret = 0;
+    for (const auto& fs : data_) {
+      ret += fs.size();
+    }
+    return ret;
+  }
  private:
-  const unique_ptr<faststring> data_;
+  vector<faststring> data_;
 };
 
-unique_ptr<RpcSidecar> RpcSidecar::FromFaststring(unique_ptr<faststring> data) {
+unique_ptr<RpcSidecar> RpcSidecar::FromFaststring(faststring data) {
+  return unique_ptr<RpcSidecar>(new FaststringSidecar(std::move(data)));
+}
+
+unique_ptr<RpcSidecar> RpcSidecar::FromFaststrings(vector<faststring> data) {
   return unique_ptr<RpcSidecar>(new FaststringSidecar(std::move(data)));
 }
 

@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/outbound_call.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -109,7 +110,7 @@ OutboundCall::~OutboundCall() {
   DVLOG(4) << "OutboundCall " << this << " destroyed with state_: " << StateName(state_);
 }
 
-size_t OutboundCall::SerializeTo(TransferPayload* slices) {
+void OutboundCall::SerializeTo(TransferPayload* slices) {
   DCHECK_LT(0, request_buf_.size())
       << "Must call SetRequestPayload() before SerializeTo()";
 
@@ -126,16 +127,12 @@ size_t OutboundCall::SerializeTo(TransferPayload* slices) {
   serialization::SerializeHeader(
       header_, sidecar_byte_size_ + request_buf_.size(), &header_buf_);
 
-  size_t n_slices = 2 + sidecars_.size();
-  DCHECK_LE(n_slices, slices->size());
-  auto slice_iter = slices->begin();
-  *slice_iter++ = Slice(header_buf_);
-  *slice_iter++ = Slice(request_buf_);
+  slices->clear();
+  slices->push_back(header_buf_);
+  slices->push_back(request_buf_);
   for (auto& sidecar : sidecars_) {
-    *slice_iter++ = sidecar->AsSlice();
+    sidecar->AppendSlices(slices);
   }
-  DCHECK_EQ(slice_iter - slices->begin(), n_slices);
-  return n_slices;
 }
 
 void OutboundCall::SetRequestPayload(const Message& req,
@@ -151,7 +148,7 @@ void OutboundCall::SetRequestPayload(const Message& req,
   sidecar_byte_size_ = 0;
   for (const unique_ptr<RpcSidecar>& car: sidecars_) {
     header_.add_sidecar_offsets(sidecar_byte_size_ + message_size);
-    int32_t sidecar_bytes = car->AsSlice().size();
+    size_t sidecar_bytes = car->TotalSize();
     DCHECK_LE(sidecar_byte_size_, TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes);
     sidecar_byte_size_ += sidecar_bytes;
   }
