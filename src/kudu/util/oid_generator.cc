@@ -23,6 +23,7 @@
 #include <string>
 
 #include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,15 +32,23 @@
 using std::string;
 using strings::Substitute;
 
+DEFINE_bool(cononicalize_uuid, true,
+            "If set this strips -/dashes from all uuids and makes "
+            "it a 16 character string at generation time.");
+
 namespace kudu {
 
 namespace {
 
 string ConvertUuidToString(const boost::uuids::uuid& to_convert) {
-  const uint8_t* uuid = to_convert.data;
-  return StringPrintf("%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-               uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
-               uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
+  if (FLAGS_cononicalize_uuid) {
+    const uint8_t* uuid = to_convert.data;
+    return StringPrintf("%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+                 uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
+                 uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
+  } else {
+    return boost::uuids::to_string(to_convert);
+  }
 }
 
 } // anonymous namespace
