@@ -461,6 +461,7 @@ void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
 
 void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     const TabletServerMap& tablet_servers, const string& leader_uuid) {
+  static const auto kTimeout = MonoDelta::FromSeconds(20);
 
   TServerDetails* initial_leader = FindOrDie(tablet_servers, leader_uuid);
 
@@ -497,12 +498,13 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
                                   MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
-    // Step down.
-    ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+    // Step down. Scenarios which use this method turn off leader failure
+    // detection, so the leader role cannot fluctuate among tablet replicas.
+    ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, kTimeout));
 
     // Assert that elections time out without a live majority.
     // We specify a very short timeout here to keep the tests fast.
-    ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+    ASSERT_OK(StartElection(initial_leader, tablet_id_, kTimeout));
     s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     LOG(INFO) << "Expected timeout encountered on election with weakened config: " << s.ToString();
@@ -515,17 +517,17 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     }
   }
 
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(20), tablet_servers, tablet_id_, 1));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers, tablet_id_, 1));
 
   // Now an election should succeed.
-  ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(StartElection(initial_leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilLeader(initial_leader, tablet_id_, kTimeout));
   LOG(INFO) << "Successful election with full config of size " << config_size;
 
   // And a write should also succeed.
   ASSERT_OK(WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
                                kTestRowKey, kTestRowIntVal, Substitute("qsz=$0", config_size),
-                               MonoDelta::FromSeconds(10)));
+                               kTimeout));
 }
 
 void RaftConsensusITest::CreateClusterForCrashyNodesTests(vector<string> extra_ts_flags) {
@@ -3094,7 +3096,7 @@ TEST_F(RaftConsensusITest, TestLeaderTransferWhenFollowerFallsBehindLeaderGC) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
   }
-
+  const auto kTimeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = {
     // Disable follower eviction.
     "--evict_failed_followers=false",
@@ -3117,38 +3119,45 @@ TEST_F(RaftConsensusITest, TestLeaderTransferWhenFollowerFallsBehindLeaderGC) {
   TabletServerMap active_tablet_servers = tablet_servers_;
   ASSERT_EQ(3, active_tablet_servers.size());
   ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30), active_tablet_servers,
-                                  tablet_id_, 1));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, 1));
 
   // Try to transfer leadership to the follower that has fallen behind log GC.
-  auto* leader_ts = FindOrDie(tablet_servers_, leader_uuid);
-  ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(leader_ts->consensus_proxy.get());
-  LeaderStepDownRequestPB req;
-  LeaderStepDownResponsePB resp;
-  RpcController rpc;
+  // The leader role might fluctuate among tablet replicas: LeaderStepDown()
+  // request will be retried in such rare cases because of ASSERT_EVENTUALLY().
+  ASSERT_EVENTUALLY([&] {
+    TServerDetails* leader_ts;
+    ASSERT_OK(FindTabletLeader(
+        tablet_servers_, tablet_id_, kTimeout, &leader_ts));
+    LeaderStepDownRequestPB req;
+    req.set_dest_uuid(leader_ts->uuid());
+    req.set_tablet_id(tablet_id_);
+    req.set_mode(consensus::LeaderStepDownMode::GRACEFUL);
+    req.set_new_leader_uuid(follower_uuid);
 
-  req.set_dest_uuid(leader_uuid);
-  req.set_tablet_id(tablet_id_);
-  req.set_mode(consensus::LeaderStepDownMode::GRACEFUL);
-  req.set_new_leader_uuid(follower_uuid);
-
-  // The request should succeed.
-  ASSERT_OK(c_proxy->LeaderStepDown(req, &resp, &rpc));
-  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
+    // The request should succeed.
+    ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(leader_ts->consensus_proxy.get());
+    RpcController ctl;
+    LeaderStepDownResponsePB resp;
+    ASSERT_OK(c_proxy->LeaderStepDown(req, &resp, &ctl));
+    ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
+  });
 
   // However, the leader will not be able to transfer leadership to the lagging
   // follower, and eventually will resume normal operation. We check this by
   // waiting for a write to succeed.
   ASSERT_EVENTUALLY([&] {
     WriteRequestPB w_req;
-    WriteResponsePB w_resp;
-    rpc.Reset();
-    rpc.set_timeout(MonoDelta::FromSeconds(30));
     w_req.set_tablet_id(tablet_id_);
     ASSERT_OK(SchemaToPB(schema_, w_req.mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_, kTestRowKey, kTestRowIntVal,
                    "hello world", w_req.mutable_row_operations());
-    ASSERT_OK(leader_ts->tserver_proxy->Write(w_req, &w_resp, &rpc));
+    TServerDetails* leader_ts;
+    ASSERT_OK(FindTabletLeader(
+        tablet_servers_, tablet_id_, kTimeout, &leader_ts));
+    RpcController ctl;
+    ctl.set_timeout(kTimeout);
+    WriteResponsePB w_resp;
+    ASSERT_OK(leader_ts->tserver_proxy->Write(w_req, &w_resp, &ctl));
   });
 }
 

@@ -65,6 +65,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
@@ -815,7 +816,18 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
         // Step down.
         itest::TServerDetails* tserver =
             CHECK_NOTNULL(FindOrDie(ts_map, replica->permanent_uuid()));
-        ASSERT_OK(LeaderStepDown(tserver, replica->tablet_id(), MonoDelta::FromSeconds(10)));
+        TabletServerErrorPB error;
+        auto s = LeaderStepDown(tserver, replica->tablet_id(),
+                                MonoDelta::FromSeconds(10), &error);
+        // In rare cases, the leader replica can change its role right before
+        // the step-down request is received.
+        if (s.IsIllegalState() &&
+            error.code() == TabletServerErrorPB::NOT_THE_LEADER) {
+          LOG(INFO) << Substitute("T:$0 P:$1: not a leader replica anymore",
+                                  replica->tablet_id(), replica->permanent_uuid());
+          continue;
+        }
+        ASSERT_OK(s);
         SleepFor(MonoDelta::FromMilliseconds(kMaxElectionTime));
         // Check stats after every election.
         NO_FATALS(CheckStats(kRowsCount));

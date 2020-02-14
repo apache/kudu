@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -266,6 +267,8 @@ TEST_F(TombstonedVotingStressTest, TestTombstonedVotingUnderStress) {
   // We don't shut this node down because it will serve as the tablet copy
   // "source" during the test.
   LOG(INFO) << "forcing leader to step down...";
+  // The leader role cannot fluctuate in this scenario because of
+  // --enable_leader_failure_detection=false setting.
   ASSERT_OK(itest::LeaderStepDown(ts0_ets, tablet_id_, kTimeout));
 
   // Now we are done with setup. Start the "stress" part of the test.

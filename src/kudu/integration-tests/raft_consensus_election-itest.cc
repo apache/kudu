@@ -325,6 +325,8 @@ TEST_F(RaftConsensusElectionITest, LeaderStepDown) {
                               consensus::EXCLUDE_HEALTH_REPORT, &cstate_before));
 
   // Step down and test that a 2nd stepdown returns the expected result.
+  // The leader role cannot fluctuate among tablet replicas because of
+  // --enable_leader_failure_detection=false setting.
   ASSERT_OK(LeaderStepDown(ts, tablet_id_, kTimeout));
 
   // Get the Raft term from the leader that has just stepped down.
@@ -413,6 +415,8 @@ TEST_P(RaftConsensusNumLeadersMetricTest, TestNumLeadersMetric) {
 
   // Renounce leadership on the rest.
   for (; idx < tablet_ids.size(); idx++) {
+    // The leader role cannot fluctuate among tablet replicas because of
+    // --enable_leader_failure_detection=false setting.
     ASSERT_OK(LeaderStepDown(ts, tablet_ids[idx], kTimeout));
     ASSERT_OK(get_num_leaders_metric(&num_leaders_metric));
     ASSERT_EQ(--num_leaders_expected, num_leaders_metric);
@@ -459,6 +463,8 @@ TEST_F(RaftConsensusElectionITest, StepDownWithSlowFollower) {
   SleepFor(MonoDelta::FromSeconds(1));
 
   // Step down should respond quickly despite the hung requests.
+  // The leader role cannot fluctuate among tablet replicas because of
+  // --enable_leader_failure_detection=false setting.
   ASSERT_OK(LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(3)));
 }
 
@@ -549,6 +555,8 @@ TEST_F(RaftConsensusElectionITest, ElectPendingVoter) {
 
   // Now that TS 4 is electable (and pending), have TS 0 step down.
   LOG(INFO) << "Forcing Peer " << initial_leader->uuid() << " to step down...";
+  // The leader role cannot fluctuate among tablet replicas because of
+  // --enable_leader_failure_detection=false setting.
   ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
 
   // Resume TS 1 so we have a majority of 3 to elect a new leader.
