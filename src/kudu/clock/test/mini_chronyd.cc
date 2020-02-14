@@ -292,7 +292,20 @@ Status MiniChronyd::GetServerStats(ServerStats* stats) const {
 Status MiniChronyd::SetTime(time_t time) {
   char buf[kFastToBufferSize];
   char* time_to_set = FastTimeToBuffer(time, buf);
-  return RunChronyCmd({ "settime", time_to_set });
+  string out;
+  string err;
+  // The first command is 'manual reset' to remove samples accumulated prior
+  // to the run of this 'settime' command. Those are not needed and could
+  // confuse chrony when SetTime() is called next time with a close enough
+  // timestamp (in the chrony's source, see functions handle_settime() from
+  // cmdmon.c and MNL_AcceptTimestamp() from manual.c).
+  // The second command is 'settime <time>' which sets the time as requested.
+  auto s = RunChronyCmd(
+      { "manual reset", Substitute("settime $0", time_to_set) }, &out, &err);
+  if (!s.ok()) {
+    s = s.CloneAndAppend(Substitute("stdout: $0 stderr: $1", out, err));
+  }
+  return s;
 }
 
 // Find absolute path to chronyc (chrony's CLI tool),
@@ -444,7 +457,18 @@ Status MiniChronyd::RunChronyCmd(const vector<string>& args,
                                  string* out_stderr) const {
   string chronyc_bin;
   RETURN_NOT_OK(GetChronycPath(&chronyc_bin));
-  vector<string> cmd_and_args = { chronyc_bin, "-h", cmdaddress(), };
+  // Use '-m' switch to allow for multiple commands to be sent at once: each
+  // argument is interpreted as a separate command.
+  // Use '-n' switch to avoid resolving IP addresses into DNS names in case if
+  // chronyc outputs anything related to to IP addresses/hostnames (e.g.,
+  // list of source NTP servers or list of NTP clients server by chronyd, etc.).
+  // Since non-default command address is used for chronyd (the 'bindcmdaddress'
+  // option in 'chrony.conf'), it's necessary to specify the address using the
+  // '-h' switch (it's a path of the Unix domain socket in case of MiniChronyd).
+  // See 'man chronyc' for more details on the switches used for 'chronyc'
+  // invocation.
+  vector<string> cmd_and_args = {
+      chronyc_bin, "-n", "-m", "-h", cmdaddress(), };
   std::copy(args.begin(), args.end(), std::back_inserter(cmd_and_args));
   return Subprocess::Call(cmd_and_args, "", out_stdout, out_stderr);
 }

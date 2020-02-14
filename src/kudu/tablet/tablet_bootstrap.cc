@@ -1663,9 +1663,7 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
 }
 
 Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
-  Timestamp ts(timestamp);
-  RETURN_NOT_OK(clock_->Update(ts));
-  return Status::OK();
+  return clock_->Update(Timestamp(timestamp));
 }
 
 string TabletBootstrap::LogPrefix() const {
