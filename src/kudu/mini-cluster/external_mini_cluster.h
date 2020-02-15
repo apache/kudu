@@ -94,6 +94,35 @@ class ExternalTabletServer;
 // Location --> number of tablet servers in location.
 typedef std::map<std::string, int> LocationInfo;
 
+#if !defined(NO_CHRONY)
+// The enumeration below describes the way Kudu's built-in NTP client is
+// configured given the set of dedicated NTP servers run by the mini-cluster.
+enum class BuiltinNtpConfigMode {
+  // Each server (master/tserver) uses all available NTP servers for its
+  // built-in NTP client. For example, given 3 tservers and 2 NTP servers:
+  //
+  // tserver index | NTP server indices
+  // ----------------------------------
+  //   0           |  0 1
+  //   1           |  0 1
+  //   2           |  0 1
+  ALL_SERVERS,
+
+  // Each server (master/tserver) uses a single NTP server. The assignment runs
+  // in a round-robin manner. For example, given 5 tservers and 2 NTP servers:
+  //
+  // tserver index | NTP server indices
+  // ----------------------------------
+  //   0           |  0
+  //   1           |  1
+  //   2           |  0
+  //   3           |  1
+  //   4           |  0
+  //
+  ROUND_ROBIN_SINGLE_SERVER,
+};
+#endif
+
 struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
 
@@ -200,6 +229,12 @@ struct ExternalMiniClusterOptions {
   //
   // Default: 0
   int num_ntp_servers;
+
+  // Mapping of NTP servers to built-in NTP client for each Kudu server.
+  // This parameter is effective iff num_ntp_servers > 0.
+  //
+  // Default: BuiltinNtpConfigMode::ALL_SERVERS
+  BuiltinNtpConfigMode ntp_config_mode;
 #endif // #if !defined(NO_CHRONY) ...
 };
 
@@ -434,7 +469,10 @@ class ExternalMiniCluster : public MiniCluster {
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
-  Status AddTimeSourceFlags(std::vector<std::string>* flags);
+
+  // Add flags related to time source and clock for the daemon at index 'idx'.
+  // The time source flags are appended to the 'flags' in-out parameter.
+  Status AddTimeSourceFlags(int idx, std::vector<std::string>* flags);
 
   ExternalMiniClusterOptions opts_;
 

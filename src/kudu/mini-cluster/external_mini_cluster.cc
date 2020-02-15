@@ -123,6 +123,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
 #if !defined(NO_CHRONY)
       , num_ntp_servers(1)
+      , ntp_config_mode(BuiltinNtpConfigMode::ALL_SERVERS)
 #endif // #if !defined(NO_CHRONY) ...
 {
 }
@@ -167,19 +168,31 @@ Status ExternalMiniCluster::HandleOptions() {
   return Status::OK();
 }
 
-Status ExternalMiniCluster::AddTimeSourceFlags(std::vector<std::string>* flags) {
+Status ExternalMiniCluster::AddTimeSourceFlags(
+    int idx, std::vector<std::string>* flags) {
+  DCHECK_LE(0, idx);
   DCHECK(flags);
+  CHECK_LE(0, opts_.num_ntp_servers);
 #if defined(NO_CHRONY)
   flags->emplace_back("--time_source=system_unsync");
 #else
-  if (opts_.num_ntp_servers > 0) {
+  if (opts_.num_ntp_servers == 0) {
+    flags->emplace_back("--time_source=system_unsync");
+  } else {
     vector<string> ntp_endpoints;
     CHECK_EQ(opts_.num_ntp_servers, ntp_servers_.size());
-    for (const auto& server : ntp_servers_) {
-      ntp_endpoints.emplace_back(server->address().ToString());
+    // Point the built-in NTP client to the test NTP servers.
+    switch (opts_.ntp_config_mode) {
+      case BuiltinNtpConfigMode::ALL_SERVERS:
+        for (const auto& server : ntp_servers_) {
+          ntp_endpoints.emplace_back(server->address().ToString());
+        }
+        break;
+      case BuiltinNtpConfigMode::ROUND_ROBIN_SINGLE_SERVER:
+        ntp_endpoints.emplace_back(
+            ntp_servers_[idx % opts_.num_ntp_servers]->address().ToString());
+        break;
     }
-    // Point the built-in NTP client to the test NTP server running as a part
-    // of the cluster.
     flags->emplace_back(Substitute("--builtin_ntp_servers=$0",
                                    JoinStrings(ntp_endpoints, ",")));
     // The chronyd server supports very short polling interval: let's use this
@@ -192,8 +205,6 @@ Status ExternalMiniCluster::AddTimeSourceFlags(std::vector<std::string>* flags) 
     // Switch the clock to use the built-in NTP client which clock is
     // synchronized with the test NTP server.
     flags->emplace_back("--time_source=builtin");
-  } else {
-    flags->emplace_back("--time_source=system_unsync");
   }
 #endif // #if defined(NO_CHRONY) ... else ...
   return Status::OK();
@@ -548,7 +559,6 @@ Status ExternalMiniCluster::StartMasters() {
     flags.emplace_back("--location_mapping_by_uuid");
 #   endif
   }
-  RETURN_NOT_OK(AddTimeSourceFlags(&flags));
 
   // Add custom master flags.
   copy(opts_.extra_master_flags.begin(), opts_.extra_master_flags.end(),
@@ -570,6 +580,13 @@ Status ExternalMiniCluster::StartMasters() {
       opts.perf_record_filename =
           Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
     }
+
+    vector<string> time_source_flags;
+    RETURN_NOT_OK(AddTimeSourceFlags(i, &time_source_flags));
+    // Custom flags come last because they can contain overrides.
+    flags.insert(flags.begin(),
+                 time_source_flags.begin(), time_source_flags.end());
+
     opts.extra_flags = SubstituteInFlags(flags, i);
     opts.start_process_timeout = opts_.start_process_timeout;
     opts.rpc_bind_address = master_rpc_addrs[i];
@@ -636,7 +653,7 @@ Status ExternalMiniCluster::AddTabletServer() {
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
   vector<string> extra_flags;
-  RETURN_NOT_OK(AddTimeSourceFlags(&extra_flags));
+  RETURN_NOT_OK(AddTimeSourceFlags(idx, &extra_flags));
   auto flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
   copy(flags.begin(), flags.end(), std::back_inserter(extra_flags));
   opts.extra_flags = extra_flags;
