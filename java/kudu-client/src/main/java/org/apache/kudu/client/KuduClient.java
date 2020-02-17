@@ -411,6 +411,15 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Sends a request to the master to check if the cluster supports ignore operations.
+   * @return true if the cluster supports ignore operations
+   */
+  @InterfaceAudience.Private
+  public boolean supportsIgnoreOperations() throws KuduException {
+    return joinAndHandleException(asyncClient.supportsIgnoreOperations());
+  }
+
+  /**
    * @return a HostAndPort describing the current leader master
    * @throws KuduException if a leader master could not be found in time
    */

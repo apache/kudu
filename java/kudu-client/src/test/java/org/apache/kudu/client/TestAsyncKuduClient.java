@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static junit.framework.TestCase.assertFalse;
 import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
@@ -278,5 +279,22 @@ public class TestAsyncKuduClient {
     } catch (NonRecoverableException nre) {
       assertTrue(nre.getMessage().startsWith("Got out-of-order key column"));
     }
+  }
+
+  /**
+   * Test supportsIgnoreOperations() when the cluster does support them.
+   */
+  @Test(timeout = 100000)
+  public void testSupportsIgnoreOperationsTrue() throws Exception {
+    assertTrue(asyncClient.supportsIgnoreOperations().join());
+  }
+
+  /**
+   * Test supportsIgnoreOperations() when the cluster does not support them.
+   */
+  @Test(timeout = 100000)
+  @KuduTestHarness.MasterServerConfig(flags = { "--master_support_ignore_operations=false" })
+  public void testSupportsIgnoreOperationsFalse() throws Exception {
+    assertFalse(asyncClient.supportsIgnoreOperations().join());
   }
 }

@@ -1007,6 +1007,10 @@ enum MasterFeatures {
   GENERATE_AUTHZ_TOKEN = 5;
   // The master supports dynamic addition/removal of masters
   DYNAMIC_MULTI_MASTER = 6;
+  // Whether the cluster supports INSERT_IGNORE, DELETE_IGNORE, and UPDATE_IGNORE operations.
+  // Though this is technically a tserver feature, it's unreasonable to check if every
+  // tablet server supports this feature. Instead we use the master as a proxy.
+  IGNORE_OPERATIONS = 7;
 }
 
 service MasterService {

@@ -28,6 +28,7 @@ package org.apache.kudu.client;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
+import static org.apache.kudu.rpc.RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_INVALID_REQUEST;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -2641,6 +2642,42 @@ public class AsyncKuduClient implements AutoCloseable {
   @InterfaceAudience.LimitedPrivate("Test")
   List<Connection> getConnectionListCopy() {
     return connectionCache.getConnectionListCopy();
+  }
+
+  /**
+   * Sends a request to the master to check if the cluster supports ignore operations.
+   * @return true if the cluster supports ignore operations
+   */
+  @InterfaceAudience.Private
+  public Deferred<Boolean> supportsIgnoreOperations() {
+    PingRequest ping = PingRequest.makeMasterPingRequest(
+        this.masterTable, timer, defaultAdminOperationTimeoutMs);
+    ping.addRequiredFeature(Master.MasterFeatures.IGNORE_OPERATIONS_VALUE);
+    Deferred<PingResponse> response = sendRpcToTablet(ping);
+    return AsyncUtil.addBoth(response, new PingSupportsFeatureCallback());
+  }
+
+  private static final class PingSupportsFeatureCallback implements Callback<Boolean, Object> {
+    @Override
+    public Boolean call(final Object resp) {
+      if (resp instanceof Exception) {
+        // The server returns an RpcRemoteException when the required feature is not supported.
+        // The exception should have an ERROR_INVALID_REQUEST error code and at least one
+        // unsupported feature flag.
+        if (resp instanceof RpcRemoteException &&
+            ((RpcRemoteException) resp).getErrPB().getCode() == ERROR_INVALID_REQUEST &&
+            ((RpcRemoteException) resp).getErrPB().getUnsupportedFeatureFlagsCount() >= 1) {
+          return false;
+        }
+        throw new IllegalStateException((Exception) resp);
+      }
+      return true;
+    }
+
+    @Override
+    public String toString() {
+      return "ping supports ignore operations";
+    }
   }
 
   /**

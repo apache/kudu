@@ -17,6 +17,10 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
 import com.google.protobuf.Message;
 import io.netty.util.Timer;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -33,9 +37,14 @@ import org.apache.kudu.util.Pair;
 class PingRequest extends KuduRpc<PingResponse> {
 
   private final String serviceName;
+  private final List<Integer> requiredFeatures = new ArrayList<>();
 
   static PingRequest makeMasterPingRequest() {
-    return new PingRequest(MASTER_SERVICE_NAME, null, 0);
+    return makeMasterPingRequest(null, null, 0);
+  }
+
+  static PingRequest makeMasterPingRequest(KuduTable masterTable, Timer timer, long timeoutMillis) {
+    return new PingRequest(masterTable, MASTER_SERVICE_NAME, timer, timeoutMillis);
   }
 
   static PingRequest makeTabletServerPingRequest() {
@@ -43,8 +52,26 @@ class PingRequest extends KuduRpc<PingResponse> {
   }
 
   private PingRequest(String serviceName, Timer timer, long timeoutMillis) {
-    super(null, timer, timeoutMillis);
+    this(null, serviceName, timer, timeoutMillis);
+  }
+
+  private PingRequest(KuduTable table, String serviceName, Timer timer, long timeoutMillis) {
+    super(table, timer, timeoutMillis);
     this.serviceName = serviceName;
+  }
+
+  /**
+   * Add an application-specific feature flag required to service the RPC.
+   * This can be useful on the Ping request to check if a service supports a feature.
+   * The server will respond with an RpcRemoteException if a feature is not supported.
+   */
+  void addRequiredFeature(Integer feature) {
+    requiredFeatures.add(feature);
+  }
+
+  @Override
+  Collection<Integer> getRequiredFeatures() {
+    return requiredFeatures;
   }
 
   @Override

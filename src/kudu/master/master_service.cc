@@ -101,6 +101,11 @@ DEFINE_bool(master_support_change_config, false,
 TAG_FLAG(master_support_change_config, hidden);
 TAG_FLAG(master_support_change_config, unsafe);
 
+DEFINE_bool(master_support_ignore_operations, true,
+            "Whether the cluster supports support ignore operations.");
+TAG_FLAG(master_support_ignore_operations, hidden);
+TAG_FLAG(master_support_ignore_operations, runtime);
+
 
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -798,6 +803,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_connect_to_master_rpc;
     case MasterFeatures::DYNAMIC_MULTI_MASTER:
       return FLAGS_master_support_change_config;
+    case MasterFeatures::IGNORE_OPERATIONS:
+      return FLAGS_master_support_ignore_operations;
     default:
       return false;
   }
