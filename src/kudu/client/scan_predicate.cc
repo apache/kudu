@@ -154,25 +154,7 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
   return Status::OK();
 }
 
-Status InBloomFilterPredicateData::CheckTypeAndGetPointer(KuduValue* val_in,
-                                                          void** val_out) const {
-  return val_in->data_->CheckTypeAndGetPointer(col_.name(),
-                                               col_.type_info()->type(),
-                                               col_.type_attributes(),
-                                               val_out);
-}
-
 Status InBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
-  void* lower_void = nullptr;
-  if (lower_) {
-    RETURN_NOT_OK(CheckTypeAndGetPointer(lower_.get(), &lower_void));
-  }
-
-  void* upper_void = nullptr;
-  if (upper_) {
-    RETURN_NOT_OK(CheckTypeAndGetPointer(upper_.get(), &upper_void));
-  }
-
   // Extract the BlockBloomFilters.
   vector<BlockBloomFilter*> block_bloom_filters;
   block_bloom_filters.reserve(bloom_filters_.size());
@@ -180,29 +162,18 @@ Status InBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*
     block_bloom_filters.push_back(bf->data_->bloom_filter_.get());
   }
 
-  spec->AddPredicate(ColumnPredicate::InBloomFilter(col_, std::move(block_bloom_filters),
-                                                    lower_void, upper_void));
+  spec->AddPredicate(ColumnPredicate::InBloomFilter(col_, std::move(block_bloom_filters)));
   return Status::OK();
 }
 
 InBloomFilterPredicateData* client::InBloomFilterPredicateData::Clone() const {
-  unique_ptr<KuduValue> lower_clone;
-  if (lower_) {
-    lower_clone.reset(lower_->Clone());
-  }
-  unique_ptr<KuduValue> upper_clone;
-  if (upper_) {
-    upper_clone.reset(upper_->Clone());
-  }
-
   vector<unique_ptr<KuduBloomFilter>> bloom_filter_clones;
   bloom_filter_clones.reserve(bloom_filters_.size());
   for (const auto& bf : bloom_filters_) {
     bloom_filter_clones.emplace_back(bf->Clone());
   }
 
-  return new InBloomFilterPredicateData(col_, std::move(bloom_filter_clones),
-                                        std::move(lower_clone), std::move(upper_clone));
+  return new InBloomFilterPredicateData(col_, std::move(bloom_filter_clones));
 }
 
 KuduBloomFilter::KuduBloomFilter()  {

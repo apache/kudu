@@ -95,13 +95,9 @@ class ComparisonPredicateData : public KuduPredicate::Data {
 class InBloomFilterPredicateData : public KuduPredicate::Data {
  public:
   InBloomFilterPredicateData(ColumnSchema col,
-                             std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters,
-                             std::unique_ptr<KuduValue> lower = nullptr,
-                             std::unique_ptr<KuduValue> upper = nullptr)
+                             std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters)
       : col_(std::move(col)),
-        bloom_filters_(std::move(bloom_filters)),
-        lower_(std::move(lower)),
-        upper_(std::move(upper)) {
+        bloom_filters_(std::move(bloom_filters)) {
   }
 
   Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
@@ -109,12 +105,8 @@ class InBloomFilterPredicateData : public KuduPredicate::Data {
   InBloomFilterPredicateData* Clone() const override;
 
  private:
-  Status CheckTypeAndGetPointer(KuduValue* val_in, void** val_out) const;
-
   ColumnSchema col_;
   std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters_;
-  std::unique_ptr<KuduValue> lower_;
-  std::unique_ptr<KuduValue> upper_;
 };
 
 // A list predicate for a column and a list of constant values.

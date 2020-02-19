@@ -971,24 +971,17 @@ KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
   });
 }
 
-KuduPredicate* KuduTable::NewInBloomFilterPredicate(
-    const Slice& col_name,
-    vector<KuduBloomFilter*>* bloom_filters,
-    KuduValue* lower_bound_inclusive,
-    KuduValue* upper_bound_exclusive) {
+KuduPredicate* KuduTable::NewInBloomFilterPredicate(const Slice& col_name,
+                                                    std::vector<KuduBloomFilter*>* bloom_filters) {
   // We always take ownership of values; this ensures cleanup if the predicate is invalid.
   auto cleanup = MakeScopedCleanup([&]() {
     STLDeleteElements(bloom_filters);
   });
 
-  unique_ptr<KuduValue> lower_bound_inclusive_uniq_ptr(lower_bound_inclusive);
-  unique_ptr<KuduValue> upper_bound_exclusive_uniq_ptr(upper_bound_exclusive);
-
-  // Empty vector of bloom filters along with no upper or lower bound will select
-  // all rows. Hence disallowed.
-  if (bloom_filters->empty() && !lower_bound_inclusive && !upper_bound_exclusive) {
+  // Empty vector of bloom filters will select all rows. Hence disallowed.
+  if (bloom_filters->empty()) {
     return new KuduPredicate(
-        new ErrorPredicateData(Status::InvalidArgument("No predicates supplied")));
+        new ErrorPredicateData(Status::InvalidArgument("No Bloom filters supplied")));
   }
 
   // Transfer the Bloom filter raw ptrs over to vector of unique ptrs.
@@ -1008,9 +1001,7 @@ KuduPredicate* KuduTable::NewInBloomFilterPredicate(
     // not only deletes pointers contained in the vector but also clears the vector
     // and we want the vector be cleared as expected by the caller.
     return new KuduPredicate(
-        new InBloomFilterPredicateData(col_schema, std::move(bloom_filters_owned),
-                                       std::move(lower_bound_inclusive_uniq_ptr),
-                                       std::move(upper_bound_exclusive_uniq_ptr)));
+        new InBloomFilterPredicateData(col_schema, std::move(bloom_filters_owned)));
   });
 }
 

@@ -141,10 +141,11 @@ class ColumnPredicate {
   // Create a new BloomFilter predicate for the column.
   //
   // The values are not copied, and must outlive the returned predicate.
+  // Optional "lower" and "upper" help with merging a Range predicate.
   static ColumnPredicate InBloomFilter(ColumnSchema column,
                                        std::vector<BlockBloomFilter*> bfs,
-                                       const void* lower,
-                                       const void* upper);
+                                       const void* lower = nullptr,
+                                       const void* upper = nullptr);
 
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);

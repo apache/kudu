@@ -147,6 +147,7 @@ class PredicateTest : public KuduTest {
                 const vector<KuduPredicate*>& predicates) {
 
     vector<KuduPredicate*> cloned_predicates;
+    cloned_predicates.reserve(predicates.size());
     for (KuduPredicate* pred : predicates) {
       cloned_predicates.push_back(pred->Clone());
     }
@@ -699,7 +700,7 @@ TEST_F(PredicateTest, TestBoolPredicates) {
     KuduScanner scanner(table.get());
     Status s = scanner.AddConjunctPredicate(bf_predicate);
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "No predicates supplied");
+    ASSERT_STR_CONTAINS(s.ToString(), "No Bloom filters supplied");
   }
 
   { // BloomFilter with (true)
@@ -1291,6 +1292,7 @@ TEST_F(BloomFilterPredicateTest, TestBloomFilterPredicate) {
   auto all_values = CreateRandomUniqueIntegers<int32_t>(kNumAllValues, empty_set, &rand);
   vector<int32_t> inclusive_values;
   ReservoirSample(all_values, kNumInclusiveValues, empty_set, &rand, &inclusive_values);
+  auto min_max_pair = std::minmax_element(inclusive_values.begin(), inclusive_values.end());
   auto* inclusive_bf = CreateBloomFilterWithValues(inclusive_values);
   auto exclusive_values = CreateRandomUniqueIntegers<int32_t>(kNumExclusiveValues, all_values,
                                                               &rand);
@@ -1308,6 +1310,9 @@ TEST_F(BloomFilterPredicateTest, TestBloomFilterPredicate) {
   vector<KuduBloomFilter*> inclusive_bf_vec = { inclusive_bf };
   auto* inclusive_predicate =
       table->NewInBloomFilterPredicate("value", &inclusive_bf_vec);
+  auto* inclusive_predicate_clone1 = inclusive_predicate->Clone();
+  auto* inclusive_predicate_clone2 = inclusive_predicate->Clone();
+
   ASSERT_TRUE(inclusive_bf_vec.empty());
   int actual_count_inclusive = CountRows(table, { inclusive_predicate });
   EXPECT_LE(inclusive_values.size(), actual_count_inclusive);
@@ -1320,6 +1325,21 @@ TEST_F(BloomFilterPredicateTest, TestBloomFilterPredicate) {
   int actual_count_exclusive = CountRows(table, { exclusive_predicate });
   EXPECT_LE(0, actual_count_exclusive);
   EXPECT_GE(kFalsePositives, actual_count_exclusive);
+
+  // Combine Range predicate with Bloom filter predicate.
+  auto* less_predicate = table->NewComparisonPredicate("value", KuduPredicate::LESS,
+                                                       KuduValue::FromInt(*min_max_pair.first));
+  int actual_count_less = CountRows(table, {inclusive_predicate_clone1, less_predicate });
+  EXPECT_EQ(0, actual_count_less);
+
+  auto* ge_predicate = table->NewComparisonPredicate("value", KuduPredicate::GREATER_EQUAL,
+                                                     KuduValue::FromInt(*min_max_pair.first));
+  auto* le_predicate = table->NewComparisonPredicate("value", KuduPredicate::LESS_EQUAL,
+                                                     KuduValue::FromInt(*min_max_pair.second));
+  int actual_count_range = CountRows(table,
+                                     { inclusive_predicate_clone2, ge_predicate, le_predicate });
+  EXPECT_LE(inclusive_values.size(), actual_count_range);
+  EXPECT_GE(inclusive_values.size() + kFalsePositives, actual_count_range);
 }
 
 class ParameterizedPredicateTest : public PredicateTest,

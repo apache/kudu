@@ -404,10 +404,10 @@ message ColumnPredicatePB {
     // A list of bloom filters for the field.
     repeated BlockBloomFilterPB bloom_filters = 1;
 
-    // Lower and Upper is optional for InBloomFilter.
-    // When use both InBloomFilter and Range predicate for the same column the
-    // merge result can be InBloomFilter whith range bound inside. And the lower
-    // and upper works just like they in Range predicate.
+    // lower and upper are optional for InBloomFilter.
+    // When using both InBloomFilter and Range predicate for the same column the
+    // merged result can be InBloomFilter within specified range.
+    //
     // The inclusive lower bound.
     optional bytes lower = 2 [(kudu.REDACT) = true];
 

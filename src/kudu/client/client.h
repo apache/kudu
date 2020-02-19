@@ -1105,21 +1105,13 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///   supplied Bloom filters to be returned by the scanner. On return,
   ///   regardless of success or error, the returned predicate will take
   ///   ownership of the pointers contained in @c bloom_filters.
-  /// @param [in] lower_bound_inclusive
-  /// @param [in] upper_bound_exclusive
-  ///   Optional [lower_bound, upper_bound) filters where type of the bound
-  ///   must correspond to the value of the column to which the predicate is
-  ///   to be applied.
   /// @return Raw pointer to an IN Bloom filter predicate. The caller owns the
   ///   predicate until it is passed into KuduScanner::AddConjunctPredicate().
   ///   In the case of an error (e.g. an invalid column name),
   ///   a non-NULL value is still returned. The error will be returned when
   ///   attempting to add this predicate to a KuduScanner.
-  KuduPredicate* NewInBloomFilterPredicate(
-      const Slice& col_name,
-      std::vector<KuduBloomFilter*>* bloom_filters,
-      KuduValue* lower_bound_inclusive = NULL, // NOLINT(modernize-use-nullptr)
-      KuduValue* upper_bound_exclusive = NULL); // NOLINT(modernize-use-nullptr)
+  KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
+                                           std::vector<KuduBloomFilter*>* bloom_filters);
 
   /// Create a new IN list predicate which can be used for scanners on this
   /// table.
