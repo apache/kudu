@@ -166,12 +166,9 @@ TEST_F(FaststringTest, TestMoveAssignment) {
     f2.CheckInvariants(); // NOLINT(*)
 
     // Check self-move doesn't have any effect.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wself-move"
     f1 = std::move(f1); // NOLINT(*)
-#pragma clang diagnostic pop
     ASSERT_EQ(0, f2.size()); // NOLINT(*)
-    ASSERT_EQ(test_str, f1.ToString());
+    ASSERT_EQ(test_str, f1.ToString()); // NOLINT(*)
     f1.CheckInvariants(); // NOLINT(*)
     f2.CheckInvariants(); // NOLINT(*)
   }

@@ -447,7 +447,27 @@ ADD_KUDU_TEST(easy_json-test)
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(env_util-test)
 ADD_KUDU_TEST(errno-test)
+
+# There's a move in faststring-test.cc that looks like this:
+#
+#   f1 = std::move(f1);
+#
+# Self-moves are generally undesirable, and Clang warns about them via the
+# -Wself-move flag. In this particular case, we're explicitly testing self-move
+# behavior, so we don't want any warnings.
+#
+# Unfortunately, if we disable -Wself-move via clang diagnostic pragmas, we'll
+# wind up triggering gcc's -Wunknown-pragmas warning. And due to a long-standing
+# bug[1], we can't disable -Wunknown-pragmas via GCC diagnostic pragmas. So we
+# must disable the warning for the entirety of the compilation unit.
+#
+# 1. https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431
+if("${COMPILER_FAMILY}" STREQUAL "clang")
+  set_source_files_properties(faststring-test.cc PROPERTIES COMPILE_FLAGS
+    "-Wno-self-move")
+endif()
 ADD_KUDU_TEST(faststring-test)
+
 ADD_KUDU_TEST(file_cache-test)
 ADD_KUDU_TEST(file_cache-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(flag_tags-test)
