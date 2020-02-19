@@ -26,6 +26,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/random.h"
@@ -67,12 +68,15 @@ constexpr const int kStandardNtpPort = 123;
 class BuiltInNtp : public TimeService {
  public:
   // Create an instance using the servers specified in --builtin_ntp_servers
-  // as NTP sources.
-  BuiltInNtp();
+  // as NTP sources. The 'metric_entity' is used to register metrics specific to
+  // the built-in NTP client.
+  explicit BuiltInNtp(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Create an instance using the specified servers as NTP sources. The set
-  // of source NTP servers must not be empty.
-  explicit BuiltInNtp(std::vector<HostPort> servers);
+  // of source NTP servers must not be empty. The 'metric_entity' is used
+  // to register metrics specific to the built-in NTP client.
+  BuiltInNtp(std::vector<HostPort> servers,
+             const scoped_refptr<MetricEntity>& metric_entity);
 
   ~BuiltInNtp() override;
 
@@ -161,6 +165,16 @@ class BuiltInNtp : public TimeService {
   // based on responses received so far from configured NTP servers.
   Status CombineClocks();
 
+  // Register all metrics tracked by the built-in NTP client.
+  void RegisterMetrics(const scoped_refptr<MetricEntity>& entity);
+
+  // Get difference between the local clock and the tracked true time,
+  // in milliseconds.
+  int64_t LocalClockDeltaForMetrics();
+
+  // Get the latest computed wall-clock time, in microseconds.
+  int64_t WalltimeForMetrics();
+
   Random rng_;
   Socket socket_;
 
@@ -185,6 +199,15 @@ class BuiltInNtp : public TimeService {
   // The polling thread. Responsible for sending/receiving NTP packets and
   // updating the maintained walltime based on the NTP responses received.
   scoped_refptr<Thread> thread_;
+
+  // Stats on the maximum error is sampled every when wall-clock time
+  // is calculated upon receiving NTP server responses.
+  scoped_refptr<Histogram> max_errors_histogram_;
+
+  // Clock metrics are set to detach to their last value. This means
+  // that, during our destructor, we'll need to access other class members
+  // declared above this. Hence, this member must be declared last.
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(BuiltInNtp);
 };

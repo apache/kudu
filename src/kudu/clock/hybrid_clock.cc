@@ -161,23 +161,27 @@ METRIC_DEFINE_gauge_bool(server, hybrid_clock_extrapolating,
                          "Whether HybridClock timestamps are extrapolated "
                          "because of inability to read the underlying clock",
                          kudu::MetricLevel::kWarn);
+
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_error,
                            "Hybrid Clock Error",
                            kudu::MetricUnit::kMicroseconds,
                            "Server clock maximum error",
                            kudu::MetricLevel::kInfo);
+
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
                            kudu::MetricUnit::kMicroseconds,
                            "Hybrid clock timestamp",
                            kudu::MetricLevel::kInfo);
+
 METRIC_DEFINE_histogram(server, hybrid_clock_max_errors,
                         "Hybrid Clock Maximum Errors",
                         kudu::MetricUnit::kMilliseconds,
                         "The statistics on the maximum error of the underlying "
                         "clock",
-                         kudu::MetricLevel::kInfo,
+                         kudu::MetricLevel::kDebug,
                         20000, 3);
+
 METRIC_DEFINE_histogram(server, hybrid_clock_extrapolation_intervals,
                         "Intervals of Hybrid Clock Extrapolation",
                         kudu::MetricUnit::kSeconds,
@@ -210,20 +214,21 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
 
 HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
     : next_timestamp_(0),
-      state_(kNotInitialized) {
+      state_(kNotInitialized),
+      metric_entity_(metric_entity) {
   DCHECK(metric_entity);
   max_errors_histogram_ =
-      METRIC_hybrid_clock_max_errors.Instantiate(metric_entity);
+      METRIC_hybrid_clock_max_errors.Instantiate(metric_entity_);
   extrapolation_intervals_histogram_ =
-      METRIC_hybrid_clock_extrapolation_intervals.Instantiate(metric_entity);
-  extrapolating_ = metric_entity->FindOrCreateGauge(
+      METRIC_hybrid_clock_extrapolation_intervals.Instantiate(metric_entity_);
+  extrapolating_ = metric_entity_->FindOrCreateGauge(
       &METRIC_hybrid_clock_extrapolating, false, MergeType::kMax);
   METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
-      metric_entity,
+      metric_entity_,
       Bind(&HybridClock::NowForMetrics, Unretained(this)))->
           AutoDetachToLastValue(&metric_detacher_);
   METRIC_hybrid_clock_error.InstantiateFunctionGauge(
-      metric_entity,
+      metric_entity_,
       Bind(&HybridClock::ErrorForMetrics, Unretained(this)))->
           AutoDetachToLastValue(&metric_detacher_);
 }
@@ -487,8 +492,9 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source,
   switch (time_source) {
     case TimeSource::NTP_SYNC_BUILTIN:
       time_service_.reset(builtin_ntp_servers.empty()
-                          ? new clock::BuiltInNtp
-                          : new clock::BuiltInNtp(std::move(builtin_ntp_servers)));
+                          ? new clock::BuiltInNtp(metric_entity_)
+                          : new clock::BuiltInNtp(std::move(builtin_ntp_servers),
+                                                  metric_entity_));
       break;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
     case TimeSource::NTP_SYNC_SYSTEM:

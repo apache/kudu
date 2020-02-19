@@ -40,10 +40,12 @@
 #include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/clock/test/mini_chronyd_test_util.h"
 #include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cloud/instance_detector.h"
 #include "kudu/util/cloud/instance_metadata.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -55,6 +57,8 @@ DECLARE_int32(ntp_initial_sync_wait_secs);
 DECLARE_string(builtin_ntp_servers);
 DECLARE_uint32(builtin_ntp_poll_interval_ms);
 DECLARE_uint32(cloud_metadata_server_request_timeout_ms);
+
+METRIC_DECLARE_entity(server);
 
 using kudu::clock::internal::FindIntersection;
 using kudu::clock::internal::Interval;
@@ -435,8 +439,13 @@ TEST(TimeIntervalsTest, ThreeResponses) {
 //
 // TODO(aserbin): fix the described chrony's bug, at least in thirdparty
 class BuiltinNtpWithMiniChronydTest: public KuduTest {
+ public:
+  BuiltinNtpWithMiniChronydTest()
+      : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_,
+                                                        "ntp-test")) {
+  }
  protected:
-  void CheckInitUnsync(BuiltInNtp* ntp_client) {
+  static void CheckInitUnsync(BuiltInNtp* ntp_client) {
     auto deadline = MonoTime::Now() +
         MonoDelta::FromSeconds(FLAGS_ntp_initial_sync_wait_secs);
     ASSERT_OK(ntp_client->Init());
@@ -469,6 +478,9 @@ class BuiltinNtpWithMiniChronydTest: public KuduTest {
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "No suitable source for synchronisation");
   }
+
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
 };
 
 // This is a basic scenario to verify that built-in NTP client is able
@@ -493,7 +505,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, Basic) {
 
   // chronyd supports very short polling intervals (down to 1/64 second).
   FLAGS_builtin_ntp_poll_interval_ms = 50;
-  BuiltInNtp c(servers_endpoints);
+  BuiltInNtp c(servers_endpoints, metric_entity_);
   ASSERT_OK(c.Init());
   ASSERT_EVENTUALLY([&] {
     uint64_t now_us;
@@ -543,7 +555,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, NoIntersectionIntervalAtStartup) {
   // chronyd supports very short polling intervals (down to 1/64 second).
   FLAGS_builtin_ntp_poll_interval_ms = 50;
 
-  BuiltInNtp c(servers_endpoints);
+  BuiltInNtp c(servers_endpoints, metric_entity_);
   NO_FATALS(CheckInitUnsync(&c));
   NO_FATALS(CheckWallTimeUnavailable(&c));
 }
@@ -636,7 +648,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     // Verify chronyd's client itself does not accept the set of of NTP sources.
     NO_FATALS(CheckNoNtpSource(refs));
 
-    BuiltInNtp c(refs);
+    BuiltInNtp c(refs, metric_entity_);
     NO_FATALS(CheckInitUnsync(&c));
     NO_FATALS(CheckWallTimeUnavailable(&c));
   };
@@ -678,7 +690,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, SyncAndUnsyncReferenceServers) {
     // Verify chronyd's client itself accepts the set of of NTP sources.
     ASSERT_OK(MiniChronyd::CheckNtpSource(refs));
 
-    BuiltInNtp c(refs);
+    BuiltInNtp c(refs, metric_entity_);
     ASSERT_OK(c.Init());
     ASSERT_EVENTUALLY([&] {
       uint64_t now_us;
@@ -731,7 +743,7 @@ TEST_F(BuiltinNtpWithMiniChronydTest, CloudInstanceNtpServer) {
   ASSERT_OK(MiniChronyd::CheckNtpSource(servers_endpoints));
 
   FLAGS_builtin_ntp_poll_interval_ms = 500;
-  BuiltInNtp c(servers_endpoints);
+  BuiltInNtp c(servers_endpoints, metric_entity_);
   ASSERT_OK(c.Init());
   ASSERT_EVENTUALLY([&] {
     uint64_t now_us;

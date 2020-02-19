@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -38,6 +39,8 @@
 #include <glog/logging.h>
 
 #include "kudu/clock/builtin_ntp-internal.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -47,6 +50,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -104,6 +108,29 @@ DEFINE_uint32(builtin_ntp_true_time_refresh_max_interval_s, 3600,
               "true time estimation (in seconds)");
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, experimental);
 TAG_FLAG(builtin_ntp_true_time_refresh_max_interval_s, runtime);
+
+METRIC_DEFINE_gauge_int64(server, builtin_ntp_local_clock_delta,
+                          "Local Clock vs Built-In NTP True Time Delta",
+                          kudu::MetricUnit::kMilliseconds,
+                          "Delta between local clock and true time "
+                          "tracked by built-in NTP client; set to "
+                          "2^63-1 when true time is not tracked",
+                          kudu::MetricLevel::kInfo);
+
+METRIC_DEFINE_gauge_int64(server, builtin_ntp_walltime,
+                          "Built-in NTP Wall-Clock Time",
+                          kudu::MetricUnit::kMicroseconds,
+                          "Latest wall-clock time as tracked by "
+                          "built-in NTP client",
+                          kudu::MetricLevel::kDebug);
+
+METRIC_DEFINE_histogram(server, builtin_ntp_max_errors,
+                        "Built-In NTP Maximum Errors",
+                        kudu::MetricUnit::kMilliseconds,
+                        "Statistics on the maximum true time error computed by "
+                        "built-in NTP client",
+                         kudu::MetricLevel::kDebug,
+                        20000, 3);
 
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;
@@ -445,7 +472,6 @@ class BuiltInNtp::ServerState {
   }
 
  private:
-
   // Lock to protect internal state below from concurrent access.
   mutable rw_spinlock lock_;
 
@@ -475,13 +501,16 @@ class BuiltInNtp::ServerState {
   size_t o_pkt_total_num_;    // number of NTP requests sent
 };
 
-BuiltInNtp::BuiltInNtp()
+BuiltInNtp::BuiltInNtp(const scoped_refptr<MetricEntity>& metric_entity)
     : rng_(GetRandomSeed32()) {
+  RegisterMetrics(metric_entity);
 }
 
-BuiltInNtp::BuiltInNtp(vector<HostPort> servers)
+BuiltInNtp::BuiltInNtp(vector<HostPort> servers,
+                       const scoped_refptr<MetricEntity>& metric_entity)
     : rng_(GetRandomSeed32()) {
   CHECK_OK(PopulateServers(std::move(servers)));
+  RegisterMetrics(metric_entity);
 }
 
 BuiltInNtp::~BuiltInNtp() {
@@ -1019,8 +1048,8 @@ Status BuiltInNtp::CombineClocks() {
                           falsetickers_num, all_sources_num);
   }
 
-  int64_t compute_wall = (best_interval.first + best_interval.second) / 2;
-  int64_t compute_error = (best_interval.second - best_interval.first) / 2;
+  const int64_t compute_wall = (best_interval.first + best_interval.second) / 2;
+  const int64_t compute_error = (best_interval.second - best_interval.first) / 2;
   {
     // Extra sanity check to make sure walltime doesn't go back.
     std::lock_guard<rw_spinlock> l(last_computed_lock_);
@@ -1036,6 +1065,9 @@ Status BuiltInNtp::CombineClocks() {
     last_computed_.mono = now;
     last_computed_.wall = compute_wall;
     last_computed_.error = compute_error;
+
+    // Update stats on the computed error.
+    max_errors_histogram_->Increment(compute_error / 1000);
   }
   VLOG(2) << Substitute("combined clocks: $0 $1 $2",
                         now, compute_wall, compute_error);
@@ -1049,6 +1081,40 @@ Status BuiltInNtp::CombineClocks() {
   }
 
   return Status::OK();
+}
+
+void BuiltInNtp::RegisterMetrics(const scoped_refptr<MetricEntity>& entity) {
+  METRIC_builtin_ntp_local_clock_delta.InstantiateFunctionGauge(
+      entity,
+      Bind(&BuiltInNtp::LocalClockDeltaForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+  METRIC_builtin_ntp_walltime.InstantiateFunctionGauge(
+      entity,
+      Bind(&BuiltInNtp::WalltimeForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+  max_errors_histogram_ =
+      METRIC_builtin_ntp_max_errors.Instantiate(entity);
+}
+
+int64_t BuiltInNtp::LocalClockDeltaForMetrics() {
+  uint64_t now = 0; // avoid clang-tidy warnings
+  uint64_t err_ignored;
+  auto s = WalltimeWithError(&now, &err_ignored);
+  const int64_t now_local = GetCurrentTimeMicros();
+  if (!s.ok()) {
+    return std::numeric_limits<int64_t>::max();
+  }
+
+  // Here we don't care much about scheduling anomalies to take into account
+  // the timing of the clock sampling above. There might be some delay between
+  // calls to WalltimeWithError() and GetCurrentTimeMicros(), but the metric
+  // is designed to spot relatively big offsets like few seconds and more.
+  return (now_local - static_cast<int64_t>(now)) / 1000;
+}
+
+int64_t BuiltInNtp::WalltimeForMetrics() {
+  shared_lock<rw_spinlock> l(last_computed_lock_);
+  return last_computed_.wall;
 }
 
 } // namespace clock

@@ -258,6 +258,9 @@ class HybridClock : public Clock {
   };
   State state_;
 
+  // Metric entity.
+  scoped_refptr<MetricEntity> metric_entity_;
+
   // Whether the hybrid clock is extrapolating the readings of the underlying
   // clock instead of using the real ones. It's important to know whether
   // the extrapolation is happening, but 'extrapolation_intervals_histogram_'
@@ -265,7 +268,7 @@ class HybridClock : public Clock {
   // extrapolation interval.
   scoped_refptr<AtomicGauge<bool>> extrapolating_;
 
-  // Stats on the underlying clock's 'maximum clock' metric sampled every
+  // Stats on the underlying clock's 'maximum error' metric sampled every
   // NowWithError() call (essentially, every call when requesting a hybrid clock
   // timestamp).
   scoped_refptr<Histogram> max_errors_histogram_;
