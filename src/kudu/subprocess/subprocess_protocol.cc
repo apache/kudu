@@ -30,6 +30,7 @@
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/subprocess/subprocess.pb.h" // IWYU pragma: keep
 #include "kudu/tools/tool.pb.h"  // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/pb_util.h"
@@ -212,6 +213,15 @@ template
 Status SubprocessProtocol::SendMessage(const tools::ControlShellRequestPB& message);
 template
 Status SubprocessProtocol::SendMessage(const tools::ControlShellResponsePB& message);
+
+template
+Status SubprocessProtocol::ReceiveMessage(SubprocessRequestPB* message);
+template
+Status SubprocessProtocol::ReceiveMessage(SubprocessResponsePB* message);
+template
+Status SubprocessProtocol::SendMessage(const SubprocessRequestPB& message);
+template
+Status SubprocessProtocol::SendMessage(const SubprocessResponsePB& message);
 
 } // namespace subprocess
 } // namespace kudu

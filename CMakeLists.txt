@@ -88,6 +88,10 @@ set(THIRDPARTY_INSTALL_COMMON_DIR ${THIRDPARTY_INSTALL_DIR}/common)
 set(THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR ${THIRDPARTY_INSTALL_DIR}/uninstrumented)
 set(THIRDPARTY_INSTALL_TSAN_DIR ${THIRDPARTY_INSTALL_DIR}/tsan)
 
+# Set the Java directory so our C++ tests are able to access its contents.
+# This can be useful to, e.g. spawn a Java subprocess.
+set(JAVA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/java)
+
 # Allow "make install" to not depend on all targets.
 #
 # Must be declared in the top-level CMakeLists.txt.
