@@ -17,11 +17,10 @@
 
 package org.apache.kudu.spark.kudu
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 import org.apache.spark.util.AccumulatorV2
-import org.HdrHistogram.HistogramIterationValue
-import org.HdrHistogram.SynchronizedHistogram
+import org.HdrHistogram.IntCountsHistogram
 
 /*
  * A Spark accumulator that aggregates values into an HDR histogram.
@@ -37,29 +36,27 @@ import org.HdrHistogram.SynchronizedHistogram
  * [1]: https://github.com/HdrHistogram/HdrHistogram
  * [2]: https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/ui/jobs/StagePage.scala#L216
  */
-private[kudu] class HdrHistogramAccumulator(val histogram: HistogramWrapper)
-    extends AccumulatorV2[Long, HistogramWrapper] {
-
-  def this() = this(new HistogramWrapper(new SynchronizedHistogram(3)))
+private[kudu] class HdrHistogramAccumulator(histogram: HistogramWrapper = new HistogramWrapper())
+    extends AccumulatorV2[Int, HistogramWrapper] {
 
   override def isZero: Boolean = {
-    histogram.inner_histogram.getTotalCount == 0
+    histogram.isZero
   }
 
-  override def copy(): AccumulatorV2[Long, HistogramWrapper] = {
+  override def copy(): AccumulatorV2[Int, HistogramWrapper] = {
     new HdrHistogramAccumulator(histogram.copy())
   }
 
   override def reset(): Unit = {
-    histogram.inner_histogram.reset()
+    histogram.reset()
   }
 
-  override def add(v: Long): Unit = {
-    histogram.inner_histogram.recordValue(v)
+  override def add(v: Int): Unit = {
+    histogram.add(v)
   }
 
-  override def merge(other: AccumulatorV2[Long, HistogramWrapper]): Unit = {
-    histogram.inner_histogram.add(other.value.inner_histogram)
+  override def merge(other: AccumulatorV2[Int, HistogramWrapper]): Unit = {
+    histogram.add(other.value)
   }
 
   override def value: HistogramWrapper = histogram
@@ -68,24 +65,69 @@ private[kudu] class HdrHistogramAccumulator(val histogram: HistogramWrapper)
 }
 
 /*
- * A wrapper for a SychronizedHistogram from the HdrHistogram library. See the
+ * A wrapper for a IntCountsHistogram from the HdrHistogram library. See the
  * comment on the declaration of the HdrHistogramAccumulator for why this class
  * exists.
  *
- * A synchronized histogram is used because accumulators may be read from
- * multiple threads concurrently.
+ * synchronized is used because accumulators may be read from multiple threads concurrently.
+ *
+ * An option is used for innerHistogram so we can only initialize the histogram if it is used.
  */
-private[kudu] class HistogramWrapper(val inner_histogram: SynchronizedHistogram)
+private[kudu] class HistogramWrapper(var innerHistogram: Option[IntCountsHistogram] = None)
     extends Serializable {
 
+  def isZero: Boolean = {
+    innerHistogram.synchronized {
+      innerHistogram.isEmpty
+    }
+  }
+
   def copy(): HistogramWrapper = {
-    new HistogramWrapper(inner_histogram.copy())
+    innerHistogram.synchronized {
+      new HistogramWrapper(innerHistogram.map(_.copy()))
+    }
+  }
+
+  def reset(): Unit = {
+    innerHistogram.synchronized {
+      if (innerHistogram.isDefined) {
+        innerHistogram.get.reset()
+      }
+      innerHistogram = None
+    }
+  }
+
+  def add(v: Int) {
+    innerHistogram.synchronized {
+      initializeIfEmpty()
+      innerHistogram.get.recordValue(v)
+    }
+  }
+
+  def add(other: HistogramWrapper) {
+    innerHistogram.synchronized {
+      if (other.innerHistogram.isEmpty) {
+        return
+      }
+      initializeIfEmpty()
+      innerHistogram.get.add(other.innerHistogram.get)
+    }
+  }
+
+  private def initializeIfEmpty(): Unit = {
+    if (innerHistogram.isEmpty) {
+      innerHistogram = Some(new IntCountsHistogram(2))
+    }
   }
 
   override def toString: String = {
-    inner_histogram.synchronized {
-      if (inner_histogram.getTotalCount == 1) {
-        return s"${inner_histogram.getMinValue}ms"
+    innerHistogram.synchronized {
+      if (innerHistogram.isEmpty) {
+        return "0ms"
+      }
+
+      if (innerHistogram.get.getTotalCount == 1) {
+        return s"${innerHistogram.get.getMinValue}ms"
       }
       // The argument to SynchronizedHistogram#percentiles is the number of
       // ticks per half distance to 100%. So, a value of 1 produces values for
@@ -93,10 +135,13 @@ private[kudu] class HistogramWrapper(val inner_histogram: SynchronizedHistogram)
       // values have been exhausted. It's a little wonky if there are very few
       // values in the histogram-- it might print out the same percentile a
       // couple of times- but it's really nice for larger histograms.
-      val pvs = for (pv: HistogramIterationValue <- inner_histogram.percentiles(1)) yield {
-        s"${pv.getPercentile}%: ${pv.getValueIteratedTo}ms"
-      }
-      pvs.mkString(", ")
+      innerHistogram.get
+        .percentiles(1)
+        .asScala
+        .map { pv =>
+          s"${pv.getPercentile}%: ${pv.getValueIteratedTo}ms"
+        }
+        .mkString(", ")
     }
   }
 }

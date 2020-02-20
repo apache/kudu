@@ -481,7 +481,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       // timestamp on each executor.
       timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
       addForOperation(numRows, opType)
-      val elapsedTime = System.currentTimeMillis() - startTime
+      val elapsedTime = (System.currentTimeMillis() - startTime).toInt
       durationHistogram.add(elapsedTime)
       log.info(s"applied $numRows ${opType}s to table '$tableName' in ${elapsedTime}ms")
     }
