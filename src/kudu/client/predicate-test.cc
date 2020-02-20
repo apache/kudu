@@ -1290,9 +1290,9 @@ TEST_F(BloomFilterPredicateTest, TestBloomFilterPredicate) {
 
   const unordered_set<int32_t> empty_set;
   auto all_values = CreateRandomUniqueIntegers<int32_t>(kNumAllValues, empty_set, &rand);
+  auto min_max_pair = std::minmax_element(all_values.begin(), all_values.end());
   vector<int32_t> inclusive_values;
   ReservoirSample(all_values, kNumInclusiveValues, empty_set, &rand, &inclusive_values);
-  auto min_max_pair = std::minmax_element(inclusive_values.begin(), inclusive_values.end());
   auto* inclusive_bf = CreateBloomFilterWithValues(inclusive_values);
   auto exclusive_values = CreateRandomUniqueIntegers<int32_t>(kNumExclusiveValues, all_values,
                                                               &rand);
