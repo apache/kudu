@@ -31,6 +31,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/thrift/ha_client_metrics.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
@@ -48,6 +49,9 @@ class TProtocol;
 } // namespace apache
 
 namespace kudu {
+
+using rpc::ComputeExponentialBackoff;
+
 namespace thrift {
 
 // Options for a Thrift client connection.
@@ -251,14 +255,10 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
           if (PREDICT_TRUE(metrics_)) {
             metrics_->reconnections_failed->Increment();
           }
-          // Reconnect failed; retry with exponential backoff capped at 10s and
-          // fail the task. We don't bother with jitter here because only the
-          // leader master should be attempting this in any given period per
-          // cluster.
+          // Reconnect failed; retry with exponential backoff and fail the task.
           consecutive_reconnect_failures_++;
           reconnect_after_ = MonoTime::Now() +
-              std::min(MonoDelta::FromMilliseconds(100 << consecutive_reconnect_failures_),
-                       MonoDelta::FromSeconds(10));
+              ComputeExponentialBackoff(consecutive_reconnect_failures_);
           reconnect_failure_ = std::move(reconnect_status);
           return callback(reconnect_failure_);
         }
