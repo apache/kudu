@@ -26,7 +26,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES block_bloom_filter.proto)
 ADD_EXPORTABLE_LIBRARY(block_bloom_filter_proto
   SRCS ${BLOCK_BLOOM_FILTER_PROTO_SRCS}
-  DEPS protobuf
+  DEPS hash_proto pb_util_proto protobuf
   NONLINK_DEPS ${BLOCK_BLOOM_FILTER_PROTO_TGTS})
 
 #######################################

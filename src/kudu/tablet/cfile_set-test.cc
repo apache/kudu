@@ -267,12 +267,14 @@ class TestCFileSet : public KuduRowSetTest {
     return attr;
   }
 
-  static constexpr int kRatio[] = {2, 10, 100};
+  static const int kRatio[];
 
  protected:
   static const int32_t kNoBound;
   google::FlagSaver saver;
 };
+
+const int TestCFileSet::kRatio[] = {2, 10, 100};
 
 const int32_t TestCFileSet::kNoBound = kuint32max;
 
