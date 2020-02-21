@@ -101,7 +101,7 @@ DEFINE_string(time_source,
               TIME_SOURCE_NTP_SYNC_BUILTIN " the built-in NTP client is "
               "configured with dedicated NTP server(s) provided by the "
               "environment.");
-TAG_FLAG(time_source, evolving);
+TAG_FLAG(time_source, stable);
 DEFINE_validator(time_source, [](const char* flag_name, const string& value) {
   if (boost::iequals(value, TIME_SOURCE_AUTO) ||
       boost::iequals(value, TIME_SOURCE_NTP_SYNC_BUILTIN) ||

@@ -73,6 +73,7 @@ DEFINE_string(builtin_ntp_servers,
               "The NTP servers used by the built-in NTP client, in format "
               "<FQDN|IP>[:PORT]. These will only be used if the built-in NTP "
               "client is enabled (i.e. if setting --time_source=builtin).");
+TAG_FLAG(builtin_ntp_servers, stable);
 
 // In the 'Best practices' section, RFC 4330 states that 15 seconds is the
 // minimum allowed polling interval.
