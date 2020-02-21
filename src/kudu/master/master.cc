@@ -125,7 +125,7 @@ Master::Master(const MasterOptions& opts)
 }
 
 Master::~Master() {
-  CHECK_NE(kRunning, state_);
+  ShutdownImpl();
 }
 
 Status Master::Init() {
@@ -169,10 +169,9 @@ Status Master::Start() {
 Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-                                      Bind(&Master::CrashMasterOnDiskError, Unretained(this)));
+                                      Bind(&Master::CrashMasterOnDiskError));
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION,
-                                      Bind(&Master::CrashMasterOnCFileCorruption,
-                                           Unretained(this)));
+                                      Bind(&Master::CrashMasterOnCFileCorruption));
 
   RETURN_NOT_OK(maintenance_manager_->Start());
 
@@ -240,28 +239,6 @@ Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& 
                           s.ToString());
 }
 
-void Master::Shutdown() {
-  if (state_ == kRunning) {
-    const string name = rpc_server_->ToString();
-    LOG(INFO) << "Master@" << name << " shutting down...";
-
-    // 1. Stop accepting new RPCs.
-    UnregisterAllServices();
-
-    // 2. Shut down the master's subsystems.
-    init_pool_->Shutdown();
-    maintenance_manager_->Shutdown();
-    catalog_manager_->Shutdown();
-    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
-    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
-
-    // 3. Shut down generic subsystems.
-    KuduServer::Shutdown();
-    LOG(INFO) << "Master@" << name << " shutdown complete.";
-  }
-  state_ = kStopped;
-}
-
 Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
   if (!registration_initialized_.load(std::memory_order_acquire)) {
     return Status::ServiceUnavailable("Master startup not complete");
@@ -292,6 +269,28 @@ Status Master::InitMasterRegistration() {
   registration_initialized_.store(true);
 
   return Status::OK();
+}
+
+void Master::ShutdownImpl() {
+  if (kInitialized == state_ || kRunning == state_) {
+    const string name = rpc_server_->ToString();
+    LOG(INFO) << "Master@" << name << " shutting down...";
+
+    // 1. Stop accepting new RPCs.
+    UnregisterAllServices();
+
+    // 2. Shut down the master's subsystems.
+    init_pool_->Shutdown();
+    maintenance_manager_->Shutdown();
+    catalog_manager_->Shutdown();
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION);
+
+    // 3. Shut down generic subsystems.
+    KuduServer::Shutdown();
+    LOG(INFO) << "Master@" << name << " shutdown complete.";
+  }
+  state_ = kStopped;
 }
 
 void Master::CrashMasterOnDiskError(const string& uuid) {

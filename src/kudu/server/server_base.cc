@@ -449,7 +449,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
 }
 
 ServerBase::~ServerBase() {
-  Shutdown();
+  ShutdownImpl();
 }
 
 Sockaddr ServerBase::first_rpc_address() const {
@@ -723,6 +723,35 @@ void ServerBase::ExcessLogFileDeleterThread() {
   }
 }
 
+void ServerBase::ShutdownImpl() {
+  // First, stop accepting incoming requests and wait for any outstanding
+  // requests to finish processing.
+  //
+  // Note: prior to Messenger::Shutdown, it is assumed that any incoming RPCs
+  // deferred from reactor threads have already been cleaned up.
+  if (web_server_) {
+    web_server_->Stop();
+  }
+  rpc_server_->Shutdown();
+  if (messenger_) {
+    messenger_->Shutdown();
+  }
+
+  // Next, shut down remaining server components.
+  stop_background_threads_latch_.CountDown();
+  if (diag_log_) {
+    diag_log_->Stop();
+  }
+  if (excess_log_deleter_thread_) {
+    excess_log_deleter_thread_->Join();
+  }
+#ifdef TCMALLOC_ENABLED
+  if (tcmalloc_memory_gc_thread_) {
+    tcmalloc_memory_gc_thread_->Join();
+  }
+#endif
+}
+
 #ifdef TCMALLOC_ENABLED
 Status ServerBase::StartTcmallocMemoryGcThread() {
   return Thread::Create("server", "tcmalloc-memory-gc", &ServerBase::TcmallocMemoryGcThread,
@@ -772,35 +801,6 @@ Status ServerBase::Start() {
   start_time_ = WallTime_Now();
 
   return Status::OK();
-}
-
-void ServerBase::Shutdown() {
-  // First, stop accepting incoming requests and wait for any outstanding
-  // requests to finish processing.
-  //
-  // Note: prior to Messenger::Shutdown, it is assumed that any incoming RPCs
-  // deferred from reactor threads have already been cleaned up.
-  if (web_server_) {
-    web_server_->Stop();
-  }
-  rpc_server_->Shutdown();
-  if (messenger_) {
-    messenger_->Shutdown();
-  }
-
-  // Next, shut down remaining server components.
-  stop_background_threads_latch_.CountDown();
-  if (diag_log_) {
-    diag_log_->Stop();
-  }
-  if (excess_log_deleter_thread_) {
-    excess_log_deleter_thread_->Join();
-  }
-#ifdef TCMALLOC_ENABLED
-  if (tcmalloc_memory_gc_thread_) {
-    tcmalloc_memory_gc_thread_->Join();
-  }
-#endif
 }
 
 void ServerBase::UnregisterAllServices() {

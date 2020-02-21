@@ -141,7 +141,9 @@ class ServerBase {
   virtual Status Start();
 
   // Shuts down the server.
-  virtual void Shutdown();
+  virtual void Shutdown() {
+    ShutdownImpl();
+  }
 
   // Registers a new RPC service. Once Start() is called, the server will
   // process and dispatch incoming RPCs belonging to this service.
@@ -216,6 +218,11 @@ class ServerBase {
   // Start thread to remove excess glog and minidump files.
   Status StartExcessLogFileDeleterThread();
   void ExcessLogFileDeleterThread();
+
+  // A method for internal use in the destructor. Some static code analyzers
+  // issue a warning if calling a virtual function from destructor even if it's
+  // safe in a particular case.
+  void ShutdownImpl();
 
 #ifdef TCMALLOC_ENABLED
   // Start thread to GC tcmalloc allocated memory.

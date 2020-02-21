@@ -60,9 +60,11 @@ class Master : public kserver::KuduServer {
   explicit Master(const MasterOptions& opts);
   ~Master();
 
-  virtual Status Init() override;
-  virtual Status Start() override;
-  virtual void Shutdown() override;
+  Status Init() override;
+  Status Start() override;
+  void Shutdown() override {
+    ShutdownImpl();
+  }
 
   Status StartAsync();
   Status WaitForCatalogManagerInit() const;
@@ -106,10 +108,10 @@ class Master : public kserver::KuduServer {
   Status GetMasterHostPorts(std::vector<HostPortPB>* hostports) const;
 
   // Crash the master on disk error.
-  void CrashMasterOnDiskError(const std::string& uuid);
+  static void CrashMasterOnDiskError(const std::string& uuid);
 
   // Crash the master on CFile corruption.
-  void CrashMasterOnCFileCorruption(const std::string& tablet_id);
+  static void CrashMasterOnCFileCorruption(const std::string& tablet_id);
 
   bool IsShutdown() const {
     return state_ == kStopped;
@@ -128,6 +130,11 @@ class Master : public kserver::KuduServer {
   // Initialize registration_.
   // Requires that the web server and RPC server have been started.
   Status InitMasterRegistration();
+
+  // A method for internal use in the destructor. Some static code analyzers
+  // issue a warning if calling a virtual function from destructor even if it's
+  // safe in a particular case.
+  void ShutdownImpl();
 
   enum MasterState {
     kStopped,

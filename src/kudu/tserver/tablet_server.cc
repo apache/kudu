@@ -64,7 +64,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
 }
 
 TabletServer::~TabletServer() {
-  Shutdown();
+  ShutdownImpl();
 }
 
 Status TabletServer::Init() {
@@ -148,7 +148,7 @@ Status TabletServer::Start() {
   return Status::OK();
 }
 
-void TabletServer::Shutdown() {
+void TabletServer::ShutdownImpl() {
   if (kInitialized == state_ || kRunning == state_) {
     const string name = rpc_server_->ToString();
     LOG(INFO) << "TabletServer@" << name << " shutting down...";

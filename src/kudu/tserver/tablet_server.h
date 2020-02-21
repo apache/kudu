@@ -55,13 +55,15 @@ class TabletServer : public kserver::KuduServer {
   // Some initialization tasks are asynchronous, such as the bootstrapping
   // of tablets. Caller can block, waiting for the initialization to fully
   // complete by calling WaitInited().
-  virtual Status Init() override;
+  Status Init() override;
 
   // Waits for the tablet server to complete the initialization.
   Status WaitInited();
 
   Status Start() override;
-  void Shutdown() override;
+  void Shutdown() override {
+    ShutdownImpl();
+  }
 
   std::string ToString() const;
 
@@ -99,6 +101,11 @@ class TabletServer : public kserver::KuduServer {
     kInitialized,
     kRunning
   };
+
+  // A method for internal use in the destructor. Some static code analyzers
+  // issue a warning if calling a virtual function from destructor even if it's
+  // safe in a particular case.
+  void ShutdownImpl();
 
   TabletServerState state_;
 

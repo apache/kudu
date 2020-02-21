@@ -51,13 +51,13 @@ class KuduServer : public server::ServerBase {
 
   // Finalizes the initialization of a KuduServer by performing any member
   // initializations that may fail.
-  virtual Status Init() override;
+  Status Init() override;
 
   // Exposes an initialized KuduServer to the network or filesystem.
-  virtual Status Start() override;
+  Status Start() override;
 
   // Shuts down a KuduServer instance.
-  virtual void Shutdown() override;
+  void Shutdown() override;
 
   ThreadPool* tablet_prepare_pool() const { return tablet_prepare_pool_.get(); }
   ThreadPool* tablet_apply_pool() const { return tablet_apply_pool_.get(); }
