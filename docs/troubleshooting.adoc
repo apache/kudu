@@ -105,7 +105,6 @@ link:administration.html#change_dir_config[Changing Directory Configurations] do
 
 [[ntp]]
 === NTP Clock Synchronization
-
 The local clock of the machine where Kudu master or tablet server is running
 must be synchronized using the Network Time Protocol (NTP) if using the `system`
 time source. The time source is controlled by the `--time_source` flag and
@@ -136,10 +135,31 @@ or
 Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).
 ----
 
-==== Installing NTP-related Packages
+In this and following NTP-related paragraphs, when talking about the
+'synchronization' with true time using NTP, we are referring to a couple of
+things:
+- the synchronization status of the NTP server which drives the local clock
+  of the machine
+- the synchronization status of the local machine's clock itself as reported
+  by the kernel's NTP discipline
 
-Kudu has been well tested to work on machines whose clock is synchronized with
-`ntpd`, the NTP server from ubiquitous NTP suite.
+The former can be retrieved using the `ntpstat`, `ntpq`, and `ntpdc` utilities
+if using `ntpd` (they are included in the `ntp` package) or the `chronyc`
+utility if using `chronyd` (that's a part of the `chrony` package). The latter
+can be retrieved using either the `ntptime` utility (the `ntptime` utility is
+also a part of the `ntp` package) or the `chronyc` utility if using `chronyd`.
+For more information, see the manual pages of the mentioned utilities and the
+paragraphs below.
+
+==== NTP-related Packages
+For a long time, `ntpd` has been the recommended NTP server to use on Kudu
+nodes to synchronize local machines' clocks. Newer releases of Linux OS offer
+`chronyd` as an alternative to `ntpd` for network time synchronization. Both
+have been tested and proven to provide necessary functionality for clock
+synchronisation in a Kudu cluster.
+
+===== Installing And Running `ntpd`
+`ntpd` is the NTP server from the ubiquitous `ntp` suite.
 
 To install `ntpd` and other NTP-related utilities, use the appropriate command
 for your operating system:
@@ -165,18 +185,33 @@ delay of the machine's local clock with the true time. The smaller the offset
 between local machine's clock and the true time, the faster the NTP server can
 synchronize the clock.
 
-When talking about the 'synchronization' with true time using NTP, we are
-referring to a couple of things:
-- the synchronization status of the NTP server which drives the local clock
-  of the machine
-- the synchronization status of the local machine's clock itself as reported
-  by the kernel's NTP discipline
+When running `ntpdate`, make sure the tool reports success: check its exit
+status and output. In case of issues connecting to the NTP servers, make sure
+NTP traffic is not being blocked by a firewall (NTP generates UDP traffic on
+port 123 by default) or other network connectivity issue.
 
-The former can be retrieved using the `ntpstat`, `ntpq`, and `ntpdc` utilities
-(they are included in the `ntp` package). The latter can be retrieved using the
-`ntptime` utility (the `ntptime` utility is also a part of the `ntp` package).
-For more information, see the manual pages of the mentioned utilities and
-the paragraph below.
+Below are a few examples of configuration files for `ntpd`. By default, `ntpd`
+uses `/etc/ntp.conf` configuration file.
+
+----
+# Use my organization's internal NTP server (server in a local network).
+server ntp1.myorg.internal iburst maxpoll 7
+# Add servers from the NTP public pool for redundancy and robustness.
+server 0.pool.ntp.org iburst maxpoll 8
+server 1.pool.ntp.org iburst maxpoll 8
+server 2.pool.ntp.org iburst maxpoll 8
+server 3.pool.ntp.org iburst maxpoll 8
+----
+
+----
+# AWS case: use dedicated NTP server available via link-local IP address.
+server 169.254.169.123 iburst
+----
+
+----
+# GCE case: use dedicated NTP server available from within cloud instance.
+server metadata.google.internal iburst
+----
 
 Sometimes it takes too long to synchronize the machine's local clock with the
 true time even if the `ntpstat` utility reports that the NTP daemon is
@@ -207,8 +242,7 @@ More information on best practices and examples of practical resolution of
 various NTP synchronization issues can be found found at
 link:https://www.redhat.com/en/blog/avoiding-clock-drift-vms[clock-drift]
 
-====  Monitoring Clock Synchronization Status
-
+===== Monitoring Clock Synchronization Status With The `ntp` Suite
 When the `ntp` package is installed, you can monitor the synchronization status
 of the machine's clock by running `ntptime`. For example, a system
 with a local clock that is synchronized may report:
@@ -301,37 +335,186 @@ $ ntpq -nc opeers
 TIP: Both `lpeers` and `opeers` may be helpful as `lpeers` lists refid and
 jitter, while `opeers` lists clock dispersion.
 
-==== Using `chrony` for Time Synchronization
 
-Some operating systems offer `chronyd` as an alternative to `ntpd` for network
-time synchronization (the OS package is called `chrony` and contains both the
-NTP server `chronyd` and the `chronyc` utility).
+===== Installing And Running `chronyd`
+Kudu has been tested and is supported on machines whose local clock is
+synchronized with NTP using `chronyd` version 3.2 and newer.
 
-If using `chronyd` for time synchronization at Kudu nodes, the `rtcsync` option
-must be enabled in `chrony.conf`. Without `rtcsync`, the local machine's clock
-will always be reported as unsynchronized and Kudu masters and tablet servers
-will not be able to start. The following
+The OS package is called `chrony` and contains both the NTP server `chronyd`
+and the `chronyc` command line utility. To install the `chronyd` NTP server
+and other utilities, use the appropriate command for your operating system:
+
+[cols="1,1", options="header"]
+|===
+| OS | Command
+| Debian/Ubuntu | `sudo apt-get install chrony`
+| RHEL/CentOS | `sudo yum install chrony`
+|===
+
+If `chronyd` is installed but not yet running, start it using one of these
+commands (don't forget to run `chronyd -q` first):
+[cols="1,1", options="header"]
+|===
+| OS | Command
+| Debian/Ubuntu | `sudo service chrony restart`
+| RHEL/CentOS | `sudo service chronyd restart`
+|===
+
+By default, `chronyd` uses `/etc/chrony.conf` configuration file. The `rtcsync`
+option must be enabled in `chrony.conf`. Without `rtcsync`, the local machine's
+clock will always be reported as unsynchronized and Kudu masters and tablet
+servers will not be able to start. The following
 link:https://github.com/mlichvar/chrony/blob/994409a03697b8df68115342dc8d1e7ceeeb40bd/sys_timex.c#L162-L166[code]
 explains the observed behavior of `chronyd` when setting the synchronization
-status of the clock on Linux.
+status of the local clock on Linux.
 
-[NOTE]
-====
-Kudu has been tested most thoroughly using `ntpd` and using `chronyd` is
-viable as well, but it's still considered experimental at this time. Check out
-link:https://issues.apache.org/jira/browse/KUDU-2573[KUDU-2573] for status
-updates and more information on this topic.
-====
+As verified at RHEL7.5/CentOS7.5 with `chronyd` 3.2 and newer, the default
+configuration file is good enough to satisfy Kudu requirements for the system
+clock if running on a machine that has Internet access.
+
+An link:https://chrony.tuxfamily.org/faq.html#_what_is_the_minimum_recommended_configuration_for_an_ntp_client[example of a minimum viable configuration] for `chronyd` is:
+
+----
+pool pool.ntp.org iburst
+driftfile /var/lib/chrony/drift
+makestep 1 3
+rtcsync
+----
+
+===== Monitoring Clock Synchronization Status With The `chrony` Suite
+When the `chrony` package is installed, you can monitor the synchronization
+status of the machine's clock by running `chronyc tracking` (add `-n` option
+if no resolution of IP addresses back to FQDNs is desired:
+`chronyc -n tracking`).
+
+For example, a system where `chronyd` hasn't synchronized the local clock yet
+may report something like the following:
+
+----
+Reference ID    : 00000000 ()
+Stratum         : 0
+Ref time (UTC)  : Thu Jan 01 00:00:00 1970
+System time     : 0.000000000 seconds fast of NTP time
+Last offset     : +0.000000000 seconds
+RMS offset      : 0.000000000 seconds
+Frequency       : 69.422 ppm slow
+Residual freq   : +0.000 ppm
+Skew            : 0.000 ppm
+Root delay      : 1.000000000 seconds
+Root dispersion : 1.000000000 seconds
+Update interval : 0.0 seconds
+Leap status     : Not synchronised
+----
+
+A system with its local clock already synchronized may report:
+
+----
+Reference ID    : A9FEA9FE (169.254.169.254)
+Stratum         : 3
+Ref time (UTC)  : Tue Mar 03 06:33:23 2020
+System time     : 0.000011798 seconds fast of NTP time
+Last offset     : +0.000014285 seconds
+RMS offset      : 0.001493311 seconds
+Frequency       : 69.417 ppm slow
+Residual freq   : +0.000 ppm
+Skew            : 0.006 ppm
+Root delay      : 0.000786347 seconds
+Root dispersion : 0.000138749 seconds
+Update interval : 1036.7 seconds
+Leap status     : Normal
+----
+
+Note the following important pieces of output:
+
+- `Root delay`: the total of the network path delays (round trips)
+  to the Stratum 1 server with which this `chronyd` instance is synchronized.
+- `Root dispersion`: the total dispersion accumulated through all the paths up
+  to the Stratum 1 server with which this `chronyd` instance is synchronized.
+- `Leap status`: whether the local clock is synchronized with the true time
+  up to the maximum error (see below). The `Normal` status means the clock is
+  synchronized, and `Not synchronised` naturally means otherwise.
+
+An absolute bound on the error of the clock maintained internally by `chronyd`
+at the time of the last NTP update can be expressed as:
+
+----
+clock_error <= abs(last_offset) + (root_delay / 2) + root_dispersion
+----
+
+`chronyc sources` reports on the list of reference NTP servers:
+
+----
+210 Number of sources = 4
+MS Name/IP address         Stratum Poll Reach LastRx Last sample
+===============================================================================
+^* 169.254.169.254               2  10   377   371   +240us[ +254us] +/-  501us
+^- 64.62.190.177                 3  11   377   102  +1033us[+1033us] +/-   81ms
+^- 64.246.132.14                 1  11   377   129   +323us[ +323us] +/-   16ms
+^- 184.105.182.16                2  10   377   130  -4719us[-4719us] +/-   55ms
+----
+
+To get more details on the measurement stats for reference NTP servers use
+`chronyc sourcestats`:
+
+----
+210 Number of sources = 4
+Name/IP Address            NP  NR  Span  Frequency  Freq Skew  Offset  Std Dev
+==============================================================================
+169.254.169.254            46  27  323m     +0.000      0.006    +72ns    68us
+64.62.190.177              12  10  224m     +0.071      0.050  +1240us   154us
+64.246.132.14              21  13  326m     +0.012      0.030   +434us   230us
+184.105.182.16              6   3   86m     +0.252      0.559  -5097us   306us
+----
+
+Use `chronyc ntpdata [server]` to get information on a particular reference
+server (or all servers if the `server` parameter is omitted):
+
+----
+Remote address  : 169.254.169.254 (A9FEA9FE)
+Remote port     : 123
+Local address   : 172.31.113.1 (AC1F7101)
+Leap status     : Normal
+Version         : 4
+Mode            : Server
+Stratum         : 2
+Poll interval   : 10 (1024 seconds)
+Precision       : -20 (0.000000954 seconds)
+Root delay      : 0.000229 seconds
+Root dispersion : 0.000107 seconds
+Reference ID    : 474F4F47 ()
+Reference time  : Tue Mar 03 06:33:24 2020
+Offset          : -0.000253832 seconds
+Peer delay      : 0.000557465 seconds
+Peer dispersion : 0.000000987 seconds
+Response time   : 0.000000001 seconds
+Jitter asymmetry: +0.50
+NTP tests       : 111 111 1111
+Interleaved     : No
+Authenticated   : No
+TX timestamping : Daemon
+RX timestamping : Kernel
+Total TX        : 50
+Total RX        : 50
+Total valid RX  : 50
+----
+
+For troubleshooting tips on clock synchronisation with chronyd see
+link:https://chrony.tuxfamily.org/faq.html#_computer_is_not_synchronising[this
+useful guide].
 
 ==== NTP Configuration Best Practices
-
 In order to provide stable time synchronization with low maximum error, follow
 these best NTP configuration best practices.
 
-*Run ntpdate prior to running NTP server.* If the offset of the local
-clock is too far from the true time, it can take a long time before the NTP
-server synchronizes the local clock, even if it's allowed to perform step
-adjustments.
+*Run `ntpdate` (or its alternatives `ntpd -q` or `chronyd -q` in case of chrony)
+prior to running the NTP server.* If the offset of the local clock is too far
+from the true time, it can take a long time before the NTP server synchronizes
+the local clock, even if it's allowed to perform step adjustments. So, after
+configuring `ntpd` or `chronyd`, first run the `ntpdate` tool with the same set
+of NTP servers or run `ntpd -q/chronyd -q`. It's assumed that the NTP server
+is not running when `ntpdate/ntpd -q/chronyd -q` is run. On RHEL/CentOS, if
+using the `ntp` suite, enable the `ntpdate` service; if using the `chrony`
+suite, enable the `chrony-wait` service.
 
 *In certain public cloud environments, use the highly-available NTP server
 accessible via link-local IP address or other dedicated NTP server provided
@@ -348,63 +531,34 @@ NTP is designed to increase its accuracy with a diversity of sources in networks
 with higher round-trip times and jitter.
 
 *Use the `iburst` option for faster synchronization at startup*. The `iburst`
-option instructs `ntpd` to send an initial "burst" of time queries at startup.
-This results in a faster synchronization of the `ntpd` with its reference
-servers upon startup.
+option instructs the NTP server (both `ntpd` and `chronyd`) to send an initial
+"burst" of time queries at startup.  This results in a faster synchronization
+of the `ntpd/chronyd` with their reference servers upon startup.
 
 *If the maximum clock error goes beyond the default threshold set by Kudu
 (10 seconds), consider setting lower value for the `maxpoll` option for every
-NTP server in `ntp.conf`*. For example, consider setting the `maxpoll` to 7
-which will cause the NTP daemon to make requests to the corresponding NTP
-server at least every 128 seconds. The default maximum poll interval is 10
-(1024 seconds).
+NTP server in `ntp.conf/chrony.conf`*. For example, consider setting the
+`maxpoll` to 7 which will cause the NTP daemon to make requests to the
+corresponding NTP server at least every 128 seconds. The default maximum poll
+interval is 10 (1024 seconds) for both `ntpd` and `chronyd`.
 
 [NOTE]
 ====
 If using custom `maxpoll` interval, don't set `maxpoll` too low (e.g., lower
 than 6) to avoid flooding NTP servers, especially the public ones. Otherwise
-they may blacklist the client (i.e. the `ntpd` daemon at your machine) and cease
-providing NTP service at all. If in doubt, consult the `ntp.conf` manual page.
+they may blacklist the client (i.e. the NTP daemon at your machine) and cease
+providing NTP service at all. If in doubt, consult the `ntp.conf` or
+`chrony.conf` manual page correspondingly.
 ====
 
-A few examples of `ntpd` configuration files:
-
-----
-# Use my organization's internal NTP server (server in a local network).
-server ntp1.myorg.internal iburst maxpoll 7
-# Add servers from the NTP public pool for redundancy and robustness.
-server 0.pool.ntp.org iburst maxpoll 8
-server 1.pool.ntp.org iburst maxpoll 8
-server 2.pool.ntp.org iburst maxpoll 8
-server 3.pool.ntp.org iburst maxpoll 8
-----
-
-----
-# AWS case: use dedicated NTP server available via link-local IP address.
-server 169.254.169.123 iburst
-----
-
-----
-# GCE case: use dedicated NTP server available from within cloud instance.
-server metadata.google.internal iburst
-----
-
-TIP: After configuring `ntpd`, first run the `ntpdate` tool with the same set
-of NTP servers (it's assumed that `ntpd` is not running when the `ntpdate` tool
-is run). Make sure the tool reports success: check its exit status and output.
-In case of issues connecting to the NTP servers, make sure NTP traffic is not
-being blocked by a firewall (NTP generates UDP traffic on port 123 by default)
-or other network connectivity issue. Then start the `ntpd` daemon and use the
-`ntpq` tool described above to verify that the NTP daemon is able to connect
-to its reference servers.
 
 ==== Troubleshooting NTP Stability Problems
 
-As of Kudu 1.6.0, Kudu daemons are able to continue to operate during a brief
-loss of clock synchronization. If clock synchronization is lost for several
-hours, daemons may crash. If a daemon crashes due to clock synchronization
-issues, consult the `ERROR` log for a dump of related information which may
-help to diagnose the issue.
+As of Kudu 1.6.0, both `kudu-master` and `kudu-tserver` are able to continue to
+operate during a brief loss of clock synchronization. If clock synchronization
+is lost for several hours, they may crash. If `kudu-master` or `kudu-tserver`
+process crashes due to clock synchronization issues, consult the `ERROR` log
+for a dump of related information which may help to diagnose the issue.
 
 TIP: Kudu 1.5.0 and earlier versions were less resilient to brief NTP outages. In
 addition, they contained a link:https://issues.apache.org/jira/browse/KUDU-2209[bug]
@@ -413,12 +567,14 @@ crashes. If you experience crashes related to clock synchronization on these
 earlier versions of Kudu and it appears that the system's NTP configuration
 is correct, consider upgrading to Kudu 1.6.0 or later.
 
-TIP: If using other than link-local NTP server, it may take some time for `ntpd`
-to synchronize with one of its reference servers in case of network connectivity
-issues. In case of a spotty network between the machine and the reference NTP
-servers, `ntpd` may become unsynchronized with its reference NTP servers. If
-that happens, consider finding other set of reference NTP servers: the best
-bet is to use NTP servers in the local network or *.pool.ntp.org servers.
+TIP: If using other than link-local NTP servers, it may take some time for the
+NTP server running on a local machine to synchronize with one of its reference
+servers in case of network connectivity issues. In case of a spotty network
+between the machine and the reference NTP servers, `ntpd/chronyd` may become
+unsynchronized with its reference NTP servers. If that happens, consider finding
+other set of reference NTP servers: the best bet is to use NTP servers in the
+local network or *.pool.ntp.org servers.
+
 
 [[disk_space_usage]]
 == Disk Space Usage
