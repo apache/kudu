@@ -220,7 +220,7 @@ public class TestKuduSession {
    * can end up giving ConvertBatchToListOfResponsesCB a list with nulls if a tablet was already
    * flushed. Only happens with multiple tablets.
    */
-  @Test(timeout = 10000)
+  @Test(timeout = 100000)
   public void testConcurrentFlushes() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
     int numTablets = 4;
