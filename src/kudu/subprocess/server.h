@@ -37,6 +37,7 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
@@ -234,8 +235,8 @@ class SubprocessServer {
   // Next request ID to be assigned.
   std::atomic<CallId> next_id_;
 
-  // Set to true if the server is shutting down.
-  std::atomic<bool> closing_;
+  // Latch used to indicate that the server is shutting down.
+  CountDownLatch closing_;
 
   // The underlying subprocess.
   std::shared_ptr<Subprocess> process_;

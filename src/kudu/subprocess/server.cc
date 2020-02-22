@@ -87,7 +87,7 @@ namespace subprocess {
 SubprocessServer::SubprocessServer(vector<string> subprocess_argv)
     : call_timeout_(MonoDelta::FromSeconds(FLAGS_subprocess_timeout_secs)),
       next_id_(1),
-      closing_(false),
+      closing_(1),
       process_(make_shared<Subprocess>(std::move(subprocess_argv))),
       outbound_call_queue_(FLAGS_subprocess_request_queue_size_bytes),
       inbound_response_queue_(FLAGS_subprocess_response_queue_size_bytes) {
@@ -137,11 +137,10 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
 
 void SubprocessServer::Shutdown() {
   // Stop further work from happening by killing the subprocess and shutting
-  // down the queues. We do the atomic exchange to avoid multiple threads
-  // racing on Shutdown.
-  // NOTE: compare_exchange_strong() takes a references as its first arg.
-  bool false_ref = false;
-  if (!closing_.compare_exchange_strong(false_ref, true)) {
+  // down the queues.
+  if (!closing_.CountDown()) {
+    // We may shut down out-of-band in tests; if we've already shut down,
+    // there's nothing left to do.
     return;
   }
   // NOTE: ordering isn't too important as long as we shut everything down.
@@ -172,13 +171,13 @@ void SubprocessServer::Shutdown() {
 
 void SubprocessServer::ReceiveMessagesThread() {
   DCHECK(message_protocol_) << "message protocol is not initialized";
-  while (!closing_.load()) {
+  while (closing_.count() > 0) {
     // Receive a new response from the subprocess.
     SubprocessResponsePB response;
     Status s = message_protocol_->ReceiveMessage(&response);
     if (s.IsEndOfFile()) {
       // The underlying pipe was closed. We're likely shutting down.
-      DCHECK(closing_);
+      DCHECK_EQ(0, closing_.count());
       return;
     }
     // TODO(awong): getting an error here indicates that this server and the
@@ -189,7 +188,7 @@ void SubprocessServer::ReceiveMessagesThread() {
     WARN_NOT_OK(s, "failed to receive response from the subprocess");
     if (s.ok() && !inbound_response_queue_.BlockingPut(response)) {
       // The queue has been shut down and we should shut down too.
-      DCHECK(closing_);
+      DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "failed to put response onto inbound queue";
       return;
     }
@@ -229,12 +228,13 @@ void SubprocessServer::ResponderThread() {
     // already been called by the deadline checker.
   } while (s.ok());
   DCHECK(s.IsAborted());
-  DCHECK(closing_);
+  DCHECK_EQ(0, closing_.count());
   LOG(INFO) << "get failed, inbound queue shut down: " << s.ToString();
 }
 
 void SubprocessServer::CheckDeadlinesThread() {
-  while (!closing_.load()) {
+  while (!closing_.WaitFor(
+      MonoDelta::FromMilliseconds(FLAGS_subprocess_deadline_checking_interval_ms))) {
     MonoTime now = MonoTime::Now();
     vector<shared_ptr<SubprocessCall>> timed_out_calls;
     {
@@ -259,7 +259,6 @@ void SubprocessServer::CheckDeadlinesThread() {
     for (const auto& call : timed_out_calls) {
       call->RespondError(Status::TimedOut("timed out while in flight"));
     }
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_subprocess_deadline_checking_interval_ms));
   }
 }
 
@@ -287,7 +286,7 @@ void SubprocessServer::SendMessagesThread() {
     }
   } while (s.ok());
   DCHECK(s.IsAborted());
-  DCHECK(closing_);
+  DCHECK_EQ(0, closing_.count());
   LOG(INFO) << "outbound queue shut down: " << s.ToString();
 }
 
@@ -309,7 +308,8 @@ Status SubprocessServer::QueueCall(const shared_ptr<SubprocessCall>& call) {
         if (MonoTime::Now() > call->deadline()) {
           return Status::TimedOut("timed out trying to queue call");
         }
-        SleepFor(MonoDelta::FromMilliseconds(FLAGS_subprocess_queue_full_retry_ms));
+        closing_.WaitFor(
+            MonoDelta::FromMilliseconds(FLAGS_subprocess_queue_full_retry_ms));
       }
     }
   } while (true);

@@ -38,12 +38,13 @@ class CountDownLatch {
 
   // Decrement the count of this latch by 'amount'
   // If the new count is less than or equal to zero, then all waiting threads are woken up.
-  // If the count is already zero, this has no effect.
-  void CountDown(int amount) {
+  // If the count is already zero, this has no effect and this returns false.
+  // Otherwise, returns true.
+  bool CountDown(int amount) {
     DCHECK_GE(amount, 0);
     MutexLock lock(lock_);
     if (count_ == 0) {
-      return;
+      return false;
     }
 
     if (amount >= count_) {
@@ -56,13 +57,15 @@ class CountDownLatch {
       // Latch has triggered.
       cond_.Broadcast();
     }
+    return true;
   }
 
   // Decrement the count of this latch.
   // If the new count is zero, then all waiting threads are woken up.
-  // If the count is already zero, this has no effect.
-  void CountDown() {
-    CountDown(1);
+  // If the count is already zero, this has no effect and this returns false.
+  // Otherwise, returns true.
+  bool CountDown() {
+    return CountDown(1);
   }
 
   // Wait until the count on the latch reaches zero.
