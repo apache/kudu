@@ -19,6 +19,7 @@ set(MINI_CLUSTER_SRCS
   external_mini_cluster.cc
   internal_mini_cluster.cc
   mini_cluster.cc
+  webui_checker.cc
 )
 
 set(MINI_CLUSTER_LIBS

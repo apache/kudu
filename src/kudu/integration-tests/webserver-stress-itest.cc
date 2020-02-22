@@ -23,9 +23,9 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/webui_checker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

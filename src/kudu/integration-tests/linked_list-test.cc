@@ -39,7 +39,6 @@
 
 #include <boost/bind.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -53,6 +52,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/mini-cluster/webui_checker.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
