@@ -187,6 +187,7 @@ DEFINE_validator(builtin_ntp_client_bind_address,
 //   http://support.ntp.org/bin/view/Support/NTPRelatedDefinitions
 //
 // Revelant RFC references:
+//   https://tools.ietf.org/html/rfc7822 (updates RFC 5905)
 //   https://tools.ietf.org/html/rfc5905
 //   https://tools.ietf.org/html/rfc4330 (obsoleted by RFC 5905)
 struct BuiltInNtp::NtpPacket {
@@ -727,8 +728,22 @@ bool BuiltInNtp::TryReceivePacket() {
     p->server->InvalidatePacket();
   });
 
-  if (resp.version_number() < kMinNtpVersion ||
-      resp.version_number() > kNtpVersion) {
+  // Basic validation on the NTP version (VN field): it should not be less than
+  // 1 as per RFC 4330, Section 5. SNTP Client Operations:
+  //
+  //   NTP and SNTP clients set the mode field to 3 (client) for unicast and
+  //   manycast requests.  They set the VN field to any version number that
+  //   is supported by the server, selected by configuration or discovery,
+  //   and that can interoperate with all previous version NTP and SNTP
+  //   servers.  Servers reply with the same version as the request, so the
+  //   VN field of the request also specifies the VN field of the reply.  A
+  //   prudent SNTP client can specify the earliest acceptable version on
+  //   the expectation that any server of that or a later version will
+  //   respond.  NTP Version 3 (RFC 1305) and Version 2 (RFC 1119) servers
+  //   accept all previous versions, including Version 1 (RFC 1059).  Note
+  //   that Version 0 (RFC 959) is no longer supported by current and future
+  //   NTP and SNTP servers.
+  if (resp.version_number() < kMinNtpVersion) {
     VLOG(1) << Substitute("$0: unexpected protocol version in response packet "
                           "from NTP server at $1",
                           resp.version_number(), from_server.ToString());
