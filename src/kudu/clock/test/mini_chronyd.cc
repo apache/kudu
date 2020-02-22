@@ -242,6 +242,20 @@ Status MiniChronyd::Stop() {
   return proc->KillAndWait(SIGTERM);
 }
 
+Status MiniChronyd::Pause() {
+  if (!process_) {
+    return Status::IllegalState("chronyd is not running");
+  }
+  return process_->Kill(SIGSTOP);
+}
+
+Status MiniChronyd::Resume() {
+  if (!process_) {
+    return Status::IllegalState("chronyd is not running");
+  }
+  return process_->Kill(SIGCONT);
+}
+
 Status MiniChronyd::GetServerStats(ServerStats* stats) const {
   static const string kNtpPacketsKey = "NTP packets received";
   static const string kCmdPacketsKey = "Command packets received";

@@ -203,6 +203,12 @@ class MiniChronyd {
   // Stop the mini chronyd.
   Status Stop() WARN_UNUSED_RESULT;
 
+  // Sends SIGSTOP signal to the underlying chronyd.
+  Status Pause() WARN_UNUSED_RESULT;
+
+  // Sends SIGCONT signal to the underlying chronyd.
+  Status Resume() WARN_UNUSED_RESULT;
+
   // Get NTP server statistics as output by 'chronyc serverstats'.
   Status GetServerStats(ServerStats* stats) const;
 
