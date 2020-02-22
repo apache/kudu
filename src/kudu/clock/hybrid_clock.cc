@@ -18,6 +18,7 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -73,6 +74,12 @@ DEFINE_bool(use_hybrid_clock, true,
             "Whether HybridClock should be used as the default clock "
             "implementation. This should be disabled for testing purposes only.");
 TAG_FLAG(use_hybrid_clock, hidden);
+
+DEFINE_int32(hybrid_clock_inject_init_delay_ms, 0,
+             "If enabled, injects the given number of milliseconds delay into "
+             "HybridClock::Init(). For testing only!");
+TAG_FLAG(hybrid_clock_inject_init_delay_ms, hidden);
+TAG_FLAG(hybrid_clock_inject_init_delay_ms, unsafe);
 
 // Use the 'system' time source by default in standard (non-test) environment.
 // This requires local machine clock to be NTP-synchronized.
@@ -165,13 +172,15 @@ METRIC_DEFINE_gauge_bool(server, hybrid_clock_extrapolating,
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_error,
                            "Hybrid Clock Error",
                            kudu::MetricUnit::kMicroseconds,
-                           "Server clock maximum error",
+                           "Server clock maximum error; returns 2^64-1 when "
+                           "unable to read the underlying clock",
                            kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
                            kudu::MetricUnit::kMicroseconds,
-                           "Hybrid clock timestamp",
+                           "Hybrid clock timestamp; returns 2^64-1 when "
+                           "unable to read the underlying clock",
                            kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_histogram(server, hybrid_clock_max_errors,
@@ -223,14 +232,6 @@ HybridClock::HybridClock(const scoped_refptr<MetricEntity>& metric_entity)
       METRIC_hybrid_clock_extrapolation_intervals.Instantiate(metric_entity_);
   extrapolating_ = metric_entity_->FindOrCreateGauge(
       &METRIC_hybrid_clock_extrapolating, false, MergeType::kMax);
-  METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
-      metric_entity_,
-      Bind(&HybridClock::NowForMetrics, Unretained(this)))->
-          AutoDetachToLastValue(&metric_detacher_);
-  METRIC_hybrid_clock_error.InstantiateFunctionGauge(
-      metric_entity_,
-      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))->
-          AutoDetachToLastValue(&metric_detacher_);
 }
 
 Status HybridClock::Init() {
@@ -245,15 +246,15 @@ Status HybridClock::Init() {
 
 Timestamp HybridClock::Now() {
   Timestamp now;
-  uint64_t error;
-  NowWithError(&now, &error);
+  uint64_t error_ignored;
+  NowWithErrorOrDie(&now, &error_ignored);
   return now;
 }
 
 Timestamp HybridClock::NowLatest() {
   Timestamp now;
   uint64_t error;
-  NowWithError(&now, &error);
+  NowWithErrorOrDie(&now, &error);
 
   uint64_t now_latest = GetPhysicalValueMicros(now) + error;
   uint64_t now_logical = GetLogicalValue(now);
@@ -269,16 +270,16 @@ Status HybridClock::GetGlobalLatest(Timestamp* t) {
   return Status::OK();
 }
 
-void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
+Status HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
   std::lock_guard<decltype(lock_)> lock(lock_);
-  NowWithErrorUnlocked(timestamp, max_error_usec);
+  return NowWithErrorUnlocked(timestamp, max_error_usec);
 }
 
 Status HybridClock::Update(const Timestamp& to_update) {
   Timestamp now;
   uint64_t error_ignored;
   std::lock_guard<decltype(lock_)> lock(lock_);
-  NowWithErrorUnlocked(&now, &error_ignored);
+  RETURN_NOT_OK(NowWithErrorUnlocked(&now, &error_ignored));
 
   // If the incoming message is in the past relative to our current
   // physical clock, there's nothing to do.
@@ -316,7 +317,7 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then,
   TRACE_EVENT0("clock", "HybridClock::WaitUntilAfter");
   Timestamp now;
   uint64_t error;
-  NowWithError(&now, &error);
+  RETURN_NOT_OK(NowWithError(&now, &error));
 
   // "unshift" the timestamps so that we can measure actual time
   uint64_t now_usec = GetPhysicalValueMicros(now);
@@ -353,7 +354,7 @@ Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
                                           const MonoTime& deadline) {
   Timestamp now;
   uint64_t error;
-  NowWithError(&now, &error);
+  RETURN_NOT_OK(NowWithError(&now, &error));
   if (now > then) {
     return Status::OK();
   }
@@ -371,8 +372,12 @@ bool HybridClock::IsAfter(Timestamp t) {
   // Manually get the time, rather than using Now(), so we don't end up causing
   // a time update.
   uint64_t now_usec;
-  uint64_t error_usec;
-  WalltimeWithErrorOrDie(&now_usec, &error_usec);
+  uint64_t error_usec_unused;
+  Status s = WalltimeWithError(&now_usec, &error_usec_unused);
+  if (PREDICT_FALSE(!s.ok())) {
+    time_service_->DumpDiagnostics(/*log=*/nullptr);
+    CHECK_OK_PREPEND(s, "unable to get current time with error bound");
+  }
 
   Timestamp now;
   {
@@ -382,14 +387,14 @@ bool HybridClock::IsAfter(Timestamp t) {
   return t.value() < now.value();
 }
 
-void HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
-                                       uint64_t *max_error_usec) {
+Status HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
+                                         uint64_t *max_error_usec) {
   DCHECK(lock_.is_locked());
   DCHECK_EQ(state_, kInitialized) << "Clock not initialized. Must call Init() first.";
 
   uint64_t now_usec;
   uint64_t error_usec;
-  WalltimeWithErrorOrDie(&now_usec, &error_usec);
+  RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
 
   // If the physical time from the system clock is higher than our last-returned
   // time, we should use the physical timestamp.
@@ -402,7 +407,7 @@ void HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
                           "Resetting logical values. Physical Value: $0 usec "
                           "Logical Value: 0  Error: $1",
                           now_usec, error_usec);
-    return;
+    return Status::OK();
   }
 
   // We don't have the last time read max error since it might have originated
@@ -429,6 +434,16 @@ void HybridClock::NowWithErrorUnlocked(Timestamp *timestamp,
                         "last read and incrementing logical values. "
                         "Clock: $0 Error: $1",
                         Stringify(*timestamp), *max_error_usec);
+  return Status::OK();
+}
+
+void HybridClock::NowWithErrorOrDie(Timestamp* timestamp,
+                                    uint64_t* max_error_usec) {
+  auto s = NowWithError(timestamp, max_error_usec);
+  if (PREDICT_FALSE(!s.ok())) {
+    time_service_->DumpDiagnostics(/*log=*/nullptr);
+    CHECK_OK_PREPEND(s, "unable to get current timestamp with error bound");
+  }
 }
 
 Status HybridClock::SelectTimeSource(const string& time_source_str,
@@ -511,6 +526,11 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source,
       return Status::InvalidArgument("invalid time source for hybrid clock",
                                      TimeSourceToString(time_source));
   }
+  if (FLAGS_hybrid_clock_inject_init_delay_ms > 0) {
+    LOG(WARNING) << "Injecting " << FLAGS_hybrid_clock_inject_init_delay_ms
+                 << "ms delay in HybridClock initialization process";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_hybrid_clock_inject_init_delay_ms));
+  }
   RETURN_NOT_OK(time_service_->Init());
 
   // Make sure the underlying clock service is available (e.g., for NTP-based
@@ -552,7 +572,6 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source,
   LOG(INFO) << Substitute("HybridClock initialized: "
                           "now $0 us; error $1 us; skew $2 ppm",
                           now_usec, error_usec, time_service_->skew_ppm());
-
   {
     // We typically don't expect other threads to access an object until after
     // its Init() is called, but there is nothing preventing some other thread
@@ -561,6 +580,20 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source,
     std::lock_guard<decltype(lock_)> lock(lock_);
     state_ = kInitialized;
   }
+
+  // Once the hybrid clock is initialized, it's safe to register/instantiate
+  // function gauges. Otherwise, there might be an attempt to read the gauges'
+  // values when the object is not ready for that yet. Gauges produce special
+  // values for corresponding metrics, but there is no value in that anyways.
+  METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
+      metric_entity_,
+      Bind(&HybridClock::NowForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+  METRIC_hybrid_clock_error.InstantiateFunctionGauge(
+      metric_entity_,
+      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+
   return Status::OK();
 }
 
@@ -645,24 +678,25 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
   return kudu::Status::OK();
 }
 
-void HybridClock::WalltimeWithErrorOrDie(uint64_t* now_usec, uint64_t* error_usec) {
-  Status s = WalltimeWithError(now_usec, error_usec);
-  if (PREDICT_FALSE(!s.ok())) {
-    time_service_->DumpDiagnostics(/*log=*/nullptr);
-    CHECK_OK_PREPEND(s, "unable to get current time with error bound");
-  }
-}
-
 // Used to get the timestamp for metrics.
 uint64_t HybridClock::NowForMetrics() {
-  return Now().ToUint64();
+  Timestamp now;
+  uint64_t error_unused;
+  auto s = NowWithError(&now, &error_unused);
+  if (PREDICT_FALSE(!s.ok())) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return now.ToUint64();
 }
 
 // Used to get the current error, for metrics.
 uint64_t HybridClock::ErrorForMetrics() {
-  Timestamp now;
+  Timestamp now_unused;
   uint64_t error;
-  NowWithError(&now, &error);
+  auto s = NowWithError(&now_unused, &error);
+  if (PREDICT_FALSE(!s.ok())) {
+    return std::numeric_limits<uint64_t>::max();
+  }
   return error;
 }
 

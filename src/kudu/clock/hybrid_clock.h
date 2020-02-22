@@ -25,6 +25,7 @@
 #include "kudu/clock/time_service.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
@@ -132,10 +133,10 @@ class HybridClock : public Clock {
   std::string Stringify(Timestamp timestamp) override;
 
   // Obtains the timestamp corresponding to the current time and the associated
-  // error in micros. This may fail if the clock is unsynchronized or synchronized
-  // but the error is too high and, since we can't do anything about it,
-  // LOG(FATAL)'s in that case.
-  void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
+  // error in micros. If the clock is unsynchronized or synchronized but the
+  // error is too high, a non-OK status is returned.
+  Status NowWithError(Timestamp* timestamp, uint64_t* max_error_usec)
+      WARN_UNUSED_RESULT;
 
   // Static encoding/decoding methods for timestamps. Public mostly
   // for testing/debugging purposes.
@@ -212,16 +213,17 @@ class HybridClock : public Clock {
                             std::vector<HostPort> builtin_ntp_servers);
 
   // Variant of NowWithError() that requires 'lock_' to be held already.
-  void NowWithErrorUnlocked(Timestamp* timestamp, uint64_t* max_error_usec);
+  Status NowWithErrorUnlocked(Timestamp* timestamp, uint64_t* max_error_usec);
+
+  // Variant of NowWithError() that calls LOG(FATAL) if the clock is
+  // unsynchronized or synchronized but the error is too high.
+  void NowWithErrorOrDie(Timestamp* timestamp, uint64_t* max_error_usec);
 
   // Obtains the current wallclock time and maximum error in microseconds,
   // and checks if the clock is synchronized.
   //
   // On OS X, the error will always be 0.
   Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec);
-
-  // Same as above, but exits with a FATAL if there is an error.
-  void WalltimeWithErrorOrDie(uint64_t* now_usec, uint64_t* error_usec);
 
   // Used to get the timestamp for metrics.
   uint64_t NowForMetrics();

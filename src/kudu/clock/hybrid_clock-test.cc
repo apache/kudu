@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -27,14 +28,21 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/mock_ntp.h"
+#include "kudu/clock/test/mini_chronyd.h"
 #include "kudu/clock/time_service.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/webui_checker.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -47,7 +55,10 @@ DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(time_source);
 METRIC_DECLARE_entity(server);
 
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
+using std::thread;
 using std::vector;
 
 namespace kudu {
@@ -79,23 +90,23 @@ TEST_F(MockHybridClockTest, TestMockedSystemClock) {
   ASSERT_OK(clock.Init());
   Timestamp timestamp;
   uint64_t max_error_usec;
-  clock.NowWithError(&timestamp, &max_error_usec);
+  ASSERT_OK(clock.NowWithError(&timestamp, &max_error_usec));
   ASSERT_EQ(timestamp.ToUint64(), 0);
   ASSERT_EQ(max_error_usec, 0);
   // If we read the clock again we should see the logical component be incremented.
-  clock.NowWithError(&timestamp, &max_error_usec);
+  ASSERT_OK(clock.NowWithError(&timestamp, &max_error_usec));
   ASSERT_EQ(timestamp.ToUint64(), 1);
   // Now set an arbitrary time and check that is the time returned by the clock.
   uint64_t time = 1234 * 1000;
   uint64_t error = 100 * 1000;
   mock_ntp(clock)->SetMockClockWallTimeForTests(time);
   mock_ntp(clock)->SetMockMaxClockErrorForTests(error);
-  clock.NowWithError(&timestamp, &max_error_usec);
+  ASSERT_OK(clock.NowWithError(&timestamp, &max_error_usec));
   ASSERT_EQ(timestamp.ToUint64(),
             HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 0).ToUint64());
   ASSERT_EQ(max_error_usec, error);
   // Perform another read, we should observe the logical component increment, again.
-  clock.NowWithError(&timestamp, &max_error_usec);
+  ASSERT_OK(clock.NowWithError(&timestamp, &max_error_usec));
   ASSERT_EQ(timestamp.ToUint64(),
             HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 1).ToUint64());
 }
@@ -202,7 +213,7 @@ TEST_F(HybridClockTest, WaitUntilAfterCase1) {
 
   Timestamp past_ts;
   uint64_t max_error;
-  clock_.NowWithError(&past_ts, &max_error);
+  ASSERT_OK(clock_.NowWithError(&past_ts, &max_error));
 
   // make the event 3 * the max. possible error in the past
   Timestamp past_ts_changed = HybridClock::AddPhysicalTimeToTimestamp(
@@ -226,7 +237,7 @@ TEST_F(HybridClockTest, WaitUntilAfterCase2) {
   // error interval
   Timestamp past_ts;
   uint64_t past_max_error;
-  clock_.NowWithError(&past_ts, &past_max_error);
+  ASSERT_OK(clock_.NowWithError(&past_ts, &past_max_error));
   // Make sure the error is at least a small number of microseconds, to ensure
   // that we always have to wait.
   past_max_error = std::max(past_max_error, static_cast<uint64_t>(2000));
@@ -236,7 +247,7 @@ TEST_F(HybridClockTest, WaitUntilAfterCase2) {
 
   Timestamp current_ts;
   uint64_t current_max_error;
-  clock_.NowWithError(&current_ts, &current_max_error);
+  ASSERT_OK(clock_.NowWithError(&current_ts, &current_max_error));
 
   // Check waiting with a deadline which already expired.
   {
@@ -335,13 +346,13 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   uint64_t max_error_usec[3];
 
   // Get the clock once, with a working NTP.
-  clock_.NowWithError(&timestamps[0], &max_error_usec[0]);
+  ASSERT_OK(clock_.NowWithError(&timestamps[0], &max_error_usec[0]));
 
   // Try to read the clock again a second later, but with an error
   // injected. It should extrapolate from the first read.
   SleepFor(MonoDelta::FromSeconds(1));
   FLAGS_inject_unsync_time_errors = true;
-  clock_.NowWithError(&timestamps[1], &max_error_usec[1]);
+  ASSERT_OK(clock_.NowWithError(&timestamps[1], &max_error_usec[1]));
 
   // The new clock reading should be a second or longer from the
   // first one, since SleepFor guarantees sleeping at least as long
@@ -359,10 +370,100 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   // Now restore the ability to read the system clock, and
   // read it again.
   FLAGS_inject_unsync_time_errors = false;
-  clock_.NowWithError(&timestamps[2], &max_error_usec[2]);
+  ASSERT_OK(clock_.NowWithError(&timestamps[2], &max_error_usec[2]));
 
   ASSERT_LT(timestamps[0].ToUint64(), timestamps[1].ToUint64());
   ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
+}
+
+TEST_F(HybridClockTest, SlowClockInitialisation) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  const vector<string> kExtraFlags =
+      { "--hybrid_clock_inject_init_delay_ms=100" };
+
+  ExternalMiniClusterOptions opts;
+  opts.num_masters = 3;
+  opts.num_ntp_servers = 1;
+  opts.extra_master_flags = kExtraFlags;
+  opts.extra_tserver_flags = kExtraFlags;
+
+  // The PeriodicWebUIChecker needs to know the addresses which master and
+  // tserver embedded web servers are bound to. So, first start all the
+  // processes, then stop them, and then instantiate the PeriodicWebUIChecker.
+  // This way there will be requests coming to the webservers while Kudu masters
+  // and tablet servers are bootstrapping.
+  ExternalMiniCluster cluster(opts);
+  ASSERT_OK(cluster.Start());
+  cluster.Shutdown();
+
+  auto ntp_servers = cluster.ntp_servers();
+  ASSERT_EQ(1, ntp_servers.size());
+  auto* ntp_server = ntp_servers.front();
+  ASSERT_OK(ntp_server->Pause());
+  Status ntp_server_resumer_status;
+  thread ntp_server_resumer([&] {
+    SleepFor(MonoDelta::FromMilliseconds(500));
+    ntp_server_resumer_status = ntp_server->Resume();
+  });
+  SCOPED_CLEANUP({
+    ntp_server_resumer.join();
+  });
+
+  // Start pounding the master and tserver's web UIs.
+  PeriodicWebUIChecker checker(cluster, MonoDelta::FromMilliseconds(1),
+                               "", { "/metrics" }, { "/metrics" });
+
+  // Start bootstrapping masters and tablet servers.
+  ASSERT_OK(cluster.Restart());
+  SleepFor(MonoDelta::FromSeconds(1));
+  NO_FATALS(cluster.AssertNoCrashes());
+  cluster.Shutdown();
+  ASSERT_OK(cluster.Restart());
+  SleepFor(MonoDelta::FromSeconds(1));
+  NO_FATALS(cluster.AssertNoCrashes());
+  ASSERT_OK(ntp_server_resumer_status);
+
+  // Check for the presence of clock-related metrics.
+  vector<string> addresses;
+  addresses.reserve(cluster.num_masters() + cluster.num_tablet_servers());
+  for (auto idx = 0; idx < cluster.num_masters(); ++idx) {
+    addresses.emplace_back(
+        cluster.master(idx)->bound_http_hostport().ToString());
+  }
+  for (auto idx = 0; idx < cluster.num_tablet_servers(); ++idx) {
+    addresses.emplace_back(
+          cluster.tablet_server(idx)->bound_http_hostport().ToString());
+  }
+
+  EasyCurl c;
+  for (const auto& addr : addresses) {
+    faststring buf;
+    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/metrics", addr), &buf));
+    const auto str = buf.ToString();
+    ASSERT_STR_CONTAINS(str, "builtin_ntp_local_clock_delta");
+    ASSERT_STR_CONTAINS(str, "builtin_ntp_max_errors");
+    ASSERT_STR_CONTAINS(str, "builtin_ntp_walltime");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_max_errors");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_error");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_extrapolating");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_extrapolation_intervals");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_timestamp");
+  }
+}
+
+// A simple scenario to verify that 'auto' is recognized as one of the possible
+// time sources: the auto-selection works and the resulting hybrid clock
+// is functional.
+TEST_F(HybridClockTest, TimeSourceAutoSelection) {
+  FLAGS_time_source = "auto";
+  HybridClock clock(metric_entity_);
+  ASSERT_OK(clock.Init());
+  Timestamp timestamp[2];
+  uint64_t max_error_usec[2];
+  ASSERT_OK(clock.NowWithError(&timestamp[0], &max_error_usec[0]));
+  ASSERT_OK(clock.NowWithError(&timestamp[1], &max_error_usec[1]));
+  ASSERT_LE(timestamp[0].value(), timestamp[1].value());
 }
 
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
@@ -379,20 +480,6 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   ASSERT_STR_MATCHES(s, "(ntpq -n |chronyc -n sources)");
 }
 #endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
-
-// A simple scenario to verify that 'auto' is recognized as one of the possible
-// time sources: the auto-selection works and the resulting hybrid clock
-// is functional.
-TEST_F(HybridClockTest, TimeSourceAutoSelection) {
-  FLAGS_time_source = "auto";
-  HybridClock clock(metric_entity_);
-  ASSERT_OK(clock.Init());
-  Timestamp timestamp[2];
-  uint64_t max_error_usec[2];
-  clock.NowWithError(&timestamp[0], &max_error_usec[0]);
-  clock.NowWithError(&timestamp[1], &max_error_usec[1]);
-  ASSERT_LE(timestamp[0].value(), timestamp[1].value());
-}
 
 }  // namespace clock
 }  // namespace kudu

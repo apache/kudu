@@ -69,7 +69,6 @@ if (NOT NO_CHRONY)
 endif() # (NOT NO_CHRONY)
 
 SET_KUDU_TEST_LINK_LIBS(clock)
-ADD_KUDU_TEST(hybrid_clock-test PROCESSORS 3)
 ADD_KUDU_TEST(logical_clock-test)
 
 if (NO_CHRONY)
@@ -79,3 +78,6 @@ else()
   ADD_KUDU_TEST(test/mini_chronyd-test)
 endif()
 ADD_KUDU_TEST(ntp-test)
+
+SET_KUDU_TEST_LINK_LIBS(clock mini_cluster)
+ADD_KUDU_TEST(hybrid_clock-test PROCESSORS 3)

@@ -1167,7 +1167,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   // get current time, with and without error
   Timestamp now_before;
   uint64_t error_before;
-  hclock->NowWithError(&now_before, &error_before);
+  ASSERT_OK(hclock->NowWithError(&now_before, &error_before));
 
   uint64_t now_before_usec = HybridClock::GetPhysicalValueMicros(now_before);
   LOG(INFO) << "Submitting write with commit wait at: " << now_before_usec << " us +- "
@@ -1195,7 +1195,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
 
   Timestamp now_after;
   uint64_t error_after;
-  hclock->NowWithError(&now_after, &error_after);
+  ASSERT_OK(hclock->NowWithError(&now_after, &error_after));
 
   Timestamp write_timestamp(resp.timestamp());
 
