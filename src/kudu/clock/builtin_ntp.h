@@ -172,8 +172,11 @@ class BuiltInNtp : public TimeService {
   // in milliseconds.
   int64_t LocalClockDeltaForMetrics();
 
-  // Get the latest computed wall-clock time, in microseconds.
+  // Get the latest computed true time, in microseconds.
   int64_t WalltimeForMetrics();
+
+  // Get the latest computed maximum error from true time, in microseconds.
+  int64_t MaxErrorForMetrics();
 
   Random rng_;
   Socket socket_;

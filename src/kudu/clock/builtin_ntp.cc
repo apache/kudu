@@ -118,20 +118,27 @@ METRIC_DEFINE_gauge_int64(server, builtin_ntp_local_clock_delta,
                           "2^63-1 when true time is not tracked",
                           kudu::MetricLevel::kInfo);
 
-METRIC_DEFINE_gauge_int64(server, builtin_ntp_walltime,
-                          "Built-in NTP Wall-Clock Time",
+METRIC_DEFINE_gauge_int64(server, builtin_ntp_time,
+                          "Built-in NTP Time",
                           kudu::MetricUnit::kMicroseconds,
-                          "Latest wall-clock time as tracked by "
+                          "Latest true time as tracked by "
                           "built-in NTP client",
                           kudu::MetricLevel::kDebug);
 
+METRIC_DEFINE_gauge_int64(server, builtin_ntp_error,
+                          "Built-in NTP Latest Maximum Time Error",
+                          kudu::MetricUnit::kMicroseconds,
+                          "Latest maximum time error as tracked by "
+                          "built-in NTP client",
+                          kudu::MetricLevel::kInfo);
+
 METRIC_DEFINE_histogram(server, builtin_ntp_max_errors,
-                        "Built-In NTP Maximum Errors",
-                        kudu::MetricUnit::kMilliseconds,
+                        "Built-In NTP Maximum Time Errors",
+                        kudu::MetricUnit::kMicroseconds,
                         "Statistics on the maximum true time error computed by "
                         "built-in NTP client",
                          kudu::MetricLevel::kDebug,
-                        20000, 3);
+                        10000000, 1);
 
 using kudu::clock::internal::Interval;
 using kudu::clock::internal::kIntervalNone;
@@ -1083,7 +1090,7 @@ Status BuiltInNtp::CombineClocks() {
     last_computed_.error = compute_error;
 
     // Update stats on the computed error.
-    max_errors_histogram_->Increment(compute_error / 1000);
+    max_errors_histogram_->Increment(compute_error);
   }
   VLOG(2) << Substitute("combined clocks: $0 $1 $2",
                         now, compute_wall, compute_error);
@@ -1104,9 +1111,13 @@ void BuiltInNtp::RegisterMetrics(const scoped_refptr<MetricEntity>& entity) {
       entity,
       Bind(&BuiltInNtp::LocalClockDeltaForMetrics, Unretained(this)))->
           AutoDetachToLastValue(&metric_detacher_);
-  METRIC_builtin_ntp_walltime.InstantiateFunctionGauge(
+  METRIC_builtin_ntp_time.InstantiateFunctionGauge(
       entity,
       Bind(&BuiltInNtp::WalltimeForMetrics, Unretained(this)))->
+          AutoDetachToLastValue(&metric_detacher_);
+  METRIC_builtin_ntp_error.InstantiateFunctionGauge(
+      entity,
+      Bind(&BuiltInNtp::MaxErrorForMetrics, Unretained(this)))->
           AutoDetachToLastValue(&metric_detacher_);
   max_errors_histogram_ =
       METRIC_builtin_ntp_max_errors.Instantiate(entity);
@@ -1131,6 +1142,11 @@ int64_t BuiltInNtp::LocalClockDeltaForMetrics() {
 int64_t BuiltInNtp::WalltimeForMetrics() {
   shared_lock<rw_spinlock> l(last_computed_lock_);
   return last_computed_.wall;
+}
+
+int64_t BuiltInNtp::MaxErrorForMetrics() {
+  shared_lock<rw_spinlock> l(last_computed_lock_);
+  return last_computed_.error;
 }
 
 } // namespace clock

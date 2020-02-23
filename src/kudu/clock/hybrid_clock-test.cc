@@ -376,6 +376,15 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
 }
 
+// This scenario emulates slow initialisation of the hybrid clock's underlying
+// time source while Kudu servers are busy with bootstrapping (in this
+// particular case, the time source is the built-in NTP client). During the
+// bootstrapping, the embedded web servers are flooded with requests to the
+// '/metrics' URLs. Kudu masters and tablet servers should not crash and be able
+// to start and function as expected once the time source is up and running.
+//
+// In addition, this scenario verifies the presence of time-specific metrics in
+// the data retrieved from the '/metrics' endpoint.
 TEST_F(HybridClockTest, SlowClockInitialisation) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
@@ -390,9 +399,10 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
 
   // The PeriodicWebUIChecker needs to know the addresses which master and
   // tserver embedded web servers are bound to. So, first start all the
-  // processes, then stop them, and then instantiate the PeriodicWebUIChecker.
-  // This way there will be requests coming to the webservers while Kudu masters
-  // and tablet servers are bootstrapping.
+  // processes, then stop them, and then instantiate the PeriodicWebUIChecker
+  // passing information on the bound addresses which will be used upon next
+  // start of masters/tservers. This way there will be requests coming to the
+  // embedded web servers while Kudu servers are bootstrapping.
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
   cluster.Shutdown();
@@ -410,7 +420,7 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
     ntp_server_resumer.join();
   });
 
-  // Start pounding the master and tserver's web UIs.
+  // Start pounding the master and tserver's web server.
   PeriodicWebUIChecker checker(cluster, MonoDelta::FromMilliseconds(1),
                                "", { "/metrics" }, { "/metrics" });
 
@@ -424,7 +434,7 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
   NO_FATALS(cluster.AssertNoCrashes());
   ASSERT_OK(ntp_server_resumer_status);
 
-  // Check for the presence of clock-related metrics.
+  // Make sure certain time-related metrics are present.
   vector<string> addresses;
   addresses.reserve(cluster.num_masters() + cluster.num_tablet_servers());
   for (auto idx = 0; idx < cluster.num_masters(); ++idx) {
@@ -441,13 +451,14 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
     faststring buf;
     ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/metrics", addr), &buf));
     const auto str = buf.ToString();
+    ASSERT_STR_CONTAINS(str, "builtin_ntp_error");
     ASSERT_STR_CONTAINS(str, "builtin_ntp_local_clock_delta");
     ASSERT_STR_CONTAINS(str, "builtin_ntp_max_errors");
-    ASSERT_STR_CONTAINS(str, "builtin_ntp_walltime");
-    ASSERT_STR_CONTAINS(str, "hybrid_clock_max_errors");
+    ASSERT_STR_CONTAINS(str, "builtin_ntp_time");
     ASSERT_STR_CONTAINS(str, "hybrid_clock_error");
     ASSERT_STR_CONTAINS(str, "hybrid_clock_extrapolating");
     ASSERT_STR_CONTAINS(str, "hybrid_clock_extrapolation_intervals");
+    ASSERT_STR_CONTAINS(str, "hybrid_clock_max_errors");
     ASSERT_STR_CONTAINS(str, "hybrid_clock_timestamp");
   }
 }

@@ -185,11 +185,11 @@ METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
 
 METRIC_DEFINE_histogram(server, hybrid_clock_max_errors,
                         "Hybrid Clock Maximum Errors",
-                        kudu::MetricUnit::kMilliseconds,
+                        kudu::MetricUnit::kMicroseconds,
                         "The statistics on the maximum error of the underlying "
                         "clock",
                          kudu::MetricLevel::kDebug,
-                        20000, 3);
+                        10000000, 1);
 
 METRIC_DEFINE_histogram(server, hybrid_clock_extrapolation_intervals,
                         "Intervals of Hybrid Clock Extrapolation",
@@ -604,7 +604,7 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
 
   bool is_extrapolated = false;
   if (PREDICT_TRUE(s.ok())) {
-    max_errors_histogram_->Increment(*error_usec / 1000);
+    max_errors_histogram_->Increment(*error_usec);
     // We got a good clock read. Remember this in case the clock later becomes
     // unsynchronized and we need to extrapolate from here.
     //
