@@ -115,7 +115,7 @@ void MvccManager::AbortTransaction(Timestamp timestamp) {
 
   // If the tablet is shutting down, we can ignore the state of the
   // transactions.
-  if (PREDICT_FALSE(!is_open())) {
+  if (PREDICT_FALSE(!open_.load())) {
     LOG(WARNING) << "aborting transaction with timestamp " << timestamp.ToString()
         << " in state " << old_state << "; MVCC is closed";
     return;
@@ -331,7 +331,7 @@ bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
 }
 
 Status MvccManager::CheckOpen() const {
-  if (PREDICT_TRUE(is_open())) {
+  if (PREDICT_TRUE(open_.load())) {
     return Status::OK();
   }
   return Status::Aborted("MVCC is closed");
@@ -397,16 +397,6 @@ Status MvccManager::WaitForApplyingTransactionsToCommit() const {
     return Status::OK();
   }
   return WaitUntil(NONE_APPLYING, wait_for, MonoTime::Max());
-}
-
-bool MvccManager::AreAllTransactionsCommitted(Timestamp ts) const {
-  std::lock_guard<LockType> l(lock_);
-  return AreAllTransactionsCommittedUnlocked(ts);
-}
-
-int MvccManager::CountTransactionsInFlight() const {
-  std::lock_guard<LockType> l(lock_);
-  return timestamps_in_flight_.size();
 }
 
 Timestamp MvccManager::GetCleanTimestamp() const {

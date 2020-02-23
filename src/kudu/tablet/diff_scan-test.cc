@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -65,8 +66,7 @@ TEST_P(DiffScanTest, TestDiffScan) {
   auto tablet = this->tablet();
   auto tablet_id = tablet->tablet_id();
 
-  MvccSnapshot snap1;
-  tablet->mvcc_manager()->TakeSnapshot(&snap1);
+  MvccSnapshot snap1(*tablet->mvcc_manager());
 
   LocalTabletWriter writer(tablet.get(), &client_schema_);
   constexpr int64_t kRowKey = 1;
@@ -89,8 +89,7 @@ TEST_P(DiffScanTest, TestDiffScan) {
 
   // 4. Do a diff scan from time snap1.
   ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingTransactionsToCommit());
-  MvccSnapshot snap2;
-  tablet->mvcc_manager()->TakeSnapshot(&snap2);
+  MvccSnapshot snap2(*tablet->mvcc_manager());
 
   RowIteratorOptions opts;
   opts.snap_to_include = snap2;
