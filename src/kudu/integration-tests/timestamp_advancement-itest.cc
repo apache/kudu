@@ -246,7 +246,7 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
 };
 
 // Test that bootstrapping a Raft no-op from the WAL will advance the replica's
-// MVCC safe time timestamps.
+// MVCC clean time timestamps.
 TEST_F(TimestampAdvancementITest, TestNoOpAdvancesMvccSafeTimeOnBootstrap) {
   // Set a low Raft heartbeat interval so we can inject churn elections.
   FLAGS_raft_heartbeat_interval_ms = 100;
@@ -328,7 +328,7 @@ TEST_F(TimestampAdvancementITest, Kudu2463Test) {
   ASSERT_TRUE(resp.has_error());
   const TabletServerErrorPB& error = resp.error();
   ASSERT_EQ(error.code(), TabletServerErrorPB::TABLET_NOT_RUNNING);
-  ASSERT_STR_CONTAINS(resp.error().status().message(), "safe time has not yet been initialized");
+  ASSERT_STR_CONTAINS(resp.error().status().message(), "clean time has not yet been initialized");
   ASSERT_EQ(error.status().code(), AppStatusPB::UNINITIALIZED);
 }
 

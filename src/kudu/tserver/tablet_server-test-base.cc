@@ -26,7 +26,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -144,7 +143,7 @@ Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id) {
   // must wait to finish replicating its no-op (even as a single replica)
   // before being available to scans.
   MonoTime deadline = MonoTime::Now() + kTimeout;
-  while (!tablet_replica->tablet()->mvcc_manager()->CheckIsSafeTimeInitialized().ok()) {
+  while (!tablet_replica->tablet()->mvcc_manager()->CheckIsCleanTimeInitialized().ok()) {
     if (MonoTime::Now() >= deadline) {
       return Status::TimedOut("mvcc did not advance safe time within timeout");
     }

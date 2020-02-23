@@ -168,8 +168,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   txn1.StartApplying();
   txn1.Commit();
 
-  // All transactions are committed, adjust the safe time.
-  mgr.AdjustSafeTime(t3);
+  // All transactions are committed, adjust the new transaction lower bound.
+  mgr.AdjustNewTransactionLowerBound(t3);
 
   // all committed
   snap = MvccSnapshot(mgr);
@@ -225,7 +225,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
 }
 
 // Tests starting transaction at a point-in-time in the past and committing them while
-// adjusting safe time.
+// adjusting the new transaction timestamp lower bound.
 TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
   MvccManager mgr;
 
@@ -239,25 +239,27 @@ TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
 
   ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
 
-  // Committing 'txn_in_the_past' should not advance safe time or clean time.
+  // Committing 'txn_in_the_past' should not advance the new transaction lower
+  // bound or the clean time.
   txn_in_the_past.Commit();
 
   // Now take a snapshot.
   MvccSnapshot snap_with_first_txn(mgr);
 
-  // Because we did not advance the the safe or clean watermarkd, even though the only
-  // in-flight transaction was committed at time 50, a transaction at time 40 should still be
-  // considered uncommitted.
+  // Because we did not advance the the new transaction lower bound or clean
+  // time, even though the only in-flight transaction was committed at time 50,
+  // a transaction at time 40 should still be considered uncommitted.
   ASSERT_FALSE(snap_with_first_txn.IsCommitted(Timestamp(40)));
 
-  // Now advance the both clean and safe watermarks to the last committed transaction.
-  mgr.AdjustSafeTime(Timestamp(50));
+  // Now advance the both clean and new transaction lower bound watermarks to
+  // the last committed transaction.
+  mgr.AdjustNewTransactionLowerBound(Timestamp(50));
 
   ASSERT_EQ(ts_in_the_past, mgr.GetCleanTimestamp());
 
-  MvccSnapshot snap_with_adjusted_safe_time(mgr);
+  MvccSnapshot snap_with_adjusted_clean_time(mgr);
 
-  ASSERT_TRUE(snap_with_adjusted_safe_time.IsCommitted(Timestamp(40)));
+  ASSERT_TRUE(snap_with_adjusted_clean_time.IsCommitted(Timestamp(40)));
 }
 
 TEST_F(MvccTest, TestScopedTransaction) {
@@ -396,7 +398,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommittedForTests) {
   ScopedTransaction txn2(&mgr, ts2);
   Timestamp ts3 = clock_.Now();
   ScopedTransaction txn3(&mgr, ts3);
-  mgr.AdjustSafeTime(clock_.Now());
+  mgr.AdjustNewTransactionLowerBound(clock_.Now());
 
   ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(1)));
   ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(2)));
@@ -429,7 +431,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommittedForTests) {
 TEST_F(MvccTest, WaitForCleanSnapshotSnapWithNoInflights) {
   MvccManager mgr;
   Timestamp to_wait_for = clock_.Now();
-  mgr.AdjustSafeTime(clock_.Now());
+  mgr.AdjustNewTransactionLowerBound(clock_.Now());
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
   // join immediately.
@@ -444,13 +446,14 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapBeforeSafeTimeWithInFlights) {
   ScopedTransaction txn1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
   ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustSafeTime(ts2);
+  mgr.AdjustNewTransactionLowerBound(ts2);
   Timestamp to_wait_for = clock_.Now();
 
-  // Select a safe time that is after all transactions and after the the timestamp we'll wait for
-  // and adjust it on the MvccManager. This will cause "clean time" to move when tx1 and tx2 commit.
-  Timestamp safe_time = clock_.Now();
-  mgr.AdjustSafeTime(safe_time);
+  // Select a new transaction timestamp lower bound that is after all
+  // transactions and after the the timestamp we'll wait for.
+  // This will cause "clean time" to move when tx1 and tx2 commit.
+  Timestamp future_ts = clock_.Now();
+  mgr.AdjustNewTransactionLowerBound(future_ts);
 
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
@@ -470,7 +473,7 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights) {
   ScopedTransaction txn1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
   ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustSafeTime(ts2);
+  mgr.AdjustNewTransactionLowerBound(ts2);
 
   // Wait should return immediately, since we have no transactions "applying"
   // yet.
@@ -530,8 +533,9 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAtTimestampWithInFlights) {
   tx2.Commit();
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Advance safe time, thread should continue.
-  mgr.AdjustSafeTime(ts3);
+  // Advance new transaction lower bound and the clean time, thread should
+  // continue.
+  mgr.AdjustNewTransactionLowerBound(ts3);
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
@@ -543,7 +547,7 @@ TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
   ScopedTransaction txn1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
   ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustSafeTime(ts2);
+  mgr.AdjustNewTransactionLowerBound(ts2);
 
   // Wait should return immediately, since we have no transactions "applying"
   // yet.
@@ -573,7 +577,7 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   MvccManager mgr;
   Timestamp ts1 = clock_.Now();
   ScopedTransaction txn1(&mgr, ts1);
-  mgr.AdjustSafeTime(ts1);
+  mgr.AdjustNewTransactionLowerBound(ts1);
   txn1.StartApplying();
 
   // Spin up a thread to wait on the applying transaction.
@@ -604,8 +608,8 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   ASSERT_TRUE(s.IsAborted());
 }
 
-// Test that if we abort a transaction we don't advance the safe time and don't
-// add the transaction to the committed set.
+// Test that if we abort a transaction we don't advance the new transaction
+// lower bound and don't add the transaction to the committed set.
 TEST_F(MvccTest, TestTxnAbort) {
 
   MvccManager mgr;
@@ -617,7 +621,7 @@ TEST_F(MvccTest, TestTxnAbort) {
   ScopedTransaction txn2(&mgr, ts2);
   Timestamp ts3 = clock_.Now();
   ScopedTransaction txn3(&mgr, ts3);
-  mgr.AdjustSafeTime(ts3);
+  mgr.AdjustNewTransactionLowerBound(ts3);
 
   // Now abort tx1, this shouldn't move the clean time and the transaction
   // shouldn't be reported as committed.
@@ -626,11 +630,11 @@ TEST_F(MvccTest, TestTxnAbort) {
   ASSERT_FALSE(mgr.cur_snap_.IsCommitted(ts1));
 
   // Committing tx3 shouldn't advance the clean time since it is not the earliest
-  // in-flight, but it should advance 'safe_time_' to 3.
+  // in-flight, but it should advance 'new_txn_timestamp_exc_lower_bound_' to 3.
   txn3.StartApplying();
   txn3.Commit();
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(ts3));
-  ASSERT_EQ(ts3, mgr.safe_time_);
+  ASSERT_EQ(ts3, mgr.new_txn_timestamp_exc_lower_bound_);
 
   // Committing tx2 should advance the clean time to 3.
   txn2.StartApplying();
@@ -647,7 +651,7 @@ TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
 
   ScopedTransaction tx1(&mgr, Timestamp(10));
   ScopedTransaction tx2(&mgr, Timestamp(15));
-  mgr.AdjustSafeTime(Timestamp(15));
+  mgr.AdjustNewTransactionLowerBound(Timestamp(15));
 
   tx2.StartApplying();
   tx2.Commit();
@@ -706,7 +710,7 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
   // Start a new transaction. This time, mark it as Applying.
   t = clock_.Now();
   mgr.StartTransaction(t);
-  mgr.AdjustSafeTime(t);
+  mgr.AdjustNewTransactionLowerBound(t);
   mgr.StartApplyingTransaction(t);
 
   // Can only call StartApplying once.
@@ -738,11 +742,13 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
-// Test for a bug related to the initialization of the MvccManager without
-// any pending transactions, i.e. when there are only calls to AdvanceSafeTime().
-// Prior to the fix we would advance safe/clean time but not the
+// Test for a bug related to the initialization of the MvccManager without any
+// pending transactions, i.e. when there are only calls to
+// AdjustNewTransactionLowerBound().
+//
+// Prior to the fix we would advance clean time but not the
 // 'none_committed_at_or_after_' watermark, meaning the latter would become lower
-// than safe/clean time. This had the effect on compaction of culling delta files
+// than clean time. This had the effect on compaction of culling delta files
 // even though they shouldn't be culled.
 // This test makes sure that watermarks are advanced correctly and that delta
 // files are culled correctly.
@@ -759,25 +765,23 @@ TEST_F(MvccTest, TestCorrectInitWithNoTxns) {
     clock_.Now();
   }
 
-  // Advance the safe timestamp.
-  Timestamp new_safe_time = clock_.Now();
-  mgr.AdjustSafeTime(new_safe_time);
+  // Advance the new transaction lower bound.
+  Timestamp new_ts_lower_bound = clock_.Now();
+  mgr.AdjustNewTransactionLowerBound(new_ts_lower_bound);
 
-  // Test that the snapshot reports that a timestamp lower than the safe time
-  // may have be committed transaction before that timestamp.
-  // Conversely, test that the snapshot reports that a timestamp greater
-  // than the safe time (and thus greater than none_committed_at_or_after_'
-  // as there are no other transactions committed) cannot have any committed
-  // transactions after that timestamp.
+  // Test that the snapshot reports that a timestamp lower than the new
+  // transaction lower bound may have committed transactions after that
+  // timestamp. Conversely, test that the snapshot reports that there are no
+  // committed transactions at or after the new lower bound.
   MvccSnapshot snap2;
   snap2 = MvccSnapshot(mgr);
-  Timestamp before_safe_time(new_safe_time.value() - 1);
-  Timestamp after_safe_time(new_safe_time.value() + 1);
-  EXPECT_TRUE(snap2.MayHaveCommittedTransactionsAtOrAfter(before_safe_time));
-  EXPECT_FALSE(snap2.MayHaveCommittedTransactionsAtOrAfter(after_safe_time));
+  Timestamp before_lb(new_ts_lower_bound.value() - 1);
+  Timestamp after_lb(new_ts_lower_bound.value() + 1);
+  EXPECT_TRUE(snap2.MayHaveCommittedTransactionsAtOrAfter(before_lb));
+  EXPECT_FALSE(snap2.MayHaveCommittedTransactionsAtOrAfter(after_lb));
 
-  EXPECT_EQ(snap2.all_committed_before_, new_safe_time);
-  EXPECT_EQ(snap2.none_committed_at_or_after_, new_safe_time);
+  EXPECT_EQ(snap2.all_committed_before_, new_ts_lower_bound);
+  EXPECT_EQ(snap2.none_committed_at_or_after_, new_ts_lower_bound);
   EXPECT_EQ(snap2.committed_timestamps_.size(), 0);
 }
 

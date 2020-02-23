@@ -189,18 +189,22 @@ class MvccManager {
   // Returns an error if the current snapshot has not been adjusted past its
   // initial state. While in this state, it is unsafe for the MvccManager to
   // serve information about already-applied transactions.
-  Status CheckIsSafeTimeInitialized() const;
+  Status CheckIsCleanTimeInitialized() const;
 
-  // Adjusts the safe time so that the MvccManager can trim state, provided
-  // 'safe_time' is higher than the current safe time.
+  // Adjusts the new lower bound on new transactions, provided 'timestamp' is
+  // higher than the current lower bound. This also updates the clean time,
+  // which may also now be 'timestamp' (see AdjustCleanTimeUnlocked() for more
+  // details).
   //
-  // This must only be called when there is a guarantee that there won't be
-  // any more transactions with timestamps equal to or lower than 'safe_time'.
+  // This must only called when we are guaranteed that there won't be new
+  // transactions started at or below the given timestamp, e.g. the
+  // transactions is consensus committed and we're beginning to apply it.
   //
-  // TODO(dralves) Until leader leases is implemented this should only be called
-  // with the timestamps of consensus committed transactions, not with the safe
-  // time received from the leader (which can go back without leader leases).
-  void AdjustSafeTime(Timestamp safe_time);
+  // TODO(dralves): Until leader leases is implemented this should only be
+  // called with the timestamps of consensus committed transactions, not with
+  // the safe time received from the leader (which can go back without leader
+  // leases).
+  void AdjustNewTransactionLowerBound(Timestamp timestamp);
 
   // Take a snapshot of the MVCC state at 'timestamp' (i.e which includes
   // all transactions which have a lower timestamp)
@@ -268,8 +272,8 @@ class MvccManager {
 
   // Begins a new transaction, which is assigned the provided timestamp.
   //
-  // Requires that 'timestamp' is not committed.
-  // Requires that 'timestamp' is greater than 'safe_time'.
+  // Requires that 'timestamp' is not committed is greater than
+  // 'new_txn_timstamp_exc_lower_bound_'.
   void StartTransaction(Timestamp timestamp);
 
   // Mark that the transaction with the given timestamp is starting to apply
@@ -352,7 +356,8 @@ class MvccManager {
 
   // Adjusts the clean time, i.e. the timestamp such that all transactions with
   // lower timestamps are committed or aborted, based on which transactions are
-  // currently in flight and on what is the latest value of 'safe_time_'.
+  // currently in flight and on what is the latest value of
+  // 'new_txn_timestamp_exc_lower_bound_'.
   //
   // Must be called with lock_ held.
   void AdjustCleanTimeUnlocked();
@@ -371,10 +376,13 @@ class MvccManager {
   typedef std::unordered_map<Timestamp::val_type, TxnState> InFlightMap;
   InFlightMap timestamps_in_flight_;
 
-  // A transaction timestamp below which all transactions are either committed or in-flight,
-  // meaning no new transactions will be started with a timestamp that is equal
-  // to or lower than this one.
-  Timestamp safe_time_;
+  // A transaction timestamp at and below which no new transactions can be
+  // initialized.
+  //
+  // We must apply transactions in timestamp order, so if we've begun applying
+  // a transaction at a given timestamp, we must not initialize a transaction
+  // at or below that timestamp.
+  Timestamp new_txn_timestamp_exc_lower_bound_;
 
   // The minimum timestamp in timestamps_in_flight_, or Timestamp::kMax
   // if that set is empty. This is cached in order to avoid having to iterate

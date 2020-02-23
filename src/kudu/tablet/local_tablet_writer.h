@@ -109,7 +109,7 @@ class LocalTabletWriter {
     RETURN_NOT_OK(tablet_->ApplyRowOperations(tx_state_.get()));
 
     tx_state_->ReleaseTxResultPB(&result_);
-    tablet_->mvcc_manager()->AdjustSafeTime(tx_state_->timestamp());
+    tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(tx_state_->timestamp());
     tx_state_->CommitOrAbort(Transaction::COMMITTED);
 
     // Return the status of first failed op.

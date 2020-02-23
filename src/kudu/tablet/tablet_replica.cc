@@ -700,7 +700,7 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
     CHECK_OK(prepare_pool_token_->SubmitFunc([this, ts] {
       std::lock_guard<simple_spinlock> l(lock_);
       if (state_ == RUNNING || state_ == BOOTSTRAPPING) {
-        tablet_->mvcc_manager()->AdjustSafeTime(Timestamp(ts));
+        tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(Timestamp(ts));
       }
     }));
   }

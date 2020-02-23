@@ -275,7 +275,7 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
     CHECK_OK(dms_->Update(tx.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
     tx.Commit();
   }
-  mvcc_.AdjustSafeTime(clock_.Now());
+  mvcc_.AdjustNewTransactionLowerBound(clock_.Now());
 
   MvccSnapshot snap(mvcc_);
   LOG_TIMING(INFO, "Applying updates") {

@@ -48,18 +48,16 @@ namespace tablet {
 using strings::Substitute;
 
 MvccManager::MvccManager()
-  : safe_time_(Timestamp::kMin),
+  : new_txn_timestamp_exc_lower_bound_(Timestamp::kMin),
     earliest_in_flight_(Timestamp::kMax),
     open_(true) {
   cur_snap_.all_committed_before_ = Timestamp::kInitialTimestamp;
   cur_snap_.none_committed_at_or_after_ = Timestamp::kInitialTimestamp;
 }
 
-Status MvccManager::CheckIsSafeTimeInitialized() const {
-  // We initialize the MVCC safe time and clean time at the same time, so if
-  // clean time has not been updated, neither has safe time.
+Status MvccManager::CheckIsCleanTimeInitialized() const {
   if (GetCleanTimestamp() == Timestamp::kInitialTimestamp) {
-    return Status::Uninitialized("safe time has not yet been initialized");
+    return Status::Uninitialized("clean time has not yet been initialized");
   }
   return Status::OK();
 }
@@ -67,14 +65,17 @@ Status MvccManager::CheckIsSafeTimeInitialized() const {
 void MvccManager::StartTransaction(Timestamp timestamp) {
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_inject_latency_ms_before_starting_txn);
   std::lock_guard<LockType> l(lock_);
-  CHECK(!cur_snap_.IsCommitted(timestamp)) << "Trying to start a new txn at an already-committed"
-                                           << " timestamp: " << timestamp.ToString()
-                                           << " cur_snap_: " << cur_snap_.ToString();
-  CHECK(InitTransactionUnlocked(timestamp)) << "There is already a transaction with timestamp: "
-                                            << timestamp.value() << " in flight or this timestamp "
-                                            << "is before than or equal to \"safe\" time."
-                                            << " Current Snapshot: " << cur_snap_.ToString()
-                                            << " Current safe time: " << safe_time_;
+  CHECK(!cur_snap_.IsCommitted(timestamp)) <<
+      Substitute("Trying to start a new txn at an already committed "
+                 "timestamp: $0, current MVCC snapshot: $1",
+                 timestamp.ToString(), cur_snap_.ToString());
+  CHECK(InitTransactionUnlocked(timestamp)) <<
+      Substitute("There is already a txn with timestamp: $0 in flight, or "
+                 "this timestamp is below or equal to the exclusive lower "
+                 "bound for new transaction timestamps. Current lower bound: "
+                 "$1, current MVCC snapshot: $2", timestamp.ToString(),
+                 new_txn_timestamp_exc_lower_bound_.ToString(),
+                 cur_snap_.ToString());
 }
 
 void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
@@ -95,8 +96,9 @@ void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
 }
 
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
-  // Ensure that we didn't mark the given timestamp as "safe".
-  if (PREDICT_FALSE(timestamp <= safe_time_)) {
+  // Ensure we're not trying to start a transaction that falls before our lower
+  // bound.
+  if (PREDICT_FALSE(timestamp <= new_txn_timestamp_exc_lower_bound_)) {
     return false;
   }
 
@@ -139,7 +141,10 @@ void MvccManager::CommitTransaction(Timestamp timestamp) {
   bool was_earliest = false;
   CommitTransactionUnlocked(timestamp, &was_earliest);
 
-  if (was_earliest && safe_time_ >= timestamp) {
+  // NOTE: we should have pushed the lower bound forward before committing, but
+  // we may not have in tests.
+  if (was_earliest && new_txn_timestamp_exc_lower_bound_ >= timestamp) {
+
     // If this transaction was the earliest in-flight, we might have to adjust
     // the "clean" timestamp.
     AdjustCleanTimeUnlocked();
@@ -188,21 +193,22 @@ void MvccManager::AdvanceEarliestInFlightTimestamp() {
   }
 }
 
-void MvccManager::AdjustSafeTime(Timestamp safe_time) {
+void MvccManager::AdjustNewTransactionLowerBound(Timestamp timestamp) {
   std::lock_guard<LockType> l(lock_);
-  // No more transactions will start with a ts that is lower than or equal
-  // to 'safe_time', so we adjust the snapshot accordingly.
-  if (PREDICT_TRUE(safe_time_ <= safe_time)) {
-    DVLOG(4) << "Adjusting safe time to: " << safe_time;
-    safe_time_ = safe_time;
+  // No more transactions will start with a timestamp that is lower than or
+  // equal to 'timestamp', so we adjust the snapshot accordingly.
+  if (PREDICT_TRUE(new_txn_timestamp_exc_lower_bound_ <= timestamp)) {
+    DVLOG(4) << "Adjusting new transaction lower bound to: " << timestamp;
+    new_txn_timestamp_exc_lower_bound_ = timestamp;
   } else {
     // Note: Getting here means that we are about to apply a transaction out of
     // order. This out-of-order applying is only safe because concurrrent
     // transactions are guaranteed to not affect the same state based on locks
     // taken before starting the transaction (e.g. row locks, schema locks).
-    KLOG_EVERY_N(INFO, 10) << Substitute("Tried to move safe_time back from $0 to $1. "
-                                         "Current Snapshot: $2", safe_time_.ToString(),
-                                         safe_time.ToString(), cur_snap_.ToString());
+    KLOG_EVERY_N(INFO, 10) <<
+        Substitute("Tried to move back new transaction lower bound from $0 to $1. "
+                   "Current Snapshot: $2", new_txn_timestamp_exc_lower_bound_.ToString(),
+                   timestamp.ToString(), cur_snap_.ToString());
     return;
   }
 
@@ -237,22 +243,24 @@ void MvccManager::AdjustCleanTimeUnlocked() {
 
   // There are two possibilities:
   //
-  // 1) We still have an in-flight transaction earlier than 'safe_time_'.
-  //    In this case, we update the watermark to that transaction's timestamp.
+  // 1) We still have an in-flight transaction earlier than
+  //    'new_txn_timestamp_exc_lower_bound_'. In this case, we update the
+  //    watermark to that transaction's timestamp.
   //
-  // 2) There are no in-flight transactions earlier than 'safe_time_'.
-  //    (There may still be in-flight transactions with future timestamps due to
-  //    commit-wait transactions which start in the future). In this case, we update
-  //    the watermark to 'safe_time_', since we know that no new
-  //    transactions can start with an earlier timestamp.
+  // 2) There are no in-flight transactions earlier than
+  //    'new_txn_timestamp_exc_lower_bound_'. In this case, we update the
+  //    watermark to that lower bound, since we know that no new transactions
+  //    can start with an earlier timestamp.
+  //    NOTE: there may still be in-flight transactions with future timestamps
+  //    due to commit-wait transactions which start in the future.
   //
   // In either case, we have to add the newly committed ts only if it remains higher
   // than the new watermark.
 
-  if (earliest_in_flight_ < safe_time_) {
+  if (earliest_in_flight_ < new_txn_timestamp_exc_lower_bound_) {
     cur_snap_.all_committed_before_ = earliest_in_flight_;
   } else {
-    cur_snap_.all_committed_before_ = safe_time_;
+    cur_snap_.all_committed_before_ = new_txn_timestamp_exc_lower_bound_;
   }
 
   DVLOG(4) << "Adjusted clean time to: " << cur_snap_.all_committed_before_;

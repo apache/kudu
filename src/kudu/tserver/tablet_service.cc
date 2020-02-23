@@ -2424,7 +2424,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   RETURN_NOT_OK(GetTabletRef(replica, &tablet, error_code));
 
   // Ensure the tablet has a valid clean time.
-  s = tablet->mvcc_manager()->CheckIsSafeTimeInitialized();
+  s = tablet->mvcc_manager()->CheckIsCleanTimeInitialized();
   if (!s.ok()) {
     LOG(WARNING) << Substitute("Rejecting scan request for tablet $0: $1",
                                tablet->tablet_id(), s.ToString());

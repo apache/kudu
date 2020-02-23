@@ -1117,31 +1117,32 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
     return Status::OK();
   }
 
-  // Handle safe time advancement:
+  // Handle advancement of our new timestamp lower bound watermark.
   //
-  // If this message is a Raft election no-op, or is a transaction op that
-  // has an external consistency mode other than COMMIT_WAIT, we know that no
+  // If this message is a Raft election no-op, or is a transaction op that has
+  // an external consistency mode other than COMMIT_WAIT, we know that no
   // future transaction will have a timestamp that is lower than it, so we can
   // just advance the safe timestamp to the message's timestamp.
   //
   // If the hybrid clock is disabled, all transactions will fall into this
   // category.
-  Timestamp safe_time;
+  Timestamp new_lower_bound;
   if (replicate->op_type() != consensus::WRITE_OP ||
       replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
-    safe_time = Timestamp(replicate->timestamp());
-  // ... else we set the safe timestamp to be the transaction's timestamp minus the maximum clock
-  // error. This opens the door for problems if the flags changed across reboots, but this is
-  // unlikely and the problem would manifest itself immediately and clearly (mvcc would complain
-  // the operation is already committed, with a CHECK failure).
+    new_lower_bound = Timestamp(replicate->timestamp());
+  // ... else we set the new timestamp lower bound to be the transaction's
+  // timestamp minus the maximum clock error. This opens the door for problems
+  // if the flags changed across reboots, but this is unlikely and the problem
+  // would manifest itself immediately and clearly (mvcc would complain the
+  // operation is already committed, with a CHECK failure).
   } else {
     DCHECK(clock_->SupportsExternalConsistencyMode(COMMIT_WAIT)) << "The provided clock does not"
         "support COMMIT_WAIT external consistency mode.";
-    safe_time = clock::HybridClock::AddPhysicalTimeToTimestamp(
+    new_lower_bound = clock::HybridClock::AddPhysicalTimeToTimestamp(
         Timestamp(replicate->timestamp()),
         MonoDelta::FromMicroseconds(-FLAGS_max_clock_sync_error_usec));
   }
-  tablet_->mvcc_manager()->AdjustSafeTime(safe_time);
+  tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(new_lower_bound);
 
   return Status::OK();
 }

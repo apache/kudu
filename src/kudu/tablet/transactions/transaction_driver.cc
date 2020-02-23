@@ -477,10 +477,11 @@ Status TransactionDriver::ApplyAsync() {
     if (transaction_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);
       order_verifier_->CheckApply(op_id_copy_.index(), prepare_physical_timestamp_);
-      // Now that the transaction is committed in consensus advance the safe time.
+      // Now that the transaction is committed in consensus advance the lower
+      // bound on new transaction timestamps.
       if (transaction_->state()->external_consistency_mode() != COMMIT_WAIT) {
         transaction_->state()->tablet_replica()->tablet()->mvcc_manager()->
-            AdjustSafeTime(transaction_->state()->timestamp());
+            AdjustNewTransactionLowerBound(transaction_->state()->timestamp());
       }
     } else {
       DCHECK_EQ(replication_state_, REPLICATION_FAILED);
