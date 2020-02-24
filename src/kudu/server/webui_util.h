@@ -14,10 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_SERVER_WEBUI_UTIL_H
-#define KUDU_SERVER_WEBUI_UTIL_H
+#pragma once
 
-#include <iosfwd>
 #include <vector>
 
 template <class T>
@@ -32,13 +30,7 @@ class MonitoredTask;
 // Appends a JSON array describing 'schema' to 'output', under the key "columns".
 void SchemaToJson(const Schema& schema, EasyJson* output);
 
-// Appends an HTML table describing 'schema' to 'output'.
-// TODO(wdberkeley) Remove this once /tablet is converted to a template.
-void HtmlOutputSchemaTable(const Schema& schema, std::ostringstream* output);
-
 // Appends a JSON array describing the tasks in 'tasks' to 'output', under the key "tasks".
 void TaskListToJson(const std::vector<scoped_refptr<MonitoredTask>>& tasks, EasyJson* output);
 
 } // namespace kudu
-
-#endif // KUDU_SERVER_WEBUI_UTIL_H

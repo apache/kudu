@@ -17,7 +17,7 @@
 
 #include "kudu/server/webui_util.h"
 
-#include <string>
+#include <vector>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -29,9 +29,6 @@
 #include "kudu/util/easy_json.h"
 #include "kudu/util/monotime.h"
 
-using std::string;
-using strings::Substitute;
-
 namespace kudu {
 
 void SchemaToJson(const Schema& schema, EasyJson* output) {
@@ -41,7 +38,7 @@ void SchemaToJson(const Schema& schema, EasyJson* output) {
     EasyJson col_json = schema_json.PushBack(EasyJson::kObject);
     col_json["name"] = col.name();
     col_json["is_key"] = schema.is_key_column(i);
-    col_json["id"] = Substitute("$0", schema.column_id(i));
+    col_json["id"] = strings::Substitute("$0", schema.column_id(i));
     col_json["type"] = col.TypeToString();
     const ColumnStorageAttributes& attrs = col.attributes();
     col_json["encoding"] = EncodingType_Name(attrs.encoding);
