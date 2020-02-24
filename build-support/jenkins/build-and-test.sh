@@ -374,6 +374,17 @@ if [ -d "$TEST_TMPDIR" ]; then
   rm -Rf $TEST_TMPDIR/*
 fi
 
+# Some portions of the C++ build may depend on Java code, so we may run Gradle
+# while building. Pass in some flags suitable for automated builds; these will
+# also be used in the Java build.
+export EXTRA_GRADLE_FLAGS="--console=plain"
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
+# KUDU-2524: temporarily disable scalafmt until we can work out its JDK
+# incompatibility issue.
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
+
 # actually do the build
 echo
 echo Building C++ code.
@@ -437,13 +448,6 @@ if [ "$BUILD_JAVA" == "1" ]; then
   set -x
 
   # Run the full Gradle build.
-  export EXTRA_GRADLE_FLAGS="--console=plain"
-  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
-  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
-  # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
-  # incompatibility issue.
-  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
-  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
   # If we're running distributed Java tests, submit them asynchronously.
   if [ "$ENABLE_DIST_TEST" == "1" ]; then
     echo

@@ -38,11 +38,11 @@ target_link_libraries(subprocess_proto
 set(ECHO_JAR ${EXECUTABLE_OUTPUT_PATH}/kudu-subprocess-echo.jar)
 
 add_custom_command(OUTPUT ${ECHO_JAR}
-    COMMAND ./gradlew :kudu-subprocess-echo:jar
-    COMMAND ln -nsf
-      "${JAVA_DIR}/kudu-subprocess-echo/build/libs/kudu-subprocess-echo-${KUDU_VERSION_NUMBER}.jar"
-      "${ECHO_JAR}"
-    WORKING_DIRECTORY "${JAVA_DIR}")
+  COMMAND ./gradlew :kudu-subprocess-echo:jar $ENV{EXTRA_GRADLE_FLAGS}
+  COMMAND ln -nsf
+    "${JAVA_DIR}/kudu-subprocess-echo/build/libs/kudu-subprocess-echo-${KUDU_VERSION_NUMBER}.jar"
+    "${ECHO_JAR}"
+  WORKING_DIRECTORY "${JAVA_DIR}")
 add_custom_target(echo_subprocess DEPENDS ${ECHO_JAR})
 
 add_library(kudu_subprocess
