@@ -254,6 +254,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
       gscoped_ptr<ReplicateMsg> replicate_msg,
       ConsensusReplicatedCallback replicated_cb);
 
+  // Creates a new ConsensusRound, the entity that owns all the data
+  // structures required for a consensus round, such as the ReplicateMsg
+  scoped_refptr<ConsensusRound> NewRound(
+      gscoped_ptr<ReplicateMsg> replicate_msg);
+
   // Called by a Leader to replicate an entry to the state machine.
   //
   // From the leader instance perspective execution proceeds as follows:
@@ -331,6 +336,33 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status RequestVote(const VoteRequestPB* request,
                      TabletVotingState tablet_voting_state,
                      VoteResponsePB* response);
+
+  // Utility Function:
+  // From a simple ChangeConfigRequest, create a BulkChangeConfigRequest
+  static void GetBulkConfigChangeRequest(
+      const ChangeConfigRequestPB& req,
+      BulkChangeConfigRequestPB *bulk_req);
+
+  // Utility function:
+  // Takes a bulk change config request and returns a new config by
+  // building it from the current committed_config + the changes
+  // This helper has been excised out of kudu
+  // BulkChangeConfig function. It does several sanity checks
+  // to adhere to one at a time change
+  Status CheckBulkConfigChangeAndGetNewConfigUnlocked(
+      const BulkChangeConfigRequestPB& req,
+      boost::optional<ServerErrorPB::Code>* error_code,
+      RaftConfigPB *new_config);
+
+  // This returns a ReplicateMsg to the caller, without actually running
+  // consensus. The term and index can shift after the return and therefore
+  // the caller has to hold on to some mutex to serialize the calls.
+  // The message should be resent via ReplicateMsg() API to do actual
+  // consensus
+  Status CheckAndPopulateChangeConfigMessage(
+      const ChangeConfigRequestPB& req,
+      boost::optional<ServerErrorPB::Code>* error_code,
+      ReplicateMsg *replicate_msg);
 
   // Implement a ChangeConfig() request.
   Status ChangeConfig(const ChangeConfigRequestPB& req,
@@ -465,6 +497,18 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                           ConsensusResponsePB* response,
                           rpc::RpcContext* context);
 
+  // Trigger that a non-Transaction ConsensusRound has finished replication.
+  // If the replication was successful, an status will be OK. Otherwise, it
+  // may be Aborted or some other error status.
+  // If 'status' is OK, write a Commit message to the local WAL based on the
+  // type of message it is.
+  // The 'client_cb' will be invoked at the end of this execution.
+  //
+  // NOTE: Must be called while holding 'lock_'.
+  void NonTxRoundReplicationFinished(ConsensusRound* round,
+                                     const StdStatusCallback& client_cb,
+                                     const Status& status);
+
  protected:
   RaftConsensus(ConsensusOptions options,
                 RaftPeerPB local_peer_pb,
@@ -552,6 +596,13 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
   void SetLeaderUuidUnlocked(const std::string& uuid);
+
+  // Utility function to get a replicated message
+  // from a old_config -> new_config config change proposal
+  Status CreateReplicateMsgFromConfigsUnlocked(
+      RaftConfigPB old_config,
+      RaftConfigPB new_config,
+      ReplicateMsg *cc_replicate);
 
   // Replicate (as leader) a config change. This includes validating the new
   // config and updating the peers and setting the new_configuration as pending.
@@ -767,18 +818,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // to be cleared such that we revert back to the old configuration.
   void CompleteConfigChangeRoundUnlocked(ConsensusRound* round,
                                          const Status& status);
-
-  // Trigger that a non-Transaction ConsensusRound has finished replication.
-  // If the replication was successful, an status will be OK. Otherwise, it
-  // may be Aborted or some other error status.
-  // If 'status' is OK, write a Commit message to the local WAL based on the
-  // type of message it is.
-  // The 'client_cb' will be invoked at the end of this execution.
-  //
-  // NOTE: Must be called while holding 'lock_'.
-  void NonTxRoundReplicationFinished(ConsensusRound* round,
-                                     const StdStatusCallback& client_cb,
-                                     const Status& status);
 
   // As a leader, append a new ConsensusRound to the queue.
   Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
@@ -1059,9 +1098,8 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
                  gscoped_ptr<ReplicateMsg> replicate_msg,
                  ConsensusReplicatedCallback replicated_cb);
 
-  // Ctor used for follower/learner transactions. These transactions do not use the
-  // replicate callback and the commit callback is set later, after the transaction
-  // is actually started.
+  // Ctor used when the ConsensusReplicatedCallback will be set after the round
+  // is created.
   ConsensusRound(RaftConsensus* consensus,
                  ReplicateRefPtr replicate_msg);
 

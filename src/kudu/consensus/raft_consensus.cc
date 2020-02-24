@@ -737,6 +737,13 @@ scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
                                                std::move(replicated_cb)));
 }
 
+scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
+    gscoped_ptr<ReplicateMsg> replicate_msg) {
+  ReplicateRefPtr r(new RefCountedReplicate(replicate_msg.release()));
+  return make_scoped_refptr(new ConsensusRound(this,
+                                               std::move(r)));
+}
+
 void RaftConsensus::ReportFailureDetectedTask() {
   std::unique_lock<simple_spinlock> try_lock(failure_detector_election_lock_,
                                              std::try_to_lock);
@@ -1914,23 +1921,28 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                "tablet", options_.tablet_id);
 
   BulkChangeConfigRequestPB bulk_req;
-  *bulk_req.mutable_tablet_id() = req.tablet_id();
+  GetBulkConfigChangeRequest(req, &bulk_req);
+
+  return BulkChangeConfig(bulk_req, std::move(client_cb), error_code);
+}
+
+void RaftConsensus::GetBulkConfigChangeRequest(const ChangeConfigRequestPB& req,
+    BulkChangeConfigRequestPB *bulk_req) {
+  *(bulk_req->mutable_tablet_id()) = req.tablet_id();
 
   if (req.has_dest_uuid()) {
-    *bulk_req.mutable_dest_uuid() = req.dest_uuid();
+    *(bulk_req->mutable_dest_uuid()) = req.dest_uuid();
   }
   if (req.has_cas_config_opid_index()) {
-    bulk_req.set_cas_config_opid_index(req.cas_config_opid_index());
+    bulk_req->set_cas_config_opid_index(req.cas_config_opid_index());
   }
-  auto* change = bulk_req.add_config_changes();
+  auto* change = bulk_req->add_config_changes();
   if (req.has_type()) {
     change->set_type(req.type());
   }
   if (req.has_server()) {
     *change->mutable_peer() = req.server();
   }
-
-  return BulkChangeConfig(bulk_req, std::move(client_cb), error_code);
 }
 
 Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
@@ -1942,6 +1954,49 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
+    RaftConfigPB new_config;
+    CheckBulkConfigChangeAndGetNewConfigUnlocked(req, error_code, &new_config);
+    const RaftConfigPB committed_config = cmeta_->CommittedConfig();
+
+    RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
+        committed_config, std::move(new_config), std::bind(
+            &RaftConsensus::MarkDirtyOnSuccess,
+            this,
+            string("Config change replication complete"),
+            std::move(client_cb),
+            std::placeholders::_1)));
+  } // Release lock before signaling request.
+
+  peer_manager_->SignalRequest();
+  return Status::OK();
+}
+
+Status RaftConsensus::CheckAndPopulateChangeConfigMessage(
+    const ChangeConfigRequestPB& req,
+    boost::optional<ServerErrorPB::Code>* error_code,
+    ReplicateMsg *replicate_msg) {
+  BulkChangeConfigRequestPB bulk_req;
+  GetBulkConfigChangeRequest(req, &bulk_req);
+
+  LockGuard l(lock_);
+  RaftConfigPB new_config;
+  RETURN_NOT_OK(CheckBulkConfigChangeAndGetNewConfigUnlocked(
+      bulk_req, error_code, &new_config));
+  const RaftConfigPB committed_config = cmeta_->CommittedConfig();
+
+  RETURN_NOT_OK(CreateReplicateMsgFromConfigsUnlocked(
+      committed_config, std::move(new_config),
+      replicate_msg));
+
+  return Status::OK();
+}
+
+Status RaftConsensus::CheckBulkConfigChangeAndGetNewConfigUnlocked(
+      const BulkChangeConfigRequestPB& req,
+      boost::optional<ServerErrorPB::Code>* error_code,
+      RaftConfigPB *new_config) {
+  {
+    DCHECK(lock_.is_locked());
     RETURN_NOT_OK(CheckRunningUnlocked());
     RETURN_NOT_OK(CheckActiveLeaderUnlocked());
     RETURN_NOT_OK(CheckNoConfigChangePendingUnlocked());
@@ -1969,7 +2024,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
 
     // 'new_config' will be modified in-place and validated before being used
     // as the new Raft configuration.
-    RaftConfigPB new_config = committed_config;
+    *new_config = committed_config;
 
     // Enforce the "one by one" config change rules, even with the bulk API.
     // Keep track of total voters added, including non-voters promoted to
@@ -2028,7 +2083,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
           if (peer.member_type() == RaftPeerPB::VOTER) {
             num_voters_modified++;
           }
-          *new_config.add_peers() = peer;
+          *(new_config->add_peers()) = peer;
           break;
 
         case REMOVE_PEER:
@@ -2040,7 +2095,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
                            server_uuid,
                            SecureShortDebugString(cmeta_->ToConsensusStatePB())));
           }
-          if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
+          if (!RemoveFromRaftConfig(new_config, server_uuid)) {
             return Status::NotFound(
                 Substitute("Server with UUID $0 not a member of the config. RaftConfig: $1",
                            server_uuid, SecureShortDebugString(committed_config)));
@@ -2053,7 +2108,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
         case MODIFY_PEER: {
           LOG(INFO) << "modifying peer" << peer.ShortDebugString();
           RaftPeerPB* modified_peer;
-          RETURN_NOT_OK(GetRaftConfigMember(&new_config, server_uuid, &modified_peer));
+          RETURN_NOT_OK(GetRaftConfigMember(new_config, server_uuid, &modified_peer));
           const RaftPeerPB orig_peer(*modified_peer);
           // Override 'member_type' and items within 'attrs' only if they are
           // explicitly passed in the request. At least one field must be
@@ -2097,7 +2152,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
     }
 
     // Don't allow no-op config changes to be committed.
-    if (MessageDifferencer::Equals(committed_config, new_config)) {
+    if (MessageDifferencer::Equals(committed_config, *new_config)) {
       return Status::InvalidArgument("requested configuration change does not "
                                      "actually modify the config",
                                      SecureShortDebugString(req));
@@ -2111,17 +2166,8 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
     }
 
     // We'll assign a new opid_index to this config change.
-    new_config.clear_opid_index();
-
-    RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
-        committed_config, std::move(new_config), std::bind(
-            &RaftConsensus::MarkDirtyOnSuccess,
-            this,
-            string("Config change replication complete"),
-            std::move(client_cb),
-            std::placeholders::_1)));
-  } // Release lock before signaling request.
-  peer_manager_->SignalRequest();
+    new_config->clear_opid_index();
+  }
   return Status::OK();
 }
 
@@ -2591,12 +2637,9 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
     StdStatusCallback client_cb) {
   DCHECK(lock_.is_locked());
   auto cc_replicate = new ReplicateMsg();
-  cc_replicate->set_op_type(CHANGE_CONFIG_OP);
-  ChangeConfigRecordPB* cc_req = cc_replicate->mutable_change_config_record();
-  cc_req->set_tablet_id(options_.tablet_id);
-  *cc_req->mutable_old_config() = std::move(old_config);
-  *cc_req->mutable_new_config() = std::move(new_config);
-  CHECK_OK(time_manager_->AssignTimestamp(cc_replicate));
+  RETURN_NOT_OK(CreateReplicateMsgFromConfigsUnlocked(
+      std::move(old_config), std::move(new_config),
+      cc_replicate));
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(cc_replicate))));
@@ -2608,6 +2651,20 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
       std::placeholders::_1));
 
   return AppendNewRoundToQueueUnlocked(round);
+}
+
+Status RaftConsensus::CreateReplicateMsgFromConfigsUnlocked(
+    RaftConfigPB old_config,
+    RaftConfigPB new_config,
+    ReplicateMsg *cc_replicate) {
+  DCHECK(lock_.is_locked());
+  cc_replicate->set_op_type(CHANGE_CONFIG_OP);
+  ChangeConfigRecordPB* cc_req = cc_replicate->mutable_change_config_record();
+  cc_req->set_tablet_id(options_.tablet_id);
+  *cc_req->mutable_old_config() = std::move(old_config);
+  *cc_req->mutable_new_config() = std::move(new_config);
+  CHECK_OK(time_manager_->AssignTimestamp(cc_replicate));
+  return Status::OK();
 }
 
 Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
@@ -2923,13 +2980,25 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Committing " << op_type_str << " with op id "
                                << round->id();
   round_handler_->FinishConsensusOnlyRound(round);
-  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
-  commit_msg->set_op_type(round->replicate_msg()->op_type());
-  *commit_msg->mutable_commited_op_id() = round->id();
 
-  CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
-                                   Bind(CrashIfNotOkStatusCB,
-                                        "Enqueued commit operation failed to write to WAL")));
+  // Using disable_noop_ mode as a proxy for not pushing commit messages
+  // after config change success.
+  // The call stack should be.
+  // StartConsensusOnlyRound in plugin
+  //   -> calls StartFollowerTransaction in plugin
+  //            which enques commitDoneCb
+  // commitDoneCB gets fired which calls
+  //     -> NonTxRoundReplicationFinished for OP_TYPE=CONFIG_CHANGE
+  //         which should not call commit msg
+  if (!disable_noop_) {
+    gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
+    commit_msg->set_op_type(round->replicate_msg()->op_type());
+    *commit_msg->mutable_commited_op_id() = round->id();
+
+    CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
+                                     Bind(CrashIfNotOkStatusCB,
+                                          "Enqueued commit operation failed to write to WAL")));
+  }
 
   client_cb(status);
 }
