@@ -23,7 +23,6 @@
 #include <utility>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -231,7 +230,7 @@ void GenericServiceImpl::SetServerWallClockForTests(const SetServerWallClockForT
                                                    rpc::RpcContext *context) {
   if (!FLAGS_use_hybrid_clock || FLAGS_time_source != "mock") {
     LOG(WARNING) << "Error setting wall clock for tests. Server is not using HybridClock"
-        "or was not started with '--ntp-source=mock'";
+        "or was not started with '--time_source=mock'";
     resp->set_success(false);
   }
 

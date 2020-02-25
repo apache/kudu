@@ -49,6 +49,8 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
+using google::SetCommandLineOptionWithMode;
+using google::FlagSettingMode;
 using kudu::clock::BuiltInNtp;
 using kudu::cloud::InstanceDetector;
 using kudu::cloud::InstanceMetadata;
@@ -464,6 +466,15 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
       result_builtin_ntp_servers.emplace_back(
           ntp_server, clock::kStandardNtpPort);
       result_time_source = TimeSource::NTP_SYNC_BUILTIN;
+
+      // NOTE: setting the default value for the --builtin_ntp_servers flag
+      // is the way to store the information on the effective setting for the
+      // built-in NTP client if time source auto-selection has run. This
+      // convention is used by the embedded Web server to show the corresponding
+      // information at the '/config' page.
+      SetCommandLineOptionWithMode("builtin_ntp_servers",
+                                   ntp_server.c_str(),
+                                   FlagSettingMode::SET_FLAGS_DEFAULT);
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)
     } else {
       // For the 'auto' time source, in case of environment that's known not
@@ -478,9 +489,17 @@ Status HybridClock::SelectTimeSource(const string& time_source_str,
     if (result_time_source == TimeSource::UNKNOWN) {
       result_time_source = TimeSource::UNSYNC_SYSTEM;
       LOG(WARNING) << Substitute(
-          "falling back '$0' time source for hybrid clock",
+          "falling back to '$0' time source for the hybrid clock",
           TimeSourceToString(result_time_source));
     }
+
+    // NOTE: setting the default value for the --time_source flag is the way to
+    // store the information on the effective time source auto-selected by Kudu.
+    // This convention is used by the embedded Web server to show the
+    // information on the effective time source at the '/config' page.
+    SetCommandLineOptionWithMode("time_source",
+                                 TimeSourceToString(result_time_source),
+                                 FlagSettingMode::SET_FLAGS_DEFAULT);
   } else if (boost::iequals(time_source_str, TIME_SOURCE_MOCK)) {
     result_time_source = TimeSource::MOCK;
 #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE)

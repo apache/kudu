@@ -30,8 +30,23 @@ under the License.
           {{^secure}}glyphicon-hide{{/secure}}"></span>
       {{name}}: {{value}}
       <small>(<a href="#{{id}}" data-toggle="collapse">?</a>)</small>
-      <div id="{{id}}" class="collapse text-muted">{{explanation}}</div>
+      <div id="{{id}}" class="collapse text-muted">{{comment}}</div>
     </li>
    {{/security_configs}}
+  </ul>
+</div>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">Time Source</h3>
+  </div>
+  <ul class="list-group">
+   {{#time_source_configs}}
+    <li class="list-group-item">
+      {{name}}: {{value}}
+      <small>(<a href="#{{id}}" data-toggle="collapse">?</a>)</small>
+      <div id="{{id}}" class="collapse text-muted">{{comment}}</div>
+    </li>
+   {{/time_source_configs}}
   </ul>
 </div>
