@@ -210,6 +210,17 @@ message RaftConfigPB {
   optional string replicaset_name = 6;
 }
 
+// A single directed edge on the request proxying graph.
+message ProxyEdgePB {
+  optional string peer_uuid = 1;        // Peer getting its requests proxied.
+  optional string proxy_from_uuid = 2;  // Peer to proxy from.
+}
+
+// A directed graph representation of the proxy topology.
+message ProxyTopologyPB {
+  repeated ProxyEdgePB proxy_edges = 1;
+}
+
 // Represents a snapshot of a configuration at a given moment in time.
 message ConsensusStatePB {
   // A configuration is always guaranteed to have a known term.

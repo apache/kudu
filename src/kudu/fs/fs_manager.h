@@ -234,6 +234,11 @@ class FsManager {
     return JoinPathSegments(GetConsensusMetadataDir(), tablet_id);
   }
 
+  // Return the path where ProxyTopologyPB is stored.
+  std::string GetProxyMetadataPath(const std::string& tablet_id) const {
+    return JoinPathSegments(GetConsensusMetadataDir(), tablet_id + ".proxy");
+  }
+
   Env* env() { return env_; }
 
   bool read_only() const {
