@@ -18,6 +18,7 @@
 // Ksck, a tool to run a Kudu System Check.
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <iosfwd>
@@ -174,6 +175,57 @@ enum class KsckFetchState {
 // Required for logging in case of CHECK failures.
 std::ostream& operator<<(std::ostream& lhs, KsckFetchState state);
 
+// Enum representing logical categories of flags used in a Kudu cluster.
+enum FlagsCategory {
+  // Flags specific to the time source, clock, and alike.
+  TIME_SOURCE = 0,
+
+  // Flags tagged hidden, experimental, or unsafe.
+  UNUSUAL = 1,
+
+  // Utility members used for range-related expressions.
+  // NOTE: update the MAX member upon updates
+  MIN = 0,
+  MAX = UNUSUAL,
+  ARRAY_SIZE = MAX + 1,
+};
+
+// Information on flags fetched using GetFlags() RPC. Consists of the status of
+// the GetFlags() operation and the result flags wrapped into boost::optional,
+// where the latter is boost::none unless the RPC was successful.
+struct FetchedFlags {
+  KsckFetchState state = KsckFetchState::UNINITIALIZED;
+  boost::optional<server::GetFlagsResponsePB> flags;
+};
+
+// Flags retrieved using GetFlags(), indexed by FlagsCategory.
+typedef std::array<FetchedFlags, FlagsCategory::ARRAY_SIZE> FetchedFlagsByCategory;
+
+// Structure to represent a filter to build appropriate request for GetFlags()
+// RPC.
+struct FlagsFetchFilter {
+  const std::vector<std::string> flags;
+  const std::vector<std::string> tags;
+};
+
+// Get filter to build GetFlags() RPC for the specified flags category.
+const FlagsFetchFilter& GetFlagsCategoryFilter(FlagsCategory category);
+
+// Get string representation for the specified flag category.
+const char* FlagsCategoryToString(FlagsCategory category);
+
+// Convert string representation of flag category into corresponding enum field.
+// On success, returns Status::OK() and outputs the result category into the
+// 'category' output parameter. On failure returns Status::InvalidParameter().
+Status StringToFlagsCategory(const std::string& str,
+                             FlagsCategory* category);
+
+// Convert comma-separated string into vector of flag categories. The result
+// is appended to the 'categories' output parameter. In addition, this function
+// removes duplicates in resulting 'categories'.
+Status StringToFlagsCategories(const std::string& str,
+                               std::vector<FlagsCategory>* categories);
+
 // The following three classes must be extended in order to communicate with their respective
 // components. The two main use cases envisioned for this are:
 // - To be able to mock a cluster to more easily test the ksck checks.
@@ -183,8 +235,8 @@ std::ostream& operator<<(std::ostream& lhs, KsckFetchState state);
 class KsckMaster {
  public:
   explicit KsckMaster(std::string address) :
-    address_(std::move(address)),
-    uuid_(strings::Substitute("$0 ($1)", kDummyUuid, address_)) {}
+      address_(std::move(address)),
+      uuid_(strings::Substitute("$0 ($1)", kDummyUuid, address_)) {}
 
   virtual ~KsckMaster() = default;
 
@@ -196,9 +248,8 @@ class KsckMaster {
   // Connects to the master and populates the consensus map.
   virtual Status FetchConsensusState() = 0;
 
-  // Retrieves "unusual" flags from the KsckMaster.
-  // "Unusual" flags ares ones tagged hidden, experimental, or unsafe.
-  virtual Status FetchUnusualFlags() = 0;
+  // Fetch flags for the requested categories.
+  virtual Status FetchFlags(const std::vector<FlagsCategory>& categories) = 0;
 
   // Since masters are provided by address, FetchInfo() must be called before
   // calling this method.
@@ -221,9 +272,12 @@ class KsckMaster {
     return cstate_;
   }
 
-  virtual const boost::optional<server::GetFlagsResponsePB>& unusual_flags() const {
-    CHECK_NE(KsckFetchState::UNINITIALIZED, unusual_flags_state_);
-    return unusual_flags_;
+  virtual const boost::optional<server::GetFlagsResponsePB>& flags(
+      FlagsCategory category) const {
+    CHECK_GE(category, FlagsCategory::MIN);
+    CHECK_LE(category, FlagsCategory::MAX);
+    CHECK_NE(KsckFetchState::UNINITIALIZED, flags_by_category_[category].state);
+    return flags_by_category_[category].flags;
   }
 
   std::string ToString() const {
@@ -252,14 +306,11 @@ class KsckMaster {
   // May be none if fetching info from the master fails.
   boost::optional<std::string> version_;
 
+  // Fetched flags indexed by category.
+  FetchedFlagsByCategory flags_by_category_;
+
   // May be none if consensus state fetch fails.
   boost::optional<consensus::ConsensusStatePB> cstate_;
-
-  // unusual_flags_state_ reflects whether the fetch of the non-critical flags
-  // info has been done, and if it succeeded or failed.
-  KsckFetchState unusual_flags_state_ = KsckFetchState::UNINITIALIZED;
-  // May be none if flag fetch fails.
-  boost::optional<server::GetFlagsResponsePB> unusual_flags_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckMaster);
@@ -272,14 +323,15 @@ class KsckTabletServer {
   typedef std::unordered_map<std::string, tablet::TabletStatusPB> TabletStatusMap;
 
   // Map from (tserver id, tablet id) to tablet consensus information.
-  typedef std::map
-      <std::pair<std::string, std::string>, consensus::ConsensusStatePB> TabletConsensusStateMap;
+  typedef std::map<std::pair<std::string, std::string>,
+                   consensus::ConsensusStatePB>
+      TabletConsensusStateMap;
 
   explicit KsckTabletServer(std::string uuid, std::string location = "")
       : uuid_(std::move(uuid)),
         location_(std::move(location)) {}
 
-  virtual ~KsckTabletServer() { }
+  virtual ~KsckTabletServer() {}
 
   // Connects to the configured tablet server and populates the fields of this class. 'health' must
   // not be nullptr.
@@ -296,9 +348,8 @@ class KsckTabletServer {
   // Otherwise 'health' will be UNAVAILABLE
   virtual Status FetchConsensusState(cluster_summary::ServerHealth* health) = 0;
 
-  // Retrieves "unusual" flags from the KsckTabletServer.
-  // "Unusual" flags ares ones tagged hidden, experimental, or unsafe.
-  virtual Status FetchUnusualFlags() = 0;
+  // Fetches flags for the requested categories.
+  virtual Status FetchFlags(const std::vector<FlagsCategory>& categories) = 0;
 
   // Fetches and updates the current timestamp from the tablet server.
   virtual void FetchCurrentTimestampAsync() = 0;
@@ -354,9 +405,12 @@ class KsckTabletServer {
     return version_;
   }
 
-  virtual const boost::optional<server::GetFlagsResponsePB>& unusual_flags() const {
-    CHECK_NE(KsckFetchState::UNINITIALIZED, unusual_flags_state_);
-    return unusual_flags_;
+  virtual const boost::optional<server::GetFlagsResponsePB>& flags(
+      FlagsCategory category) const {
+    DCHECK_GE(category, FlagsCategory::MIN);
+    DCHECK_LE(category, FlagsCategory::MAX);
+    CHECK_NE(KsckFetchState::UNINITIALIZED, flags_by_category_[category].state);
+    return flags_by_category_[category].flags;
   }
 
   virtual const boost::optional<cluster_summary::QuiescingInfo>& quiescing_info() const {
@@ -382,25 +436,21 @@ class KsckTabletServer {
   // it succeeded or failed.
   KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
 
-  TabletStatusMap tablet_status_map_;
-  TabletConsensusStateMap tablet_consensus_state_map_;
-
   // May be none if fetching info from the tablet server fails.
   boost::optional<std::string> version_;
 
-  // unusual_flags_state_ reflects whether the fetch of the non-critical flags
-  // info has been done, and if it succeeded or failed.
-  KsckFetchState unusual_flags_state_ = KsckFetchState::UNINITIALIZED;
+  // Fetched flags indexed by category.
+  FetchedFlagsByCategory flags_by_category_;
 
-  // May be none if flag fetch fails.
-  boost::optional<server::GetFlagsResponsePB> unusual_flags_;
+  TabletStatusMap tablet_status_map_;
+  TabletConsensusStateMap tablet_consensus_state_map_;
 
   // May be none if the quiescing request fails.
   boost::optional<cluster_summary::QuiescingInfo> quiescing_info_;
 
-  std::atomic<uint64_t> timestamp_;
   const std::string uuid_;
   std::string location_;
+  std::atomic<uint64_t> timestamp_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckTabletServer);
@@ -562,6 +612,10 @@ class Ksck {
   // Must first call CheckMasterHealth().
   Status CheckMasterUnusualFlags();
 
+  // Check for the consistency of flag values across all masters in the cluster.
+  // Must first call CheckMasterHealth().
+  Status CheckMasterDivergedFlags();
+
   // Verifies that it can connect to the cluster, i.e. that it can contact a
   // leader master.
   Status CheckClusterRunning();
@@ -580,6 +634,17 @@ class Ksck {
   // to a non-default value.
   // Must first call FetchInfoFromTabletServers().
   Status CheckTabletServerUnusualFlags();
+
+  // Check for the consistency of flag values across all tablet servers
+  // in the cluster.
+  // Must first call FetchInfoFromTabletServers().
+  Status CheckTabletServerDivergedFlags();
+
+  // Check for the consistency of flag values across all tablet servers and
+  // masters in the cluster.
+  // Must first call CheckMasterDivergedFlags() and
+  // CheckTabletServerDivergedFlags().
+  Status CheckDivergedFlags();
 
   // Check for version inconsistencies among all servers.
   Status CheckServerVersions();
@@ -610,13 +675,14 @@ class Ksck {
  private:
   friend class KsckTest;
 
-  // Accumulate information about flags from a server into a FlagToServersMap and
-  // a FlagTagsMap.
-  // 'flags_to_server_map' and 'flag_tags_map' must not be null.
-  void AddFlagsToFlagMaps(const server::GetFlagsResponsePB& flags,
-                          const std::string& server_address,
-                          KsckFlagToServersMap* flags_to_servers_map,
-                          KsckFlagTagsMap* flag_tags_map);
+  // Accumulate information about flags from a server into a FlagToServersMap
+  // and, optionally, flag's tags into a FlagTagsMap. 'flags_to_server_map' must
+  // not be null; 'flag_tags_map' may be null: in such case no information on
+  // flag's tags is accumulated.
+  static void AddFlagsToFlagMaps(const server::GetFlagsResponsePB& flags,
+                                 const std::string& server_address,
+                                 KsckFlagToServersMap* flags_to_servers_map,
+                                 KsckFlagTagsMap* flag_tags_map = nullptr);
 
   bool VerifyTable(const std::shared_ptr<KsckTable>& table);
 

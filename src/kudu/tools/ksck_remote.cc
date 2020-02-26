@@ -20,7 +20,6 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <initializer_list>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -95,6 +94,9 @@ using kudu::master::TServerStatePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::server::GenericServiceProxy;
+using kudu::server::GetFlagsRequestPB;
+using kudu::server::GetFlagsResponsePB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -111,17 +113,24 @@ MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
 
-// Common flag-fetching routine for masters and tablet servers.
-Status FetchUnusualFlagsCommon(const shared_ptr<server::GenericServiceProxy>& proxy,
-                               server::GetFlagsResponsePB* resp) {
-  server::GetFlagsRequestPB req;
-  RpcController rpc;
-  rpc.set_timeout(GetDefaultTimeout());
-  for (const string& tag : { "experimental", "hidden", "unsafe" }) {
+// Common flag-fetching routine. Fetches flags for the specified category,
+// given service proxy object.
+Status FetchCategoryFlags(FlagsCategory category,
+                          const shared_ptr<GenericServiceProxy>& proxy,
+                          GetFlagsResponsePB* resp) {
+  const auto& filter = GetFlagsCategoryFilter(category);
+  GetFlagsRequestPB req;
+  for (const auto& flag : filter.flags) {
+    req.add_flags(flag);
+  }
+  for (const auto& tag : filter.tags) {
     req.add_tags(tag);
   }
-  return proxy->GetFlags(req, resp, &rpc);
+  RpcController ctl;
+  ctl.set_timeout(GetDefaultTimeout());
+  return proxy->GetFlags(req, resp, &ctl);
 }
+
 } // anonymous namespace
 
 Status RemoteKsckMaster::Init() {
@@ -174,16 +183,20 @@ Status RemoteKsckMaster::FetchConsensusState() {
   return Status::OK();
 }
 
-Status RemoteKsckMaster::FetchUnusualFlags() {
-  server::GetFlagsResponsePB resp;
-  Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
-  if (!s.ok()) {
-    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
-  } else {
-    unusual_flags_state_ = KsckFetchState::FETCHED;
-    unusual_flags_ = std::move(resp);
+Status RemoteKsckMaster::FetchFlags(const vector<FlagsCategory>& categories) {
+  Status result;
+  for (auto cat : categories) {
+    GetFlagsResponsePB resp;
+    const auto s = FetchCategoryFlags(cat, generic_proxy_, &resp);
+    if (!s.ok()) {
+      flags_by_category_[cat].state = KsckFetchState::FETCH_FAILED;
+      result = result.ok() ? s : result.CloneAndAppend(s.message());
+    } else {
+      flags_by_category_[cat].state = KsckFetchState::FETCHED;
+      flags_by_category_[cat].flags = std::move(resp);
+    }
   }
-  return s;
+  return result;
 }
 
 Status RemoteKsckTabletServer::Init() {
@@ -323,16 +336,20 @@ Status RemoteKsckTabletServer::FetchConsensusState(ServerHealth* health) {
   return Status::OK();
 }
 
-Status RemoteKsckTabletServer::FetchUnusualFlags() {
-  server::GetFlagsResponsePB resp;
-  Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
-  if (!s.ok()) {
-    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
-  } else {
-    unusual_flags_state_ = KsckFetchState::FETCHED;
-    unusual_flags_ = std::move(resp);
+Status RemoteKsckTabletServer::FetchFlags(const vector<FlagsCategory>& categories) {
+  Status result;
+  for (auto cat : categories) {
+    GetFlagsResponsePB resp;
+    const auto s = FetchCategoryFlags(cat, generic_proxy_, &resp);
+    if (!s.ok()) {
+      flags_by_category_[cat].state = KsckFetchState::FETCH_FAILED;
+      result = result.ok() ? s : result.CloneAndAppend(s.message());
+    } else {
+      flags_by_category_[cat].state = KsckFetchState::FETCHED;
+      flags_by_category_[cat].flags = std::move(resp);
+    }
   }
-  return s;
+  return result;
 }
 
 class ChecksumStepper;

@@ -172,6 +172,12 @@ string ServerCsv(int server_count, const vector<string>& servers) {
 } // anonymous namespace
 
 Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
+  static const char* const kMsgCheckedFlags =
+      "Flags of checked categories for $0:";
+  static const char* const kMsgUnusualFlags = "Unusual flags for $0:";
+  static const char* const kMsgDivergedFlags =
+      "Flags of checked categories for $0 diverging from $1 flags:";
+
   if (mode == PrintMode::JSON_PRETTY || mode == PrintMode::JSON_COMPACT) {
     return PrintJsonTo(mode, sections, out);
   }
@@ -192,12 +198,35 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
     }
     out << endl;
 
-    RETURN_NOT_OK(PrintFlagTable(ServerType::MASTER,
-                                 cluster_status.master_summaries.size(),
-                                 master_flag_to_servers_map,
-                                 master_flag_tags_map,
-                                 out));
-    if (!master_flag_to_servers_map.empty()) {
+    if (!master_unusual_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgUnusualFlags,
+                        ServerTypeToString(ServerType::MASTER)) << endl;
+      RETURN_NOT_OK(PrintTaggedFlagTable(ServerType::MASTER,
+                                         cluster_status.master_summaries.size(),
+                                         master_unusual_flag_to_servers_map,
+                                         master_unusual_flag_tags_map,
+                                         out));
+      out << endl;
+    }
+
+    if (!master_checked_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgCheckedFlags,
+                        ServerTypeToString(ServerType::MASTER)) << endl;
+      RETURN_NOT_OK(PrintFlagTable(ServerType::MASTER,
+                                   cluster_status.master_summaries.size(),
+                                   master_checked_flag_to_servers_map,
+                                   out));
+      out << endl;
+    }
+
+    if (!master_diverged_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgDivergedFlags,
+                        ServerTypeToString(ServerType::MASTER),
+                        ServerTypeToString(ServerType::TABLET_SERVER)) << endl;
+      RETURN_NOT_OK(PrintFlagTable(ServerType::MASTER,
+                                   cluster_status.master_summaries.size(),
+                                   master_diverged_flag_to_servers_map,
+                                   out));
       out << endl;
     }
   }
@@ -221,12 +250,35 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
       out << endl;
     }
 
-    RETURN_NOT_OK(PrintFlagTable(ServerType::TABLET_SERVER,
-                                 cluster_status.tserver_summaries.size(),
-                                 tserver_flag_to_servers_map,
-                                 tserver_flag_tags_map,
-                                 out));
-    if (!tserver_flag_to_servers_map.empty()) {
+    if (!tserver_unusual_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgUnusualFlags,
+                        ServerTypeToString(ServerType::TABLET_SERVER)) << endl;
+      RETURN_NOT_OK(PrintTaggedFlagTable(ServerType::TABLET_SERVER,
+                                         cluster_status.tserver_summaries.size(),
+                                         tserver_unusual_flag_to_servers_map,
+                                         tserver_unusual_flag_tags_map,
+                                         out));
+      out << endl;
+    }
+
+    if (!tserver_checked_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgCheckedFlags,
+                        ServerTypeToString(ServerType::TABLET_SERVER)) << endl;
+      RETURN_NOT_OK(PrintFlagTable(ServerType::TABLET_SERVER,
+                                   cluster_status.tserver_summaries.size(),
+                                   tserver_checked_flag_to_servers_map,
+                                   out));
+      out << endl;
+    }
+
+    if (!tserver_diverged_flag_to_servers_map.empty()) {
+      out << Substitute(kMsgDivergedFlags,
+                        ServerTypeToString(ServerType::TABLET_SERVER),
+                        ServerTypeToString(ServerType::MASTER)) << endl;
+      RETURN_NOT_OK(PrintFlagTable(ServerType::TABLET_SERVER,
+                                   cluster_status.tserver_summaries.size(),
+                                   tserver_diverged_flag_to_servers_map,
+                                   out));
       out << endl;
     }
   }
@@ -234,8 +286,8 @@ Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
   // Finally, in the "server section", print the version summary.
   if (sections & PrintSections::VERSION_SUMMARIES) {
     RETURN_NOT_OK(PrintVersionTable(version_summaries,
-                                    cluster_status.master_summaries.size()
-                                      + cluster_status.tserver_summaries.size(),
+                                    cluster_status.master_summaries.size() +
+                                        cluster_status.tserver_summaries.size(),
                                     out));
     out << endl;
   }
@@ -432,8 +484,26 @@ Status PrintServerHealthSummaries(ServerType type,
 Status PrintFlagTable(ServerType type,
                       int num_servers,
                       const KsckFlagToServersMap& flag_to_servers_map,
-                      const KsckFlagTagsMap& flag_tags_map,
                       ostream& out) {
+  if (flag_to_servers_map.empty()) {
+    return Status::OK();
+  }
+  DataTable flags_table({"Flag", "Value", ServerTypeToString(type)});
+  for (const auto& flag : flag_to_servers_map) {
+    const string& name = flag.first.first;
+    const string& value = flag.first.second;
+    flags_table.AddRow({name,
+                        value,
+                        ServerCsv(num_servers, flag.second)});
+  }
+  return flags_table.PrintTo(out);
+}
+
+Status PrintTaggedFlagTable(ServerType type,
+                            int num_servers,
+                            const KsckFlagToServersMap& flag_to_servers_map,
+                            const KsckFlagTagsMap& flag_tags_map,
+                            ostream& out) {
   if (flag_to_servers_map.empty()) {
     return Status::OK();
   }

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 #include <map>
@@ -92,7 +93,9 @@ class MockKsckMaster : public KsckMaster {
     uuid_ = uuid;
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      unusual_flags_.emplace();
+      for (size_t cat = FlagsCategory::MIN; cat < FlagsCategory::ARRAY_SIZE; ++cat) {
+        flags_by_category_[cat].flags.emplace();
+      }
     }
   }
 
@@ -113,13 +116,16 @@ class MockKsckMaster : public KsckMaster {
     return fetch_cstate_status_;
   }
 
-  Status FetchUnusualFlags() override {
-    if (is_get_flags_available_) {
-      unusual_flags_state_ = KsckFetchState::FETCHED;
-      return Status::OK();
+  Status FetchFlags(const std::vector<FlagsCategory>& categories) override {
+    for (const auto cat : categories) {
+      if (is_get_flags_available_) {
+        flags_by_category_[cat].state = KsckFetchState::FETCHED;
+      } else {
+        flags_by_category_[cat].state = KsckFetchState::FETCH_FAILED;
+      }
     }
-    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
-    return Status::RemoteError("GetFlags not available");
+    return is_get_flags_available_
+        ? Status::OK() : Status::RemoteError("GetFlags not available");
   }
 
   // Public because the unit tests mutate these variables directly.
@@ -127,7 +133,7 @@ class MockKsckMaster : public KsckMaster {
   Status fetch_cstate_status_;
   using KsckMaster::uuid_;
   using KsckMaster::cstate_;
-  using KsckMaster::unusual_flags_;
+  using KsckMaster::flags_by_category_;
   using KsckMaster::version_;
  private:
   const bool is_get_flags_available_;
@@ -143,7 +149,9 @@ class MockKsckTabletServer : public KsckTabletServer {
         is_get_flags_available_(is_get_flags_available) {
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      unusual_flags_.emplace();
+      for (size_t cat = FlagsCategory::MIN; cat < FlagsCategory::ARRAY_SIZE; ++cat) {
+        flags_by_category_[cat].flags.emplace();
+      }
     }
   }
 
@@ -163,13 +171,16 @@ class MockKsckTabletServer : public KsckTabletServer {
     return Status::OK();
   }
 
-  Status FetchUnusualFlags() override {
-    if (is_get_flags_available_) {
-      unusual_flags_state_ = KsckFetchState::FETCHED;
-      return Status::OK();
+  Status FetchFlags(const std::vector<FlagsCategory>& categories) override {
+    for (const auto cat : categories) {
+      if (is_get_flags_available_) {
+        flags_by_category_[cat].state = KsckFetchState::FETCHED;
+      } else {
+        flags_by_category_[cat].state = KsckFetchState::FETCH_FAILED;
+      }
     }
-    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
-    return Status::RemoteError("GetFlags not available");
+    return is_get_flags_available_
+        ? Status::OK() : Status::RemoteError("GetFlags not available");
   }
 
   void FetchCurrentTimestampAsync() override {}
@@ -203,7 +214,7 @@ class MockKsckTabletServer : public KsckTabletServer {
   // The fake progress amount for this mock server, used to mock checksum
   // progress for this server.
   int64_t checksum_progress_ = 10;
-  using KsckTabletServer::unusual_flags_;
+  using KsckTabletServer::flags_by_category_;
   using KsckTabletServer::location_;
   using KsckTabletServer::version_;
 
@@ -1100,7 +1111,7 @@ TEST_F(KsckTest, TestMasterFlagCheck) {
     }
     shared_ptr<MockKsckMaster> master =
         std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(i));
-    master->unusual_flags_ = std::move(flags);
+    master->flags_by_category_[FlagsCategory::UNUSUAL].flags = std::move(flags);
   }
   ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckMasterUnusualFlags());
@@ -1233,7 +1244,7 @@ TEST_F(KsckTest, TestTserverFlagCheck) {
     }
     shared_ptr<MockKsckTabletServer> ts =
         std::static_pointer_cast<MockKsckTabletServer>(entry.second);
-    ts->unusual_flags_ = std::move(flags);
+    ts->flags_by_category_[FlagsCategory::UNUSUAL].flags = std::move(flags);
     i++;
   }
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());

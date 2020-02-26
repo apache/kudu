@@ -25,7 +25,7 @@
 namespace kudu {
 namespace cluster_summary {
 
-const char* const HealthCheckResultToString(HealthCheckResult cr) {
+const char* HealthCheckResultToString(HealthCheckResult cr) {
   switch (cr) {
     case HealthCheckResult::HEALTHY:
       return "HEALTHY";
@@ -43,7 +43,7 @@ const char* const HealthCheckResultToString(HealthCheckResult cr) {
 }
 
 // Return a string representation of 'sh'.
-const char* const ServerHealthToString(ServerHealth sh) {
+const char* ServerHealthToString(ServerHealth sh) {
   switch (sh) {
     case ServerHealth::HEALTHY:
       return "HEALTHY";
@@ -59,7 +59,7 @@ const char* const ServerHealthToString(ServerHealth sh) {
 }
 
 // Return a string representation of 'type'.
-const char* const ServerTypeToString(ServerType type) {
+const char* ServerTypeToString(ServerType type) {
   switch (type) {
     case ServerType::MASTER:
       return "Master";

@@ -126,10 +126,16 @@ struct KsckResults {
   KsckVersionToServersMap version_summaries;
 
   // Information about the flags of masters and tablet servers.
-  KsckFlagToServersMap master_flag_to_servers_map;
-  KsckFlagTagsMap master_flag_tags_map;
-  KsckFlagToServersMap tserver_flag_to_servers_map;
-  KsckFlagTagsMap tserver_flag_tags_map;
+  KsckFlagToServersMap master_checked_flag_to_servers_map;
+  KsckFlagToServersMap master_unusual_flag_to_servers_map;
+  KsckFlagTagsMap master_unusual_flag_tags_map;
+  KsckFlagToServersMap tserver_checked_flag_to_servers_map;
+  KsckFlagToServersMap tserver_unusual_flag_to_servers_map;
+  KsckFlagTagsMap tserver_unusual_flag_tags_map;
+
+  // Information on flags diverged between masters and tablet servers.
+  KsckFlagToServersMap master_diverged_flag_to_servers_map;
+  KsckFlagToServersMap tserver_diverged_flag_to_servers_map;
 
   // Any special states that the tablet servers may be in.
   KsckTServerStateMap ts_states;
@@ -156,14 +162,21 @@ Status PrintServerHealthSummaries(
     const std::vector<cluster_summary::ServerHealthSummary>& summaries,
     std::ostream& out);
 
-// Print a formatted summary of the flags in 'flag_to_servers_map', indicating
-// which servers have which (flag, value) pairs set.
-// Flag tag information is sourced from 'flag_tags_map'.
+// Print a formatted summary of the flags in 'flag_to_servers_map',
+// indicating which servers have which (flag, value) pairs set.
 Status PrintFlagTable(cluster_summary::ServerType type,
                       int num_servers,
                       const KsckFlagToServersMap& flag_to_servers_map,
-                      const KsckFlagTagsMap& flag_tags_map,
                       std::ostream& out);
+
+// Similar to PrintFlagTable(), but also output information on tags for
+// flags in 'flag_to_servers_map'. Flag tag information is sourced from
+// 'flag_tags_map'.
+Status PrintTaggedFlagTable(cluster_summary::ServerType type,
+                            int num_servers,
+                            const KsckFlagToServersMap& flag_to_servers_map,
+                            const KsckFlagTagsMap& flag_tags_map,
+                            std::ostream& out);
 
 Status PrintTServerStatesTable(const KsckTServerStateMap& ts_states,
                                std::ostream& out);

@@ -82,7 +82,7 @@ class RemoteKsckMaster : public KsckMaster {
   // Gathers consensus state for the master tablet.
   Status FetchConsensusState() override;
 
-  Status FetchUnusualFlags() override;
+  Status FetchFlags(const std::vector<FlagsCategory>& categories) override;
 
  private:
   std::shared_ptr<rpc::Messenger> messenger_;
@@ -111,7 +111,7 @@ class RemoteKsckTabletServer : public KsckTabletServer,
 
   Status FetchConsensusState(cluster_summary::ServerHealth* health) override;
 
-  Status FetchUnusualFlags() override;
+  Status FetchFlags(const std::vector<FlagsCategory>& categories) override;
 
   void FetchCurrentTimestampAsync() override;
   Status FetchCurrentTimestamp() override;

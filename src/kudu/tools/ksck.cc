@@ -38,6 +38,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/color.h"
@@ -53,10 +54,19 @@
   } \
 } while (0)
 
+#define STR_FLAGS_CATEGORY_TIME_SOURCE "time_source"
+#define STR_FLAGS_CATEGORY_UNUSUAL "unusual"
+
 DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster.");
 DEFINE_int32(fetch_info_concurrency, 20,
              "Number of threads to fetch info concurrently.");
+DEFINE_string(flags_categories_to_check, STR_FLAGS_CATEGORY_TIME_SOURCE,
+              "Comma-separated list of flag categories to check for divergence "
+              "across the cluster; default is "
+              STR_FLAGS_CATEGORY_TIME_SOURCE "; available categories are "
+              STR_FLAGS_CATEGORY_TIME_SOURCE ","
+              STR_FLAGS_CATEGORY_UNUSUAL ".");
 
 DEFINE_string(ksck_format, "plain_concise",
               "Output format for ksck. Available options are 'plain_concise', "
@@ -79,11 +89,14 @@ using kudu::cluster_summary::ServerHealth;
 using kudu::cluster_summary::ServerHealthSummary;
 using kudu::cluster_summary::TableSummary;
 using kudu::cluster_summary::TabletSummary;
+using kudu::server::GetFlagsResponsePB;
 
 using std::atomic;
 using std::cout;
 using std::ostream;
 using std::ostringstream;
+using std::pair;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -91,6 +104,23 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tools {
+
+DEFINE_validator(flags_categories_to_check,
+                 [](const char* /* flag_name */, const string& value) {
+  vector<string> categories;
+  SplitStringUsing(value, ",", &categories);
+  for (const auto& cat : categories) {
+    if (cat.empty() || StringToFlagsCategory(cat, nullptr).ok()) {
+      continue;
+    }
+    LOG(ERROR) << Substitute("unknown flag category: '$0' "
+                             "(expecting comma-separated list built out of "
+                             STR_FLAGS_CATEGORY_TIME_SOURCE ", "
+                             STR_FLAGS_CATEGORY_UNUSUAL ")", cat);
+    return false;
+  }
+  return true;
+});
 
 namespace {
 void BuildConsensusStateForConfigMember(const consensus::ConsensusStatePB& cstate,
@@ -159,6 +189,70 @@ std::ostream& operator<<(std::ostream& lhs, KsckFetchState state) {
   return lhs;
 }
 
+const FlagsFetchFilter& GetFlagsCategoryFilter(FlagsCategory category) {
+  // NOTE: using double braces for std::array aggregate initialization.
+  static const std::array<FlagsFetchFilter, FlagsCategory::ARRAY_SIZE> kFilters { {
+    {
+      // FlagsCategory::TIME_SOURCE
+      { "time_source", "builtin_ntp_servers", },
+      {}
+    },
+    {
+      // FlagsCategory::UNUSUAL
+      {},
+      { "experimental", "hidden", "unsafe" }
+    },
+  } };
+  DCHECK_GE(category, FlagsCategory::MIN);
+  DCHECK_LE(category, FlagsCategory::MAX);
+  return kFilters[category];
+}
+
+const char* FlagsCategoryToString(FlagsCategory category) {
+  static constexpr const char* const kCategoryTimeSource =
+      STR_FLAGS_CATEGORY_TIME_SOURCE;
+  static constexpr const char* const kCategoryUnusual =
+      STR_FLAGS_CATEGORY_UNUSUAL;
+  switch (category) {
+    case FlagsCategory::TIME_SOURCE:
+      return kCategoryTimeSource;
+    case FlagsCategory::UNUSUAL:
+      return kCategoryUnusual;
+  }
+  return "unknown";
+}
+
+Status StringToFlagsCategory(const string& str, FlagsCategory* category) {
+  if (boost::iequals(str, STR_FLAGS_CATEGORY_TIME_SOURCE)) {
+    if (category) {
+      *category = FlagsCategory::TIME_SOURCE;
+    }
+    return Status::OK();
+  }
+  if (boost::iequals(str, STR_FLAGS_CATEGORY_UNUSUAL)) {
+    if (category) {
+      *category = FlagsCategory::UNUSUAL;
+    }
+    return Status::OK();
+  }
+  return Status::InvalidArgument(Substitute("$0: unknown flags category", str));
+}
+
+Status StringToFlagsCategories(const std::string& str,
+                               vector<FlagsCategory>* categories) {
+  DCHECK(categories);
+  vector<string> categories_str(strings::Split(str, ",", strings::SkipEmpty()));
+  for (const auto& str : categories_str) {
+    FlagsCategory cat;
+    RETURN_NOT_OK(StringToFlagsCategory(str, &cat));
+    categories->push_back(cat);
+  }
+  std::sort(categories->begin(), categories->end());
+  categories->erase(std::unique(categories->begin(), categories->end()),
+                    categories->end());
+  return Status::OK();
+}
+
 Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
     : cluster_(std::move(cluster)),
       out_(out == nullptr ? &std::cout : out) {
@@ -180,35 +274,38 @@ Status Ksck::CheckMasterHealth() {
   vector<ServerHealthSummary> master_summaries;
   simple_spinlock master_summaries_lock;
 
+  vector<FlagsCategory> flags_categories_to_fetch = { FlagsCategory::UNUSUAL };
+  RETURN_NOT_OK(StringToFlagsCategories(FLAGS_flags_categories_to_check,
+                                        &flags_categories_to_fetch));
   for (const auto& master : cluster_->masters()) {
     RETURN_NOT_OK(pool_->SubmitFunc([&]() {
-        ServerHealthSummary sh;
-        Status s = master->FetchInfo().AndThen([&]() {
-          return master->FetchConsensusState();
-        });
-        sh.uuid = master->uuid();
-        sh.address = master->address();
-        sh.version = master->version();
-        sh.status = s;
-        if (!s.ok()) {
-          if (IsNotAuthorizedMethodAccess(s)) {
-            sh.health = ServerHealth::UNAUTHORIZED;
-            ++unauthorized_masters;
-          } else {
-            sh.health = ServerHealth::UNAVAILABLE;
-          }
-          ++bad_masters;
+      ServerHealthSummary sh;
+      Status s = master->FetchInfo().AndThen([&]() {
+        return master->FetchConsensusState();
+      });
+      sh.uuid = master->uuid();
+      sh.address = master->address();
+      sh.version = master->version();
+      sh.status = s;
+      if (!s.ok()) {
+        if (IsNotAuthorizedMethodAccess(s)) {
+          sh.health = ServerHealth::UNAUTHORIZED;
+          ++unauthorized_masters;
+        } else {
+          sh.health = ServerHealth::UNAVAILABLE;
         }
+        ++bad_masters;
+      }
 
-        {
-          std::lock_guard<simple_spinlock> lock(master_summaries_lock);
-          master_summaries.emplace_back(std::move(sh));
-        }
+      {
+        std::lock_guard<simple_spinlock> lock(master_summaries_lock);
+        master_summaries.emplace_back(std::move(sh));
+      }
 
-        // Fetch the flags information.
-        // Flag retrieval is not supported by older versions; failure is tracked in
-        // CheckMasterUnusualFlags().
-        ignore_result(master->FetchUnusualFlags());
+      // Fetch the flags information in every requested category.
+      // Flag retrieval is not supported by older versions; failure is tracked
+      // in CheckTabletServer{Unusual,Diverged}Flags().
+      ignore_result(master->FetchFlags(flags_categories_to_fetch));
     }));
   }
   pool_->Wait();
@@ -273,44 +370,83 @@ Status Ksck::CheckMasterConsensus() {
   return Status::OK();
 }
 
-void Ksck::AddFlagsToFlagMaps(const server::GetFlagsResponsePB& flags,
+void Ksck::AddFlagsToFlagMaps(const GetFlagsResponsePB& flags,
                               const string& server_address,
                               KsckFlagToServersMap* flags_to_servers_map,
                               KsckFlagTagsMap* flag_tags_map) {
-  CHECK(flags_to_servers_map);
-  CHECK(flag_tags_map);
+  DCHECK(flags_to_servers_map);
   for (const auto& f : flags.flags()) {
-    const std::pair<string, string> key(f.name(), f.value());
+    const pair<string, string> key(f.name(), f.value());
     if (!InsertIfNotPresent(flags_to_servers_map, key, { server_address })) {
       FindOrDieNoPrint(*flags_to_servers_map, key).push_back(server_address);
     }
-    InsertIfNotPresent(flag_tags_map, f.name(), JoinStrings(f.tags(), ","));
+    if (flag_tags_map != nullptr) {
+      InsertIfNotPresent(flag_tags_map, f.name(), JoinStrings(f.tags(), ","));
+    }
   }
 }
 
 Status Ksck::CheckMasterUnusualFlags() {
-  int bad_masters = 0;
-  Status last_error = Status::OK();
+  size_t bad_servers = 0;
   for (const auto& master : cluster_->masters()) {
-    if (!master->unusual_flags()) {
-      bad_masters++;
+    const auto& unusual_flags = master->flags(FlagsCategory::UNUSUAL);
+    if (!unusual_flags) {
+      ++bad_servers;
       continue;
     }
-    AddFlagsToFlagMaps(*master->unusual_flags(),
+    AddFlagsToFlagMaps(*unusual_flags,
                        master->address(),
-                       &results_.master_flag_to_servers_map,
-                       &results_.master_flag_tags_map);
+                       &results_.master_unusual_flag_to_servers_map,
+                       &results_.master_unusual_flag_tags_map);
   }
 
-  if (!results_.master_flag_to_servers_map.empty()) {
+  if (!results_.master_unusual_flag_to_servers_map.empty()) {
     results_.warning_messages.push_back(Status::ConfigurationError(
         "Some masters have unsafe, experimental, or hidden flags set"));
   }
 
-  if (bad_masters > 0) {
-    return Status::Incomplete(
-        Substitute("$0 of $1 masters' flags were not available",
-                   bad_masters, cluster_->masters().size()));
+  if (bad_servers > 0) {
+    return Status::Incomplete(Substitute(
+        "$0 of $1 masters were not available to retrieve unusual flags",
+        bad_servers, cluster_->masters().size()));
+  }
+  return Status::OK();
+}
+
+Status Ksck::CheckMasterDivergedFlags() {
+  vector<FlagsCategory> flags_categories;
+  RETURN_NOT_OK(StringToFlagsCategories(FLAGS_flags_categories_to_check,
+                                        &flags_categories));
+  for (const auto cat : flags_categories) {
+    KsckFlagToServersMap servers_by_flag;
+    size_t bad_servers = 0;
+    for (const auto& master : cluster_->masters()) {
+      const auto& flags = master->flags(cat);
+      if (!flags) {
+        ++bad_servers;
+        continue;
+      }
+      AddFlagsToFlagMaps(*flags, master->address(), &servers_by_flag);
+      AddFlagsToFlagMaps(*flags,
+                         master->address(),
+                         &results_.master_checked_flag_to_servers_map);
+    }
+
+    for (const auto& e : servers_by_flag) {
+      if (e.second.size() + bad_servers == cluster_->masters().size()) {
+        continue;
+      }
+      results_.warning_messages.push_back(Status::ConfigurationError(
+          Substitute("Different masters have different settings for same "
+                     "flags of checked category '$0'",
+                     FlagsCategoryToString(cat))));
+      break;
+    }
+    if (bad_servers > 0) {
+      return Status::Incomplete(Substitute(
+          "$0 of $1 masters were not available to retrieve $2 category flags",
+          bad_servers, cluster_->masters().size(), FlagsCategoryToString(cat)));
+    }
   }
   return Status::OK();
 }
@@ -339,6 +475,9 @@ Status Ksck::FetchInfoFromTabletServers() {
   vector<ServerHealthSummary> tablet_server_summaries;
   simple_spinlock tablet_server_summaries_lock;
 
+  vector<FlagsCategory> flags_categories_to_fetch = { FlagsCategory::UNUSUAL };
+  RETURN_NOT_OK(StringToFlagsCategories(FLAGS_flags_categories_to_check,
+                                        &flags_categories_to_fetch));
   for (const auto& entry : cluster_->tablet_servers()) {
     const auto& ts = entry.second;
     RETURN_NOT_OK(pool_->SubmitFunc([&]() {
@@ -371,10 +510,10 @@ Status Ksck::FetchInfoFromTabletServers() {
         tablet_server_summaries.push_back(std::move(summary));
       }
 
-      // Fetch the flags information.
-      // Flag retrieval is not supported by older versions; failure is tracked in
-      // CheckTabletServerUnusualFlags().
-      ignore_result(ts->FetchUnusualFlags());
+      // Fetch the flags information in every requested category.
+      // Flag retrieval is not supported by older versions; failure is tracked
+      // in CheckTabletServer{Unusual,Diverged}Flags().
+      ignore_result(ts->FetchFlags(flags_categories_to_fetch));
     }));
   }
   pool_->Wait();
@@ -439,7 +578,9 @@ Status Ksck::Run() {
   PUSH_PREPEND_NOT_OK(CheckMasterConsensus(), results_.error_messages,
                       "master consensus error");
   PUSH_PREPEND_NOT_OK(CheckMasterUnusualFlags(), results_.warning_messages,
-                      "master flag check error");
+                      "master unusual flags check error");
+  PUSH_PREPEND_NOT_OK(CheckMasterDivergedFlags(), results_.warning_messages,
+                      "master diverged flags check error");
 
   // CheckClusterRunning and FetchTableAndTabletInfo must succeed for
   // subsequent checks to be runnable.
@@ -460,9 +601,14 @@ Status Ksck::Run() {
   PUSH_PREPEND_NOT_OK(FetchInfoFromTabletServers(), results_.error_messages,
                       "error fetching info from tablet servers");
   PUSH_PREPEND_NOT_OK(CheckTabletServerUnusualFlags(), results_.warning_messages,
-                      "tserver flag check error");
+                      "tserver unusual flags check error");
+  PUSH_PREPEND_NOT_OK(CheckTabletServerDivergedFlags(), results_.warning_messages,
+                      "tserver diverged flags check error");
   PUSH_PREPEND_NOT_OK(CheckServerVersions(), results_.warning_messages,
                       "version check error");
+
+  PUSH_PREPEND_NOT_OK(CheckDivergedFlags(), results_.warning_messages,
+                      "diverged flags (both masters and tservers) check error");
 
   PUSH_PREPEND_NOT_OK(CheckTablesConsistency(), results_.error_messages,
                       "table consistency check error");
@@ -492,28 +638,112 @@ Status Ksck::Run() {
 }
 
 Status Ksck::CheckTabletServerUnusualFlags() {
-  int bad_tservers = 0;
+  int bad_servers = 0;
   for (const auto& uuid_and_ts : cluster_->tablet_servers()) {
     const auto& tserver = uuid_and_ts.second;
-    if (!tserver->unusual_flags()) {
-      bad_tservers++;
+    const auto& unusual_flags = tserver->flags(FlagsCategory::UNUSUAL);
+    if (!unusual_flags) {
+      ++bad_servers;
       continue;
     }
-    AddFlagsToFlagMaps(*tserver->unusual_flags(),
+    AddFlagsToFlagMaps(*unusual_flags,
                        tserver->address(),
-                       &results_.tserver_flag_to_servers_map,
-                       &results_.tserver_flag_tags_map);
+                       &results_.tserver_unusual_flag_to_servers_map,
+                       &results_.tserver_unusual_flag_tags_map);
   }
 
-  if (!results_.tserver_flag_to_servers_map.empty()) {
+  if (!results_.tserver_unusual_flag_to_servers_map.empty()) {
     results_.warning_messages.push_back(Status::ConfigurationError(
         "Some tablet servers have unsafe, experimental, or hidden flags set"));
   }
 
-  if (bad_tservers > 0) {
-    return Status::Incomplete(
-        Substitute("$0 of $1 tservers' flags were not available",
-                   bad_tservers, cluster_->tablet_servers().size()));
+  if (bad_servers > 0) {
+    return Status::Incomplete(Substitute(
+        "$0 of $1 tservers were not available to retrieve unusual flags",
+        bad_servers, cluster_->tablet_servers().size()));
+  }
+  return Status::OK();
+}
+
+Status Ksck::CheckTabletServerDivergedFlags() {
+  vector<FlagsCategory> flags_categories;
+  RETURN_NOT_OK(StringToFlagsCategories(FLAGS_flags_categories_to_check,
+                                        &flags_categories));
+  for (const auto cat : flags_categories) {
+    KsckFlagToServersMap servers_by_flag;
+    size_t bad_servers = 0;
+    for (const auto& uuid_and_ts : cluster_->tablet_servers()) {
+      const auto& tserver = uuid_and_ts.second;
+      const auto& flags = tserver->flags(cat);
+      if (!flags) {
+        ++bad_servers;
+        continue;
+      }
+      AddFlagsToFlagMaps(*flags, tserver->address(), &servers_by_flag);
+      AddFlagsToFlagMaps(*flags,
+                         tserver->address(),
+                         &results_.tserver_checked_flag_to_servers_map);
+    }
+    for (const auto& e : servers_by_flag) {
+      if (e.second.size() + bad_servers == cluster_->tablet_servers().size()) {
+        continue;
+      }
+      results_.warning_messages.push_back(Status::ConfigurationError(
+          Substitute("Different tservers have different settings for same "
+                     "flags of checked category '$0'",
+                     FlagsCategoryToString(cat))));
+      break;
+    }
+    if (bad_servers > 0) {
+      return Status::Incomplete(Substitute(
+          "$0 of $1 tservers were not available to retrieve $2 category flags",
+          bad_servers,
+          cluster_->tablet_servers().size(),
+          FlagsCategoryToString(cat)));
+    }
+  }
+  return Status::OK();
+}
+
+Status Ksck::CheckDivergedFlags() {
+  set<KsckFlag> masters_flags;
+  for (const auto& elem : results_.master_checked_flag_to_servers_map) {
+    InsertOrDieNoPrint(&masters_flags, elem.first);
+  }
+  set<KsckFlag> tservers_flags;
+  for (const auto& elem : results_.tserver_checked_flag_to_servers_map) {
+    InsertOrDieNoPrint(&tservers_flags, elem.first);
+  }
+
+  vector<KsckFlag> symm_diff;
+  std::set_symmetric_difference(masters_flags.begin(),
+                                masters_flags.end(),
+                                tservers_flags.begin(),
+                                tservers_flags.end(),
+                                back_inserter(symm_diff));
+  if (!symm_diff.empty()) {
+    for (const auto& f : symm_diff) {
+      {
+        const auto* e = FindOrNull(results_.master_checked_flag_to_servers_map, f);
+        if (e) {
+          InsertOrDieNoPrint(&results_.master_diverged_flag_to_servers_map, f, *e);
+          continue;
+        }
+      }
+      {
+        const auto* e = FindOrNull(results_.tserver_checked_flag_to_servers_map, f);
+        if (e) {
+          InsertOrDieNoPrint(&results_.tserver_diverged_flag_to_servers_map, f, *e);
+          continue;
+        }
+      }
+      // The flag/value pair must be either of masters' or tservers'.
+      LOG(DFATAL) << "found neither masters' or tservers' flag: " << f.first;
+    }
+
+    results_.warning_messages.push_back(Status::ConfigurationError(
+        "Same flags have different values between masters and tservers "
+        "for at least one checked flag category"));
   }
   return Status::OK();
 }
@@ -686,7 +916,7 @@ HealthCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
       }
 
       // Organize consensus info for each replica.
-      std::pair<string, string> tablet_key = std::make_pair(ts->uuid(), tablet->id());
+      pair<string, string> tablet_key = std::make_pair(ts->uuid(), tablet->id());
       if (ContainsKey(ts->tablet_consensus_state_map(), tablet_key)) {
         const auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map(), tablet_key);
         ConsensusState ksck_cstate;

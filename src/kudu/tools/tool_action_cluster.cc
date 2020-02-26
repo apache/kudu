@@ -386,6 +386,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("color")
         .AddOptionalParameter("consensus")
         .AddOptionalParameter("fetch_info_concurrency")
+        .AddOptionalParameter("flags_categories_to_check")
         .AddOptionalParameter("ksck_format")
         .AddOptionalParameter("quiescing_info")
         .AddOptionalParameter("sections")
