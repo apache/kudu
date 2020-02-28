@@ -19,8 +19,10 @@ package org.apache.kudu.subprocess;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Stopwatch;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -39,12 +41,12 @@ import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
 @InterfaceAudience.Private
 class MessageParser implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(MessageParser.class);
-  private final BlockingQueue<byte[]> inboundQueue;
-  private final BlockingQueue<SubprocessResponsePB> outboundQueue;
+  private final BlockingQueue<InboundRequest> inboundQueue;
+  private final BlockingQueue<OutboundResponse> outboundQueue;
   private final ProtocolHandler protocolHandler;
 
-  MessageParser(BlockingQueue<byte[]> inboundQueue,
-                BlockingQueue<SubprocessResponsePB> outboundQueue,
+  MessageParser(BlockingQueue<InboundRequest> inboundQueue,
+                BlockingQueue<OutboundResponse> outboundQueue,
                 ProtocolHandler protocolHandler) {
     Preconditions.checkNotNull(inboundQueue);
     Preconditions.checkNotNull(outboundQueue);
@@ -56,47 +58,59 @@ class MessageParser implements Runnable {
   @Override
   public void run() {
     while (true) {
-      byte[] data = QueueUtil.take(inboundQueue);
-      SubprocessResponsePB response = getResponse(data);
-      QueueUtil.put(outboundQueue, response);
+      InboundRequest req = QueueUtil.take(inboundQueue);
+      SubprocessMetrics metrics = req.metrics();
+      metrics.recordInboundQueueTimeMs();
+
+      // Record the execution time.
+      metrics.startTimer();
+      SubprocessResponsePB.Builder responseBuilder = parseAndExecuteRequest(req.bytes());
+      metrics.recordExecutionTimeMs();
+
+      // Begin recording the time it takes to make it through the outbound
+      // queue. The writer thread will record the elapsed time right before
+      // writing the response to the pipe.
+      metrics.startTimer();
+      QueueUtil.put(outboundQueue, new OutboundResponse(responseBuilder, metrics));
     }
   }
 
   /**
-   * Constructs a message with the given error status.
+   * Returns a response builder with the given error status.
    *
    * @param errorCode the given error status
    * @param resp the message builder
    * @return a message with the given error status
    */
-  static SubprocessResponsePB responseWithError(AppStatusPB.ErrorCode errorCode,
-                                                SubprocessResponsePB.Builder resp) {
+  static SubprocessResponsePB.Builder builderWithError(AppStatusPB.ErrorCode errorCode,
+                                                       SubprocessResponsePB.Builder resp) {
     Preconditions.checkNotNull(resp);
     AppStatusPB.Builder errorBuilder = AppStatusPB.newBuilder();
     errorBuilder.setCode(errorCode);
     resp.setError(errorBuilder);
-    return resp.build();
+    return resp;
   }
 
   /**
-   * Parses the given protobuf message. If encountered InvalidProtocolBufferException,
-   * which indicates the message is invalid, respond with an error message.
+   * Parses the given protobuf request and executes it, returning a builder for
+   * the response. If a InvalidProtocolBufferException is thrown, which
+   * indicates the message is invalid, the builder will contain an error
+   * message.
    *
    * @param data the protobuf message
    * @return a SubprocessResponsePB
    */
-  private SubprocessResponsePB getResponse(byte[] data) {
-    SubprocessResponsePB response;
+  private SubprocessResponsePB.Builder parseAndExecuteRequest(byte[] data) {
     SubprocessResponsePB.Builder responseBuilder = SubprocessResponsePB.newBuilder();
     try {
       // Parses the data as a message of SubprocessRequestPB type.
       SubprocessRequestPB request = SubprocessRequestPB.parser().parseFrom(data);
-      response = protocolHandler.handleRequest(request);
+      responseBuilder = protocolHandler.unpackAndExecuteRequest(request);
     } catch (InvalidProtocolBufferException e) {
       LOG.warn(String.format("%s: %s", "Unable to parse the protobuf message",
                              new String(data, StandardCharsets.UTF_8)), e);
-      response = responseWithError(AppStatusPB.ErrorCode.ILLEGAL_STATE, responseBuilder);
+      responseBuilder = builderWithError(AppStatusPB.ErrorCode.ILLEGAL_STATE, responseBuilder);
     }
-    return response;
+    return responseBuilder;
   }
 }

@@ -38,11 +38,11 @@ import org.slf4j.LoggerFactory;
 @InterfaceAudience.Private
 class MessageReader implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(MessageReader.class);
-  private final BlockingQueue<byte[]> inboundQueue;
+  private final BlockingQueue<InboundRequest> inboundQueue;
   private final MessageIO messageIO;
   private final boolean injectInterrupt;
 
-  MessageReader(BlockingQueue<byte[]> inboundQueue,
+  MessageReader(BlockingQueue<InboundRequest> inboundQueue,
                 MessageIO messageIO,
                 boolean injectInterrupt) {
     Preconditions.checkNotNull(inboundQueue);
@@ -79,7 +79,12 @@ class MessageReader implements Runnable {
         LOG.warn("Empty message received.");
         continue;
       }
-      QueueUtil.put(inboundQueue, data);
+      SubprocessMetrics metrics = new SubprocessMetrics(inboundQueue);
+      // Begin recording the time it takes to make it through the inbound
+      // queue. A parser thread will record the elapsed time right after
+      // it pulls the request from the queue.
+      metrics.startTimer();
+      QueueUtil.put(inboundQueue, new InboundRequest(data, metrics));
     }
   }
 }

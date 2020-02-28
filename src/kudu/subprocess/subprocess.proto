@@ -36,6 +36,29 @@ message EchoResponsePB {
   required string data = 1;
 }
 
+// Metrics for the subprocess subsystem.
+message SubprocessMetricsPB {
+  // Amount of time the request spent in the subprocess's inbound queue before
+  // being serviced.
+  optional int64 inbound_queue_time_ms = 1;
+
+  // Amount of time the response spent in the subprocess's outbound queue
+  // before being sent over the pipe.
+  optional int64 outbound_queue_time_ms = 2;
+
+  // Number of requests in the subprocess's inbound queue at the time the
+  // response is being returned from the subprocess.
+  optional int64 inbound_queue_length = 3;
+
+  // Number of responses in the subprocess's outbound queue at the time the
+  // response is being returned from the subprocess.
+  optional int64 outbound_queue_length = 4;
+
+  // The amount of time it took to execute the request (i.e. the time in
+  // between waiting in the inbound and outbound queues).
+  optional int64 execution_time_ms = 5;
+}
+
 // Request sent to the subprocess.
 message SubprocessRequestPB {
   // A sequence number that uniquely identifies a call to the subprocess. This
@@ -54,6 +77,10 @@ message SubprocessResponsePB {
   // Only set if there was some kind of subprocess-side error.
   optional AppStatusPB error = 2;
 
-  // The subprocess response. Only set for requests that actually expect a response.
+  // The subprocess response. Only set for requests that actually expect a
+  // response.
   optional google.protobuf.Any response = 3;
+
+  // Metrics for the generic subprocess subsystem.
+  optional SubprocessMetricsPB metrics = 4;
 }

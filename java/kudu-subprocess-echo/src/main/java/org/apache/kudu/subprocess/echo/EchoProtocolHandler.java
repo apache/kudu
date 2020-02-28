@@ -31,7 +31,7 @@ import org.apache.kudu.subprocess.Subprocess.EchoResponsePB;
 class EchoProtocolHandler extends ProtocolHandler<EchoRequestPB, EchoResponsePB> {
 
   @Override
-  protected EchoResponsePB createResponse(EchoRequestPB request) {
+  protected EchoResponsePB executeRequest(EchoRequestPB request) {
     if (request.hasSleepMs()) {
       try {
         Thread.sleep(request.getSleepMs());

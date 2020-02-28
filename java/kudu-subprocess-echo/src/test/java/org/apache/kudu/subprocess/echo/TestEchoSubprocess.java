@@ -17,10 +17,11 @@
 
 package org.apache.kudu.subprocess.echo;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
+import java.io.BufferedInputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +30,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
-import com.google.common.primitives.Bytes;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -40,6 +40,10 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.subprocess.KuduSubprocessException;
 import org.apache.kudu.subprocess.MessageIO;
 import org.apache.kudu.subprocess.MessageTestUtil;
+import org.apache.kudu.subprocess.OutboundResponse;
+import org.apache.kudu.subprocess.Subprocess.EchoResponsePB;
+import org.apache.kudu.subprocess.Subprocess.SubprocessMetricsPB;
+import org.apache.kudu.subprocess.Subprocess.SubprocessRequestPB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.test.junit.RetryRule;
@@ -49,114 +53,272 @@ import org.apache.kudu.test.junit.RetryRule;
  */
 public class TestEchoSubprocess {
   private static final Logger LOG = LoggerFactory.getLogger(TestEchoSubprocess.class);
+  private static final String[] NO_ARGS = {""};
+  private static final int TIMEOUT_MS = 1000;
+  private static final String MESSAGE = "We are one. We are many.";
+
+  // Helper functors that can be passed around to ensure we either see an error
+  // or not.
   private static final Function<Throwable, Void> NO_ERR = e -> {
     LOG.error(String.format("Unexpected error: %s", e.getMessage()));
     Assert.fail();
     return null;
   };
-  private static final Function<Throwable, Void> HAS_ERR = e -> {
+  private final Function<Throwable, Void> HAS_ERR = e -> {
     Assert.assertTrue(e instanceof KuduSubprocessException);
     return null;
   };
+
+  // Pipe that we can write to that will feed requests to the subprocess's
+  // input pipe.
+  private PipedOutputStream requestSenderPipe;
+
+  // Pipe that we can read from that will receive responses from the
+  // subprocess's output pipe.
+  private final PipedInputStream responseReceiverPipe = new PipedInputStream();
 
   @Rule
   public RetryRule retryRule = new RetryRule();
 
   public static class PrintStreamWithIOException extends PrintStream {
     public PrintStreamWithIOException(OutputStream out, boolean autoFlush, String encoding)
-            throws UnsupportedEncodingException {
+        throws UnsupportedEncodingException {
       super(out, autoFlush, encoding);
     }
 
     @Override
     public boolean checkError() {
+      // Always say that we've got an error.
       return true;
     }
   }
 
-  void runEchoSubprocess(InputStream in,
-                         PrintStream out,
-                         String[] args,
-                         Function<Throwable, Void> errorHandler,
-                         boolean injectInterrupt)
-      throws InterruptedException, ExecutionException, TimeoutException {
-    System.setIn(in);
-    System.setOut(out);
-    SubprocessExecutor subprocessExecutor = new SubprocessExecutor(errorHandler);
-    EchoProtocolHandler protocolProcessor = new EchoProtocolHandler();
-    if (injectInterrupt) {
-      subprocessExecutor.interrupt();
+  // Given that executors run multiple threads, the exceptions that we expect
+  // may not necessarily be the first thrown. This checks for the expected
+  // error on all thrown exceptions, including suppressed ones.
+  <T extends Throwable> void assertIncludingSuppressedThrows(Class<T> expectedThrowable,
+                                                             String errorMessage,
+                                                             ThrowingRunnable runnable) {
+    try {
+      runnable.run();
+    } catch (Throwable actualThrown) {
+      if (expectedThrowable.isInstance(actualThrown) &&
+          actualThrown.toString().contains(errorMessage)) {
+        return;
+      }
+      LOG.info(actualThrown.toString());
+      for (Throwable s : actualThrown.getSuppressed()) {
+        if (s.getClass() == expectedThrowable && s.toString().contains(errorMessage)) {
+          return;
+        }
+        LOG.info(s.toString());
+      }
+      throw new AssertionError(String.format("No errors that match %s with message: %s",
+                                             expectedThrowable.toString(), errorMessage));
     }
-    subprocessExecutor.run(args, protocolProcessor, /* timeoutMs= */1000);
+    throw new AssertionError("Didn't throw an exception");
+  }
+
+  // Sends a SubprocessRequestPB to the sender pipe, serializing it as
+  // appropriate.
+  void sendRequestToPipe(SubprocessRequestPB req) throws IOException {
+    requestSenderPipe.write(MessageTestUtil.serializeMessage(req));
+  }
+
+  // Receives a response from the receiver pipe and deserializes it into a
+  // SubprocessResponsePB.
+  SubprocessResponsePB receiveResponse() throws IOException {
+    BufferedInputStream bufferedInput = new BufferedInputStream(responseReceiverPipe);
+    return MessageTestUtil.deserializeMessage(bufferedInput, SubprocessResponsePB.parser());
+  }
+
+  // Sets up and returns a SubprocessExecutor with the given error handler and
+  // IO error injection behavior. The SubprocessExecutor will do IO to and from
+  // 'requestSenderPipe' and 'responseReceiverPipe'.
+  SubprocessExecutor setUpExecutorIO(Function<Throwable, Void> errorHandler,
+                                     boolean injectIOError) throws IOException {
+    // Initialize the pipe that we'll push requests to; feed it into the
+    // executor's input pipe.
+    PipedInputStream inputPipe = new PipedInputStream();
+    requestSenderPipe = new PipedOutputStream(inputPipe);
+    System.setIn(inputPipe);
+
+    // Initialize the pipe that the executor will write to; feed it into the
+    // response pipe that we can read from.
+    PipedOutputStream outputPipe = new PipedOutputStream(responseReceiverPipe);
+    if (injectIOError) {
+      System.setOut(new PrintStreamWithIOException(outputPipe, /*autoFlush*/false, "UTF-8"));
+    } else {
+      System.setOut(new PrintStream(outputPipe));
+    }
+    SubprocessExecutor subprocessExecutor = new SubprocessExecutor(errorHandler);
+    return subprocessExecutor;
   }
 
   /**
-   * Parses non-malformed message should exit normally without any exceptions.
+   * Test a regular old message. There should be no exceptions of any kind.
+   * We should also see some metrics that make sense.
    */
   @Test(expected = TimeoutException.class)
   public void testBasicMsg() throws Exception {
-    final String message = "data";
-    final byte[] messageBytes = MessageTestUtil.serializeMessage(
-        MessageTestUtil.createEchoSubprocessRequest(message));
-    final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out =
-            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    final String[] args = {""};
-    runEchoSubprocess(in, out, args, NO_ERR, /* injectInterrupt= */false);
+    SubprocessExecutor executor =
+        setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+
+    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+    SubprocessResponsePB spResp = receiveResponse();
+    EchoResponsePB echoResp = spResp.getResponse().unpack(EchoResponsePB.class);
+    Assert.assertEquals(MESSAGE, echoResp.getData());
+
+    SubprocessMetricsPB spMetrics = spResp.getMetrics();
+    // We only sent one request, so by the time the executor sent the message,
+    // the queues should have been empty.
+    Assert.assertTrue(spMetrics.hasInboundQueueLength());
+    Assert.assertTrue(spMetrics.hasOutboundQueueLength());
+    Assert.assertEquals(0, spMetrics.getInboundQueueLength());
+    Assert.assertEquals(0, spMetrics.getOutboundQueueLength());
+
+    // The recorded times should be non-zero.
+    Assert.assertTrue(spMetrics.hasInboundQueueTimeMs());
+    Assert.assertTrue(spMetrics.hasOutboundQueueTimeMs());
+    Assert.assertTrue(spMetrics.hasExecutionTimeMs());
+    Assert.assertTrue(spMetrics.getInboundQueueTimeMs() >= 0);
+    Assert.assertTrue(spMetrics.getOutboundQueueTimeMs() >= 0);
+    Assert.assertTrue(spMetrics.getExecutionTimeMs() >= 0);
   }
 
   /**
-   * Parses message with empty payload should exit normally without any exceptions.
+   * Test to see what happens when the execution is the bottleneck. We should
+   * see it in the execution time and inbound queue time and length metrics.
    */
   @Test(expected = TimeoutException.class)
-  public void testMsgWithEmptyPayload() throws Exception {
-    final byte[] emptyPayload = MessageIO.intToBytes(0);
-    final InputStream in = new ByteArrayInputStream(emptyPayload);
-    final PrintStream out =
-            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    final String[] args = {""};
-    runEchoSubprocess(in, out, args, NO_ERR, /* injectInterrupt= */false);
+  public void testSlowExecutionMetrics() throws Exception {
+    SubprocessExecutor executor =
+      setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+    final int SLEEP_MS = 200;
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
+
+    // Run the executor with a single parser thread so we can make stronger
+    // assumptions about timing.
+    executor.run(new String[]{"-p", "1"}, new EchoProtocolHandler(), TIMEOUT_MS);
+
+    SubprocessMetricsPB m = receiveResponse().getMetrics();
+    long inboundQueueLength = m.getInboundQueueLength();
+    long inboundQueueTimeMs = m.getInboundQueueTimeMs();
+    long executionTimeMs = m.getExecutionTimeMs();
+    // By the time the first request is written, the second should be sleeping,
+    // and the third should be waiting in the inbound queue. That said, the
+    // second could also be in the queue if the parser thread is slow to pick
+    // up the second request.
+    Assert.assertTrue(
+        String.format("Got an unexpected inbound queue length: %s", inboundQueueLength),
+        inboundQueueLength == 1 || inboundQueueLength == 2);
+    Assert.assertEquals(0, m.getOutboundQueueLength());
+
+    // We can't make many guarantees about how long the first request was
+    // waiting in the queues.
+    Assert.assertTrue(
+        String.format("Expected a positive inbound queue time: %s", inboundQueueTimeMs),
+        inboundQueueTimeMs >= 0);
+
+    // It should've taken longer than our sleep to execute.
+    Assert.assertTrue(
+        String.format("Expected a longer execution time than %s ms: %s ms",
+                      SLEEP_MS, executionTimeMs),
+        executionTimeMs >= SLEEP_MS);
+
+    // The second request should've spent the duration of the first sleep waiting
+    // in the inbound queue.
+    m = receiveResponse().getMetrics();
+    Assert.assertTrue(
+        String.format("Expected a higher inbound queue time: %s ms", m.getInboundQueueTimeMs()),
+        m.getInboundQueueTimeMs() >= SLEEP_MS);
+
+    // The last should've spent the duration of the first two sleeps waiting.
+    m = receiveResponse().getMetrics();
+    Assert.assertTrue(
+        String.format("Expected a higher inbound queue time: %s", m.getInboundQueueTimeMs()),
+        m.getInboundQueueTimeMs() >= 2 * SLEEP_MS);
   }
 
   /**
-   * Parses malformed message should cause <code>IOException</code>.
+   * Test to see what happens when writing is the bottleneck. We should see it
+   * in the outbound queue metrics.
+   */
+  @Test(expected = TimeoutException.class)
+  public void testSlowWriterMetrics() throws Exception {
+    SubprocessExecutor executor =
+      setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+    final int BLOCK_MS = 200;
+    executor.blockWriteMs(BLOCK_MS);
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+
+    // In writing the first request, the other two requests should've been
+    // close behind, likely both in the outbound queue.
+    SubprocessMetricsPB m = receiveResponse().getMetrics();
+    Assert.assertEquals(2, m.getOutboundQueueLength());
+
+    m = receiveResponse().getMetrics();
+    Assert.assertEquals(1, m.getOutboundQueueLength());
+    Assert.assertTrue(
+      String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
+      m.getOutboundQueueTimeMs() >= BLOCK_MS);
+
+    m = receiveResponse().getMetrics();
+    Assert.assertEquals(0, m.getOutboundQueueLength());
+    Assert.assertTrue(
+      String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
+      m.getOutboundQueueTimeMs() >= 2 * BLOCK_MS);
+  }
+
+  /**
+   * Test what happens when we send a message that is completely empty (i.e.
+   * not an empty SubprocessRequestPB message -- no message at all).
+   */
+  @Test(expected = TimeoutException.class)
+  public void testMsgWithEmptyMessage() throws Exception {
+    SubprocessExecutor executor = setUpExecutorIO(NO_ERR,
+                                                  /*injectIOError*/false);
+    requestSenderPipe.write(MessageIO.intToBytes(0));
+    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+
+    // We should see no bytes land in the receiver pipe.
+    Assert.assertEquals(-1, responseReceiverPipe.read());
+  }
+
+  /**
+   * Test what happens when we send a message that isn't protobuf.
    */
   @Test
-  public void testMalformedMsg() throws Exception {
-    final byte[] messageBytes = "malformed".getBytes(StandardCharsets.UTF_8);
-    final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out =
-            new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
-      @Override
-      public void run() throws Exception {
-        final String[] args = {""};
-        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
-      }
-    });
+  public void testMalformedPB() throws Exception {
+    SubprocessExecutor executor = setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+    requestSenderPipe.write("malformed".getBytes(StandardCharsets.UTF_8));
+    Throwable thrown = Assert.assertThrows(ExecutionException.class,
+        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
     Assert.assertTrue(thrown.getMessage().contains("Unable to read the protobuf message"));
   }
 
   /**
-   * Parses message with <code>IOException</code> injected should exit with
-   * <code>KuduSubprocessException</code>.
+   * Try injecting an <code>IOException</code> to the pipe that gets written to
+   * by the SubprocessExecutor. We should exit with a
+   * <code>KuduSubprocessException</code>
    */
   @Test
   public void testInjectIOException() throws Exception {
-    final String message = "data";
-    final byte[] messageBytes = MessageTestUtil.serializeMessage(
-        MessageTestUtil.createEchoSubprocessRequest(message));
-    final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out =
-            new PrintStreamWithIOException(new ByteArrayOutputStream(), false, "UTF-8");
-    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
-      @Override
-      public void run() throws Exception {
-        final String[] args = {""};
-        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */false);
-      }
-    });
-    Assert.assertTrue(thrown.getMessage().contains("Unable to write the protobuf messag"));
+    SubprocessExecutor executor =
+        setUpExecutorIO(HAS_ERR, /*injectIOError*/true);
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+    // NOTE: we don't expect the ExecutionException from the MessageWriter's
+    // CompletableFuture because, in waiting for completion, the MessageReader
+    // times out before CompletableFuture.get() is called on the writer.
+    assertIncludingSuppressedThrows(IOException.class,
+      "Unable to write to print stream",
+      () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
   }
 
   /**
@@ -165,51 +327,32 @@ public class TestEchoSubprocess {
    */
   @Test
   public void testInjectInterruptedException() throws Exception {
-    final String message = "data";
-    final byte[] messageBytes = MessageTestUtil.serializeMessage(
-        MessageTestUtil.createEchoSubprocessRequest(message));
-    final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out =
-        new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    Throwable thrown = Assert.assertThrows(ExecutionException.class, new ThrowingRunnable() {
-      @Override
-      public void run() throws Exception {
-        final String[] args = {""};
-        runEchoSubprocess(in, out, args, HAS_ERR, /* injectInterrupt= */true);
-      }
-    });
-    Assert.assertTrue(thrown.getMessage().contains("Unable to put the message to the queue"));
+    SubprocessExecutor executor =
+        setUpExecutorIO(HAS_ERR, /*injectIOError*/false);
+    executor.interrupt();
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest(MESSAGE));
+    assertIncludingSuppressedThrows(ExecutionException.class,
+        "Unable to put the message to the queue",
+        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
   }
 
   /**
-   * Verifies when <code>MessageWriter</code> task is blocking on writing the message,
-   * <code>MessageParser</code> task can continue processing the requests without
-   * blocking.
+   * Check that even if the writer is blocked writing, the
+   * <code>MessageParser</code> tasks can continue making progress.
    */
   @Test
   public void testMessageParser() throws Exception  {
-    final byte[] messageBytes = Bytes.concat(
-        MessageTestUtil.serializeMessage(MessageTestUtil.createEchoSubprocessRequest("a")),
-        MessageTestUtil.serializeMessage(MessageTestUtil.createEchoSubprocessRequest("b")));
-    final InputStream in = new ByteArrayInputStream(messageBytes);
-    final PrintStream out =
-        new PrintStream(new ByteArrayOutputStream(), false, "UTF-8");
-    final SubprocessExecutor[] executors = new SubprocessExecutor[1];
-    System.setIn(in);
-    System.setOut(out);
-    Assert.assertThrows(TimeoutException.class, new ThrowingRunnable() {
-      @Override
-      public void run() throws Exception {
-        final String[] args = {""};
-        executors[0] = new SubprocessExecutor(NO_ERR);
-        // Block the message write for 1000 Ms.
-        executors[0].blockWriteMs(1000);
-        executors[0].run(args, new EchoProtocolHandler(), /* timeoutMs= */500);
-      }
-    });
+    SubprocessExecutor executor =
+        setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest("a"));
+    sendRequestToPipe(MessageTestUtil.createEchoSubprocessRequest("b"));
+    executor.blockWriteMs(1000);
+    Assert.assertThrows(TimeoutException.class,
+        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), /*timeoutMs*/500));
 
-    // Verify that the message have been processed and placed to outbound queue.
-    BlockingQueue<SubprocessResponsePB> outboundQueue = executors[0].getOutboundQueue();
+    // We should see a single message in the outbound queue. The other one is
+    // blocked writing.
+    BlockingQueue<OutboundResponse> outboundQueue = executor.getOutboundQueue();
     Assert.assertEquals(1, outboundQueue.size());
   }
 }

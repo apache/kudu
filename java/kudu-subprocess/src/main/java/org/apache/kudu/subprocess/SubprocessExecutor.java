@@ -37,19 +37,17 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
-
 /**
  * The {@link SubprocessExecutor} class,
  *    1. parses the command line to get the configuration,
  *    2. has a single reader thread that continuously reads protobuf-based
- *       messages from standard input and puts the messages to a FIFO inbound
- *       blocking queue,
+ *       messages from stdin and puts the message onto the inbound request
+ *       queue,
  *    3. has multiple parser threads that continuously retrieve the messages
- *       from the inbound queue, process them and put the responses to a FIFO
- *       outbound blocking queue,
+ *       from the inbound queue, process them, and put the responses onto the
+ *       outbound response queue,
  *    4. has a single writer thread that continuously retrieves the responses
- *       from the outbound queue, and writes the responses to standard output.
+ *       from the outbound queue, and writes the responses to stdout.
  */
 @InterfaceAudience.Private
 public class SubprocessExecutor {
@@ -57,12 +55,13 @@ public class SubprocessExecutor {
   private final Function<Throwable, Void> errorHandler;
   private boolean injectInterrupt = false;
   private long blockWriteMs = -1;
-  private BlockingQueue<SubprocessResponsePB> outboundQueue;
+  private BlockingQueue<OutboundResponse> outboundQueue;
+  private BlockingQueue<InboundRequest> inboundQueue;
 
   public SubprocessExecutor() {
     errorHandler = (t) -> {
-      // If unexpected exception(s) are thrown by the reader or writer tasks,
-      // this error handler wraps the throwable in a runtime exception and rethrows,
+      // If unexpected exception(s) are thrown by any of the tasks, this error
+      // handler wraps the throwable in a runtime exception and rethrows,
       // causing the program to exit with a nonzero status code.
       throw new RuntimeException(t);
     };
@@ -92,7 +91,7 @@ public class SubprocessExecutor {
     int queueSize = conf.getQueueSize();
     int maxMessageBytes = conf.getMaxMessageBytes();
 
-    BlockingQueue<byte[]> inboundQueue = new ArrayBlockingQueue<>(queueSize, /* fair= */true);
+    inboundQueue = new ArrayBlockingQueue<>(queueSize, /* fair= */true);
     outboundQueue = new ArrayBlockingQueue<>(queueSize, /* fair= */true);
     ExecutorService readerService = Executors.newSingleThreadExecutor();
     ExecutorService parserService = Executors.newFixedThreadPool(maxMsgParserThread);
@@ -127,9 +126,10 @@ public class SubprocessExecutor {
       CompletableFuture<Void> writerFuture = CompletableFuture.runAsync(writer, writerService);
       writerFuture.exceptionally(errorHandler);
 
-      // Wait until the tasks finish execution. -1 means the reader (parser, or writer)
-      // tasks continue the execution until finish. In cases where we don't want the
-      // tasks to run forever, e.g. in tests, wait for the specified timeout.
+      // Wait until the tasks finish execution. A timeout of -1 means the reader, parser,
+      // and writer tasks should continue until finished. In cases where we don't want
+      // the tasks to run forever, e.g. in tests, wait for the specified
+      // timeout.
       if (timeoutMs == -1) {
         readerFuture.join();
         writerFuture.join();
@@ -149,7 +149,7 @@ public class SubprocessExecutor {
    * Returns the outbound message queue.
    */
   @VisibleForTesting
-  public BlockingQueue<SubprocessResponsePB> getOutboundQueue() {
+  public BlockingQueue<OutboundResponse> getOutboundQueue() {
     return outboundQueue;
   }
 

@@ -38,17 +38,33 @@ public class MessageTestUtil {
 
   /**
    * Constructs a SubprocessRequestPB message of echo request with the
+   * given payload and sleep.
+   *
+   * @param payload the message payload
+   * @param sleepMs the amount of time to sleep
+   * @return a SubprocessRequestPB message
+   */
+  public static SubprocessRequestPB createEchoSubprocessRequest(String payload,
+                                                                int sleepMs) {
+    SubprocessRequestPB.Builder builder = SubprocessRequestPB.newBuilder();
+    EchoRequestPB.Builder echoBuilder = EchoRequestPB.newBuilder();
+    echoBuilder.setData(payload);
+    if (sleepMs > 0) {
+      echoBuilder.setSleepMs(sleepMs);
+    }
+    builder.setRequest(Any.pack(echoBuilder.build()));
+    return builder.build();
+  }
+
+  /**
+   * Constructs a SubprocessRequestPB message of echo request with the
    * given payload.
    *
    * @param payload the message payload
    * @return a SubprocessRequestPB message
    */
   public static SubprocessRequestPB createEchoSubprocessRequest(String payload) {
-    SubprocessRequestPB.Builder builder = SubprocessRequestPB.newBuilder();
-    EchoRequestPB.Builder echoBuilder = EchoRequestPB.newBuilder();
-    echoBuilder.setData(payload);
-    builder.setRequest(Any.pack(echoBuilder.build()));
-    return builder.build();
+    return createEchoSubprocessRequest(payload, 0);
   }
 
   /**
@@ -68,7 +84,7 @@ public class MessageTestUtil {
   }
 
   /**
-   * De-serializes the given message in byte array.
+   * Deserializes a message from the byte array.
    *
    * @param bytes the serialized message in byte array
    * @param parser the parser for the message
@@ -78,9 +94,21 @@ public class MessageTestUtil {
   static <T extends Message> T deserializeMessage(byte[] bytes, Parser<T> parser)
       throws IOException {
     ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
+    return deserializeMessage(new BufferedInputStream(inputStream), parser);
+  }
+
+  /**
+   * Deserializes a message from the input stream.
+   *
+   * @param inputStream the input stream from which to deserialize the message
+   * @param parser the parser for the message
+   * @return a message
+   * @throws IOException if an I/O error occurs
+   */
+  public static <T extends Message> T deserializeMessage(BufferedInputStream inputStream,
+                                                         Parser<T> parser) throws IOException {
     MessageIO messageIO = new MessageIO(
-        SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT,
-        new BufferedInputStream(inputStream), /* out= */null);
+        SubprocessConfiguration.MAX_MESSAGE_BYTES_DEFAULT, inputStream, /*out*/null);
     byte[] data = messageIO.readBytes();
     return parser.parseFrom(data);
   }

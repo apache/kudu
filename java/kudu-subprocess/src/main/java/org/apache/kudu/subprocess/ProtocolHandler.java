@@ -37,31 +37,31 @@ public abstract class ProtocolHandler<RequestT extends Message,
                                       ResponseT extends Message> {
 
   /**
-   * Processes the given SubprocessRequestPB message according to the
-   * request type and returns a SubprocessResponsePB message.
+   * Unpacks the SubprocessRequestPB message according to the expected request
+   * type and returns a SubprocessResponsePB builder with the results.
    *
-   * @param request a SubprocessRequestPB protobuf message
-   * @return a SubprocessResponsePB message
+   * @param request a SubprocessRequestPB message
+   * @return a SubprocessResponsePB.Builder
    * @throws InvalidProtocolBufferException if the protocol message being parsed is invalid
    */
-  SubprocessResponsePB handleRequest(SubprocessRequestPB request)
+  SubprocessResponsePB.Builder unpackAndExecuteRequest(SubprocessRequestPB request)
       throws InvalidProtocolBufferException {
     Preconditions.checkNotNull(request);
     SubprocessResponsePB.Builder builder = SubprocessResponsePB.newBuilder();
     builder.setId(request.getId());
     Class<RequestT> requestType = getRequestClass();
-    ResponseT resp = createResponse(request.getRequest().unpack(requestType));
+    ResponseT resp = executeRequest(request.getRequest().unpack(requestType));
     builder.setResponse(Any.pack(resp));
-    return builder.build();
+    return builder;
   }
 
   /**
-   * Creates a protobuf message that responds to a request message.
+   * Executes the request and creates a response.
    *
    * @param request the request message
    * @return a response
    */
-  protected abstract ResponseT createResponse(RequestT request);
+  protected abstract ResponseT executeRequest(RequestT request);
 
   /**
    * Gets the class instance of request message.

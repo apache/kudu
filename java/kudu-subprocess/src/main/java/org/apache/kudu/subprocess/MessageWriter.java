@@ -32,11 +32,11 @@ import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
  */
 @InterfaceAudience.Private
 class MessageWriter implements Runnable {
-  private final BlockingQueue<SubprocessResponsePB> outboundQueue;
+  private final BlockingQueue<OutboundResponse> outboundQueue;
   private final MessageIO messageIO;
   private final long blockWriteMs;
 
-  MessageWriter(BlockingQueue<SubprocessResponsePB> outboundQueue,
+  MessageWriter(BlockingQueue<OutboundResponse> outboundQueue,
                 MessageIO messageIO,
                 long blockWriteMs) {
     Preconditions.checkNotNull(outboundQueue);
@@ -49,17 +49,18 @@ class MessageWriter implements Runnable {
   @Override
   public void run() {
     while (true) {
-      SubprocessResponsePB response = QueueUtil.take(outboundQueue);
+      OutboundResponse resp = QueueUtil.take(outboundQueue);
+      resp.metrics().recordOutboundQueueTimeMs();
 
       // Write the response to the underlying output stream. IOException is fatal,
       // and should be propagated up the call stack.
       try {
-        messageIO.writeMessage(response);
         // Block the write for the given milliseconds if needed (for tests only).
         // -1 means the write will not be blocked.
         if (blockWriteMs != -1) {
           Thread.sleep(blockWriteMs);
         }
+        messageIO.writeMessage(resp.buildRespPB(outboundQueue));
       } catch (IOException | InterruptedException e) {
         throw new KuduSubprocessException("Unable to write the protobuf message", e);
       }
