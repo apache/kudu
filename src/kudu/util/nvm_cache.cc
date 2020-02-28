@@ -70,10 +70,33 @@ DEFINE_bool(nvm_cache_simulate_allocation_failure, false,
             "for testing.");
 TAG_FLAG(nvm_cache_simulate_allocation_failure, unsafe);
 
+DEFINE_double(nvm_cache_usage_ratio, 1.25,
+             "A ratio to set the usage of nvm cache. The charge of an item in the nvm "
+             "cache is equal to the results of memkind_malloc_usable_size multiplied by "
+             "the ratio.");
+TAG_FLAG(nvm_cache_usage_ratio, advanced);
+
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+static bool ValidateNVMCacheUsageRatio(const char* flagname, double value) {
+  if (value < 1.0) {
+    LOG(ERROR) << Substitute("$0 must be greater than or equal to 1.0, value $1 is invalid.",
+                             flagname, value);
+    return false;
+  }
+  if (value < 1.25) {
+    LOG(WARNING) << Substitute("The value of $0 is $1, it is less than recommended "
+                               "value (1.25). Due to memkind fragmentation, an improper "
+                               "ratio will cause allocation failures while capacity-based "
+                               "evictions are not triggered. Raise --nvm_cache_usage_ratio.",
+                               flagname, value);
+  }
+  return true;
+}
+DEFINE_validator(nvm_cache_usage_ratio, &ValidateNVMCacheUsageRatio);
 
 namespace kudu {
 
@@ -657,8 +680,11 @@ class ShardedLRUCache : public Cache {
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
+        // Multiply the results of memkind_malloc_usable_size by a ratio
+        // due to the fragmentation is not counted in.
         handle->charge = (charge == kAutomaticCharge) ?
-            CALL_MEMKIND(memkind_malloc_usable_size, vmp_, buf) : charge;
+            CALL_MEMKIND(memkind_malloc_usable_size, vmp_, buf) * FLAGS_nvm_cache_usage_ratio :
+            charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return ph;
@@ -698,6 +724,9 @@ Cache* NewCache<Cache::EvictionPolicy::LRU,
   CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)
     << "configured capacity " << capacity << " bytes is less than "
     << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
+
+  LOG(INFO) << 1 / FLAGS_nvm_cache_usage_ratio * 100 << "% capacity "
+            << "from nvm block cache is available due to memkind fragmentation.";
 
   memkind* vmp;
   int err = CALL_MEMKIND(memkind_create_pmem, FLAGS_nvm_cache_path.c_str(), capacity, &vmp);
