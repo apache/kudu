@@ -999,6 +999,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     // due to Java security policies.
     "--ipki_server_key_size=1024",
 
+    // The RSA key of 1024 bits is too short if OpenSSL security level is set to
+    // 2 or higher (applicable for OpenSSL 1.1.0 and newer). Lowering the
+    // security level to 1 makes possible ot use shorter keys in such cases.
+    "--openssl_security_level_override=1",
+
     // Disable minidumps by default since many tests purposely inject faults.
     "--enable_minidumps=false",
 

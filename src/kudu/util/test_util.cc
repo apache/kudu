@@ -110,6 +110,10 @@ KuduTest::KuduTest()
     {"ipki_server_key_size", "1024"},
     {"ipki_ca_key_size", "1024"},
     {"tsk_num_rsa_bits", "512"},
+    // Some OS distros set the default security level higher than 1, so it's
+    // necessary to override it to use the key length specified above (which are
+    // considered lax and don't work in case of security level 2 or higher).
+    {"openssl_security_level_override", "1"},
     // For a generic Kudu test, the local wall-clock time is good enough even
     // if it's not synchronized by NTP. All test components are run at the same
     // node, so there aren't multiple time sources to synchronize.

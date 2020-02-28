@@ -81,6 +81,12 @@ DEFINE_int32(ipki_server_key_size, 2048,
              "is used for TLS connections to and from clients and other servers.");
 TAG_FLAG(ipki_server_key_size, experimental);
 
+DEFINE_int32(openssl_security_level_override, -1,
+             "if set to 0 or greater, overrides the security level for OpenSSL "
+             "library of versions 1.1.0 and newer; for test purposes only");
+TAG_FLAG(openssl_security_level_override, hidden);
+TAG_FLAG(openssl_security_level_override, unsafe);
+
 namespace kudu {
 namespace security {
 
@@ -177,6 +183,25 @@ Status TlsContext::Init() {
   OPENSSL_RET_NOT_OK(
       SSL_CTX_set_cipher_list(ctx_.get(), tls_ciphers_.c_str()),
       "failed to set TLS ciphers");
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+  // OpenSSL 1.1 and newer supports the 'security level' concept:
+  //   https://www.openssl.org/docs/man1.1.0/man3/SSL_CTX_get_security_level.html
+  //
+  // For some Linux distros (e.g. RHEL/CentOS 8.1), the OpenSSL library is
+  // configured to use security level 2 by default, which tightens requirements
+  // on the number of bits used for various algorithms and ciphers (e.g., RSA
+  // key should be at least 2048 bits long with security level 2). However,
+  // in Kudu test environment we strive to use shorter keys because it saves
+  // us time running our tests.
+  auto level = SSL_CTX_get_security_level(ctx_.get());
+  VLOG(1) << Substitute("OpenSSL security level is $0", level);
+  if (FLAGS_openssl_security_level_override >= 0) {
+    SSL_CTX_set_security_level(ctx_.get(), FLAGS_openssl_security_level_override);
+    level = SSL_CTX_get_security_level(ctx_.get());
+    VLOG(1) << Substitute("OpenSSL security level reset to $0", level);
+  }
+#endif
 
   // Enable ECDH curves. For OpenSSL 1.1.0 and up, this is done automatically.
 #ifndef OPENSSL_NO_ECDH
