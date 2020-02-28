@@ -94,7 +94,8 @@ build_cmake() {
   pushd $CMAKE_BDIR
   $CMAKE_SOURCE/bootstrap \
     --prefix=$PREFIX \
-    --parallel=$PARALLEL
+    --parallel=$PARALLEL -- \
+    -DBUILD_TESTING=OFF
   # Unfortunately, cmake's bootstrap always uses Makefiles
   # and can't be configured to build with ninja.
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
