@@ -470,4 +470,5 @@ enum TabletServerFeatures {
   COLUMN_PREDICATES = 1;
   // Whether the server supports padding UNIXTIME_MICROS slots to 16 bytes.
   PAD_UNIXTIME_MICROS_TO_16_BYTES = 2;
+  QUIESCING = 3;
 }

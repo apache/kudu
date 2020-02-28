@@ -56,6 +56,7 @@ class GenericServiceProxy;
 
 namespace tserver {
 class TabletServerServiceProxy;
+class TabletServerAdminServiceProxy;
 }
 
 namespace tools {
@@ -115,6 +116,8 @@ class RemoteKsckTabletServer : public KsckTabletServer,
   void FetchCurrentTimestampAsync() override;
   Status FetchCurrentTimestamp() override;
 
+  void FetchQuiescingInfo() override;
+
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
@@ -148,6 +151,7 @@ class RemoteKsckTabletServer : public KsckTabletServer,
   const std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
   std::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 };
 

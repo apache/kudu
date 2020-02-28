@@ -360,10 +360,45 @@ Status PrintServerHealthSummaries(ServerType type,
   if (type == ServerType::TABLET_SERVER) {
     DataTable table({ "UUID", "Address", "Status", "Location" });
     unordered_map<string, int> location_counts;
+    bool has_quiescing_info = false;
     for (const auto& s : summaries) {
+      if (s.quiescing_info) {
+        has_quiescing_info = true;
+      }
       string location = s.ts_location.empty() ? "<none>" : s.ts_location;
       location_counts[location]++;
       table.AddRow({ s.uuid, s.address, ServerHealthToString(s.health), std::move(location) });
+    }
+
+    // If any quiescing info was collected, add it too.
+    if (has_quiescing_info) {
+      vector<string> quiescing_col;
+      vector<string> num_leaders_col;
+      vector<string> num_scanners_col;
+      bool has_quiescing_server = false;
+      for (const auto& s : summaries) {
+        if (s.quiescing_info) {
+          const auto& qinfo = *s.quiescing_info;
+          if (qinfo.is_quiescing) {
+            has_quiescing_server = true;
+            quiescing_col.emplace_back("true");
+          } else {
+            quiescing_col.emplace_back("false");
+          }
+          num_leaders_col.emplace_back(IntToString(qinfo.num_leaders));
+          num_scanners_col.emplace_back(IntToString(qinfo.num_active_scanners));
+        } else {
+          quiescing_col.emplace_back("n/a");
+          num_leaders_col.emplace_back("n/a");
+          num_scanners_col.emplace_back("n/a");
+        }
+      }
+      // Only output the quiescing column if there are quiescing servers.
+      if (has_quiescing_server) {
+        table.AddColumn("Quiescing", std::move(quiescing_col));
+      }
+      table.AddColumn("Tablet Leaders", std::move(num_leaders_col));
+      table.AddColumn("Active Scanners", std::move(num_scanners_col));
     }
     RETURN_NOT_OK(table.PrintTo(out));
 

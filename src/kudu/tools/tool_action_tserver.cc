@@ -286,14 +286,15 @@ Status QuiescingStatus(const RunnerContext& context) {
   req.set_return_stats(true);
   QuiesceTabletServerResponsePB resp;
   RpcController rpc;
+  rpc.RequireServerFeature(tserver::TabletServerFeatures::QUIESCING);
   RETURN_NOT_OK(proxy->Quiesce(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
   DataTable table({});
   table.AddColumn("Quiescing", { resp.is_quiescing() ? "true" : "false" });
-  table.AddColumn("Tablet leader count", { IntToString(resp.num_leaders()) });
-  table.AddColumn("Active scanner count", { IntToString(resp.num_active_scanners()) });
+  table.AddColumn("Tablet Leaders", { IntToString(resp.num_leaders()) });
+  table.AddColumn("Active Scanners", { IntToString(resp.num_active_scanners()) });
   return table.PrintTo(cout);
 }
 

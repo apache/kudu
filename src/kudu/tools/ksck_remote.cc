@@ -63,6 +63,8 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/locks.h"
@@ -75,7 +77,11 @@
 DECLARE_int64(timeout_ms); // defined in tool_action_common
 DECLARE_int32(fetch_info_concurrency);
 
-DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
+DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks.");
+DEFINE_bool(quiescing_info, true,
+            "Whether to display the quiescing-related information of each tablet server, "
+            "e.g. number of tablet leaders per server, the number of active scanners "
+            "per server.");
 
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduScanToken;
@@ -189,6 +195,7 @@ Status RemoteKsckTabletServer::Init() {
   const auto& host = host_port_.host();
   generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addr, host));
   ts_proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addr, host));
+  ts_admin_proxy_.reset(new tserver::TabletServerAdminServiceProxy(messenger_, addr, host));
   consensus_proxy_.reset(new consensus::ConsensusServiceProxy(messenger_, addr, host));
   return Status::OK();
 }
@@ -232,6 +239,9 @@ Status RemoteKsckTabletServer::FetchInfo(ServerHealth* health) {
   }
 
   RETURN_NOT_OK(FetchCurrentTimestamp());
+  if (FLAGS_quiescing_info) {
+    FetchQuiescingInfo();
+  }
 
   state_ = KsckFetchState::FETCHED;
   *health = ServerHealth::HEALTHY;
@@ -266,6 +276,26 @@ Status RemoteKsckTabletServer::FetchCurrentTimestamp() {
   RETURN_NOT_OK(generic_proxy_->ServerClock(req, &resp, &rpc));
   timestamp_ = resp.timestamp();
   return Status::OK();
+}
+
+void RemoteKsckTabletServer::FetchQuiescingInfo() {
+  tserver::QuiesceTabletServerRequestPB req;
+  tserver::QuiesceTabletServerResponsePB resp;
+  req.set_return_stats(true);
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  rpc.RequireServerFeature(tserver::TabletServerFeatures::QUIESCING);
+  Status s = ts_admin_proxy_->Quiesce(req, &resp, &rpc);
+  if (!s.ok()) {
+    LOG(WARNING) << Substitute("Couldn't fetch quiescing info from tablet server $0 ($1): $2",
+                               uuid_, address(), s.ToString());
+    return;
+  }
+  cluster_summary::QuiescingInfo qinfo;
+  qinfo.is_quiescing = resp.is_quiescing();
+  qinfo.num_leaders = resp.num_leaders();
+  qinfo.num_active_scanners = resp.num_active_scanners();
+  quiescing_info_ = qinfo;
 }
 
 Status RemoteKsckTabletServer::FetchConsensusState(ServerHealth* health) {

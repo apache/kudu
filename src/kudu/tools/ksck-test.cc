@@ -178,6 +178,8 @@ class MockKsckTabletServer : public KsckTabletServer {
     return Status::OK();
   }
 
+  void FetchQuiescingInfo() override {}
+
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& /*schema*/,

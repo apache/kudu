@@ -36,6 +36,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tools/tool_test_util.h"
@@ -377,8 +378,10 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
   auto* ts = cluster_->mini_tablet_server(0);
   auto rw_workload = CreateFaultIntolerantRWWorkload();
   rw_workload->Setup();
-  rw_workload->set_num_read_threads(1);
+  // Spawn a bunch of read threads so we'll be more likely to see scanners.
+  rw_workload->set_num_read_threads(10);
   ASSERT_FALSE(ts->server()->quiescing());
+  const auto& master_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
   // First, call the start tool a couple of times.
   for (int i = 0; i < 2; i++) {
     ASSERT_OK(RunActionPrependStdoutStderr(
@@ -391,9 +394,17 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
     ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
                           &stdout));
     ASSERT_STR_CONTAINS(stdout,
-        " Quiescing | Tablet leader count | Active scanner count\n"
-        "-----------+---------------------+----------------------\n"
-        " true      |       1             |       0");
+        " Quiescing | Tablet Leaders | Active Scanners\n"
+        "-----------+----------------+-----------------\n"
+        " true      |       1        |       0");
+    ASSERT_TRUE(ts->server()->quiescing());
+
+    // Same with ksck.
+    ASSERT_OK(RunKuduTool({ "cluster", "ksck", master_addr }, &stdout));
+    ASSERT_STR_MATCHES(stdout,
+        ".* Quiescing | Tablet Leaders | Active Scanners\n"
+        ".*-----------+----------------+-----------------\n"
+        ".* true      |       1        |      0");
     ASSERT_TRUE(ts->server()->quiescing());
   }
   ASSERT_OK(RunActionPrependStdoutStderr(
@@ -402,20 +413,46 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
   ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
                         &stdout));
   ASSERT_STR_CONTAINS(stdout,
-      " Quiescing | Tablet leader count | Active scanner count\n"
-      "-----------+---------------------+----------------------\n"
-      " false     |       1             |       0");
+      " Quiescing | Tablet Leaders | Active Scanners\n"
+      "-----------+----------------+-----------------\n"
+      " false     |       1        |       0");
   ASSERT_FALSE(ts->server()->quiescing());
 
+  // When there aren't quiescing tservers, ksck won't report the quiescing
+  // status, but it will still report related info...
+  ASSERT_OK(RunKuduTool({ "cluster", "ksck", master_addr }, &stdout));
+  ASSERT_STR_MATCHES(stdout,
+      ".* Tablet Leaders | Active Scanners\n"
+      ".*----------------+-----------------\n"
+      ".*       1        |      0");
+  ASSERT_STR_NOT_CONTAINS(stdout, "Quiescing");
+  ASSERT_FALSE(ts->server()->quiescing());
+
+  // ... until the user doesn't want to see that.
+  ASSERT_OK(RunKuduTool({ "cluster", "ksck", "--noquiescing_info", master_addr }, &stdout));
+  ASSERT_STR_NOT_CONTAINS(stdout, "Quiescing");
+  ASSERT_STR_NOT_CONTAINS(stdout, "Tablet Leaders");
+  ASSERT_STR_NOT_CONTAINS(stdout, "Active Scanners");
+  ASSERT_FALSE(ts->server()->quiescing());
+
+
   // Now try getting the status with some scanners.
+  // Set a low batch size so we'll be more likely to catch scanners in the act.
+  FLAGS_scanner_default_batch_size_bytes = 1;
   rw_workload->Start();
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(RunKuduTool({ "tserver", "quiesce", "status", ts->bound_rpc_addr().ToString() },
                           &stdout));
     ASSERT_STR_CONTAINS(stdout, Substitute(
-        " Quiescing | Tablet leader count | Active scanner count\n"
-        "-----------+---------------------+----------------------\n"
-        " false     |       1             |       $0",
+        " Quiescing | Tablet Leaders | Active Scanners\n"
+        "-----------+----------------+-----------------\n"
+        " false     |       1        |       $0",
+        ts->server()->scanner_manager()->CountActiveScanners()));
+    ASSERT_OK(RunKuduTool({ "cluster", "ksck", master_addr }, &stdout));
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        ".* Tablet Leaders | Active Scanners\n"
+        ".*----------------+-----------------\n"
+        ".*       1        |      $0",
         ts->server()->scanner_manager()->CountActiveScanners()));
   });
   ASSERT_FALSE(ts->server()->quiescing());

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_SERVICE_H
-#define KUDU_TSERVER_TABLET_SERVICE_H
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -217,6 +216,8 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
                QuiesceTabletServerResponsePB* resp,
                rpc::RpcContext* context) override;
 
+  bool SupportsFeature(uint32_t feature) const override;
+
  private:
   TabletServer* server_;
 };
@@ -284,4 +285,3 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
 } // namespace tserver
 } // namespace kudu
 
-#endif

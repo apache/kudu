@@ -17,17 +17,18 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
@@ -386,6 +387,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("consensus")
         .AddOptionalParameter("fetch_info_concurrency")
         .AddOptionalParameter("ksck_format")
+        .AddOptionalParameter("quiescing_info")
         .AddOptionalParameter("sections")
         .AddOptionalParameter("tables")
         .AddOptionalParameter("tablets")

@@ -1013,6 +1013,17 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   }
 }
 
+bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {
+  switch (feature) {
+    case TabletServerFeatures::COLUMN_PREDICATES:
+    case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
+    case TabletServerFeatures::QUIESCING:
+      return true;
+    default:
+      return false;
+  }
+}
+
 void TabletServiceAdminImpl::Quiesce(const QuiesceTabletServerRequestPB* req,
                                      QuiesceTabletServerResponsePB* resp,
                                      rpc::RpcContext* context) {
@@ -2097,6 +2108,7 @@ bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
   switch (feature) {
     case TabletServerFeatures::COLUMN_PREDICATES:
     case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
+    case TabletServerFeatures::QUIESCING:
       return true;
     default:
       return false;

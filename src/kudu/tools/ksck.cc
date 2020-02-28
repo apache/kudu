@@ -355,6 +355,7 @@ Status Ksck::FetchInfoFromTabletServers() {
       summary.address = ts->address();
       summary.ts_location = ts->location();
       summary.version = ts->version();
+      summary.quiescing_info = ts->quiescing_info();
       summary.status = s;
       if (!s.ok()) {
         if (IsNotAuthorizedMethodAccess(s)) {

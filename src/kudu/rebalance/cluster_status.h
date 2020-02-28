@@ -129,12 +129,20 @@ enum class ServerHealth {
 // Return a string representation of 'sh'.
 const char* const ServerHealthToString(ServerHealth sh);
 
+// Quiescing-related info.
+struct QuiescingInfo {
+  bool is_quiescing;
+  int num_leaders;
+  int num_active_scanners;
+};
+
 // A summary of a server health check.
 struct ServerHealthSummary {
   std::string uuid;
   std::string address;
   std::string ts_location;
   boost::optional<std::string> version;
+  boost::optional<QuiescingInfo> quiescing_info;
   ServerHealth health = ServerHealth::HEALTHY;
   Status status = Status::OK();
 };
