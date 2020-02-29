@@ -37,8 +37,12 @@ target_link_libraries(subprocess_proto
 #######################################
 set(ECHO_JAR ${EXECUTABLE_OUTPUT_PATH}/kudu-subprocess-echo.jar)
 
+# Add the EXTRA_GRADLE_FLAGS environment variable to a cmake list and calls `separate_arguments`.
+# This solves the problem of escaped spaces in the EXTRA_GRADLE_FLAGS environment variable.
+list(APPEND EXTRA_GRADLE_FLAGS $ENV{EXTRA_GRADLE_FLAGS})
+separate_arguments(EXTRA_GRADLE_FLAGS)
 add_custom_command(OUTPUT ${ECHO_JAR}
-  COMMAND ./gradlew :kudu-subprocess-echo:jar $ENV{EXTRA_GRADLE_FLAGS}
+  COMMAND ./gradlew :kudu-subprocess-echo:jar ${EXTRA_GRADLE_FLAGS}
   COMMAND ln -nsf
     "${JAVA_DIR}/kudu-subprocess-echo/build/libs/kudu-subprocess-echo-${KUDU_VERSION_NUMBER}.jar"
     "${ECHO_JAR}"
