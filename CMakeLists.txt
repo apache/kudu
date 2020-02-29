@@ -1181,7 +1181,7 @@ ADD_THIRDPARTY_LIB(boost_date_time
 # in the libc++ library for some reason.
 if (APPLE)
   get_filename_component(SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR
-    ${TCMALLOC_STATIC_LIB} DIRECTORY)
+    "${TCMALLOC_STATIC_LIB}" DIRECTORY)
   execute_process(
     COMMAND printf
       "#include <new>\nint main(){(::operator delete)(0,256);return 0;}\n"
