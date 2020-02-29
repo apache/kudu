@@ -21,13 +21,13 @@
 #include <cstdint>
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
@@ -37,6 +37,7 @@
 
 using std::string;
 using std::thread;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -241,11 +242,11 @@ TEST(BlockingQueueTest, TestGetFromShutdownQueue) {
   ASSERT_FALSE(s.ok()) << s.ToString();
 }
 
-TEST(BlockingQueueTest, TestGscopedPtrMethods) {
+TEST(BlockingQueueTest, TestUniquePtrMethods) {
   BlockingQueue<int*> test_queue(2);
-  gscoped_ptr<int> input_int(new int(123));
+  unique_ptr<int> input_int(new int(123));
   ASSERT_EQ(test_queue.Put(&input_int), QUEUE_SUCCESS);
-  gscoped_ptr<int> output_int;
+  unique_ptr<int> output_int;
   ASSERT_OK(test_queue.BlockingGet(&output_int));
   ASSERT_EQ(123, *output_int.get());
   test_queue.Shutdown();

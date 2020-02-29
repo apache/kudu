@@ -17,13 +17,13 @@
 #pragma once
 
 #include <list>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
@@ -79,7 +79,7 @@ class BlockingQueue {
   // - OK if successful
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
-  Status BlockingGet(T *out, MonoTime deadline = MonoTime()) {
+  Status BlockingGet(T* out, MonoTime deadline = MonoTime()) {
     MutexLock l(lock_);
     while (true) {
       if (!list_.empty()) {
@@ -102,7 +102,7 @@ class BlockingQueue {
 
   // Get an element from the queue.  Returns false if the queue is empty and
   // we were shut down prior to getting the element.
-  Status BlockingGet(gscoped_ptr<T_VAL> *out, MonoTime deadline = MonoTime()) {
+  Status BlockingGet(std::unique_ptr<T_VAL>* out, MonoTime deadline = MonoTime()) {
     T t = nullptr;
     RETURN_NOT_OK(BlockingGet(&t, deadline));
     out->reset(t);
@@ -148,10 +148,10 @@ class BlockingQueue {
 
   // Attempts to put the given value in the queue.
   // Returns:
-  //   QUEUE_SUCCESS: if successfully inserted
+  //   QUEUE_SUCCESS: if successfully enqueued
   //   QUEUE_FULL: if the queue has reached max_size
   //   QUEUE_SHUTDOWN: if someone has already called Shutdown()
-  QueueStatus Put(const T &val) {
+  QueueStatus Put(const T& val) {
     MutexLock l(lock_);
     if (size_ >= max_size_) {
       return QUEUE_FULL;
@@ -166,9 +166,10 @@ class BlockingQueue {
     return QUEUE_SUCCESS;
   }
 
-  // Returns the same as the other Put() overload above.
-  // If the element was inserted, the gscoped_ptr releases its contents.
-  QueueStatus Put(gscoped_ptr<T_VAL> *val) {
+  // Same as other Put() overload above.
+  //
+  // If the element was enqueued, the contents of 'val' are released.
+  QueueStatus Put(std::unique_ptr<T_VAL>* val) {
     QueueStatus s = Put(val->get());
     if (s == QUEUE_SUCCESS) {
       ignore_result<>(val->release());
@@ -211,17 +212,20 @@ class BlockingQueue {
     }
   }
 
-  // Same as other BlockingPut() overload above. If the element was
-  // enqueued, gscoped_ptr releases its contents.
-  Status BlockingPut(gscoped_ptr<T_VAL>* val, MonoTime deadline = MonoTime()) {
+  // Same as other BlockingPut() overload above.
+  //
+  // If the element was enqueued, the contents of 'val' are released.
+  Status BlockingPut(std::unique_ptr<T_VAL>* val, MonoTime deadline = MonoTime()) {
     RETURN_NOT_OK(BlockingPut(val->get(), deadline));
     ignore_result(val->release());
     return Status::OK();
   }
 
-  // Shut down the queue.
+  // Shuts down the queue.
+  //
   // When a blocking queue is shut down, no more elements can be added to it,
   // and Put() will return QUEUE_SHUTDOWN.
+  //
   // Existing elements will drain out of it, and then BlockingGet will start
   // returning false.
   void Shutdown() {
@@ -273,4 +277,3 @@ class BlockingQueue {
 };
 
 } // namespace kudu
-
