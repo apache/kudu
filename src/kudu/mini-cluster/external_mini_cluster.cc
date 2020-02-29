@@ -964,26 +964,6 @@ ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
 ExternalDaemon::~ExternalDaemon() {
 }
 
-Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
-  string spn = "kudu/" + bind_host;
-  string ktpath;
-  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
-                        "could not create keytab");
-  extra_env_ = kdc->GetEnvVars();
-
-  // Insert Kerberos flags at the front of extra_flags, so that user specified
-  // flags will override them.
-  opts_.extra_flags.insert(opts_.extra_flags.begin(), {
-    Substitute("--keytab_file=$0", ktpath),
-    Substitute("--principal=$0", spn),
-    "--rpc_authentication=required",
-    "--superuser_acl=test-admin",
-    "--user_acl=test-user",
-  });
-
-  return Status::OK();
-}
-
 Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   CHECK(!process_);
   const auto this_tid = std::this_thread::get_id();
@@ -991,37 +971,60 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     << "Process being started from thread " << this_tid << " which is different"
     << " from the instantiating thread " << parent_tid_;
 
-  vector<string> argv;
+  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir()));
+  const string info_path = JoinPathSegments(data_dirs()[0], "info.pb");
 
-  // First the exe for argv[0].
-  argv.push_back(opts_.exe);
+  vector<string> argv = {
+    // First the exe for argv[0].
+    opts_.exe,
 
-  // Then all the flags coming from the minicluster framework.
-  argv.insert(argv.end(), user_flags.begin(), user_flags.end());
+    // Basic flags for Kudu server.
+    "--fs_wal_dir=" + wal_dir(),
+    "--fs_data_dirs=" + JoinStrings(data_dirs(), ","),
+    "--block_manager=" + opts_.block_manager_type,
+    "--webserver_interface=localhost",
 
-  // Disable fsync to dramatically speed up runtime. This is safe as no tests
-  // rely on forcefully cutting power to a machine or equivalent.
-  argv.emplace_back("--never_fsync");
+    // Disable fsync to dramatically speed up runtime. This is safe as no tests
+    // rely on forcefully cutting power to a machine or equivalent.
+    "--never_fsync",
 
-  // Generate smaller RSA keys -- generating a 1024-bit key is faster
-  // than generating the default 2048-bit key, and we don't care about
-  // strong encryption in tests. Setting it lower (e.g. 512 bits) results
-  // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122
-  // since we are using strong/high TLS v1.2 cipher suites, so the minimum
-  // size of TLS-related RSA key is 768 bits (due to the usage of
-  // the ECDHE-RSA-AES256-GCM-SHA384 suite). However, to work with Java
-  // client it's necessary to have at least 1024 bits for certificate RSA key
-  // due to Java security policies.
-  argv.emplace_back("--ipki_server_key_size=1024");
+    // Generate smaller RSA keys -- generating a 1024-bit key is faster
+    // than generating the default 2048-bit key, and we don't care about
+    // strong encryption in tests. Setting it lower (e.g. 512 bits) results
+    // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122
+    // since we are using strong/high TLS v1.2 cipher suites, so the minimum
+    // size of TLS-related RSA key is 768 bits (due to the usage of
+    // the ECDHE-RSA-AES256-GCM-SHA384 suite). However, to work with Java
+    // client it's necessary to have at least 1024 bits for certificate RSA key
+    // due to Java security policies.
+    "--ipki_server_key_size=1024",
 
-  // Disable minidumps by default since many tests purposely inject faults.
-  argv.emplace_back("--enable_minidumps=false");
+    // Disable minidumps by default since many tests purposely inject faults.
+    "--enable_minidumps=false",
 
-  // Disable redaction.
-  argv.emplace_back("--redact=none");
+    // Disable redaction of the information in logs and Web UI.
+    "--redact=none",
 
-  // Enable metrics logging.
-  argv.emplace_back("--metrics_log_interval_ms=1000");
+    // Enable metrics logging.
+    "--metrics_log_interval_ms=1000",
+
+    // Even if we are logging to stderr, metrics logs and minidumps end up being
+    // written based on -log_dir. So, we have to set that too.
+    "--log_dir=" + log_dir(),
+
+    // Tell the server to dump its port information so we can pick it up.
+    "--server_dump_info_path=" + info_path,
+    "--server_dump_info_format=pb",
+
+    // We use ephemeral ports in many tests. They don't work for production,
+    // but are OK in unit tests.
+    "--rpc_server_allow_ephemeral_ports",
+
+    // Allow unsafe and experimental flags from tests, since we often use
+    // fault injection, etc.
+    "--unlock_experimental_flags",
+    "--unlock_unsafe_flags",
+  };
 
   if (opts_.logtostderr) {
     // Ensure that logging goes to the test output and doesn't get buffered.
@@ -1029,24 +1032,8 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     argv.emplace_back("--logbuflevel=-1");
   }
 
-  // Even if we are logging to stderr, metrics logs and minidumps end up being
-  // written based on -log_dir. So, we have to set that too.
-  argv.push_back("--log_dir=" + log_dir());
-  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir()));
-
-  // Tell the server to dump its port information so we can pick it up.
-  string info_path = JoinPathSegments(data_dirs()[0], "info.pb");
-  argv.push_back("--server_dump_info_path=" + info_path);
-  argv.emplace_back("--server_dump_info_format=pb");
-
-  // We use ephemeral ports in many tests. They don't work for production, but are OK
-  // in unit tests.
-  argv.emplace_back("--rpc_server_allow_ephemeral_ports");
-
-  // Allow unsafe and experimental flags from tests, since we often use
-  // fault injection, etc.
-  argv.emplace_back("--unlock_experimental_flags");
-  argv.emplace_back("--unlock_unsafe_flags");
+  // Add all the flags coming from the minicluster framework.
+  argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
@@ -1141,6 +1128,26 @@ void ExternalDaemon::SetMetastoreIntegration(const string& hms_uris,
                                              bool enable_kerberos) {
   opts_.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_uris));
   opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0", enable_kerberos));
+}
+
+Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
+  string spn = "kudu/" + bind_host;
+  string ktpath;
+  RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
+                        "could not create keytab");
+  extra_env_ = kdc->GetEnvVars();
+
+  // Insert Kerberos flags at the front of extra_flags, so that user specified
+  // flags will override them.
+  opts_.extra_flags.insert(opts_.extra_flags.begin(), {
+    Substitute("--keytab_file=$0", ktpath),
+    Substitute("--principal=$0", spn),
+    "--rpc_authentication=required",
+    "--superuser_acl=test-admin",
+    "--user_acl=test-user",
+  });
+
+  return Status::OK();
 }
 
 Status ExternalDaemon::Pause() {
@@ -1397,7 +1404,6 @@ Status ExternalMaster::Restart() {
 
   vector<string> flags(GetCommonFlags());
   flags.push_back(Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()));
-
   if (bound_http_.Initialized()) {
     flags.push_back(Substitute("--webserver_interface=$0", bound_http_.host()));
     flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
@@ -1454,21 +1460,17 @@ Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
   return Status::OK();
 }
 
-vector<string> ExternalMaster::GetCommonFlags() const {
-  return {
-    "--fs_wal_dir=" + wal_dir(),
-    "--fs_data_dirs=" + JoinStrings(data_dirs(), ","),
-    "--block_manager=" + opts_.block_manager_type,
-    "--webserver_interface=localhost",
-
+const vector<string>& ExternalMaster::GetCommonFlags() {
+  static const vector<string> kFlags = {
     // See the in-line comment for "--ipki_server_key_size" flag in
     // ExternalDaemon::StartProcess() method.
     "--ipki_ca_key_size=1024",
 
-    // As for the TSK keys, 512 bits is the minimum since we are using the SHA256
-    // digest for token signing/verification.
+    // As for the TSK keys, 512 bits is the minimum since we are using
+    // SHA256 digest for token signing/verification.
     "--tsk_num_rsa_bits=512",
   };
+  return kFlags;
 }
 
 
@@ -1487,21 +1489,15 @@ ExternalTabletServer::~ExternalTabletServer() {
 }
 
 Status ExternalTabletServer::Start() {
-  vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + wal_dir());
-  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs(), ","));
-  flags.push_back("--block_manager=" + opts_.block_manager_type);
-  flags.push_back(Substitute("--rpc_bind_addresses=$0",
-                             rpc_bind_address().ToString()));
-  flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
-                             rpc_bind_address().host()));
-  flags.push_back(Substitute("--webserver_interface=$0",
-                             rpc_bind_address().host()));
-  flags.emplace_back("--webserver_port=0");
-  flags.push_back(Substitute("--tserver_master_addrs=$0",
-                             HostPort::ToCommaSeparatedString(master_addrs_)));
-  RETURN_NOT_OK(StartProcess(flags));
-  return Status::OK();
+  vector<string> flags {
+    Substitute("--rpc_bind_addresses=$0", rpc_bind_address().ToString()),
+    Substitute("--local_ip_for_outbound_sockets=$0", rpc_bind_address().host()),
+    Substitute("--webserver_interface=$0", rpc_bind_address().host()),
+    "--webserver_port=0",
+    Substitute("--tserver_master_addrs=$0",
+               HostPort::ToCommaSeparatedString(master_addrs_)),
+  };
+  return StartProcess(flags);
 }
 
 Status ExternalTabletServer::Restart() {
@@ -1509,20 +1505,17 @@ Status ExternalTabletServer::Restart() {
   if (bound_rpc_.port() == 0) {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
-  vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + wal_dir());
-  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs(), ","));
-  flags.push_back("--block_manager=" + opts_.block_manager_type);
-  flags.push_back(Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()));
-  flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
-                             rpc_bind_address().host()));
+  vector<string> flags {
+    Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()),
+    Substitute("--local_ip_for_outbound_sockets=$0", rpc_bind_address().host()),
+    Substitute("--tserver_master_addrs=$0",
+               HostPort::ToCommaSeparatedString(master_addrs_)),
+  };
   if (bound_http_.Initialized()) {
     flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
     flags.push_back(Substitute("--webserver_interface=$0",
                                bound_http_.host()));
   }
-  flags.push_back(Substitute("--tserver_master_addrs=$0",
-                             HostPort::ToCommaSeparatedString(master_addrs_)));
   return StartProcess(flags);
 }
 

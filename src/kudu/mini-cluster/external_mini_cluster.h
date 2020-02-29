@@ -700,9 +700,8 @@ class ExternalMaster : public ExternalDaemon {
       WaitMode wait_mode = DONT_WAIT_FOR_LEADERSHIP) WARN_UNUSED_RESULT;
 
  private:
-  std::vector<std::string> GetCommonFlags() const;
-
   friend class RefCountedThreadSafe<ExternalMaster>;
+  static const std::vector<std::string>& GetCommonFlags();
   virtual ~ExternalMaster();
 };
 
