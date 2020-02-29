@@ -856,7 +856,7 @@ Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch, const StatusCallb
 
   entry_batch->set_callback(callback);
   TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch.get());
-  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(entry_batch.get()))) {
+  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(entry_batch.get()).ok())) {
     TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
     return kLogShutdownStatus;
   }

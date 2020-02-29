@@ -288,7 +288,7 @@ class ScopedRowUpdater {
     CHECK_OK(session->SetFlushMode(client::KuduSession::AUTO_FLUSH_BACKGROUND));
 
     int64_t next_key;
-    while (to_update_.BlockingGet(&next_key)) {
+    while (to_update_.BlockingGet(&next_key).ok()) {
       std::unique_ptr<client::KuduUpdate> update(table_->NewUpdate());
       CHECK_OK(update->mutable_row()->SetInt64(kKeyColumnName, next_key));
       CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));

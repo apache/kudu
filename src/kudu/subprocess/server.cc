@@ -33,7 +33,6 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/blocking_queue.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -131,7 +130,8 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   Synchronizer sync;
   auto cb = sync.AsStdStatusCallback();
   auto call = make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_);
-  RETURN_NOT_OK(QueueCall(call));
+  RETURN_NOT_OK_PREPEND(outbound_call_queue_.BlockingPut(call, call->deadline()),
+                        "couldn't enqueue call");
   return sync.Wait();
 }
 
@@ -186,7 +186,7 @@ void SubprocessServer::ReceiveMessagesThread() {
     // subprocess.
     DCHECK(s.ok());
     WARN_NOT_OK(s, "failed to receive response from the subprocess");
-    if (s.ok() && !inbound_response_queue_.BlockingPut(response)) {
+    if (s.ok() && !inbound_response_queue_.BlockingPut(response).ok()) {
       // The queue has been shut down and we should shut down too.
       DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "failed to put response onto inbound queue";
@@ -288,33 +288,6 @@ void SubprocessServer::SendMessagesThread() {
   DCHECK(s.IsAborted());
   DCHECK_EQ(0, closing_.count());
   LOG(INFO) << "outbound queue shut down: " << s.ToString();
-}
-
-Status SubprocessServer::QueueCall(const shared_ptr<SubprocessCall>& call) {
-  if (MonoTime::Now() > call->deadline()) {
-    return Status::TimedOut("timed out before queueing call");
-  }
-
-  do {
-    QueueStatus queue_status = outbound_call_queue_.Put(call);
-    switch (queue_status) {
-      case QUEUE_SUCCESS:
-        return Status::OK();
-      case QUEUE_SHUTDOWN:
-        return Status::ServiceUnavailable("outbound queue shutting down");
-      case QUEUE_FULL: {
-        // If we still have more time allotted for this call, wait for a bit
-        // and try again; otherwise, time out.
-        if (MonoTime::Now() > call->deadline()) {
-          return Status::TimedOut("timed out trying to queue call");
-        }
-        closing_.WaitFor(
-            MonoDelta::FromMilliseconds(FLAGS_subprocess_queue_full_retry_ms));
-      }
-    }
-  } while (true);
-
-  return Status::OK();
 }
 
 } // namespace subprocess

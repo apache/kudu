@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_BLOCKING_QUEUE_H
-#define KUDU_UTIL_BLOCKING_QUEUE_H
+#pragma once
 
 #include <list>
 #include <string>
@@ -70,9 +69,17 @@ class BlockingQueue {
         << "BlockingQueue holds bare pointers at destruction time";
   }
 
-  // Get an element from the queue.  Returns false if we were shut down prior to
-  // getting the element.
-  bool BlockingGet(T *out) {
+  // Gets an element from the queue; if the queue is empty, blocks until the
+  // queue becomes non-empty, or until the deadline passes.
+  //
+  // If the queue has been shut down but there are still elements in the queue,
+  // it returns those elements as if the queue were not yet shut down.
+  //
+  // Returns:
+  // - OK if successful
+  // - TimedOut if the deadline passed
+  // - Aborted if the queue shut down
+  Status BlockingGet(T *out, MonoTime deadline = MonoTime()) {
     MutexLock l(lock_);
     while (true) {
       if (!list_.empty()) {
@@ -80,25 +87,26 @@ class BlockingQueue {
         list_.pop_front();
         decrement_size_unlocked(*out);
         not_full_.Signal();
-        return true;
+        return Status::OK();
       }
       if (shutdown_) {
-        return false;
+        return Status::Aborted("");
       }
-      not_empty_.Wait();
+      if (!deadline.Initialized()) {
+        not_empty_.Wait();
+      } else if (PREDICT_FALSE(!not_empty_.WaitUntil(deadline))) {
+        return Status::TimedOut("");
+      }
     }
   }
 
   // Get an element from the queue.  Returns false if the queue is empty and
   // we were shut down prior to getting the element.
-  bool BlockingGet(gscoped_ptr<T_VAL> *out) {
-    T t = NULL;
-    bool got_element = BlockingGet(&t);
-    if (!got_element) {
-      return false;
-    }
+  Status BlockingGet(gscoped_ptr<T_VAL> *out, MonoTime deadline = MonoTime()) {
+    T t = nullptr;
+    RETURN_NOT_OK(BlockingGet(&t, deadline));
     out->reset(t);
-    return true;
+    return Status::OK();
   }
 
   // Get all elements from the queue and append them to a vector.
@@ -168,34 +176,47 @@ class BlockingQueue {
     return s;
   }
 
-  // Gets an element for the queue; if the queue is full, blocks until
-  // space becomes available. Returns false if we were shutdown prior
-  // to enqueueing the element.
-  bool BlockingPut(const T& val) {
+  // Puts an element onto the queue; if the queue is full, blocks until space
+  // becomes available, or until the deadline passes.
+  //
+  // NOTE: unlike BlockingGet() and BlockingDrainTo(), which succeed as long as
+  // there are elements in the queue (regardless of deadline), if the deadline
+  // has passed, an error will be returned even if there is space in the queue.
+  //
+  // Returns:
+  // - OK if successful
+  // - TimedOut if the deadline passed
+  // - Aborted if the queue shut down
+  Status BlockingPut(const T& val, MonoTime deadline = MonoTime()) {
+    if (deadline.Initialized() && MonoTime::Now() > deadline) {
+      return Status::TimedOut("");
+    }
     MutexLock l(lock_);
     while (true) {
       if (shutdown_) {
-        return false;
+        return Status::Aborted("");
       }
       if (size_ < max_size_) {
         list_.push_back(val);
         increment_size_unlocked(val);
         l.Unlock();
         not_empty_.Signal();
-        return true;
+        return Status::OK();
       }
-      not_full_.Wait();
+      if (!deadline.Initialized()) {
+        not_full_.Wait();
+      } else if (PREDICT_FALSE(!not_full_.WaitUntil(deadline))) {
+        return Status::TimedOut("");
+      }
     }
   }
 
   // Same as other BlockingPut() overload above. If the element was
   // enqueued, gscoped_ptr releases its contents.
-  bool BlockingPut(gscoped_ptr<T_VAL>* val) {
-    bool ret = Put(val->get());
-    if (ret) {
-      ignore_result(val->release());
-    }
-    return ret;
+  Status BlockingPut(gscoped_ptr<T_VAL>* val, MonoTime deadline = MonoTime()) {
+    RETURN_NOT_OK(BlockingPut(val->get(), deadline));
+    ignore_result(val->release());
+    return Status::OK();
   }
 
   // Shut down the queue.
@@ -253,4 +274,3 @@ class BlockingQueue {
 
 } // namespace kudu
 
-#endif

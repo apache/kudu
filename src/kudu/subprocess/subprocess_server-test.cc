@@ -176,7 +176,7 @@ TEST_F(SubprocessServerTest, TestTimeoutBeforeQueueing) {
   SubprocessResponsePB response;
   Status s = server_->Execute(&request, &response);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "timed out before queueing call");
+  ASSERT_STR_CONTAINS(s.ToString(), "couldn't enqueue call");
 }
 
 // Test when we try sending too many requests at once.
@@ -213,7 +213,7 @@ TEST_F(SubprocessServerTest, TestTimeoutWhileQueueingCalls) {
   bool has_timeout_when_queueing = false;
   for (const auto& s : results) {
     if (s.IsTimedOut() &&
-        s.ToString().find("timed out trying to queue call") != string::npos) {
+        s.ToString().find("couldn't enqueue call") != string::npos) {
       has_timeout_when_queueing = true;
     }
   }

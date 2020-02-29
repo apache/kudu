@@ -192,8 +192,8 @@ class SubprocessServer {
   // Initialize the server, starting the subprocess and worker threads.
   Status Init() WARN_UNUSED_RESULT;
 
-  // Synchronously send a request to the subprocess and populate 'resp' with
-  // contents returned from the subprocess, or return an error if anything
+  // Synchronously sends a request to the subprocess and populates 'resp' with
+  // contents returned from the subprocess, or returns an error if anything
   // failed or timed out along the way.
   Status Execute(SubprocessRequestPB* req, SubprocessResponsePB* resp) WARN_UNUSED_RESULT;
 
