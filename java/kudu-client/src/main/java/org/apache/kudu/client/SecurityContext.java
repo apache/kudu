@@ -420,6 +420,7 @@ class SecurityContext {
 
   /**
    * TrustManager implementation which will trust any certificate.
+   * It is not secure. Use at your own risks.
    */
   private static class TrustAnyCert implements X509TrustManager {
     @Override
