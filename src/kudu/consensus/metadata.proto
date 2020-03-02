@@ -35,6 +35,13 @@ message RaftPeerAttrsPB {
   // If set to 'true', the replica needs to be replaced regardless of
   // its health report.
   optional bool replace = 2 [ default = false ];
+
+  // Denotes if the server is backed by a database. If not, it only has the
+  // logs.
+  optional bool backing_db_present = 3 [ default = true ];
+
+  // Geographic region of the raft server.
+  optional string region = 4;
 }
 
 // Report on a replica's (peer's) health.
