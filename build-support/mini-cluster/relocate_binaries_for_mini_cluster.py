@@ -366,7 +366,7 @@ def relocate_deps_macos(target_src, target_dst, config):
 
   # For each dependency, relocate the path we will search for it and ensure it
   # is shipped with the archive.
-  for (dep_search_name, dep_src) in target_deps.iteritems():
+  for (dep_search_name, dep_src) in target_deps.items():
     # Filter out libs we don't want to archive.
     if PAT_MACOS_LIB_EXCLUDE.search(dep_search_name):
       continue
@@ -401,7 +401,7 @@ def relocate_sasl2(target_src, config):
   """
 
   # Find the libsasl2 module in our dependencies.
-  deps = get_resolved_deps(target_src);
+  deps = get_resolved_deps(target_src)
   sasl_lib = None
   for dep in deps:
     if re.search('libsasl2', dep):

@@ -341,7 +341,7 @@ def create_archive_input(staging, execution, dep_extractor,
              '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
              '-e', 'KUDU_COMPRESS_TEST_OUTPUT=%s' % \
                     os.environ.get('KUDU_COMPRESS_TEST_OUTPUT', 0)]
-  for k, v in execution.env.iteritems():
+  for k, v in execution.env.items():
     if k == 'KUDU_TEST_TIMEOUT':
       # Currently we don't respect the test timeouts specified in ctest, since
       # we want to make sure that the dist-test task timeout and the
@@ -397,7 +397,7 @@ def create_task_json(staging,
   # Some versions of 'isolate batcharchive' directly list the items in
   # the dumped JSON. Others list it in an 'items' dictionary.
   items = inmap.get('items', inmap)
-  for k, v in items.iteritems():
+  for k, v in items.items():
     # The key may be 'foo-test.<shard>'. So, chop off the last component
     # to get the test name.
     test_name = ".".join(k.split(".")[:-1]) if TEST_SHARD_RE.search(k) else k
