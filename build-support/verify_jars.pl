@@ -78,7 +78,10 @@ chomp(my @jars = `find . -type f -name \*.jar |
                          # Ignored because it's test only and unpublished.
                          grep -v kudu-jepsen.*\.jar |
                          # Ignored because it's a tool jar that shades everything.
-                         grep -v kudu-backup-tools.*\.jar`);
+                         grep -v kudu-backup-tools.*\.jar |
+                         # Ignored because it's an internal jar that shades everything.
+                         grep -v kudu-subprocess.*\.jar`
+                         );
 
 my $num_errors = 0;
 

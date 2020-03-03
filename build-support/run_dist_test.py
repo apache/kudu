@@ -162,8 +162,8 @@ def main():
                os.path.join(bin_path, "chronyd"))
     os.symlink(
         glob.glob(os.path.join(ROOT,
-                               "java/kudu-subprocess-echo/build/libs/kudu-subprocess-echo*"))[0],
-        os.path.join(bin_path, "kudu-subprocess-echo.jar"))
+                               "java/kudu-subprocess/build/libs/kudu-subprocess*"))[0],
+        os.path.join(bin_path, "kudu-subprocess.jar"))
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +

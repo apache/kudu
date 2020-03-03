@@ -111,7 +111,7 @@ DEPS_FOR_ALL = \
      "build/latest/bin/sentry-home",
 
      # Add the Kudu echo subprocess.
-     "build/latest/bin/kudu-subprocess-echo.jar",
+     "build/latest/bin/kudu-subprocess.jar",
 
      # Add the Kudu HMS plugin.
      "build/latest/bin/hms-plugin.jar",
