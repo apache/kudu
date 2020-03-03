@@ -51,6 +51,7 @@ class VoteCounter {
  public:
   // Create new VoteCounter with the given majority size.
   VoteCounter(int num_voters, int majority_size);
+  virtual ~VoteCounter() {}
 
   // Register a peer's vote.
   //
@@ -60,14 +61,15 @@ class VoteCounter {
   // If the same vote is duplicated, 'is_duplicate' is set to true.
   // Otherwise, it is set to false.
   // If an OK status is not returned, the value in 'is_duplicate' is undefined.
-  Status RegisterVote(const std::string& voter_uuid, ElectionVote vote, bool* is_duplicate);
+  virtual Status RegisterVote(
+      const std::string& voter_uuid, ElectionVote vote, bool* is_duplicate);
 
   // Return whether the vote is decided yet.
-  bool IsDecided() const;
+  virtual bool IsDecided() const;
 
   // Return decision iff IsDecided() returns true.
   // If vote is not yet decided, returns Status::IllegalState().
-  Status GetDecision(ElectionVote* decision) const;
+  virtual Status GetDecision(ElectionVote* decision) const;
 
   // Return the total of "Yes" and "No" votes.
   int GetTotalVotesCounted() const;
@@ -78,18 +80,60 @@ class VoteCounter {
   // Return true iff GetTotalVotesCounted() == num_voters_;
   bool AreAllVotesIn() const;
 
+ protected:
+  int num_voters_;
+
+  typedef std::map<std::string, ElectionVote> VoteMap;
+  VoteMap votes_; // Voting record.
+
  private:
   friend class VoteCounterTest;
 
-  typedef std::map<std::string, ElectionVote> VoteMap;
-
-  const int num_voters_;
   const int majority_size_;
-  VoteMap votes_; // Voting record.
   int yes_votes_; // Accumulated yes votes, for quick counting.
   int no_votes_;  // Accumulated no votes.
 
   DISALLOW_COPY_AND_ASSIGN(VoteCounter);
+};
+
+class FlexibleVoteCounter : public VoteCounter {
+ public:
+  FlexibleVoteCounter(RaftConfigPB config);
+
+  // Synchronization is done by the LeaderElection class. Therefore, VoteCounter
+  // class doesn't need to take care of thread safety of its book-keeping
+  // variables.
+  Status RegisterVote(
+      const std::string& voter_uuid, ElectionVote vote,
+      bool* is_duplicate) override;
+  bool IsDecided() const override;
+  Status GetDecision(ElectionVote* decision) const override;
+ private:
+  // Returns a couple of booleans - the first denotes if the election quorum
+  // has been satisfied and the second denotes if it can still be satisfied.
+  std::pair<bool, bool> GetQuorumState() const;
+
+  // Fetches topology information required by the flexible vote counter.
+  void FetchTopologyInfo(
+      std::map<std::string, int>* voter_distribution,
+      std::map<std::string, int>* le_quorum_requirement);
+
+  // Mapping from each region to number of active voters.
+  std::map<std::string, int> voter_distribution_;
+
+  // Mapping from each region to number of yes votes required.
+  std::map<std::string, int> le_quorum_requirement_;
+
+  // Vote count per region.
+  std::map<std::string, int> yes_vote_count_, no_vote_count_;
+
+  // Config at the beginning of the leader election.
+  const RaftConfigPB config_;
+
+  // UUID to region map derived from RaftConfigPB
+  std::map<std::string, std::string> uuid_to_region_;
+
+  DISALLOW_COPY_AND_ASSIGN(FlexibleVoteCounter);
 };
 
 // The result of a leader election.

@@ -151,6 +151,10 @@ DEFINE_bool(raft_derived_log_mode, false,
             "When derived log mode is turned on, certain functions"
             " inside kudu raft become invalid");
 
+DEFINE_bool(enable_flexi_raft, false,
+            "Enables flexi raft mode. All the configurations need to be already"
+            " present and setup before the flag can be enabled.");
+
 // Metrics
 // ---------
 METRIC_DEFINE_counter(server, follower_memory_pressure_rejections,
@@ -511,9 +515,15 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
                                    << SecureShortDebugString(active_config);
 
     // Initialize the VoteCounter.
-    int num_voters = CountVoters(active_config);
-    int majority_size = MajoritySize(num_voters);
-    gscoped_ptr<VoteCounter> counter(new VoteCounter(num_voters, majority_size));
+    gscoped_ptr<VoteCounter> counter;
+
+    if (!FLAGS_enable_flexi_raft) {
+      int num_voters = CountVoters(active_config);
+      int majority_size = MajoritySize(num_voters);
+      counter.reset(new VoteCounter(num_voters, majority_size));
+    } else {
+      counter.reset(new FlexibleVoteCounter(active_config));
+    }
 
     // Vote for ourselves.
     bool duplicate;
