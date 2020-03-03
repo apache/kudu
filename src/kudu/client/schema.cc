@@ -859,7 +859,7 @@ bool KuduSchema::Equals(const KuduSchema& other) const {
 }
 
 KuduColumnSchema KuduSchema::Column(size_t idx) const {
-  ColumnSchema col(schema_->column(idx));
+  const ColumnSchema& col = schema_->column(idx);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   KuduColumnStorageAttributes attrs(FromInternalEncodingType(col.attributes().encoding),
