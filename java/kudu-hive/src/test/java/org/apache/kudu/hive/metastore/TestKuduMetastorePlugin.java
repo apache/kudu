@@ -233,10 +233,10 @@ public class TestKuduMetastorePlugin {
   @Test
   public void testAlterTableHandler() throws Exception {
     // Test altering a Kudu (or a legacy) table.
-    Table table = newTable("table");
-    client.createTable(table, masterContext());
+    Table initTable = newTable("table");
+    client.createTable(initTable, masterContext());
     // Get the table from the HMS in case any translation occurred.
-    table = client.getTable(table.getDbName(), table.getTableName());
+    Table table = client.getTable(initTable.getDbName(), initTable.getTableName());
     Table legacyTable = newLegacyTable("legacy_table");
     client.createTable(legacyTable, masterContext());
     // Get the table from the HMS in case any translation occurred.
@@ -380,8 +380,10 @@ public class TestKuduMetastorePlugin {
 
     // Test altering a non-Kudu table.
     {
+      table = initTable.deepCopy();
       table.getParameters().clear();
       client.createTable(table);
+      table = client.getTable(table.getDbName(), table.getTableName());
       try {
 
         // Try to alter the table and add a Kudu table ID.
@@ -431,11 +433,12 @@ public class TestKuduMetastorePlugin {
 
     // Test altering an unsynchronized table is accepted.
     {
-      table.getParameters().clear();
+      table = initTable.deepCopy();
       table.setTableType(TableType.EXTERNAL_TABLE.name());
       table.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
       table.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
       client.createTable(table);
+      table = client.getTable(table.getDbName(), table.getTableName());
       try {
         client.alter_table(table.getDbName(), table.getTableName(), table);
       } finally {
