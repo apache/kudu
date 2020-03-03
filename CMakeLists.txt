@@ -22,6 +22,8 @@
 # 1. https://gitlab.kitware.com/cmake/cmake/issues/17938
 cmake_minimum_required(VERSION 3.11.2)
 
+project(Kudu)
+
 # Prevent builds from the top-level source directory. This ensures that build
 # output is well isolated from the source tree.
 #
