@@ -70,7 +70,7 @@ file(GLOB DEPENDENCY_JARS
 
 add_jar(hms-plugin
   "${CMAKE_SOURCE_DIR}/java/kudu-hive/src/main/java/org/apache/kudu/hive/metastore/KuduMetastorePlugin.java"
-  INCLUDE_JARS ${DEPENDENCY_JARS}
+  INCLUDE_JARS "${DEPENDENCY_JARS}"
   OUTPUT_DIR "${EXECUTABLE_OUTPUT_PATH}")
 
 set(MINI_HMS_SRCS
