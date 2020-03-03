@@ -30,6 +30,7 @@
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/resource_metrics-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
@@ -38,6 +39,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/rpc.h"
@@ -228,12 +230,13 @@ void KuduScanner::Data::UpdateResourceMetrics() {
   if (last_response_.has_resource_metrics()) {
     tserver::ResourceMetricsPB resource_metrics = last_response_.resource_metrics();
     const Reflection* reflection = resource_metrics.GetReflection();
-    vector<const FieldDescriptor*> fields;
-    reflection->ListFields(resource_metrics, &fields);
-    for (const FieldDescriptor* field : fields) {
+    const google::protobuf::Descriptor* desc = resource_metrics.GetDescriptor();
+    for (int i = 0; i < desc->field_count(); i++) {
+      const FieldDescriptor* field = desc->field(i);
       if (reflection->HasField(resource_metrics, field) &&
           field->cpp_type() == FieldDescriptor::CPPTYPE_INT64) {
-        resource_metrics_.Increment(field->name(), reflection->GetInt64(resource_metrics, field));
+        resource_metrics_.data_->Increment(StringPiece(field->name()),
+                                           reflection->GetInt64(resource_metrics, field));
       }
     }
   }

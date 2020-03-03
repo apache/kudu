@@ -17,11 +17,17 @@
 #ifndef KUDU_CLIENT_RESOURCE_METRICS_INTERNAL_H
 #define KUDU_CLIENT_RESOURCE_METRICS_INTERNAL_H
 
+#include <list>
 #include <map>
 #include <mutex>
 #include <stdint.h>
+#include <set>
 #include <string>
 
+#include <sparsehash/dense_hash_map>
+
+#include "kudu/gutil/hash/hash.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/locks.h"
 
 namespace kudu {
@@ -37,14 +43,20 @@ class ResourceMetrics::Data {
   std::map<std::string, int64_t> Get() const;
 
   // Increment the given counter.
+  ATTRIBUTE_DEPRECATED("Use StringPiece variant instead")
   void Increment(const std::string& name, int64_t amount);
+
+  // Increment the given counter. The memory referred to by 'name' must
+  // remain alive for the lifetime of this ResourceMetrics object.
+  void Increment(StringPiece name, int64_t amount);
 
   // Return metric's current value.
   int64_t GetMetric(const std::string& name) const;
 
  private:
   mutable simple_spinlock lock_;
-  std::map<std::string, int64_t> counters_;
+  google::dense_hash_map<StringPiece, int64_t, GoodFastHash<StringPiece>> counters_;
+  std::set<std::string> owned_strings_;
 };
 
 } // namespace client

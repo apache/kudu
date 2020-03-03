@@ -16,13 +16,19 @@
 // under the License.
 
 #include "kudu/client/resource_metrics.h"
-#include "kudu/client/resource_metrics-internal.h"
 
+#include <cstdint>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
+#include <utility>
 
+#include <sparsehash/dense_hash_map>
+
+#include "kudu/client/resource_metrics-internal.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/stringpiece.h"
 
 namespace kudu {
 
@@ -49,18 +55,29 @@ int64_t ResourceMetrics::GetMetric(const std::string& name) const {
   return data_->GetMetric(name);
 }
 
-ResourceMetrics::Data::Data() {}
+ResourceMetrics::Data::Data() {
+  counters_.set_empty_key("");
+}
 
 ResourceMetrics::Data::~Data() {}
 
 void ResourceMetrics::Data::Increment(const std::string& name, int64_t amount) {
   std::lock_guard<simple_spinlock> l(lock_);
+  auto it = owned_strings_.insert(name).first;
+  counters_[*it] += amount;
+}
+void ResourceMetrics::Data::Increment(StringPiece name, int64_t amount) {
+  std::lock_guard<simple_spinlock> l(lock_);
   counters_[name] += amount;
 }
 
 std::map<std::string, int64_t> ResourceMetrics::Data::Get() const {
+  std::map<std::string, int64_t> ret;
   std::lock_guard<simple_spinlock> l(lock_);
-  return counters_;
+  for (const auto& p : counters_) {
+    ret.emplace(p.first.as_string(), p.second);
+  }
+  return ret;
 }
 
 int64_t ResourceMetrics::Data::GetMetric(const std::string& name) const {

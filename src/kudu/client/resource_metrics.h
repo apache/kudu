@@ -26,6 +26,12 @@
 
 #include "kudu/util/kudu_export.h"
 
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+
 namespace kudu {
 namespace client {
 
@@ -47,6 +53,7 @@ class KUDU_EXPORT ResourceMetrics {
   /// @param [in] amount
   ///   The amount to increment the metric
   ///   (negative @c amount corresponds to decrementing the metric).
+  ATTRIBUTE_DEPRECATED("This function will become private in a future release.")
   void Increment(const std::string& name, int64_t amount);
 
   /// Get current count for the specified metric.
@@ -57,6 +64,7 @@ class KUDU_EXPORT ResourceMetrics {
   int64_t GetMetric(const std::string& name) const;
 
  private:
+  friend class KuduScanner;
   class KUDU_NO_EXPORT Data;
   Data* data_;
 };

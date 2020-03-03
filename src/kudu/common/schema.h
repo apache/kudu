@@ -224,14 +224,14 @@ class ColumnSchema {
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
-        read_default_(read_default ? new Variant(type, read_default) : nullptr),
+        read_default_(read_default ? std::make_shared<Variant>(type, read_default) : nullptr),
         attributes_(attributes),
         type_attributes_(type_attributes),
         comment_(std::move(comment)) {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != nullptr) {
-      write_default_.reset(new Variant(type, write_default));
+      write_default_ = std::make_shared<Variant>(type, write_default);
     }
   }
 

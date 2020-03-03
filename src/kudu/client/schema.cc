@@ -823,6 +823,10 @@ KuduSchema::KuduSchema(const Schema& schema)
   : schema_(new Schema(schema)) {
 }
 
+KuduSchema::KuduSchema(Schema&& schema)
+  : schema_(new Schema(schema)) {
+}
+
 KuduSchema::~KuduSchema() {
   delete schema_;
 }

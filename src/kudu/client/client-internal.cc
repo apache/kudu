@@ -32,6 +32,8 @@
 #include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/container/small_vector.hpp>
+#include <boost/container/vector.hpp>
 #include <boost/function.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -74,6 +76,7 @@ DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
 
+using boost::container::small_vector;
 using std::map;
 using std::pair;
 using std::set;
@@ -226,8 +229,8 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
       // TODO(wdberkeley): Eventually, the client might use the hierarchical
       // structure of a location to determine proximity.
       const string client_location = location();
-      vector<RemoteTabletServer*> local;
-      vector<RemoteTabletServer*> same_location;
+      small_vector<RemoteTabletServer*, 1> local;
+      small_vector<RemoteTabletServer*, 3> same_location;
       local.reserve(filtered.size());
       same_location.reserve(filtered.size());
       for (RemoteTabletServer* rts : filtered) {
