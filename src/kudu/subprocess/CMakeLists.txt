@@ -72,4 +72,5 @@ if (NOT NO_TESTS)
   )
 endif()
 
+ADD_KUDU_TEST(subprocess_proxy-test)
 ADD_KUDU_TEST(subprocess_server-test)
