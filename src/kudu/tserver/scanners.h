@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -299,13 +300,11 @@ class Scanner {
   }
 
   void add_num_rows_returned(int64_t num_rows_added) {
-    std::lock_guard<simple_spinlock> l(lock_);
     num_rows_returned_ += num_rows_added;
     DCHECK_LE(num_rows_added, num_rows_returned_);
   }
 
   int64_t num_rows_returned() const {
-    std::lock_guard<simple_spinlock> l(lock_);
     return num_rows_returned_;
   }
 
@@ -347,8 +346,7 @@ class Scanner {
   // The current call sequence ID.
   uint32_t call_seq_id_;
 
-  // Protects last_access_time_ call_seq_id_, iter_, spec_, and
-  // num_rows_returned_.
+  // Protects last_access_time_ call_seq_id_, iter_, spec_
   mutable simple_spinlock lock_;
 
   // The time the scanner was started.
@@ -383,7 +381,7 @@ class Scanner {
 
   // The number of rows that have been serialized and sent over the wire by
   // this scanner.
-  int64_t num_rows_returned_;
+  std::atomic<int64_t> num_rows_returned_;
 
   // The cumulative amounts of wall, user cpu, and system cpu time spent on
   // this scanner, in seconds.
