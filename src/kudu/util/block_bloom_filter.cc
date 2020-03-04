@@ -47,6 +47,9 @@ namespace kudu {
 
 constexpr uint32_t BlockBloomFilter::kRehash[8] __attribute__((aligned(32)));
 const base::CPU BlockBloomFilter::kCpu = base::CPU();
+// constexpr data member requires initialization in the class declaration.
+// Hence no duplicate initialization in the definition here.
+constexpr BlockBloomFilter* const BlockBloomFilter::kAlwaysTrueFilter;
 
 BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_allocator) :
   always_false_(true),
@@ -60,13 +63,16 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
   if (has_avx2()) {
     bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
     bucket_find_func_ptr_ = &BlockBloomFilter::BucketFindAVX2;
+    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayAVX2;
   } else {
     bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
     bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArray;
   }
 #else
   bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
   bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+  or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArray;
 #endif
 }
 
@@ -257,6 +263,56 @@ bool BlockBloomFilter::operator==(const BlockBloomFilter& rhs) const {
 
 bool BlockBloomFilter::operator!=(const BlockBloomFilter& rhs) const {
   return !(rhs == *this);
+}
+
+void BlockBloomFilter::OrEqualArray(size_t n, const uint8_t* __restrict__ in,
+                                    uint8_t* __restrict__ out) {
+  // The trivial loop out[i] |= in[i] should auto-vectorize with gcc at -O3, but it is not
+  // written in a way that is very friendly to auto-vectorization. Instead, we manually
+  // vectorize, increasing the speed by up to 56x.
+  const __m128i* simd_in = reinterpret_cast<const __m128i*>(in);
+  const __m128i* const simd_in_end = reinterpret_cast<const __m128i*>(in + n);
+  __m128i* simd_out = reinterpret_cast<__m128i*>(out);
+  // in.directory has a size (in bytes) that is a multiple of 32. Since sizeof(__m128i)
+  // == 16, we can do two _mm_or_si128's in each iteration without checking array
+  // bounds.
+  while (simd_in != simd_in_end) {
+    for (int i = 0; i < 2; ++i, ++simd_in, ++simd_out) {
+      _mm_storeu_si128(
+          simd_out, _mm_or_si128(_mm_loadu_si128(simd_out), _mm_loadu_si128(simd_in)));
+    }
+  }
+}
+
+Status BlockBloomFilter::Or(const BlockBloomFilter& other) {
+  // AlwaysTrueFilter is a special case implemented with a nullptr.
+  // Hence Or'ing with an AlwaysTrueFilter will result in a Bloom filter that also
+  // always returns true which'll require destructing this Bloom filter.
+  // Moreover for a reference "other" to be an AlwaysTrueFilter the reference needs
+  // to be created from a nullptr and so we get into undefined behavior territory.
+  // Comparing AlwaysTrueFilter with "&other" results in a compiler warning for
+  // comparing a non-null argument "other" with NULL [-Wnonnull-compare].
+  // For above reasons, guard against it.
+  CHECK_NE(kAlwaysTrueFilter, &other);
+
+  if (this == &other) {
+    // No op.
+    return Status::OK();
+  }
+  if (directory_size() != other.directory_size()) {
+    return Status::InvalidArgument(Substitute("Directory size don't match. this: $0, other: $1",
+        directory_size(), other.directory_size()));
+  }
+  if (other.AlwaysFalse()) {
+    // Nothing to do.
+    return Status::OK();
+  }
+
+  (*or_equal_array_func_ptr_)(directory_size(),
+                              reinterpret_cast<uint8_t*>(other.directory_),
+                              reinterpret_cast<uint8_t*>(directory_));
+  always_false_ = false;
+  return Status::OK();
 }
 
 shared_ptr<DefaultBlockBloomFilterBufferAllocator>

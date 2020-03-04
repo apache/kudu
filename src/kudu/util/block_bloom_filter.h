@@ -148,6 +148,21 @@ class BlockBloomFilter {
   bool operator==(const BlockBloomFilter& rhs) const;
   bool operator!=(const BlockBloomFilter& rhs) const;
 
+  // Computes the logical OR of this filter with 'other' and stores the result in this
+  // filter.
+  // Notes:
+  // - The directory sizes of the Bloom filters must match.
+  // - Or'ing with kAlwaysTrueFilter is disallowed.
+  Status Or(const BlockBloomFilter& other);
+
+  // Returns whether the Bloom filter is empty and hence would return false for all lookups.
+  bool AlwaysFalse() const {
+    return always_false_;
+  }
+
+  // Representation of a filter which allows all elements to pass.
+  static constexpr BlockBloomFilter* const kAlwaysTrueFilter = nullptr;
+
  private:
   // always_false_ is true when the bloom filter hasn't had any elements inserted.
   bool always_false_;
@@ -190,7 +205,7 @@ class BlockBloomFilter {
   // Helper function for public Init() variants.
   Status InitInternal(int log_space_bytes, HashAlgorithm hash_algorithm, uint32_t hash_seed);
 
-  // Same as Insert(), but skips the CPU check and assumes that AVX is not available.
+  // Same as Insert(), but skips the CPU check and assumes that AVX2 is not available.
   void InsertNoAvx2(uint32_t hash) noexcept;
 
   // Does the actual work of Insert(). bucket_idx is the index of the bucket to insert
@@ -199,8 +214,11 @@ class BlockBloomFilter {
 
   bool BucketFind(uint32_t bucket_idx, uint32_t hash) const noexcept;
 
+  // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n'.
+  static void OrEqualArray(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict__ out);
+
 #ifdef USE_AVX2
-  // Same as Insert(), but skips the CPU check and assumes that AVX is available.
+  // Same as Insert(), but skips the CPU check and assumes that AVX2 is available.
   void InsertAvx2(uint32_t hash) noexcept __attribute__((__target__("avx2")));
 
   // A faster SIMD version of BucketInsert().
@@ -210,12 +228,18 @@ class BlockBloomFilter {
   // A faster SIMD version of BucketFind().
   bool BucketFindAVX2(uint32_t bucket_idx, uint32_t hash) const noexcept
       __attribute__((__target__("avx2")));
+
+  // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n' using AVX2
+  // instructions. 'n' must be a multiple of 32.
+  static void OrEqualArrayAVX2(size_t n, const uint8_t* __restrict__ in,
+                               uint8_t* __restrict__ out) __attribute__((target("avx2")));
 #endif
 
   // Function pointers initialized in constructor to avoid run-time cost
   // in hot-path of Find and Insert operations.
   decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
   decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
+  decltype(&BlockBloomFilter::OrEqualArray) or_equal_array_func_ptr_;
 
   // Returns amount of space used in log2 bytes.
   int log_space_bytes() const {

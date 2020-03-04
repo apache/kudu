@@ -286,4 +286,37 @@ TEST_F(BlockBloomFilterTest, MinSpaceForFpp) {
     }
   }
 }
+
+TEST_F(BlockBloomFilterTest, Or) {
+  BlockBloomFilter* bf1 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
+  BlockBloomFilter* bf2 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
+
+  for (int i = 60; i < 80; ++i) bf2->Insert(i);
+  for (int i = 0; i < 10; ++i) bf1->Insert(i);
+
+  ASSERT_OK(bf1->Or(*bf2));
+  for (int i = 0; i < 10; ++i) ASSERT_TRUE(bf1->Find(i)) << i;
+  for (int i = 60; i < 80; ++i) ASSERT_TRUE(bf1->Find(i)) << i;
+
+  // Insert another value to aggregated BloomFilter.
+  for (int i = 11; i < 50; ++i) bf1->Insert(i);
+
+  for (int i = 11; i < 50; ++i) ASSERT_TRUE(bf1->Find(i)) << i;
+  ASSERT_FALSE(bf1->Find(81));
+
+  // Check that AlwaysFalse() is updated correctly.
+  BlockBloomFilter* bf3 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
+  BlockBloomFilter* always_false = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
+  ASSERT_OK(bf3->Or(*always_false));
+  EXPECT_TRUE(bf3->AlwaysFalse());
+  ASSERT_OK(bf3->Or(*bf2));
+  EXPECT_FALSE(bf3->AlwaysFalse());
+
+  // Invalid argument test cases.
+  BlockBloomFilter* bf4 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
+  BlockBloomFilter* bf5 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100000, 0.01));
+  Status s = bf4->Or(*bf5);
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "Directory size don't match");
+}
 }  // namespace kudu
