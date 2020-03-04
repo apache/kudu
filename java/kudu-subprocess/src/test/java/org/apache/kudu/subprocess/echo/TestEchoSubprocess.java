@@ -79,13 +79,13 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
    * Test a regular old message. There should be no exceptions of any kind.
    * We should also see some metrics that make sense.
    */
-  @Test(expected = TimeoutException.class)
+  @Test
   public void testBasicMsg() throws Exception {
     SubprocessExecutor executor =
         setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
 
-    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+    executor.runUntilTimeout(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
     SubprocessResponsePB spResp = receiveResponse();
     EchoResponsePB echoResp = spResp.getResponse().unpack(EchoResponsePB.class);
     Assert.assertEquals(MESSAGE, echoResp.getData());
@@ -111,7 +111,7 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
    * Test to see what happens when the execution is the bottleneck. We should
    * see it in the execution time and inbound queue time and length metrics.
    */
-  @Test(expected = TimeoutException.class)
+  @Test
   public void testSlowExecutionMetrics() throws Exception {
     SubprocessExecutor executor =
       setUpExecutorIO(NO_ERR, /*injectIOError*/false);
@@ -122,7 +122,7 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
 
     // Run the executor with a single parser thread so we can make stronger
     // assumptions about timing.
-    executor.run(new String[]{"-p", "1"}, new EchoProtocolHandler(), TIMEOUT_MS);
+    executor.runUntilTimeout(new String[]{"-p", "1"}, new EchoProtocolHandler(), TIMEOUT_MS);
 
     SubprocessMetricsPB m = receiveResponse().getMetrics();
     long inboundQueueLength = m.getInboundQueueLength();
@@ -167,16 +167,16 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
    * Test to see what happens when writing is the bottleneck. We should see it
    * in the outbound queue metrics.
    */
-  @Test(expected = TimeoutException.class)
+  @Test
   public void testSlowWriterMetrics() throws Exception {
     SubprocessExecutor executor =
-      setUpExecutorIO(NO_ERR, /*injectIOError*/false);
+        setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     final int BLOCK_MS = 200;
     executor.blockWriteMs(BLOCK_MS);
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
-    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+    executor.runUntilTimeout(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
 
     // In writing the first request, the other two requests should've been
     // close behind, likely both in the outbound queue.
@@ -186,29 +186,34 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     m = receiveResponse().getMetrics();
     Assert.assertEquals(1, m.getOutboundQueueLength());
     Assert.assertTrue(
-      String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
-      m.getOutboundQueueTimeMs() >= BLOCK_MS);
+        String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
+        m.getOutboundQueueTimeMs() >= BLOCK_MS);
 
     m = receiveResponse().getMetrics();
     Assert.assertEquals(0, m.getOutboundQueueLength());
     Assert.assertTrue(
-      String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
-      m.getOutboundQueueTimeMs() >= 2 * BLOCK_MS);
+        String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
+        m.getOutboundQueueTimeMs() >= 2 * BLOCK_MS);
   }
 
   /**
    * Test what happens when we send a message that is completely empty (i.e.
    * not an empty SubprocessRequestPB message -- no message at all).
    */
-  @Test(expected = TimeoutException.class)
+  @Test
   public void testMsgWithEmptyMessage() throws Exception {
     SubprocessExecutor executor = setUpExecutorIO(NO_ERR,
                                                   /*injectIOError*/false);
     requestSenderPipe.write(MessageIO.intToBytes(0));
-    executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
+    // NOTE: reading IO when the pipe is virtually empty leads us to hang. So
+    // let's put something else onto the pipe and just ensure that our empty
+    // message was a no-op.
+    sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
+    executor.runUntilTimeout(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS);
 
-    // We should see no bytes land in the receiver pipe.
-    Assert.assertEquals(-1, responseReceiverPipe.read());
+    SubprocessResponsePB spResp = receiveResponse();
+    EchoResponsePB echoResp = spResp.getResponse().unpack(EchoResponsePB.class);
+    Assert.assertEquals(MESSAGE, echoResp.getData());
   }
 
   /**
@@ -237,8 +242,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     // CompletableFuture because, in waiting for completion, the MessageReader
     // times out before CompletableFuture.get() is called on the writer.
     assertIncludingSuppressedThrows(IOException.class,
-      "Unable to write to print stream",
-      () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
+        "Unable to write to print stream",
+        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
   }
 
   /**
@@ -261,14 +266,14 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
    * <code>MessageParser</code> tasks can continue making progress.
    */
   @Test
-  public void testMessageParser() throws Exception  {
+  public void testSlowWriterDoesntBlockQueues() throws Exception  {
     SubprocessExecutor executor =
         setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     sendRequestToPipe(createEchoSubprocessRequest("a"));
     sendRequestToPipe(createEchoSubprocessRequest("b"));
     executor.blockWriteMs(1000);
     Assert.assertThrows(TimeoutException.class,
-        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), /*timeoutMs*/500));
+        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
 
     // We should see a single message in the outbound queue. The other one is
     // blocked writing.

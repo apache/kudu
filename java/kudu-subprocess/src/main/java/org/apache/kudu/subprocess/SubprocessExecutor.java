@@ -33,6 +33,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -167,5 +168,22 @@ public class SubprocessExecutor {
   @VisibleForTesting
   public void blockWriteMs(long blockWriteMs) {
     this.blockWriteMs = blockWriteMs;
+  }
+
+  /**
+   * Wrapper around <code>run()</code> that runs until 'timeoutMs' elapses,
+   * catches any timeout exceptions, and returns.
+   *
+   * Used in tests.
+   * TODO(awong): it'd be nice if we had a nicer way to shut down the executor.
+   */
+  public void runUntilTimeout(String[] args, ProtocolHandler handler, long timeoutMs)
+      throws ExecutionException, InterruptedException {
+    Preconditions.checkArgument(timeoutMs != -1);
+    try {
+     run(args, handler, timeoutMs);
+    } catch (TimeoutException e) {
+      // no-op
+    }
   }
 }

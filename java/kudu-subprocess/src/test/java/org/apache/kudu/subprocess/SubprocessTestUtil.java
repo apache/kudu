@@ -66,8 +66,11 @@ public class SubprocessTestUtil {
   protected PipedOutputStream requestSenderPipe;
 
   // Pipe that we can read from that will receive responses from the
-  // subprocess's output pipe.
+  // subprocess's output pipe. We'll read from it via BufferedInputStream,
+  // so wrap the pipe here.
   protected final PipedInputStream responseReceiverPipe = new PipedInputStream();
+  private final BufferedInputStream bufferedInputStream =
+      new BufferedInputStream(responseReceiverPipe);
 
   public static class PrintStreamWithIOException extends PrintStream {
     public PrintStreamWithIOException(OutputStream out, boolean autoFlush, String encoding)
@@ -91,8 +94,8 @@ public class SubprocessTestUtil {
   // Receives a response from the receiver pipe and deserializes it into a
   // SubprocessResponsePB.
   public Subprocess.SubprocessResponsePB receiveResponse() throws IOException {
-    BufferedInputStream bufferedInput = new BufferedInputStream(responseReceiverPipe);
-    return SubprocessTestUtil.deserializeMessage(bufferedInput, Subprocess.SubprocessResponsePB.parser());
+    return SubprocessTestUtil.deserializeMessage(bufferedInputStream,
+                                                 Subprocess.SubprocessResponsePB.parser());
   }
 
   // Sets up and returns a SubprocessExecutor with the given error handler and
