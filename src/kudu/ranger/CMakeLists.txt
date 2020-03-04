@@ -31,3 +31,26 @@ add_library(ranger_proto
 target_link_libraries(ranger_proto
   protobuf
 )
+
+##############################
+# kudu_ranger
+##############################
+
+set(RANGER_SRCS
+  ranger_client.cc)
+set(RANGER_DEPS
+  gflags
+  kudu_subprocess
+  ranger_proto)
+
+add_library(kudu_ranger ${RANGER_SRCS})
+target_link_libraries(kudu_ranger ${RANGER_DEPS})
+
+#######################################
+# Unit tests
+#######################################
+
+SET_KUDU_TEST_LINK_LIBS(
+  kudu_ranger)
+
+ADD_KUDU_TEST(ranger_client-test)

@@ -137,22 +137,35 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
 
 void SubprocessServer::Shutdown() {
   // Stop further work from happening by killing the subprocess and shutting
-  // down the queues.
+ // down the queues.
   if (!closing_.CountDown()) {
     // We may shut down out-of-band in tests; if we've already shut down,
     // there's nothing left to do.
     return;
   }
   // NOTE: ordering isn't too important as long as we shut everything down.
-  WARN_NOT_OK(process_->KillAndWait(SIGTERM), "failed to stop subprocess");
+  //
+  // Normally the process_ should be started before we reach Shutdown() and the
+  // threads below should be running too, except in mock servers because we
+  // don't init there. Shutdown() is still called in this case from the
+  // destructor though so these checks are necessary.
+  if (process_->IsStarted()) {
+    WARN_NOT_OK(process_->KillAndWait(SIGTERM), "failed to stop subprocess");
+  }
   inbound_response_queue_.Shutdown();
   outbound_call_queue_.Shutdown();
 
   // We should be able to clean up our threads; they'll see that we're closing,
   // the pipe has been closed, or the queues have been shut down.
-  write_thread_->Join();
-  read_thread_->Join();
-  deadline_checker_->Join();
+  if (write_thread_) {
+    write_thread_->Join();
+  }
+  if (read_thread_) {
+    read_thread_->Join();
+  }
+  if (deadline_checker_) {
+    deadline_checker_->Join();
+  }
   for (const auto& t : responder_threads_) {
     t->Join();
   }

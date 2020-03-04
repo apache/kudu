@@ -80,8 +80,7 @@ Status ParseHiveTableIdentifier(const string& table_name,
 
 Status ParseRangerTableIdentifier(const string& table_name,
                                   string* ranger_database,
-                                  Slice* ranger_table,
-                                  bool* default_database) {
+                                  Slice* ranger_table) {
   auto separator_idx = boost::make_optional<int>(false, 0);
   for (int idx = 0; idx < table_name.size(); ++idx) {
     char c = table_name[idx];
@@ -102,7 +101,6 @@ Status ParseRangerTableIdentifier(const string& table_name,
     *ranger_database = FLAGS_ranger_default_database;
     *ranger_table = Slice(table_name.data());
   }
-  *default_database = !separator_idx;
 
   if (ranger_table->empty()) {
     return Status::InvalidArgument(kInvalidRangerTableError, table_name);

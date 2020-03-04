@@ -1,0 +1,108 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+#pragma once
+
+#include <memory>
+#include <string>
+#include <unordered_set>
+#include <utility>
+
+#include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/ranger/ranger.pb.h"
+#include "kudu/subprocess/server.h"
+#include "kudu/subprocess/subprocess_proxy.h"
+#include "kudu/util/status.h"
+
+namespace kudu {
+
+class MetricEntity;
+
+namespace ranger {
+
+struct ActionHash {
+ public:
+  int operator()(const ActionPB& action) const {
+    return action;
+  }
+};
+
+struct RangerSubprocessMetrics : public subprocess::SubprocessMetrics {
+  explicit RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity);
+};
+
+typedef subprocess::SubprocessProxy<RangerRequestListPB, RangerResponseListPB,
+                                    RangerSubprocessMetrics> RangerSubprocess;
+
+// A client for the Ranger service that communicates with a Java subprocess.
+class RangerClient {
+ public:
+  // Creates a Ranger client.
+  explicit RangerClient(const scoped_refptr<MetricEntity>& metric_entity);
+
+  // Starts the RangerClient, initializes the subprocess server.
+  Status Start() WARN_UNUSED_RESULT;
+
+  // Authorizes an action on the table. Returns OK if 'user_name' is authorized
+  // to perform 'action' on 'table_name', NotAuthorized otherwise.
+  Status AuthorizeAction(const std::string& user_name, const ActionPB& action,
+                         const std::string& table_name) WARN_UNUSED_RESULT;
+
+  // Authorizes action on multiple tables. If there is at least one table that
+  // user is authorized to perform the action on, it sets 'table_names' to the
+  // tables the user is authorized to access and returns OK, NotAuthorized
+  // otherwise.
+  Status AuthorizeActionMultipleTables(const std::string& user_name, const ActionPB& action,
+                                       std::unordered_set<std::string>* table_names)
+      WARN_UNUSED_RESULT;
+
+  // Authorizes action on multiple columns. If there is at least one column that
+  // user is authorized to perform the action on, it sets 'column_names' to the
+  // columns the user is authorized to access and returns OK, NotAuthorized
+  // otherwise.
+  Status AuthorizeActionMultipleColumns(const std::string& user_name, const ActionPB& action,
+                                        const std::string& table_name,
+                                        std::unordered_set<std::string>* column_names)
+      WARN_UNUSED_RESULT;
+
+  // Authorizes multiple table-level actions on a single table. If there is at
+  // least one action that user is authorized to perform on the table, it sets
+  // 'actions' to the actions the user is authorized to perform and returns OK,
+  // NotAuthorized otherwise.
+  Status AuthorizeActions(const std::string& user_name,
+                          const std::string& table_name,
+                          std::unordered_set<ActionPB, ActionHash>* actions)
+      WARN_UNUSED_RESULT;
+
+  // Replaces the subprocess server in the subprocess proxy.
+  void ReplaceServerForTests(std::unique_ptr<subprocess::SubprocessServer> server) {
+    subprocess_.ReplaceServerForTests(std::move(server));
+  }
+
+ private:
+  // Sends request to the subprocess and parses the response.
+  Status SendRequest(RangerRequestListPB* req, RangerResponseListPB* resp) WARN_UNUSED_RESULT;
+
+  // Returns classpath to be used for the Ranger subprocess.
+  static std::string GetJavaClasspath();
+
+  RangerSubprocess subprocess_;
+};
+
+} // namespace ranger
+} // namespace kudu

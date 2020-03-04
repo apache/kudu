@@ -19,6 +19,16 @@ package kudu.ranger;
 option java_package = "org.apache.kudu.ranger";
 
 // Describes the type of action that can be performed in Ranger.
+//
+// SQL-like action types used by Ranger. ALL implies all other privilege types
+// and all privilege types imply METADATA. METADATA is used for discovery
+// (listing tables).
+//
+// The action type mapping is similar to the one in Sentry which was implemented
+// before Ranger and the same privileges have to be enforced with both
+// authorization providers.
+//
+// For more information on fine grained authz check out docs/security.adoc
 enum ActionPB {
   SELECT = 0;
   INSERT = 1;

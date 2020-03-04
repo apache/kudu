@@ -630,6 +630,11 @@ Status Subprocess::Kill(int signal) {
 }
 
 Status Subprocess::KillAndWait(int signal) {
+  if (state_ != kRunning) {
+    const string err_str = "Sub-process is not running";
+    LOG(DFATAL) << err_str;
+    return Status::IllegalState(err_str);
+  }
   string procname = Substitute("$0 (pid $1)", argv0(), pid());
 
   // This is a fatal error because all errors in Kill() are signal-independent,
@@ -854,6 +859,10 @@ int Subprocess::ReleaseChildFd(int stdfd) {
   int ret = child_fds_[stdfd];
   child_fds_[stdfd] = -1;
   return ret;
+}
+
+bool Subprocess::IsStarted() {
+  return state_ != kNotStarted;
 }
 
 } // namespace kudu

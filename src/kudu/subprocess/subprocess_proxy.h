@@ -48,11 +48,11 @@ template<class ReqPB, class RespPB, class MetricsPB>
 class SubprocessProxy {
  public:
   SubprocessProxy(std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity)
-      : server_(std::move(argv)), metrics_(entity) {}
+      : server_(new SubprocessServer(std::move(argv))), metrics_(entity) {}
 
   // Starts the underlying subprocess.
   Status Start() {
-    return server_.Init();
+    return server_->Init();
   }
 
   // Executes the given request and populates the given response, returning a
@@ -62,7 +62,7 @@ class SubprocessProxy {
     SubprocessRequestPB sreq;
     sreq.mutable_request()->PackFrom(req);
     SubprocessResponsePB sresp;
-    RETURN_NOT_OK(server_.Execute(&sreq, &sresp));
+    RETURN_NOT_OK(server_->Execute(&sreq, &sresp));
     if (!sresp.response().UnpackTo(resp)) {
       LOG(ERROR) << strings::Substitute("unable to unpack response: $0",
                                         pb_util::SecureDebugString(sresp));
@@ -77,6 +77,11 @@ class SubprocessProxy {
       return StatusFromPB(sresp.error());
     }
     return Status::OK();
+  }
+
+  // Replaces the subprocess server.
+  void ReplaceServerForTests(std::unique_ptr<SubprocessServer> server) {
+    server_ = std::move(server);
   }
  private:
   // Parses the given metrics protobuf and updates 'metrics_' based on its
@@ -94,7 +99,7 @@ class SubprocessProxy {
     metrics_.execution_time_ms->Increment(pb.execution_time_ms());
   }
 
-  SubprocessServer server_;
+  std::unique_ptr<SubprocessServer> server_;
   MetricsPB metrics_;
 };
 

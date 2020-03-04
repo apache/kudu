@@ -170,6 +170,8 @@ class Subprocess {
   pid_t pid() const;
   const std::string& argv0() const { return argv_[0]; }
 
+  bool IsStarted();
+
  private:
   FRIEND_TEST(SubprocessTest, TestGetProcfsState);
 
