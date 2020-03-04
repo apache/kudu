@@ -141,6 +141,10 @@ DEFINE_int32(tablet_bootstrap_inject_latency_ms, 0,
              "For use in tests only.");
 TAG_FLAG(tablet_bootstrap_inject_latency_ms, unsafe);
 
+DEFINE_int32(tablet_open_inject_latency_ms, 0,
+            "Injects latency into the tablet opening. For use in tests only.");
+TAG_FLAG(tablet_open_inject_latency_ms, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
@@ -1075,11 +1079,8 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
   return Status::OK();
 }
 
-// Note: 'deleter' is not used in the body of OpenTablet(), but is required
-// anyway because its destructor performs cleanup that should only happen when
-// OpenTablet() completes.
 void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
-                                 const scoped_refptr<TransitionInProgressDeleter>& /*deleter*/) {
+                                 const scoped_refptr<TransitionInProgressDeleter>& deleter) {
   const string& tablet_id = replica->tablet_id();
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
@@ -1158,6 +1159,12 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     replica->RegisterMaintenanceOps(server_->maintenance_manager());
   }
 
+  if (PREDICT_FALSE(FLAGS_tablet_open_inject_latency_ms > 0)) {
+    LOG(WARNING) << "Injecting " << FLAGS_tablet_open_inject_latency_ms
+                 << "ms of latency into OpenTablet";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_open_inject_latency_ms));
+  }
+
   // Now that the tablet has successfully opened, cancel the cleanup.
   fail_tablet.cancel();
 
@@ -1169,6 +1176,9 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
                    << Trace::CurrentTrace()->DumpToString();
     }
   }
+
+  deleter->Destroy();
+  MarkTabletDirty(tablet_id, "Open tablet completed");
 }
 
 void TSTabletManager::Shutdown() {
@@ -1639,11 +1649,19 @@ void TSTabletManager::SetNextUpdateTimeForTests() {
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(
     TransitionInProgressMap* map, RWMutex* lock, string entry)
-    : in_progress_(map), lock_(lock), entry_(std::move(entry)) {}
+    : in_progress_(map), lock_(lock), entry_(std::move(entry)), is_destroyed_(false) {}
 
-TransitionInProgressDeleter::~TransitionInProgressDeleter() {
+void TransitionInProgressDeleter::Destroy() {
+  CHECK(!is_destroyed_);
   std::lock_guard<RWMutex> lock(*lock_);
   CHECK(in_progress_->erase(entry_));
+  is_destroyed_ = true;
+}
+
+TransitionInProgressDeleter::~TransitionInProgressDeleter() {
+  if (!is_destroyed_) {
+    Destroy();
+  }
 }
 
 } // namespace tserver

@@ -256,9 +256,6 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     set_state(RUNNING);
   }
 
-  // Because we changed the tablet state, we need to re-report the tablet to the master.
-  mark_dirty_clbk_.Run("Started TabletReplica");
-
   return Status::OK();
 }
 
