@@ -114,7 +114,8 @@ class EchoSubprocessTest : public KuduTest {
     RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
     vector<string> argv = {
       Substitute("$0/bin/java", java_home),
-      "-jar", Substitute("$0/kudu-subprocess-echo.jar", bin_dir)
+      "-cp", Substitute("$0/kudu-subprocess.jar", bin_dir),
+      "org.apache.kudu.subprocess.echo.EchoSubprocessMain"
     };
     echo_subprocess_ = make_shared<EchoSubprocess>(std::move(argv), metric_entity_);
     return echo_subprocess_->Start();
