@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -34,6 +35,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
@@ -90,7 +92,7 @@ class MockKsckMaster : public KsckMaster {
     uuid_ = uuid;
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      flags_ = GetFlagsResponsePB{};
+      unusual_flags_.emplace();
     }
   }
 
@@ -113,10 +115,10 @@ class MockKsckMaster : public KsckMaster {
 
   Status FetchUnusualFlags() override {
     if (is_get_flags_available_) {
-      flags_state_ = KsckFetchState::FETCHED;
+      unusual_flags_state_ = KsckFetchState::FETCHED;
       return Status::OK();
     }
-    flags_state_ = KsckFetchState::FETCH_FAILED;
+    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
     return Status::RemoteError("GetFlags not available");
   }
 
@@ -125,7 +127,7 @@ class MockKsckMaster : public KsckMaster {
   Status fetch_cstate_status_;
   using KsckMaster::uuid_;
   using KsckMaster::cstate_;
-  using KsckMaster::flags_;
+  using KsckMaster::unusual_flags_;
   using KsckMaster::version_;
  private:
   const bool is_get_flags_available_;
@@ -141,7 +143,7 @@ class MockKsckTabletServer : public KsckTabletServer {
         is_get_flags_available_(is_get_flags_available) {
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      flags_ = GetFlagsResponsePB{};
+      unusual_flags_.emplace();
     }
   }
 
@@ -163,10 +165,10 @@ class MockKsckTabletServer : public KsckTabletServer {
 
   Status FetchUnusualFlags() override {
     if (is_get_flags_available_) {
-      flags_state_ = KsckFetchState::FETCHED;
+      unusual_flags_state_ = KsckFetchState::FETCHED;
       return Status::OK();
     }
-    flags_state_ = KsckFetchState::FETCH_FAILED;
+    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
     return Status::RemoteError("GetFlags not available");
   }
 
@@ -199,7 +201,7 @@ class MockKsckTabletServer : public KsckTabletServer {
   // The fake progress amount for this mock server, used to mock checksum
   // progress for this server.
   int64_t checksum_progress_ = 10;
-  using KsckTabletServer::flags_;
+  using KsckTabletServer::unusual_flags_;
   using KsckTabletServer::location_;
   using KsckTabletServer::version_;
 
@@ -1096,7 +1098,7 @@ TEST_F(KsckTest, TestMasterFlagCheck) {
     }
     shared_ptr<MockKsckMaster> master =
         std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(i));
-    master->flags_ = flags;
+    master->unusual_flags_ = std::move(flags);
   }
   ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckMasterUnusualFlags());
@@ -1229,7 +1231,7 @@ TEST_F(KsckTest, TestTserverFlagCheck) {
     }
     shared_ptr<MockKsckTabletServer> ts =
         std::static_pointer_cast<MockKsckTabletServer>(entry.second);
-    ts->flags_ = flags;
+    ts->unusual_flags_ = std::move(flags);
     i++;
   }
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());

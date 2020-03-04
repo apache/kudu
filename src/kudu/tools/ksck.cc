@@ -292,11 +292,11 @@ Status Ksck::CheckMasterUnusualFlags() {
   int bad_masters = 0;
   Status last_error = Status::OK();
   for (const auto& master : cluster_->masters()) {
-    if (!master->flags()) {
+    if (!master->unusual_flags()) {
       bad_masters++;
       continue;
     }
-    AddFlagsToFlagMaps(*master->flags(),
+    AddFlagsToFlagMaps(*master->unusual_flags(),
                        master->address(),
                        &results_.master_flag_to_servers_map,
                        &results_.master_flag_tags_map);
@@ -494,11 +494,11 @@ Status Ksck::CheckTabletServerUnusualFlags() {
   int bad_tservers = 0;
   for (const auto& uuid_and_ts : cluster_->tablet_servers()) {
     const auto& tserver = uuid_and_ts.second;
-    if (!tserver->flags()) {
+    if (!tserver->unusual_flags()) {
       bad_tservers++;
       continue;
     }
-    AddFlagsToFlagMaps(*tserver->flags(),
+    AddFlagsToFlagMaps(*tserver->unusual_flags(),
                        tserver->address(),
                        &results_.tserver_flag_to_servers_map,
                        &results_.tserver_flag_tags_map);

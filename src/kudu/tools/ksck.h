@@ -221,9 +221,9 @@ class KsckMaster {
     return cstate_;
   }
 
-  virtual const boost::optional<server::GetFlagsResponsePB>& flags() const {
-    CHECK_NE(KsckFetchState::UNINITIALIZED, flags_state_);
-    return flags_;
+  virtual const boost::optional<server::GetFlagsResponsePB>& unusual_flags() const {
+    CHECK_NE(KsckFetchState::UNINITIALIZED, unusual_flags_state_);
+    return unusual_flags_;
   }
 
   std::string ToString() const {
@@ -249,18 +249,17 @@ class KsckMaster {
   // if it succeeded or failed.
   KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
 
-  // flags_state_ reflects whether the fetch of the non-critical flags info has
-  // been done, and if it succeeded or failed.
-  KsckFetchState flags_state_ = KsckFetchState::UNINITIALIZED;
-
   // May be none if fetching info from the master fails.
   boost::optional<std::string> version_;
 
   // May be none if consensus state fetch fails.
   boost::optional<consensus::ConsensusStatePB> cstate_;
 
+  // unusual_flags_state_ reflects whether the fetch of the non-critical flags
+  // info has been done, and if it succeeded or failed.
+  KsckFetchState unusual_flags_state_ = KsckFetchState::UNINITIALIZED;
   // May be none if flag fetch fails.
-  boost::optional<server::GetFlagsResponsePB> flags_;
+  boost::optional<server::GetFlagsResponsePB> unusual_flags_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckMaster);
@@ -350,9 +349,9 @@ class KsckTabletServer {
     return version_;
   }
 
-  virtual const boost::optional<server::GetFlagsResponsePB>& flags() const {
-    CHECK_NE(KsckFetchState::UNINITIALIZED, flags_state_);
-    return flags_;
+  virtual const boost::optional<server::GetFlagsResponsePB>& unusual_flags() const {
+    CHECK_NE(KsckFetchState::UNINITIALIZED, unusual_flags_state_);
+    return unusual_flags_;
   }
 
   uint64_t current_timestamp() const {
@@ -373,18 +372,18 @@ class KsckTabletServer {
   // it succeeded or failed.
   KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
 
-  // flags_state_ reflects whether the fetch of the non-critical flags info has
-  // been done, and if it succeeded or failed.
-  KsckFetchState flags_state_ = KsckFetchState::UNINITIALIZED;
-
   TabletStatusMap tablet_status_map_;
   TabletConsensusStateMap tablet_consensus_state_map_;
 
   // May be none if fetching info from the tablet server fails.
   boost::optional<std::string> version_;
 
+  // unusual_flags_state_ reflects whether the fetch of the non-critical flags
+  // info has been done, and if it succeeded or failed.
+  KsckFetchState unusual_flags_state_ = KsckFetchState::UNINITIALIZED;
   // May be none if flag fetch fails.
-  boost::optional<server::GetFlagsResponsePB> flags_;
+  boost::optional<server::GetFlagsResponsePB> unusual_flags_;
+
   std::atomic<uint64_t> timestamp_;
   const std::string uuid_;
   std::string location_;

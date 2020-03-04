@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -28,7 +29,6 @@
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client-internal.h"
@@ -172,10 +172,10 @@ Status RemoteKsckMaster::FetchUnusualFlags() {
   server::GetFlagsResponsePB resp;
   Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
   if (!s.ok()) {
-    flags_state_ = KsckFetchState::FETCH_FAILED;
+    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
   } else {
-    flags_state_ = KsckFetchState::FETCHED;
-    flags_ = resp;
+    unusual_flags_state_ = KsckFetchState::FETCHED;
+    unusual_flags_ = std::move(resp);
   }
   return s;
 }
@@ -297,10 +297,10 @@ Status RemoteKsckTabletServer::FetchUnusualFlags() {
   server::GetFlagsResponsePB resp;
   Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
   if (!s.ok()) {
-    flags_state_ = KsckFetchState::FETCH_FAILED;
+    unusual_flags_state_ = KsckFetchState::FETCH_FAILED;
   } else {
-    flags_state_ = KsckFetchState::FETCHED;
-    flags_ = resp;
+    unusual_flags_state_ = KsckFetchState::FETCHED;
+    unusual_flags_ = std::move(resp);
   }
   return s;
 }
