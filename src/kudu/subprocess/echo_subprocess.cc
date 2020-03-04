@@ -50,17 +50,31 @@ METRIC_DEFINE_histogram(server, echo_subprocess_execution_time_ms,
     "time spent spent in the subprocess queues",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
+METRIC_DEFINE_histogram(server, echo_server_outbound_queue_time_ms,
+    "Echo server outbound queue time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent in the Echo server's outbound request queue",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
+METRIC_DEFINE_histogram(server, echo_server_inbound_queue_time_ms,
+    "Echo server inbound queue time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent in the Echo server's inbound response queue",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
 
 namespace kudu {
 namespace subprocess {
 
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 EchoSubprocessMetrics::EchoSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
-  HISTINIT(inbound_queue_length, echo_subprocess_inbound_queue_length);
-  HISTINIT(outbound_queue_length, echo_subprocess_outbound_queue_length);
-  HISTINIT(inbound_queue_time_ms, echo_subprocess_inbound_queue_time_ms);
-  HISTINIT(outbound_queue_time_ms, echo_subprocess_outbound_queue_time_ms);
-  HISTINIT(execution_time_ms, echo_subprocess_execution_time_ms);
+  HISTINIT(sp_inbound_queue_length, echo_subprocess_inbound_queue_length);
+  HISTINIT(sp_outbound_queue_length, echo_subprocess_outbound_queue_length);
+  HISTINIT(sp_inbound_queue_time_ms, echo_subprocess_inbound_queue_time_ms);
+  HISTINIT(sp_outbound_queue_time_ms, echo_subprocess_outbound_queue_time_ms);
+  HISTINIT(sp_execution_time_ms, echo_subprocess_execution_time_ms);
+  HISTINIT(server_outbound_queue_time_ms, echo_server_outbound_queue_time_ms);
+  HISTINIT(server_inbound_queue_time_ms, echo_server_inbound_queue_time_ms);
 }
 #undef HISTINIT
 

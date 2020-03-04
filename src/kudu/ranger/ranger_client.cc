@@ -80,6 +80,18 @@ METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
     "time spent spent in the subprocess queues",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
+METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_time_ms,
+    "Ranger server outbound queue time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent in the Ranger server's outbound request queue",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
+METRIC_DEFINE_histogram(server, ranger_server_inbound_queue_time_ms,
+    "Ranger server inbound queue time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent in the Ranger server's inbound response queue",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
 
 namespace kudu {
 namespace ranger {
@@ -99,11 +111,13 @@ const char* kMainClass = "org.apache.kudu.ranger.RangerSubprocessMain";
 
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
-  HISTINIT(inbound_queue_length, ranger_subprocess_inbound_queue_length);
-  HISTINIT(outbound_queue_length, ranger_subprocess_outbound_queue_length);
-  HISTINIT(inbound_queue_time_ms, ranger_subprocess_inbound_queue_time_ms);
-  HISTINIT(outbound_queue_time_ms, ranger_subprocess_outbound_queue_time_ms);
-  HISTINIT(execution_time_ms, ranger_subprocess_execution_time_ms);
+  HISTINIT(sp_inbound_queue_length, ranger_subprocess_inbound_queue_length);
+  HISTINIT(sp_outbound_queue_length, ranger_subprocess_outbound_queue_length);
+  HISTINIT(sp_inbound_queue_time_ms, ranger_subprocess_inbound_queue_time_ms);
+  HISTINIT(sp_outbound_queue_time_ms, ranger_subprocess_outbound_queue_time_ms);
+  HISTINIT(sp_execution_time_ms, ranger_subprocess_execution_time_ms);
+  HISTINIT(server_outbound_queue_time_ms, ranger_server_outbound_queue_time_ms);
+  HISTINIT(server_inbound_queue_time_ms, ranger_server_inbound_queue_time_ms);
 }
 #undef HISTINIT
 

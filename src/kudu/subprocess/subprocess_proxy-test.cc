@@ -45,6 +45,8 @@ METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_length);
 METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_subprocess_execution_time_ms);
+METRIC_DECLARE_histogram(echo_server_outbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_server_inbound_queue_time_ms);
 
 using std::unique_ptr;
 using std::string;
@@ -87,6 +89,9 @@ class EchoSubprocessTest : public KuduTest {
   unique_ptr<EchoSubprocess> echo_subprocess_;
 };
 
+#define GET_HIST(metric_entity, metric_name) \
+  down_cast<Histogram*>((metric_entity)->FindOrNull(METRIC_##metric_name).get());
+
 TEST_F(EchoSubprocessTest, TestBasicSubprocessMetrics) {
   const string kMessage = "don't catch you slippin' now";
   const int64_t kSleepMs = 1000;
@@ -97,29 +102,35 @@ TEST_F(EchoSubprocessTest, TestBasicSubprocessMetrics) {
   ASSERT_OK(echo_subprocess_->Execute(req, &resp));
   ASSERT_EQ(kMessage, resp.data());
 
+
   // There shouldn't have anything in the subprocess queues.
-  Histogram* in_len_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_inbound_queue_length).get());
+  Histogram* in_len_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_length);
   ASSERT_EQ(1, in_len_hist->TotalCount());
   ASSERT_EQ(0, in_len_hist->MaxValueForTests());
-  Histogram* out_len_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_outbound_queue_length).get());
+  Histogram* out_len_hist = GET_HIST(metric_entity_, echo_subprocess_outbound_queue_length);
   ASSERT_EQ(1, out_len_hist->TotalCount());
   ASSERT_EQ(0, out_len_hist->MaxValueForTests());
 
   // We should have some non-negative queue times.
-  Histogram* out_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_outbound_queue_time_ms).get());
+  Histogram* out_hist = GET_HIST(metric_entity_, echo_subprocess_outbound_queue_time_ms);
   ASSERT_EQ(1, out_hist->TotalCount());
   ASSERT_LE(0, out_hist->MaxValueForTests());
-  Histogram* in_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_inbound_queue_time_ms).get());
+  Histogram* in_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_time_ms);
   ASSERT_EQ(1, in_hist->TotalCount());
   ASSERT_LE(0, in_hist->MaxValueForTests());
 
+  // We should have some non-negative queue times on the server side too.
+  Histogram* server_out_hist =
+    GET_HIST(metric_entity_, echo_server_outbound_queue_time_ms);
+  ASSERT_EQ(1, server_out_hist->TotalCount());
+  ASSERT_LE(0, server_out_hist->MaxValueForTests());
+  Histogram* server_in_hist =
+    GET_HIST(metric_entity_, echo_server_inbound_queue_time_ms);
+  ASSERT_EQ(1, server_in_hist->TotalCount());
+  ASSERT_LE(0, server_in_hist->MaxValueForTests());
+
   // The execution should've taken at least our sleep time.
-  Histogram* exec_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_execution_time_ms).get());
+  Histogram* exec_hist = GET_HIST(metric_entity_, echo_subprocess_execution_time_ms);
   ASSERT_EQ(1, exec_hist->TotalCount());
   ASSERT_LT(kSleepMs, exec_hist->MaxValueForTests());
 }
@@ -140,17 +151,40 @@ TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Immediately following our call, we won't have any metrics from the subprocess.
-  Histogram* exec_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
-      METRIC_echo_subprocess_execution_time_ms).get());
+  Histogram* exec_hist = GET_HIST(metric_entity_, echo_subprocess_execution_time_ms);
+  Histogram* out_len_hist = GET_HIST(metric_entity_, echo_subprocess_outbound_queue_length);
+  Histogram* in_len_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_length);
+  Histogram* sp_out_hist = GET_HIST(metric_entity_, echo_subprocess_outbound_queue_time_ms);
+  Histogram* sp_in_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_time_ms);
+  Histogram* server_out_hist = GET_HIST(metric_entity_, echo_server_outbound_queue_time_ms);
+  Histogram* server_in_hist = GET_HIST(metric_entity_, echo_server_inbound_queue_time_ms);
   ASSERT_EQ(0, exec_hist->TotalCount());
+  ASSERT_EQ(0, out_len_hist->TotalCount());
+  ASSERT_EQ(0, in_len_hist->TotalCount());
+  ASSERT_EQ(0, sp_out_hist->TotalCount());
+  ASSERT_EQ(0, sp_in_hist->TotalCount());
+
+  // We'll have sent the request from the server and not received the response.
+  // Our metrics should reflect that.
+  ASSERT_EQ(1, server_out_hist->TotalCount());
+  ASSERT_EQ(0, server_in_hist->TotalCount());
 
   // Eventually the subprocess will return our call, and we'll see some
   // metrics.
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(1, exec_hist->TotalCount());
     ASSERT_LT(kSleepMs, exec_hist->MaxValueForTests());
+
+    ASSERT_EQ(1, out_len_hist->TotalCount());
+    ASSERT_EQ(1, in_len_hist->TotalCount());
+    ASSERT_EQ(1, sp_out_hist->TotalCount());
+    ASSERT_EQ(1, sp_in_hist->TotalCount());
+    ASSERT_EQ(1, server_out_hist->TotalCount());
+    ASSERT_EQ(1, server_in_hist->TotalCount());
   });
 }
+
+#undef GET_HIST
 
 } // namespace subprocess
 } // namespace kudu

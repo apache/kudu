@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -130,9 +131,11 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   req->set_id(next_id_++);
   Synchronizer sync;
   auto cb = sync.AsStdStatusCallback();
-  auto call = make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_);
-  RETURN_NOT_OK_PREPEND(outbound_call_queue_.BlockingPut(call, call->deadline()),
-                        "couldn't enqueue call");
+  CallAndTimer call_and_timer = {
+      make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_), {} };
+  RETURN_NOT_OK_PREPEND(
+      outbound_call_queue_.BlockingPut(call_and_timer, call_and_timer.first->deadline()),
+      "couldn't enqueue call");
   return sync.Wait();
 }
 
@@ -200,7 +203,8 @@ void SubprocessServer::ReceiveMessagesThread() {
     // subprocess.
     DCHECK(s.ok());
     WARN_NOT_OK(s, "failed to receive response from the subprocess");
-    if (s.ok() && !inbound_response_queue_.BlockingPut(response).ok()) {
+    ResponsePBAndTimer resp_and_timer = { std::move(response), {} };
+    if (s.ok() && !inbound_response_queue_.BlockingPut(resp_and_timer).ok()) {
       // The queue has been shut down and we should shut down too.
       DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "failed to put response onto inbound queue";
@@ -212,12 +216,16 @@ void SubprocessServer::ReceiveMessagesThread() {
 void SubprocessServer::ResponderThread() {
   Status s;
   do {
-    vector<SubprocessResponsePB> resps;
+    vector<ResponsePBAndTimer> resps;
     // NOTE: since we don't supply a deadline, this will only fail if the queue
     // is shutting down. Also note that even if this fails because we're
     // shutting down, we still populate 'resps' and must run their callbacks.
     s = inbound_response_queue_.BlockingDrainTo(&resps);
-    for (const auto& resp : resps) {
+    for (auto& resp_and_timer : resps) {
+      metrics_.server_inbound_queue_time_ms->Increment(
+          resp_and_timer.second.elapsed().ToMilliseconds());
+      const auto& resp = resp_and_timer.first;
+
       if (!resp.has_id()) {
         LOG(FATAL) << Substitute("Received invalid response: $0",
                                  pb_util::SecureDebugString(resp));
@@ -226,18 +234,19 @@ void SubprocessServer::ResponderThread() {
       // metrics.
       if (PREDICT_TRUE(resp.has_metrics())) {
         const auto& pb = resp.metrics();
-        metrics_.inbound_queue_length->Increment(pb.inbound_queue_length());
-        metrics_.outbound_queue_length->Increment(pb.outbound_queue_length());
-        metrics_.inbound_queue_time_ms->Increment(pb.inbound_queue_time_ms());
-        metrics_.outbound_queue_time_ms->Increment(pb.outbound_queue_time_ms());
-        metrics_.execution_time_ms->Increment(pb.execution_time_ms());
+        metrics_.sp_inbound_queue_length->Increment(pb.inbound_queue_length());
+        metrics_.sp_outbound_queue_length->Increment(pb.outbound_queue_length());
+        metrics_.sp_inbound_queue_time_ms->Increment(pb.inbound_queue_time_ms());
+        metrics_.sp_outbound_queue_time_ms->Increment(pb.outbound_queue_time_ms());
+        metrics_.sp_execution_time_ms->Increment(pb.execution_time_ms());
       }
     }
     vector<pair<shared_ptr<SubprocessCall>, SubprocessResponsePB>> calls_and_resps;
     calls_and_resps.reserve(resps.size());
     {
       std::lock_guard<simple_spinlock> l(in_flight_lock_);
-      for (auto& resp : resps) {
+      for (auto& resp_and_timer : resps) {
+        auto& resp = resp_and_timer.first;
         auto id = resp.id();
         auto call = EraseKeyReturnValuePtr(&call_by_id_, id);
         if (call) {
@@ -290,7 +299,7 @@ void SubprocessServer::SendMessagesThread() {
   DCHECK(message_protocol_) << "message protocol is not initialized";
   Status s;
   do {
-    vector<shared_ptr<SubprocessCall>> calls;
+    vector<CallAndTimer> calls;
     // NOTE: since we don't supply a deadline, this will only fail if the queue
     // is shutting down. Also note that even if this fails because we're
     // shutting down, we still populate 'calls' and should add them to the
@@ -298,14 +307,19 @@ void SubprocessServer::SendMessagesThread() {
     s = outbound_call_queue_.BlockingDrainTo(&calls);
     {
       std::lock_guard<simple_spinlock> l(in_flight_lock_);
-      for (const auto& call : calls) {
+      for (const auto& call_and_timer : calls) {
+        const auto& call = call_and_timer.first;
         EmplaceOrDie(&call_by_id_, call->id(), call);
       }
     }
     // NOTE: it's possible that before sending the request, the call already
     // timed out and the deadline checker already called its callback. If so,
     // the following call will no-op.
-    for (const auto& call : calls) {
+    for (const auto& call_and_timer : calls) {
+      const auto& call = call_and_timer.first;
+      metrics_.server_outbound_queue_time_ms->Increment(
+          call_and_timer.second.elapsed().ToMilliseconds());
+
       call->SendRequest(message_protocol_.get());
     }
   } while (s.ok());

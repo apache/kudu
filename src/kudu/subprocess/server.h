@@ -54,12 +54,27 @@ namespace subprocess {
 
 typedef int64_t CallId;
 
+struct SimpleTimer {
+  SimpleTimer() {
+    start_time = MonoTime::Now();
+  }
+  MonoTime start_time;
+  MonoDelta elapsed() const {
+    return MonoTime::Now() - start_time;
+  }
+};
+
 struct SubprocessMetrics {
-  scoped_refptr<Histogram> inbound_queue_length;
-  scoped_refptr<Histogram> outbound_queue_length;
-  scoped_refptr<Histogram> inbound_queue_time_ms;
-  scoped_refptr<Histogram> outbound_queue_time_ms;
-  scoped_refptr<Histogram> execution_time_ms;
+  // Metrics returned from the subprocess.
+  scoped_refptr<Histogram> sp_inbound_queue_length;
+  scoped_refptr<Histogram> sp_outbound_queue_length;
+  scoped_refptr<Histogram> sp_inbound_queue_time_ms;
+  scoped_refptr<Histogram> sp_outbound_queue_time_ms;
+  scoped_refptr<Histogram> sp_execution_time_ms;
+
+  // Metrics recorded by the SubprocessServer.
+  scoped_refptr<Histogram> server_inbound_queue_time_ms;
+  scoped_refptr<Histogram> server_outbound_queue_time_ms;
 };
 
 // Encapsulates the pending state of a request that is in the process of being
@@ -155,19 +170,21 @@ class SubprocessCall {
 };
 
 // Used by BlockingQueue to determine the size of messages.
+typedef std::pair<std::shared_ptr<SubprocessCall>, SimpleTimer> CallAndTimer;
 struct RequestLogicalSize {
-  static size_t logical_size(const std::shared_ptr<SubprocessCall>& call) {
-    return call->req_->ByteSizeLong();
+  static size_t logical_size(const CallAndTimer& call_and_timer) {
+    return call_and_timer.first->req_->ByteSizeLong();
   }
 };
+typedef std::pair<SubprocessResponsePB, SimpleTimer> ResponsePBAndTimer;
 struct ResponseLogicalSize {
-  static size_t logical_size(const SubprocessResponsePB& response) {
-    return response.ByteSizeLong();
+  static size_t logical_size(const ResponsePBAndTimer& resp_and_timer) {
+    return resp_and_timer.first.ByteSizeLong();
   }
 };
 
-typedef BlockingQueue<std::shared_ptr<SubprocessCall>, RequestLogicalSize> SubprocessCallQueue;
-typedef BlockingQueue<SubprocessResponsePB, ResponseLogicalSize> ResponseQueue;
+typedef BlockingQueue<CallAndTimer, RequestLogicalSize> SubprocessCallQueue;
+typedef BlockingQueue<ResponsePBAndTimer, ResponseLogicalSize> ResponseQueue;
 
 // Wrapper for a subprocess that communicates via protobuf. A server is
 // comprised of a few things to facilitate concurrent communication with an
