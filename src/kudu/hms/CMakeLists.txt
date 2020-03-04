@@ -63,15 +63,16 @@ execute_process(COMMAND ln -nsf
                 "${JAVA_HOME}"
                 "${EXECUTABLE_OUTPUT_PATH}/java-home")
 
-file(GLOB DEPENDENCY_JARS
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hive/lib/*"
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop/share/hadoop/common/*"
-  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop/share/hadoop/common/lib/*")
+set(HMS_PLUGIN_JAR ${EXECUTABLE_OUTPUT_PATH}/hms-plugin.jar)
 
-add_jar(hms-plugin
-  "${CMAKE_SOURCE_DIR}/java/kudu-hive/src/main/java/org/apache/kudu/hive/metastore/KuduMetastorePlugin.java"
-  INCLUDE_JARS "${DEPENDENCY_JARS}"
-  OUTPUT_DIR "${EXECUTABLE_OUTPUT_PATH}")
+add_custom_command(OUTPUT ${HMS_PLUGIN_JAR}
+  COMMAND ./gradlew :kudu-hive:jar ${GRADLE_FLAGS}
+  COMMAND ln -nsf
+    "${JAVA_DIR}/kudu-hive/build/libs/kudu-hive-${KUDU_VERSION_NUMBER}.jar"
+    "${HMS_PLUGIN_JAR}"
+  WORKING_DIRECTORY "${JAVA_DIR}"
+  DEPENDS init_gradle)
+add_custom_target(hms_plugin_jar DEPENDS ${HMS_PLUGIN_JAR})
 
 set(MINI_HMS_SRCS
   mini_hms.cc)
@@ -82,7 +83,7 @@ target_link_libraries(mini_hms
   krpc
   kudu_test_util
   kudu_util)
-add_dependencies(mini_hms hms-plugin)
+add_dependencies(mini_hms hms_plugin_jar)
 
 ##############################
 # hms tests

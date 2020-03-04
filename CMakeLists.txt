@@ -76,7 +76,6 @@ if (SLASH_POS EQUAL -1)
   endfunction()
 endif()
 
-# TODO: can we somehow pass this into the java build?
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" KUDU_VERSION_NUMBER)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
@@ -93,6 +92,23 @@ set(THIRDPARTY_INSTALL_TSAN_DIR ${THIRDPARTY_INSTALL_DIR}/tsan)
 # Set the Java directory so our C++ tests are able to access its contents.
 # This can be useful to, e.g. spawn a Java subprocess.
 set(JAVA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/java)
+
+# Adds the EXTRA_GRADLE_FLAGS environment variable to a cmake list and calls `separate_arguments`.
+# This solves the problem of escaped spaces in the EXTRA_GRADLE_FLAGS environment variable.
+list(APPEND GRADLE_FLAGS $ENV{EXTRA_GRADLE_FLAGS})
+separate_arguments(GRADLE_FLAGS)
+# We always want Gradle to use the plain console and quiet flag when called from cmake.
+list(APPEND GRADLE_FLAGS --quiet --console=plain)
+list(REMOVE_DUPLICATES GRADLE_FLAGS)
+
+# Initialize Gradle to ensure the wrapper is downloaded.
+# This is important so that multiple calls to Gradle don't try and
+# download the gradle-wrapper.jar at the same time.
+set(GRADLE_WRAPPER_JAR ${JAVA_DIR}/gradle/wrapper/gradle-wrapper.jar)
+add_custom_command(OUTPUT ${GRADLE_WRAPPER_JAR}
+  COMMAND ./gradlew --version ${GRADLE_FLAGS}
+  WORKING_DIRECTORY "${JAVA_DIR}")
+add_custom_target(init_gradle DEPENDS ${GRADLE_WRAPPER_JAR})
 
 # Allow "make install" to not depend on all targets.
 #
