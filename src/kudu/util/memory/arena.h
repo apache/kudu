@@ -21,13 +21,13 @@
 // Memory arena for variable-length datatypes and STL collections.
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <new>
 #include <ostream>
+#include <utility>
 #include <vector>
 
 #include <boost/signals2/dummy_mutex.hpp>
@@ -160,8 +160,8 @@ class ArenaBase {
   }
 
   // Allocate bytes, ensuring a specified alignment.
-  // NOTE: alignment MUST be a power of two, or else this will break.
-  void* AllocateBytesAligned(const size_t size, const size_t alignment);
+  // NOTE: alignment MUST be a power of two and only upto 64 bytes is supported.
+  void* AllocateBytesAligned(size_t size, size_t alignment);
 
   // Removes all data from the arena. (Invalidates all pointers returned by
   // AddSlice and AllocateBytes). Does not cause memory allocation.
@@ -183,8 +183,9 @@ class ArenaBase {
   class Component;
 
   // Fallback for AllocateBytes non-fast-path
-  void* AllocateBytesFallback(const size_t size, const size_t align);
+  void* AllocateBytesFallback(size_t size, size_t align);
 
+  // Returned component is guaranteed to be 16-byte aligned.
   Component* NewComponent(size_t requested_size, size_t minimum_size);
   void AddComponent(Component *component);
 
@@ -367,6 +368,19 @@ class ArenaBase<THREADSAFE>::Component {
   }
 
  private:
+  // Adjusts the supplied "offset" such that the combined "data" ptr and "offset" aligns
+  // with "alignment" bytes.
+  //
+  // Component start address "data_" is only guaranteed to be 16-byte aligned with enough
+  // bytes for the first request size plus any padding needed for alignment.
+  // So to support alignment values greater than 16 bytes, align the destination address ptr
+  // that'll be returned by AllocatedBytesAligned() and not just the "offset_".
+  template<typename T>
+  static inline T AlignOffset(const uint8_t* data, const T offset, const size_t alignment) {
+    const auto data_start_addr = reinterpret_cast<uintptr_t>(data);
+    return KUDU_ALIGN_UP((data_start_addr + offset), alignment) - data_start_addr;
+  }
+
   // Mark the given range unpoisoned in ASAN.
   // This is a no-op in a non-ASAN build.
   void AsanUnpoison(const void* addr, size_t size);
@@ -386,21 +400,21 @@ class ArenaBase<THREADSAFE>::Component {
   DISALLOW_COPY_AND_ASSIGN(Component);
 };
 
-
 // Thread-safe implementation
 template <>
 inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(
   const size_t size, const size_t alignment) {
   // Special case check the allowed alignments. Currently, we only ensure
-  // the allocated buffer components are 16-byte aligned, and the code path
-  // doesn't support larger alignment.
-  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
-         alignment == 8 || alignment == 16)
+  // the allocated buffer components are 16-byte aligned and add extra padding
+  // to support 32/64 byte alignment but the code path hasn't been tested
+  // with larger alignment values nor has there been a need.
+  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 || alignment == 8 ||
+         alignment == 16 || alignment == 32 || alignment == 64)
     << "bad alignment: " << alignment;
   retry:
   Atomic32 offset = Acquire_Load(&offset_);
 
-  Atomic32 aligned = KUDU_ALIGN_UP(offset, alignment);
+  Atomic32 aligned = AlignOffset(data_, offset, alignment);
   Atomic32 new_offset = aligned + size;
 
   if (PREDICT_TRUE(new_offset <= size_)) {
@@ -421,13 +435,15 @@ inline uint8_t *ArenaBase<true>::Component::AllocateBytesAligned(
 template <>
 inline uint8_t *ArenaBase<false>::Component::AllocateBytesAligned(
   const size_t size, const size_t alignment) {
-  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 ||
-         alignment == 8 || alignment == 16)
+  DCHECK(alignment == 1 || alignment == 2 || alignment == 4 || alignment == 8 ||
+         alignment == 16 || alignment == 32 || alignment == 64)
     << "bad alignment: " << alignment;
-  size_t aligned = KUDU_ALIGN_UP(offset_, alignment);
+
+  size_t aligned = AlignOffset(data_, offset_, alignment);
   uint8_t* destination = data_ + aligned;
   size_t save_offset = offset_;
   offset_ = aligned + size;
+
   if (PREDICT_TRUE(offset_ <= size_)) {
     AsanUnpoison(data_ + aligned, size);
     return destination;

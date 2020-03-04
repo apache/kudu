@@ -32,6 +32,7 @@
 
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -112,6 +113,21 @@ TEST_F(BlockBloomFilterTest, InvalidSpace) {
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "Bloom filter too large");
   bf.Close();
+}
+
+// Simple Arena allocator based test that would sometimes trigger
+// SIGSEGV due to misalignment of the "directory_" ptr on AVX operations
+// before adding support for 32/64 byte alignment in Arena allocator.
+// It simulates the allocation pattern in wire-protocol.cc.
+TEST_F(BlockBloomFilterTest, ArenaAligned) {
+  Arena a(64);
+  auto* allocator = a.NewObject<ArenaBlockBloomFilterBufferAllocator>(&a);
+  auto* bf = a.NewObject<BlockBloomFilter>(allocator);
+  bf->Init(6, FAST_HASH, 0);
+  bool key = true;
+  Slice s(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
+  bf->Insert(s);
+  ASSERT_TRUE(bf->Find(s));
 }
 
 TEST_F(BlockBloomFilterTest, InvalidHashAlgorithm) {

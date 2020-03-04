@@ -76,23 +76,36 @@ void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size
   // Really need to allocate more space.
   size_t next_component_size = min(2 * cur->size(), max_buffer_size_);
   // But, allocate enough, even if the request is large. In this case,
-  // might violate the max_element_size bound.
-  if (next_component_size < size) {
-    next_component_size = size;
+  // might violate the "max_buffer_size_" bound.
+  // Component allocation is guaranteed to be 16-byte aligned, see NewComponent(),
+  // but we also need to support higher alignment values of 32 and 64 bytes and
+  // hence we add padding so that first request to allocate bytes after new
+  // component creation doesn't fail.
+  size_t aligned_size;
+  if (align <= 16) {
+    aligned_size = size;
+  } else {
+    DCHECK(align == 32 || align == 64);
+    aligned_size = size + align - 16;
   }
+
+  if (next_component_size < aligned_size) {
+    next_component_size = aligned_size;
+  }
+
   // If soft quota is exhausted we will only get the "minimal" amount of memory
-  // we ask for. In this case if we always use "size" as minimal, we may degrade
+  // we ask for. In this case if we always use "aligned_size" as minimal, we may degrade
   // to allocating a lot of tiny components, one for each string added to the
   // arena. This would be very inefficient, so let's first try something between
-  // "size" and "next_component_size". If it fails due to hard quota being
-  // exhausted, we'll fall back to using "size" as minimal.
-  size_t minimal = (size + next_component_size) / 2;
-  CHECK_LE(size, minimal);
+  // "aligned_size" and "next_component_size". If it fails due to hard quota being
+  // exhausted, we'll fall back to using "aligned_size" as minimal.
+  size_t minimal = (aligned_size + next_component_size) / 2;
+  CHECK_LE(aligned_size, minimal);
   CHECK_LE(minimal, next_component_size);
   // Now, just make sure we can actually get the memory.
   Component* component = NewComponent(next_component_size, minimal);
   if (component == nullptr) {
-    component = NewComponent(next_component_size, size);
+    component = NewComponent(next_component_size, aligned_size);
   }
   if (!component) return nullptr;
 

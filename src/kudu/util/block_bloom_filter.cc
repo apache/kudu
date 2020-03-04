@@ -306,10 +306,9 @@ ArenaBlockBloomFilterBufferAllocator::~ArenaBlockBloomFilterBufferAllocator() {
 
 Status ArenaBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
   DCHECK_NOTNULL(arena_);
-  // 16-bytes is the max alignment supported in arena currently whereas CACHELINE_SIZE
-  // is typically 64 bytes on modern CPUs.
-  // TODO(bankim): Needs investigation to support larger alignment values.
-  *ptr = arena_->AllocateBytesAligned(bytes, 16);
+  static_assert(CACHELINE_SIZE >= 32,
+                "For AVX operations, need buffers to be 32-bytes aligned or higher");
+  *ptr = arena_->AllocateBytesAligned(bytes, CACHELINE_SIZE);
   return *ptr == nullptr ?
       Status::RuntimeError(Substitute("Arena bad_alloc. bytes: $0", bytes)) :
       Status::OK();
