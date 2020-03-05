@@ -23,11 +23,13 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/subprocess/echo_subprocess.h"
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
@@ -36,64 +38,22 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::make_shared;
-using std::shared_ptr;
+DECLARE_int32(subprocess_timeout_secs);
+
+METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_length);
+METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_length);
+METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_time_ms);
+METRIC_DECLARE_histogram(echo_subprocess_execution_time_ms);
+
+using std::unique_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
-METRIC_DEFINE_histogram(server, echo_subprocess_inbound_queue_length,
-    "Echo subprocess inbound queue length",
-    kudu::MetricUnit::kMessages,
-    "Number of request messages in the Echo subprocess' inbound request queue",
-    kudu::MetricLevel::kInfo,
-    1000, 1);
-METRIC_DEFINE_histogram(server, echo_subprocess_outbound_queue_length,
-    "Echo subprocess outbound queue length",
-    kudu::MetricUnit::kMessages,
-    "Number of request messages in the Echo subprocess' outbound response queue",
-    kudu::MetricLevel::kInfo,
-    1000, 1);
-METRIC_DEFINE_histogram(server, echo_subprocess_inbound_queue_time_ms,
-    "Echo subprocess inbound queue time (ms)",
-    kudu::MetricUnit::kMilliseconds,
-    "Duration of time in ms spent in the Echo subprocess' inbound request queue",
-    kudu::MetricLevel::kInfo,
-    60000LU, 1);
-METRIC_DEFINE_histogram(server, echo_subprocess_outbound_queue_time_ms,
-    "Echo subprocess outbound queue time (ms)",
-    kudu::MetricUnit::kMilliseconds,
-    "Duration of time in ms spent in the Echo subprocess' outbound response queue",
-    kudu::MetricLevel::kInfo,
-    60000LU, 1);
-METRIC_DEFINE_histogram(server, echo_subprocess_execution_time_ms,
-    "Echo subprocess execution time (ms)",
-    kudu::MetricUnit::kMilliseconds,
-    "Duration of time in ms spent executing the Echo subprocess request, excluding "
-    "time spent spent in the subprocess queues",
-    kudu::MetricLevel::kInfo,
-    60000LU, 1);
-
 
 namespace kudu {
 namespace subprocess {
-
-
-#define GINIT(member, x) member = METRIC_##x.Instantiate(entity, 0)
-#define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
-struct EchoSubprocessMetrics : public SubprocessMetrics {
-  explicit EchoSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
-    HISTINIT(inbound_queue_length, echo_subprocess_inbound_queue_length);
-    HISTINIT(outbound_queue_length, echo_subprocess_outbound_queue_length);
-    HISTINIT(inbound_queue_time_ms, echo_subprocess_inbound_queue_time_ms);
-    HISTINIT(outbound_queue_time_ms, echo_subprocess_outbound_queue_time_ms);
-    HISTINIT(execution_time_ms, echo_subprocess_execution_time_ms);
-  }
-};
-#undef HISTINIT
-#undef MINIT
-
-typedef SubprocessProxy<EchoRequestPB, EchoResponsePB, EchoSubprocessMetrics> EchoSubprocess;
 
 class EchoSubprocessTest : public KuduTest {
  public:
@@ -117,17 +77,17 @@ class EchoSubprocessTest : public KuduTest {
       "-cp", Substitute("$0/kudu-subprocess.jar", bin_dir),
       "org.apache.kudu.subprocess.echo.EchoSubprocessMain"
     };
-    echo_subprocess_ = make_shared<EchoSubprocess>(std::move(argv), metric_entity_);
+    echo_subprocess_.reset(new EchoSubprocess(std::move(argv), metric_entity_));
     return echo_subprocess_->Start();
   }
 
  protected:
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  shared_ptr<EchoSubprocess> echo_subprocess_;
+  unique_ptr<EchoSubprocess> echo_subprocess_;
 };
 
-TEST_F(EchoSubprocessTest, TestBasicMetrics) {
+TEST_F(EchoSubprocessTest, TestBasicSubprocessMetrics) {
   const string kMessage = "don't catch you slippin' now";
   const int64_t kSleepMs = 1000;
   EchoRequestPB req;
@@ -162,6 +122,34 @@ TEST_F(EchoSubprocessTest, TestBasicMetrics) {
       METRIC_echo_subprocess_execution_time_ms).get());
   ASSERT_EQ(1, exec_hist->TotalCount());
   ASSERT_LT(kSleepMs, exec_hist->MaxValueForTests());
+}
+
+// Test that we'll still report metrics when we recieve them from the
+// subprocess, even if the call itself failed.
+TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
+  // Set things up so we'll time out.
+  FLAGS_subprocess_timeout_secs = 1;
+  const int64_t kSleepMs = 2000;
+  ASSERT_OK(ResetEchoSubprocess());
+
+  EchoRequestPB req;
+  req.set_data("garbage!");
+  req.set_sleep_ms(kSleepMs);
+  EchoResponsePB resp;
+  Status s = echo_subprocess_->Execute(req, &resp);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+  // Immediately following our call, we won't have any metrics from the subprocess.
+  Histogram* exec_hist = down_cast<Histogram*>(metric_entity_->FindOrNull(
+      METRIC_echo_subprocess_execution_time_ms).get());
+  ASSERT_EQ(0, exec_hist->TotalCount());
+
+  // Eventually the subprocess will return our call, and we'll see some
+  // metrics.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, exec_hist->TotalCount());
+    ASSERT_LT(kSleepMs, exec_hist->MaxValueForTests());
+  });
 }
 
 } // namespace subprocess

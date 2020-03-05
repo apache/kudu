@@ -42,6 +42,7 @@ namespace kudu {
 namespace ranger {
 
 using boost::hash_combine;
+using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessRequestPB;
 using kudu::subprocess::SubprocessResponsePB;
 using kudu::subprocess::SubprocessServer;
@@ -91,8 +92,8 @@ class MockSubprocessServer : public SubprocessServer {
 
   ~MockSubprocessServer() override {}
 
-  MockSubprocessServer() :
-    SubprocessServer({"mock"}) {}
+  MockSubprocessServer()
+      : SubprocessServer({"mock"}, SubprocessMetrics()) {}
 
   Status Execute(SubprocessRequestPB* req,
                  SubprocessResponsePB* resp) override {

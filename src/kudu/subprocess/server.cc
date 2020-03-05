@@ -83,13 +83,14 @@ using strings::Substitute;
 namespace kudu {
 namespace subprocess {
 
-SubprocessServer::SubprocessServer(vector<string> subprocess_argv)
+SubprocessServer::SubprocessServer(vector<string> subprocess_argv, SubprocessMetrics metrics)
     : call_timeout_(MonoDelta::FromSeconds(FLAGS_subprocess_timeout_secs)),
       next_id_(1),
       closing_(1),
       process_(make_shared<Subprocess>(std::move(subprocess_argv))),
       outbound_call_queue_(FLAGS_subprocess_request_queue_size_bytes),
-      inbound_response_queue_(FLAGS_subprocess_response_queue_size_bytes) {
+      inbound_response_queue_(FLAGS_subprocess_response_queue_size_bytes),
+      metrics_(std::move(metrics)) {
   process_->ShareParentStdin(false);
   process_->ShareParentStdout(false);
 }
@@ -220,6 +221,16 @@ void SubprocessServer::ResponderThread() {
       if (!resp.has_id()) {
         LOG(FATAL) << Substitute("Received invalid response: $0",
                                  pb_util::SecureDebugString(resp));
+      }
+      // Regardless of whether this call succeeded or not, parse the returned
+      // metrics.
+      if (PREDICT_TRUE(resp.has_metrics())) {
+        const auto& pb = resp.metrics();
+        metrics_.inbound_queue_length->Increment(pb.inbound_queue_length());
+        metrics_.outbound_queue_length->Increment(pb.outbound_queue_length());
+        metrics_.inbound_queue_time_ms->Increment(pb.inbound_queue_time_ms());
+        metrics_.outbound_queue_time_ms->Increment(pb.outbound_queue_time_ms());
+        metrics_.execution_time_ms->Increment(pb.execution_time_ms());
       }
     }
     vector<pair<shared_ptr<SubprocessCall>, SubprocessResponsePB>> calls_and_resps;

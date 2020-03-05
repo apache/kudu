@@ -59,6 +59,13 @@ target_link_libraries(kudu_subprocess
 )
 add_dependencies(kudu_subprocess subprocess_jar)
 
+add_library(echo_subprocess
+  echo_subprocess.cc
+)
+target_link_libraries(echo_subprocess
+  kudu_subprocess
+)
+
 #######################################
 # Unit tests
 #######################################
@@ -66,6 +73,7 @@ add_dependencies(kudu_subprocess subprocess_jar)
 if (NOT NO_TESTS)
   SET_KUDU_TEST_LINK_LIBS(
     kudu_subprocess
+    echo_subprocess
   )
 endif()
 

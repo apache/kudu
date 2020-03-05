@@ -39,6 +39,7 @@
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
@@ -52,6 +53,14 @@ class Thread;
 namespace subprocess {
 
 typedef int64_t CallId;
+
+struct SubprocessMetrics {
+  scoped_refptr<Histogram> inbound_queue_length;
+  scoped_refptr<Histogram> outbound_queue_length;
+  scoped_refptr<Histogram> inbound_queue_time_ms;
+  scoped_refptr<Histogram> outbound_queue_time_ms;
+  scoped_refptr<Histogram> execution_time_ms;
+};
 
 // Encapsulates the pending state of a request that is in the process of being
 // sent to a subprocess. These calls are added to an in-flight map before
@@ -188,7 +197,7 @@ typedef BlockingQueue<SubprocessResponsePB, ResponseLogicalSize> ResponseQueue;
 // Public methods are virtual so a mock server can be used in tests.
 class SubprocessServer {
  public:
-  explicit SubprocessServer(std::vector<std::string> subprocess_argv);
+  SubprocessServer(std::vector<std::string> subprocess_argv, SubprocessMetrics metrics);
   virtual ~SubprocessServer();
 
   // Initialize the server, starting the subprocess and worker threads.
@@ -267,6 +276,9 @@ class SubprocessServer {
 
   // Inbound queue of responses sent by the subprocess.
   ResponseQueue inbound_response_queue_;
+
+  // Metrics for this subprocess.
+  SubprocessMetrics metrics_;
 
   // Calls that are currently in-flight (the requests are being sent over the
   // pipe or waiting for a response), ordered by ID. This ordering allows for

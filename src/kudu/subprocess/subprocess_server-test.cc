@@ -26,10 +26,13 @@
 #include <google/protobuf/any.pb.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/subprocess/echo_subprocess.h"
 #include "kudu/subprocess/server.h"
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -75,6 +78,9 @@ const char* kHello = "hello world";
 
 class SubprocessServerTest : public KuduTest {
  public:
+  SubprocessServerTest()
+      : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_,
+                                                        "subprocess_server-test")) {}
   void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(ResetSubprocessServer());
@@ -103,11 +109,14 @@ class SubprocessServerTest : public KuduTest {
       argv.emplace_back("p");
       argv.emplace_back(std::to_string(java_parser_threads));
     }
-    server_ = make_shared<SubprocessServer>(std::move(argv));
+    server_ = make_shared<SubprocessServer>(std::move(argv),
+                                            EchoSubprocessMetrics(metric_entity_));
     return server_->Init();
   }
 
  protected:
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<SubprocessServer> server_;
 };
 
