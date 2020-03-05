@@ -49,16 +49,17 @@ DEFINE_string(ranger_jar_path, "",
               "Path to the JAR file containing the Ranger subprocess.");
 TAG_FLAG(ranger_jar_path, experimental);
 
+METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
+    "Ranger subprocess execution time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent executing the Ranger subprocess request, excluding "
+    "time spent spent in the subprocess queues",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
 METRIC_DEFINE_histogram(server, ranger_subprocess_inbound_queue_length,
     "Ranger subprocess inbound queue length",
     kudu::MetricUnit::kMessages,
     "Number of request messages in the Ranger subprocess' inbound request queue",
-    kudu::MetricLevel::kInfo,
-    1000, 1);
-METRIC_DEFINE_histogram(server, ranger_subprocess_outbound_queue_length,
-    "Ranger subprocess outbound queue length",
-    kudu::MetricUnit::kMessages,
-    "Number of request messages in the Ranger subprocess' outbound response queue",
     kudu::MetricLevel::kInfo,
     1000, 1);
 METRIC_DEFINE_histogram(server, ranger_subprocess_inbound_queue_time_ms,
@@ -67,29 +68,42 @@ METRIC_DEFINE_histogram(server, ranger_subprocess_inbound_queue_time_ms,
     "Duration of time in ms spent in the Ranger subprocess' inbound request queue",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
+METRIC_DEFINE_histogram(server, ranger_subprocess_outbound_queue_length,
+    "Ranger subprocess outbound queue length",
+    kudu::MetricUnit::kMessages,
+    "Number of request messages in the Ranger subprocess' outbound response queue",
+    kudu::MetricLevel::kInfo,
+    1000, 1);
 METRIC_DEFINE_histogram(server, ranger_subprocess_outbound_queue_time_ms,
     "Ranger subprocess outbound queue time (ms)",
     kudu::MetricUnit::kMilliseconds,
     "Duration of time in ms spent in the Ranger subprocess' outbound response queue",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
-METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
-    "Ranger subprocess execution time (ms)",
-    kudu::MetricUnit::kMilliseconds,
-    "Duration of time in ms spent executing the Ranger subprocess request, excluding "
-    "time spent spent in the subprocess queues",
+METRIC_DEFINE_histogram(server, ranger_server_inbound_queue_size_bytes,
+    "Ranger server inbound queue size (bytes)",
+    kudu::MetricUnit::kBytes,
+    "Number of bytes in the inbound response queue of the Ranger server, recorded "
+    "at the time a new response is read from the pipe and added to the inbound queue",
     kudu::MetricLevel::kInfo,
-    60000LU, 1);
-METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_time_ms,
-    "Ranger server outbound queue time (ms)",
-    kudu::MetricUnit::kMilliseconds,
-    "Duration of time in ms spent in the Ranger server's outbound request queue",
-    kudu::MetricLevel::kInfo,
-    60000LU, 1);
+    4 * 1024 * 1024, 1);
 METRIC_DEFINE_histogram(server, ranger_server_inbound_queue_time_ms,
     "Ranger server inbound queue time (ms)",
     kudu::MetricUnit::kMilliseconds,
     "Duration of time in ms spent in the Ranger server's inbound response queue",
+    kudu::MetricLevel::kInfo,
+    60000LU, 1);
+METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_size_bytes,
+    "Ranger server outbound queue size (bytes)",
+    kudu::MetricUnit::kBytes,
+    "Number of bytes in the outbound request queue of the Ranger server, recorded "
+    "at the time a new request is added to the outbound request queue",
+    kudu::MetricLevel::kInfo,
+    4 * 1024 * 1024, 1);
+METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_time_ms,
+    "Ranger server outbound queue time (ms)",
+    kudu::MetricUnit::kMilliseconds,
+    "Duration of time in ms spent in the Ranger server's outbound request queue",
     kudu::MetricLevel::kInfo,
     60000LU, 1);
 

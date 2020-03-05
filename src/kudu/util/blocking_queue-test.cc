@@ -207,8 +207,11 @@ struct LengthLogicalSize {
 TEST(BlockingQueueTest, TestLogicalSize) {
   BlockingQueue<string, LengthLogicalSize> test_queue(4);
   ASSERT_EQ(test_queue.Put("a"), QUEUE_SUCCESS);
+  ASSERT_EQ(1, test_queue.size());
   ASSERT_EQ(test_queue.Put("bcd"), QUEUE_SUCCESS);
+  ASSERT_EQ(4, test_queue.size());
   ASSERT_EQ(test_queue.Put("e"), QUEUE_FULL);
+  ASSERT_EQ(4, test_queue.size());
 }
 
 TEST(BlockingQueueTest, TestNonPointerParamsMayBeNonEmptyOnDestruct) {

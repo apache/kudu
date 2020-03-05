@@ -244,6 +244,11 @@ class BlockingQueue {
     return max_size_;
   }
 
+  size_t size() const {
+    MutexLock l(lock_);
+    return size_;
+  }
+
   std::string ToString() const {
     std::string ret;
 
@@ -269,7 +274,7 @@ class BlockingQueue {
 
   bool shutdown_;
   size_t size_;
-  size_t max_size_;
+  const size_t max_size_;
   mutable Mutex lock_;
   ConditionVariable not_empty_;
   ConditionVariable not_full_;

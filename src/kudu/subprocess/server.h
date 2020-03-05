@@ -66,14 +66,16 @@ struct SimpleTimer {
 
 struct SubprocessMetrics {
   // Metrics returned from the subprocess.
-  scoped_refptr<Histogram> sp_inbound_queue_length;
-  scoped_refptr<Histogram> sp_outbound_queue_length;
-  scoped_refptr<Histogram> sp_inbound_queue_time_ms;
-  scoped_refptr<Histogram> sp_outbound_queue_time_ms;
   scoped_refptr<Histogram> sp_execution_time_ms;
+  scoped_refptr<Histogram> sp_inbound_queue_length;
+  scoped_refptr<Histogram> sp_inbound_queue_time_ms;
+  scoped_refptr<Histogram> sp_outbound_queue_length;
+  scoped_refptr<Histogram> sp_outbound_queue_time_ms;
 
   // Metrics recorded by the SubprocessServer.
+  scoped_refptr<Histogram> server_inbound_queue_size_bytes;
   scoped_refptr<Histogram> server_inbound_queue_time_ms;
+  scoped_refptr<Histogram> server_outbound_queue_size_bytes;
   scoped_refptr<Histogram> server_outbound_queue_time_ms;
 };
 

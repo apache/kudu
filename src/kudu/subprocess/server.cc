@@ -131,6 +131,8 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   req->set_id(next_id_++);
   Synchronizer sync;
   auto cb = sync.AsStdStatusCallback();
+  // Before adding to the queue, record the size of the call queue.
+  metrics_.server_outbound_queue_size_bytes->Increment(outbound_call_queue_.size());
   CallAndTimer call_and_timer = {
       make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_), {} };
   RETURN_NOT_OK_PREPEND(
@@ -203,6 +205,8 @@ void SubprocessServer::ReceiveMessagesThread() {
     // subprocess.
     DCHECK(s.ok());
     WARN_NOT_OK(s, "failed to receive response from the subprocess");
+    // Before adding to the queue, record the size of the response queue.
+    metrics_.server_inbound_queue_size_bytes->Increment(inbound_response_queue_.size());
     ResponsePBAndTimer resp_and_timer = { std::move(response), {} };
     if (s.ok() && !inbound_response_queue_.BlockingPut(resp_and_timer).ok()) {
       // The queue has been shut down and we should shut down too.

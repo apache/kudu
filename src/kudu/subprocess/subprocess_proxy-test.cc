@@ -45,6 +45,8 @@ METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_length);
 METRIC_DECLARE_histogram(echo_subprocess_inbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_subprocess_outbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_subprocess_execution_time_ms);
+METRIC_DECLARE_histogram(echo_server_outbound_queue_size_bytes);
+METRIC_DECLARE_histogram(echo_server_inbound_queue_size_bytes);
 METRIC_DECLARE_histogram(echo_server_outbound_queue_time_ms);
 METRIC_DECLARE_histogram(echo_server_inbound_queue_time_ms);
 
@@ -119,6 +121,16 @@ TEST_F(EchoSubprocessTest, TestBasicSubprocessMetrics) {
   ASSERT_EQ(1, in_hist->TotalCount());
   ASSERT_LE(0, in_hist->MaxValueForTests());
 
+  // There shouldn't have anything bytes the server queues when we enqueue.
+  Histogram* server_in_size_hist =
+      GET_HIST(metric_entity_, echo_server_inbound_queue_size_bytes);
+  ASSERT_EQ(1, server_in_size_hist->TotalCount());
+  ASSERT_EQ(0, server_in_size_hist->MaxValueForTests());
+  Histogram* server_out_size_hist =
+      GET_HIST(metric_entity_, echo_server_outbound_queue_size_bytes);
+  ASSERT_EQ(1, server_out_size_hist->TotalCount());
+  ASSERT_EQ(0, server_out_size_hist->MaxValueForTests());
+
   // We should have some non-negative queue times on the server side too.
   Histogram* server_out_hist =
     GET_HIST(metric_entity_, echo_server_outbound_queue_time_ms);
@@ -156,8 +168,10 @@ TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
   Histogram* in_len_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_length);
   Histogram* sp_out_hist = GET_HIST(metric_entity_, echo_subprocess_outbound_queue_time_ms);
   Histogram* sp_in_hist = GET_HIST(metric_entity_, echo_subprocess_inbound_queue_time_ms);
-  Histogram* server_out_hist = GET_HIST(metric_entity_, echo_server_outbound_queue_time_ms);
-  Histogram* server_in_hist = GET_HIST(metric_entity_, echo_server_inbound_queue_time_ms);
+  Histogram* server_out_time_hist = GET_HIST(metric_entity_, echo_server_outbound_queue_time_ms);
+  Histogram* server_out_size_hist = GET_HIST(metric_entity_, echo_server_outbound_queue_size_bytes);
+  Histogram* server_in_time_hist = GET_HIST(metric_entity_, echo_server_inbound_queue_time_ms);
+  Histogram* server_in_size_hist = GET_HIST(metric_entity_, echo_server_inbound_queue_size_bytes);
   ASSERT_EQ(0, exec_hist->TotalCount());
   ASSERT_EQ(0, out_len_hist->TotalCount());
   ASSERT_EQ(0, in_len_hist->TotalCount());
@@ -166,8 +180,10 @@ TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
 
   // We'll have sent the request from the server and not received the response.
   // Our metrics should reflect that.
-  ASSERT_EQ(1, server_out_hist->TotalCount());
-  ASSERT_EQ(0, server_in_hist->TotalCount());
+  ASSERT_EQ(1, server_out_time_hist->TotalCount());
+  ASSERT_EQ(1, server_out_size_hist->TotalCount());
+  ASSERT_EQ(0, server_in_time_hist->TotalCount());
+  ASSERT_EQ(0, server_in_size_hist->TotalCount());
 
   // Eventually the subprocess will return our call, and we'll see some
   // metrics.
@@ -179,8 +195,10 @@ TEST_F(EchoSubprocessTest, TestSubprocessMetricsOnError) {
     ASSERT_EQ(1, in_len_hist->TotalCount());
     ASSERT_EQ(1, sp_out_hist->TotalCount());
     ASSERT_EQ(1, sp_in_hist->TotalCount());
-    ASSERT_EQ(1, server_out_hist->TotalCount());
-    ASSERT_EQ(1, server_in_hist->TotalCount());
+    ASSERT_EQ(1, server_out_time_hist->TotalCount());
+    ASSERT_EQ(1, server_in_time_hist->TotalCount());
+    ASSERT_EQ(1, server_out_size_hist->TotalCount());
+    ASSERT_EQ(1, server_in_size_hist->TotalCount());
   });
 }
 
