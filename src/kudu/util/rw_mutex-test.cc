@@ -108,7 +108,7 @@ TEST_P(RWMutexTest, TestDeadlocks) {
   LOG(INFO) << "Number of reads: " << number_of_reads.Load();
 }
 
-#ifndef NDEBUG
+#ifdef FB_DO_NOT_REMOVE  // #ifndef NDEBUG
 // Tests that the RWMutex wrapper catches basic usage errors. This checking is
 // only enabled in debug builds.
 TEST_P(RWMutexTest, TestLockChecking) {

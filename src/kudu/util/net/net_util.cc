@@ -138,22 +138,37 @@ Status HostPort::ParseString(const string& str, uint16_t default_port) {
     is the format used for specifying IPv6 addresses with host-port.
   */
 
-  bool ipv6_addr = strcount(str, ':') > 1;
+  int num_colons = strcount(str, ':');
+  bool ipv6_addr = num_colons > 1;
+  bool has_port = false;
 
-  const string delim = ipv6_addr ? "]:" : ":";
-  std::pair<string, string> p =
-      strings::Split(str, strings::delimiter::Limit(delim, 1));
+  string host, port_str;
 
-  // Strip any whitespace from the host.
-  StripWhiteSpace(&p.first);
+  if (ipv6_addr) {
+    std::pair<string, string> p =
+        strings::Split(str, strings::delimiter::Limit("]", 1));
+    host = std::move(p.first);
+    StripWhiteSpace(&host);
+    host = StripPrefixString(host, "[");
 
-  // Stripping of `[` should be inconsquential in case of IPv4.
-  string host = StripPrefixString(p.first, "[");
-  string port_str = p.second;
+    port_str = std::move(p.second);
+    has_port = strcount(port_str, ':') > 0;
+    if (has_port) {
+      StripWhiteSpace(&port_str);
+      port_str = StripPrefixString(port_str, ":");
+    }
+  } else {
+    has_port = num_colons == 1;
+    std::pair<string, string> p =
+        strings::Split(str, strings::delimiter::Limit(":", 1));
+    host = std::move(p.first);
+    StripWhiteSpace(&host);
+    port_str = std::move(p.second);
+  }
 
   // Parse the port.
   uint32_t port;
-  if (port_str.empty()) {
+  if (!has_port) {
     // No port specified.
     port = default_port;
   } else if (!SimpleAtoi(port_str, &port) || port > 65535) {

@@ -19,6 +19,7 @@
 
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 
 #include <cerrno>
@@ -106,8 +107,19 @@ std::string Sockaddr::ToString() const {
   return Substitute("$0:$1", host(), port());
 }
 
+// Return true iff two ipv6 address structs are equal.
+static bool Ipv6AddrsEqual(const struct in6_addr& a, const struct in6_addr& b) {
+  constexpr int kIpv6AddrBytes = 16;
+  for (int i = 0; i < kIpv6AddrBytes; i++) {
+    if (a.s6_addr[i] != b.s6_addr[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool Sockaddr::IsWildcard() const {
-  return addr_.sin6_addr.s6_addr == 0;
+  return Ipv6AddrsEqual(addr_.sin6_addr, ::in6addr_any /* from netinet/in.h */);
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
