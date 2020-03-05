@@ -378,8 +378,9 @@ TEST_F(TServerQuiescingITest, TestQuiescingToolBasics) {
   auto* ts = cluster_->mini_tablet_server(0);
   auto rw_workload = CreateFaultIntolerantRWWorkload();
   rw_workload->Setup();
-  // Spawn a bunch of read threads so we'll be more likely to see scanners.
-  rw_workload->set_num_read_threads(10);
+  // NOTE: if this value is too high, this test can become flaky, since the
+  // degrees of freedom in the number of active scanners will be high.
+  rw_workload->set_num_read_threads(1);
   ASSERT_FALSE(ts->server()->quiescing());
   const auto& master_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
   // First, call the start tool a couple of times.
