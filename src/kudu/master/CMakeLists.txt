@@ -45,6 +45,7 @@ set(MASTER_SRCS
   master_service.cc
   mini_master.cc
   placement_policy.cc
+  ranger_authz_provider.cc
   sentry_authz_provider.cc
   sentry_client_metrics.cc
   sentry_privileges_cache_metrics.cc
@@ -62,7 +63,9 @@ target_link_libraries(master
   kserver
   kudu_common
   kudu_hms
+  kudu_ranger
   kudu_sentry
+  kudu_subprocess
   kudu_thrift
   kudu_util
   master_proto

@@ -17,13 +17,13 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -42,7 +42,8 @@
 DEFINE_bool(sentry_require_db_privileges_for_list_tables, false,
             "Whether Kudu will require database-level privileges to authorize "
             "ListTables requests. When set to false, table-level privileges are "
-            "required for each table.");
+            "required for each table. ranger_config_path must not be set if "
+            "this is set");
 TAG_FLAG(sentry_require_db_privileges_for_list_tables, advanced);
 
 DECLARE_string(sentry_service_rpc_addresses);

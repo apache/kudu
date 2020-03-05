@@ -106,6 +106,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/placement_policy.h"
+#include "kudu/master/ranger_authz_provider.h"
 #include "kudu/master/sentry_authz_provider.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/table_metrics.h"
@@ -133,6 +134,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -311,6 +313,20 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
 
 METRIC_DEFINE_entity(table);
+
+DECLARE_string(sentry_service_rpc_addresses);
+DECLARE_string(ranger_config_path);
+
+static bool ValidateRangerSentryFlags() {
+  if (!FLAGS_sentry_service_rpc_addresses.empty() &&
+      !FLAGS_ranger_config_path.empty()) {
+    LOG(ERROR) << "--sentry_service_rpc_addresses and --ranger_config_path "
+                  "cannot be set at the same time.";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(ranger_sentry_flags, ValidateRangerSentryFlags);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
@@ -752,6 +768,8 @@ CatalogManager::CatalogManager(Master* master)
       leader_lock_(RWMutex::Priority::PREFER_WRITING) {
   if (SentryAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
+  } else if (RangerAuthzProvider::IsEnabled()) {
+    authz_provider_.reset(new RangerAuthzProvider(master_->metric_entity()));
   } else {
     authz_provider_.reset(new DefaultAuthzProvider);
   }
