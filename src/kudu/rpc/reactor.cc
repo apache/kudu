@@ -928,6 +928,7 @@ void Reactor::QueueCancellation(const shared_ptr<OutboundCall>& call) {
 }
 
 void Reactor::ScheduleReactorTask(ReactorTask *task) {
+  bool was_empty;
   {
     std::unique_lock<LockType> l(lock_);
     if (closing_) {
@@ -936,9 +937,12 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
       task->Abort(ShutdownError(false));
       return;
     }
+    was_empty = pending_tasks_.empty();
     pending_tasks_.push_back(*task);
   }
-  thread_.WakeThread();
+  if (was_empty) {
+    thread_.WakeThread();
+  }
 }
 
 bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks) { // NOLINT(*)

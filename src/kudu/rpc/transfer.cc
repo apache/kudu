@@ -20,6 +20,7 @@
 #include <sys/uio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <limits>
@@ -88,32 +89,43 @@ TransferCallbacks::~TransferCallbacks()
 {}
 
 InboundTransfer::InboundTransfer()
-  : total_length_(kMsgLengthPrefixLength),
+  : total_length_(0),
     cur_offset_(0) {
   buf_.resize(kMsgLengthPrefixLength);
 }
 
-Status InboundTransfer::ReceiveBuffer(Socket &socket) {
-  if (cur_offset_ < kMsgLengthPrefixLength) {
-    // receive uint32 length prefix
-    int32_t rem = kMsgLengthPrefixLength - cur_offset_;
-    int32_t nread;
-    Status status = socket.Recv(&buf_[cur_offset_], rem, &nread);
-    RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
-    if (nread == 0) {
-      return Status::OK();
-    }
-    DCHECK_GE(nread, 0);
-    cur_offset_ += nread;
-    if (cur_offset_ < kMsgLengthPrefixLength) {
-      // If we still don't have the full length prefix, we can't continue
-      // reading yet.
-      return Status::OK();
-    }
-    // Since we only read 'rem' bytes above, we should now have exactly
-    // the length prefix in our buffer and no more.
-    DCHECK_EQ(cur_offset_, kMsgLengthPrefixLength);
+InboundTransfer::InboundTransfer(faststring initial_buf)
+  : buf_(std::move(initial_buf)),
+    total_length_(0),
+    cur_offset_(buf_.size()) {
+  buf_.resize(std::max<size_t>(kMsgLengthPrefixLength, buf_.size()));
+}
 
+Status InboundTransfer::ReceiveBuffer(Socket* socket, faststring* extra_4) {
+  static constexpr int kExtraReadLength = kMsgLengthPrefixLength;
+  if (total_length_ == 0) {
+    // We haven't yet parsed the message length. It's possible that the
+    // length is already available in the buffer passed in the constructor.
+    if (cur_offset_ < kMsgLengthPrefixLength) {
+      // receive uint32 length prefix
+      int32_t rem = kMsgLengthPrefixLength - cur_offset_;
+      int32_t nread;
+      Status status = socket->Recv(&buf_[cur_offset_], rem, &nread);
+      RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
+      if (nread == 0) {
+        return Status::OK();
+      }
+      DCHECK_GE(nread, 0);
+      cur_offset_ += nread;
+      if (cur_offset_ < kMsgLengthPrefixLength) {
+        // If we still don't have the full length prefix, we can't continue
+        // reading yet.
+        return Status::OK();
+      }
+    }
+
+    // Parse the message length out of the prefix.
+    DCHECK_GE(cur_offset_, kMsgLengthPrefixLength);
     // The length prefix doesn't include its own 4 bytes, so we have to
     // add that back in.
     total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
@@ -126,7 +138,7 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
       return Status::NetworkError(Substitute("RPC frame had invalid length of $0",
                                              total_length_));
     }
-    buf_.resize(total_length_);
+    buf_.resize(total_length_ + kExtraReadLength);
 
     // Fall through to receive the message body, which is likely to be already
     // available on the socket.
@@ -139,11 +151,23 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
   // INT_MAX. The message will be split across multiple Recv() calls.
   // Note that this is only needed when rpc_max_message_size > INT_MAX, which is
   // currently only used for unit tests.
-  int32_t rem = std::min(total_length_ - cur_offset_,
+  int32_t rem = std::min(total_length_ - cur_offset_ + kExtraReadLength,
       static_cast<uint32_t>(std::numeric_limits<int32_t>::max()));
-  Status status = socket.Recv(&buf_[cur_offset_], rem, &nread);
+  Status status = socket->Recv(&buf_[cur_offset_], rem, &nread);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
   cur_offset_ += nread;
+
+  // We may have read some extra bytes, in which case we need to trim them off
+  // and write them into the provided buffer.
+  if (cur_offset_ >= total_length_) {
+    int64_t extra_read = cur_offset_ - total_length_;
+    DCHECK_LE(extra_read, kExtraReadLength);
+    DCHECK_GE(extra_read, 0);
+    extra_4->clear();
+    extra_4->append(&buf_[total_length_], extra_read);
+    cur_offset_ = total_length_;
+    buf_.resize(total_length_);
+  }
 
   return Status::OK();
 }
@@ -153,7 +177,7 @@ bool InboundTransfer::TransferStarted() const {
 }
 
 bool InboundTransfer::TransferFinished() const {
-  return cur_offset_ == total_length_;
+  return total_length_ > 0 && cur_offset_ == total_length_;
 }
 
 string InboundTransfer::StatusAsString() const {

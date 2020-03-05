@@ -67,9 +67,15 @@ class InboundTransfer {
  public:
 
   InboundTransfer();
+  explicit InboundTransfer(faststring initial_buf);
 
-  // read from the socket into our buffer
-  Status ReceiveBuffer(Socket &socket);
+  // Read from the socket into our buffer.
+  //
+  // If this is the last read of the transfer (i.e. if TransferFinished() is true
+  // after this call returns OK), up to 4 extra bytes may have been read
+  // from the socket and stored in 'extra_4'. In that case, any previous content of
+  // 'extra_4' is replaced by this extra bytes.
+  Status ReceiveBuffer(Socket *socket, faststring* extra_4);
 
   // Return true if any bytes have yet been sent.
   bool TransferStarted() const;
@@ -91,6 +97,7 @@ class InboundTransfer {
 
   faststring buf_;
 
+  // 0 indicates not yet set
   uint32_t total_length_;
   uint32_t cur_offset_;
 
