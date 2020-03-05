@@ -20,11 +20,11 @@
 #include <pthread.h>
 #include <sys/types.h>
 
+#include <memory>
 #include <string>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 
 namespace kudu {
@@ -70,7 +70,7 @@ class Mutex {
   // All private data is implicitly protected by native_handle_.
   // Be VERY careful to only access members under that lock.
   pid_t owning_tid_;
-  gscoped_ptr<StackTrace> stack_trace_;
+  std::unique_ptr<StackTrace> stack_trace_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(Mutex);

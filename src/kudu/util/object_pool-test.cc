@@ -17,7 +17,6 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/object_pool.h"
 
 namespace kudu {

@@ -39,9 +39,7 @@
 // NOTE: this code disables TSAN for the most part. This is because it uses
 // some "clever" concurrency mechanisms which are difficult to model in TSAN.
 // We instead ensure correctness by heavy stress-testing.
-
-#ifndef KUDU_TABLET_CONCURRENT_BTREE_H
-#define KUDU_TABLET_CONCURRENT_BTREE_H
+#pragma once
 
 #include <algorithm>
 #include <boost/smart_ptr/detail/yield_k.hpp>
@@ -1100,7 +1098,7 @@ class CBTree {
   // Note that this requires iterating through the entire tree,
   // so it is not very efficient.
   size_t count() const {
-    gscoped_ptr<CBTreeIterator<Traits> > iter(NewIterator());
+    std::unique_ptr<CBTreeIterator<Traits>> iter(NewIterator());
     bool exact;
     iter->SeekAtOrAfter(Slice(""), &exact);
     size_t count = 0;
@@ -1862,5 +1860,3 @@ class CBTreeIterator {
 } // namespace btree
 } // namespace tablet
 } // namespace kudu
-
-#endif

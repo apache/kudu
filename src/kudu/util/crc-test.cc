@@ -15,39 +15,42 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/crc.h"
+
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <ostream>
+#include <utility>
 #include <string>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/crc.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+using std::unique_ptr;
+using strings::Substitute;
+
 namespace kudu {
 namespace crc {
-
-using strings::Substitute;
 
 class CrcTest : public KuduTest {
  protected:
 
   // Returns pointer to data which must be deleted by caller.
-  static void GenerateBenchmarkData(const uint8_t** bufptr, size_t* buflen) {
+  static void GenerateBenchmarkData(unique_ptr<uint8_t[]>* bufptr, size_t* buflen) {
     const uint32_t kNumNumbers = 1000000;
     const uint32_t kBytesPerNumber = sizeof(uint32_t);
     const uint32_t kLength = kNumNumbers * kBytesPerNumber;
-    auto buf = new uint8_t[kLength];
+    unique_ptr<uint8_t[]> buf(new uint8_t[kLength]);
     for (uint32_t i = 0; i < kNumNumbers; i++) {
-      memcpy(buf + (i * kBytesPerNumber), &i, kBytesPerNumber);
+      memcpy(buf.get() + (i * kBytesPerNumber), &i, kBytesPerNumber);
     }
-    *bufptr = buf;
+    *bufptr = std::move(buf);
     *buflen = kLength;
   }
 
@@ -82,11 +85,9 @@ TEST_F(CrcTest, TestCRC32C) {
 // Simple benchmark of CRC32C throughput.
 // We should expect about 8 bytes per cycle in throughput on a single core.
 TEST_F(CrcTest, BenchmarkCRC32C) {
-  gscoped_ptr<const uint8_t[]> data;
-  const uint8_t* buf;
+  unique_ptr<uint8_t[]> buf;
   size_t buflen;
   GenerateBenchmarkData(&buf, &buflen);
-  data.reset(buf);
   Crc* crc32c = GetCrc32cInstance();
   int kNumRuns = 1000;
   if (AllowSlowTests()) {
@@ -97,7 +98,7 @@ TEST_F(CrcTest, BenchmarkCRC32C) {
   sw.start();
   for (int i = 0; i < kNumRuns; i++) {
     uint64_t cksum;
-    crc32c->Compute(buf, buflen, &cksum);
+    crc32c->Compute(buf.get(), buflen, &cksum);
   }
   sw.stop();
   CpuTimes elapsed = sw.elapsed();

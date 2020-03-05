@@ -39,7 +39,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -205,6 +204,12 @@ namespace kudu {
 const char* const Env::kInjectedFailureStatusMsg = "INJECTED FAILURE";
 
 namespace {
+
+struct FreeDeleter {
+  inline void operator()(void* ptr) const {
+    free(ptr);
+  }
+};
 
 #if defined(__APPLE__)
 // Simulates Linux's fallocate file preallocation API on OS X.
@@ -1224,7 +1229,7 @@ class PosixEnv : public Env {
   Status GetCurrentWorkingDir(string* cwd) const override {
     TRACE_EVENT0("io", "PosixEnv::GetCurrentWorkingDir");
     ThreadRestrictions::AssertIOAllowed();
-    unique_ptr<char, FreeDeleter> wd(getcwd(NULL, 0));
+    unique_ptr<char[], FreeDeleter> wd(getcwd(nullptr, 0));
     if (!wd) {
       return IOError("getcwd()", errno);
     }
@@ -1514,7 +1519,7 @@ class PosixEnv : public Env {
 
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
-    unique_ptr<char, FreeDeleter> name_dup(strdup(root.c_str()));
+    unique_ptr<char[], FreeDeleter> name_dup(strdup(root.c_str()));
     char *(paths[]) = { name_dup.get(), nullptr };
 
     // FTS_NOCHDIR is important here to make this thread-safe.

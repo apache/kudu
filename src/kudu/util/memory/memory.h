@@ -28,9 +28,7 @@
 // be shared between multiple materializations; e.g. you can designate a
 // single allocator per a single user request, thus setting bounds on memory
 // usage on a per-request basis.
-
-#ifndef KUDU_UTIL_MEMORY_MEMORY_H_
-#define KUDU_UTIL_MEMORY_MEMORY_H_
+#pragma once
 
 #include <algorithm>
 #include <cstddef>
@@ -45,7 +43,6 @@
 #include "kudu/util/boost_mutex_utils.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/mutex.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
@@ -649,8 +646,7 @@ class MemoryStatisticsCollectingBufferAllocator : public BufferAllocator {
   virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   BufferAllocator* delegate_;
-  gscoped_ptr<MemoryStatisticsCollectorInterface>
-      memory_stats_collector_;
+  std::unique_ptr<MemoryStatisticsCollectorInterface> memory_stats_collector_;
 };
 
 // BufferAllocator which uses MemTracker to keep track of and optionally
@@ -771,7 +767,7 @@ class OwningThreadSafeBufferAllocator
   virtual ~OwningThreadSafeBufferAllocator() {}
 
  private:
-  gscoped_ptr<DelegateAllocatorType> delegate_owned_;
+  std::unique_ptr<DelegateAllocatorType> delegate_owned_;
 };
 
 class ThreadSafeMemoryLimit
@@ -966,5 +962,3 @@ void StaticQuota<thread_safe>::SetQuota(const size_t quota) {
 }
 
 }  // namespace kudu
-
-#endif  // KUDU_UTIL_MEMORY_MEMORY_H_

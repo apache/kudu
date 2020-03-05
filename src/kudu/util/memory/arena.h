@@ -19,9 +19,7 @@
 //
 //
 // Memory arena for variable-length datatypes and STL collections.
-
-#ifndef KUDU_UTIL_MEMORY_ARENA_H_
-#define KUDU_UTIL_MEMORY_ARENA_H_
+#pragma once
 
 #include <algorithm>
 #include <cstddef>
@@ -37,7 +35,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -374,7 +371,7 @@ class ArenaBase<THREADSAFE>::Component {
   // This is a no-op in a non-ASAN build.
   void AsanUnpoison(const void* addr, size_t size);
 
-  gscoped_ptr<Buffer> buffer_;
+  std::unique_ptr<Buffer> buffer_;
   uint8_t* const data_;
   typename ArenaTraits<THREADSAFE>::offset_type offset_;
   const size_t size_;
@@ -497,5 +494,3 @@ inline T *ArenaBase<THREADSAFE>::NewObject(Args&&... args) {
 }
 
 }  // namespace kudu
-
-#endif  // KUDU_UTIL_MEMORY_ARENA_H_

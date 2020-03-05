@@ -31,19 +31,16 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/cache.h"
@@ -569,7 +566,7 @@ int DetermineShardBits() {
 class ShardedLRUCache : public Cache {
  private:
   unique_ptr<CacheMetrics> metrics_;
-  vector<NvmLRUCache*> shards_;
+  vector<unique_ptr<NvmLRUCache>> shards_;
 
   // Number of bits of hash used to determine the shard.
   const int shard_bits_;
@@ -594,14 +591,14 @@ class ShardedLRUCache : public Cache {
     int num_shards = 1 << shard_bits_;
     const size_t per_shard = (capacity + (num_shards - 1)) / num_shards;
     for (int s = 0; s < num_shards; s++) {
-      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(vmp_));
+      unique_ptr<NvmLRUCache> shard(new NvmLRUCache(vmp_));
       shard->SetCapacity(per_shard);
-      shards_.push_back(shard.release());
+      shards_.emplace_back(std::move(shard));
     }
   }
 
   virtual ~ShardedLRUCache() {
-    STLDeleteElements(&shards_);
+    shards_.clear();
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
     // memkind pool.
@@ -638,8 +635,8 @@ class ShardedLRUCache : public Cache {
 
   virtual void SetMetrics(unique_ptr<CacheMetrics> metrics) OVERRIDE {
     metrics_ = std::move(metrics);
-    for (NvmLRUCache* cache : shards_) {
-      cache->SetMetrics(metrics_.get());
+    for (const auto& shard : shards_) {
+      shard->SetMetrics(metrics_.get());
     }
   }
   virtual UniquePendingHandle Allocate(Slice key, int val_len, int charge) OVERRIDE {
@@ -650,9 +647,9 @@ class ShardedLRUCache : public Cache {
     // Try allocating from each of the shards -- if memkind is tight,
     // this can cause eviction, so we might have better luck in different
     // shards.
-    for (NvmLRUCache* cache : shards_) {
+    for (const auto& shard : shards_) {
       UniquePendingHandle ph(static_cast<PendingHandle*>(
-          cache->Allocate(sizeof(LRUHandle) + key_len + val_len)),
+          shard->Allocate(sizeof(LRUHandle) + key_len + val_len)),
           Cache::PendingHandleDeleter(this));
       if (ph) {
         LRUHandle* handle = reinterpret_cast<LRUHandle*>(ph.get());
@@ -677,7 +674,7 @@ class ShardedLRUCache : public Cache {
 
   size_t Invalidate(const InvalidationControl& ctl) override {
     size_t invalidated_count = 0;
-    for (auto& shard: shards_) {
+    for (const auto& shard: shards_) {
       invalidated_count += shard->Invalidate(ctl);
     }
     return invalidated_count;

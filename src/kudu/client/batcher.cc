@@ -21,9 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -49,7 +47,6 @@
 #include "kudu/gutil/atomic_refcount.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -66,8 +63,25 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
-using std::pair;
-using std::set;
+namespace kudu {
+namespace rpc {
+class Messenger;
+}  // namespace rpc
+}  // namespace kudu
+
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::CredentialsPolicy;
+using kudu::rpc::ErrorStatusPB;
+using kudu::rpc::Messenger;
+using kudu::rpc::RequestTracker;
+using kudu::rpc::ResponseCallback;
+using kudu::rpc::RetriableRpc;
+using kudu::rpc::RetriableRpcStatus;
+using kudu::security::SignedTokenPB;
+using kudu::tserver::WriteRequestPB;
+using kudu::tserver::WriteResponsePB;
+using kudu::tserver::WriteResponsePB_PerRowErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -78,24 +92,6 @@ using strings::Substitute;
 namespace kudu {
 
 class Schema;
-
-namespace rpc {
-class Messenger;
-}
-
-using pb_util::SecureDebugString;
-using pb_util::SecureShortDebugString;
-using rpc::CredentialsPolicy;
-using rpc::ErrorStatusPB;
-using rpc::Messenger;
-using rpc::RequestTracker;
-using rpc::ResponseCallback;
-using rpc::RetriableRpc;
-using rpc::RetriableRpcStatus;
-using security::SignedTokenPB;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
-using tserver::WriteResponsePB_PerRowErrorPB;
 
 namespace client {
 
@@ -187,7 +183,7 @@ struct InFlightOp {
   State state;
 
   // The actual operation.
-  gscoped_ptr<KuduWriteOperation> write_op;
+  unique_ptr<KuduWriteOperation> write_op;
 
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
@@ -715,7 +711,7 @@ void Batcher::FlushAsync(KuduStatusCallback* cb) {
 Status Batcher::Add(KuduWriteOperation* write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
-  gscoped_ptr<InFlightOp> op(new InFlightOp());
+  unique_ptr<InFlightOp> op(new InFlightOp());
   string partition_key;
   RETURN_NOT_OK(write_op->table_->partition_schema().EncodeKey(write_op->row(), &partition_key));
   op->write_op.reset(write_op);
@@ -943,7 +939,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
                  << SecureDebugString(rpc.resp());
       continue;
     }
-    gscoped_ptr<KuduWriteOperation> op = std::move(rpc.ops()[err_pb.row_index()]->write_op);
+    unique_ptr<KuduWriteOperation> op = std::move(rpc.ops()[err_pb.row_index()]->write_op);
     VLOG(2) << "Error on op " << op->ToString() << ": "
             << SecureShortDebugString(err_pb.error());
     Status op_status = StatusFromPB(err_pb.error());

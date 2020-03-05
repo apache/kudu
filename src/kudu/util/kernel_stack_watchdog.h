@@ -50,8 +50,7 @@
 //
 // Scopes with SCOPED_WATCH_STACK may be nested, but only up to a hard-coded limited depth
 // (currently 8).
-#ifndef KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
-#define KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
+#pragma once
 
 #include <ctime>
 #include <memory>
@@ -62,7 +61,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -203,7 +201,7 @@ class KernelStackWatchdog {
 
   // If non-NULL, warnings will be emitted into this vector instead of glog.
   // Used by tests.
-  gscoped_ptr<std::vector<std::string> > log_collector_;
+  std::unique_ptr<std::vector<std::string> > log_collector_;
 
   // Lock protecting log_collector_.
   mutable simple_spinlock log_lock_;
@@ -287,4 +285,3 @@ class ScopedWatchKernelStack {
 };
 
 } // namespace kudu
-#endif /* KUDU_UTIL_KERNEL_STACK_WATCHDOG_H */

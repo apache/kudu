@@ -17,14 +17,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/inline_slice.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
+
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -32,7 +34,7 @@ template<size_t N>
 static void TestRoundTrip(InlineSlice<N> *slice,
                           Arena *arena,
                           size_t test_size) {
-  gscoped_ptr<uint8_t[]> buf(new uint8_t[test_size]);
+  unique_ptr<uint8_t[]> buf(new uint8_t[test_size]);
   for (int i = 0; i < test_size; i++) {
     buf[i] = i & 0xff;
   }

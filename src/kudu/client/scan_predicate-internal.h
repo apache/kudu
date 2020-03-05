@@ -14,9 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
-#define KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
+#pragma once
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -88,7 +88,7 @@ class ComparisonPredicateData : public KuduPredicate::Data {
 
   ColumnSchema col_;
   KuduPredicate::ComparisonOp op_;
-  gscoped_ptr<KuduValue> val_;
+  std::unique_ptr<KuduValue> val_;
 };
 
 // An InBloomFilter predicate for selecting values present in the vector of Bloom filters.
@@ -211,4 +211,3 @@ class KuduBloomFilter::Data {
 
 } // namespace client
 } // namespace kudu
-#endif /* KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H */

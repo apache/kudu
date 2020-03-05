@@ -17,13 +17,14 @@
 //
 // Simple pool/freelist for objects of the same type, typically used
 // in local context.
-#ifndef KUDU_UTIL_OBJECT_POOL_H
-#define KUDU_UTIL_OBJECT_POOL_H
+#pragma once
+
+#include <cstdint>
+#include <memory>
 
 #include <glog/logging.h>
-#include <stdint.h>
+
 #include "kudu/gutil/manual_constructor.h"
-#include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
 
@@ -46,7 +47,7 @@ template<typename T>
 class ObjectPool {
  public:
   typedef ReturnToPool<T> deleter_type;
-  typedef gscoped_ptr<T, deleter_type> scoped_ptr;
+  typedef std::unique_ptr<T, deleter_type> scoped_ptr;
 
   ObjectPool() :
     free_list_head_(NULL),
@@ -163,4 +164,3 @@ class ReturnToPool {
 
 
 } // namespace kudu
-#endif

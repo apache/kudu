@@ -16,8 +16,7 @@
 // under the License.
 //
 // Utility methods for dealing with file paths.
-#ifndef KUDU_UTIL_PATH_UTIL_H
-#define KUDU_UTIL_PATH_UTIL_H
+#pragma once
 
 #include <string>
 #include <vector>
@@ -60,4 +59,3 @@ Status FindExecutable(const std::string& binary,
                       std::string* path) WARN_UNUSED_RESULT;
 
 } // namespace kudu
-#endif /* KUDU_UTIL_PATH_UTIL_H */

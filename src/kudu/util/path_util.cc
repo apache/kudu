@@ -20,7 +20,9 @@
 // Use the POSIX version of dirname(3).
 #include <libgen.h>
 
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 #if defined(__APPLE__)
 #include <mutex>
 #endif // defined(__APPLE__)
@@ -29,7 +31,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
@@ -37,13 +38,23 @@
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
-
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::SkipEmpty;
 using strings::Split;
 
 namespace kudu {
+
+namespace {
+
+struct FreeDeleter {
+  inline void operator()(void* ptr) const {
+    free(ptr);
+  }
+};
+
+} // anonymous namespace
 
 const char kTmpInfix[] = ".kudutmp";
 const char kOldTmpInfix[] = ".tmp";
@@ -80,7 +91,7 @@ vector<string> SplitPath(const string& path) {
 }
 
 string DirName(const string& path) {
-  gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
+  unique_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
 #if defined(__APPLE__)
   static std::mutex lock;
   std::lock_guard<std::mutex> l(lock);
@@ -89,7 +100,7 @@ string DirName(const string& path) {
 }
 
 string BaseName(const string& path) {
-  gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
+  unique_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
   return basename(path_copy.get());
 }
 

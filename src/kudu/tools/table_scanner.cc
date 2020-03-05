@@ -31,7 +31,6 @@
 #include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 
@@ -380,7 +379,7 @@ Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table
   };
 
   // Table schema and replica number.
-  gscoped_ptr<KuduTableCreator> table_creator(dst_client->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(dst_client->NewTableCreator());
   table_creator->table_name(dst_table_name)
       .schema(&dst_table_schema)
       .num_replicas(src_table->num_replicas());

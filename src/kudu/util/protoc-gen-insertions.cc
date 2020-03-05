@@ -19,6 +19,7 @@
 // Currently, this just adds an include of protobuf-annotations.h, a file which hooks up
 // the protobuf concurrency annotations to our TSAN annotations.
 
+#include <memory>
 #include <string>
 
 #include <google/protobuf/compiler/code_generator.h>
@@ -27,7 +28,6 @@
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -35,6 +35,7 @@
 using google::protobuf::io::ZeroCopyOutputStream;
 using google::protobuf::io::Printer;
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -50,13 +51,15 @@ class InsertAnnotations : public ::google::protobuf::compiler::CodeGenerator {
     // Determine the file name we will substitute into.
     string path_no_extension;
     if (!TryStripSuffixString(file->name(), kProtoExtension, &path_no_extension)) {
-      *error = strings::Substitute("file name $0 did not end in $1", file->name(), kProtoExtension);
+      *error = strings::Substitute("file name $0 did not end in $1",
+                                   file->name(), kProtoExtension);
       return false;
     }
     string pb_file = path_no_extension + ".pb.cc";
 
     // Actually insert the new #include
-    gscoped_ptr<ZeroCopyOutputStream> inserter(gen_context->OpenForInsert(pb_file, "includes"));
+    unique_ptr<ZeroCopyOutputStream> inserter(
+        gen_context->OpenForInsert(pb_file, "includes"));
     Printer printer(inserter.get(), '$');
     printer.Print(kIncludeToInsert);
 

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_METRICS_H
-#define KUDU_UTIL_METRICS_H
+#pragma once
 
 /////////////////////////////////////////////////////
 // Kudu Metrics
@@ -232,6 +231,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -244,7 +244,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -1468,7 +1467,7 @@ class Histogram : public Metric {
   explicit Histogram(const HistogramPrototype* proto);
   Histogram(const HistogramPrototype* proto, const HdrHistogram& hdr_hist);
 
-  const gscoped_ptr<HdrHistogram> histogram_;
+  const std::unique_ptr<HdrHistogram> histogram_;
   DISALLOW_COPY_AND_ASSIGN(Histogram);
 };
 
@@ -1563,5 +1562,3 @@ inline scoped_refptr<FunctionGauge<T> > MetricEntity::FindOrCreateFunctionGauge(
 }
 
 } // namespace kudu
-
-#endif // KUDU_UTIL_METRICS_H

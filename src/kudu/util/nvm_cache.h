@@ -19,6 +19,8 @@
 #include <cstddef>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/util/cache.h"
 
 namespace kudu {
