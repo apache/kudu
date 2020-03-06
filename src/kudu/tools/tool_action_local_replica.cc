@@ -284,7 +284,9 @@ Status RewriteRaftConfig(const RunnerContext& context) {
 
   // Make a copy of the old file before rewriting it.
   Env* env = Env::Default();
-  FsManager fs_manager(env, FsManagerOpts());
+  FsManagerOpts fs_opts = FsManagerOpts();
+  fs_opts.skip_block_manager = true;
+  FsManager fs_manager(env, std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
   RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
 

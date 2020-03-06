@@ -141,7 +141,8 @@ FsManagerOpts::FsManagerOpts()
     block_manager_type(FLAGS_block_manager),
     read_only(false),
     update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES),
-    file_cache(nullptr) {
+    file_cache(nullptr),
+    skip_block_manager(false) {
   data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
@@ -151,7 +152,8 @@ FsManagerOpts::FsManagerOpts(const string& root)
     block_manager_type(FLAGS_block_manager),
     read_only(false),
     update_instances(UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES),
-    file_cache(nullptr) {}
+    file_cache(nullptr),
+    skip_block_manager(false) {}
 
 FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
@@ -425,10 +427,12 @@ Status FsManager::Open(FsReport* report) {
   error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
 
-  // Finally, initialize and open the block manager.
-  InitBlockManager();
-  LOG_TIMING(INFO, "opening block manager") {
-    RETURN_NOT_OK(block_manager_->Open(report));
+  // Finally, initialize and open the block manager if needed.
+  if (!opts_.skip_block_manager) {
+    InitBlockManager();
+    LOG_TIMING(INFO, "opening block manager") {
+      RETURN_NOT_OK(block_manager_->Open(report));
+    }
   }
 
   // Report wal and metadata directories.
@@ -763,15 +767,17 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 
 Status FsManager::CreateNewBlock(const CreateBlockOptions& opts, unique_ptr<WritableBlock>* block) {
   CHECK(!opts_.read_only);
-
+  DCHECK(block_manager_);
   return block_manager_->CreateBlock(opts, block);
 }
 
 Status FsManager::OpenBlock(const BlockId& block_id, unique_ptr<ReadableBlock>* block) {
+  DCHECK(block_manager_);
   return block_manager_->OpenBlock(block_id, block);
 }
 
 bool FsManager::BlockExists(const BlockId& block_id) const {
+  DCHECK(block_manager_);
   unique_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();
 }

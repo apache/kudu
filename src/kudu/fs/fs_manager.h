@@ -130,6 +130,12 @@ struct FsManagerOpts {
   //
   // Defaults to null.
   FileCache* file_cache;
+
+  // Whether or not to skip opening the block manager. FsManager operations that
+  // require the block manager will crash.
+  //
+  // Default to false.
+  bool skip_block_manager;
 };
 
 // FsManager provides helpers to read data and metadata files,
@@ -286,6 +292,7 @@ class FsManager {
   }
 
   fs::BlockManager* block_manager() {
+    DCHECK(block_manager_);
     return block_manager_.get();
   }
 
