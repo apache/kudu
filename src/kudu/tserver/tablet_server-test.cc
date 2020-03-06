@@ -66,7 +66,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -2666,11 +2665,11 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   int32_t stop_key_int = 60;
   EncodedKeyBuilder ekb(&schema_);
   ekb.AddColumnKey(&start_key_int);
-  gscoped_ptr<EncodedKey> start_encoded(ekb.BuildEncodedKey());
+  unique_ptr<EncodedKey> start_encoded(ekb.BuildEncodedKey());
 
   ekb.Reset();
   ekb.AddColumnKey(&stop_key_int);
-  gscoped_ptr<EncodedKey> stop_encoded(ekb.BuildEncodedKey());
+  unique_ptr<EncodedKey> stop_encoded(ekb.BuildEncodedKey());
 
   scan->mutable_start_primary_key()->assign(
     reinterpret_cast<const char*>(start_encoded->encoded_key().data()),

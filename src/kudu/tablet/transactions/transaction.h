@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_TABLET_TRANSACTION_H_
-#define KUDU_TABLET_TRANSACTION_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -194,8 +192,9 @@ class TransactionState {
     return &tx_metrics_;
   }
 
-  void set_completion_callback(gscoped_ptr<TransactionCompletionCallback> completion_clbk) {
-    completion_clbk_.reset(completion_clbk.release());
+  void set_completion_callback(
+      std::unique_ptr<TransactionCompletionCallback> completion_clbk) {
+    completion_clbk_ = std::move(completion_clbk);
   }
 
   // Returns the completion callback.
@@ -281,7 +280,7 @@ class TransactionState {
   scoped_refptr<rpc::ResultTracker> result_tracker_;
 
   // Optional callback to be called once the transaction completes.
-  gscoped_ptr<TransactionCompletionCallback> completion_clbk_;
+  std::unique_ptr<TransactionCompletionCallback> completion_clbk_;
 
   AutoReleasePool pool_;
 
@@ -372,5 +371,3 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
 
 }  // namespace tablet
 }  // namespace kudu
-
-#endif /* KUDU_TABLET_TRANSACTION_H_ */

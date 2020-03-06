@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/heartbeater.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -29,13 +30,13 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -111,6 +112,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcController;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -148,7 +150,7 @@ class Heartbeater::Thread {
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
   // Creates a proxy to 'hostport'.
-  Status MasterServiceProxyForHostPort(gscoped_ptr<MasterServiceProxy>* proxy);
+  Status MasterServiceProxyForHostPort(unique_ptr<MasterServiceProxy>* proxy);
 
   // The host and port of the master that this thread will heartbeat to.
   //
@@ -164,7 +166,7 @@ class Heartbeater::Thread {
   scoped_refptr<kudu::Thread> thread_;
 
   // Current RPC proxy to the leader master.
-  gscoped_ptr<MasterServiceProxy> proxy_;
+  unique_ptr<MasterServiceProxy> proxy_;
 
   // The most recent response from a heartbeat.
   master::TSHeartbeatResponsePB last_hb_response_;
@@ -310,7 +312,7 @@ Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
 }
 
 Status Heartbeater::Thread::ConnectToMaster() {
-  gscoped_ptr<MasterServiceProxy> new_proxy;
+  unique_ptr<MasterServiceProxy> new_proxy;
   RETURN_NOT_OK(MasterServiceProxyForHostPort(&new_proxy));
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
@@ -715,7 +717,7 @@ void Heartbeater::Thread::GenerateFullTabletReport(TabletReportPB* report) {
 }
 
 Status Heartbeater::Thread::MasterServiceProxyForHostPort(
-    gscoped_ptr<MasterServiceProxy>* proxy) {
+    unique_ptr<MasterServiceProxy>* proxy) {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(server_->dns_resolver()->ResolveAddresses(master_address_,
                                                           &addrs));

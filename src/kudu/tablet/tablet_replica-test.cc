@@ -290,7 +290,7 @@ class TabletReplicaTest : public KuduTabletTest {
                                                                          resp.get()));
 
     CountDownLatch rpc_latch(1);
-    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
     RETURN_NOT_OK(replica->SubmitWrite(std::move(tx_state)));
@@ -314,7 +314,7 @@ class TabletReplicaTest : public KuduTabletTest {
     unique_ptr<AlterSchemaTransactionState> tx_state(
         new AlterSchemaTransactionState(replica, &req, resp.get()));
     CountDownLatch rpc_latch(1);
-    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<AlterSchemaResponsePB>(&rpc_latch, resp.get())));
     RETURN_NOT_OK(replica->SubmitAlterSchema(std::move(tx_state)));
     rpc_latch.Wait();
@@ -589,7 +589,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
                                                                          nullptr, // No RequestIdPB
                                                                          resp.get()));
 
-    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
     gscoped_ptr<DelayedApplyTransaction> transaction(

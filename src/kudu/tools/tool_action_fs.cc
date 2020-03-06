@@ -43,10 +43,10 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -595,7 +595,7 @@ string FormatCFileKeyMetadata(const TabletMetadata& tablet,
   }
 
   Arena arena(1024);
-  gscoped_ptr<EncodedKey> key;
+  unique_ptr<EncodedKey> key;
   CHECK_OK(EncodedKey::DecodeEncodedString(tablet.schema(), &arena, value, &key));
   return key->Stringify(tablet.schema());
 }

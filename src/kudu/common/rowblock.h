@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_COMMON_ROWBLOCK_H
-#define KUDU_COMMON_ROWBLOCK_H
+#pragma once
 
 #include <cstdint>
 #include <cstring>
@@ -28,7 +26,6 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
@@ -178,7 +175,7 @@ class SelectionVector {
   size_t n_rows_;
   size_t n_bytes_;
 
-  gscoped_array<uint8_t> bitmap_;
+  std::unique_ptr<uint8_t[]> bitmap_;
 
   DISALLOW_COPY_AND_ASSIGN(SelectionVector);
 };
@@ -471,5 +468,3 @@ inline RowBlockRow RowBlock::row(size_t idx) const {
 }
 
 } // namespace kudu
-
-#endif

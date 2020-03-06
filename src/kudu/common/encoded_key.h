@@ -14,15 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_COMMON_ENCODED_KEY_H
-#define KUDU_COMMON_ENCODED_KEY_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
@@ -46,7 +45,7 @@ class EncodedKey {
              std::vector<const void *> *raw_keys,
              size_t num_key_cols);
 
-  static gscoped_ptr<EncodedKey> FromContiguousRow(const ConstContiguousRow& row);
+  static std::unique_ptr<EncodedKey> FromContiguousRow(const ConstContiguousRow& row);
 
   // Decode the encoded key specified in 'encoded', which must correspond to the
   // provided schema.
@@ -55,11 +54,11 @@ class EncodedKey {
   static Status DecodeEncodedString(const Schema& schema,
                                     Arena* arena,
                                     const Slice& encoded,
-                                    gscoped_ptr<EncodedKey> *result);
+                                    std::unique_ptr<EncodedKey> *result);
 
   // Given an EncodedKey, increment it to the next lexicographically greater EncodedKey.
   static Status IncrementEncodedKey(const Schema& tablet_schema,
-                                    gscoped_ptr<EncodedKey>* key,
+                                    std::unique_ptr<EncodedKey>* key,
                                     Arena* arena);
 
   const Slice &encoded_key() const { return encoded_key_; }
@@ -91,7 +90,7 @@ class EncodedKey {
  private:
   const int num_key_cols_;
   Slice encoded_key_;
-  gscoped_ptr<uint8_t[]> data_;
+  std::unique_ptr<uint8_t[]> data_;
   std::vector<const void *> raw_keys_;
 };
 
@@ -121,4 +120,3 @@ class EncodedKeyBuilder {
 };
 
 } // namespace kudu
-#endif

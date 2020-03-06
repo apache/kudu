@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,7 +35,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/auto_release_pool.h"
@@ -44,6 +44,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -117,7 +118,7 @@ class TestScanSpec : public KuduTest {
   void SetLowerBound(ScanSpec* spec, const KuduPartialRow& row) {
     CHECK(row.IsKeySet());
     ConstContiguousRow cont_row(row.schema(), row.row_data_);
-    gscoped_ptr<EncodedKey> enc_key(EncodedKey::FromContiguousRow(cont_row));
+    unique_ptr<EncodedKey> enc_key(EncodedKey::FromContiguousRow(cont_row));
     spec->SetLowerBoundKey(enc_key.get());
     pool_.Add(enc_key.release());
   }
@@ -127,7 +128,7 @@ class TestScanSpec : public KuduTest {
   void SetExclusiveUpperBound(ScanSpec* spec, const KuduPartialRow& row) {
     CHECK(row.IsKeySet());
     ConstContiguousRow cont_row(row.schema(), row.row_data_);
-    gscoped_ptr<EncodedKey> enc_key(EncodedKey::FromContiguousRow(cont_row));
+    unique_ptr<EncodedKey> enc_key(EncodedKey::FromContiguousRow(cont_row));
     spec->SetExclusiveUpperBoundKey(enc_key.get());
     pool_.Add(enc_key.release());
   }

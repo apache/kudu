@@ -22,7 +22,6 @@
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet_replica.h"

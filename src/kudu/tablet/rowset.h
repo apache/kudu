@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_ROWSET_H
-#define KUDU_TABLET_ROWSET_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -346,7 +345,7 @@ class RowSetKeyProbe {
 
  private:
   const ConstContiguousRow row_key_;
-  gscoped_ptr<EncodedKey> encoded_key_;
+  std::unique_ptr<EncodedKey> encoded_key_;
   BloomKeyProbe bloom_probe_;
 };
 
@@ -509,5 +508,3 @@ class DuplicatingRowSet : public RowSet {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

@@ -53,19 +53,20 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
+using kudu::consensus::CommitMsg;
+using kudu::consensus::DriverType;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::ReplicateMsg;
+using kudu::log::Log;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::RequestIdPB;
+using kudu::rpc::ResultTracker;
+using std::string;
+using std::unique_ptr;
+using strings::Substitute;
+
 namespace kudu {
 namespace tablet {
-
-using consensus::CommitMsg;
-using consensus::DriverType;
-using consensus::RaftConsensus;
-using consensus::ReplicateMsg;
-using log::Log;
-using pb_util::SecureShortDebugString;
-using rpc::RequestIdPB;
-using rpc::ResultTracker;
-using std::string;
-using strings::Substitute;
 
 static const char* kTimestampFieldName = "timestamp";
 
@@ -156,11 +157,11 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
       // before the transaction has a chance to fail.
       const rpc::RequestIdPB& request_id = state()->request_id();
       const google::protobuf::Message* response = state()->response();
-      gscoped_ptr<TransactionCompletionCallback> callback(
+      unique_ptr<TransactionCompletionCallback> callback(
           new FollowerTransactionCompletionCallback(request_id,
                                                     response,
                                                     state()->result_tracker()));
-      mutable_state()->set_completion_callback(callback.Pass());
+      mutable_state()->set_completion_callback(std::move(callback));
     }
   } else {
     DCHECK_EQ(type, consensus::LEADER);
@@ -263,7 +264,7 @@ void TransactionDriver::RegisterFollowerTransactionOnResultTracker() {
     case ResultTracker::RpcState::STALE:
     case ResultTracker::RpcState::COMPLETED: {
       mutable_state()->set_completion_callback(
-          gscoped_ptr<TransactionCompletionCallback>(new TransactionCompletionCallback()));
+          unique_ptr<TransactionCompletionCallback>(new TransactionCompletionCallback()));
       VLOG(2) << state()->result_tracker() << " Follower Rpc was already COMPLETED or STALE: "
           << rpc_state << " OpId: " << SecureShortDebugString(state()->op_id())
           << " RequestId: " << SecureShortDebugString(state()->request_id());

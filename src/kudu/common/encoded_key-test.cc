@@ -18,6 +18,7 @@
 #include "kudu/common/encoded_key.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -25,7 +26,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/int128.h"
@@ -38,6 +38,7 @@
 #include "kudu/util/test_macros.h"
 
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -73,9 +74,9 @@ class EncodedKeyTest : public KuduTest {
   // Test whether target lies within the numerical key ranges given by
   // start and end. If -1, an empty slice is used instead.
   bool InRange(int start, int end, int target) {
-    gscoped_ptr<EncodedKey> start_key(BuildEncodedKey(&key_builder_, start));
-    gscoped_ptr<EncodedKey> end_key(BuildEncodedKey(&key_builder_, end));
-    gscoped_ptr<EncodedKey> target_key(BuildEncodedKey(&key_builder_, target));
+    unique_ptr<EncodedKey> start_key(BuildEncodedKey(&key_builder_, start));
+    unique_ptr<EncodedKey> end_key(BuildEncodedKey(&key_builder_, end));
+    unique_ptr<EncodedKey> target_key(BuildEncodedKey(&key_builder_, target));
     return target_key->InRange(start != -1 ? start_key->encoded_key() : Slice(),
                                end != -1 ? end_key->encoded_key() : Slice());
   }
@@ -93,7 +94,7 @@ class EncodedKeyTest : public KuduTest {
     Schema schema({ ColumnSchema("key", Type) }, 1);
     EncodedKeyBuilder builder(&schema);
     builder.AddColumnKey(val);
-    gscoped_ptr<EncodedKey> key(builder.BuildEncodedKey());
+    unique_ptr<EncodedKey> key(builder.BuildEncodedKey());
     EXPECT_ROWKEY_EQ(schema, expected, *key);
     EXPECT_EQ(encoded_form, key->encoded_key());
   }
@@ -192,7 +193,7 @@ TEST_F(EncodedKeyTest, TestDecodeSimpleKeys) {
 }
 
 TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
-  gscoped_ptr<EncodedKey> key;
+  unique_ptr<EncodedKey> key;
   {
     // Integer type compound key.
     Schema schema({ ColumnSchema("key0", UINT16),
@@ -246,7 +247,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
 }
 
 TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
-  gscoped_ptr<EncodedKey> key;
+  unique_ptr<EncodedKey> key;
   Arena arena(1024);
 
   {

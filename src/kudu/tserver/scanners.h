@@ -31,7 +31,6 @@
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_user.h"
@@ -142,7 +141,7 @@ class ScannerManager {
   void RecordCompletedScanUnlocked(ScanDescriptor descriptor);
 
   // (Optional) scanner metrics for this instance.
-  gscoped_ptr<ScannerMetrics> metrics_;
+  std::unique_ptr<ScannerMetrics> metrics_;
 
   // If true, removal thread should shut itself down. Protected
   // by 'shutdown_lock_' and 'shutdown_cv_'.

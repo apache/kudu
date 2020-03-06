@@ -45,7 +45,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -216,7 +215,7 @@ class TabletCopyTest : public KuduTabletTest {
                                             &req,
                                             nullptr, // No RequestIdPB
                                             &resp));
-      state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
+      state->set_completion_callback(unique_ptr<tablet::TransactionCompletionCallback>(
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_replica_->SubmitWrite(std::move(state)));
       latch.Wait();

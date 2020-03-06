@@ -22,7 +22,6 @@
 #include <string>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/kserver/kserver.h"
 #include "kudu/tserver/tablet_server_options.h"
@@ -118,18 +117,18 @@ class TabletServer : public kserver::KuduServer {
   const TabletServerOptions opts_;
 
   // Manager for tablets which are available on this server.
-  gscoped_ptr<TSTabletManager> tablet_manager_;
+  std::unique_ptr<TSTabletManager> tablet_manager_;
 
   // Manager for open scanners from clients.
   // This is always non-NULL. It is scoped only to minimize header
   // dependencies.
-  gscoped_ptr<ScannerManager> scanner_manager_;
+  std::unique_ptr<ScannerManager> scanner_manager_;
 
   // Thread responsible for heartbeating to the master.
-  gscoped_ptr<Heartbeater> heartbeater_;
+  std::unique_ptr<Heartbeater> heartbeater_;
 
-  // Webserver path handlers
-  gscoped_ptr<TabletServerPathHandlers> path_handlers_;
+  // Webserver path handlers.
+  std::unique_ptr<TabletServerPathHandlers> path_handlers_;
 
   // The maintenance manager for this tablet server
   std::shared_ptr<MaintenanceManager> maintenance_manager_;

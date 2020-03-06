@@ -38,7 +38,6 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -72,6 +71,7 @@ using kudu::rpc::RpcController;
 using std::atomic;
 using std::string;
 using std::thread;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -208,7 +208,7 @@ class TabletCopyServiceTest : public TabletCopyTest {
     return data_id;
   }
 
-  gscoped_ptr<TabletCopyServiceProxy> tablet_copy_proxy_;
+  unique_ptr<TabletCopyServiceProxy> tablet_copy_proxy_;
 };
 
 // Test beginning and ending a tablet copy session.

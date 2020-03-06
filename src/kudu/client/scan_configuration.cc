@@ -31,7 +31,6 @@
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 
 using std::unique_ptr;
@@ -115,7 +114,7 @@ Status ScanConfiguration::AddUpperBound(const KuduPartialRow& key) {
 
 Status ScanConfiguration::AddLowerBoundRaw(const Slice& key) {
   // Make a copy of the key.
-  gscoped_ptr<EncodedKey> enc_key;
+  unique_ptr<EncodedKey> enc_key;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *table_->schema().schema_, &arena_, key, &enc_key));
   spec_.SetLowerBoundKey(enc_key.get());
@@ -125,7 +124,7 @@ Status ScanConfiguration::AddLowerBoundRaw(const Slice& key) {
 
 Status ScanConfiguration::AddUpperBoundRaw(const Slice& key) {
   // Make a copy of the key.
-  gscoped_ptr<EncodedKey> enc_key;
+  unique_ptr<EncodedKey> enc_key;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *table_->schema().schema_, &arena_, key, &enc_key));
   spec_.SetExclusiveUpperBoundKey(enc_key.get());

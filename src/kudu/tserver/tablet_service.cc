@@ -58,7 +58,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -999,7 +998,7 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   unique_ptr<AlterSchemaTransactionState> tx_state(
     new AlterSchemaTransactionState(replica.get(), req, resp));
 
-  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context,
                                                                   resp)));
 
@@ -1253,7 +1252,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+  tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback<WriteResponsePB>(context,
                                                             resp)));
 
@@ -1913,7 +1912,8 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   // Decode encoded key
   Arena arena(256);
   Schema tablet_schema = replica->tablet_metadata()->schema();
-  gscoped_ptr<EncodedKey> start, stop;
+  unique_ptr<EncodedKey> start;
+  unique_ptr<EncodedKey> stop;
   if (req->has_start_primary_key()) {
     s = EncodedKey::DecodeEncodedString(tablet_schema, &arena, req->start_primary_key(), &start);
     if (PREDICT_FALSE(!s.ok())) {
@@ -2154,7 +2154,8 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                                     const Schema& tablet_schema,
                                     const SharedScanner& scanner,
                                     ScanSpec* spec) {
-  gscoped_ptr<EncodedKey> start, stop;
+  unique_ptr<EncodedKey> start;
+  unique_ptr<EncodedKey> stop;
   if (scan_pb.has_start_primary_key()) {
     RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
                             tablet_schema, scanner->arena(),

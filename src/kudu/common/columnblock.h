@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstddef>
@@ -26,7 +25,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
@@ -312,9 +310,9 @@ class ScopedColumnBlock : public ColumnBlock {
   }
 
  private:
-  gscoped_array<uint8_t> null_bitmap_;
-  gscoped_array<cpp_type> data_;
-  gscoped_ptr<Arena> arena_;
+  std::unique_ptr<uint8_t[]> null_bitmap_;
+  std::unique_ptr<cpp_type[]> data_;
+  std::unique_ptr<Arena> arena_;
 
 };
 

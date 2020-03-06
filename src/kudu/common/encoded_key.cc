@@ -16,6 +16,7 @@
 // under the License.
 
 #include <cstring>
+#include <memory>
 #include <ostream>
 #include <vector>
 
@@ -31,11 +32,11 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 
-namespace kudu {
-
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
+namespace kudu {
 
 EncodedKey::EncodedKey(faststring* data,
                        vector<const void *> *raw_keys,
@@ -50,19 +51,19 @@ EncodedKey::EncodedKey(faststring* data,
   raw_keys_.swap(*raw_keys);
 }
 
-gscoped_ptr<EncodedKey> EncodedKey::FromContiguousRow(const ConstContiguousRow& row) {
+unique_ptr<EncodedKey> EncodedKey::FromContiguousRow(const ConstContiguousRow& row) {
   EncodedKeyBuilder kb(row.schema());
   for (int i = 0; i < row.schema()->num_key_columns(); i++) {
     kb.AddColumnKey(row.cell_ptr(i));
   }
-  return make_gscoped_ptr(kb.BuildEncodedKey());
+  return unique_ptr<EncodedKey>(kb.BuildEncodedKey());
 
 }
 
 Status EncodedKey::DecodeEncodedString(const Schema& schema,
                                        Arena* arena,
                                        const Slice& encoded,
-                                       gscoped_ptr<EncodedKey>* result) {
+                                       unique_ptr<EncodedKey>* result) {
   uint8_t* raw_key_buf = static_cast<uint8_t*>(arena->AllocateBytes(schema.key_byte_size()));
   if (PREDICT_FALSE(!raw_key_buf)) {
     return Status::RuntimeError("OOM");
@@ -84,7 +85,7 @@ Status EncodedKey::DecodeEncodedString(const Schema& schema,
 }
 
 Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
-                                       gscoped_ptr<EncodedKey> *key,
+                                       unique_ptr<EncodedKey> *key,
                                        Arena* arena) {
   // Copy the row itself to the Arena.
   uint8_t* new_row_key = static_cast<uint8_t*>(

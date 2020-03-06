@@ -23,9 +23,7 @@
 #include <iterator>
 #include <memory>
 #include <ostream>
-#include <set>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -58,7 +56,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -491,7 +488,7 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB& req) {
   }
   CountDownLatch latch(1);
   WriteResponsePB resp;
-  gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
+  unique_ptr<tablet::TransactionCompletionCallback> txn_callback(
       new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp));
   unique_ptr<tablet::WriteTransactionState> tx_state(
       new tablet::WriteTransactionState(tablet_replica_.get(),

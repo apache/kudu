@@ -44,7 +44,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -1320,8 +1319,8 @@ TEST_F(TestTabletStringKey, TestSplitKeyRange) {
   }
   // test split key range with bound
   {
-    gscoped_ptr<EncodedKey> l_enc_key;
-    gscoped_ptr<EncodedKey> u_enc_key;
+    unique_ptr<EncodedKey> l_enc_key;
+    unique_ptr<EncodedKey> u_enc_key;
     Arena arena(256);
     KuduPartialRow lower_bound(&this->schema_);
     CHECK_OK(lower_bound.SetString("key", "1"));

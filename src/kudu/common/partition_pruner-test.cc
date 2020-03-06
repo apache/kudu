@@ -37,7 +37,6 @@
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
@@ -126,8 +125,8 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    gscoped_ptr<EncodedKey> enc_lower_bound;
-    gscoped_ptr<EncodedKey> enc_upper_bound;
+    unique_ptr<EncodedKey> enc_lower_bound;
+    unique_ptr<EncodedKey> enc_upper_bound;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
@@ -247,8 +246,8 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    gscoped_ptr<EncodedKey> enc_lower_bound;
-    gscoped_ptr<EncodedKey> enc_upper_bound;
+    unique_ptr<EncodedKey> enc_lower_bound;
+    unique_ptr<EncodedKey> enc_upper_bound;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
@@ -359,8 +358,8 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    gscoped_ptr<EncodedKey> enc_lower_bound;
-    gscoped_ptr<EncodedKey> enc_upper_bound;
+    unique_ptr<EncodedKey> enc_lower_bound;
+    unique_ptr<EncodedKey> enc_upper_bound;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));

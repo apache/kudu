@@ -18,6 +18,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -35,7 +36,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
@@ -63,7 +63,16 @@ DECLARE_int32(update_tablet_metrics_interval_ms);
 #define ASSERT_MONOTONIC_REPORT_SEQNO(report_seqno, tablet_report) \
   NO_FATALS(AssertMonotonicReportSeqno(report_seqno, tablet_report))
 
+using kudu::consensus::kInvalidOpIdIndex;
+using kudu::consensus::RaftConfigPB;
+using kudu::master::ReportedTabletPB;
+using kudu::master::TabletReportPB;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::tablet::LocalTabletWriter;
+using kudu::tablet::Tablet;
+using kudu::tablet::TabletReplica;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -71,15 +80,6 @@ namespace kudu {
 class FsManager;
 
 namespace tserver {
-
-using consensus::kInvalidOpIdIndex;
-using consensus::RaftConfigPB;
-using master::ReportedTabletPB;
-using master::TabletReportPB;
-using pb_util::SecureShortDebugString;
-using tablet::LocalTabletWriter;
-using tablet::Tablet;
-using tablet::TabletReplica;
 
 class TsTabletManagerTest : public KuduTest {
  public:
@@ -157,7 +157,7 @@ class TsTabletManagerTest : public KuduTest {
   }
 
  protected:
-  gscoped_ptr<MiniTabletServer> mini_server_;
+  unique_ptr<MiniTabletServer> mini_server_;
   FsManager* fs_manager_;
   TSTabletManager* tablet_manager_;
   Heartbeater* heartbeater_;
