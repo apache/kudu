@@ -26,14 +26,14 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/countdown_latch.h"
+#include "kudu/util/notification.h"
 #include "kudu/util/status.h"
 #include "kudu/util/user.h"
 
@@ -94,11 +94,10 @@ Status Proxy::SyncRequest(const string& method,
                           const google::protobuf::Message& req,
                           google::protobuf::Message* resp,
                           RpcController* controller) const {
-  CountDownLatch latch(1);
+  Notification note;
   AsyncRequest(method, req, DCHECK_NOTNULL(resp), controller,
-               boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
-
-  latch.Wait();
+               boost::bind(&Notification::Notify, boost::ref(note)));
+  note.WaitForNotification();
   return controller->status();
 }
 
