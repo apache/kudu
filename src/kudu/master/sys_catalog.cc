@@ -401,9 +401,8 @@ Status SysCatalogTable::SetupTablet(
       Bind(&SysCatalogTable::SysCatalogStateChanged,
            Unretained(this),
            metadata->tablet_id())));
-  // TODO(awong): plumb master_->num_raft_leaders() here.
   RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Init({ /*quiescing*/nullptr,
-                                                 /*num_leaders*/nullptr,
+                                                 master_->num_raft_leaders(),
                                                  master_->raft_pool() }),
                          "failed to initialize system catalog replica");
 

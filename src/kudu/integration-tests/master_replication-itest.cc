@@ -206,16 +206,19 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
   // so we need to loop and try all masters.
   while (true) {
     for (int i = 0; i < cluster_->num_masters(); i++) {
-      CatalogManager* catalog =
-          cluster_->mini_master(i)->master()->catalog_manager();
+      Master* master = cluster_->mini_master(i)->master();
+      CatalogManager* catalog = master->catalog_manager();
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       if (l.first_failed_status().ok()) {
+        ASSERT_EQ(1, master->num_raft_leaders()->value());
         bool exists;
         ASSERT_OK(catalog->TableNameExists(kTableId1, &exists));
         ASSERT_TRUE(exists);
         ASSERT_OK(catalog->TableNameExists(kTableId2, &exists));
         ASSERT_TRUE(exists);
         return;
+      } else {
+        ASSERT_EQ(0, master->num_raft_leaders()->value());
       }
     }
     SleepFor(MonoDelta::FromMilliseconds(1));
