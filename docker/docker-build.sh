@@ -104,6 +104,13 @@ TAG_LATEST=${TAG_LATEST:=1}
 TAG_HASH=${TAG_HASH:=0}
 DOCKER_CACHE_FROM=${DOCKER_CACHE_FROM:=""}
 
+# Enabled the docker buildkit so we can use advanced features
+# like skipping unused stages and mounting scripts that don't
+# need to remain in the image along with an improvement on
+# performance, storage management, feature functionality, and security.
+# https://docs.docker.com/develop/develop-images/build_enhancements/
+export DOCKER_BUILDKIT=1
+
 VERSION=$(cat "$ROOT/version.txt")
 VCS_REF=$(git rev-parse --short HEAD || echo "")
 
