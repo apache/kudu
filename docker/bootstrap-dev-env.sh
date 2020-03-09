@@ -49,7 +49,6 @@ if [[ -f "/usr/bin/yum" ]]; then
     krb5-workstation \
     libtool \
     make \
-    nscd \
     ntp \
     openssl-devel \
     patch \
@@ -62,12 +61,13 @@ if [[ -f "/usr/bin/yum" ]]; then
     wget
 
   # Install docs build libraries.
-  yum install -y \
-    doxygen \
-    gem \
-    graphviz \
-    ruby-devel \
-    zlib-devel
+  # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.
+  # yum install -y \
+  #  doxygen \
+  #  gem \
+  #  graphviz \
+  #  ruby-devel \
+  #  zlib-devel
 
   # To build on a version older than 7.0, the Red Hat Developer Toolset
   # must be installed (in order to have access to a C++11 capable compiler).
@@ -133,7 +133,6 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     libtool \
     lsb-release \
     make \
-    nscd \
     ntp \
     openssl \
     patch \
@@ -141,9 +140,9 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     python \
     rsync \
     unzip \
-    vim-common
+    vim-common \
+    wget
 
-  # Install docs build libraries.
   apt-get install -y --no-install-recommends \
     doxygen \
     gem \
@@ -151,6 +150,15 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     ruby-dev \
     xsltproc \
     zlib1g-dev
+  # Install docs build libraries.
+  # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.
+  # apt-get install -y --no-install-recommends \
+  #  doxygen \
+  #  gem \
+  #  graphviz \
+  #  ruby-dev \
+  #  xsltproc \
+  #  zlib1g-dev
 
   # Reduce the image size by cleaning up after the install.
   apt-get clean

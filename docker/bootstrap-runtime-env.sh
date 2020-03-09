@@ -37,7 +37,6 @@ if [[ -f "/usr/bin/yum" ]]; then
     cyrus-sasl-plain \
     krb5-server \
     krb5-workstation \
-    nscd \
     openssl
 
   # Reduce the image size by cleaning up after the install.
@@ -60,7 +59,6 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     libsasl2-2 \
     libsasl2-modules \
     libsasl2-modules-gssapi-mit \
-    nscd \
     openssl
 
   # Reduce the image size by cleaning up after the install.

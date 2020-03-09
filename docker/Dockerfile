@@ -280,24 +280,27 @@ ARG GID=1000
 ARG INSTALL_DIR="/opt/kudu"
 ARG DATA_DIR="/var/lib/kudu"
 
+# Setup the kudu user and create the neccessary directories.
+# We do this before copying any files othwerwise the image size is doubled by the chown change.
+RUN groupadd -g ${GID} kudu || groupmod -n kudu $(getent group ${GID} | cut -d: -f1) \
+    && useradd --shell /bin/bash -u ${UID} -g ${GID} -m kudu \
+    && mkdir -p ${INSTALL_DIR} && chown -R kudu:kudu ${INSTALL_DIR} \
+    && mkdir -p ${DATA_DIR} && chown -R kudu:kudu ${DATA_DIR}
+
 # Copy the binaries.
 WORKDIR $INSTALL_DIR/bin
-COPY --from=build /kudu/build/latest/bin/kudu ./
+COPY --chown=kudu:kudu --from=build /kudu/build/latest/bin/kudu ./
 # Add to the binaries to the path.
 ENV PATH=$INSTALL_DIR/bin/:$PATH
 
-WORKDIR $INSTALL_DIR
 # Copy the web files.
-COPY --from=build /kudu/www ./www
-COPY ./docker/kudu-entrypoint.sh /
+WORKDIR $INSTALL_DIR
+COPY --chown=kudu:kudu --from=build /kudu/www ./www
 
-# Setup the kudu user and create the neccessary directories.
-RUN groupadd -g ${GID} kudu || groupmod -n kudu $(getent group ${GID} | cut -d: -f1) \
-    && useradd --shell /bin/bash -u ${UID} -g ${GID} -m kudu \
-    && chown -R kudu:kudu ${INSTALL_DIR} \
-    && mkdir -p ${DATA_DIR} && chown -R kudu:kudu ${DATA_DIR}
+# Copy the entrypoint script.
+COPY --chown=kudu:kudu ./docker/kudu-entrypoint.sh /
+
 USER kudu
-
 # Add the entrypoint.
 ENTRYPOINT ["/kudu-entrypoint.sh"]
 CMD ["help"]
