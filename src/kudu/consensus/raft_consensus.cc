@@ -3571,7 +3571,7 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
 
   // TODO(mpercy): Cache this proxy object (although they are lightweight).
   // We can use a PeerProxyPool, like we do when sending from the leader.
-  gscoped_ptr<PeerProxy> next_proxy;
+  shared_ptr<PeerProxy> next_proxy;
   RET_RESPOND_ERROR_NOT_OK(peer_proxy_factory_->NewProxy(*next_peer_pb, &next_proxy));
 
   ConsensusResponsePB downstream_response;

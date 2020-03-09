@@ -140,7 +140,7 @@ class ConsensusPeersTest : public KuduTest {
     peer_pb.set_member_type(RaftPeerPB::VOTER);
     auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
         raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb));
-    gscoped_ptr<PeerProxy> proxy(proxy_ptr);
+    shared_ptr<PeerProxy> proxy(proxy_ptr);
     CHECK_OK(Peer::NewRemotePeer(std::move(peer_pb),
                                  kTabletId,
                                  kLeaderUuid,
@@ -285,7 +285,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 kLeaderUuid,
                                 message_queue_.get(),
                                 raft_pool_token_.get(),
-                                gscoped_ptr<PeerProxy>(mock_proxy),
+                                shared_ptr<PeerProxy>(mock_proxy),
                                 messenger_,
                                 &peer));
 
@@ -323,7 +323,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 kLeaderUuid,
                                 message_queue_.get(),
                                 raft_pool_token_.get(),
-                                gscoped_ptr<PeerProxy>(mock_proxy),
+                                shared_ptr<PeerProxy>(mock_proxy),
                                 messenger_,
                                 &peer));
 

@@ -28,7 +28,6 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -36,6 +35,7 @@
 
 using kudu::log::Log;
 using kudu::pb_util::SecureShortDebugString;
+using std::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -73,7 +73,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
     }
 
     VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << SecureShortDebugString(peer_pb);
-    gscoped_ptr<PeerProxy> peer_proxy;
+    shared_ptr<PeerProxy> peer_proxy;
     RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
                           "Could not obtain a remote proxy to the peer.");
 

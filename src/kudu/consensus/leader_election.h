@@ -28,7 +28,6 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -202,7 +201,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
   struct VoterState {
     std::string peer_uuid;
-    gscoped_ptr<PeerProxy> proxy;
+    std::shared_ptr<PeerProxy> proxy;
 
     // If constructing the proxy failed (e.g. due to a DNS resolution issue)
     // then 'proxy' will be NULL, and 'proxy_status' will contain the error.

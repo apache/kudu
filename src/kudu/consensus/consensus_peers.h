@@ -36,7 +36,6 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
@@ -117,7 +116,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
                               std::string leader_uuid,
                               PeerMessageQueue* queue,
                               ThreadPoolToken* raft_pool_token,
-                              gscoped_ptr<PeerProxy> proxy,
+                              std::shared_ptr<PeerProxy> proxy,
                               std::shared_ptr<rpc::Messenger> messenger,
                               std::shared_ptr<Peer>* peer);
 
@@ -127,7 +126,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
        std::string leader_uuid,
        PeerMessageQueue* queue,
        ThreadPoolToken* raft_pool_token,
-       gscoped_ptr<PeerProxy> proxy,
+       std::shared_ptr<PeerProxy> proxy,
        std::shared_ptr<rpc::Messenger> messenger);
 
   void SendNextRequest(bool even_if_queue_empty);
@@ -166,7 +165,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
 
   RaftPeerPB peer_pb_;
 
-  gscoped_ptr<PeerProxy> proxy_;
+  std::shared_ptr<PeerProxy> proxy_;
 
   PeerMessageQueue* queue_;
   uint64_t failed_attempts_;
@@ -249,7 +248,7 @@ class PeerProxyFactory {
  public:
 
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
-                          gscoped_ptr<PeerProxy>* proxy) = 0;
+                          std::shared_ptr<PeerProxy>* proxy) = 0;
 
   virtual ~PeerProxyFactory() {}
 
@@ -260,7 +259,7 @@ class PeerProxyFactory {
 class RpcPeerProxy : public PeerProxy {
  public:
   RpcPeerProxy(gscoped_ptr<HostPort> hostport,
-               gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
+               std::shared_ptr<ConsensusServiceProxy> consensus_proxy);
 
   void UpdateAsync(const ConsensusRequestPB* request,
                    ConsensusResponsePB* response,
@@ -287,7 +286,7 @@ class RpcPeerProxy : public PeerProxy {
 
  private:
   gscoped_ptr<HostPort> hostport_;
-  gscoped_ptr<ConsensusServiceProxy> consensus_proxy_;
+  std::shared_ptr<ConsensusServiceProxy> consensus_proxy_;
 };
 
 // PeerProxyFactory implementation that generates RPCPeerProxies
@@ -296,7 +295,7 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
   explicit RpcPeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger);
 
   Status NewProxy(const RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override;
+                  std::shared_ptr<PeerProxy>* proxy) override;
 
   ~RpcPeerProxyFactory();
 

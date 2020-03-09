@@ -398,7 +398,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
   }
 
   Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override {
+                  std::shared_ptr<PeerProxy>* proxy) override {
     proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
   }
@@ -620,7 +620,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   }
 
   Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override {
+                  std::shared_ptr<PeerProxy>* proxy) override {
     LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
                                                            pool_.get(),
                                                            peers_);
