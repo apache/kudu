@@ -879,15 +879,18 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(
-    const boost::optional<string>& successor_uuid) {
+    const boost::optional<string>& successor_uuid,
+    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   successor_watch_in_progress_ = true;
   designated_successor_uuid_ = successor_uuid;
+  tl_filter_fn_ = filter_fn;
 }
 
 void PeerMessageQueue::EndWatchForSuccessor() {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   successor_watch_in_progress_ = false;
+  tl_filter_fn_ = nullptr;
 }
 
 void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
@@ -1068,6 +1071,11 @@ void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
   Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
                                  peer.uuid(), &peer_pb);
   if (!s.ok() || peer_pb->member_type() != RaftPeerPB::VOTER) {
+    return;
+  }
+
+  // check if this instance is filtered, if filter_fn has been provided
+  if (!designated_successor_uuid_ && tl_filter_fn_ && tl_filter_fn_(*peer_pb)) {
     return;
   }
 
