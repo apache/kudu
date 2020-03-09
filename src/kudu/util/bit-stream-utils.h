@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef IMPALA_UTIL_BIT_STREAM_UTILS_H
-#define IMPALA_UTIL_BIT_STREAM_UTILS_H
+#pragma once
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/bit-util.h"
@@ -93,7 +92,12 @@ class BitReader {
   // 'buffer' is the buffer to read from.  The buffer's length is 'buffer_len'.
   BitReader(const uint8_t* buffer, int buffer_len);
 
-  BitReader() : buffer_(NULL), max_bytes_(0) {}
+  BitReader()
+      : buffer_(nullptr),
+        max_bytes_(0),
+        buffered_values_(0),
+        byte_offset_(0),
+        bit_offset_(0) {}
 
   // Gets the next value from the buffer.  Returns true if 'v' could be read or false if
   // there are not enough bytes left. num_bits must be <= 32.
@@ -146,5 +150,3 @@ class BitReader {
 };
 
 } // namespace kudu
-
-#endif

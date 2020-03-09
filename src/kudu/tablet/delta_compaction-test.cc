@@ -36,7 +36,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/delta_iterator_merger.h"
 #include "kudu/tablet/delta_key.h"
@@ -79,7 +78,7 @@ class TestDeltaCompaction : public KuduTest {
     return builder.Build();
   }
 
-  Status GetDeltaFileWriter(gscoped_ptr<DeltaFileWriter>* dfw,
+  Status GetDeltaFileWriter(unique_ptr<DeltaFileWriter>* dfw,
                             BlockId* block_id) const {
     unique_ptr<WritableBlock> block;
     RETURN_NOT_OK(fs_manager_->CreateNewBlock({}, &block));
@@ -108,7 +107,7 @@ class TestDeltaCompaction : public KuduTest {
  protected:
   int64_t deltafile_idx_;
   Schema schema_;
-  gscoped_ptr<FsManager> fs_manager_;
+  unique_ptr<FsManager> fs_manager_;
 };
 
 TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
@@ -135,7 +134,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   for (const Schema& schema : schemas) {
     // Write the Deltas
     BlockId block_id;
-    gscoped_ptr<DeltaFileWriter> dfw;
+    unique_ptr<DeltaFileWriter> dfw;
     ASSERT_OK(GetDeltaFileWriter(&dfw, &block_id));
 
     // Generate N updates with the new schema, some of them are on existing
@@ -200,7 +199,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   opts.projection = &merge_schema;
   unique_ptr<DeltaIterator> merge_iter;
   ASSERT_OK(DeltaIteratorMerger::Create(inputs, opts, &merge_iter));
-  gscoped_ptr<DeltaFileWriter> dfw;
+  unique_ptr<DeltaFileWriter> dfw;
   BlockId block_id;
   ASSERT_OK(GetDeltaFileWriter(&dfw, &block_id));
   ASSERT_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),

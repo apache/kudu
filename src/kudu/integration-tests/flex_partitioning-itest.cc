@@ -40,7 +40,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -209,7 +208,7 @@ class FlexPartitioningITest : public KuduTest,
     KuduSchema schema;
     ASSERT_OK(b.Build(&schema));
 
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     table_creator->table_name(kTableName)
         .schema(&schema)
         .num_replicas(1);
@@ -316,7 +315,7 @@ class FlexPartitioningITest : public KuduTest,
 
   Random random_;
 
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  unique_ptr<ExternalMiniCluster> cluster_;
 
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> table_;
@@ -339,7 +338,7 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
   int count = 0;
   for (const auto& bound : bounds) {
     for (int32_t i = bound.first[0]; i < bound.second[0]; i++) {
-      gscoped_ptr<KuduInsert> insert(table_->NewInsert());
+      unique_ptr<KuduInsert> insert(table_->NewInsert());
       GenerateDataForRow(table_->schema(), i, &random_, insert->mutable_row());
       inserted_rows_.emplace_back(new KuduPartialRow(*insert->mutable_row()));
       RETURN_NOT_OK(session->Apply(insert.release()));

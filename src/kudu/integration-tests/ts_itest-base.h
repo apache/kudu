@@ -14,16 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -157,8 +156,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   std::vector<std::string> GetServersWithoutReplica(const std::string& tablet_id) const;
 
  protected:
-  gscoped_ptr<cluster::ExternalMiniCluster> cluster_;
-  gscoped_ptr<itest::MiniClusterFsInspector> inspect_;
+  std::unique_ptr<cluster::ExternalMiniCluster> cluster_;
+  std::unique_ptr<itest::MiniClusterFsInspector> inspect_;
 
   // Maps server uuid to TServerDetails
   itest::TabletServerMap tablet_servers_;

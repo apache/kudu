@@ -50,7 +50,6 @@
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -103,6 +102,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::thread;
+using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
@@ -161,9 +161,9 @@ class MasterTest : public KuduTest {
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds);
 
   shared_ptr<Messenger> client_messenger_;
-  gscoped_ptr<MiniMaster> mini_master_;
+  unique_ptr<MiniMaster> mini_master_;
   Master* master_;
-  gscoped_ptr<MasterServiceProxy> proxy_;
+  unique_ptr<MasterServiceProxy> proxy_;
 };
 
 TEST_F(MasterTest, TestPingServer) {

@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -28,30 +29,27 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
-using std::string;
-using std::vector;
-
 DEFINE_int32(throttling_test_time, 3,
              "Number of seconds to run write throttling test");
 
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using std::string;
+using std::unique_ptr;
+using std::vector;
+
 namespace kudu {
 namespace tablet {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduInsert;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableCreator;
 
 class WriteThrottlingTest : public ExternalMiniClusterITestBase {
  protected:
@@ -63,7 +61,7 @@ class WriteThrottlingTest : public ExternalMiniClusterITestBase {
   }
 
   void CreateTable() {
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .set_range_partition_columns({ "key" })
@@ -96,7 +94,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteRpcPerSec) {
   for (int t = 0; t < FLAGS_throttling_test_time; t++) {
     MonoTime begin = MonoTime::Now();
     for (int i = 0; i < TARGET_QPS; i++) {
-      gscoped_ptr<KuduInsert> insert(table_->NewInsert());
+      unique_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt64("key", t * TARGET_QPS + i));
       CHECK_OK(row->SetStringNoCopy("string_val", string_val));
@@ -128,7 +126,7 @@ TEST_F(WriteThrottlingTest, ThrottleWriteBytesPerSec) {
   for (int t = 0; t < FLAGS_throttling_test_time; t++) {
     MonoTime begin = MonoTime::Now();
     for (int i = 0; i < TARGET_QPS; i++) {
-      gscoped_ptr<KuduInsert> insert(table_->NewInsert());
+      unique_ptr<KuduInsert> insert(table_->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt64("key", t * TARGET_QPS + i));
       CHECK_OK(row->SetStringNoCopy("string_val", string_val));

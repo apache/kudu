@@ -32,7 +32,6 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -722,7 +721,7 @@ class Tablet {
   TabletMemTrackers mem_trackers_;
 
   scoped_refptr<MetricEntity> metric_entity_;
-  gscoped_ptr<TabletMetrics> metrics_;
+  std::unique_ptr<TabletMetrics> metrics_;
 
   std::unique_ptr<Throttler> throttler_;
 
@@ -734,7 +733,7 @@ class Tablet {
   MvccManager mvcc_;
   LockManager lock_manager_;
 
-  gscoped_ptr<CompactionPolicy> compaction_policy_;
+  std::unique_ptr<CompactionPolicy> compaction_policy_;
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time

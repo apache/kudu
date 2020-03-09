@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -32,7 +33,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -69,24 +69,24 @@ METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 
 using boost::none;
+using kudu::cluster::InternalMiniCluster;
+using kudu::master::CatalogManager;
+using kudu::master::CreateTableRequestPB;
+using kudu::master::CreateTableResponsePB;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::IsCreateTableDoneRequestPB;
+using kudu::master::IsCreateTableDoneResponsePB;
+using kudu::master::MiniMaster;
+using kudu::master::TSDescriptor;
+using kudu::master::TabletLocationsPB;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::tserver::MiniTabletServer;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
-
-using cluster::InternalMiniCluster;
-using master::CatalogManager;
-using master::CreateTableRequestPB;
-using master::CreateTableResponsePB;
-using master::GetTableLocationsResponsePB;
-using master::IsCreateTableDoneRequestPB;
-using master::IsCreateTableDoneResponsePB;
-using master::MiniMaster;
-using master::TSDescriptor;
-using master::TabletLocationsPB;
-using kudu::pb_util::SecureShortDebugString;
-using tserver::MiniTabletServer;
 
 void CreateTableForTesting(MiniMaster* mini_master,
                            const string& table_name,
@@ -218,7 +218,7 @@ class RegistrationTest : public KuduTest {
   }
 
  protected:
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   Schema schema_;
   int64_t setup_time_;
 };

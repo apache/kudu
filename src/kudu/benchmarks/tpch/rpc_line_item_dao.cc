@@ -17,6 +17,7 @@
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 
+#include <memory>
 #include <ostream>
 #include <vector>
 #include <utility>
@@ -32,7 +33,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/monotime.h"
@@ -42,28 +42,25 @@
 DEFINE_bool(tpch_cache_blocks_when_scanning, true,
             "Whether the scanners should cache the blocks that are read or not");
 
+using kudu::client::KuduInsert;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduError;
+using kudu::client::KuduPredicate;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSession;
+using kudu::client::KuduStatusCallback;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::KuduValue;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
 
 class KuduPartialRow;
-
-using client::KuduInsert;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduError;
-using client::KuduPredicate;
-using client::KuduRowResult;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSession;
-using client::KuduStatusCallback;
-using client::KuduStatusMemberCallback;
-using client::KuduTableCreator;
-using client::KuduUpdate;
-using client::KuduValue;
-using std::vector;
 
 namespace {
 
@@ -137,7 +134,7 @@ void RpcLineItemDAO::Init() {
            .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     table_creator->table_name(table_name_)
         .schema(&schema)
         .num_replicas(1);
@@ -166,14 +163,14 @@ void RpcLineItemDAO::Init() {
 }
 
 void RpcLineItemDAO::WriteLine(const boost::function<void(KuduPartialRow*)> &f) {
-  gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
+  unique_ptr<KuduInsert> insert(client_table_->NewInsert());
   f(insert->mutable_row());
   CHECK_OK(session_->Apply(insert.release()));
   HandleLine();
 }
 
 void RpcLineItemDAO::MutateLine(const boost::function<void(KuduPartialRow*)> &f) {
-  gscoped_ptr<KuduUpdate> update(client_table_->NewUpdate());
+  unique_ptr<KuduUpdate> update(client_table_->NewUpdate());
   f(update->mutable_row());
   CHECK_OK(session_->Apply(update.release()));
   HandleLine();
@@ -188,12 +185,12 @@ void RpcLineItemDAO::FinishWriting() {
 }
 
 void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
-                                 gscoped_ptr<Scanner>* out_scanner) {
+                                 unique_ptr<Scanner>* out_scanner) {
   vector<KuduPredicate*> preds;
   OpenScannerImpl(columns, preds, out_scanner);
 }
 
-void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
+void RpcLineItemDAO::OpenTpch1Scanner(unique_ptr<Scanner>* out_scanner) {
   vector<KuduPredicate*> preds;
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kShipDateColName, KuduPredicate::LESS_EQUAL,
@@ -201,18 +198,18 @@ void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
   OpenScannerImpl(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
 }
 
-void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t max_key,
-                                                      gscoped_ptr<Scanner>* out_scanner) {
+void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(
+    int64_t min_orderkey, int64_t max_orderkey, unique_ptr<Scanner>* out_scanner) {
   vector<KuduPredicate*> preds;
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kShipDateColName, KuduPredicate::LESS_EQUAL,
                       KuduValue::CopyString(kScanUpperBound)));
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kOrderKeyColName, KuduPredicate::GREATER_EQUAL,
-                      KuduValue::FromInt(min_key)));
+                      KuduValue::FromInt(min_orderkey)));
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kOrderKeyColName, KuduPredicate::LESS_EQUAL,
-                      KuduValue::FromInt(max_key)));
+                      KuduValue::FromInt(max_orderkey)));
   OpenScannerImpl(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
 }
 
@@ -224,8 +221,8 @@ bool RpcLineItemDAO::IsTableEmpty() {
 
 void RpcLineItemDAO::OpenScannerImpl(const vector<string>& columns,
                                      const vector<KuduPredicate*>& preds,
-                                     gscoped_ptr<Scanner>* out_scanner) {
-  gscoped_ptr<Scanner> ret(new Scanner);
+                                     unique_ptr<Scanner>* out_scanner) {
+  unique_ptr<Scanner> ret(new Scanner);
   ret->scanner_.reset(new KuduScanner(client_table_.get()));
   ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
   CHECK_OK(ret->scanner_->SetProjectedColumnNames(columns));

@@ -28,7 +28,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -38,24 +37,24 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-
-using client::KuduClient;
-using client::KuduColumnSchema;
-using client::KuduDelete;
-using client::KuduError;
-using client::KuduInsert;
-using client::KuduScanBatch;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableCreator;
-using client::KuduUpdate;
-using client::sp::shared_ptr;
-using cluster::MiniCluster;
-
+using kudu::client::KuduClient;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduDelete;
+using kudu::client::KuduError;
+using kudu::client::KuduInsert;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::MiniCluster;
+using std::unique_ptr;
 using std::vector;
+
+namespace kudu {
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
@@ -152,12 +151,12 @@ void TestWorkload::WriteThread() {
     {
       for (int i = 0; i < write_batch_size_; i++) {
         if (write_pattern_ == UPDATE_ONE_ROW) {
-          gscoped_ptr<KuduUpdate> update(table->NewUpdate());
+          unique_ptr<KuduUpdate> update(table->NewUpdate());
           KuduPartialRow* row = update->mutable_row();
           GenerateDataForRow(schema_, 0, &rng_, row);
           CHECK_OK(session->Apply(update.release()));
         } else {
-          gscoped_ptr<KuduInsert> insert(table->NewInsert());
+          unique_ptr<KuduInsert> insert(table->NewInsert());
           KuduPartialRow* row = insert->mutable_row();
           int32_t key;
           if (write_pattern_ == INSERT_SEQUENTIAL_ROWS) {
@@ -196,7 +195,7 @@ void TestWorkload::WriteThread() {
     // Write delete row to cluster.
     if (write_pattern_ == INSERT_RANDOM_ROWS_WITH_DELETE) {
       for (auto key : keys) {
-        gscoped_ptr<KuduDelete> op(table->NewDelete());
+        unique_ptr<KuduDelete> op(table->NewDelete());
         KuduPartialRow* row = op->mutable_row();
         WriteValueToColumn(schema_, 0, key, row);
         CHECK_OK(session->Apply(op.release()));
@@ -314,7 +313,7 @@ void TestWorkload::Setup() {
     }
 
     // Create the table.
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     Status s = table_creator->table_name(table_name_)

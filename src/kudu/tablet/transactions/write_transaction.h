@@ -29,7 +29,6 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/rowset.h"
@@ -150,7 +149,7 @@ class WriteTransactionState : public TransactionState {
   // This must be called exactly once, after the timestamp was acquired.
   // This also copies the timestamp from the MVCC transaction into the
   // WriteTransactionState object.
-  void SetMvccTx(gscoped_ptr<ScopedTransaction> mvcc_tx);
+  void SetMvccTx(std::unique_ptr<ScopedTransaction> mvcc_tx);
 
   // Set the Tablet components that this transaction will write into.
   // Called exactly once at the beginning of Apply, before applying its
@@ -255,7 +254,7 @@ class WriteTransactionState : public TransactionState {
   ProbeStats* stats_array_ = nullptr;
 
   // The MVCC transaction, set up during PREPARE phase
-  gscoped_ptr<ScopedTransaction> mvcc_tx_;
+  std::unique_ptr<ScopedTransaction> mvcc_tx_;
 
   // The tablet components, acquired at the same time as mvcc_tx_ is set.
   scoped_refptr<const TabletComponents> tablet_components_;
@@ -281,7 +280,7 @@ class WriteTransaction : public Transaction {
   WriteTransactionState* state() override { return state_.get(); }
   const WriteTransactionState* state() const override { return state_.get(); }
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override;
+  void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
   // Executes a Prepare for a write transaction.
   //
@@ -316,7 +315,7 @@ class WriteTransaction : public Transaction {
   // are placed in the queue (but not necessarily in the same order of the
   // original requests) which is already a requirement of the consensus
   // algorithm.
-  Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) override;
+  Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
 
   // If result == COMMITTED, commits the mvcc transaction and updates
   // the metrics, if result == ABORTED aborts the mvcc transaction.

@@ -45,7 +45,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -147,6 +146,7 @@ using kudu::rpc::RpcController;
 using kudu::server::SetFlagRequestPB;
 using kudu::server::SetFlagResponsePB;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -321,7 +321,7 @@ void RaftConsensusITest::InsertPayloadIgnoreErrors(int start_row,
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   string payload(payload_size, 'x');
   for (int i = 0; i < num_rows; i++) {
-    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    unique_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();
     CHECK_OK(row->SetInt32(0, i + start_row));
     CHECK_OK(row->SetInt32(1, 0));

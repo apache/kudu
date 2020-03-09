@@ -37,7 +37,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/callback.h"  // IWYU pragma: keep
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/blocking_queue.h"
@@ -302,9 +301,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // Append the given commit message, asynchronously.
   //
   // Returns a bad status if the log is already shut down.
-  Status AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
+  Status AsyncAppendCommit(std::unique_ptr<consensus::CommitMsg> commit_msg,
                            const StatusCallback& callback);
-
 
   // Blocks the current thread until all the entries in the log queue
   // are flushed and fsynced (if fsync of log entries is enabled).

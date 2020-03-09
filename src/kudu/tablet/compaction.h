@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_COMPACTION_H
-#define KUDU_TABLET_COMPACTION_H
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -28,7 +27,6 @@
 
 #include "kudu/common/rowblock.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/status.h"
 
@@ -109,7 +107,7 @@ class CompactionInput {
                        const Schema* projection,
                        const MvccSnapshot &snap,
                        const fs::IOContext* io_context,
-                       gscoped_ptr<CompactionInput>* out);
+                       std::unique_ptr<CompactionInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.
@@ -262,5 +260,3 @@ std::string CompactionInputRowToString(const CompactionInputRow& input_row);
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

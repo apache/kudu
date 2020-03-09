@@ -48,7 +48,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -276,7 +275,7 @@ class FuzzTest : public KuduTest {
              .default_admin_operation_timeout(MonoDelta::FromSeconds(60))
              .Build(&client_));
     // Add a table, make sure it reports itself.
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .set_range_partition_columns({ "key" })
@@ -667,7 +666,7 @@ class FuzzTest : public KuduTest {
                    int update_multiplier);
 
   KuduSchema schema_;
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduSession> session_;
   shared_ptr<KuduTable> table_;

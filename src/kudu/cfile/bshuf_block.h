@@ -235,6 +235,7 @@ class BShufBlockDecoder final : public BlockDecoder {
         num_elems_(0),
         compressed_size_(0),
         num_elems_after_padding_(0),
+        size_of_elem_(0),
         cur_idx_(0) {
   }
 

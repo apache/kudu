@@ -32,7 +32,6 @@
 #include "kudu/common/row.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/mvcc.h"
@@ -157,7 +156,7 @@ class RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    gscoped_ptr<CompactionInput>* out) const = 0;
+                                    std::unique_ptr<CompactionInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
   virtual Status CountRows(const fs::IOContext* io_context, rowid_t *count) const = 0;
@@ -404,7 +403,7 @@ class DuplicatingRowSet : public RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE;
+                                    std::unique_ptr<CompactionInput>* out) const OVERRIDE;
 
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const OVERRIDE;
 

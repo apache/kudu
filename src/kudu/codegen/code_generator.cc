@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cctype>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -40,7 +41,6 @@
 #include <llvm/Target/TargetMachine.h>
 
 #include "kudu/codegen/row_projector.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/ref_counted.h"
@@ -78,6 +78,7 @@ using llvm::Target;
 using llvm::TargetMachine;
 using llvm::Triple;
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -131,7 +132,7 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_in
 
   MCContext context(asm_info, register_info, nullptr);
 
-  gscoped_ptr<MCDisassembler> disas(
+  unique_ptr<MCDisassembler> disas(
     CHECK_NOTNULL(tm.getTarget().createMCDisassembler(subtarget_info, context)));
 
   // LLVM uses these completely undocumented magic syntax constants which had
@@ -142,7 +143,7 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_in
   // This only has meaning for a *given* target, but at least the 0th syntax
   // will always be defined, so that's what we use.
   static const unsigned kSyntaxVariant = 0;
-  gscoped_ptr<MCInstPrinter> printer(
+  unique_ptr<MCInstPrinter> printer(
     CHECK_NOTNULL(tm.getTarget().createMCInstPrinter(triple, kSyntaxVariant, *asm_info,
                                                      instr_info, *register_info)));
 

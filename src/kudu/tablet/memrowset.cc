@@ -19,7 +19,6 @@
 
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -310,7 +309,7 @@ Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status MemRowSet::NewCompactionInput(const Schema* projection,
                                      const MvccSnapshot& snap,
                                      const IOContext* /*io_context*/,
-                                     gscoped_ptr<CompactionInput>* out) const  {
+                                     unique_ptr<CompactionInput>* out) const  {
   out->reset(CompactionInput::Create(*this, projection, snap));
   return Status::OK();
 }
@@ -342,7 +341,7 @@ typedef MemRowSet::Iterator::MRSRowProjector MRSRowProjector;
 template<class ActualProjector>
 class MRSRowProjectorImpl : public MRSRowProjector {
  public:
-  explicit MRSRowProjectorImpl(gscoped_ptr<ActualProjector> actual)
+  explicit MRSRowProjectorImpl(unique_ptr<ActualProjector> actual)
     : actual_(std::move(actual)) {}
 
   Status Init() override { return actual_->Init(); }
@@ -362,26 +361,26 @@ class MRSRowProjectorImpl : public MRSRowProjector {
   }
 
  private:
-  gscoped_ptr<ActualProjector> actual_;
+  unique_ptr<ActualProjector> actual_;
 };
 
 // If codegen is enabled, then generates a codegen::RowProjector;
 // otherwise makes a regular one.
-gscoped_ptr<MRSRowProjector> GenerateAppropriateProjector(
+unique_ptr<MRSRowProjector> GenerateAppropriateProjector(
   const Schema* base, const Schema* projection) {
   // Attempt code-generated implementation
   if (FLAGS_mrs_use_codegen) {
-    gscoped_ptr<codegen::RowProjector> actual;
+    unique_ptr<codegen::RowProjector> actual;
     if (codegen::CompilationManager::GetSingleton()->RequestRowProjector(
           base, projection, &actual)) {
-      return gscoped_ptr<MRSRowProjector>(
+      return unique_ptr<MRSRowProjector>(
         new MRSRowProjectorImpl<codegen::RowProjector>(std::move(actual)));
     }
   }
 
   // Proceed with default implementation
-  gscoped_ptr<RowProjector> actual(new RowProjector(base, projection));
-  return gscoped_ptr<MRSRowProjector>(
+  unique_ptr<RowProjector> actual(new RowProjector(base, projection));
+  return unique_ptr<MRSRowProjector>(
     new MRSRowProjectorImpl<RowProjector>(std::move(actual)));
 }
 

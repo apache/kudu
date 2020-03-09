@@ -21,11 +21,11 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/core/ref.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -34,7 +34,6 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -126,7 +125,7 @@ class RemoteKsckTest : public KuduTest {
     ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client_));
 
     // Create one table.
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     ASSERT_OK(table_creator->table_name(kTableName)
@@ -182,7 +181,7 @@ class RemoteKsckTest : public KuduTest {
     }
 
     for (uint64_t i = 0; continue_writing.Load(); i++) {
-      gscoped_ptr<KuduInsert> insert(table->NewInsert());
+      unique_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
       status = session->Apply(insert.release());
       if (!status.ok()) {

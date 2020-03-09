@@ -23,7 +23,6 @@
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -37,7 +36,6 @@
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -109,7 +107,7 @@ Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
                            string leader_uuid,
                            PeerMessageQueue* queue,
                            ThreadPoolToken* raft_pool_token,
-                           gscoped_ptr<PeerProxy> proxy,
+                           unique_ptr<PeerProxy> proxy,
                            shared_ptr<Messenger> messenger,
                            shared_ptr<Peer>* peer) {
 
@@ -130,7 +128,7 @@ Peer::Peer(RaftPeerPB peer_pb,
            string leader_uuid,
            PeerMessageQueue* queue,
            ThreadPoolToken* raft_pool_token,
-           gscoped_ptr<PeerProxy> proxy,
+           unique_ptr<PeerProxy> proxy,
            shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
@@ -510,7 +508,7 @@ Peer::~Peer() {
 }
 
 RpcPeerProxy::RpcPeerProxy(HostPort hostport,
-                           gscoped_ptr<ConsensusServiceProxy> consensus_proxy)
+                           unique_ptr<ConsensusServiceProxy> consensus_proxy)
     : hostport_(std::move(hostport)),
       consensus_proxy_(std::move(DCHECK_NOTNULL(consensus_proxy))) {
 }
@@ -556,7 +554,7 @@ Status CreateConsensusServiceProxyForHost(
     const HostPort& hostport,
     const shared_ptr<Messenger>& messenger,
     DnsResolver* dns_resolver,
-    gscoped_ptr<ConsensusServiceProxy>* new_proxy) {
+    unique_ptr<ConsensusServiceProxy>* new_proxy) {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(dns_resolver->ResolveAddresses(hostport, &addrs));
   if (addrs.size() > 1) {
@@ -577,10 +575,10 @@ RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger,
 }
 
 Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
-                                     gscoped_ptr<PeerProxy>* proxy) {
+                                     unique_ptr<PeerProxy>* proxy) {
   HostPort hostport;
   RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), &hostport));
-  gscoped_ptr<ConsensusServiceProxy> new_proxy;
+  unique_ptr<ConsensusServiceProxy> new_proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
       hostport, messenger_, dns_resolver_, &new_proxy));
   proxy->reset(new RpcPeerProxy(std::move(hostport), std::move(new_proxy)));
@@ -594,7 +592,7 @@ Status SetPermanentUuidForRemotePeer(
   DCHECK(!remote_peer->has_permanent_uuid());
   HostPort hostport;
   RETURN_NOT_OK(HostPortFromPB(remote_peer->last_known_addr(), &hostport));
-  gscoped_ptr<ConsensusServiceProxy> proxy;
+  unique_ptr<ConsensusServiceProxy> proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
       hostport, messenger, resolver, &proxy));
   GetNodeInstanceRequestPB req;

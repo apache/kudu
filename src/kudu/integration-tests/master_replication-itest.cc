@@ -33,7 +33,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -171,7 +170,7 @@ class MasterReplicationTest : public KuduTest {
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
     b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
     CHECK_OK(b.Build(&schema));
-    gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     return table_creator->table_name(table_name)
         .set_range_partition_columns({ "key" })
         .schema(&schema)
@@ -180,7 +179,7 @@ class MasterReplicationTest : public KuduTest {
 
  protected:
   InternalMiniClusterOptions opts_;
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
 };
 
 // Basic test. Verify that:

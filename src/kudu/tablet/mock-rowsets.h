@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_MOCK_ROWSETS_H
-#define KUDU_TABLET_MOCK_ROWSETS_H
+#pragma once
 
 #include <memory>
 #include <mutex>
@@ -62,7 +61,7 @@ class MockRowSet : public RowSet {
   virtual Status NewCompactionInput(const Schema* /*projection*/,
                                     const MvccSnapshot& /*snap*/,
                                     const fs::IOContext* /*io_context*/,
-                                    gscoped_ptr<CompactionInput>* /*out*/) const OVERRIDE {
+                                    std::unique_ptr<CompactionInput>* /*out*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -237,4 +236,3 @@ class MockMemRowSet : public MockRowSet {
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_MOCK_ROWSETS_H */

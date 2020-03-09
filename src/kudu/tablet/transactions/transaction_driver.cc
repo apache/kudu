@@ -21,7 +21,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -29,10 +28,10 @@
 #include <google/protobuf/message.h>
 
 #include "kudu/clock/clock.h"
-#include "kudu/consensus/raft_consensus.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
@@ -125,7 +124,7 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
   }
 }
 
-Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
+Status TransactionDriver::Init(unique_ptr<Transaction> transaction,
                                DriverType type) {
   // If the tablet has been stopped, the replica is likely shutting down soon.
   // Prevent further transacions from starting.
@@ -165,7 +164,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     }
   } else {
     DCHECK_EQ(type, consensus::LEADER);
-    gscoped_ptr<ReplicateMsg> replicate_msg;
+    unique_ptr<ReplicateMsg> replicate_msg;
     transaction_->NewReplicateMsg(&replicate_msg);
     if (consensus_) { // sometimes NULL in tests
       // A raw pointer is required to avoid a refcount cycle.
@@ -517,7 +516,7 @@ void TransactionDriver::ApplyTask() {
   scoped_refptr<TransactionDriver> ref(this);
 
   {
-    gscoped_ptr<CommitMsg> commit_msg;
+    unique_ptr<CommitMsg> commit_msg;
     Status s = transaction_->Apply(&commit_msg);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << Substitute("Did not Apply transaction $0: $1",

@@ -42,7 +42,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -141,7 +140,7 @@ class ScanTokenTest : public KuduTest {
   }
 
   shared_ptr<KuduClient> client_;
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
 };
 
 TEST_F(ScanTokenTest, TestScanTokens) {

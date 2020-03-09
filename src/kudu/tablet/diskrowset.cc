@@ -39,7 +39,6 @@
 #include "kudu/common/types.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
@@ -368,8 +367,8 @@ Status RollingDiskRowSetWriter::RollWriter() {
   cur_redo_ds_block_id_ = redo_data_block->id();
   cur_undo_writer_.reset(new DeltaFileWriter(std::move(undo_data_block)));
   cur_redo_writer_.reset(new DeltaFileWriter(std::move(redo_data_block)));
-  cur_undo_delta_stats.reset(new DeltaStats());
-  cur_redo_delta_stats.reset(new DeltaStats());
+  cur_undo_delta_stats_.reset(new DeltaStats());
+  cur_redo_delta_stats_.reset(new DeltaStats());
 
   row_idx_in_cur_drs_ = 0;
   can_roll_ = false;
@@ -403,7 +402,7 @@ Status RollingDiskRowSetWriter::AppendUndoDeltas(rowid_t row_idx_in_block,
   return AppendDeltas<UNDO>(row_idx_in_block, undo_delta_head,
                             row_idx,
                             cur_undo_writer_.get(),
-                            cur_undo_delta_stats.get());
+                            cur_undo_delta_stats_.get());
 }
 
 Status RollingDiskRowSetWriter::AppendRedoDeltas(rowid_t row_idx_in_block,
@@ -412,7 +411,7 @@ Status RollingDiskRowSetWriter::AppendRedoDeltas(rowid_t row_idx_in_block,
   return AppendDeltas<REDO>(row_idx_in_block, redo_delta_head,
                             row_idx,
                             cur_redo_writer_.get(),
-                            cur_redo_delta_stats.get());
+                            cur_redo_delta_stats_.get());
 }
 
 template<DeltaType Type>
@@ -450,8 +449,8 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     RETURN_NOT_OK(writer_status);
     CHECK_GT(cur_writer_->written_count(), 0);
 
-    cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
-    cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
+    cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats_);
+    cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats_);
 
     // Commit the UNDO block. Status::Aborted() indicates that there
     // were no UNDOs written.
@@ -460,7 +459,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
     } else {
-      DCHECK_EQ(cur_undo_delta_stats->min_timestamp(), Timestamp::kMax);
+      DCHECK_EQ(cur_undo_delta_stats_->min_timestamp(), Timestamp::kMax);
     }
 
     // Same for the REDO block.
@@ -469,7 +468,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, 0, cur_redo_ds_block_id_);
     } else {
-      DCHECK_EQ(cur_redo_delta_stats->min_timestamp(), Timestamp::kMax);
+      DCHECK_EQ(cur_redo_delta_stats_->min_timestamp(), Timestamp::kMax);
     }
 
     written_size_ += cur_writer_->written_size();
@@ -583,7 +582,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
   RETURN_NOT_OK(delta_tracker()->CheckWritableUnlocked());
 
   // TODO(todd): do we need to lock schema or anything here?
-  gscoped_ptr<MajorDeltaCompaction> compaction;
+  unique_ptr<MajorDeltaCompaction> compaction;
   RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, std::move(history_gc_opts),
                                         io_context, &compaction));
 
@@ -633,7 +632,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
 Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
                                            HistoryGcOpts history_gc_opts,
                                            const IOContext* io_context,
-                                           gscoped_ptr<MajorDeltaCompaction>* out) const {
+                                           unique_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
@@ -675,7 +674,7 @@ Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
 Status DiskRowSet::NewCompactionInput(const Schema* projection,
                                       const MvccSnapshot &snap,
                                       const IOContext* io_context,
-                                      gscoped_ptr<CompactionInput>* out) const {
+                                      unique_ptr<CompactionInput>* out) const {
   return CompactionInput::Create(*this, projection, snap, io_context, out);
 }
 
@@ -895,7 +894,7 @@ Status DiskRowSet::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
 Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
-  gscoped_ptr<CompactionInput> input;
+  unique_ptr<CompactionInput> input;
   RETURN_NOT_OK(NewCompactionInput(&rowset_metadata_->tablet_schema(),
                                    MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
                                    nullptr, &input));

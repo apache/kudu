@@ -84,17 +84,22 @@ class RleDecoder {
   // Create a decoder object. buffer/buffer_len is the decoded data.
   // bit_width is the width of each value (before encoding).
   RleDecoder(const uint8_t* buffer, int buffer_len, int bit_width)
-    : bit_reader_(buffer, buffer_len),
-      bit_width_(bit_width),
-      current_value_(0),
-      repeat_count_(0),
-      literal_count_(0),
-      rewind_state_(CANT_REWIND) {
+      : bit_reader_(buffer, buffer_len),
+        bit_width_(bit_width),
+        current_value_(0),
+        repeat_count_(0),
+        literal_count_(0),
+        rewind_state_(CANT_REWIND) {
     DCHECK_GE(bit_width_, 1);
     DCHECK_LE(bit_width_, 64);
   }
 
-  RleDecoder() {}
+  RleDecoder()
+      : bit_width_(0),
+        current_value_(0),
+        repeat_count_(0),
+        literal_count_(0),
+        rewind_state_(CANT_REWIND) {}
 
   // Skip n values, and returns the number of non-zero entries skipped.
   size_t Skip(size_t to_skip);

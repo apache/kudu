@@ -20,7 +20,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <utility>
 
 #include <glog/logging.h>
@@ -28,7 +27,6 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -36,13 +34,16 @@
 
 using kudu::log::Log;
 using kudu::pb_util::SecureShortDebugString;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
 namespace consensus {
 
-PeerManager::PeerManager(std::string tablet_id,
-                         std::string local_uuid,
+PeerManager::PeerManager(string tablet_id,
+                         string local_uuid,
                          PeerProxyFactory* peer_proxy_factory,
                          PeerMessageQueue* queue,
                          ThreadPoolToken* raft_pool_token,
@@ -73,11 +74,11 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
     }
 
     VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << SecureShortDebugString(peer_pb);
-    gscoped_ptr<PeerProxy> peer_proxy;
+    unique_ptr<PeerProxy> peer_proxy;
     RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
                           "Could not obtain a remote proxy to the peer.");
 
-    std::shared_ptr<Peer> remote_peer;
+    shared_ptr<Peer> remote_peer;
     RETURN_NOT_OK(Peer::NewRemotePeer(peer_pb,
                                       tablet_id_,
                                       local_uuid_,
@@ -107,8 +108,8 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
   }
 }
 
-Status PeerManager::StartElection(const std::string& uuid) {
-  std::shared_ptr<Peer> peer;
+Status PeerManager::StartElection(const string& uuid) {
+  shared_ptr<Peer> peer;
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     peer = FindPtrOrNull(peers_, uuid);
@@ -130,7 +131,7 @@ void PeerManager::Close() {
   }
 }
 
-std::string PeerManager::GetLogPrefix() const {
+string PeerManager::GetLogPrefix() const {
   return Substitute("T $0 P $1: ", tablet_id_, local_uuid_);
 }
 

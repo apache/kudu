@@ -49,7 +49,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -1672,7 +1671,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
   // Add another table to test multiple tables output.
   const string kAnotherTableId = "TestAnotherTable";
   auto client_schema = KuduSchema::FromSchema(schema_);
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kAnotherTableId)
            .schema(&client_schema)
            .set_range_partition_columns({ "key" })

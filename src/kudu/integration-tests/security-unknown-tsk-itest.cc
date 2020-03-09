@@ -37,7 +37,6 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -217,7 +216,7 @@ TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
   // calls to the tablet server. The table should consists of multiple tablets
   // hosted by all available tablet servers, so the insert or scan requests are
   // sent to all avaialble tablet servers.
-  gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   shared_ptr<KuduTable> table;
   ASSERT_OK(table_creator->table_name(table_name)
       .set_range_partition_columns({ "key" })

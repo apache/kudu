@@ -40,7 +40,6 @@
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -571,7 +570,7 @@ class PredicateTest : public KuduTest {
   }
 
   shared_ptr<KuduClient> client_;
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
 };
 
 TEST_F(PredicateTest, TestBoolPredicates) {

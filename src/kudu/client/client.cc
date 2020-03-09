@@ -72,7 +72,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -1632,7 +1631,7 @@ void KuduScanner::Close() {
   // to clean up.
   if (!data_->next_req_.scanner_id().empty()) {
     CHECK(data_->proxy_);
-    gscoped_ptr<CloseCallback> closer(new CloseCallback);
+    unique_ptr<CloseCallback> closer(new CloseCallback);
     closer->scanner_id = data_->next_req_.scanner_id();
     data_->PrepareRequest(KuduScanner::Data::CLOSE);
     data_->next_req_.set_close_scanner(true);

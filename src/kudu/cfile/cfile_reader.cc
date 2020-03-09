@@ -47,7 +47,6 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"

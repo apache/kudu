@@ -22,7 +22,6 @@
 #include <ctime>
 #include <new>
 #include <ostream>
-#include <type_traits>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -138,7 +137,7 @@ WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, Driv
   start_time_ = MonoTime::Now();
 }
 
-void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
+void WriteTransaction::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(WRITE_OP);
   (*replicate_msg)->mutable_write_request()->CopyFrom(*state()->request());
@@ -221,7 +220,7 @@ void WriteTransaction::UpdatePerRowErrors() {
 
 // FIXME: Since this is called as a void in a thread-pool callback,
 // it seems pointless to return a Status!
-Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
+Status WriteTransaction::Apply(unique_ptr<CommitMsg>* commit_msg) {
   TRACE_EVENT0("txn", "WriteTransaction::Apply");
   TRACE("APPLY: Starting.");
 
@@ -320,7 +319,7 @@ WriteTransactionState::WriteTransactionState(TabletReplica* tablet_replica,
   }
 }
 
-void WriteTransactionState::SetMvccTx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
+void WriteTransactionState::SetMvccTx(unique_ptr<ScopedTransaction> mvcc_tx) {
   DCHECK(!mvcc_tx_) << "Mvcc transaction already started/set.";
   mvcc_tx_ = std::move(mvcc_tx);
 }

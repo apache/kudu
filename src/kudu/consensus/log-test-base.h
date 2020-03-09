@@ -36,7 +36,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -279,7 +278,7 @@ class LogTestBase : public KuduTest {
                       int rs_id,
                       int dms_id,
                       bool sync = APPEND_SYNC) {
-    gscoped_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
+    std::unique_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
     commit->set_op_type(consensus::WRITE_OP);
 
     commit->mutable_commited_op_id()->CopyFrom(original_opid);
@@ -300,7 +299,7 @@ class LogTestBase : public KuduTest {
   // indicating that the associated writes failed due to
   // "NotFound" errors.
   Status AppendCommitWithNotFoundOpResults(const consensus::OpId& original_opid) {
-    gscoped_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
+    std::unique_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
     commit->set_op_type(consensus::WRITE_OP);
     commit->mutable_commited_op_id()->CopyFrom(original_opid);
 
@@ -314,7 +313,7 @@ class LogTestBase : public KuduTest {
     return AppendCommit(std::move(commit));
   }
 
-  Status AppendCommit(gscoped_ptr<consensus::CommitMsg> commit,
+  Status AppendCommit(std::unique_ptr<consensus::CommitMsg> commit,
                       bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;

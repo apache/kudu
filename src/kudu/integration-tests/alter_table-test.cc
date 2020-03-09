@@ -46,7 +46,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -146,7 +145,7 @@ class AlterTableTest : public KuduTest {
         .Build(&client_));
 
     // Add a table, make sure it reports itself.
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .set_range_partition_columns({ "c0" })
@@ -225,7 +224,7 @@ class AlterTableTest : public KuduTest {
                          const string& column_name,
                          int32_t default_value,
                          const MonoDelta& timeout) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
     table_alterer->AddColumn(column_name)->Type(KuduColumnSchema::INT32)->
       NotNull()->Default(KuduValue::FromInt(default_value));
     return table_alterer->timeout(timeout)->Alter();
@@ -259,7 +258,7 @@ class AlterTableTest : public KuduTest {
       CHECK_OK(row->SetInt32(0, i * 100));
       split_rows.push_back(row);
     }
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     return table_creator->table_name(table_name)
@@ -291,7 +290,7 @@ class AlterTableTest : public KuduTest {
 
   static const char *kTableName;
 
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
 
   KuduSchema schema_;
@@ -375,7 +374,7 @@ TEST_F(AlterTableTest, TestAddNullableColumnWithoutDefault) {
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("new")->Type(KuduColumnSchema::INT32);
     ASSERT_OK(table_alterer->Alter());
   }
@@ -395,7 +394,7 @@ TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("c0")->RenameTo("primaryKeyRenamed");
     table_alterer->AlterColumn("c1")->RenameTo("secondColumn");
     ASSERT_OK(table_alterer->Alter());
@@ -410,7 +409,7 @@ TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
   EXPECT_EQ("(int32 primaryKeyRenamed=16777216, int32 secondColumn=1)", rows[1]);
 
   {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AlterColumn("primaryKeyRenamed")->RenameTo("pk");
     table_alterer->AlterColumn("secondColumn")->RenameTo("sc");
     ASSERT_OK(table_alterer->Alter());
@@ -622,7 +621,7 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
 
   // Insert a bunch of rows with the current schema
   for (int i = start_row; i < start_row + num_rows; i++) {
-    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    unique_ptr<KuduInsert> insert(table->NewInsert());
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
     // compactions may actually be triggered.

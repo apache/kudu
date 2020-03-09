@@ -63,11 +63,11 @@
 namespace kudu {
 namespace consensus {
 
-inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
-                                                      int64_t index,
-                                                      const Timestamp& timestamp,
-                                                      int64_t payload_size) {
-    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
+inline std::unique_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
+                                                          int64_t index,
+                                                          const Timestamp& timestamp,
+                                                          int64_t payload_size) {
+    std::unique_ptr<ReplicateMsg> msg(new ReplicateMsg);
     OpId* id = msg->mutable_id();
     id->set_term(term);
     id->set_index(index);
@@ -75,7 +75,7 @@ inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request()->mutable_payload_for_tests()->resize(payload_size);
     msg->set_timestamp(timestamp.ToUint64());
-    return std::move(msg);
+    return msg;
 }
 
 // Returns RaftPeerPB with given UUID and obviously-fake hostname / port combo.
@@ -250,7 +250,7 @@ class DelayablePeerProxy : public TestPeerProxy {
   }
 
  protected:
-  gscoped_ptr<ProxyType> const proxy_;
+  std::unique_ptr<ProxyType> const proxy_;
   bool delay_response_; // Protected by lock_.
   CountDownLatch latch_;
 };
@@ -392,7 +392,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
   }
 
   Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override {
+                  std::unique_ptr<PeerProxy>* proxy) override {
     proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
   }
@@ -613,7 +613,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   }
 
   Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override {
+                  std::unique_ptr<PeerProxy>* proxy) override {
     LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
                                                            pool_.get(),
                                                            peers_);
@@ -676,7 +676,7 @@ class TestDriver {
   // The commit message has the exact same type of the replicate message, but
   // no content.
   void Apply() {
-    gscoped_ptr<CommitMsg> msg(new CommitMsg);
+    std::unique_ptr<CommitMsg> msg(new CommitMsg);
     msg->set_op_type(round_->replicate_msg()->op_type());
     msg->mutable_commited_op_id()->CopyFrom(round_->id());
     CHECK_OK(log_->AsyncAppendCommit(std::move(msg),

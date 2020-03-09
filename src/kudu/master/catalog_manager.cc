@@ -54,7 +54,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -87,7 +86,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -3168,7 +3166,7 @@ class PickLeaderReplica : public TSPicker {
 class RetryingTSRpcTask : public MonitoredTask {
  public:
   RetryingTSRpcTask(Master *master,
-                    gscoped_ptr<TSPicker> replica_picker,
+                    unique_ptr<TSPicker> replica_picker,
                     scoped_refptr<TableInfo> table)
     : master_(master),
       replica_picker_(std::move(replica_picker)),
@@ -3238,7 +3236,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   void RpcCallback();
 
   Master * const master_;
-  const gscoped_ptr<TSPicker> replica_picker_;
+  const unique_ptr<TSPicker> replica_picker_;
   const scoped_refptr<TableInfo> table_;
 
   MonoTime start_ts_;
@@ -3413,7 +3411,7 @@ class RetrySpecificTSRpcTask : public RetryingTSRpcTask {
                          const string& permanent_uuid,
                          const scoped_refptr<TableInfo>& table)
     : RetryingTSRpcTask(master,
-                        gscoped_ptr<TSPicker>(new PickSpecificUUID(permanent_uuid)),
+                        unique_ptr<TSPicker>(new PickSpecificUUID(permanent_uuid)),
                         table),
       permanent_uuid_(permanent_uuid) {
   }
@@ -3606,7 +3604,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
   AsyncAlterTable(Master *master,
                   scoped_refptr<TabletInfo> tablet)
     : RetryingTSRpcTask(master,
-                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
+                        unique_ptr<TSPicker>(new PickLeaderReplica(tablet)),
                         tablet->table()),
       tablet_(std::move(tablet)) {
   }
@@ -3706,7 +3704,7 @@ AsyncChangeConfigTask::AsyncChangeConfigTask(Master* master,
                                              ConsensusStatePB cstate,
                                              consensus::ChangeConfigType change_config_type)
     : RetryingTSRpcTask(master,
-                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
+                        unique_ptr<TSPicker>(new PickLeaderReplica(tablet)),
                         tablet->table()),
       tablet_(std::move(tablet)),
       cstate_(std::move(cstate)),

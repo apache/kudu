@@ -44,13 +44,13 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -125,7 +125,7 @@ class TestEncoding : public KuduTest {
 
   template<class BuilderType, class DecoderType>
   void TestBinarySeekByValueSmallBlock() {
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BuilderType sbb(opts.get());
     // Insert "hello 0" through "hello 9"
     const uint kCount = 10;
@@ -180,7 +180,7 @@ class TestEncoding : public KuduTest {
   template<class BuilderType, class DecoderType>
   void TestStringSeekByValueLargeBlock() {
     Arena arena(1024); // TODO(todd): move to fixture?
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BinaryPrefixBlockBuilder sbb(opts.get());
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
@@ -258,7 +258,7 @@ class TestEncoding : public KuduTest {
 
   template<class BuilderType, class DecoderType>
   void TestBinaryBlockRoundTrip() {
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BuilderType sbb(opts.get());
 
     auto seed = SeedRandom();
@@ -398,7 +398,7 @@ class TestEncoding : public KuduTest {
 
   template <class BlockBuilderType, class BlockDecoderType>
   void TestEmptyBlockEncodeDecode() {
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BlockBuilderType bb(opts.get());
     Slice s = bb.Finish(0);
     ASSERT_GT(s.size(), 0);
@@ -412,16 +412,16 @@ class TestEncoding : public KuduTest {
 
   template <DataType Type, class BlockBuilder, class BlockDecoder>
   void TestEncodeDecodeTemplateBlockEncoder(typename TypeTraits<Type>::cpp_type* src,
-                                            uint32_t size) {
+                                            size_t size) {
     typedef typename TypeTraits<Type>::cpp_type CppType;
     const uint32_t kOrdinalPosBase = 12345;
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BlockBuilder pbb(opts.get());
 
     pbb.Add(reinterpret_cast<const uint8_t *>(src), size);
     Slice s = pbb.Finish(kOrdinalPosBase);
 
-    LOG(INFO)<< "Encoded size for 10k elems: " << s.size();
+    LOG(INFO) << "Encoded size for 10k elems: " << s.size();
 
     BlockDecoder pbd(s);
     ASSERT_OK(pbd.ParseHeader());
@@ -448,7 +448,7 @@ class TestEncoding : public KuduTest {
     ASSERT_EQ(0, view.nrows())<< "Should have no space left in the buffer after "
         << "decoding all rows";
 
-    for (uint i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
       if (src[i] != decoded[i]) {
         FAIL()<< "Fail at index " << i <<
             " inserted=" << src[i] << " got=" << decoded[i];
@@ -470,7 +470,7 @@ class TestEncoding : public KuduTest {
   // Test truncation of blocks
   template<class BuilderType, class DecoderType>
   void TestBinaryBlockTruncation() {
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
     BuilderType sbb(opts.get());
     const uint kCount = 10;
     size_t sbsize;
@@ -682,80 +682,82 @@ class TestEncoding : public KuduTest {
 TEST_F(TestEncoding, TestPlainBlockEncoder) {
   const uint32_t kSize = 10000;
 
-  gscoped_ptr<int32_t[]> ints(new int32_t[kSize]);
+  unique_ptr<int32_t[]> ints(new int32_t[kSize]);
   for (int i = 0; i < kSize; i++) {
     ints.get()[i] = random();
   }
 
   TestEncodeDecodeTemplateBlockEncoder<INT32, PlainBlockBuilder<INT32>,
-                                    PlainBlockDecoder<INT32> >(ints.get(), kSize);
+      PlainBlockDecoder<INT32>>(ints.get(), kSize);
 }
 
 // Test for bitshuffle block, for INT32, INT64, INT128, FLOAT, DOUBLE
 TEST_F(TestEncoding, TestBShufInt32BlockEncoder) {
   const uint32_t kSize = 10000;
 
-  gscoped_ptr<int32_t[]> ints(new int32_t[kSize]);
+  unique_ptr<int32_t[]> ints(new int32_t[kSize]);
   for (int i = 0; i < kSize; i++) {
     ints.get()[i] = random();
   }
 
   TestEncodeDecodeTemplateBlockEncoder<INT32, BShufBlockBuilder<INT32>,
-                                    BShufBlockDecoder<INT32> >(ints.get(), kSize);
+      BShufBlockDecoder<INT32>>(ints.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestBShufInt64BlockEncoder) {
   const uint32_t kSize = 10000;
 
-  gscoped_ptr<int64_t[]> ints(new int64_t[kSize]);
+  unique_ptr<int64_t[]> ints(new int64_t[kSize]);
   for (int i = 0; i < kSize; i++) {
     ints.get()[i] = random();
   }
 
   TestEncodeDecodeTemplateBlockEncoder<INT64, BShufBlockBuilder<INT64>,
-      BShufBlockDecoder<INT64> >(ints.get(), kSize);
+      BShufBlockDecoder<INT64>>(ints.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestBShufInt128BlockEncoder) {
   const uint32_t kSize = 10000;
 
-  gscoped_ptr<int128_t[]> ints(new int128_t[kSize]);
+  unique_ptr<int128_t[]> ints(new int128_t[kSize]);
   for (int i = 0; i < kSize; i++) {
     ints.get()[i] = random();
   }
 
   TestEncodeDecodeTemplateBlockEncoder<INT128, BShufBlockBuilder<INT128>,
-      BShufBlockDecoder<INT128> >(ints.get(), kSize);
+      BShufBlockDecoder<INT128>>(ints.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestBShufFloatBlockEncoder) {
-  const uint32_t kSize = 10000;
+  const int kSize = 10000;
 
-  gscoped_ptr<float[]> floats(new float[kSize]);
+  unique_ptr<float[]> floats(new float[kSize]);
   for (int i = 0; i < kSize; i++) {
-    floats.get()[i] = random() + static_cast<float>(random())/INT_MAX;
+    floats.get()[i] = static_cast<float>(random()) +
+                      static_cast<float>(random())/INT_MAX;
   }
 
   TestEncodeDecodeTemplateBlockEncoder<FLOAT, BShufBlockBuilder<FLOAT>,
-                                    BShufBlockDecoder<FLOAT> >(floats.get(), kSize);
+      BShufBlockDecoder<FLOAT>>(floats.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestBShufDoubleBlockEncoder) {
-  const uint32_t kSize = 10000;
+  const int kSize = 10000;
 
-  gscoped_ptr<double[]> doubles(new double[kSize]);
+  unique_ptr<double[]> doubles(new double[kSize]);
   for (int i = 0; i < kSize; i++) {
-    doubles.get()[i] = random() + + static_cast<double>(random())/INT_MAX;
+    doubles.get()[i] = static_cast<double>(random()) +
+                       static_cast<double>(random())/INT_MAX;
   }
 
   TestEncodeDecodeTemplateBlockEncoder<DOUBLE, BShufBlockBuilder<DOUBLE>,
-                                    BShufBlockDecoder<DOUBLE> >(doubles.get(), kSize);
+      BShufBlockDecoder<DOUBLE>>(doubles.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestRleIntBlockEncoder) {
   unique_ptr<WriterOptions> opts(NewWriterOptions());
   RleIntBlockBuilder<UINT32> ibb(opts.get());
-  gscoped_ptr<int[]> ints(new int[10000]);
+  unique_ptr<int[]> ints(new int[10000]);
   for (int i = 0; i < 10000; i++) {
     ints[i] = random();
   }
@@ -869,8 +871,8 @@ class IntEncodingTest : public TestEncoding {
     typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
     typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
 
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-    gscoped_ptr<encoder_type> ibb(new encoder_type(opts.get()));
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<encoder_type> ibb(new encoder_type(opts.get()));
     DoSeekTest<encoder_type, decoder_type, IntType>(ibb.get(), num_ints, num_queries, verify);
   }
 
@@ -886,8 +888,8 @@ class IntEncodingTest : public TestEncoding {
     typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
     typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
 
-    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
-    gscoped_ptr<encoder_type> ibb(new encoder_type(opts.get()));
+    unique_ptr<WriterOptions> opts(NewWriterOptions());
+    unique_ptr<encoder_type> ibb(new encoder_type(opts.get()));
     TestIntBlockRoundTrip<encoder_type, decoder_type, IntType>(ibb.get());
   }
 };

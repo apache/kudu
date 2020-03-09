@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_TEST_BASE_H
-#define KUDU_CFILE_TEST_BASE_H
+#pragma once
 
 #include <algorithm>
 #include <cstdlib>
@@ -69,8 +67,6 @@ class DataGenerator {
   typedef typename DataTypeTraits<DATA_TYPE>::cpp_type cpp_type;
 
   DataGenerator() :
-    values_(NULL),
-    null_bitmap_(NULL),
     block_entries_(0),
     total_entries_(0)
   {}
@@ -150,8 +146,8 @@ class DataGenerator {
   virtual ~DataGenerator() {}
 
  private:
-  gscoped_array<cpp_type> values_;
-  gscoped_array<uint8_t> null_bitmap_;
+  std::unique_ptr<cpp_type[]> values_;
+  std::unique_ptr<uint8_t[]> null_bitmap_;
   size_t block_entries_;
   size_t total_entries_;
 };
@@ -325,7 +321,7 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
     char data[kItemBufferSize];
   };
 
-  gscoped_array<Buffer> data_buffer_;
+  std::unique_ptr<Buffer[]> data_buffer_;
   const char* format_;
   int num_;
 };
@@ -412,7 +408,7 @@ class CFileTestBase : public KuduTest {
     ASSERT_OK(w.Finish());
   }
 
-  gscoped_ptr<FsManager> fs_manager_;
+  std::unique_ptr<FsManager> fs_manager_;
 
 };
 
@@ -567,5 +563,3 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

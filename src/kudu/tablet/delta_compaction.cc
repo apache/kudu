@@ -52,22 +52,19 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/trace.h"
 
+using kudu::fs::BlockCreationTransaction;
+using kudu::fs::BlockManager;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::IOContext;
+using kudu::fs::WritableBlock;
 using std::shared_ptr;
-
-namespace kudu {
-
-using fs::BlockCreationTransaction;
-using fs::BlockManager;
-using fs::CreateBlockOptions;
-using fs::IOContext;
-using fs::WritableBlock;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+namespace kudu {
 namespace tablet {
-
 namespace {
 
 const size_t kRowsPerBlock = 100; // Number of rows per block of columns
@@ -267,11 +264,11 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
 Status MajorDeltaCompaction::OpenBaseDataWriter() {
   CHECK(!base_data_writer_);
 
-  gscoped_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_,
-                                                         &partial_schema_,
-                                                         tablet_id_));
+  unique_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_,
+                                                        &partial_schema_,
+                                                        tablet_id_));
   RETURN_NOT_OK(w->Open());
-  base_data_writer_.swap(w);
+  base_data_writer_ = std::move(w);
   return Status::OK();
 }
 

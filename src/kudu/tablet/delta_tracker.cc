@@ -77,13 +77,13 @@ Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                           LogAnchorRegistry* log_anchor_registry,
                           const TabletMemTrackers& mem_trackers,
                           const IOContext* io_context,
-                          gscoped_ptr<DeltaTracker>* delta_tracker) {
-  gscoped_ptr<DeltaTracker> local_dt(
+                          unique_ptr<DeltaTracker>* delta_tracker) {
+  unique_ptr<DeltaTracker> local_dt(
       new DeltaTracker(rowset_metadata, log_anchor_registry,
                        mem_trackers));
   RETURN_NOT_OK(local_dt->DoOpen(io_context));
 
-  delta_tracker->swap(local_dt);
+  *delta_tracker = std::move(local_dt);
   return Status::OK();
 }
 
@@ -166,7 +166,7 @@ Status DeltaTracker::CreateAndInitDMSUnlocked(const fs::IOContext* io_context) {
                                       &dms));
   RETURN_NOT_OK(dms->Init(io_context));
 
-  dms_.swap(dms);
+  dms_ = std::move(dms);
   dms_exists_.Store(true);
   return Status::OK();
 }
@@ -718,7 +718,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                         Substitute("Unable to start writing to delta block $0",
                                    block_id.ToString()));
 
-  gscoped_ptr<DeltaStats> stats;
+  unique_ptr<DeltaStats> stats;
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
   const auto bytes_written = dfw.written_size();
@@ -779,7 +779,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     count = dms_exists_.Load() ? dms_->Count() : 0;
 
     // Swap the DeltaMemStore and dms_ is null now.
-    old_dms.swap(dms_);
+    old_dms = std::move(dms_);
     dms_exists_.Store(false);
 
     if (count == 0) {

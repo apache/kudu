@@ -21,7 +21,6 @@
 
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/code_cache.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
@@ -75,7 +74,7 @@ class CompilationManager {
   // Does not write to 'out' if false is returned.
   bool RequestRowProjector(const Schema* base_schema,
                            const Schema* projection,
-                           gscoped_ptr<RowProjector>* out);
+                           std::unique_ptr<RowProjector>* out);
 
   // Waits for all asynchronous compilation tasks to finish.
   void Wait();

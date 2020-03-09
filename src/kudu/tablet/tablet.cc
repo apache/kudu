@@ -22,7 +22,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -531,7 +530,7 @@ void Tablet::AssignTimestampAndStartTransactionForTests(WriteTransactionState* t
 }
 
 void Tablet::StartTransaction(WriteTransactionState* tx_state) {
-  gscoped_ptr<ScopedTransaction> mvcc_tx;
+  unique_ptr<ScopedTransaction> mvcc_tx;
   DCHECK(tx_state->has_timestamp());
   mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
   tx_state->SetMvccTx(std::move(mvcc_tx));
@@ -690,7 +689,7 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
   // were unset (eg because the table only _has_ primary keys, or because
   // the rest are intended to be set to their defaults), we need to
   // avoid doing anything.
-  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
+  unique_ptr<OperationResultPB> result(new OperationResultPB());
   if (enc.is_empty()) {
     upsert->SetMutateSucceeded(std::move(result));
     return Status::OK();
@@ -764,7 +763,7 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
   DCHECK(mutate->checked_present);
   DCHECK(mutate->valid);
 
-  gscoped_ptr<OperationResultPB> result(new OperationResultPB());
+  unique_ptr<OperationResultPB> result(new OperationResultPB());
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
   Timestamp ts = tx_state->timestamp();
 
@@ -1460,19 +1459,19 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   }
 
   vector<MaintenanceOp*> maintenance_ops;
-  gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
+  unique_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
   maint_mgr->RegisterOp(rs_compact_op.get());
   maintenance_ops.push_back(rs_compact_op.release());
 
-  gscoped_ptr<MaintenanceOp> minor_delta_compact_op(new MinorDeltaCompactionOp(this));
+  unique_ptr<MaintenanceOp> minor_delta_compact_op(new MinorDeltaCompactionOp(this));
   maint_mgr->RegisterOp(minor_delta_compact_op.get());
   maintenance_ops.push_back(minor_delta_compact_op.release());
 
-  gscoped_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
+  unique_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
   maint_mgr->RegisterOp(major_delta_compact_op.get());
   maintenance_ops.push_back(major_delta_compact_op.release());
 
-  gscoped_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
+  unique_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
   maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
   maintenance_ops.push_back(undo_delta_block_gc_op.release());
 

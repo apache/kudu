@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -29,7 +30,6 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/result_tracker.h"
@@ -101,7 +101,7 @@ class Transaction {
   TransactionType tx_type() const { return tx_type_; }
 
   // Builds the ReplicateMsg for this transaction.
-  virtual void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
+  virtual void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
 
   // Executes the prepare phase of this transaction, the actual actions
   // of this phase depend on the transaction type, but usually are limited
@@ -123,7 +123,7 @@ class Transaction {
   // Executes the Apply() phase of the transaction, the actual actions of
   // this phase depend on the transaction type, but usually this is the
   // method where data-structures are changed.
-  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
+  virtual Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
   // Executed after the transaction has been applied and the commit message has
   // been appended to the log (though it might not be durable yet), or if the

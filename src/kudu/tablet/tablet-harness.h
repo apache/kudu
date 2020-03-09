@@ -158,7 +158,7 @@ class TabletHarness {
 
   std::unique_ptr<clock::Clock> clock_;
   Schema schema_;
-  gscoped_ptr<FsManager> fs_manager_;
+  std::unique_ptr<FsManager> fs_manager_;
   std::shared_ptr<Tablet> tablet_;
 };
 

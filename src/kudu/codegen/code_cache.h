@@ -14,13 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CODEGEN_CODE_CACHE_H
-#define KUDU_CODEGEN_CODE_CACHE_H
+#pragma once
 
 #include <cstddef>
+#include <memory>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 
@@ -83,13 +81,11 @@ class CodeCache {
  private:
   class EvictionCallback;
 
-  gscoped_ptr<EvictionCallback> eviction_callback_;
-  gscoped_ptr<Cache> cache_;
+  std::unique_ptr<EvictionCallback> eviction_callback_;
+  std::unique_ptr<Cache> cache_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeCache);
 };
 
 } // namespace codegen
 } // namespace kudu
-
-#endif

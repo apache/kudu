@@ -179,7 +179,7 @@ class MemRowSetCompactionInput : public CompactionInput {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
-  gscoped_ptr<RowBlock> row_block_;
+  unique_ptr<RowBlock> row_block_;
 
   unique_ptr<MemRowSet::Iterator> iter_;
 
@@ -415,7 +415,7 @@ class MergeCompactionInput : public CompactionInput {
     : schema_(schema),
       num_dup_rows_(0) {
     for (const shared_ptr<CompactionInput> &input : inputs) {
-      gscoped_ptr<MergeState> state(new MergeState);
+      unique_ptr<MergeState> state(new MergeState);
       state->input = input;
       states_.push_back(state.release());
     }
@@ -850,7 +850,7 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
                                const Schema* projection,
                                const MvccSnapshot &snap,
                                const IOContext* io_context,
-                               gscoped_ptr<CompactionInput>* out) {
+                               unique_ptr<CompactionInput>* out) {
   CHECK(projection->has_column_ids());
 
   unique_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
@@ -902,7 +902,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
 
   vector<shared_ptr<CompactionInput> > inputs;
   for (const shared_ptr<RowSet> &rs : rowsets_) {
-    gscoped_ptr<CompactionInput> input;
+    unique_ptr<CompactionInput> input;
     RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, io_context, &input),
                           Substitute("Could not create compaction input for rowset $0",
                                      rs->ToString()));
@@ -910,7 +910,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
   }
 
   if (inputs.size() == 1) {
-    out->swap(inputs[0]);
+    *out = std::move(inputs[0]);
   } else {
     out->reset(CompactionInput::Merge(inputs, schema));
   }
@@ -1315,7 +1315,7 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
         }
 
         DeltaTracker* cur_tracker = cur_drs->delta_tracker();
-        gscoped_ptr<OperationResultPB> result(new OperationResultPB);
+        unique_ptr<OperationResultPB> result(new OperationResultPB);
         DCHECK_LT(idx_in_delta_tracker, num_rows);
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,

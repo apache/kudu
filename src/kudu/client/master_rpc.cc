@@ -20,6 +20,7 @@
 #include "kudu/client/master_rpc.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <utility>
@@ -32,7 +33,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
@@ -43,11 +43,6 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
-
-using std::pair;
-using std::shared_ptr;
-using std::string;
-using std::vector;
 
 using kudu::consensus::RaftPeerPB;
 using kudu::master::ConnectToMasterRequestPB;
@@ -62,6 +57,11 @@ using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
 using kudu::rpc::RpcController;
+using std::pair;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -171,7 +171,7 @@ void ConnectToMasterRpc::SendRpcCb(const Status& status) {
   // will be Status::OK.
   //
   // TODO(todd): this is the most confusing code I've ever seen...
-  gscoped_ptr<ConnectToMasterRpc> deleter(this);
+  unique_ptr<ConnectToMasterRpc> deleter(this);
   Status new_status = status;
 
   rpc::RpcController* rpc = mutable_retrier()->mutable_controller();

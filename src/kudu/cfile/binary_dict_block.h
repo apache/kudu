@@ -31,15 +31,13 @@
 // To use other block builder/decoder, just make sure that BlockDecoder has
 // interface CopyNextValuesToArray(size_t*, uint8_t*). To do that, just replace
 // BShufBuilder/Decoder is ok.
-//
-//
-#ifndef KUDU_CFILE_BINARY_DICT_BLOCK_H
-#define KUDU_CFILE_BINARY_DICT_BLOCK_H
+#pragma once
 
 #include <sys/types.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include <sparsehash/dense_hash_map>
 
@@ -47,7 +45,6 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -114,7 +111,7 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
   bool finished_;
   const WriterOptions* options_;
 
-  gscoped_ptr<BlockBuilder> data_builder_;
+  std::unique_ptr<BlockBuilder> data_builder_;
 
   // dict_block_, dictionary_, dictionary_strings_arena_
   // is related to the dictionary block (one per cfile).
@@ -178,7 +175,7 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
   // Dictionary block decoder
   BinaryPlainBlockDecoder* dict_decoder_;
 
-  gscoped_ptr<BlockDecoder> data_decoder_;
+  std::unique_ptr<BlockDecoder> data_decoder_;
 
   // Parent CFileIterator, each dictionary decoder in the same CFile will share
   // the same vocabulary, and thus, the same set of matching codewords.
@@ -198,5 +195,3 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
 MAKE_ENUM_LIMITS(kudu::cfile::DictEncodingMode,
                  kudu::cfile::DictEncodingMode_min,
                  kudu::cfile::DictEncodingMode_max);
-
-#endif // KUDU_CFILE_BINARY_DICT_BLOCK_H

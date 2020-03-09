@@ -21,7 +21,6 @@
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <type_traits>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -368,7 +367,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     table_name_ = superblock.table_name();
 
     uint32_t schema_version = superblock.schema_version();
-    gscoped_ptr<Schema> schema(new Schema());
+    unique_ptr<Schema> schema(new Schema());
     RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), schema.get()),
                           "Failed to parse Schema from superblock " +
                           SecureShortDebugString(superblock));
@@ -757,12 +756,12 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 }
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
-  gscoped_ptr<Schema> new_schema(new Schema(schema));
+  unique_ptr<Schema> new_schema(new Schema(schema));
   std::lock_guard<LockType> l(data_lock_);
   SetSchemaUnlocked(std::move(new_schema), version);
 }
 
-void TabletMetadata::SetSchemaUnlocked(gscoped_ptr<Schema> new_schema, uint32_t version) {
+void TabletMetadata::SetSchemaUnlocked(unique_ptr<Schema> new_schema, uint32_t version) {
   DCHECK(new_schema->has_column_ids());
 
   Schema* old_schema = schema_;

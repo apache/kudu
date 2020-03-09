@@ -35,7 +35,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
@@ -147,9 +146,9 @@ class DiskRowSetWriter {
 
   bool finished_;
   rowid_t written_count_;
-  gscoped_ptr<MultiColumnWriter> col_writer_;
-  gscoped_ptr<cfile::BloomFileWriter> bloom_writer_;
-  gscoped_ptr<cfile::CFileWriter> ad_hoc_index_writer_;
+  std::unique_ptr<MultiColumnWriter> col_writer_;
+  std::unique_ptr<cfile::BloomFileWriter> bloom_writer_;
+  std::unique_ptr<cfile::CFileWriter> ad_hoc_index_writer_;
 
   // The last encoded key written.
   faststring last_encoded_key_;
@@ -184,20 +183,20 @@ class RollingDiskRowSetWriter {
   // 'live_row_count' means the number of live rows in this input block.
   Status AppendBlock(const RowBlock &block, int live_row_count = 0);
 
-  // Appends a sequence of REDO deltas for the same row to the current
-  // redo delta file. 'row_idx_in_next_block' is the positional index after
-  // the last written block. The 'row_idx_in_drs' out parameter will be set
-  // with the row index from the start of the DiskRowSet currently being written.
-  Status AppendRedoDeltas(rowid_t row_idx_in_next_block,
-                          Mutation* redo_deltas,
+  // Appends a sequence of REDO deltas for the same row to the current redo
+  // delta file. 'row_idx_in_block' is the positional index after the last
+  // written block. The 'row_idx_in_drs' out parameter will be set with the row
+  // index from the start of the DiskRowSet currently being written.
+  Status AppendRedoDeltas(rowid_t row_idx_in_block,
+                          Mutation* redo_delta_head,
                           rowid_t* row_idx_in_drs);
 
-  // Appends a sequence of UNDO deltas for the same row to the current
-  // undo delta file. 'row_idx_in_next_block' is the positional index after
-  // the last written block. The 'row_idx_in_drs' out parameter will be set
-  // with the row index from the start of the DiskRowSet currently being written.
-  Status AppendUndoDeltas(rowid_t row_idx_in_next_block,
-                          Mutation* undo_deltas,
+  // Appends a sequence of UNDO deltas for the same row to the current undo
+  // delta file. 'row_idx_in_block' is the positional index after the last
+  // written block. The 'row_idx_in_drs' out parameter will be set with the row
+  // index from the start of the DiskRowSet currently being written.
+  Status AppendUndoDeltas(rowid_t row_idx_in_block,
+                          Mutation* undo_delta_head,
                           rowid_t* row_idx_in_drs);
 
   // Try to roll the output, if we've passed the configured threshold. This will
@@ -248,14 +247,14 @@ class RollingDiskRowSetWriter {
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
 
-  gscoped_ptr<DiskRowSetWriter> cur_writer_;
+  std::unique_ptr<DiskRowSetWriter> cur_writer_;
 
   // A delta writer to store the undos for each DRS
-  gscoped_ptr<DeltaFileWriter> cur_undo_writer_;
-  gscoped_ptr<DeltaStats> cur_undo_delta_stats;
+  std::unique_ptr<DeltaFileWriter> cur_undo_writer_;
+  std::unique_ptr<DeltaStats> cur_undo_delta_stats_;
   // a delta writer to store the redos for each DRS
-  gscoped_ptr<DeltaFileWriter> cur_redo_writer_;
-  gscoped_ptr<DeltaStats> cur_redo_delta_stats;
+  std::unique_ptr<DeltaFileWriter> cur_redo_writer_;
+  std::unique_ptr<DeltaStats> cur_redo_delta_stats_;
   BlockId cur_undo_ds_block_id_;
   BlockId cur_redo_ds_block_id_;
 
@@ -363,7 +362,7 @@ class DiskRowSet : public RowSet {
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    gscoped_ptr<CompactionInput>* out) const override;
+                                    std::unique_ptr<CompactionInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
@@ -463,7 +462,7 @@ class DiskRowSet : public RowSet {
   Status NewMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
                                  HistoryGcOpts history_gc_opts,
                                  const fs::IOContext* io_context,
-                                 gscoped_ptr<MajorDeltaCompaction>* out) const;
+                                 std::unique_ptr<MajorDeltaCompaction>* out) const;
 
   // Major compacts all the delta files for the specified columns.
   Status MajorCompactDeltaStoresWithColumnIds(const std::vector<ColumnId>& col_ids,
@@ -481,7 +480,7 @@ class DiskRowSet : public RowSet {
   // Base data for this rowset.
   mutable rw_spinlock component_lock_;
   std::shared_ptr<CFileSet> base_data_;
-  gscoped_ptr<DeltaTracker> delta_tracker_;
+  std::unique_ptr<DeltaTracker> delta_tracker_;
 
   // Number of rows in the rowset. This may be unset (-1) if the rows in the
   // underlying cfile set have not been counted yet.

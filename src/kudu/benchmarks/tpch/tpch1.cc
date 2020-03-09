@@ -59,6 +59,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -74,7 +75,6 @@
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/client/row_result.h"
 #include "kudu/codegen/compilation_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/master/mini_master.h"
@@ -104,13 +104,13 @@ DEFINE_int32(tpch_max_batch_size, 1000,
 DEFINE_string(table_name, "lineitem",
               "The table name to write/read");
 
+using kudu::client::KuduRowResult;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 
 namespace kudu {
-
-using client::KuduRowResult;
 
 struct Result {
   int32_t l_quantity;
@@ -157,7 +157,7 @@ void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
 
 void WarmupScanCache(RpcLineItemDAO* dao) {
   // Warms up cache for the tpch1 query.
-  gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+  unique_ptr<RpcLineItemDAO::Scanner> scanner;
   dao->OpenTpch1Scanner(&scanner);
   codegen::CompilationManager::GetSingleton()->Wait();
 }
@@ -166,7 +166,7 @@ void Tpch1(RpcLineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, Hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, Hash> slice_map_map;
 
-  gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+  unique_ptr<RpcLineItemDAO::Scanner> scanner;
   dao->OpenTpch1Scanner(&scanner);
 
   int matching_rows = 0;
@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
   kudu::InitGoogleLoggingSafe(argv[0]);
 
   kudu::Env* env;
-  gscoped_ptr<kudu::cluster::InternalMiniCluster> cluster;
+  unique_ptr<kudu::cluster::InternalMiniCluster> cluster;
   string master_address;
   if (FLAGS_use_mini_cluster) {
     env = kudu::Env::Default();
@@ -270,7 +270,7 @@ int main(int argc, char **argv) {
     master_address = FLAGS_master_address;
   }
 
-  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(
+  unique_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(
       master_address, FLAGS_table_name, FLAGS_tpch_max_batch_size,
       /* timeout_ms = */ 5000, kudu::RpcLineItemDAO::RANGE,
       /* num_buckets = */ 1));

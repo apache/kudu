@@ -18,6 +18,7 @@
 #include "kudu/tablet/lock_manager.h"
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -26,7 +27,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
@@ -38,6 +38,8 @@
 #include "kudu/util/trace.h"
 
 using base::subtle::NoBarrier_Load;
+using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -64,7 +66,7 @@ class LockEntry {
     return key_hash_ == hash && key_ == key;
   }
 
-  std::string ToString() const {
+  string ToString() const {
     return KUDU_REDACT(key_.ToDebugString());
   }
 
@@ -165,7 +167,7 @@ class LockTable {
   // number of buckets in the table
   uint64_t size_;
   // table buckets
-  gscoped_array<Bucket> buckets_;
+  unique_ptr<Bucket[]> buckets_;
   // number of items in the table
   base::subtle::Atomic64 item_count_;
 };
@@ -244,7 +246,7 @@ void LockTable::Resize() {
     return;
 
   // Allocate a new bucket list
-  gscoped_array<Bucket> new_buckets(new Bucket[new_size]);
+  unique_ptr<Bucket[]> new_buckets(new Bucket[new_size]);
   size_t new_mask = new_size - 1;
 
   // Copy entries

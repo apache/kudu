@@ -34,7 +34,6 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -46,6 +45,7 @@
 #include "kudu/util/threadpool.h"
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 DEFINE_bool(codegen_time_compilation, false, "Whether to print time that each code "
             "generation request took.");
@@ -176,7 +176,7 @@ Status CompilationManager::StartInstrumentation(const scoped_refptr<MetricEntity
 
 bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              const Schema* projection,
-                                             gscoped_ptr<RowProjector>* out) {
+                                             unique_ptr<RowProjector>* out) {
   faststring key;
   Status s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
   WARN_NOT_OK(s, "RowProjector compilation request failed");

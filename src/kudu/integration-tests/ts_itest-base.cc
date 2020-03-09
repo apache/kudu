@@ -28,7 +28,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -73,6 +72,7 @@ using kudu::cluster::LocationInfo;
 using std::pair;
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::unordered_multimap;
 using std::unordered_set;
 using std::vector;
@@ -531,7 +531,7 @@ void TabletServerIntegrationTestBase::CreateTable(const string& table_id) {
   // The tests here make extensive use of server schemas, but we need
   // a client schema to create the table.
   client::KuduSchema client_schema(client::KuduSchema::FromSchema(schema_));
-  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_id)
            .schema(&client_schema)
            .set_range_partition_columns({ "key" })

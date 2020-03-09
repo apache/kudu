@@ -47,8 +47,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -63,7 +63,6 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
@@ -122,16 +121,16 @@ DEFINE_string(tpch_partition_strategy, "range",
               "tablets. This is less ideal, but more faithfully represents a lot of write "
               "workloads.");
 
+using kudu::client::KuduRowResult;
+using kudu::client::KuduSchema;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
+using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
-
-using client::KuduRowResult;
-using client::KuduSchema;
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
-using strings::Substitute;
 
 class TpchRealWorld {
  public:
@@ -147,7 +146,7 @@ class TpchRealWorld {
 
   Status Init();
 
-  gscoped_ptr<RpcLineItemDAO> GetInittedDAO();
+  unique_ptr<RpcLineItemDAO> GetInittedDAO();
 
   void LoadLineItemsThread(int i);
 
@@ -170,7 +169,7 @@ class TpchRealWorld {
         ? Substitute("$0.$1", kLineItemBase, i + 1) : kLineItemBase;
   }
 
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  unique_ptr<ExternalMiniCluster> cluster_;
   AtomicInt<int64_t> rows_inserted_;
   string master_addresses_;
   AtomicBool stop_threads_;
@@ -259,7 +258,7 @@ Status TpchRealWorld::StartDbgens() {
       argv.emplace_back("-S");
       argv.push_back(Substitute("$0", i));
     }
-    gscoped_ptr<Subprocess> dbgen_proc(new Subprocess(argv));
+    unique_ptr<Subprocess> dbgen_proc(new Subprocess(argv));
     LOG(INFO) << "Running " << JoinStrings(argv, " ");
     RETURN_NOT_OK(dbgen_proc->Start());
     dbgen_processes_.push_back(dbgen_proc.release());
@@ -267,7 +266,7 @@ Status TpchRealWorld::StartDbgens() {
   return Status::OK();
 }
 
-gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
+unique_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
   // When chunking, dbgen will begin the nth chunk on the order key:
   //
   //   6000000 * SF * n / num_chunks
@@ -295,7 +294,7 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
     LOG(FATAL) << "Unknown partition strategy: " << FLAGS_tpch_partition_strategy;
   }
 
-  gscoped_ptr<RpcLineItemDAO> dao(
+  unique_ptr<RpcLineItemDAO> dao(
         new RpcLineItemDAO(master_addresses_,
                            FLAGS_tpch_table_name,
                            FLAGS_tpch_max_batch_size,
@@ -304,12 +303,12 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
                            FLAGS_tpch_num_inserters,
                            split_rows));
   dao->Init();
-  return std::move(dao);
+  return dao;
 }
 
 void TpchRealWorld::LoadLineItemsThread(int i) {
   LOG(INFO) << "Connecting to cluster at " << master_addresses_;
-  gscoped_ptr<RpcLineItemDAO> dao = GetInittedDAO();
+  unique_ptr<RpcLineItemDAO> dao = GetInittedDAO();
   LineItemTsvImporter importer(GetNthLineItemFileName(i));
 
   boost::function<void(KuduPartialRow*)> f =
@@ -359,7 +358,7 @@ void TpchRealWorld::MonitorDbgenThread(int i) {
 }
 
 void TpchRealWorld::RunQueriesThread() {
-  gscoped_ptr<RpcLineItemDAO> dao = GetInittedDAO();
+  unique_ptr<RpcLineItemDAO> dao = GetInittedDAO();
   while (!stop_threads_.Load()) {
     string log;
     if (FLAGS_tpch_load_data) {
@@ -368,7 +367,7 @@ void TpchRealWorld::RunQueriesThread() {
       log = "querying data in cluster";
     }
     LOG_TIMING(INFO, log) {
-      gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+      unique_ptr<RpcLineItemDAO::Scanner> scanner;
       dao->OpenTpch1Scanner(&scanner);
       vector<KuduRowResult> rows;
       // We check stop_threads_ even while scanning since it can takes tens of seconds to query.

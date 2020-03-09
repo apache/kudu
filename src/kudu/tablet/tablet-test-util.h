@@ -52,7 +52,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -173,7 +172,7 @@ class KuduTabletTest : public KuduTest {
   const Schema client_schema_;
   const TabletHarness::Options::ClockType clock_type_;
 
-  gscoped_ptr<TabletHarness> harness_;
+  std::unique_ptr<TabletHarness> harness_;
 };
 
 class KuduRowSetTest : public KuduTabletTest {

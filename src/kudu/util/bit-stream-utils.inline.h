@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef IMPALA_UTIL_BIT_STREAM_UTILS_INLINE_H
-#define IMPALA_UTIL_BIT_STREAM_UTILS_INLINE_H
+#pragma once
 
 #include <algorithm>
 
@@ -90,11 +89,11 @@ inline void BitWriter::PutVlqInt(int32_t v) {
 
 
 inline BitReader::BitReader(const uint8_t* buffer, int buffer_len)
-  : buffer_(buffer),
-    max_bytes_(buffer_len),
-    buffered_values_(0),
-    byte_offset_(0),
-    bit_offset_(0) {
+    : buffer_(buffer),
+      max_bytes_(buffer_len),
+      buffered_values_(0),
+      byte_offset_(0),
+      bit_offset_(0) {
   int num_bytes = std::min(8, max_bytes_);
   memcpy(&buffered_values_, buffer_ + byte_offset_, num_bytes);
 }
@@ -207,5 +206,3 @@ inline bool BitReader::GetVlqInt(int32_t* v) {
 }
 
 } // namespace kudu
-
-#endif

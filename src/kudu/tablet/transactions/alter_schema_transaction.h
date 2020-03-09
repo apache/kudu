@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstdint>
@@ -26,7 +25,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/transaction.h"
@@ -134,7 +132,7 @@ class AlterSchemaTransaction : public Transaction {
   AlterSchemaTransactionState* state() override { return state_.get(); }
   const AlterSchemaTransactionState* state() const override { return state_.get(); }
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override;
+  void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
   // Executes a Prepare for the alter schema transaction.
   Status Prepare() override;
@@ -143,7 +141,7 @@ class AlterSchemaTransaction : public Transaction {
   Status Start() override;
 
   // Executes an Apply for the alter schema transaction
-  Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) override;
+  Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
 
   // Actually commits the transaction.
   void Finish(TransactionResult result) override;

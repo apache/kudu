@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <atomic>
@@ -38,7 +37,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -55,7 +53,7 @@
 namespace kudu {
 
 typedef std::lock_guard<simple_spinlock> Lock;
-typedef gscoped_ptr<Lock> ScopedLock;
+typedef std::unique_ptr<Lock> ScopedLock;
 
 class Status;
 class ThreadPool;
@@ -218,7 +216,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // (and later on the CommitMsg). ConsensusRound will also point to and
   // increase the reference count for the provided callbacks.
   scoped_refptr<ConsensusRound> NewRound(
-      gscoped_ptr<ReplicateMsg> replicate_msg,
+      std::unique_ptr<ReplicateMsg> replicate_msg,
       ConsensusReplicatedCallback replicated_cb);
 
   // Called by a Leader to replicate an entry to the state machine.
@@ -1005,7 +1003,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
   ConsensusRound(RaftConsensus* consensus,
-                 gscoped_ptr<ReplicateMsg> replicate_msg,
+                 std::unique_ptr<ReplicateMsg> replicate_msg,
                  ConsensusReplicatedCallback replicated_cb);
 
   // Ctor used for follower/learner transactions. These transactions do not use the

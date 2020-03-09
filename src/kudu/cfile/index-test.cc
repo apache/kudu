@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include <glog/logging.h>
@@ -29,23 +30,25 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/gutil/endian.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using std::string;
+using std::unique_ptr;
+
 namespace kudu {
 namespace cfile {
 
 Status SearchInReaderString(const IndexBlockReader &reader,
-                            const std::string &search_key,
+                            const string &search_key,
                             BlockPointer *ptr, Slice *match) {
 
   static faststring dst;
 
-  gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
+  unique_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
   KeyEncoderTraits<BINARY, faststring>::Encode(search_key, &dst);
   Status s = iter->SeekAtOrBefore(Slice(dst));
@@ -63,7 +66,7 @@ Status SearchInReaderUint32(const IndexBlockReader &reader,
 
   static faststring dst;
 
-  gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
+  unique_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
   KeyEncoderTraits<UINT32, faststring>::Encode(search_key, &dst);
   Status s = iter->SeekAtOrBefore(Slice(dst));
@@ -310,7 +313,7 @@ TEST(TestIndexBlock, TestIterator) {
 
   IndexBlockReader reader;
   ASSERT_OK(reader.Parse(s));
-  gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
+  unique_ptr<IndexBlockIterator> iter(reader.NewIterator());
   ASSERT_OK(iter->SeekToIndex(0));
   ASSERT_EQ(0U, SliceAsUInt32(iter->GetCurrentKey()));
   ASSERT_EQ(100000U, iter->GetCurrentBlockPointer().offset());

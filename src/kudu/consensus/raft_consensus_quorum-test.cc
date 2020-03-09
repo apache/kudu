@@ -20,7 +20,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -57,7 +56,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -270,7 +268,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   Status AppendDummyMessage(int peer_idx,
                             scoped_refptr<ConsensusRound>* round) {
-    gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
+    unique_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
     msg->set_timestamp(clock_.Now().ToUint64());
@@ -302,7 +300,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       commit_callback = Bind(&DoNothingStatusCB);
     }
 
-    gscoped_ptr<CommitMsg> msg(new CommitMsg());
+    unique_ptr<CommitMsg> msg(new CommitMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_commited_op_id()->CopyFrom(round->id());
     CHECK_OK(logs_[peer_idx]->AsyncAppendCommit(std::move(msg), commit_callback));

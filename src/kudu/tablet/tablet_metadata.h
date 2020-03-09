@@ -30,7 +30,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/callback.h"  // IWYU pragma: keep
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -311,7 +310,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id);
 
-  void SetSchemaUnlocked(gscoped_ptr<Schema> schema, uint32_t version);
+  void SetSchemaUnlocked(std::unique_ptr<Schema> schema, uint32_t version);
 
   Status LoadFromDisk();
 
@@ -370,7 +369,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   int64_t last_durable_mrs_id_;
 
   // The current schema version. This is owned by this class.
-  // We don't use gscoped_ptr so that we can do an atomic swap.
+  // We don't use unique_ptr so that we can do an atomic swap.
   Schema* schema_;
   uint32_t schema_version_;
   std::string table_name_;

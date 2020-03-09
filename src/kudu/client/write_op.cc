@@ -17,6 +17,7 @@
 
 #include "kudu/client/write_op.h"
 
+#include <memory>
 #include <ostream>
 
 #include <glog/logging.h>
@@ -29,14 +30,14 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
 
+using kudu::client::sp::shared_ptr;
+using std::unique_ptr;
+
 namespace kudu {
 namespace client {
-
-using sp::shared_ptr;
 
 RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
   switch (type) {
@@ -66,7 +67,7 @@ EncodedKey* KuduWriteOperation::CreateKey() const {
   for (int i = 0; i < row.schema()->num_key_columns(); i++) {
     kb.AddColumnKey(row.cell_ptr(i));
   }
-  gscoped_ptr<EncodedKey> key(kb.BuildEncodedKey());
+  unique_ptr<EncodedKey> key(kb.BuildEncodedKey());
   return key.release();
 }
 

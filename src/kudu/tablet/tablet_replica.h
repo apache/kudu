@@ -31,7 +31,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -259,10 +258,10 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Convenience method to return the permanent_uuid of this peer.
   std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }
 
-  Status NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
+  Status NewLeaderTransactionDriver(std::unique_ptr<Transaction> transaction,
                                     scoped_refptr<TransactionDriver>* driver);
 
-  Status NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
+  Status NewReplicaTransactionDriver(std::unique_ptr<Transaction> transaction,
                                      scoped_refptr<TransactionDriver>* driver);
 
   // Tells the tablet's log to garbage collect.

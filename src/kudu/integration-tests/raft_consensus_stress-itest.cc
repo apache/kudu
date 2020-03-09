@@ -18,17 +18,16 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"

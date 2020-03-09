@@ -875,7 +875,7 @@ Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
   return AsyncAppend(std::move(batch), callback);
 }
 
-Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
+Status Log::AsyncAppendCommit(unique_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
   MAYBE_FAULT(FLAGS_fault_crash_before_append_commit);
 

@@ -26,7 +26,6 @@
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -199,9 +198,10 @@ Status InternalMiniCluster::AddTabletServer() {
   }
 
   string bind_ip = GetBindIpForDaemonWithType(MiniCluster::TSERVER, new_idx, opts_.bind_mode);
-  gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(GetTabletServerFsRoot(new_idx),
-                                                                   HostPort(bind_ip, ts_rpc_port),
-                                                                   opts_.num_data_dirs));
+  unique_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(
+      GetTabletServerFsRoot(new_idx),
+      HostPort(bind_ip, ts_rpc_port),
+      opts_.num_data_dirs));
 
   // set the master addresses
   tablet_server->options()->master_addresses = master_rpc_addrs();

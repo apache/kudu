@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -33,7 +34,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"

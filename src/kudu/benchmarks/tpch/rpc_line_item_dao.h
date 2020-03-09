@@ -14,17 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TPCH_RPC_LINE_ITEM_DAO_H
-#define KUDU_TPCH_RPC_LINE_ITEM_DAO_H
+#pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/row_result.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/semaphore.h"
@@ -67,18 +66,19 @@ class RpcLineItemDAO {
   // Deletes previous scanner if one is open.
   // Projects only those column names listed in 'columns'.
   void OpenScanner(const std::vector<std::string>& columns,
-                   gscoped_ptr<Scanner>* scanner);
+                   std::unique_ptr<Scanner>* scanner);
   // Calls OpenScanner with the tpch1 query parameters.
-  void OpenTpch1Scanner(gscoped_ptr<Scanner>* scanner);
+  void OpenTpch1Scanner(std::unique_ptr<Scanner>* scanner);
 
   // Opens a scanner with the TPCH Q1 projection and filter, plus range filter to only
   // select rows in the given order key range.
   void OpenTpch1ScannerForOrderKeyRange(int64_t min_orderkey, int64_t max_orderkey,
-                                        gscoped_ptr<Scanner>* scanner);
+                                        std::unique_ptr<Scanner>* scanner);
   bool IsTableEmpty();
 
-  // TODO: this wrapper class is of limited utility now that we only have a single
-  // "DAO" implementation -- we could just return the KuduScanner to users directly.
+  // TODO(unknown): this wrapper class is of limited utility now that we only
+  // have a single "DAO" implementation -- we could just return the KuduScanner
+  // to users directly.
   class Scanner {
    public:
     ~Scanner() {}
@@ -93,7 +93,7 @@ class RpcLineItemDAO {
     friend class RpcLineItemDAO;
     Scanner() {}
 
-    gscoped_ptr<client::KuduScanner> scanner_;
+    std::unique_ptr<client::KuduScanner> scanner_;
   };
 
  private:
@@ -101,7 +101,7 @@ class RpcLineItemDAO {
 
   void OpenScannerImpl(const std::vector<std::string>& columns,
                        const std::vector<client::KuduPredicate*>& preds,
-                       gscoped_ptr<Scanner>* scanner);
+                       std::unique_ptr<Scanner>* scanner);
   void HandleLine();
 
   const std::string master_address_;
@@ -124,4 +124,3 @@ class RpcLineItemDAO {
 };
 
 } //namespace kudu
-#endif

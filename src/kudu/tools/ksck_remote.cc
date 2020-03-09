@@ -43,7 +43,6 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -98,6 +97,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -387,7 +387,7 @@ class ChecksumStepper {
   }
 
   void HandleResponse() {
-    gscoped_ptr<ChecksumStepper> deleter(this);
+    unique_ptr<ChecksumStepper> deleter(this);
     Status s = rpc_.status();
     if (s.ok() && resp_.has_error()) {
       s = StatusFromPB(resp_.error().status());
@@ -453,7 +453,7 @@ class ChecksumStepper {
         LOG(FATAL) << "Unknown type";
         break;
     }
-    gscoped_ptr<ChecksumCallbackHandler> handler(new ChecksumCallbackHandler(this));
+    unique_ptr<ChecksumCallbackHandler> handler(new ChecksumCallbackHandler(this));
     rpc::ResponseCallback cb = boost::bind(&ChecksumCallbackHandler::Run, handler.get());
     proxy_->ChecksumAsync(req_, &resp_, &rpc_, cb);
     ignore_result(handler.release());
@@ -486,7 +486,7 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const Schema& schema,
         const KsckChecksumOptions& options,
         shared_ptr<KsckChecksumManager> manager) {
-  gscoped_ptr<ChecksumStepper> stepper(
+  unique_ptr<ChecksumStepper> stepper(
       new ChecksumStepper(tablet_id, schema, uuid(), options, manager, ts_proxy_));
   stepper->Start();
   ignore_result(stepper.release()); // Deletes self on callback.

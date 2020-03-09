@@ -49,7 +49,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
@@ -343,7 +342,7 @@ class TabletReplicaTest : public KuduTabletTest {
   // Execute insert requests and roll log after each one.
   Status ExecuteInsertsAndRollLogs(int num_inserts) {
     for (int i = 0; i < num_inserts; i++) {
-      gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
+      unique_ptr<WriteRequestPB> req(new WriteRequestPB());
       RETURN_NOT_OK(GenerateSequentialInsertRequest(GetTestSchema(), req.get()));
       RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
     }
@@ -354,7 +353,7 @@ class TabletReplicaTest : public KuduTabletTest {
   // Execute delete requests and roll log after each one.
   Status ExecuteDeletesAndRollLogs(int num_deletes) {
     for (int i = 0; i < num_deletes; i++) {
-      gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
+      unique_ptr<WriteRequestPB> req(new WriteRequestPB());
       CHECK_OK(GenerateSequentialDeleteRequest(req.get()));
       CHECK_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
     }
@@ -413,7 +412,7 @@ class DelayedApplyTransaction : public WriteTransaction {
         apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
 
-  virtual Status Apply(gscoped_ptr<CommitMsg>* commit_msg) override {
+  virtual Status Apply(unique_ptr<CommitMsg>* commit_msg) override {
     apply_started_->CountDown();
     LOG(INFO) << "Delaying apply...";
     apply_continue_->Wait();
@@ -579,8 +578,8 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   CountDownLatch rpc_latch(1);
   CountDownLatch apply_started(1);
   CountDownLatch apply_continue(1);
-  gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
-  gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
+  unique_ptr<WriteRequestPB> req(new WriteRequestPB());
+  unique_ptr<WriteResponsePB> resp(new WriteResponsePB());
   {
     // Long-running mutation.
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
@@ -592,14 +591,14 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
     tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
-    gscoped_ptr<DelayedApplyTransaction> transaction(
+    unique_ptr<DelayedApplyTransaction> transaction(
         new DelayedApplyTransaction(&apply_started,
                                     &apply_continue,
                                     std::move(tx_state)));
 
     scoped_refptr<TransactionDriver> driver;
-    ASSERT_OK(tablet_replica_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(),
-                                                       &driver));
+    ASSERT_OK(tablet_replica_->NewLeaderTransactionDriver(std::move(transaction),
+                                                          &driver));
 
     ASSERT_OK(driver->ExecuteAsync());
     apply_started.Wait();

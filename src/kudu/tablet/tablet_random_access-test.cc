@@ -37,7 +37,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/key_value_test_schema.h"
@@ -227,7 +226,7 @@ class TestRandomAccess : public KuduTabletTest {
                                         const optional<ExpectedKeyValueRow>& old_row,
                                         vector<LocalTabletWriter::Op>* ops) {
 
-    gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
+    unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     optional<ExpectedKeyValueRow> ret = ExpectedKeyValueRow();
     ret->key = key;
@@ -275,7 +274,7 @@ class TestRandomAccess : public KuduTabletTest {
   // Adds a delete of the given row to 'ops', returning an empty string (indicating that
   // the row no longer exists).
   optional<ExpectedKeyValueRow> DeleteRow(int key, vector<LocalTabletWriter::Op>* ops) {
-    gscoped_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
+    unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     ops->push_back(LocalTabletWriter::Op(RowOperationsPB::DELETE, row.release()));
     return boost::none;
@@ -330,7 +329,7 @@ class TestRandomAccess : public KuduTabletTest {
   // operations. This stops the compact/flush thread.
   CountDownLatch done_;
 
-  gscoped_ptr<LocalTabletWriter> writer_;
+  unique_ptr<LocalTabletWriter> writer_;
 };
 
 TEST_F(TestRandomAccess, Test) {

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_TS_DESCRIPTOR_H
-#define KUDU_MASTER_TS_DESCRIPTOR_H
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -31,7 +30,6 @@
 
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/locks.h"
@@ -204,7 +202,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // The tablet server's location, as determined by the master at registration.
   boost::optional<std::string> location_;
 
-  gscoped_ptr<ServerRegistrationPB> registration_;
+  std::unique_ptr<ServerRegistrationPB> registration_;
 
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
@@ -218,4 +216,3 @@ typedef std::vector<std::shared_ptr<TSDescriptor>> TSDescriptorVector;
 
 } // namespace master
 } // namespace kudu
-#endif /* KUDU_MASTER_TS_DESCRIPTOR_H */

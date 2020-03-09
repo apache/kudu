@@ -14,13 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CONSENSUS_REF_COUNTED_REPLICATE_H_
-#define KUDU_CONSENSUS_REF_COUNTED_REPLICATE_H_
+#pragma once
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
 namespace consensus {
@@ -35,7 +32,7 @@ class RefCountedReplicate : public RefCountedThreadSafe<RefCountedReplicate> {
   }
 
  private:
-  gscoped_ptr<ReplicateMsg> msg_;
+  std::unique_ptr<ReplicateMsg> msg_;
 };
 
 typedef scoped_refptr<RefCountedReplicate> ReplicateRefPtr;
@@ -46,5 +43,3 @@ inline ReplicateRefPtr make_scoped_refptr_replicate(ReplicateMsg* replicate) {
 
 } // namespace consensus
 } // namespace kudu
-
-#endif /* KUDU_CONSENSUS_REF_COUNTED_REPLICATE_H_ */

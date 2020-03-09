@@ -33,7 +33,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/block_id.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -70,14 +69,14 @@ class TestTabletMetadata : public KuduTabletTest {
   }
 
   void BuildPartialRow(int key, int intval, const char* strval,
-                       gscoped_ptr<KuduPartialRow>* row);
+                       unique_ptr<KuduPartialRow>* row);
 
  protected:
-  gscoped_ptr<LocalTabletWriter> writer_;
+  unique_ptr<LocalTabletWriter> writer_;
 };
 
 void TestTabletMetadata::BuildPartialRow(int key, int intval, const char* strval,
-                                         gscoped_ptr<KuduPartialRow>* row) {
+                                         unique_ptr<KuduPartialRow>* row) {
   row->reset(new KuduPartialRow(&client_schema_));
   CHECK_OK((*row)->SetInt32(0, key));
   CHECK_OK((*row)->SetInt32(1, intval));
@@ -89,7 +88,7 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
   TabletMetadata* meta = harness_->tablet()->metadata();
 
   // Write some data to the tablet and flush.
-  gscoped_ptr<KuduPartialRow> row;
+  unique_ptr<KuduPartialRow> row;
   BuildPartialRow(0, 0, "foo", &row);
   ASSERT_OK(writer_->Insert(*row));
   ASSERT_OK(harness_->tablet()->Flush());
@@ -168,7 +167,7 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   ASSERT_GT(initial_size, 0);
 
   // Write some data to the tablet and flush.
-  gscoped_ptr<KuduPartialRow> row;
+  unique_ptr<KuduPartialRow> row;
   BuildPartialRow(0, 0, "foo", &row);
   writer_->Insert(*row);
   ASSERT_OK(harness_->tablet()->Flush());

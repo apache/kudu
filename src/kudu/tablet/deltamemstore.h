@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTAMEMSTORE_H
-#define KUDU_TABLET_DELTAMEMSTORE_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +25,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/concurrent_btree.h"
@@ -105,7 +103,7 @@ class DeltaMemStore : public DeltaStore,
   // Flush the DMS to the given file writer.
   // Returns statistics in *stats.
   Status FlushToFile(DeltaFileWriter *dfw,
-                     gscoped_ptr<DeltaStats>* stats);
+                     std::unique_ptr<DeltaStats>* stats);
 
   // Create an iterator for applying deltas from this DMS.
   //
@@ -241,7 +239,7 @@ class DMSIterator : public DeltaIterator {
 
   DeltaPreparer<DMSPreparerTraits> preparer_;
 
-  gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
+  std::unique_ptr<DeltaMemStore::DMSTreeIter> iter_;
 
   bool initted_;
 
@@ -251,5 +249,3 @@ class DMSIterator : public DeltaIterator {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

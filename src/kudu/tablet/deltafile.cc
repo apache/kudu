@@ -24,7 +24,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/cfile_reader.h"
@@ -41,7 +40,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_relevancy.h"
@@ -235,7 +233,7 @@ Status DeltaFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         std::move(options),
                                         &cf_reader));
-  gscoped_ptr<DeltaFileReader> df_reader(
+  unique_ptr<DeltaFileReader> df_reader(
       new DeltaFileReader(std::move(cf_reader), delta_type));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(df_reader->Init(io_context));
@@ -280,9 +278,9 @@ Status DeltaFileReader::ReadDeltaStats() {
   if (!deltastats_pb.ParseFromString(filestats_pb_buf)) {
     return Status::Corruption("unable to parse the delta stats protobuf");
   }
-  gscoped_ptr<DeltaStats>stats(new DeltaStats());
+  unique_ptr<DeltaStats> stats(new DeltaStats());
   RETURN_NOT_OK(stats->InitFromPB(deltastats_pb));
-  delta_stats_.swap(stats);
+  delta_stats_ = std::move(stats);
   return Status::OK();
 }
 

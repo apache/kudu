@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -37,7 +38,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -56,15 +56,15 @@
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
 
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::client::sp::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
 namespace client {
-
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
-using sp::shared_ptr;
 
 static const int kNumTabletServers = 3;
 static const int kNumTablets = 3;
@@ -409,7 +409,7 @@ class AllTypesItest : public KuduTest {
   Status CreateTable() {
     CreateAllTypesSchema();
     vector<const KuduPartialRow*> split_rows = setup_.GenerateSplitRows(schema_);
-    gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
 
     for (const KuduPartialRow* row : split_rows) {
       split_rows_.push_back(*row);
@@ -632,7 +632,7 @@ class AllTypesItest : public KuduTest {
   KuduSchema schema_;
   vector<KuduPartialRow> split_rows_;
   shared_ptr<KuduClient> client_;
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  unique_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduTable> table_;
 };
 

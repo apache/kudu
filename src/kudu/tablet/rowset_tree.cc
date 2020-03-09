@@ -34,9 +34,10 @@
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
 
-using std::vector;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {
@@ -137,9 +138,10 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   // Iterate over each of the provided RowSets, fetching their
   // bounds and adding them to the local vectors.
   for (const shared_ptr<RowSet> &rs : rowsets) {
-    gscoped_ptr<RowSetWithBounds> rsit(new RowSetWithBounds());
+    unique_ptr<RowSetWithBounds> rsit(new RowSetWithBounds());
     rsit->rowset = rs.get();
-    string min_key, max_key;
+    string min_key;
+    string max_key;
     Status s = rs->GetBounds(&min_key, &max_key);
     if (s.IsNotSupported()) {
       // This rowset is a MemRowSet, for which the bounds change as more

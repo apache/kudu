@@ -36,7 +36,6 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/rowset.h"
@@ -331,7 +330,7 @@ class MemRowSet : public RowSet,
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot& snap,
                                     const fs::IOContext* io_context,
-                                    gscoped_ptr<CompactionInput>* out) const override;
+                                    std::unique_ptr<CompactionInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
    const Schema &schema() const {
@@ -592,7 +591,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
                                       ApplyStatus* apply_status);
 
   const std::shared_ptr<const MemRowSet> memrowset_;
-  gscoped_ptr<MemRowSet::MSBTIter> iter_;
+  std::unique_ptr<MemRowSet::MSBTIter> iter_;
 
   const RowIteratorOptions opts_;
 
@@ -600,7 +599,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   // Relies on the MRSRowProjector interface to abstract from the two
   // different implementations of the RowProjector, which may change
   // at runtime (using vs. not using code generation).
-  const gscoped_ptr<MRSRowProjector> projector_;
+  const std::unique_ptr<MRSRowProjector> projector_;
   DeltaProjector delta_projector_;
 
   // The index of the first IS_DELETED virtual column in the projection schema,

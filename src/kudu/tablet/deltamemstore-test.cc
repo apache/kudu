@@ -48,7 +48,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
@@ -212,7 +211,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   ASSERT_OK(fs.CreateNewBlock({}, &block));
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
-  gscoped_ptr<DeltaStats> stats;
+  unique_ptr<DeltaStats> stats;
   dms_->FlushToFile(&dfw, &stats);
 
   ASSERT_EQ(n_rows / 2, stats->update_count_for_col_id(schema_.column_id(kIntColumn)));

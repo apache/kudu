@@ -24,7 +24,6 @@
 #include <glog/logging.h>
 
 #include "kudu/codegen/jit_wrapper.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/cache.h"

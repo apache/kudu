@@ -38,7 +38,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -110,7 +109,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   // Try to create a single-tablet table.
   // This won't succeed because we can't create enough replicas to get
   // a quorum.
-  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
@@ -196,7 +195,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   const int kNumTablets = 20;
   NO_FATALS(StartCluster({}, {}, kNumServers));
 
-  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
@@ -280,7 +279,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
                               int32_t range_lower_bound,
                               int32_t range_upper_bound,
                               const string& dimension_label) -> Status {
-    gscoped_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
+    unique_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
     unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
     RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));
     unique_ptr<KuduPartialRow> upper_bound(client_schema->NewRow());
@@ -301,7 +300,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
                              int32_t range_lower_bound,
                              int32_t range_upper_bound,
                              const string& dimension_label) -> Status {
-    gscoped_ptr<client::KuduTableAlterer> table_alterer(client->NewTableAlterer(table_name));
+    unique_ptr<client::KuduTableAlterer> table_alterer(client->NewTableAlterer(table_name));
     unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
     RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));
     unique_ptr<KuduPartialRow> upper_bound(client_schema->NewRow());
@@ -399,7 +398,7 @@ static void LookUpRandomKeysLoop(const std::shared_ptr<master::MasterServiceProx
                                  AtomicBool* quit) {
   Schema schema(GetSimpleTestSchema());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
-  gscoped_ptr<KuduPartialRow> r(client_schema.NewRow());
+  unique_ptr<KuduPartialRow> r(client_schema.NewRow());
 
   while (!quit->Load()) {
     master::GetTableLocationsRequestPB req;
@@ -467,7 +466,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
 
   Schema schema(GetSimpleTestSchema());
   auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
-  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
 
   // Don't bother waiting for table creation to finish; it'll never happen
   // because all of the tservers are dead.

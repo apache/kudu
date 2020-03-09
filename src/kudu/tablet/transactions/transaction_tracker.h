@@ -14,16 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_TABLET_TRANSACTION_TRACKER_H_
-#define KUDU_TABLET_TRANSACTION_TRACKER_H_
+#pragma once
 
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
@@ -103,7 +100,7 @@ class TransactionTracker {
       ScopedRefPtrEqualToFunctor<TransactionDriver> > TxnMap;
   TxnMap pending_txns_;
 
-  gscoped_ptr<Metrics> metrics_;
+  std::unique_ptr<Metrics> metrics_;
 
   std::shared_ptr<MemTracker> mem_tracker_;
 
@@ -112,5 +109,3 @@ class TransactionTracker {
 
 }  // namespace tablet
 }  // namespace kudu
-
-#endif // KUDU_TABLET_TRANSACTION_TRACKER_H_

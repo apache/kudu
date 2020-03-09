@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_CFILE_READER_H
-#define KUDU_CFILE_CFILE_READER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -35,7 +33,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/compression/compression.pb.h"
@@ -213,8 +210,8 @@ class CFileReader {
 
   uint8_t cfile_version_;
 
-  gscoped_ptr<CFileHeaderPB> header_;
-  gscoped_ptr<CFileFooterPB> footer_;
+  std::unique_ptr<CFileHeaderPB> header_;
+  std::unique_ptr<CFileFooterPB> footer_;
   const CompressionCodec* codec_;
   const TypeInfo *type_info_;
   const TypeEncodingInfo *type_encoding_info_;
@@ -409,7 +406,7 @@ class CFileIterator : public ColumnIterator {
   struct PreparedBlock {
     BlockPointer dblk_ptr_;
     BlockHandle dblk_data_;
-    gscoped_ptr<BlockDecoder> dblk_;
+    std::unique_ptr<BlockDecoder> dblk_;
 
     // The rowid of the first row in this block.
     rowid_t first_row_idx() const {
@@ -466,11 +463,11 @@ class CFileIterator : public ColumnIterator {
 
   CFileReader* reader_;
 
-  gscoped_ptr<IndexTreeIterator> posidx_iter_;
-  gscoped_ptr<IndexTreeIterator> validx_iter_;
+  std::unique_ptr<IndexTreeIterator> posidx_iter_;
+  std::unique_ptr<IndexTreeIterator> validx_iter_;
 
   // Decoder for the dictionary block.
-  gscoped_ptr<BinaryPlainBlockDecoder> dict_decoder_;
+  std::unique_ptr<BinaryPlainBlockDecoder> dict_decoder_;
   BlockHandle dict_block_handle_;
 
   // Set containing the codewords that match the predicate in a dictionary.
@@ -512,5 +509,3 @@ class CFileIterator : public ColumnIterator {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

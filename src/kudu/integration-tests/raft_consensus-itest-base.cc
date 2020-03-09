@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -37,7 +38,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
@@ -83,6 +83,7 @@ using kudu::itest::TServerDetails;
 using kudu::pb_util::SecureDebugString;
 using kudu::rpc::RpcController;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -151,7 +152,7 @@ void RaftConsensusITestBase::InsertTestRowsRemoteThread(
     uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
     for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-      gscoped_ptr<KuduInsert> insert(table->NewInsert());
+      unique_ptr<KuduInsert> insert(table->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt32(0, j));
       CHECK_OK(row->SetInt32(1, j * 2));

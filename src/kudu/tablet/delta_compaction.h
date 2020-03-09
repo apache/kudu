@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTA_COMPACTION_H
-#define KUDU_TABLET_DELTA_COMPACTION_H
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -24,7 +23,6 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/status.h"
@@ -129,12 +127,12 @@ class MajorDeltaCompaction {
   const std::string tablet_id_;
 
   // Outputs:
-  gscoped_ptr<MultiColumnWriter> base_data_writer_;
+  std::unique_ptr<MultiColumnWriter> base_data_writer_;
   // The following two may not be initialized if we don't need to write a delta file.
-  gscoped_ptr<DeltaFileWriter> new_redo_delta_writer_;
+  std::unique_ptr<DeltaFileWriter> new_redo_delta_writer_;
   BlockId new_redo_delta_block_;
 
-  gscoped_ptr<DeltaFileWriter> new_undo_delta_writer_;
+  std::unique_ptr<DeltaFileWriter> new_undo_delta_writer_;
   BlockId new_undo_delta_block_;
 
   size_t redo_delta_mutations_written_;
@@ -149,5 +147,3 @@ class MajorDeltaCompaction {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

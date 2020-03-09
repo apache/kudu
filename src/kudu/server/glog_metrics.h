@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_SERVER_GLOG_METRICS_H
-#define KUDU_SERVER_GLOG_METRICS_H
+#pragma once
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include <memory>
+
 #include "kudu/gutil/ref_counted.h"
 
 namespace google {
@@ -38,9 +38,8 @@ class ScopedGLogMetrics {
   ~ScopedGLogMetrics();
 
  private:
-  gscoped_ptr<google::LogSink> sink_;
+  std::unique_ptr<google::LogSink> sink_;
 };
-
 
 // Registers glog-related metrics.
 // This can be called multiple times on different entities, though the resulting
@@ -48,4 +47,3 @@ class ScopedGLogMetrics {
 void RegisterGLogMetrics(const scoped_refptr<MetricEntity>& entity);
 
 } // namespace kudu
-#endif /* KUDU_SERVER_GLOG_METRICS_H */

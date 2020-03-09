@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTATRACKER_H
-#define KUDU_TABLET_DELTATRACKER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +25,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_key.h"
@@ -87,7 +85,7 @@ class DeltaTracker {
                      log::LogAnchorRegistry* log_anchor_registry,
                      const TabletMemTrackers& mem_trackers,
                      const fs::IOContext* io_context,
-                     gscoped_ptr<DeltaTracker>* delta_tracker);
+                     std::unique_ptr<DeltaTracker>* delta_tracker);
 
   Status WrapIterator(const std::shared_ptr<CFileSet::Iterator> &base,
                       const RowIteratorOptions& opts,
@@ -384,5 +382,3 @@ class DeltaTracker {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

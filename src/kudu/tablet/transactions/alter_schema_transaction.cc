@@ -84,7 +84,7 @@ AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransaction
       state_(std::move(state)) {
 }
 
-void AlterSchemaTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg) {
+void AlterSchemaTransaction::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
   (*replicate_msg)->set_op_type(ALTER_SCHEMA_OP);
   (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*state()->request());
@@ -94,7 +94,7 @@ Status AlterSchemaTransaction::Prepare() {
   TRACE("PREPARE ALTER-SCHEMA: Starting");
 
   // Decode schema
-  gscoped_ptr<Schema> schema(new Schema);
+  unique_ptr<Schema> schema(new Schema);
   Status s = SchemaFromPB(state_->request()->schema(), schema.get());
   if (!s.ok()) {
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
@@ -118,7 +118,7 @@ Status AlterSchemaTransaction::Start() {
   return Status::OK();
 }
 
-Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
+Status AlterSchemaTransaction::Apply(unique_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
   Tablet* tablet = state_->tablet_replica()->tablet();

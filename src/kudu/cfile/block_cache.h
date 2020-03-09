@@ -14,15 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BLOCK_CACHE_H
-#define KUDU_CFILE_BLOCK_CACHE_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 #include "kudu/fs/block_id.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
@@ -167,7 +166,7 @@ class BlockCache {
 
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
-  gscoped_ptr<Cache> cache_;
+  std::unique_ptr<Cache> cache_;
 };
 
 // Scoped reference to a block from the block cache.
@@ -227,5 +226,3 @@ bool ValidateBlockCacheCapacity();
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

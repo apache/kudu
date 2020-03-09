@@ -35,7 +35,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -92,7 +91,7 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
   }
 
   Status NewProxy(const RaftPeerPB& peer_pb,
-                  gscoped_ptr<PeerProxy>* proxy) override {
+                  unique_ptr<PeerProxy>* proxy) override {
     PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
     if (!proxy_ptr) return Status::NotFound("no proxy for peer");
     proxy->reset(proxy_ptr);
@@ -146,11 +145,11 @@ class LeaderElectionTest : public KuduTest {
 
   RaftConfigPB config_;
   ProxyMap proxies_;
-  gscoped_ptr<PeerProxyFactory> proxy_factory_;
+  unique_ptr<PeerProxyFactory> proxy_factory_;
   unique_ptr<ThreadPool> pool_;
 
   CountDownLatch latch_;
-  gscoped_ptr<ElectionResult> result_;
+  unique_ptr<ElectionResult> result_;
 };
 
 void LeaderElectionTest::ElectionCallback(const ElectionResult& result) {

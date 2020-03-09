@@ -14,17 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_ROWSET_MANAGER_H
-#define KUDU_TABLET_ROWSET_MANAGER_H
+#pragma once
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/slice.h"
@@ -112,7 +111,7 @@ class RowSetTree {
  private:
   // Interval tree of the rowsets. Used to efficiently find rowsets which might contain
   // a probe row.
-  gscoped_ptr<IntervalTree<RowSetIntervalTraits> > tree_;
+  std::unique_ptr<IntervalTree<RowSetIntervalTraits>> tree_;
 
   // Ordered map of all the interval endpoints, holding the implicit contiguous
   // intervals
@@ -142,4 +141,3 @@ class RowSetTree {
 
 } // namespace tablet
 } // namespace kudu
-#endif

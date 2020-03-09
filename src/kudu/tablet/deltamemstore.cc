@@ -127,13 +127,14 @@ Status DeltaMemStore::Update(Timestamp timestamp,
 }
 
 Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
-                                  gscoped_ptr<DeltaStats>* stats_ret) {
-  gscoped_ptr<DeltaStats> stats(new DeltaStats());
+                                  unique_ptr<DeltaStats>* stats_ret) {
+  unique_ptr<DeltaStats> stats(new DeltaStats());
 
-  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  unique_ptr<DMSTreeIter> iter(tree_.NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
-    Slice key_slice, val;
+    Slice key_slice;
+    Slice val;
     iter->GetCurrentEntry(&key_slice, &val);
     DeltaKey key;
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
@@ -165,7 +166,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx,
 
   bool exact;
 
-  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  unique_ptr<DMSTreeIter> iter(tree_.NewIterator());
   if (!iter->SeekAtOrBefore(key_slice, &exact)) {
     return Status::OK();
   }

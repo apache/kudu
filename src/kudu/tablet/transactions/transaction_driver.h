@@ -14,16 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
@@ -34,9 +33,9 @@
 #include "kudu/util/trace.h"
 
 namespace kudu {
-class Timestamp;
 class ThreadPool;
 class ThreadPoolToken;
+class Timestamp;
 
 namespace log {
 class Log;
@@ -234,7 +233,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
-  Status Init(gscoped_ptr<Transaction> transaction,
+  Status Init(std::unique_ptr<Transaction> transaction,
               consensus::DriverType type);
 
   // Returns the OpId of the transaction being executed or an uninitialized
@@ -375,7 +374,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   mutable simple_spinlock opid_lock_;
 
   // The transaction to be executed by this driver.
-  gscoped_ptr<Transaction> transaction_;
+  std::unique_ptr<Transaction> transaction_;
 
   // Trace object for tracing any transactions started by this driver.
   scoped_refptr<Trace> trace_;

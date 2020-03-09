@@ -31,7 +31,6 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
@@ -57,6 +56,7 @@ METRIC_DECLARE_counter(transaction_memory_limit_rejections);
 
 using std::pair;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -80,7 +80,7 @@ class TransactionTrackerTest : public KuduTest,
         state_(state) {
     }
 
-    void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override {
+    void NewReplicateMsg(unique_ptr<consensus::ReplicateMsg>* replicate_msg) override {
       replicate_msg->reset(new consensus::ReplicateMsg());
     }
     TransactionState* state() override { return state_.get();  }
@@ -88,14 +88,14 @@ class TransactionTrackerTest : public KuduTest,
 
     Status Prepare() override { return Status::OK(); }
     Status Start() override { return Status::OK(); }
-    Status Apply(gscoped_ptr<consensus::CommitMsg>* /* commit_msg */) override {
+    Status Apply(unique_ptr<consensus::CommitMsg>* /* commit_msg */) override {
       return Status::OK();
     }
     std::string ToString() const override {
       return "NoOp";
     }
    private:
-    gscoped_ptr<NoOpTransactionState> state_;
+    unique_ptr<NoOpTransactionState> state_;
   };
 
   TransactionTrackerTest()
@@ -116,8 +116,8 @@ class TransactionTrackerTest : public KuduTest,
                                 nullptr,
                                 nullptr,
                                 nullptr));
-      gscoped_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
-      RETURN_NOT_OK(driver->Init(tx.PassAs<Transaction>(), consensus::LEADER));
+      unique_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
+      RETURN_NOT_OK(driver->Init(std::move(tx), consensus::LEADER));
       local_drivers.push_back(driver);
     }
 

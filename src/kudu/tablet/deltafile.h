@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTAFILE_H
-#define KUDU_TABLET_DELTAFILE_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +31,6 @@
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -211,7 +209,7 @@ class DeltaFileReader : public DeltaStore,
   Status ReadDeltaStats();
 
   std::shared_ptr<cfile::CFileReader> reader_;
-  gscoped_ptr<DeltaStats> delta_stats_;
+  std::unique_ptr<DeltaStats> delta_stats_;
 
   // The type of this delta, i.e. UNDO or REDO.
   const DeltaType delta_type_;
@@ -269,7 +267,7 @@ class DeltaFileIterator : public DeltaIterator {
 
     // The block decoder, to avoid having to re-parse the block header
     // on every ApplyUpdates() call
-    gscoped_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
+    std::unique_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
 
     // The first row index for which there is an update in this delta block.
     rowid_t first_updated_idx_;
@@ -318,7 +316,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   DeltaPreparer<DeltaFilePreparerTraits<Type>> preparer_;
 
-  gscoped_ptr<cfile::IndexTreeIterator> index_iter_;
+  std::unique_ptr<cfile::IndexTreeIterator> index_iter_;
 
   bool prepared_;
   bool exhausted_;
@@ -337,5 +335,3 @@ class DeltaFileIterator : public DeltaIterator {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

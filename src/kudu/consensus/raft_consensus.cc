@@ -25,7 +25,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -644,7 +643,7 @@ void RaftConsensus::EndLeaderTransferPeriod() {
 }
 
 scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
-    gscoped_ptr<ReplicateMsg> replicate_msg,
+    unique_ptr<ReplicateMsg> replicate_msg,
     ConsensusReplicatedCallback replicated_cb) {
   return make_scoped_refptr(new ConsensusRound(this,
                                                std::move(replicate_msg),
@@ -2818,7 +2817,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Committing " << op_type_str << " with op id "
                                << round->id();
   round_handler_->FinishConsensusOnlyRound(round);
-  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
+  unique_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
 
@@ -3223,7 +3222,7 @@ ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
 ////////////////////////////////////////////////////////////////////////
 
 ConsensusRound::ConsensusRound(RaftConsensus* consensus,
-                               gscoped_ptr<ReplicateMsg> replicate_msg,
+                               unique_ptr<ReplicateMsg> replicate_msg,
                                ConsensusReplicatedCallback replicated_cb)
     : consensus_(consensus),
       replicate_msg_(new RefCountedReplicate(replicate_msg.release())),

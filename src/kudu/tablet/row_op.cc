@@ -17,7 +17,7 @@
 
 #include "kudu/tablet/row_op.h"
 
-#include <type_traits>
+#include <memory>
 #include <utility>
 
 #include <glog/logging.h>
@@ -28,6 +28,7 @@
 #include "kudu/util/status.h"
 
 using kudu::pb_util::SecureDebugString;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -58,7 +59,7 @@ void RowOp::SetErrorIgnored() {
   error_ignored = true;
 }
 
-void RowOp::SetMutateSucceeded(gscoped_ptr<OperationResultPB> result) {
+void RowOp::SetMutateSucceeded(unique_ptr<OperationResultPB> result) {
   DCHECK(!this->result) << SecureDebugString(*result);
   this->result = std::move(result);
 }

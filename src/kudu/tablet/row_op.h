@@ -14,13 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_ROW_OP_H
-#define KUDU_TABLET_ROW_OP_H
+#pragma once
 
+#include <memory>
 #include <string>
 
 #include "kudu/common/row_operations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -43,7 +42,7 @@ struct RowOp {
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
   void SetErrorIgnored();
-  void SetMutateSucceeded(gscoped_ptr<OperationResultPB> result);
+  void SetMutateSucceeded(std::unique_ptr<OperationResultPB> result);
   // Sets the result of a skipped operation on bootstrap.
   // TODO(dralves) Currently this performs a copy. Might be avoided with some refactoring.
   // see TODO(dralves) in TabletBoostrap::ApplyOperations().
@@ -78,7 +77,7 @@ struct RowOp {
   // The key probe structure contains the row key in both key-encoded and
   // ContiguousRow formats, bloom probe structure, etc. This is set during
   // the "prepare" phase.
-  gscoped_ptr<RowSetKeyProbe> key_probe;
+  std::unique_ptr<RowSetKeyProbe> key_probe;
 
   // The row lock which has been acquired for this row. Set during the "prepare"
   // phase.
@@ -102,10 +101,9 @@ struct RowOp {
   RowSet* present_in_rowset = nullptr;
 
   // The result of the operation.
-  gscoped_ptr<OperationResultPB> result;
+  std::unique_ptr<OperationResultPB> result;
 };
 
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_ROW_OP_H */

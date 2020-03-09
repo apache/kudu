@@ -18,6 +18,7 @@
 #include "kudu/client/meta_cache.h"
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <set>
@@ -40,7 +41,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -57,28 +57,25 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 
-using std::map;
+using kudu::consensus::RaftPeerPB;
+using kudu::master::ANY_REPLICA;
+using kudu::master::GetTableLocationsRequestPB;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::MasterServiceProxy;
+using kudu::master::TabletLocationsPB;
+using kudu::master::TSInfoPB;
+using kudu::rpc::BackoffType;
+using kudu::rpc::CredentialsPolicy;
+using kudu::tserver::TabletServerServiceProxy;
 using std::set;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-using consensus::RaftPeerPB;
-using master::ANY_REPLICA;
-using master::GetTableLocationsRequestPB;
-using master::GetTableLocationsResponsePB;
-using master::MasterServiceProxy;
-using master::TabletLocationsPB;
-using master::TSInfoPB;
-using rpc::BackoffType;
-using rpc::CredentialsPolicy;
-using tserver::TabletServerServiceProxy;
-
 namespace client {
-
 namespace internal {
 
 RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
@@ -91,7 +88,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
                                                KuduClient* client,
                                                const StatusCallback& user_callback,
                                                const Status &result_status) {
-  gscoped_ptr<vector<Sockaddr> > scoped_addrs(addrs);
+  unique_ptr<vector<Sockaddr>> scoped_addrs(addrs);
 
   Status s = result_status;
 
@@ -729,7 +726,7 @@ void LookupRpc::ResetMasterLeaderAndRetry(CredentialsPolicy creds_policy) {
 void LookupRpc::SendRpcCb(const Status& status) {
   // If we exit and haven't scheduled a retry, this object should delete
   // itself.
-  gscoped_ptr<LookupRpc> delete_me(this);
+  unique_ptr<LookupRpc> delete_me(this);
 
   // Check for generic errors.
   Status new_status = status;

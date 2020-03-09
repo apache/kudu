@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_CFILE_CFILE_WRITER_H
-#define KUDU_CFILE_CFILE_WRITER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +27,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/compression/compression.pb.h"
@@ -234,11 +231,11 @@ class CFileWriter {
   // Metadata which has been added to the writer but not yet flushed.
   std::vector<std::pair<std::string, std::string> > unflushed_metadata_;
 
-  gscoped_ptr<BlockBuilder> data_block_;
-  gscoped_ptr<IndexTreeBuilder> posidx_builder_;
-  gscoped_ptr<IndexTreeBuilder> validx_builder_;
-  gscoped_ptr<NullBitmapBuilder> null_bitmap_builder_;
-  gscoped_ptr<CompressedBlockBuilder> block_compressor_;
+  std::unique_ptr<BlockBuilder> data_block_;
+  std::unique_ptr<IndexTreeBuilder> posidx_builder_;
+  std::unique_ptr<IndexTreeBuilder> validx_builder_;
+  std::unique_ptr<NullBitmapBuilder> null_bitmap_builder_;
+  std::unique_ptr<CompressedBlockBuilder> block_compressor_;
 
   enum State {
     kWriterInitialized,
@@ -251,5 +248,3 @@ class CFileWriter {
 
 } // namespace cfile
 } // namespace kudu
-
-#endif

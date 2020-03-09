@@ -27,7 +27,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -54,6 +53,7 @@ using kudu::security::DataFormat;
 using kudu::security::PrivateKey;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace google {
@@ -90,9 +90,9 @@ class SysCatalogTest : public KuduTest {
   }
 
   shared_ptr<Messenger> client_messenger_;
-  gscoped_ptr<MiniMaster> mini_master_;
+  unique_ptr<MiniMaster> mini_master_;
   Master* master_;
-  gscoped_ptr<MasterServiceProxy> proxy_;
+  unique_ptr<MasterServiceProxy> proxy_;
 };
 
 class TestTableLoader : public TableVisitor {

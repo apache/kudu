@@ -35,7 +35,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -62,6 +61,7 @@ MAKE_ENUM_LIMITS(kudu::client::KuduColumnSchema::DataType,
                  kudu::client::KuduColumnSchema::BOOL);
 
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -841,10 +841,11 @@ void KuduSchema::CopyFrom(const KuduSchema& other) {
 
 Status KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns) {
   vector<ColumnSchema> cols_private;
-  for (const KuduColumnSchema& col : columns) {
-    cols_private.push_back(*col.col_);
+  cols_private.reserve(columns.size());
+  for (const auto& col : columns) {
+    cols_private.emplace_back(*col.col_);
   }
-  gscoped_ptr<Schema> new_schema(new Schema());
+  unique_ptr<Schema> new_schema(new Schema());
   RETURN_NOT_OK(new_schema->Reset(cols_private, key_columns));
 
   delete schema_;

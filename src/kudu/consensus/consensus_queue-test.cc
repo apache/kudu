@@ -51,7 +51,6 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/async_util.h"
@@ -240,11 +239,11 @@ class ConsensusQueueTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_server_;
   scoped_refptr<MetricEntity> metric_entity_tablet_;
-  gscoped_ptr<FsManager> fs_manager_;
+  unique_ptr<FsManager> fs_manager_;
   scoped_refptr<log::Log> log_;
   unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<TimeManager> time_manager_;
-  gscoped_ptr<PeerMessageQueue> queue_;
+  unique_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   unique_ptr<clock::Clock> clock_;
   atomic<bool> quiescing_;
