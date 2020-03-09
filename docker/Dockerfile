@@ -137,8 +137,8 @@ LABEL name="Apache Kudu Thirdparty" \
 #
 # ---- Build ----
 # Builds an image that has the Kudu source code pre-built.
-# This is useful for generating a runtime image, but can also be a
-# useful base development image.
+# This is useful for generating a small runtime image,
+# but can also be a useful base development image.
 #
 FROM thirdparty AS build
 
@@ -159,9 +159,13 @@ COPY ./build-support build-support
 COPY ./docs/support docs/support
 COPY ./cmake_modules cmake_modules
 COPY ./examples/cpp examples/cpp
-COPY ./java/kudu-hive/ java/kudu-hive/
 COPY ./src src
 COPY ./CMakeLists.txt ./version.txt ./
+
+# Copy the java build source.
+# Some parts of the C++ build depend on Java code.
+COPY ./java /kudu/java
+
 # Build the c++ code.
 WORKDIR /kudu/build/$BUILD_TYPE
 # Ensure we don't rebuild thirdparty. Instead let docker handle caching.
@@ -183,8 +187,6 @@ RUN ../../build-support/enable_devtoolset.sh \
   # Strip the client libraries to reduce the images size
   && if [[ "$STRIP" == "1" ]]; then find "/usr/local" -name "libkudu*" -type f -exec strip {} \;; fi
 
-# Copy the java build source.
-COPY ./java /kudu/java
 # Build the java code.
 WORKDIR /kudu/java
 RUN ./gradlew jar
@@ -248,6 +250,7 @@ RUN pip install -r requirements.txt \
 ARG DOCKERFILE
 ARG MAINTAINER
 ARG URL
+ARG VCS_REF
 ARG VCS_TYPE
 ARG VCS_URL
 ARG VERSION
@@ -258,6 +261,7 @@ LABEL org.label-schema.name="Apache Kudu Python Client" \
       org.label-schema.dockerfile=$DOCKERFILE \
       org.label-schema.maintainer=$MAINTAINER \
       org.label-schema.url=$URL \
+      org.label-schema.vcs-ref=$VCS_REF \
       org.label-schema.vcs-type=$VCS_TYPE \
       org.label-schema.vcs-url=$VCS_URL \
       org.label-schema.version=$VERSION

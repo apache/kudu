@@ -18,7 +18,7 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# This script handles bootstrapping a base OS for
+# This script handles bootstrapping python for
 # the Apache Kudu base docker images.
 #
 ##########################################################

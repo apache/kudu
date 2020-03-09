@@ -97,7 +97,7 @@ ROOT=$(cd $(dirname "$BASH_SOURCE")/.. ; pwd)
 #   ubuntu:bionic
 DEFAULT_OS="ubuntu:xenial"
 BASES=${BASES:="$DEFAULT_OS"}
-TARGETS=${TARGETS:="kudu"}
+TARGETS=${TARGETS:="kudu,kudu-python"}
 REPOSITORY=${REPOSITORY:="apache/kudu"}
 PUBLISH=${PUBLISH:=0}
 TAG_LATEST=${TAG_LATEST:=1}
