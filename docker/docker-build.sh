@@ -83,7 +83,9 @@
 #      via the `--cache-from` option. This option tells docker
 #      images to consider as cache sources.
 ##########################################################
-set -ex
+
+set -xe
+set -o pipefail
 
 ROOT=$(cd $(dirname "$BASH_SOURCE")/.. ; pwd)
 

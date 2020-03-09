@@ -18,7 +18,7 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# This script handles bootstrapping a base OS for
+# This script handles bootstrapping java for
 # the Apache Kudu base docker images.
 #
 ##########################################################
@@ -26,27 +26,14 @@
 set -xe
 set -o pipefail
 
-# Install the required runtime packages, if they are not installed.
+# Install the prerequisite libraries, if they are not installed.
 # CentOS/RHEL
 if [[ -f "/usr/bin/yum" ]]; then
   # Update the repo.
   yum update -y
 
-  # Install runtime packages.
-  yum install -y \
-    cyrus-sasl-gssapi \
-    cyrus-sasl-plain \
-    krb5-server \
-    krb5-workstation \
-    openssl
-
-  # Install exta impala runtime packages used by the impala-runtime image. They are nominal in size.
-  # --no-install-recommends keeps the install smaller
-  yum install -y \
-    cyrus-sasl-devel \
-    lzo-devel \
-    tzdata \
-    which
+  # Install OpenJDK 8.
+  yum install -y java-1.8.0-openjdk-devel
 
   # Reduce the image size by cleaning up after the install.
   yum clean all
@@ -59,23 +46,24 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   # Update the repo.
   apt-get update -y
 
-  # Install runtime packages.
-  # --no-install-recommends keeps the install smaller
-  apt-get install -y --no-install-recommends \
-    krb5-admin-server \
-    krb5-kdc \
-    krb5-user \
-    libsasl2-2 \
-    libsasl2-modules \
-    libsasl2-modules-gssapi-mit \
-    openssl
+  # Install lsb-release so we can reliably detect the release.
+  apt-get install -y --no-install-recommends lsb-release
+  VERSION_NAME=$(lsb_release -c | cut -d":" -f2 | tr -d '[:blank:]')
 
-  # Install exta impala runtime packages used by the impala-runtime image. They are nominal in size.
-  # --no-install-recommends keeps the install smaller
-  apt-get install -y --no-install-recommends \
-    liblzo2-2 \
-    libsasl2-dev \
-    tzdata
+  # Install OpenJDK 8.
+  if [[ "$VERSION_NAME" == "jessie" ]]; then
+    apt-get install -y --no-install-recommends software-properties-common
+    add-apt-repository "deb http://http.debian.net/debian jessie-backports main"
+    apt-get update -y
+    apt-get install -y --no-install-recommends -t jessie-backports openjdk-8-jdk
+  elif [[ "$VERSION_NAME" == "trusty" ]]; then
+    apt-get install -y --no-install-recommends software-properties-common
+    add-apt-repository ppa:openjdk-r/ppa
+    apt-get update -y
+    apt-get install -y --no-install-recommends openjdk-8-jdk
+  else
+    apt-get install -y --no-install-recommends openjdk-8-jdk
+  fi
 
   # Reduce the image size by cleaning up after the install.
   apt-get clean

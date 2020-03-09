@@ -24,6 +24,7 @@
 ##########################################################
 
 set -xe
+set -o pipefail
 
 # Install the prerequisite libraries, if they are not installed.
 # CentOS/RHEL
@@ -60,6 +61,13 @@ if [[ -f "/usr/bin/yum" ]]; then
     which \
     wget
 
+  # Install exta impala packages for the impala images. They are nominal in size.
+  # --no-install-recommends keeps the install smaller
+  yum install -y \
+    libffi-devel \
+    lzo-devel \
+    tzdata
+
   # Install docs build libraries.
   # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.
   # yum install -y \
@@ -90,25 +98,6 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
 
   # Update the repo.
   apt-get update -y
-
-  # Install lsb-release so we can reliably detect the release.
-  apt-get install -y --no-install-recommends lsb-release
-  VERSION_NAME=$(lsb_release -c | cut -d":" -f2 | tr -d '[:blank:]')
-
-  # Install OpenJDK 8.
-  if [[ "$VERSION_NAME" == "jessie" ]]; then
-    apt-get install -y --no-install-recommends software-properties-common
-    add-apt-repository "deb http://http.debian.net/debian jessie-backports main"
-    apt-get update -y
-    apt-get install -y --no-install-recommends -t jessie-backports openjdk-8-jdk
-  elif [[ "$VERSION_NAME" == "trusty" ]]; then
-    apt-get install -y --no-install-recommends software-properties-common
-    add-apt-repository ppa:openjdk-r/ppa
-    apt-get update -y
-    apt-get install -y --no-install-recommends openjdk-8-jdk
-  else
-    apt-get install -y --no-install-recommends openjdk-8-jdk
-  fi
 
   # Install core build libraries.
   # --no-install-recommends keeps the install smaller
@@ -143,13 +132,13 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     vim-common \
     wget
 
+  # Install exta impala packages for the impala images. They are nominal in size.
+  # --no-install-recommends keeps the install smaller
   apt-get install -y --no-install-recommends \
-    doxygen \
-    gem \
-    graphviz \
-    ruby-dev \
-    xsltproc \
-    zlib1g-dev
+    libffi-dev \
+    liblzo2-2 \
+    tzdata
+
   # Install docs build libraries.
   # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.
   # apt-get install -y --no-install-recommends \

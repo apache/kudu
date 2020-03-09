@@ -21,7 +21,9 @@
 # This script follows the pattern described in the docker best practices here:
 # https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#entrypoint
 ################################################################################
-set -e
+
+set -xe
+set -o pipefail
 
 function print_help {
   echo "Supported commands:"

@@ -29,9 +29,13 @@
 !version.txt
 
 # Docker files.
+!docker/impala
 !docker/bootstrap-dev-env.sh
+!docker/bootstrap-java-env.sh
+!docker/bootstrap-maven-env.sh
 !docker/bootstrap-python-env.sh
 !docker/bootstrap-runtime-env.sh
+!docker/impala-entrypoint.sh
 !docker/kudu-entrypoint.sh
 
 # Docs files.

@@ -24,6 +24,7 @@
 ##########################################################
 
 set -xe
+set -o pipefail
 
 function install_python_packages() {
   PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
