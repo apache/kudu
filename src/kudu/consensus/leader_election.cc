@@ -56,7 +56,7 @@ using std::vector;
 using strings::Substitute;
 
 ///////////////////////////////////////////////////
-// VoteCounter
+// VoteCounter & FlexibleVoteCounter
 ///////////////////////////////////////////////////
 
 VoteCounter::VoteCounter(int num_voters, int majority_size)
@@ -136,6 +136,135 @@ int VoteCounter::GetTotalVotesCounted() const {
 
 bool VoteCounter::AreAllVotesIn() const {
   return GetTotalVotesCounted() == num_voters_;
+}
+
+void FlexibleVoteCounter::FetchTopologyInfo(
+    std::map<std::string, int>* voter_distribution,
+    std::map<std::string, int>* le_quorum_requirement) {
+  CHECK(voter_distribution);
+  CHECK(le_quorum_requirement);
+  voter_distribution->clear();
+  le_quorum_requirement->clear();
+  // TODO(ritwikyadav): Populate the out params by reading config.
+}
+
+FlexibleVoteCounter::FlexibleVoteCounter(RaftConfigPB config)
+  : VoteCounter(0, 0),
+    config_(std::move(config)) {
+  num_voters_ = 0;
+
+  FetchTopologyInfo(&voter_distribution_, &le_quorum_requirement_);
+  for (
+      const std::pair<std::string, int>& regional_voter_count :
+      voter_distribution_) {
+    CHECK_GT(regional_voter_count.second, 0);
+    num_voters_ += regional_voter_count.second;
+    yes_vote_count_.emplace(regional_voter_count.first, 0);
+    no_vote_count_.emplace(regional_voter_count.first, 0);
+  }
+
+  CHECK_GT(num_voters_, 0);
+
+  // Flag to check if the quorum specification is non-empty for all
+  // specifications.
+  bool empty_quorum = false;
+  for (
+      const std::pair<std::string, int>& regional_quorum_count :
+      le_quorum_requirement_) {
+    const std::map<std::string, int>::const_iterator total_voters =
+        voter_distribution_.find(regional_quorum_count.first);
+    // Make sure that voters are present in the region specified by quorum
+    // requirement and their number is enough.
+    CHECK(total_voters != voter_distribution_.end());
+    CHECK_LE(regional_quorum_count.second, total_voters->second);
+    if (regional_quorum_count.second <= 0) {
+      empty_quorum = true;
+    }
+  }
+  CHECK(!empty_quorum);
+
+  for (const RaftPeerPB& peer : config_.peers()) {
+    if (peer.member_type() == RaftPeerPB::VOTER) {
+      uuid_to_region_.emplace(peer.permanent_uuid(), peer.attrs().region());
+    }
+  }
+}
+
+Status FlexibleVoteCounter::RegisterVote(
+    const std::string& voter_uuid, ElectionVote vote, bool* is_duplicate) {
+  Status s = VoteCounter::RegisterVote(voter_uuid, vote, is_duplicate);
+
+  // No book-keeping required for duplicate votes.
+  if (*is_duplicate) {
+    return s;
+  }
+
+  if (!ContainsKey(uuid_to_region_, voter_uuid)) {
+    return Status::InvalidArgument(
+        Substitute("UUID {$0} not present in config.", voter_uuid));
+  }
+
+  const std::string& region = uuid_to_region_[voter_uuid];
+  switch (vote) {
+    case VOTE_GRANTED:
+      InsertIfNotPresent(&yes_vote_count_, region, 0);
+      yes_vote_count_[region]++;
+      break;
+    case VOTE_DENIED:
+      InsertIfNotPresent(&no_vote_count_, region, 0);
+      no_vote_count_[region]++;
+      break;
+  }
+
+  return s;
+}
+
+std::pair<bool, bool> FlexibleVoteCounter::GetQuorumState() const {
+  bool quorum_satisfied = true;
+  bool quorum_satisfaction_possible = true;
+  for (
+      const std::pair<std::string, int>& regional_voter_count :
+      le_quorum_requirement_) {
+    const string region = regional_voter_count.first;
+
+    const std::map<std::string, int>::const_iterator regional_yes_count =
+        yes_vote_count_.find(region);
+    const std::map<std::string, int>::const_iterator regional_no_count =
+        no_vote_count_.find(region);
+    const std::map<std::string, int>::const_iterator total_region_count =
+        voter_distribution_.find(region);
+
+    CHECK(regional_yes_count != yes_vote_count_.end());
+    CHECK(regional_no_count != no_vote_count_.end());
+    CHECK(total_region_count != voter_distribution_.end());
+
+    if (regional_yes_count->second < regional_voter_count.second) {
+      quorum_satisfied = false;
+    }
+    if (regional_no_count->second + regional_voter_count.second >
+        total_region_count->second) {
+      quorum_satisfaction_possible = false;
+    }
+  }
+  return std::make_pair(quorum_satisfied, quorum_satisfaction_possible);
+}
+
+bool FlexibleVoteCounter::IsDecided() const {
+  const std::pair<bool, bool> quorum_state = GetQuorumState();
+  return quorum_state.first || !quorum_state.second;
+}
+
+Status FlexibleVoteCounter::GetDecision(ElectionVote* decision) const {
+  const std::pair<bool, bool> quorum_state = GetQuorumState();
+  if (quorum_state.first) {
+    *decision = VOTE_GRANTED;
+    return Status::OK();
+  }
+  if (!quorum_state.second) {
+    *decision = VOTE_DENIED;
+    return Status::OK();
+  }
+  return Status::IllegalState("Vote not yet decided");
 }
 
 ///////////////////////////////////////////////////
