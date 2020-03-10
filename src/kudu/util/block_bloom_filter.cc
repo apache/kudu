@@ -118,24 +118,32 @@ Status BlockBloomFilter::Init(const int log_space_bytes, HashAlgorithm hash_algo
   return Status::OK();
 }
 
+Status BlockBloomFilter::InitFromDirectory(int log_space_bytes,
+                                           const Slice& directory,
+                                           bool always_false,
+                                           HashAlgorithm hash_algorithm,
+                                           uint32_t hash_seed) {
+  RETURN_NOT_OK(InitInternal(log_space_bytes, hash_algorithm, hash_seed));
+  DCHECK_NOTNULL(directory_);
+
+  if (directory_size() != directory.size()) {
+    return Status::InvalidArgument(
+        Substitute("Mismatch in BlockBloomFilter source directory size $0 and expected size $1",
+                   directory.size(), directory_size()));
+  }
+  memcpy(directory_, directory.data(), directory.size());
+  always_false_ = always_false;
+  return Status();
+}
+
 Status BlockBloomFilter::InitFromPB(const BlockBloomFilterPB& bf_src) {
   if (!bf_src.has_log_space_bytes() || !bf_src.has_bloom_data() ||
       !bf_src.has_hash_algorithm() || !bf_src.has_always_false()) {
     return Status::InvalidArgument("Missing arguments to initialize BlockBloomFilter.");
   }
 
-  RETURN_NOT_OK(InitInternal(bf_src.log_space_bytes(), bf_src.hash_algorithm(),
-                             bf_src.hash_seed()));
-  DCHECK_NOTNULL(directory_);
-
-  if (directory_size() != bf_src.bloom_data().size()) {
-    return Status::InvalidArgument(
-        Substitute("Mismatch in BlockBloomFilter source directory size $0 and expected size $1",
-                   bf_src.bloom_data().size(), directory_size()));
-  }
-  memcpy(directory_, bf_src.bloom_data().data(), bf_src.bloom_data().size());
-  always_false_ = bf_src.always_false();
-  return Status::OK();
+  return InitFromDirectory(bf_src.log_space_bytes(), bf_src.bloom_data(), bf_src.always_false(),
+                           bf_src.hash_algorithm(), bf_src.hash_seed());
 }
 
 Status BlockBloomFilter::Clone(BlockBloomFilterBufferAllocatorIf* allocator,
@@ -303,7 +311,7 @@ Status BlockBloomFilter::Or(const BlockBloomFilter& other) {
     return Status::InvalidArgument(Substitute("Directory size don't match. this: $0, other: $1",
         directory_size(), other.directory_size()));
   }
-  if (other.AlwaysFalse()) {
+  if (other.always_false()) {
     // Nothing to do.
     return Status::OK();
   }

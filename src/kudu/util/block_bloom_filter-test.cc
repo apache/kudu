@@ -308,9 +308,9 @@ TEST_F(BlockBloomFilterTest, Or) {
   BlockBloomFilter* bf3 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
   BlockBloomFilter* always_false = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));
   ASSERT_OK(bf3->Or(*always_false));
-  EXPECT_TRUE(bf3->AlwaysFalse());
+  EXPECT_TRUE(bf3->always_false());
   ASSERT_OK(bf3->Or(*bf2));
-  EXPECT_FALSE(bf3->AlwaysFalse());
+  EXPECT_FALSE(bf3->always_false());
 
   // Invalid argument test cases.
   BlockBloomFilter* bf4 = CreateBloomFilter(BlockBloomFilter::MinLogSpace(100, 0.01));

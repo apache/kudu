@@ -91,6 +91,10 @@ class BlockBloomFilter {
   Status Init(int log_space_bytes, HashAlgorithm hash_algorithm, uint32_t hash_seed);
   // Initialize the BlockBloomFilter by de-serializing the protobuf message.
   Status InitFromPB(const BlockBloomFilterPB& bf_src);
+  // Initialize the BlockBloomFilter from a populated "directory" structure.
+  // Useful for initializing the BlockBloomFilter by de-serializing a custom protobuf message.
+  Status InitFromDirectory(int log_space_bytes, const Slice& directory, bool always_false,
+                           HashAlgorithm hash_algorithm, uint32_t hash_seed);
 
   // Clones the BlockBloomFilter using the supplied "allocator". The allocator is expected
   // to remain valid during the lifetime of the cloned BlockBloomFilter.
@@ -156,8 +160,19 @@ class BlockBloomFilter {
   Status Or(const BlockBloomFilter& other);
 
   // Returns whether the Bloom filter is empty and hence would return false for all lookups.
-  bool AlwaysFalse() const {
+  bool always_false() const {
     return always_false_;
+  }
+
+  // Returns amount of space used in log2 bytes.
+  int log_space_bytes() const {
+    return log_num_buckets_ + kLogBucketByteSize;
+  }
+
+  // Returns the directory structure. Useful for serializing the BlockBloomFilter to
+  // a custom protobuf message.
+  Slice directory() const {
+    return Slice(reinterpret_cast<const uint8_t*>(directory_), directory_size());
   }
 
   // Representation of a filter which allows all elements to pass.
@@ -240,11 +255,6 @@ class BlockBloomFilter {
   decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
   decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
   decltype(&BlockBloomFilter::OrEqualArray) or_equal_array_func_ptr_;
-
-  // Returns amount of space used in log2 bytes.
-  int log_space_bytes() const {
-    return log_num_buckets_ + kLogBucketByteSize;
-  }
 
   // Size of the internal directory structure in bytes.
   int64_t directory_size() const {
