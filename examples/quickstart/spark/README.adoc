@@ -223,3 +223,8 @@ mutate data in a streaming fashion.
 As an exercise to learn the Kudu programmatic APIs, try implementing a program
 that uses the link:http://www.nextbus.com/xmlFeedDocs/NextBusXMLFeed.pdf[SFMTA XML data feed]
 to ingest this same dataset in real time into the Kudu table.
+
+== Help
+
+If have questions, issues, or feedback on this quickstart guide, please reach out to the
+link:https://kudu.apache.org/community.html[Apache Kudu community].

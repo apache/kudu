@@ -31,7 +31,7 @@ Use the following command to run the latest Apache NiFi Docker image:
 
 [source,bash]
 ----
-docker run --name kudu-nifi --network="docker_default" -p 8080:8080 apache/nifi:latest
+docker run -d --name kudu-nifi --network="docker_default" -p 8080:8080 apache/nifi:latest
 ----
 
 You can view the running NiFi instance at link:http://localhost:8080/nifi[localhost:8080/nifi].
@@ -39,7 +39,7 @@ You can view the running NiFi instance at link:http://localhost:8080/nifi[localh
 NOTE: `--network="docker_default"` is specified to connect the container the
 same network as the quickstart cluster.
 
-NOTE: You can include the `-d` flag to run the container in the background.
+NOTE: You can remove the `-d` flag to run the container in the foreground.
 
 == Create the Kudu table
 
@@ -131,7 +131,7 @@ link:https://nifi.apache.org/docs/nifi-docs/html/user-guide.html#starting-a-comp
 == Shutdown NiFi
 
 Once you are done with the NiFi container you can shutdown in a couple of ways.
-If you ran NiFi without the `-d` flag, you can use `ctrl + c` to stop the  container.
+If you ran NiFi without the `-d` flag, you can use `ctrl + c` to stop the container.
 
 If you ran NiFi with the `-d` flag, you can use the following to
 gracefully shutdown the container:
@@ -180,3 +180,8 @@ random_user.createOrReplaceTempView("random_user")
 spark.sql("SELECT count(*) FROM random_user").show()
 spark.sql("SELECT * FROM random_user LIMIT 5").show()
 ----
+
+== Help
+
+If have questions, issues, or feedback on this quickstart guide, please reach out to the
+link:https://kudu.apache.org/community.html[Apache Kudu community].

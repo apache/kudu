@@ -96,3 +96,9 @@ pushd YCSB
 mvn -Psource-run -pl site.ycsb:kudu-binding -am clean package -DskipTests -Dkudu.version=1.12.0-SNAPSHOT
 popd
 ----
+
+
+== Help
+
+If have questions, issues, or feedback on this quickstart guide, please reach out to the
+link:https://kudu.apache.org/community.html[Apache Kudu community].

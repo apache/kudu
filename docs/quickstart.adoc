@@ -40,6 +40,18 @@ be used for production or performance/scale testing.
 Follow the Docker link:https://docs.docker.com/install/[install documentation]
 to install docker in your Linux, Mac, or Windows environment.
 
+Configure the Docker install to have enough resources to run the quickstart guides.
+
+- link:https://docs.docker.com/docker-for-mac/#resources[Docker for Mac Resource Configuration Guide]
+
+A minimum configuration that can run all the quickstart examples comfortably is:
+
+- 4 CPUs
+- 6 GB Memory
+- 50 GB Disk
+
+NOTE: You can likely get by with a lower resource configuration, but you may lose some performance and stability.
+
 You may also want to read through the Docker getting started guide, but that isn't a requirement.
 
 == Clone the Repository
@@ -72,10 +84,10 @@ you can specify the master addresses with `localhost:7051,localhost:7151,localho
 
 [source,bash]
 ----
-docker-compose -f docker/quickstart.yml up
+docker-compose -f docker/quickstart.yml up -d
 ----
 
-NOTE: You can include the `-d` flag to run the cluster in the background.
+NOTE: You can remove the `-d` flag to run the cluster in the foreground.
 
 === View the Web-UI
 
@@ -129,6 +141,9 @@ More complete walkthroughs using the quickstart Kudu cluster can be found in the
 `examples/quickstart` directory. For convenience you can browse them on
 link:https://github.com/apache/kudu/tree/master/examples/quickstart[Github].
 
+- link:https://github.com/apache/kudu/tree/master/examples/quickstart/nifi[NiFi Quickstart Guide]
+- link:https://github.com/apache/kudu/tree/master/examples/quickstart/spark[Spark Quickstart Guide]
+- link:https://github.com/apache/kudu/tree/master/examples/quickstart/impala[Impala Quickstart Guide]
 
 == Destroying the Cluster
 

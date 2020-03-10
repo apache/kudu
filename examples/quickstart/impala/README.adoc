@@ -1,0 +1,221 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Apache Impala Quickstart
+
+Below is a brief example using Apache Impala to insert, update, delete, and query data in Apache Kudu.
+
+== Start the Kudu Quickstart Environment
+
+See the Apache Kudu
+link:https://kudu.apache.org/docs/quickstart.html[quickstart documentation]
+to setup and run the Kudu quickstart environment.
+
+== Run Apache Impala
+
+Use the following command to run the latest Apache Impala docker image:
+
+NOTE: This docker image is a single node Kudu only image published for use in this quickstart only.
+The image is running a Hive metastore backed by a Derby database along with an Impala statestore daemon,
+catalog daemon, and executor daemon. The docker run command below will expose the required RPC and HTTP ports.
+
+[source,bash]
+----
+docker run -d --name kudu-impala --network="docker_default" \
+  -p 21000:21000 -p 21050:21050 -p 25000:25000 -p 25010:25010 -p 25020:25020 \
+  --memory=4096m apache/kudu:impala-latest impala
+----
+
+You can view the running Impala instance at link:http://localhost:25000[localhost:25000]
+once it is up and running. It may take a few seconds to start.
+
+NOTE: `--network="docker_default"` is specified to connect the container the
+same network as the quickstart cluster.
+
+NOTE: You can remove the `-d` flag to run the container in the foreground.
+
+
+== Run the impala-shell
+
+Use the command below to enter the `impala-shell` in the `kudu-impala` container:
+
+[source,bash]
+----
+docker exec -it kudu-impala impala-shell
+----
+
+NOTE: If the `impala-shell` says "Could not connect", wait a few more seconds to give
+Impala time to start and then enter `connect;` in the shell to try again.
+
+== Create a Kudu Table
+
+Now that you are in an `impala-shell` that is connected to Impala you can use an
+link:https://impala.apache.org/docs/build/html/topics/impala_ddl.html[Impala DDL statement]
+to create a Kudu table.
+
+[source,bash]
+----
+CREATE TABLE my_first_table
+(
+  id BIGINT,
+  name STRING,
+  PRIMARY KEY(id)
+)
+PARTITION BY HASH PARTITIONS 4
+STORED AS KUDU;
+
+DESCRIBE my_first_table;
+----
+
+== Insert and Modify Data
+
+With `my_first_table` created you can now use
+link:https://impala.apache.org/docs/build/html/topics/impala_dml.html[Impala DML statements]
+to `INSERT`, `UPDATE`, `UPSERT`, and `DELETE` data.
+
+[source,bash]
+----
+-- Insert a row.
+INSERT INTO my_first_table VALUES (99, "sarah");
+SELECT * FROM my_first_table;
+
+-- Insert multiple rows.
+INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");
+SELECT * FROM my_first_table;
+
+-- Update a row.
+UPDATE my_first_table SET name="bob" where id = 3;
+SELECT * FROM my_first_table;
+
+-- Use upsert to insert a new row and update another.
+UPSERT INTO my_first_table VALUES (3, "bobby"), (4, "grant");
+SELECT * FROM my_first_table;
+
+-- Delete a row.
+DELETE FROM my_first_table WHERE id = 99;
+SELECT * FROM my_first_table;
+
+-- Delete multiple rows.
+DELETE FROM my_first_table WHERE id < 3;
+SELECT * FROM my_first_table;
+----
+
+== Create an External Table
+
+Sometimes users want to create an Impala table that points to an existing Kudu table.
+This can be achieved by using an
+link:https://impala.apache.org/docs/build/html/topics/impala_tables.html#external_tables[external table] in Impala.
+This will create an Impala table entry that points to the existing underlying Kudu table.
+
+[source,bash]
+----
+CREATE EXTERNAL TABLE my_second_table
+STORED AS KUDU
+TBLPROPERTIES('kudu.table_name' = 'impala::default.my_first_table');
+
+DESCRIBE my_second_table;
+
+DESCRIBE EXTENDED my_second_table;
+----
+
+== Drop the Tables
+
+You can drop the tables with a simple Impala DROP TABLE statement.
+When dropping the external table the underlying Kudu table will still exist.
+But when dropping the managed table the underling Kudu data will also be dropped.
+
+[source,bash]
+----
+DROP TABLE my_second_table;
+
+DESCRIBE my_first_table;
+SELECT * FROM my_first_table;
+
+DROP TABLE my_first_table;
+----
+
+== Exit the impala-shell
+
+Use the statement below to get exit the `impala-shell` in the `kudu-impala` container:
+
+[source,bash]
+----
+exit;
+----
+
+== Shutdown Impala
+
+Once you are done with the Impala container you can shutdown in a couple of ways.
+If you ran Impala without the `-d` flag, you can use `ctrl + c` to stop the  container.
+
+If you ran Impala with the `-d` flag, you can use the following to
+gracefully shutdown the container:
+
+[source,bash]
+----
+docker stop kudu-impala
+----
+
+To permanently remove the container run the following:
+
+[source,bash]
+----
+docker rm kudu-impala
+----
+
+== Next steps
+
+The above example illustrates the basics of interacting with Kudu tables in Apache Impala.
+Next explore the other quickstart guides to learn how to ingest the data using other tools.
+
+For example, the link:https://github.com/apache/kudu/tree/master/examples/quickstart/spark[Spark quickstart guide]
+and link:https://github.com/apache/kudu/tree/master/examples/quickstart/nifi[NiFi quickstart guide]
+will walk you through how to ingest and process data in Kudu. You can follow those quickstart guides
+and query the data ingested using the steps described in this quickstart.
+
+If you have already run through the Spark quickstart the following is an
+example of the code to allow you to query the `sfmta_kudu` table:
+
+[source,bash]
+----
+CREATE EXTERNAL TABLE sfmta_kudu
+STORED AS KUDU
+TBLPROPERTIES('kudu.table_name' = 'sfmta_kudu');
+
+SELECT * FROM sfmta_kudu
+ORDER BY speed
+LIMIT 5;
+----
+
+If you have already run through the NiFi quickstart the following is an
+example of the code to allow you to query the `random_user` table:
+
+[source,bash]
+----
+CREATE EXTERNAL TABLE random_user
+STORED AS KUDU
+TBLPROPERTIES('kudu.table_name' = 'random_user');
+
+SELECT count(*) FROM random_user;
+
+SELECT * FROM random_user LIMIT 5;
+----
+
+== Help
+
+If have questions, issues, or feedback on this quickstart guide, please reach out to the
+link:https://kudu.apache.org/community.html[Apache Kudu community].
