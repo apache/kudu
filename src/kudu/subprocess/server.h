@@ -230,6 +230,8 @@ class SubprocessServer {
  private:
   FRIEND_TEST(SubprocessServerTest, TestCallsReturnWhenShuttingDown);
 
+  void StartSubprocessThread(const StdStatusCallback& cb);
+
   // Stop the subprocess and stop processing messages.
   void Shutdown();
 
@@ -273,6 +275,11 @@ class SubprocessServer {
 
   // Protocol with which to send and receive bytes to and from 'process_'.
   std::shared_ptr<SubprocessProtocol> message_protocol_;
+
+  // Thread that runs the subprocess. Since the subprocess is run via
+  // fork/exec, this thread must stay alive for the lifetime of the server.
+  // Otherwise, the OS may silently kill the spawned child process.
+  scoped_refptr<Thread> start_thread_;
 
   // Pulls requests off the request queue and serializes them via the
   // message protocol.

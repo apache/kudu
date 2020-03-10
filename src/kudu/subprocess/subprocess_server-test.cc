@@ -33,6 +33,7 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -258,6 +259,24 @@ TEST_F(SubprocessServerTest, TestCallsReturnWhenShuttingDown) {
   // There are many places the error could've happened, so we won't check on
   // the exact message or error type.
   ASSERT_FALSE(s.ok());
+}
+
+// Some usage of a subprocess warrants calling Init() from a short-lived
+// thread. Let's ensure there's no funny business when that happens (e.g.
+// ensure the OS doesn't reap the underlying process when the parent thread
+// exits).
+TEST_F(SubprocessServerTest, TestInitFromThread) {
+  Status s;
+  thread t([&] {
+    s = ResetSubprocessServer();
+  });
+  t.join();
+  ASSERT_OK(s);
+  // Wait a bit to give time for the OS to wreak havoc (though it shouldn't).
+  SleepFor(MonoDelta::FromSeconds(3));
+  SubprocessRequestPB request = CreateEchoSubprocessRequestPB(kHello);
+  SubprocessResponsePB response;
+  ASSERT_OK(server_->Execute(&request, &response));
 }
 
 } // namespace subprocess

@@ -100,9 +100,23 @@ SubprocessServer::~SubprocessServer() {
   Shutdown();
 }
 
+void SubprocessServer::StartSubprocessThread(const StdStatusCallback& cb) {
+  Status s = process_->Start();
+  cb(s);
+  if (PREDICT_TRUE(s.ok())) {
+    // If we successfully started the process, we should stay alive until we
+    // shut down.
+    closing_.Wait();
+  }
+}
+
 Status SubprocessServer::Init() {
   VLOG(2) << "Starting the subprocess";
-  RETURN_NOT_OK_PREPEND(process_->Start(), "Failed to start subprocess");
+  Synchronizer sync;
+  auto cb = sync.AsStdStatusCallback();
+  RETURN_NOT_OK(Thread::Create("subprocess", "start", &SubprocessServer::StartSubprocessThread,
+                               this, cb, &read_thread_));
+  RETURN_NOT_OK_PREPEND(sync.Wait(), "Failed to start subprocess");
 
   // Start the message protocol.
   CHECK(!message_protocol_);
@@ -172,6 +186,9 @@ void SubprocessServer::Shutdown() {
   if (deadline_checker_) {
     deadline_checker_->Join();
   }
+  if (start_thread_) {
+    start_thread_->Join();
+  }
   for (const auto& t : responder_threads_) {
     t->Join();
   }
@@ -197,6 +214,7 @@ void SubprocessServer::ReceiveMessagesThread() {
     if (s.IsEndOfFile()) {
       // The underlying pipe was closed. We're likely shutting down.
       DCHECK_EQ(0, closing_.count());
+      LOG(INFO) << "Received an EOF from the subprocess";
       return;
     }
     // TODO(awong): getting an error here indicates that this server and the
