@@ -34,8 +34,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -296,7 +294,7 @@ void Log::AppendThread::Wake() {
   auto old_status = base::subtle::NoBarrier_CompareAndSwap(
       &thread_state_, IDLE, ACTIVE);
   if (old_status == IDLE) {
-    CHECK_OK(append_pool_->SubmitClosure(Bind(&Log::AppendThread::ProcessQueue, Unretained(this))));
+    CHECK_OK(append_pool_->Submit([this]() { this->ProcessQueue(); }));
   }
 }
 
@@ -623,8 +621,7 @@ Status SegmentAllocator::AsyncAllocateSegmentUnlocked() {
   DCHECK_EQ(kAllocationNotStarted, allocation_state_);
   allocation_status_.Reset();
   allocation_state_ = kAllocationInProgress;
-  return allocation_pool_->SubmitClosure(
-      Bind(&SegmentAllocator::AllocationTask, Unretained(this)));
+  return allocation_pool_->Submit([this]() { this->AllocationTask(); });
 }
 
 void SegmentAllocator::AllocationTask() {

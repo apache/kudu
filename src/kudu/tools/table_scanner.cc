@@ -28,7 +28,6 @@
 #include <set>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -580,7 +579,7 @@ Status TableScanner::StartWork(WorkType type) {
   const set<string>& tablet_id_filters = Split(FLAGS_tablets, ",", strings::SkipWhitespace());
   map<int, vector<KuduScanToken*>> thread_tokens;
   int i = 0;
-  for (auto token : tokens) {
+  for (auto* token : tokens) {
     if (tablet_id_filters.empty() || ContainsKey(tablet_id_filters, token->tablet().id())) {
       thread_tokens[i++ % FLAGS_num_threads].emplace_back(token);
     }
@@ -598,13 +597,15 @@ Status TableScanner::StartWork(WorkType type) {
   Stopwatch sw(Stopwatch::THIS_THREAD);
   sw.start();
   for (i = 0; i < FLAGS_num_threads; ++i) {
+    auto* t_tokens = &thread_tokens[i];
+    auto* t_status = &thread_statuses[i];
     if (type == WorkType::kScan) {
-      RETURN_NOT_OK(thread_pool_->SubmitFunc(
-        boost::bind(&TableScanner::ScanTask, this, thread_tokens[i], &thread_statuses[i])));
+      RETURN_NOT_OK(thread_pool_->Submit([this, t_tokens, t_status]()
+                                         { this->ScanTask(*t_tokens, t_status); }));
     } else {
       CHECK(type == WorkType::kCopy);
-      RETURN_NOT_OK(thread_pool_->SubmitFunc(
-        boost::bind(&TableScanner::CopyTask, this, thread_tokens[i], &thread_statuses[i])));
+      RETURN_NOT_OK(thread_pool_->Submit([this, t_tokens, t_status]()
+                                         { this->CopyTask(*t_tokens, t_status); }));
     }
   }
   while (!thread_pool_->WaitFor(MonoDelta::FromSeconds(5))) {

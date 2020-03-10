@@ -693,7 +693,7 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
     // TabletReplica::Stop() stops RaftConsensus before it stops the prepare
     // pool token and this callback is invoked while the RaftConsensus lock is
     // held.
-    CHECK_OK(prepare_pool_token_->SubmitFunc([this, ts] {
+    CHECK_OK(prepare_pool_token_->Submit([this, ts] {
       std::lock_guard<simple_spinlock> l(lock_);
       if (state_ == RUNNING || state_ == BOOTSTRAPPING) {
         tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(Timestamp(ts));

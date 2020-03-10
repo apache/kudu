@@ -103,7 +103,7 @@ void Dir::Shutdown() {
 }
 
 void Dir::ExecClosure(const Closure& task) {
-  Status s = pool_->SubmitClosure(task);
+  Status s = pool_->Submit([task]() { task.Run(); });
   if (!s.ok()) {
     WARN_NOT_OK(
         s, "Could not submit task to thread pool, running it synchronously");

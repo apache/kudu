@@ -197,6 +197,34 @@ METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
 
 DECLARE_int32(heartbeat_interval_ms);
 
+using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataCreateMode;
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
+using kudu::consensus::INCLUDE_HEALTH_REPORT;
+using kudu::consensus::OpId;
+using kudu::consensus::OpIdToString;
+using kudu::consensus::RECEIVED_OPID;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::StartTabletCopyRequestPB;
+using kudu::consensus::kMinimumTerm;
+using kudu::fs::DataDirManager;
+using kudu::log::Log;
+using kudu::master::ReportedTabletPB;
+using kudu::master::TabletReportPB;
+using kudu::tablet::ReportedTabletStatsPB;
+using kudu::tablet::Tablet;
+using kudu::tablet::TABLET_DATA_COPYING;
+using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_READY;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TabletMetadata;
+using kudu::tablet::TabletReplica;
+using kudu::tserver::TabletCopyClient;
+using std::make_shared;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -204,34 +232,6 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataCreateMode;
-using consensus::ConsensusMetadataManager;
-using consensus::ConsensusStatePB;
-using consensus::EXCLUDE_HEALTH_REPORT;
-using consensus::INCLUDE_HEALTH_REPORT;
-using consensus::OpId;
-using consensus::OpIdToString;
-using consensus::RECEIVED_OPID;
-using consensus::RaftConfigPB;
-using consensus::RaftConsensus;
-using consensus::StartTabletCopyRequestPB;
-using consensus::kMinimumTerm;
-using fs::DataDirManager;
-using log::Log;
-using master::ReportedTabletPB;
-using master::TabletReportPB;
-using tablet::ReportedTabletStatsPB;
-using tablet::Tablet;
-using tablet::TABLET_DATA_COPYING;
-using tablet::TABLET_DATA_DELETED;
-using tablet::TABLET_DATA_READY;
-using tablet::TABLET_DATA_TOMBSTONED;
-using tablet::TabletDataState;
-using tablet::TabletMetadata;
-using tablet::TabletReplica;
-using tserver::TabletCopyClient;
 
 namespace tserver {
 
@@ -302,9 +302,9 @@ TSTabletManager::TSTabletManager(TabletServer* server)
       ->AutoDetach(&metric_detacher_);
 }
 
-// Base class for Runnables submitted against TSTabletManager threadpools whose
+// Base class for tasks submitted against TSTabletManager threadpools whose
 // whose callback must fire, for example if the callback responds to an RPC.
-class TabletManagerRunnable : public Runnable {
+class TabletManagerRunnable {
 public:
   TabletManagerRunnable(TSTabletManager* ts_tablet_manager,
                         std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
@@ -313,15 +313,18 @@ public:
   }
 
   virtual ~TabletManagerRunnable() {
-    // If the Runnable is destroyed without the Run() method being invoked, we
+    // If the task is destroyed without the Run() method being invoked, we
     // must invoke the user callback ourselves in order to free request
     // resources. This may happen when the ThreadPool is shut down while the
-    // Runnable is enqueued.
+    // task is enqueued.
     if (!cb_invoked_) {
       cb_(Status::ServiceUnavailable("Tablet server shutting down"),
           TabletServerErrorPB::THROTTLED);
     }
   }
+
+  // Runs the task itself.
+  virtual void Run() = 0;
 
   // Disable automatic invocation of the callback by the destructor.
   // Does not disable invocation of the callback by Run().
@@ -412,8 +415,9 @@ Status TSTabletManager::Init() {
 
     scoped_refptr<TabletReplica> replica;
     RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &replica));
-    RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                                            this, replica, deleter)));
+    RETURN_NOT_OK(open_tablet_pool_->Submit([this, replica, deleter]() {
+          this->OpenTablet(replica, deleter);
+        }));
     registered_count++;
   }
   LOG(INFO) << Substitute("Registered $0 tablets", registered_count);
@@ -501,8 +505,9 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &new_replica));
 
   // We can run this synchronously since there is nothing to bootstrap.
-  RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                                          this, new_replica, deleter)));
+  RETURN_NOT_OK(open_tablet_pool_->Submit([this, new_replica, deleter]() {
+        this->OpenTablet(new_replica, deleter);
+      }));
 
   if (replica) {
     *replica = new_replica;
@@ -555,8 +560,8 @@ void TSTabletManager::StartTabletCopy(
   // immediately check whether the tablet is already being copied, and if so,
   // return ALREADY_INPROGRESS.
   string tablet_id = req->tablet_id();
-  shared_ptr<TabletCopyRunnable> runnable(new TabletCopyRunnable(this, req, cb));
-  Status s = tablet_copy_pool_->Submit(runnable);
+  auto runnable = make_shared<TabletCopyRunnable>(this, req, cb);
+  Status s = tablet_copy_pool_->Submit([runnable]() { runnable->Run(); });
   if (PREDICT_TRUE(s.ok())) {
     return;
   }
@@ -879,7 +884,7 @@ Status TSTabletManager::BeginReplicaStateTransition(
 class DeleteTabletRunnable : public TabletManagerRunnable {
 public:
   DeleteTabletRunnable(TSTabletManager* ts_tablet_manager,
-                       std::string tablet_id,
+                       string tablet_id,
                        tablet::TabletDataState delete_type,
                        const boost::optional<int64_t>& cas_config_index, // NOLINT
                        std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
@@ -905,13 +910,13 @@ private:
 };
 
 void TSTabletManager::DeleteTabletAsync(
-    const std::string& tablet_id,
+    const string& tablet_id,
     tablet::TabletDataState delete_type,
     const boost::optional<int64_t>& cas_config_index,
-    std::function<void(const Status&, TabletServerErrorPB::Code)> cb) {
-  auto runnable = std::make_shared<DeleteTabletRunnable>(this, tablet_id, delete_type,
-                                                         cas_config_index, cb);
-  Status s = delete_tablet_pool_->Submit(runnable);
+    const std::function<void(const Status&, TabletServerErrorPB::Code)>& cb) {
+  auto runnable = make_shared<DeleteTabletRunnable>(this, tablet_id, delete_type,
+                                                    cas_config_index, cb);
+  Status s = delete_tablet_pool_->Submit([runnable]() { runnable->Run(); });
   if (PREDICT_TRUE(s.ok())) {
     return;
   }
@@ -1237,7 +1242,7 @@ void TSTabletManager::Shutdown() {
   }
 }
 
-void TSTabletManager::RegisterTablet(const std::string& tablet_id,
+void TSTabletManager::RegisterTablet(const string& tablet_id,
                                      const scoped_refptr<TabletReplica>& replica,
                                      RegisterTabletReplicaMode mode) {
   std::lock_guard<RWMutex> lock(lock_);
@@ -1555,7 +1560,7 @@ void TSTabletManager::FailTabletAndScheduleShutdown(const string& tablet_id) {
     replica->MakeUnavailable(Status::IOError("failing tablet"));
 
     // Submit a request to actually shut down the tablet asynchronously.
-    CHECK_OK(open_tablet_pool_->SubmitFunc([tablet_id, this]() {
+    CHECK_OK(open_tablet_pool_->Submit([tablet_id, this]() {
       scoped_refptr<TabletReplica> replica;
       scoped_refptr<TransitionInProgressDeleter> deleter;
       TabletServerErrorPB::Code error;
@@ -1575,7 +1580,7 @@ void TSTabletManager::FailTabletAndScheduleShutdown(const string& tablet_id) {
       // Only proceed if there is no Tablet (e.g. a bootstrap terminated early
       // due to error before creating the Tablet) or if the tablet has been
       // stopped (e.g. due to the above call to MakeUnavailable).
-      std::shared_ptr<Tablet> tablet = replica->shared_tablet();
+      auto tablet = replica->shared_tablet();
       if (s.ok() && (!tablet || tablet->HasBeenStopped())) {
         replica->Shutdown();
       }

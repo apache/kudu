@@ -177,7 +177,7 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its peer.
   weak_ptr<Peer> w_this = shared_from_this();
-  RETURN_NOT_OK(raft_pool_token_->SubmitFunc([even_if_queue_empty, w_this]() {
+  RETURN_NOT_OK(raft_pool_token_->Submit([even_if_queue_empty, w_this]() {
     if (auto p = w_this.lock()) {
       p->SendNextRequest(even_if_queue_empty);
     }
@@ -377,7 +377,7 @@ void Peer::ProcessResponse() {
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its peer.
   weak_ptr<Peer> w_this = shared_from_this();
-  Status s = raft_pool_token_->SubmitFunc([w_this]() {
+  Status s = raft_pool_token_->Submit([w_this]() {
     if (auto p = w_this.lock()) {
       p->DoProcessResponse();
 

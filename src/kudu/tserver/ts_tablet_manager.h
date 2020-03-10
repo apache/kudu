@@ -140,7 +140,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   void DeleteTabletAsync(const std::string& tablet_id,
                          tablet::TabletDataState delete_type,
                          const boost::optional<int64_t>& cas_config_index,
-                         std::function<void(const Status&, TabletServerErrorPB::Code)> cb);
+                         const std::function<void(const Status&, TabletServerErrorPB::Code)>& cb);
 
   // Delete the specified tablet synchronously.
   // See DeleteTabletAsync() for more information.

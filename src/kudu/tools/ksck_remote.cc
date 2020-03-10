@@ -19,7 +19,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -603,7 +602,7 @@ Status RemoteKsckCluster::RetrieveTablesList() {
       continue;
     }
     tables_count++;
-    RETURN_NOT_OK(pool_->SubmitFunc([&]() {
+    RETURN_NOT_OK(pool_->Submit([&]() {
       client::sp::shared_ptr<KuduTable> t;
       Status s = client_->OpenTable(table_name, &t);
       if (!s.ok()) {
@@ -640,8 +639,8 @@ Status RemoteKsckCluster::RetrieveAllTablets() {
   }
 
   for (const auto& table : tables_) {
-    RETURN_NOT_OK(pool_->SubmitFunc(
-        std::bind(&KsckCluster::RetrieveTabletsList, this, table)));
+    RETURN_NOT_OK(pool_->Submit(
+        [this, table]() { this->RetrieveTabletsList(table); }));
   }
   pool_->Wait();
 

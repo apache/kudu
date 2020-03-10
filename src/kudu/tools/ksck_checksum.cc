@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <map>
 #include <set>
@@ -280,8 +279,8 @@ void KsckChecksumManager::ReportResult(const string& tablet_id,
   }
 
   responses_.CountDown();
-  WARN_NOT_OK(find_tablets_to_checksum_pool_->SubmitFunc(
-      std::bind(&KsckChecksumManager::StartTabletChecksums, this)),
+  WARN_NOT_OK(find_tablets_to_checksum_pool_->Submit(
+      [this]() { this->StartTabletChecksums(); }),
       "failed to submit task to start additional tablet checksums");
 }
 

@@ -1455,59 +1455,65 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
 }
 
 void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t new_commit_index) {
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyCommitIndex(new_commit_index);
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [=](PeerMessageQueueObserver* observer) {
+            observer->NotifyCommitIndex(new_commit_index);
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of commit index change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfTermChange(int64_t term) {
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyTermChange(term);
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [=](PeerMessageQueueObserver* observer) {
+            observer->NotifyTermChange(term);
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of term change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
                                                        int64_t term,
                                                        const string& reason) {
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyFailedFollower(uuid, term, reason);
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [=](PeerMessageQueueObserver* observer) {
+            observer->NotifyFailedFollower(uuid, term, reason);
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid) {
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyPeerToPromote(peer_uuid);
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [=](PeerMessageQueueObserver* observer) {
+            observer->NotifyPeerToPromote(peer_uuid);
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of peer to promote.");
 }
 
 void PeerMessageQueue::NotifyObserversOfSuccessor(const string& peer_uuid) {
   DCHECK(queue_lock_.is_locked());
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyPeerToStartElection(peer_uuid);
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [=](PeerMessageQueueObserver* observer) {
+            observer->NotifyPeerToStartElection(peer_uuid);
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of available successor.");
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {
-  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
-           [](PeerMessageQueueObserver* observer) {
-             observer->NotifyPeerHealthChange();
-           })),
+  WARN_NOT_OK(raft_pool_observers_token_->Submit(
+      [=](){ this->NotifyObserversTask(
+          [](PeerMessageQueueObserver* observer) {
+            observer->NotifyPeerHealthChange();
+          });
+      }),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus peer health change.");
 }
 

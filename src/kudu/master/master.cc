@@ -35,7 +35,6 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -190,8 +189,7 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(InitMasterRegistration());
 
   // Start initializing the catalog manager.
-  RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&Master::InitCatalogManagerTask,
-                                               Unretained(this))));
+  RETURN_NOT_OK(init_pool_->Submit([this]() { this->InitCatalogManagerTask(); }));
   state_ = kRunning;
 
   return Status::OK();

@@ -44,6 +44,7 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
+using std::make_shared;
 using std::shared_ptr;
 using std::unique_ptr;
 
@@ -72,10 +73,10 @@ namespace codegen {
 
 namespace {
 
-// A CompilationTask is a ThreadPool's Runnable which, given a
-// pair of schemas and a cache to refer to, will generate code pertaining
-// to the two schemas and store it in the cache when run.
-class CompilationTask : public Runnable {
+// A CompilationTask is a task which, given a pair of schemas and a cache to
+// refer to, will generate code pertaining to the two schemas and store it in
+// the cache when run.
+class CompilationTask {
  public:
   // Requires that the cache and generator are valid for the lifetime
   // of this object.
@@ -87,7 +88,7 @@ class CompilationTask : public Runnable {
       generator_(generator) {}
 
   // Can only be run once.
-  void Run() override {
+  void Run() {
     // We need to fail softly because the user could have just given
     // a malformed projection schema pair, but could be long gone by
     // now so there's nowhere to return the status to.
@@ -188,9 +189,9 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
 
   // If not cached, add a request to compilation pool
   if (!cached) {
-    shared_ptr<Runnable> task(
-      new CompilationTask(*base_schema, *projection, &cache_, &generator_));
-    WARN_NOT_OK(pool_->Submit(task),
+    shared_ptr<CompilationTask> task(make_shared<CompilationTask>(
+        *base_schema, *projection, &cache_, &generator_));
+    WARN_NOT_OK(pool_->Submit([task]() { task->Run(); }),
                 "RowProjector compilation request failed");
     return false;
   }

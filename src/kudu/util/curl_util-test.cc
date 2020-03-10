@@ -49,7 +49,7 @@ TEST(CurlUtilTest, NonSharedObjectsBetweenThreads) {
       .Build(&pool);
 
   for (int i = 0; i < kThreadCount; i++) {
-    ASSERT_OK(pool->SubmitFunc([&]() {
+    ASSERT_OK(pool->Submit([&]() {
       EasyCurl curl;
     }));
   }

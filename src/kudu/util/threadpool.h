@@ -17,6 +17,7 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -26,7 +27,6 @@
 #include <boost/intrusive/list_hook.hpp>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -36,23 +36,12 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
-
 namespace kudu {
 
 class Thread;
 class ThreadPool;
 class ThreadPoolToken;
 class Trace;
-
-class Runnable {
- public:
-  virtual void Run() = 0;
-  virtual ~Runnable() {}
-};
 
 // Interesting thread pool metrics. Can be applied to the entire pool (see
 // ThreadPoolBuilder) or to individual tokens.
@@ -164,7 +153,6 @@ class ThreadPoolBuilder {
 //
 // Usage Example:
 //    static void Func(int n) { ... }
-//    class Task : public Runnable { ... }
 //
 //    unique_ptr<ThreadPool> thread_pool;
 //    CHECK_OK(
@@ -174,8 +162,7 @@ class ThreadPoolBuilder {
 //            .set_max_queue_size(10)
 //            .set_idle_timeout(MonoDelta::FromMilliseconds(2000))
 //            .Build(&thread_pool));
-//    thread_pool->Submit(shared_ptr<Runnable>(new Task()));
-//    thread_pool->SubmitFunc(boost::bind(&Func, 10));
+//    thread_pool->Submit([](){ Func(10) });
 class ThreadPool {
  public:
   ~ThreadPool();
@@ -188,14 +175,8 @@ class ThreadPool {
   //       require an explicit "abort" notification to exit from the run loop.
   void Shutdown();
 
-  // Submits a function using the kudu Closure system.
-  Status SubmitClosure(Closure c) WARN_UNUSED_RESULT;
-
-  // Submits a function bound using boost::bind(&FuncName, args...).
-  Status SubmitFunc(boost::function<void()> f) WARN_UNUSED_RESULT;
-
-  // Submits a Runnable class.
-  Status Submit(std::shared_ptr<Runnable> r) WARN_UNUSED_RESULT;
+  // Submits a new task.
+  Status Submit(std::function<void()> f) WARN_UNUSED_RESULT;
 
   // Waits until all the tasks are completed.
   void Wait();
@@ -243,7 +224,7 @@ class ThreadPool {
 
   // Client-provided task to be executed by this pool.
   struct Task {
-    std::shared_ptr<Runnable> runnable;
+    std::function<void()> func;
     Trace* trace;
 
     // Time at which the entry was submitted to the pool.
@@ -269,7 +250,7 @@ class ThreadPool {
   void CheckNotPoolThreadUnlocked();
 
   // Submits a task to be run via token.
-  Status DoSubmit(std::shared_ptr<Runnable> r, ThreadPoolToken* token);
+  Status DoSubmit(std::function<void()> f, ThreadPoolToken* token);
 
   // Releases token 't' and invalidates it.
   void ReleaseToken(ThreadPoolToken* t);
@@ -383,14 +364,8 @@ class ThreadPoolToken {
   // called first to take care of them.
   ~ThreadPoolToken();
 
-  // Submits a function using the kudu Closure system.
-  Status SubmitClosure(Closure c) WARN_UNUSED_RESULT;
-
-  // Submits a function bound using boost::bind(&FuncName, args...).
-  Status SubmitFunc(boost::function<void()> f) WARN_UNUSED_RESULT;
-
-  // Submits a Runnable class.
-  Status Submit(std::shared_ptr<Runnable> r) WARN_UNUSED_RESULT;
+  // Submits a new task.
+  Status Submit(std::function<void()> f) WARN_UNUSED_RESULT;
 
   // Marks the token as unusable for future submissions. Any queued tasks not
   // yet running are destroyed. If tasks are in flight, Shutdown() will wait

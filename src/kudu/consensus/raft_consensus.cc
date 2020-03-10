@@ -667,8 +667,8 @@ void RaftConsensus::ReportFailureDetected() {
   //
   // There's no need to reenable the failure detector; if this fails, it's a
   // sign that RaftConsensus has stopped and we no longer need failure detection.
-  Status s = raft_pool_token_->SubmitFunc(std::bind(
-      &RaftConsensus::ReportFailureDetectedTask, shared_from_this()));
+  auto self = shared_from_this();
+  Status s = raft_pool_token_->Submit([self]() { self->ReportFailureDetectedTask(); });
   if (PREDICT_FALSE(!s.ok())) {
     static const char* msg = "failed to submit failure detected task";
     CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
@@ -907,29 +907,29 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
   }
 
   // Run config change on thread pool after dropping lock.
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryRemoveFollowerTask,
-                                                     shared_from_this(),
-                                                     uuid,
-                                                     committed_config,
-                                                     reason)),
-              LogPrefixThreadSafe() + "Unable to start TryRemoveFollowerTask");
+  auto self = shared_from_this();
+  WARN_NOT_OK(raft_pool_token_->Submit(
+      [self, uuid, committed_config, reason]() {
+        self->TryRemoveFollowerTask(uuid, committed_config, reason);
+      }),
+    LogPrefixThreadSafe() + "Unable to start TryRemoveFollowerTask");
 }
 
 void RaftConsensus::NotifyPeerToPromote(const string& peer_uuid) {
   // Run the config change on the raft thread pool.
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryPromoteNonVoterTask,
-                                                     shared_from_this(),
-                                                     peer_uuid)),
-              LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
+  auto self = shared_from_this();
+  WARN_NOT_OK(raft_pool_token_->Submit(
+      [self, peer_uuid]() { self->TryPromoteNonVoterTask(peer_uuid); }),
+    LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
 }
 
 void RaftConsensus::NotifyPeerToStartElection(const string& peer_uuid) {
   const auto& log_prefix = LogPrefixThreadSafe();
   LOG(INFO) << log_prefix << ": Instructing follower " << peer_uuid << " to start an election";
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryStartElectionOnPeerTask,
-                                                     shared_from_this(),
-                                                     peer_uuid)),
-              log_prefix + "Unable to start TryStartElectionOnPeerTask");
+  auto self = shared_from_this();
+  WARN_NOT_OK(raft_pool_token_->Submit(
+      [self, peer_uuid]() { self->TryStartElectionOnPeerTask(peer_uuid); }),
+    log_prefix + "Unable to start TryStartElectionOnPeerTask");
 }
 
 void RaftConsensus::NotifyPeerHealthChange() {
@@ -2610,8 +2610,8 @@ void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult
   //
   // There's no need to reenable the failure detector; if this fails, it's a
   // sign that RaftConsensus has stopped and we no longer need failure detection.
-  Status s = raft_pool_token_->SubmitFunc(std::bind(
-      &RaftConsensus::DoElectionCallback, shared_from_this(), reason, result));
+  auto self = shared_from_this();
+  Status s = raft_pool_token_->Submit([=]() { self->DoElectionCallback(reason, result); });
   if (!s.ok()) {
     static const char* msg = "unable to run election callback";
     CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
@@ -2777,7 +2777,7 @@ log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {
 }
 
 void RaftConsensus::MarkDirty(const string& reason) {
-  WARN_NOT_OK(raft_pool_token_->SubmitClosure(Bind(mark_dirty_clbk_, reason)),
+  WARN_NOT_OK(raft_pool_token_->Submit([=]() { this->mark_dirty_clbk_.Run(reason); }),
               LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
 }
 

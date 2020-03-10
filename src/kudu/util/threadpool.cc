@@ -19,16 +19,15 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
 
-#include <boost/function.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -47,38 +46,6 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
-
-////////////////////////////////////////////////////////
-// FunctionRunnable
-////////////////////////////////////////////////////////
-
-class FunctionRunnable : public Runnable {
- public:
-  explicit FunctionRunnable(boost::function<void()> func) : func_(std::move(func)) {}
-
-  void Run() OVERRIDE {
-    func_();
-  }
-
- private:
-  boost::function<void()> func_;
-};
-
-////////////////////////////////////////////////////////
-// ClosureRunnable
-////////////////////////////////////////////////////////
-
-class ClosureRunnable : public Runnable {
- public:
-  explicit ClosureRunnable(Closure cl) : cl_(std::move(cl)) {}
-
-  void Run() OVERRIDE {
-    cl_.Run();
-  }
-
- private:
-  Closure cl_;
-};
 
 ////////////////////////////////////////////////////////
 // ThreadPoolBuilder
@@ -148,16 +115,8 @@ ThreadPoolToken::~ThreadPoolToken() {
   pool_->ReleaseToken(this);
 }
 
-Status ThreadPoolToken::SubmitClosure(Closure c) {
-  return Submit(std::make_shared<ClosureRunnable>(std::move(c)));
-}
-
-Status ThreadPoolToken::SubmitFunc(boost::function<void()> f) {
-  return Submit(std::make_shared<FunctionRunnable>(std::move(f)));
-}
-
-Status ThreadPoolToken::Submit(shared_ptr<Runnable> r) {
-  return pool_->DoSubmit(std::move(r), this);
+Status ThreadPoolToken::Submit(std::function<void()> f) {
+  return pool_->DoSubmit(std::move(f), this);
 }
 
 void ThreadPoolToken::Shutdown() {
@@ -445,19 +404,11 @@ void ThreadPool::ReleaseToken(ThreadPoolToken* t) {
   CHECK_EQ(1, tokens_.erase(t));
 }
 
-Status ThreadPool::SubmitClosure(Closure c) {
-  return Submit(std::make_shared<ClosureRunnable>(std::move(c)));
+Status ThreadPool::Submit(std::function<void()> f) {
+  return DoSubmit(std::move(f), tokenless_.get());
 }
 
-Status ThreadPool::SubmitFunc(boost::function<void()> f) {
-  return Submit(std::make_shared<FunctionRunnable>(std::move(f)));
-}
-
-Status ThreadPool::Submit(shared_ptr<Runnable> r) {
-  return DoSubmit(std::move(r), tokenless_.get());
-}
-
-Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
+Status ThreadPool::DoSubmit(std::function<void()> f, ThreadPoolToken* token) {
   DCHECK(token);
   MonoTime submit_time = MonoTime::Now();
 
@@ -509,7 +460,7 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   }
 
   Task task;
-  task.runnable = std::move(r);
+  task.func = std::move(f);
   task.trace = Trace::CurrentTrace();
   // Need to AddRef, since the thread which submitted the task may go away,
   // and we don't want the trace to be destructed while waiting in the queue.
@@ -682,7 +633,7 @@ void ThreadPool::DispatchThread() {
       MicrosecondsInt64 start_wall_us = GetMonoTimeMicros();
       MicrosecondsInt64 start_cpu_us = GetThreadCpuTimeMicros();
 
-      task.runnable->Run();
+      task.func();
 
       int64_t wall_us = GetMonoTimeMicros() - start_wall_us;
       int64_t cpu_us = GetThreadCpuTimeMicros() - start_cpu_us;
@@ -702,7 +653,7 @@ void ThreadPool::DispatchThread() {
     // objects, and we don't want to block submission of the threadpool.
     // In the worst case, the destructor might even try to do something
     // with this threadpool, and produce a deadlock.
-    task.runnable.reset();
+    task.func = nullptr;
     unique_lock.Lock();
 
     // Possible states:

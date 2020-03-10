@@ -278,7 +278,7 @@ Status Ksck::CheckMasterHealth() {
   RETURN_NOT_OK(StringToFlagsCategories(FLAGS_flags_categories_to_check,
                                         &flags_categories_to_fetch));
   for (const auto& master : cluster_->masters()) {
-    RETURN_NOT_OK(pool_->SubmitFunc([&]() {
+    RETURN_NOT_OK(pool_->Submit([&]() {
       ServerHealthSummary sh;
       Status s = master->FetchInfo().AndThen([&]() {
         return master->FetchConsensusState();
@@ -480,7 +480,7 @@ Status Ksck::FetchInfoFromTabletServers() {
                                         &flags_categories_to_fetch));
   for (const auto& entry : cluster_->tablet_servers()) {
     const auto& ts = entry.second;
-    RETURN_NOT_OK(pool_->SubmitFunc([&]() {
+    RETURN_NOT_OK(pool_->Submit([&]() {
       VLOG(1) << "Going to connect to tablet server: " << ts->uuid();
       ServerHealth health;
       Status s = ts->FetchInfo(&health).AndThen([&ts, &health]() {

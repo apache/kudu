@@ -844,8 +844,7 @@ Status CatalogManager::Init(bool is_first_run) {
 }
 
 Status CatalogManager::ElectedAsLeaderCb() {
-  return leader_election_pool_->SubmitClosure(
-      Bind(&CatalogManager::PrepareForLeadershipTask, Unretained(this)));
+  return leader_election_pool_->Submit([this]() { this->PrepareForLeadershipTask(); });
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {

@@ -326,8 +326,7 @@ bool MaintenanceManager::FindAndLaunchOp(std::unique_lock<Mutex>* guard) {
   LOG_AND_TRACE_WITH_PREFIX("maintenance", INFO)
       << Substitute("Scheduling $0: $1", op->name(), note);
   // Run the maintenance operation.
-  CHECK_OK(thread_pool_->SubmitFunc(boost::bind(&MaintenanceManager::LaunchOp, this, op)));
-
+  CHECK_OK(thread_pool_->Submit([this, op]() { this->LaunchOp(op); }));
   return true;
 }
 

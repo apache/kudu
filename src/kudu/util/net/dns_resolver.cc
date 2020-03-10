@@ -17,7 +17,6 @@
 
 #include "kudu/util/net/dns_resolver.h"
 
-#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -25,7 +24,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/malloc.h"
@@ -86,8 +84,9 @@ void DnsResolver::ResolveAddressesAsync(const HostPort& hostport,
   if (GetCachedAddresses(hostport, addresses)) {
     return cb.Run(Status::OK());
   }
-  const auto s = pool_->SubmitFunc(std::bind(&DnsResolver::DoResolutionCb,
-                                             this, hostport, addresses, cb));
+  const auto s = pool_->Submit([=]() {
+    this->DoResolutionCb(hostport, addresses, cb);
+  });
   if (!s.ok()) {
     cb.Run(s);
   }

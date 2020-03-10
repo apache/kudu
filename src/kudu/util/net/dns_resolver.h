@@ -17,10 +17,10 @@
 
 #pragma once
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/macros.h"

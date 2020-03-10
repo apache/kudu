@@ -168,7 +168,7 @@ class TestPeerProxy : public PeerProxy {
     }
     // If the peer has been closed while a response was in-flight, this can
     // return a bad Status, but that's fine.
-    ignore_result(pool_->SubmitFunc(callback));
+    ignore_result(pool_->Submit(std::move(callback)));
   }
 
   void RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
@@ -478,8 +478,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
                    rpc::RpcController* /*controller*/,
                    const rpc::ResponseCallback& callback) override {
     RegisterCallback(kUpdate, callback);
-    CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
-                                           this, request, response)));
+    CHECK_OK(pool_->Submit([=]() { this->SendUpdateRequest(request, response); }));
   }
 
   void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
@@ -494,8 +493,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
                                  rpc::RpcController* /*controller*/,
                                  const rpc::ResponseCallback& callback) override {
     RegisterCallback(kRequestVote, callback);
-    CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
-                                           this, request, response)));
+    CHECK_OK(pool_->Submit([=]() { this->SendVoteRequest(request, response); }));
   }
 
   template<class Response>
@@ -661,7 +659,7 @@ class TestDriver {
       return;
     }
     CHECK_OK(status);
-    CHECK_OK(pool_->SubmitFunc(boost::bind(&TestDriver::Apply, this)));
+    CHECK_OK(pool_->Submit([this]() { this->Apply(); }));
   }
 
   // Called in all modes to delete the transaction and, transitively, the consensus

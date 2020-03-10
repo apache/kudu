@@ -205,7 +205,7 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
   // object. Note that the Thrift client classes already have LOG_IF_SLOW calls
   // internally.
 
-  RETURN_NOT_OK(threadpool_->SubmitFunc([=] {
+  RETURN_NOT_OK(threadpool_->Submit([=] {
     // The main run routine of the threadpool thread. Runs the task with
     // exclusive access to the Thrift service client. If the task fails, it will
     // be retried, unless the failure type is non-retriable or the maximum

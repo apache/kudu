@@ -34,7 +34,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -226,8 +225,7 @@ Status TransactionDriver::ExecuteAsync() {
   }
 
   if (s.ok()) {
-    s = prepare_pool_token_->SubmitClosure(
-      Bind(&TransactionDriver::PrepareTask, Unretained(this)));
+    s = prepare_pool_token_->Submit([this]() { this->PrepareTask(); });
   }
 
   if (!s.ok()) {
@@ -493,7 +491,7 @@ Status TransactionDriver::ApplyAsync() {
   }
 
   TRACE_EVENT_FLOW_BEGIN0("txn", "ApplyTask", this);
-  return apply_pool_->SubmitClosure(Bind(&TransactionDriver::ApplyTask, Unretained(this)));
+  return apply_pool_->Submit([this]() { this->ApplyTask(); });
 }
 
 void TransactionDriver::ApplyTask() {
