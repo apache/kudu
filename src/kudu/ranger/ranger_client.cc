@@ -121,7 +121,7 @@ static const char* kUnauthorizedAction = "Unauthorized action";
 static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
                                                  "Use 'kudu table rename_table' to rename it to "
                                                  "a Ranger-compatible name.";
-const char* kMainClass = "org.apache.kudu.ranger.RangerSubprocessMain";
+const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
 
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
