@@ -191,7 +191,7 @@ std::ostream& operator<<(std::ostream& lhs, KsckFetchState state) {
 
 const FlagsFetchFilter& GetFlagsCategoryFilter(FlagsCategory category) {
   // NOTE: using double braces for std::array aggregate initialization.
-  static const std::array<FlagsFetchFilter, FlagsCategory::ARRAY_SIZE> kFilters { {
+  static const std::array<FlagsFetchFilter, FlagsCategory::MAX + 1> kFilters { {
     {
       // FlagsCategory::TIME_SOURCE
       { "time_source", "builtin_ntp_servers", },

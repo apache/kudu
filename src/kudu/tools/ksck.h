@@ -186,8 +186,7 @@ enum FlagsCategory {
   // Utility members used for range-related expressions.
   // NOTE: update the MAX member upon updates
   MIN = 0,
-  MAX = UNUSUAL,
-  ARRAY_SIZE = MAX + 1,
+  MAX = UNUSUAL
 };
 
 // Information on flags fetched using GetFlags() RPC. Consists of the status of
@@ -199,7 +198,7 @@ struct FetchedFlags {
 };
 
 // Flags retrieved using GetFlags(), indexed by FlagsCategory.
-typedef std::array<FetchedFlags, FlagsCategory::ARRAY_SIZE> FetchedFlagsByCategory;
+typedef std::array<FetchedFlags, FlagsCategory::MAX + 1> FetchedFlagsByCategory;
 
 // Structure to represent a filter to build appropriate request for GetFlags()
 // RPC.

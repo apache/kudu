@@ -93,7 +93,7 @@ class MockKsckMaster : public KsckMaster {
     uuid_ = uuid;
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      for (size_t cat = FlagsCategory::MIN; cat < FlagsCategory::ARRAY_SIZE; ++cat) {
+      for (size_t cat = FlagsCategory::MIN; cat <= FlagsCategory::MAX; ++cat) {
         flags_by_category_[cat].flags.emplace();
       }
     }
@@ -149,7 +149,7 @@ class MockKsckTabletServer : public KsckTabletServer {
         is_get_flags_available_(is_get_flags_available) {
     version_ = "mock-version";
     if (is_get_flags_available_) {
-      for (size_t cat = FlagsCategory::MIN; cat < FlagsCategory::ARRAY_SIZE; ++cat) {
+      for (size_t cat = FlagsCategory::MIN; cat <= FlagsCategory::MAX; ++cat) {
         flags_by_category_[cat].flags.emplace();
       }
     }
