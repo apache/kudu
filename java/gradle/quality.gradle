@@ -23,10 +23,16 @@ apply plugin: "com.github.ben-manes.versions" // Provides a task to determine wh
 apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
 apply plugin: "scalafmt" // Automatically formats Scala code on each build.
 
+def ignoreCheckFailures = false
+if (propertyExists("ignoreCheckFailures")) {
+  ignoreCheckFailures = true
+}
+
 checkstyle {
   toolVersion = versions.checkstyle
   configDir = file("$rootProject.projectDir/config/checkstyle")
-  ignoreFailures = true
+  ignoreFailures = ignoreCheckFailures
+  maxWarnings = 0
   showViolations = true
 }
 
@@ -38,7 +44,7 @@ task checkstyle(dependsOn: [checkstyleMain, checkstyleTest], group: "Verificatio
 
 spotbugs {
   toolVersion = versions.spotBugs
-  ignoreFailures = true
+  ignoreFailures = ignoreCheckFailures
   effort = "max"
   reportLevel = "low"
   excludeFilter = file("$rootProject.projectDir/config/spotbugs/excludeFilter.xml")
@@ -79,7 +85,7 @@ if(!JavaVersion.current().isJava12Compatible()) {
     options.errorprone {
       disableWarningsInGeneratedCode = true
       excludedPaths = '.*/build/generated.*/.*'
-      allErrorsAsWarnings = true
+      allErrorsAsWarnings = false
       def fix = propertyWithDefault("errorprone-fix", "")
       if (!fix.isEmpty()) {
         errorproneArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
