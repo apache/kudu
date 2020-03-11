@@ -172,10 +172,10 @@ Status ExternalMiniCluster::AddTimeSourceFlags(
     int idx, std::vector<std::string>* flags) {
   DCHECK_LE(0, idx);
   DCHECK(flags);
-  CHECK_LE(0, opts_.num_ntp_servers);
 #if defined(NO_CHRONY)
   flags->emplace_back("--time_source=system_unsync");
 #else
+  CHECK_LE(0, opts_.num_ntp_servers);
   if (opts_.num_ntp_servers == 0) {
     flags->emplace_back("--time_source=system_unsync");
   } else {
