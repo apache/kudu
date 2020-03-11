@@ -33,10 +33,18 @@
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
+
+DEFINE_string(ranger_java_path, "java",
+              "The path where the Java binary was installed. If "
+              "the value isn't an absolute path, it will be evaluated "
+              "using the Kudu user's PATH.");
+TAG_FLAG(ranger_java_path, experimental);
 
 DEFINE_string(ranger_config_path, "",
               "Path to directory containing Ranger client configuration. "
@@ -117,6 +125,24 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+static bool ValidateRangerJavaPath() {
+  // First, check the specified path.
+  if (!FLAGS_ranger_config_path.empty() &&
+      !Env::Default()->FileExists(FLAGS_ranger_java_path)) {
+    // Otherwise, since the specified path is not absolute, check if
+    // the Java binary is on the PATH.
+    string p;
+    Status s = Subprocess::Call({ "which", FLAGS_ranger_java_path }, "", &p);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("FLAGS_ranger_java_path has invalid java binary path: $0",
+                                FLAGS_ranger_java_path);
+      return false;
+    }
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(ranger_java_path_flags, ValidateRangerJavaPath);
+
 static const char* kUnauthorizedAction = "Unauthorized action";
 static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
                                                  "Use 'kudu table rename_table' to rename it to "
@@ -138,7 +164,8 @@ RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntit
 #undef HISTINIT
 
 RangerClient::RangerClient(const scoped_refptr<MetricEntity>& metric_entity) :
-  subprocess_({"java", "-cp", GetJavaClasspath()}, metric_entity) {}
+  subprocess_({ FLAGS_ranger_java_path, "-cp", GetJavaClasspath(), kMainClass },
+              metric_entity) {}
 
 Status RangerClient::Start() {
   VLOG(1) << "Initializing Ranger subprocess server";
