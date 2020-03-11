@@ -76,7 +76,7 @@ public class SubprocessExecutor {
   /**
    * Executes the subprocess with the given arguments and protocol processor.
    *
-   * @param args the subprocess arguments
+   * @param conf the subprocess configuration
    * @param protocolHandler the subprocess protocol handler
    * @param timeoutMs the maximum time to wait for subprocess tasks to finish, -1 means
    *                  no time out and the tasks will continue execute until it finishes
@@ -85,9 +85,8 @@ public class SubprocessExecutor {
    * @throws TimeoutException if the wait timed out
    */
   @VisibleForTesting
-  public void run(String[] args, ProtocolHandler protocolHandler, long timeoutMs)
+  public void run(SubprocessConfiguration conf, ProtocolHandler protocolHandler, long timeoutMs)
       throws InterruptedException, ExecutionException, TimeoutException {
-    SubprocessConfiguration conf = new SubprocessConfiguration(args);
     int maxMsgParserThread = conf.getMaxMsgParserThreads();
     int queueSize = conf.getQueueSize();
     int maxMessageBytes = conf.getMaxMessageBytes();
@@ -181,7 +180,7 @@ public class SubprocessExecutor {
       throws ExecutionException, InterruptedException {
     Preconditions.checkArgument(timeoutMs != -1);
     try {
-      run(args, handler, timeoutMs);
+      run(new SubprocessConfiguration(args), handler, timeoutMs);
     } catch (TimeoutException e) {
       // no-op
     }

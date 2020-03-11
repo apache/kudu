@@ -35,6 +35,7 @@ import org.apache.kudu.subprocess.OutboundResponse;
 import org.apache.kudu.subprocess.Subprocess.EchoResponsePB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessMetricsPB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
+import org.apache.kudu.subprocess.SubprocessConfiguration;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.subprocess.SubprocessTestUtil;
 import org.apache.kudu.test.junit.RetryRule;
@@ -226,7 +227,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     SubprocessExecutor executor = setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     requestSenderPipe.write("malformed".getBytes(StandardCharsets.UTF_8));
     Throwable thrown = Assert.assertThrows(ExecutionException.class,
-        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
+        () -> executor.run(new SubprocessConfiguration(NO_ARGS),
+                           new EchoProtocolHandler(), TIMEOUT_MS));
     Assert.assertTrue(thrown.getMessage().contains("Unable to read the protobuf message"));
   }
 
@@ -245,7 +247,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     // times out before CompletableFuture.get() is called on the writer.
     assertIncludingSuppressedThrows(IOException.class,
         "Unable to write to print stream",
-        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
+        () -> executor.run(new SubprocessConfiguration(NO_ARGS),
+                           new EchoProtocolHandler(), TIMEOUT_MS));
   }
 
   /**
@@ -260,7 +263,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE));
     assertIncludingSuppressedThrows(ExecutionException.class,
         "Unable to put the message to the queue",
-        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
+        () -> executor.run(new SubprocessConfiguration(NO_ARGS),
+                           new EchoProtocolHandler(), TIMEOUT_MS));
   }
 
   /**
@@ -275,7 +279,8 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     sendRequestToPipe(createEchoSubprocessRequest("b"));
     executor.blockWriteMs(1000);
     Assert.assertThrows(TimeoutException.class,
-        () -> executor.run(NO_ARGS, new EchoProtocolHandler(), TIMEOUT_MS));
+        () -> executor.run(new SubprocessConfiguration(NO_ARGS),
+                           new EchoProtocolHandler(), TIMEOUT_MS));
 
     // We should see a single message in the outbound queue. The other one is
     // blocked writing.

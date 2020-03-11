@@ -19,6 +19,7 @@ package org.apache.kudu.subprocess.ranger;
 
 import org.apache.yetus.audience.InterfaceAudience;
 
+import org.apache.kudu.subprocess.SubprocessConfiguration;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 
 // The Ranger subprocess that wraps the Kudu Ranger plugin. For the
@@ -33,7 +34,9 @@ class RangerSubprocessMain {
 
   public static void main(String[] args) throws Exception {
     SubprocessExecutor subprocessExecutor = new SubprocessExecutor();
-    RangerProtocolHandler protocolProcessor = new RangerProtocolHandler();
-    subprocessExecutor.run(args, protocolProcessor, /* timeoutMs= */-1);
+    SubprocessConfiguration conf = new SubprocessConfiguration(args);
+    RangerProtocolHandler protocolHandler = new RangerProtocolHandler(conf.getServicePrincipal(),
+                                                                      conf.getKeytabFile());
+    subprocessExecutor.run(conf, protocolHandler, /* timeoutMs= */-1);
   }
 }

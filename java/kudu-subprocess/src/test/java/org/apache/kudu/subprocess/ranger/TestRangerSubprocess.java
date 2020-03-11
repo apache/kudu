@@ -39,6 +39,7 @@ import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestPB;
 import org.apache.kudu.ranger.Ranger.RangerResponseListPB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessRequestPB;
+import org.apache.kudu.subprocess.SubprocessConfiguration;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.subprocess.SubprocessTestUtil;
 import org.apache.kudu.subprocess.ranger.authorization.RangerKuduAuthorizer;
@@ -125,7 +126,9 @@ public class TestRangerSubprocess extends SubprocessTestUtil {
     // We expect the executor to time out since it is non cancelable
     // if no exception encountered.
     assertThrows(TimeoutException.class,
-        () -> executor.run(NO_ARGS, new RangerProtocolHandler(), TIMEOUT_MS));
+        () -> executor.run(new SubprocessConfiguration(NO_ARGS),
+                           new RangerProtocolHandler(/* servicePrincipal= */"", /* keytab= */""),
+                           TIMEOUT_MS));
 
     RangerResponseListPB resp = receiveResponse().getResponse().unpack(RangerResponseListPB.class);
     assertTrue(resp.getResponses(/* index= */0).getAllowed());

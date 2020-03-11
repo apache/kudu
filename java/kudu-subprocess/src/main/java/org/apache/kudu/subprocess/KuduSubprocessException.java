@@ -27,12 +27,22 @@ public final class KuduSubprocessException extends RuntimeException {
 
   /**
    * Constructs a new runtime exception with the specified detail
+   * message.
+   *
+   * @param  message the detail message
+   */
+  public KuduSubprocessException(String message) {
+    super(message);
+  }
+
+  /**
+   * Constructs a new runtime exception with the specified detail
    * message and cause.
    *
    * @param  message the detail message
    * @param  cause the cause
    */
-  KuduSubprocessException(String message, Throwable cause) {
+  public KuduSubprocessException(String message, Throwable cause) {
     super(message, cause);
   }
 }

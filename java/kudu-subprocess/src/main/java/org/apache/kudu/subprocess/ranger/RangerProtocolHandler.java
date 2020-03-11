@@ -17,6 +17,7 @@
 
 package org.apache.kudu.subprocess.ranger;
 
+import com.google.common.base.Preconditions;
 import org.apache.ranger.plugin.policyengine.RangerAccessResult;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -42,8 +43,8 @@ class RangerProtocolHandler extends ProtocolHandler<RangerRequestListPB,
   @InterfaceAudience.LimitedPrivate("Test")
   static RangerKuduAuthorizer authz = new RangerKuduAuthorizer();
 
-  RangerProtocolHandler() {
-    authz.init();
+  RangerProtocolHandler(String servicePrincipal, String keytab) {
+    authz.init(servicePrincipal, keytab);
   }
 
   @Override

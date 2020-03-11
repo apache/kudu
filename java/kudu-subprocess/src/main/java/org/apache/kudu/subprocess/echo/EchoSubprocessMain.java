@@ -19,6 +19,7 @@ package org.apache.kudu.subprocess.echo;
 
 import org.apache.yetus.audience.InterfaceAudience;
 
+import org.apache.kudu.subprocess.SubprocessConfiguration;
 import org.apache.kudu.subprocess.SubprocessExecutor;
 
 @InterfaceAudience.Private
@@ -27,6 +28,6 @@ class EchoSubprocessMain {
   public static void main(String[] args) throws Exception {
     SubprocessExecutor subprocessExecutor = new SubprocessExecutor();
     EchoProtocolHandler protocolHandler = new EchoProtocolHandler();
-    subprocessExecutor.run(args, protocolHandler, /* timeoutMs= */-1);
+    subprocessExecutor.run(new SubprocessConfiguration(args), protocolHandler, /* timeoutMs= */-1);
   }
 }

@@ -17,6 +17,7 @@
 
 package org.apache.kudu.subprocess.ranger.authorization;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -41,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestPB;
+import org.apache.kudu.subprocess.KuduSubprocessException;
 
 public class RangerKuduAuthorizer {
   private static final Logger LOG = LoggerFactory.getLogger(RangerKuduAuthorizer.class);
@@ -65,10 +67,29 @@ public class RangerKuduAuthorizer {
   /**
    * Initializes the Ranger Kudu plugin, which has to be called explicitly
    * before doing any authorizations.
+   *
+   * @param servicePrincipal the principal name for Kudu to load from the keytab file
+   * @param keytab the path to the Kudu keytab file
    */
-  public void init() {
-    LOG.info("Initializing Ranger Kudu plugin");
+  public void init(String servicePrincipal, String keytab) {
+    // Determine if Kerberos is enabled in the Hadoop configuration. Kerberos should
+    // also be enabled in the Kudu master.
+    if (UserGroupInformation.isSecurityEnabled()) {
+      if (servicePrincipal.isEmpty() || keytab.isEmpty()) {
+        throw new KuduSubprocessException("Kudu principal and Keytab file must be " +
+                                          "provided when Kerberos is enabled in Ranger");
+      }
+      // When Kerberos is enabled, login with the Kudu principal and keytab
+      // before initializing the Ranger plugin.
+      try {
+        LOG.debug("Login with Kudu principal: {}, and keytab: {}", servicePrincipal, keytab);
+        UserGroupInformation.loginUserFromKeytab(servicePrincipal, keytab);
+      } catch (IOException e) {
+        throw new KuduSubprocessException("Failed to login with Kudu principal/keytab", e);
+      }
+    }
     plugin.init();
+    LOG.info("Finished Ranger Kudu plugin initialization");
   }
 
   /**

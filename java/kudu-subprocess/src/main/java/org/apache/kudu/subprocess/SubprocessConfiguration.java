@@ -36,11 +36,15 @@ public class SubprocessConfiguration {
   private int maxMsgParserThreads;
   private static final int MAX_MSG_PARSER_THREADS_DEFAULT = 3;
   private int maxMsgBytes;
+  private String keytabFile;
+  private static final String KEYTAB_FILE_DEFAULT = "";
+  private String servicePrincipal;
+  private static final String SERVICE_PRINCIPAL_DEFAULT = "";
 
   @VisibleForTesting
   static final int MAX_MESSAGE_BYTES_DEFAULT = 1024 * 1024;
 
-  SubprocessConfiguration(String[] args) {
+  public SubprocessConfiguration(String[] args) {
     parse(args);
   }
 
@@ -66,6 +70,20 @@ public class SubprocessConfiguration {
    */
   int getMaxMessageBytes() {
     return maxMsgBytes;
+  }
+
+  /**
+   * @return the path to the service keytab file
+   */
+  public String getKeytabFile() {
+    return keytabFile;
+  }
+
+  /**
+   * @return the principal name of the service to load from the keytab file
+   */
+  public String getServicePrincipal() {
+    return servicePrincipal;
   }
 
   /**
@@ -99,18 +117,38 @@ public class SubprocessConfiguration {
     maxMsgOpt.setRequired(false);
     options.addOption(maxMsgOpt);
 
+    final String keytabFileLongOpt = "keytab";
+    Option keytabOpt = new Option(
+        "k", keytabFileLongOpt, /* hasArg= */true,
+        "The path to the service keytab file");
+    keytabOpt.setRequired(false);
+    options.addOption(keytabOpt);
+
+    final String principalLongOpt = "principal";
+    Option principalOpt = new Option(
+        "i", principalLongOpt, /* hasArg= */true,
+        "The service principal name to load from the keytab file");
+    principalOpt.setRequired(false);
+    options.addOption(principalOpt);
+
     CommandLineParser parser = new BasicParser();
     try {
       CommandLine cmd = parser.parse(options, args);
       String queueSize = cmd.getOptionValue(queueSizeLongOpt);
-      String maxParserThreads = cmd.getOptionValue(maxMsgParserThreadsLongOpt);
-      String maxMsgBytes = cmd.getOptionValue(maxMsgBytesLongOpt);
       this.queueSize = queueSize == null ?
           QUEUE_SIZE_DEFAULT : Integer.parseInt(queueSize);
+      String maxParserThreads = cmd.getOptionValue(maxMsgParserThreadsLongOpt);
       this.maxMsgParserThreads = maxParserThreads == null ?
           MAX_MSG_PARSER_THREADS_DEFAULT : Integer.parseInt(maxParserThreads);
+      String maxMsgBytes = cmd.getOptionValue(maxMsgBytesLongOpt);
       this.maxMsgBytes = maxMsgBytes == null ?
           MAX_MESSAGE_BYTES_DEFAULT : Integer.parseInt(maxMsgBytes);
+      String keytab = cmd.getOptionValue(keytabFileLongOpt);
+      this.keytabFile = keytab == null ?
+          KEYTAB_FILE_DEFAULT : keytab;
+      String principal = cmd.getOptionValue(principalLongOpt);
+      this.servicePrincipal = principal == null ?
+          SERVICE_PRINCIPAL_DEFAULT : principal;
     } catch (ParseException e) {
       throw new KuduSubprocessException("Cannot parse the subprocess command line", e);
     }
