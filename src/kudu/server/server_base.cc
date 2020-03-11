@@ -126,22 +126,6 @@ DEFINE_string(user_acl, "*",
 TAG_FLAG(user_acl, stable);
 TAG_FLAG(user_acl, sensitive);
 
-DEFINE_string(principal, "kudu/_HOST",
-              "Kerberos principal that this daemon will log in as. The special token "
-              "_HOST will be replaced with the FQDN of the local host.");
-TAG_FLAG(principal, experimental);
-// This is currently tagged as unsafe because there is no way for users to configure
-// clients to expect a non-default principal. As such, configuring a server to login
-// as a different one would end up with a cluster that can't be connected to.
-// See KUDU-1884.
-TAG_FLAG(principal, unsafe);
-
-DEFINE_string(keytab_file, "",
-              "Path to the Kerberos Keytab file for this server. Specifying a "
-              "keytab file will cause the server to kinit, and enable Kerberos "
-              "to be used to authenticate RPC connections.");
-TAG_FLAG(keytab_file, stable);
-
 DEFINE_bool(allow_world_readable_credentials, false,
             "Enable the use of keytab files and TLS private keys with "
             "world-readable permissions.");
@@ -226,6 +210,8 @@ DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
 DECLARE_string(log_filename);
+DECLARE_string(keytab_file);
+DECLARE_string(principal);
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
 

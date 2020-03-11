@@ -41,7 +41,8 @@ set(RANGER_SRCS
 set(RANGER_DEPS
   gflags
   kudu_subprocess
-  ranger_proto)
+  ranger_proto
+  security)
 
 add_library(kudu_ranger ${RANGER_SRCS})
 target_link_libraries(kudu_ranger ${RANGER_DEPS})

@@ -86,5 +86,11 @@ Status CanonicalizeKrb5Principal(std::string* principal);
 // exist yet, and trying to avoid rebase pain).
 Status MapPrincipalToLocalName(const std::string& principal, std::string* local_name);
 
+// Get the configured principal. 'in_principal' is the user specified principal to use with
+// Kerberos. It may have a token in the string of the form '_HOST', which if present, needs
+// to be replaced with the FQDN of the current host. 'out_principal' has the final principal
+// with which one may Kinit.
+Status GetConfiguredPrincipal(const std::string& in_principal, std::string* out_principal);
+
 } // namespace security
 } // namespace kudu

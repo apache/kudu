@@ -73,6 +73,21 @@ DEFINE_bool(use_system_auth_to_local, kDefaultSystemAuthToLocal,
             "'kudu/foo.example.com@EXAMPLE' will map to 'kudu'.");
 TAG_FLAG(use_system_auth_to_local, advanced);
 
+DEFINE_string(principal, "kudu/_HOST",
+              "Kerberos principal that this daemon will log in as. The special token "
+              "_HOST will be replaced with the FQDN of the local host.");
+TAG_FLAG(principal, experimental);
+// This is currently tagged as unsafe because there is no way for users to configure
+// clients to expect a non-default principal. As such, configuring a server to login
+// as a different one would end up with a cluster that can't be connected to.
+// See KUDU-1884.
+TAG_FLAG(principal, unsafe);
+
+DEFINE_string(keytab_file, "",
+              "Path to the Kerberos Keytab file for this server. Specifying a "
+              "keytab file will cause the server to kinit, and enable Kerberos "
+              "to be used to authenticate RPC connections.");
+TAG_FLAG(keytab_file, stable);
 
 using std::mt19937;
 using std::random_device;
@@ -363,29 +378,6 @@ Status KinitContext::KinitInternal() {
   return Status::OK();
 }
 
-namespace {
-// 'in_principal' is the user specified principal to use with Kerberos. It may have a token
-// in the string of the form '_HOST', which if present, needs to be replaced with the FQDN of the
-// current host.
-// 'out_principal' has the final principal with which one may Kinit.
-Status GetConfiguredPrincipal(const std::string& in_principal, string* out_principal) {
-  *out_principal = in_principal;
-  const auto& kHostToken = "_HOST";
-  if (in_principal.find(kHostToken) != string::npos) {
-    string hostname;
-    // Try to fill in either the FQDN or hostname.
-    if (!GetFQDN(&hostname).ok()) {
-      RETURN_NOT_OK(GetHostname(&hostname));
-    }
-    // Hosts in principal names are canonicalized to lower-case.
-    std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
-    GlobalReplaceSubstring(kHostToken, hostname, out_principal);
-  }
-  return Status::OK();
-}
-} // anonymous namespace
-
-
 RWMutex* KerberosReinitLock() {
   return g_kerberos_reinit_lock;
 }
@@ -441,6 +433,22 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
     return Status::InvalidArgument("principal mapped to empty username");
   }
   local_name->assign(buf);
+  return Status::OK();
+}
+
+Status GetConfiguredPrincipal(const string& in_principal, string* out_principal) {
+  *out_principal = in_principal;
+  static const auto& kHostToken = "_HOST";
+  if (in_principal.find(kHostToken) != string::npos) {
+    string hostname;
+    // Try to fill in either the FQDN or hostname.
+    if (!GetFQDN(&hostname).ok()) {
+      RETURN_NOT_OK(GetHostname(&hostname));
+    }
+    // Hosts in principal names are canonicalized to lower-case.
+    std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
+    GlobalReplaceSubstring(kHostToken, hostname, out_principal);
+  }
   return Status::OK();
 }
 

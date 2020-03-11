@@ -27,11 +27,10 @@
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/subprocess/server.h"
 #include "kudu/subprocess/subprocess_proxy.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class MetricEntity;
 
 namespace ranger {
 
@@ -91,17 +90,16 @@ class RangerClient {
 
   // Replaces the subprocess server in the subprocess proxy.
   void ReplaceServerForTests(std::unique_ptr<subprocess::SubprocessServer> server) {
-    subprocess_.ReplaceServerForTests(std::move(server));
+    // Creates a dummy RangerSubprocess if it is not initialized.
+    if (!subprocess_) {
+      subprocess_.reset(new RangerSubprocess({""}, metric_entity_));
+    }
+    subprocess_->ReplaceServerForTests(std::move(server));
   }
 
  private:
-  // Sends request to the subprocess and parses the response.
-  Status SendRequest(RangerRequestListPB* req, RangerResponseListPB* resp) WARN_UNUSED_RESULT;
-
-  // Returns classpath to be used for the Ranger subprocess.
-  static std::string GetJavaClasspath();
-
-  RangerSubprocess subprocess_;
+  std::unique_ptr<RangerSubprocess> subprocess_;
+  scoped_refptr<MetricEntity> metric_entity_;
 };
 
 } // namespace ranger

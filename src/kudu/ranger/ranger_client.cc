@@ -31,6 +31,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/ranger.pb.h"
+#include "kudu/security/init.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
@@ -117,6 +118,9 @@ METRIC_DEFINE_histogram(server, ranger_server_outbound_queue_time_ms,
     kudu::MetricLevel::kInfo,
     60000LU, 1);
 
+DECLARE_string(keytab_file);
+DECLARE_string(principal);
+
 namespace kudu {
 namespace ranger {
 
@@ -127,13 +131,50 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+static const char* kUnauthorizedAction = "Unauthorized action";
+static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
+                                                 "Use 'kudu table rename_table' to rename it to "
+                                                 "a Ranger-compatible name.";
+static const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
+
 // Returns the path to the JAR file containing the Ranger subprocess.
 static string GetRangerJarPath() {
-  string exe;
-  CHECK_OK(Env::Default()->GetExecutablePath(&exe));
-  const string bin_dir = DirName(exe);
-  return FLAGS_ranger_jar_path.empty() ? JoinPathSegments(bin_dir, "kudu-subprocess.jar") :
-         FLAGS_ranger_jar_path;
+  if (FLAGS_ranger_jar_path.empty()) {
+    string exe;
+    CHECK_OK(Env::Default()->GetExecutablePath(&exe));
+    const string bin_dir = DirName(exe);
+    return JoinPathSegments(bin_dir, "kudu-subprocess.jar");
+  }
+  return FLAGS_ranger_jar_path;
+}
+
+// Returns the classpath to be used for the Ranger subprocess.
+static string GetJavaClasspath() {
+  return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
+}
+
+// Builds the arguments for the Ranger subprocess. Specifically pass
+// the principal and keytab file that the Ranger subprocess will log in with
+// if Kerberos is enabled. 'args' has the final arguments.
+// Returns 'OK' if arguments successfully created, error otherwise.
+static Status BuildArgv(vector<string>* argv) {
+  DCHECK(argv);
+  // Pass the required arguments to run the Ranger subprocess.
+  vector<string> ret = { FLAGS_ranger_java_path, "-cp", GetJavaClasspath(), kMainClass };
+  // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
+  // to the Ranger subprocess.
+  if (!FLAGS_keytab_file.empty()) {
+    string configured_principal;
+    RETURN_NOT_OK_PREPEND(security::GetConfiguredPrincipal(FLAGS_principal, &configured_principal),
+                          "unable to get the configured principal from for the Ranger subprocess");
+    ret.emplace_back("-i");
+    ret.emplace_back(std::move(configured_principal));
+    ret.emplace_back("-k");
+    ret.emplace_back(FLAGS_keytab_file);
+  }
+
+  *argv = std::move(ret);
+  return Status::OK();
 }
 
 static bool ValidateRangerConfiguration() {
@@ -145,14 +186,14 @@ static bool ValidateRangerConfiguration() {
       string p;
       Status s = Subprocess::Call({ "which", FLAGS_ranger_java_path }, "", &p);
       if (!s.ok()) {
-        LOG(ERROR) << Substitute("FLAGS_ranger_java_path has invalid java binary path: $0",
+        LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
                                  FLAGS_ranger_java_path);
         return false;
       }
     }
     string ranger_jar_path = GetRangerJarPath();
     if (!Env::Default()->FileExists(ranger_jar_path)) {
-      LOG(ERROR) << Substitute("FLAGS_ranger_jar_path has invalid JAR file path: $0",
+      LOG(ERROR) << Substitute("--ranger_jar_path has invalid JAR file path: $0",
                                ranger_jar_path);
       return false;
     }
@@ -160,12 +201,6 @@ static bool ValidateRangerConfiguration() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
-
-static const char* kUnauthorizedAction = "Unauthorized action";
-static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
-                                                 "Use 'kudu table rename_table' to rename it to "
-                                                 "a Ranger-compatible name.";
-const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
 
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
@@ -181,19 +216,24 @@ RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntit
 }
 #undef HISTINIT
 
-RangerClient::RangerClient(const scoped_refptr<MetricEntity>& metric_entity) :
-  subprocess_({ FLAGS_ranger_java_path, "-cp", GetJavaClasspath(), kMainClass },
-              metric_entity) {}
+RangerClient::RangerClient(const scoped_refptr<MetricEntity>& metric_entity)
+    : metric_entity_(metric_entity) {
+  DCHECK(metric_entity);
+}
 
 Status RangerClient::Start() {
   VLOG(1) << "Initializing Ranger subprocess server";
-  return subprocess_.Start();
+  vector<string> argv;
+  RETURN_NOT_OK(BuildArgv(&argv));
+  subprocess_.reset(new RangerSubprocess(std::move(argv), metric_entity_));
+  return subprocess_->Start();
 }
 
 // TODO(abukor): refactor to avoid code duplication
 Status RangerClient::AuthorizeAction(const string& user_name,
                                      const ActionPB& action,
                                      const string& table_name) {
+  DCHECK(subprocess_);
   string db;
   Slice tbl;
 
@@ -213,7 +253,7 @@ Status RangerClient::AuthorizeAction(const string& user_name,
   req->set_database(db);
   req->set_table(tbl.ToString());
 
-  RETURN_NOT_OK(subprocess_.Execute(req_list, &resp_list));
+  RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
   CHECK_EQ(1, resp_list.responses_size());
   if (resp_list.responses().begin()->allowed()) {
@@ -229,6 +269,7 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
                                                     const ActionPB& action,
                                                     const string& table_name,
                                                     unordered_set<string>* column_names) {
+  DCHECK(subprocess_);
   DCHECK(!column_names->empty());
 
   string db;
@@ -252,7 +293,7 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
     req->set_column(col);
   }
 
-  RETURN_NOT_OK(subprocess_.Execute(req_list, &resp_list));
+  RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
   DCHECK_EQ(column_names->size(), resp_list.responses_size());
 
@@ -277,6 +318,7 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
 Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
                                                    const ActionPB& action,
                                                    unordered_set<string>* table_names) {
+  DCHECK(subprocess_);
   if (table_names->empty()) {
     return Status::InvalidArgument("Empty set of tables");
   }
@@ -304,7 +346,7 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
     }
   }
 
-  RETURN_NOT_OK(subprocess_.Execute(req_list, &resp_list));
+  RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
   DCHECK_EQ(orig_table_names.size(), resp_list.responses_size());
 
@@ -329,6 +371,7 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
 Status RangerClient::AuthorizeActions(const string& user_name,
                                       const string& table_name,
                                       unordered_set<ActionPB, ActionHash>* actions) {
+  DCHECK(subprocess_);
   DCHECK(!actions->empty());
 
   string db;
@@ -351,7 +394,7 @@ Status RangerClient::AuthorizeActions(const string& user_name,
     req->set_table(tbl.ToString());
   }
 
-  RETURN_NOT_OK(subprocess_.Execute(req_list, &resp_list));
+  RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
   DCHECK_EQ(actions->size(), resp_list.responses_size());
 
@@ -372,10 +415,5 @@ Status RangerClient::AuthorizeActions(const string& user_name,
 
   return Status::OK();
 }
-
-string RangerClient::GetJavaClasspath() {
-  return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
-}
-
 } // namespace ranger
 } // namespace kudu
