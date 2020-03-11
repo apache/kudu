@@ -158,10 +158,15 @@ def parse_load_commands_macos(cmd_type, dump):
   state = PARSING_NONE
   values = []
   for line in dump:
+    # Ensure the line is a string-like object.
+    try:
+      line = line.decode('utf-8')
+    except (UnicodeDecodeError, AttributeError):
+      pass
     if re.match('^Load command', line):
       state = PARSING_NEW_RECORD
       continue
-    splits = re.split('\s+', line.strip().decode("utf-8"), maxsplit=2)
+    splits = re.split('\s+', line.strip(), maxsplit=2)
     key = splits[0]
     val = splits[1] if len(splits) > 1 else None
     if state == PARSING_NEW_RECORD:
@@ -236,7 +241,13 @@ def get_artifact_name():
     raise NotImplementedError("Unsupported platform")
   arch = os.uname()[4]
   with open(os.path.join(SOURCE_ROOT, "version.txt"), 'r') as version:
-    version = version.readline().strip().decode("utf-8")
+    line = version.readline()
+    # Ensure the line is a string-like object.
+    try:
+      line = line.decode('utf-8')
+    except (UnicodeDecodeError, AttributeError):
+      pass
+    version = line.strip()
   artifact_name = "kudu-binary-%s-%s-%s" % (version, os_str, arch)
   return artifact_name
 
