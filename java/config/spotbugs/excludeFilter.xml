@@ -294,6 +294,25 @@
         <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
     </Match>
 
+    <!-- kudu-subprocess exclusions -->
+    <Match>
+        <!-- We want to ignore the exception. -->
+        <Class name="org.apache.kudu.subprocess.echo.EchoProtocolHandler"/>
+        <Bug pattern="DE_MIGHT_IGNORE" />
+    </Match>
+    <Match>
+        <!-- This is not a security concern. -->
+        <Class name="org.apache.kudu.subprocess.SubprocessTestUtil"/>
+        <Field name="NO_ARGS" />
+        <Bug pattern="MS_MUTABLE_ARRAY" />
+    </Match>
+    <Match>
+        <!-- This is done to simplify testing. -->
+        <Class name="org.apache.kudu.subprocess.ranger.TestRangerSubprocess"/>
+        <Method name="mockAuthorizer" />
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD" />
+    </Match>
+
     <!-- kudu-test-utils exclusions -->
     <Match>
         <!-- There is nothing useful to do with the File.delete() return value. -->

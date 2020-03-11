@@ -19,10 +19,8 @@ package org.apache.kudu.subprocess;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Stopwatch;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;

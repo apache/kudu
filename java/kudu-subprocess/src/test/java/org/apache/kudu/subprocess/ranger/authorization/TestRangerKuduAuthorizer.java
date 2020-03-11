@@ -17,7 +17,13 @@
 
 package org.apache.kudu.subprocess.ranger.authorization;
 
-import org.apache.kudu.test.junit.RetryRule;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.policyengine.RangerAccessRequest;
 import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl;
@@ -27,12 +33,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import org.apache.kudu.test.junit.RetryRule;
 
 /**
  * Tests for the Ranger authorizer.

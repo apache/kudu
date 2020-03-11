@@ -17,11 +17,17 @@
 
 package org.apache.kudu.subprocess.ranger.authorization;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import javax.annotation.Nullable;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
-import org.apache.kudu.ranger.Ranger.RangerRequestPB;
 import org.apache.ranger.plugin.audit.RangerDefaultAuditHandler;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.policyengine.RangerAccessRequest;
@@ -33,12 +39,8 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
+import org.apache.kudu.ranger.Ranger.RangerRequestPB;
 
 public class RangerKuduAuthorizer {
   private static final Logger LOG = LoggerFactory.getLogger(RangerKuduAuthorizer.class);
@@ -157,7 +159,7 @@ public class RangerKuduAuthorizer {
     Set<String> groups = getUserGroups(user);
     for (RangerRequestPB request : requests.getRequestsList()) {
       // Action should be lower case to match the Kudu service def in Ranger.
-      String action = request.getAction().name().toLowerCase();
+      String action = request.getAction().name().toLowerCase(Locale.ENGLISH);
       String db = request.hasDatabase() ? request.getDatabase() : null;
       String table = request.hasTable() ? request.getTable() : null;
       String column = request.hasColumn() ? request.getColumn() : null;

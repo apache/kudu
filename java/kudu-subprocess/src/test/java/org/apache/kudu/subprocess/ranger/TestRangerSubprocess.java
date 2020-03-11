@@ -26,6 +26,14 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import com.google.protobuf.Any;
+import org.apache.ranger.plugin.model.RangerServiceDef;
+import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl;
+import org.apache.ranger.plugin.policyengine.RangerAccessResult;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.mockito.Mockito;
+
 import org.apache.kudu.ranger.Ranger.ActionPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestPB;
@@ -35,13 +43,6 @@ import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.kudu.subprocess.SubprocessTestUtil;
 import org.apache.kudu.subprocess.ranger.authorization.RangerKuduAuthorizer;
 import org.apache.kudu.test.junit.RetryRule;
-import org.apache.ranger.plugin.model.RangerServiceDef;
-import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl;
-import org.apache.ranger.plugin.policyengine.RangerAccessResult;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.mockito.Mockito;
 
 /**
  * Tests for the ranger subprocess.

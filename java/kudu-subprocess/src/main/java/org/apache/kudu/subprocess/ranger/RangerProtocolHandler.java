@@ -17,15 +17,16 @@
 
 package org.apache.kudu.subprocess.ranger;
 
+import org.apache.ranger.plugin.policyengine.RangerAccessResult;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerResponseListPB;
 import org.apache.kudu.ranger.Ranger.RangerResponsePB;
 import org.apache.kudu.subprocess.ProtocolHandler;
 import org.apache.kudu.subprocess.ranger.authorization.RangerKuduAuthorizer;
-import org.apache.ranger.plugin.policyengine.RangerAccessResult;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Class that sends requests to Ranger and gets authorization decision

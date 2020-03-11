@@ -23,8 +23,6 @@ import java.util.concurrent.BlockingQueue;
 import com.google.common.base.Preconditions;
 import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.subprocess.Subprocess.SubprocessResponsePB;
-
 /**
  * The {@link MessageWriter} class,
  *    1. retrieves one message from the outbound queue at a time,

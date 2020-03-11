@@ -17,11 +17,11 @@
 
 package org.apache.kudu.subprocess;
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Stopwatch;
-
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+
+import com.google.common.base.Preconditions;
+import com.google.common.base.Stopwatch;
 
 /**
  * Encapsulates the metrics associated with the subprocess. It is expected that

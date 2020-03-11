@@ -181,7 +181,7 @@ public class SubprocessExecutor {
       throws ExecutionException, InterruptedException {
     Preconditions.checkArgument(timeoutMs != -1);
     try {
-     run(args, handler, timeoutMs);
+      run(args, handler, timeoutMs);
     } catch (TimeoutException e) {
       // no-op
     }

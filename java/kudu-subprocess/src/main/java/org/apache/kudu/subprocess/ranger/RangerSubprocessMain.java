@@ -17,8 +17,9 @@
 
 package org.apache.kudu.subprocess.ranger;
 
-import org.apache.kudu.subprocess.SubprocessExecutor;
 import org.apache.yetus.audience.InterfaceAudience;
+
+import org.apache.kudu.subprocess.SubprocessExecutor;
 
 // The Ranger subprocess that wraps the Kudu Ranger plugin. For the
 // plugin to successfully connect to the Ranger service, configurations

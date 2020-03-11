@@ -113,9 +113,10 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
    */
   @Test
   public void testSlowExecutionMetrics() throws Exception {
-    SubprocessExecutor executor =
-      setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     final int SLEEP_MS = 200;
+    // Suppress checkstyle VariableDeclarationUsageDistance warning.
+    // CHECKSTYLE:OFF
+    SubprocessExecutor executor = setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
     sendRequestToPipe(createEchoSubprocessRequest(MESSAGE, SLEEP_MS));
@@ -123,6 +124,7 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     // Run the executor with a single parser thread so we can make stronger
     // assumptions about timing.
     executor.runUntilTimeout(new String[]{"-p", "1"}, new EchoProtocolHandler(), TIMEOUT_MS);
+    // CHECKSTYLE:ON
 
     SubprocessMetricsPB m = receiveResponse().getMetrics();
     long inboundQueueLength = m.getInboundQueueLength();

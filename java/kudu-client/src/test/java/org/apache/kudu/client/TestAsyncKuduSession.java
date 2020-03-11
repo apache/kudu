@@ -34,13 +34,13 @@ import com.stumbleupon.async.Deferred;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.WireProtocol.AppStatusPB;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class TestAsyncKuduSession {
   private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduSession.class);

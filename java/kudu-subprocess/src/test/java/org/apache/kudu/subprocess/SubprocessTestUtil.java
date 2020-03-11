@@ -35,11 +35,11 @@ import java.util.function.Function;
 import com.google.protobuf.Any;
 import com.google.protobuf.Message;
 import com.google.protobuf.Parser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.subprocess.Subprocess.EchoRequestPB;
 import org.apache.kudu.subprocess.Subprocess.SubprocessRequestPB;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Utility class of common functions used for testing subprocess.
@@ -56,7 +56,7 @@ public class SubprocessTestUtil {
     fail();
     return null;
   };
-  protected final Function<Throwable, Void> HAS_ERR = e -> {
+  protected static final Function<Throwable, Void> HAS_ERR = e -> {
     assertTrue(e instanceof KuduSubprocessException);
     return null;
   };
@@ -115,10 +115,9 @@ public class SubprocessTestUtil {
     if (injectIOError) {
       System.setOut(new PrintStreamWithIOException(outputPipe, /*autoFlush*/false, "UTF-8"));
     } else {
-      System.setOut(new PrintStream(outputPipe));
+      System.setOut(new PrintStream(outputPipe, /*autoFlush*/false, "UTF-8"));
     }
-    SubprocessExecutor subprocessExecutor = new SubprocessExecutor(errorHandler);
-    return subprocessExecutor;
+    return new SubprocessExecutor(errorHandler);
   }
 
   /**
