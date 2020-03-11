@@ -109,6 +109,53 @@ class InBloomFilterPredicateData : public KuduPredicate::Data {
   std::vector<std::unique_ptr<KuduBloomFilter>> bloom_filters_;
 };
 
+// Custom deleter to be used with smart pointers in InDirectBloomFilterPredicateData.
+// Allows use of smart pointers when the underlying raw pointer may or may not be
+// owned by the user. See comment in InDirectBloomFilterPredicateData for more context.
+template<typename T>
+struct DirectBloomFilterDataDeleter {
+  explicit DirectBloomFilterDataDeleter(bool owned) : owned_(owned) {
+  }
+
+  void operator()(T* ptr) {
+    if (owned_) {
+      delete ptr;
+    }
+  }
+ private:
+  bool owned_;
+};
+
+typedef std::unique_ptr<BlockBloomFilter, DirectBloomFilterDataDeleter<BlockBloomFilter>>
+    DirectBlockBloomFilterUniqPtr;
+
+class InDirectBloomFilterPredicateData : public KuduPredicate::Data {
+ public:
+  InDirectBloomFilterPredicateData(
+      ColumnSchema col,
+      std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator,
+      std::vector<DirectBlockBloomFilterUniqPtr> bloom_filters)
+      : col_(std::move(col)),
+        allocator_(std::move(allocator)),
+        bloom_filters_(std::move(bloom_filters)) {
+  }
+
+  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
+
+  InDirectBloomFilterPredicateData* Clone() const override;
+
+ private:
+  ColumnSchema col_;
+  // This class is designed to accept BlockBloomFilter directly as raw pointer
+  // from consumers like Impala. In such a case, the data is owned by the caller and not
+  // by the instance of this class. So storing raw pointers and not destructing the pointers would
+  // have worked fine. However for the case when predicate data is Clone()'d the internal data
+  // is owned by the instance of this class. Hence using smart pointers with custom deleter
+  // DirectBloomFilterDataDeleter to keep track of ownership.
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_;
+  std::vector<DirectBlockBloomFilterUniqPtr> bloom_filters_;
+};
+
 // A list predicate for a column and a list of constant values.
 class InListPredicateData : public KuduPredicate::Data {
  public:

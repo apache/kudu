@@ -92,6 +92,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
@@ -971,7 +972,7 @@ KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
 }
 
 KuduPredicate* KuduTable::NewInBloomFilterPredicate(const Slice& col_name,
-                                                    std::vector<KuduBloomFilter*>* bloom_filters) {
+                                                    vector<KuduBloomFilter*>* bloom_filters) {
   // We always take ownership of values; this ensures cleanup if the predicate is invalid.
   auto cleanup = MakeScopedCleanup([&]() {
     STLDeleteElements(bloom_filters);
@@ -1001,6 +1002,47 @@ KuduPredicate* KuduTable::NewInBloomFilterPredicate(const Slice& col_name,
     // and we want the vector be cleared as expected by the caller.
     return new KuduPredicate(
         new InBloomFilterPredicateData(col_schema, std::move(bloom_filters_owned)));
+  });
+}
+
+KuduPredicate* KuduTable::NewInBloomFilterPredicate(const Slice& col_name,
+                                                    const Slice& allocator,
+                                                    const vector<Slice>& bloom_filters) {
+  // Empty vector of bloom filters will select all rows. Hence disallowed.
+  if (bloom_filters.empty()) {
+    return new KuduPredicate(
+        new ErrorPredicateData(Status::InvalidArgument("No Bloom filters supplied")));
+  }
+
+  // In this case, the Block Bloom filters and allocator are supplied as opaque pointers
+  // and the predicate will convert them to well-defined pointer types
+  // but will NOT take ownership of those pointers. Hence a custom deleter,
+  // DirectBloomFilterDataDeleter, is used that gives control over ownership.
+
+  // Extract the allocator.
+  auto* bbf_allocator =
+      // const_cast<> can be avoided with mutable_data() on a Slice. However mutable_data() is a
+      // non-const function which can't be used with the const allocator Slice.
+      // Same for BlockBloomFilter below.
+      reinterpret_cast<BlockBloomFilterBufferAllocatorIf*>(const_cast<uint8_t*>(allocator.data()));
+  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> bbf_allocator_shared(
+      bbf_allocator,
+      DirectBloomFilterDataDeleter<BlockBloomFilterBufferAllocatorIf>(false /*owned*/));
+
+  // Extract the Block Bloom filters.
+  vector<DirectBlockBloomFilterUniqPtr> bbf_vec;
+  for (const auto& bf_slice : bloom_filters) {
+    auto* bbf =
+        reinterpret_cast<BlockBloomFilter*>(const_cast<uint8_t*>(bf_slice.data()));
+    DirectBlockBloomFilterUniqPtr bf_uniq_ptr(
+        bbf, DirectBloomFilterDataDeleter<BlockBloomFilter>(false /*owned*/));
+    bbf_vec.emplace_back(std::move(bf_uniq_ptr));
+  }
+
+  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
+    return new KuduPredicate(
+        new InDirectBloomFilterPredicateData(col_schema, std::move(bbf_allocator_shared),
+                                             std::move(bbf_vec)));
   });
 }
 

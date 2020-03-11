@@ -153,16 +153,28 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
   return Status::OK();
 }
 
-Status InBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
+// Helper function to add Bloom filters of different types to the scan spec.
+// "func" is a functor that provides access to the underlying BlockBloomFilter ptr.
+template<typename BloomFilterType, typename BloomFilterPtrFuncType>
+static Status AddBloomFiltersToScanSpec(const ColumnSchema& col, ScanSpec* spec,
+                                        const vector<BloomFilterType>& bloom_filters,
+                                        BloomFilterPtrFuncType func) {
   // Extract the BlockBloomFilters.
   vector<BlockBloomFilter*> block_bloom_filters;
-  block_bloom_filters.reserve(bloom_filters_.size());
-  for (const auto& bf : bloom_filters_) {
-    block_bloom_filters.push_back(bf->data_->bloom_filter_.get());
+  block_bloom_filters.reserve(bloom_filters.size());
+  for (const auto& bf : bloom_filters) {
+    block_bloom_filters.push_back(func(bf));
   }
 
-  spec->AddPredicate(ColumnPredicate::InBloomFilter(col_, std::move(block_bloom_filters)));
+  spec->AddPredicate(ColumnPredicate::InBloomFilter(col, std::move(block_bloom_filters)));
   return Status::OK();
+}
+
+Status InBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
+  return AddBloomFiltersToScanSpec(col_, spec, bloom_filters_,
+                                   [](const unique_ptr<KuduBloomFilter>& bf) {
+                                     return bf->data_->bloom_filter_.get();
+                                   });
 }
 
 InBloomFilterPredicateData* client::InBloomFilterPredicateData::Clone() const {
@@ -173,6 +185,35 @@ InBloomFilterPredicateData* client::InBloomFilterPredicateData::Clone() const {
   }
 
   return new InBloomFilterPredicateData(col_, std::move(bloom_filter_clones));
+}
+
+Status InDirectBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
+  return AddBloomFiltersToScanSpec(col_, spec, bloom_filters_,
+                                   [](const DirectBlockBloomFilterUniqPtr& bf) {
+                                     return bf.get();
+                                   });
+}
+
+InDirectBloomFilterPredicateData* InDirectBloomFilterPredicateData::Clone() const {
+  // In the clone case, the objects are owned by InDirectBloomFilterPredicateData
+  // and hence use the default deleter with shared_ptr.
+  shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_clone =
+      CHECK_NOTNULL(allocator_->Clone());
+
+  vector<DirectBlockBloomFilterUniqPtr> bloom_filter_clones;
+  bloom_filter_clones.reserve(bloom_filters_.size());
+  for (const auto& bf : bloom_filters_) {
+    unique_ptr<BlockBloomFilter> bf_clone;
+    CHECK_OK(bf->Clone(allocator_clone.get(), &bf_clone));
+
+    // Similarly for unique_ptr, specify that the BlockBloomFilter is owned by
+    // InDirectBloomFilterPredicateData.
+    DirectBlockBloomFilterUniqPtr direct_bf_clone(
+        bf_clone.release(), DirectBloomFilterDataDeleter<BlockBloomFilter>(true /*owned*/));
+    bloom_filter_clones.emplace_back(std::move(direct_bf_clone));
+  }
+  return new InDirectBloomFilterPredicateData(col_, std::move(allocator_clone),
+                                              std::move(bloom_filter_clones));
 }
 
 KuduBloomFilter::KuduBloomFilter()  {

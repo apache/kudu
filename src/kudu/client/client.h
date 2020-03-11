@@ -1113,6 +1113,45 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
                                            std::vector<KuduBloomFilter*>* bloom_filters);
 
+  /// @name Advanced/Unstable API
+  ///
+  /// There are no guarantees on the stability of this client API.
+  ///
+  ///@{
+  /// Create a new IN Bloom filter predicate using direct BlockBloomFilter
+  /// pointers which can be used for scanners on this table.
+  ///
+  /// A Bloom filter is a space-efficient probabilistic data structure used to
+  /// test set membership with a possibility of false positive matches.
+  ///
+  /// IN list predicate can be used with small number of values; on the other
+  /// hand with IN Bloom filter predicate large number of values can be tested
+  /// for membership in a space-efficient manner.
+  ///
+  /// @param [in] col_name
+  ///   Name of the column to which the predicate applies.
+  /// @param [in] allocator
+  ///   Pointer to the BlockBloomFilterBufferAllocatorIf allocator used with
+  ///   Bloom filters.
+  /// @param bloom_filters
+  ///   Vector of BlockBloomFilter pointers that contain the values inserted to
+  ///   match against the column. The column value must match against all the
+  ///   supplied Bloom filters to be returned by the scanner. On return,
+  ///   regardless of success or error, the returned predicate will NOT take
+  ///   ownership of the pointers contained in @c bloom_filters and caller is
+  ///   responsible for the lifecycle management of the Bloom filters.
+  ///   The supplied Bloom filters are expected to remain valid for the
+  ///   lifetime of the KuduScanner.
+  /// @return Raw pointer to an IN Bloom filter predicate. The caller owns the
+  ///   predicate until it is passed into KuduScanner::AddConjunctPredicate().
+  ///   In the case of an error (e.g. an invalid column name),
+  ///   a non-NULL value is still returned. The error will be returned when
+  ///   attempting to add this predicate to a KuduScanner.
+  KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
+                                           const Slice& allocator,
+                                           const std::vector<Slice>& bloom_filters);
+  ///@}
+
   /// Create a new IN list predicate which can be used for scanners on this
   /// table.
   ///
