@@ -68,6 +68,18 @@ bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config) {
   return false;
 }
 
+bool GetRaftConfigMemberRegion(const std::string& uuid,
+    const RaftConfigPB& config, bool *is_voter, std::string *region) {
+  for (const RaftPeerPB& peer : config.peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      *is_voter = (peer.member_type() == RaftPeerPB::VOTER);
+      *region = peer.attrs().region();
+      return true;
+    }
+  }
+  return false;
+}
+
 bool IsVoterRole(RaftPeerPB::Role role) {
   return role == RaftPeerPB::LEADER || role == RaftPeerPB::FOLLOWER;
 }

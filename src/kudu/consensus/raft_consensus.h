@@ -233,6 +233,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // success.
   // Additional calls to this method during the transfer period prolong it.
   Status TransferLeadership(const boost::optional<std::string>& new_leader_uuid,
+                            const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
                             LeaderStepDownResponsePB* resp);
 
   // Begin or end a leadership transfer period. During a transfer period, a
@@ -240,7 +241,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // followers. If a leader transfer period is already in progress,
   // BeginLeaderTransferPeriodUnlocked returns ServiceUnavailable.
   Status BeginLeaderTransferPeriodUnlocked(
-      const boost::optional<std::string>& successor_uuid);
+      const boost::optional<std::string>& successor_uuid,
+      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn);
   void EndLeaderTransferPeriod();
 
   // Creates a new ConsensusRound, the entity that owns all the data
@@ -378,6 +380,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.
   MonoDelta MinimumElectionTimeout() const;
+
+  // Return the minimum election timeout considering ban-factor
+  MonoDelta MinimumElectionTimeoutWithBan() const;
 
   // Returns a copy of the state of the consensus system.
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the

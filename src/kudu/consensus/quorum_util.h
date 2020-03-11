@@ -47,6 +47,8 @@ enum class MajorityHealthPolicy {
 
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
 bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config);
+bool GetRaftConfigMemberRegion(const std::string& uuid, const RaftConfigPB& config,
+    bool *is_voter, std::string *region);
 
 // Whether the specified Raft role is attributed to a peer which can participate
 // in leader elections.

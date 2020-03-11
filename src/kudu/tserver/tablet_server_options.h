@@ -45,6 +45,8 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   TabletServerOptions();
 
   std::vector<HostPort> tserver_addresses;
+  std::vector<std::string> tserver_regions;
+  std::vector<bool> tserver_bbd;
 
   std::shared_ptr<kudu::log::LogFactory> log_factory;
 

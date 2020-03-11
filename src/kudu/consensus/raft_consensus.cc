@@ -92,6 +92,11 @@ DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
              "The value passed to this flag may be fractional.");
 TAG_FLAG(leader_failure_max_missed_heartbeat_periods, advanced);
 
+DEFINE_double(snooze_for_leader_ban_ratio, 1.0,
+             "Failure detector for this instance should be at a higher ratio than other instances"
+             ". This will prevent this instance from initiating an election");
+TAG_FLAG(snooze_for_leader_ban_ratio, advanced);
+
 DEFINE_int32(leader_failure_exp_backoff_max_delta_ms, 20 * 1000,
              "Maximum time to sleep in between leader election retries, in addition to the "
              "regular timeout. When leader election fails the interval in between retries "
@@ -603,7 +608,8 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
 }
 
 Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_leader_uuid,
-                                         LeaderStepDownResponsePB* resp) {
+    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn,
+    LeaderStepDownResponsePB* resp) {
   TRACE_EVENT0("consensus", "RaftConsensus::TransferLeadership");
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
@@ -636,11 +642,12 @@ Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_lead
       return Status::InvalidArgument(msg);
     }
   }
-  return BeginLeaderTransferPeriodUnlocked(new_leader_uuid);
+  return BeginLeaderTransferPeriodUnlocked(new_leader_uuid, filter_fn);
 }
 
 Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
-    const boost::optional<string>& successor_uuid) {
+    const boost::optional<string>& successor_uuid,
+    const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
   DCHECK(lock_.is_locked());
   if (leader_transfer_in_progress_.CompareAndSwap(false, true)) {
     return Status::ServiceUnavailable(
@@ -648,7 +655,7 @@ Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
                    options_.tablet_id));
   }
   leader_transfer_in_progress_.Store(true, kMemOrderAcquire);
-  queue_->BeginWatchForSuccessor(successor_uuid);
+  queue_->BeginWatchForSuccessor(successor_uuid, filter_fn);
   transfer_period_timer_->Start();
   return Status::OK();
 }
@@ -1459,7 +1466,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Snooze the failure detector as soon as we decide to accept the message.
     // We are guaranteed to be acting as a FOLLOWER at this point by the above
     // sanity check.
-    SnoozeFailureDetector();
+    // If this particular instance is banned from cluster manager,
+    // then we snooze for longer to give other instances an opportunity to win
+    // the election
+    SnoozeFailureDetector(boost::none, MinimumElectionTimeoutWithBan());
 
     last_leader_communication_time_micros_ = GetMonoTimeMicros();
 
@@ -2948,6 +2958,12 @@ void RaftConsensus::SnoozeFailureDetector(boost::optional<string> reason_for_log
 MonoDelta RaftConsensus::MinimumElectionTimeout() const {
   int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
       FLAGS_raft_heartbeat_interval_ms;
+  return MonoDelta::FromMilliseconds(failure_timeout);
+}
+
+MonoDelta RaftConsensus::MinimumElectionTimeoutWithBan() const {
+  int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
+      FLAGS_raft_heartbeat_interval_ms * FLAGS_snooze_for_leader_ban_ratio;
   return MonoDelta::FromMilliseconds(failure_timeout);
 }
 

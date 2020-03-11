@@ -372,7 +372,8 @@ class PeerMessageQueue {
   // boost::none, the queue will notify its observers when 'successor_uuid' is
   // caught up to the leader. Otherwise, it will notify its observers
   // with the UUID of the first voter that is caught up.
-  void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid);
+  void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid,
+      const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn);
   void EndWatchForSuccessor();
 
  private:
@@ -572,6 +573,7 @@ class PeerMessageQueue {
   bool successor_watch_in_progress_;
   boost::optional<std::string> designated_successor_uuid_;
 
+  std::function<bool(const kudu::consensus::RaftPeerPB&)> tl_filter_fn_;
   // We assume that we never have multiple threads racing to append to the queue.
   // This fake mutex adds some extra assurance that this implementation property
   // doesn't change.

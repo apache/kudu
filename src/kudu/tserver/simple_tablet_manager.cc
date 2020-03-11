@@ -203,6 +203,7 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
   new_config.set_obsolete_local(false);
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
+  size_t ts_index = 0;
   // Build the set of followers from our server options.
   for (const HostPort& host_port : options.tserver_addresses) {
     RaftPeerPB peer;
@@ -210,7 +211,14 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
     peer.set_member_type(RaftPeerPB::VOTER);
+    if (!options.tserver_bbd.empty()) {
+      peer.mutable_attrs()->set_backing_db_present(options.tserver_bbd[ts_index]);
+    }
+    if (!options.tserver_regions.empty()) {
+      peer.mutable_attrs()->set_region(options.tserver_regions[ts_index]);
+    }
     new_config.add_peers()->CopyFrom(peer);
+    ts_index++;
   }
 
   // Now resolve UUIDs.
