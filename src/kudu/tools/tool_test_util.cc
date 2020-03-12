@@ -69,9 +69,9 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
 
   // Kudu masters and tablet servers run as a part of external mini-cluster use
   // shorter keys. Newer OS distros have OpenSSL built with the default security
-  // level higher than 1, so it's necessary to override it on the client
+  // level higher than 0, so it's necessary to override it on the client
   // side as well to allow clients to accept and verify TLS certificates.
-  total_args.emplace_back("--openssl_security_level_override=1");
+  total_args.emplace_back("--openssl_security_level_override=0");
 
   total_args.insert(total_args.end(), args.begin(), args.end());
   return Subprocess::Call(total_args, in, out, err);

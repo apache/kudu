@@ -102,18 +102,17 @@ KuduTest::KuduTest()
     {"redact", "none"},
     // Reduce default RSA key length for faster tests. We are using strong/high
     // TLS v1.2 cipher suites, so minimum possible for TLS-related RSA keys is
-    // 768 bits. However, for the external mini cluster we use 1024 bits because
-    // Java default security policies require at least 1024 bits for RSA keys
-    // used in certificates. For uniformity, here 1024 RSA bit keys are used
-    // as well. As for the TSK keys, 512 bits is the minimum since the SHA256
-    // digest is used for token signing/verification.
-    {"ipki_server_key_size", "1024"},
-    {"ipki_ca_key_size", "1024"},
+    // 768 bits. Java security policies in tests tweaked appropriately to allow
+    // for using smaller RSA keys in certificates. As for the TSK keys, 512 bits
+    // is the minimum since the SHA256 digest is used for token
+    // signing/verification.
+    {"ipki_server_key_size", "768"},
+    {"ipki_ca_key_size", "768"},
     {"tsk_num_rsa_bits", "512"},
-    // Some OS distros set the default security level higher than 1, so it's
+    // Some OS distros set the default security level higher than 0, so it's
     // necessary to override it to use the key length specified above (which are
     // considered lax and don't work in case of security level 2 or higher).
-    {"openssl_security_level_override", "1"},
+    {"openssl_security_level_override", "0"},
     // For a generic Kudu test, the local wall-clock time is good enough even
     // if it's not synchronized by NTP. All test components are run at the same
     // node, so there aren't multiple time sources to synchronize.

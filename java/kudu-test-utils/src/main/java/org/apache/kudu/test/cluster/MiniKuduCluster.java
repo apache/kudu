@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;
+import java.security.Security;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -140,6 +141,14 @@ public final class MiniKuduCluster implements AutoCloseable {
     } else {
       this.clusterRoot = clusterRoot;
     }
+
+    // Default Java security settings are restrictive with regard to RSA key
+    // length. Since Kudu masters and tablet servers in MiniKuduCluster use
+    // smaller RSA keys to shorten runtime of tests, it's necessary to override
+    // those default security settings to allow for using relaxed cryptography,
+    // particularly smaller RSA keys.
+    Security.setProperty("jdk.certpath.disabledAlgorithms", "MD2, RC4, MD5");
+    Security.setProperty("jdk.tls.disabledAlgorithms", "SSLv3, RC4, MD5");
   }
 
   /**
