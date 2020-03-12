@@ -81,6 +81,7 @@ final class ConnectToCluster {
   ConnectToCluster(List<HostAndPort> masterAddrs) {
     this.masterAddrs = masterAddrs;
     this.responseD = new Deferred<>();
+    this.numMasters = masterAddrs.size();
   }
 
   @InterfaceAudience.LimitedPrivate("Test")
@@ -91,15 +92,6 @@ final class ConnectToCluster {
   @InterfaceAudience.LimitedPrivate("Test")
   List<Exception> getExceptionsReceived() {
     return exceptionsReceived;
-  }
-
-  /**
-   * Set the number of masters.
-   * Only used for testing.
-   * @param numMasters the number of masters.
-   */
-  public void setNumMasters(int numMasters) {
-    this.numMasters = numMasters;
   }
 
   private static Deferred<ConnectToMasterResponsePB> connectToMaster(

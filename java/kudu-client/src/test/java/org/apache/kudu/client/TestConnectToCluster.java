@@ -34,8 +34,9 @@ import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.MasterServerConfig;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
-import org.apache.kudu.test.junit.RetryRule;
 
 public class TestConnectToCluster {
 
@@ -45,7 +46,7 @@ public class TestConnectToCluster {
       new HostAndPort("2", 9000));
 
   @Rule
-  public RetryRule retryRule = new RetryRule();
+  public KuduTestHarness harness = new KuduTestHarness();
 
   /**
    * Test that the client properly falls back to the old GetMasterRegistration
@@ -53,18 +54,11 @@ public class TestConnectToCluster {
    * ConnectToMaster RPC.
    */
   @Test(timeout = 60000)
+  @MasterServerConfig(flags = { "--master_support_connect_to_master_rpc=0" })
   public void testFallbackConnectRpc() throws Exception {
-    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-         .addMasterServerFlag("--master_support_connect_to_master_rpc=0")
-         .numMasterServers(1)
-         .numTabletServers(0)
-         .build();
-         KuduClient c = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
-             .build()) {
-      // Call some method which uses the master. This forces us to connect
-      // and verifies that the fallback works.
-      c.listTabletServers();
-    }
+    // Call some method which uses the master. This forces us to connect
+    // and verifies that the fallback works.
+    harness.getClient().listTabletServers();
   }
 
   /**
@@ -76,26 +70,21 @@ public class TestConnectToCluster {
   @Test(timeout = 60000)
   public void testConnectToOneOfManyMasters() throws Exception {
     int successes = 0;
-    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-         .numMasterServers(3)
-         .numTabletServers(0)
-         .build()) {
-      String[] masterAddrs = cluster.getMasterAddressesAsString().split(",", -1);
-      assertEquals(3, masterAddrs.length);
-      for (String masterAddr : masterAddrs) {
-        try (KuduClient c = new KuduClient.KuduClientBuilder(masterAddr).build()) {
-          // Call some method which uses the master. This forces us to connect.
-          c.listTabletServers();
-          successes++;
-        } catch (Exception e) {
-          Assert.assertTrue("unexpected exception: " + e.toString(),
-              e.toString().matches(
-                  ".*Client configured with 1 master\\(s\\) " +
-                  "\\(.+?\\) but cluster indicates it expects 3 master\\(s\\) " +
-                  "\\(.+?,.+?,.+?\\).*"));
-          Assert.assertThat(Joiner.on("\n").join(e.getStackTrace()),
-              CoreMatchers.containsString("testConnectToOneOfManyMasters"));
-        }
+    String[] masterAddrs = harness.getMasterAddressesAsString().split(",", -1);
+    assertEquals(3, masterAddrs.length);
+    for (String masterAddr : masterAddrs) {
+      try (KuduClient c = new KuduClient.KuduClientBuilder(masterAddr).build()) {
+        // Call some method which uses the master. This forces us to connect.
+        c.listTabletServers();
+        successes++;
+      } catch (Exception e) {
+        Assert.assertTrue("unexpected exception: " + e.toString(),
+            e.toString().matches(
+                ".*Client configured with 1 master\\(s\\) " +
+                "\\(.+?\\) but cluster indicates it expects 3 master\\(s\\) " +
+                "\\(.+?,.+?,.+?\\).*"));
+        Assert.assertThat(Joiner.on("\n").join(e.getStackTrace()),
+            CoreMatchers.containsString("testConnectToOneOfManyMasters"));
       }
     }
 
@@ -248,7 +237,6 @@ public class TestConnectToCluster {
     // add the responses. We then check for the right response.
 
     ConnectToCluster grrm = new ConnectToCluster(MASTERS);
-    grrm.setNumMasters(MASTERS.size());
 
     Callback<Void, ConnectToMasterResponsePB> cb0 = grrm.callbackForNode(MASTERS.get(0));
     Callback<Void, ConnectToMasterResponsePB> cb1 = grrm.callbackForNode(MASTERS.get(1));
