@@ -3,9 +3,7 @@
   # be used by client applications.
   local:
     # libunwind
-    _ULx86_64_*;
-    _Ux86_64_*;
-    _U_dyn_info_list_addr;
+    _U*;
     unw_backtrace;
 
     # libev
