@@ -62,7 +62,18 @@ $ ./gradlew test
 ----
 
 If you would like to force tests that were already run to re-run
-you can pass `-PrerunTests`.
+you can pass `-PrerunTests`. Another option is to run
+
+[source,bash]
+----
+$ ./gradlew cleanTest test
+----
+
+The difference is that the latter spends extra time re-building test state,
+while the former runs them again. Using -PrerunTests can be useful to quickly
+loop on tests with less slowdown. See
+https://docs.gradle.org/5.6.4/userguide/java_testing.html#sec:forcing_java_tests_to_run[here]
+for more details.
 
 If you would like to run a subset of the tests or a single test
 you can pass the Gradle `--tests <pattern>` argument to filter
