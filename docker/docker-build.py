@@ -266,7 +266,7 @@ def main():
 
       # If this is the default OS, also tag it without the OS-specific tag.
       if base == DEFAULT_OS:
-        default_os_tag = get_full_tag(opts.repository, target, version, '')
+        default_os_tag = get_full_tag(opts.repository, target, version_tag, '')
         default_os_cmd = 'docker tag %s %s' % (full_tag, default_os_tag)
         run_command(default_os_cmd, opts)
         tags.append(default_os_tag)

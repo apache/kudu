@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.1.7-experimental
+
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -105,9 +107,10 @@ LABEL org.label-schema.name="Apache Kudu Development Base" \
 #
 FROM dev AS thirdparty
 
-ARG UID=1000
-ARG GID=1000
 ARG BUILD_DIR="/kudu"
+
+ENV UID=1000
+ENV GID=1000
 
 # Setup the kudu user and create the neccessary directories.
 # We do this before copying any files othwerwise the image size is doubled by the chown change.
@@ -126,7 +129,10 @@ COPY --chown=kudu:kudu ./build-support/enable_devtoolset.sh \
   build-support/
 COPY --chown=kudu:kudu ./build-support/ccache-clang build-support/ccache-clang
 COPY --chown=kudu:kudu ./build-support/ccache-devtoolset-3 build-support/ccache-devtoolset-3
-RUN build-support/enable_devtoolset.sh \
+# We explicitly set UID/GID due to https://github.com/moby/buildkit/issues/1237
+# Hard coded UID/GID are required due to https://github.com/moby/buildkit/issues/815
+RUN --mount=type=cache,id=ccache,uid=1000,gid=1000,target=/home/kudu/.ccache \
+  build-support/enable_devtoolset.sh \
   thirdparty/build-if-necessary.sh \
   # Remove the files left behind that we don't need.
   # Remove all the source files except the hadoop, hive, postgresql, ranger, and sentry sources
@@ -177,6 +183,9 @@ ARG PARALLEL=4
 # This is a common label argument, but also used in the build invocation.
 ARG VCS_REF
 
+ENV UID=1000
+ENV GID=1000
+
 # Use the bash shell for all RUN commands.
 SHELL ["/bin/bash", "-c"]
 # Run the build as the kudu user.
@@ -198,9 +207,15 @@ COPY --chown=kudu:kudu ./java ${BUILD_DIR}/java
 
 # Build the c++ code.
 WORKDIR ${BUILD_DIR}/build/$BUILD_TYPE
+# Enable the Gradle build cache in the C++ build.
+ENV GRADLE_FLAGS="--build-cache"
 # Ensure we don't rebuild thirdparty. Instead let docker handle caching.
 ENV NO_REBUILD_THIRDPARTY=1
-RUN ../../build-support/enable_devtoolset.sh \
+# We explicitly set UID/GID due to https://github.com/moby/buildkit/issues/1237
+# Hard coded UID/GID are required due to https://github.com/moby/buildkit/issues/815
+RUN --mount=type=cache,id=ccache,uid=1000,gid=1000,target=/home/kudu/.ccache \
+  --mount=type=cache,id=gradle-cache,uid=1000,gid=1000,target=/home/kudu/.gradle \
+  ../../build-support/enable_devtoolset.sh \
   ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
   -DKUDU_LINK=$LINK_TYPE \
@@ -219,13 +234,15 @@ RUN ../../build-support/enable_devtoolset.sh \
 
 # Build the java code.
 WORKDIR ${BUILD_DIR}/java
-RUN ./gradlew jar
+RUN --mount=type=cache,id=gradle-cache,uid=1000,gid=1000,target=/home/kudu/.gradle \
+  ./gradlew jar --build-cache
 
 # Copy the python build source.
 COPY --chown=kudu:kudu ./python ${BUILD_DIR}/python
 # Build the python code.
 WORKDIR ${BUILD_DIR}/python
-RUN pip install --user -r requirements.txt \
+RUN --mount=type=cache,id=ccache,uid=1000,gid=1000,target=/home/kudu/.ccache \
+  pip install --user -r requirements.txt \
   && python setup.py sdist
 
 # Copy any remaining source files.
@@ -263,10 +280,11 @@ LABEL name="Apache Kudu Build" \
 #
 FROM runtime AS kudu-python
 
-ARG UID=1000
-ARG GID=1000
 ARG BUILD_DIR="/kudu"
 ARG INSTALL_DIR="/opt/kudu"
+
+ENV UID=1000
+ENV GID=1000
 
 # Setup the kudu user and create the neccessary directories.
 # We do this before copying any files othwerwise the image size is doubled by the chown change.
@@ -321,11 +339,12 @@ LABEL org.label-schema.name="Apache Kudu Python Client" \
 #
 FROM runtime AS kudu
 
-ARG UID=1000
-ARG GID=1000
 ARG BUILD_DIR="/kudu"
 ARG INSTALL_DIR="/opt/kudu"
 ARG DATA_DIR="/var/lib/kudu"
+
+ENV UID=1000
+ENV GID=1000
 
 # Setup the kudu user and create the neccessary directories.
 # We do this before copying any files othwerwise the image size is doubled by the chown change.
@@ -439,10 +458,11 @@ LABEL name="Apache Impala Build" \
 #
 FROM runtime AS impala
 
-ARG UID=1000
-ARG GID=1000
 ARG DATA_DIR="/var/lib/impala"
 ARG IMPALA_VERSION="3.3.0"
+
+ENV UID=1001
+ENV GID=1001
 
 ENV IMPALA_HOME="/opt/impala"
 ENV HIVE_HOME="/opt/hive"
