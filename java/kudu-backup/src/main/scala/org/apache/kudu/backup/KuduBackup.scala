@@ -140,7 +140,7 @@ object KuduBackup {
       val backupResult = Try(doBackup(tableName, context, session, io, options, backupMap))
       backupResult match {
         case Success(()) =>
-          log.info(s"Successfully backed up up table $tableName")
+          log.info(s"Successfully backed up table $tableName")
         case Failure(ex) =>
           if (options.numParallelBackups == 1 && options.failOnFirstError)
             throw ex
