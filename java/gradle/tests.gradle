@@ -80,13 +80,6 @@ tasks.withType(Test) {
     systemProperty "testRandomSeed", propertyWithDefault("testRandomSeed", null)
   }
 
-  // Don't fail the build if a --tests filter doesn't match any tests.
-  // This is useful for filtering tests from the top of the project where some
-  // subprojects won't match the filter. Without this, those subprojects would fail.
-  filter {
-    failOnNoMatchingTests = false
-  }
-
   // Force the tests to be rerun if the rerunTests property is set.
   if (propertyExists("rerunTests")) {
     outputs.upToDateWhen { false }
