@@ -27,75 +27,70 @@ import com.stumbleupon.async.Deferred;
 import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.test.cluster.MiniKuduCluster;
-import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.NetUtil;
 
 public class TestConnectionCache {
 
   @Rule
-  public RetryRule retryRule = new RetryRule();
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Test(timeout = 50000)
   @SuppressWarnings("FutureReturnValueIgnored")
   public void test() throws Exception {
-    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasterServers(3)
-                                                      .build();
-         AsyncKuduClient client = new AsyncKuduClient.AsyncKuduClientBuilder(
-             cluster.getMasterAddressesAsString()).build()) {
-      // Below we ping the masters directly using RpcProxy, so if they aren't ready to process
-      // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
-      // it won't return until a master leader is found.
-      client.getTablesList().join();
+    AsyncKuduClient client = harness.getAsyncClient();
 
-      HostAndPort masterHostPort = cluster.getMasterServers().get(0);
-      ServerInfo firstMaster = new ServerInfo("fake-uuid",
-                                              masterHostPort,
-                                              NetUtil.getInetAddress(masterHostPort.getHost()),
-                                              /*location=*/"");
+    // Below we ping the masters directly using RpcProxy, so if they aren't ready to process
+    // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
+    // it won't return until a master leader is found.
+    client.getTablesList().join();
 
-      // 3 masters in the cluster. Connections should have been cached since we forced
-      // a cluster connection above.
-      // No tservers have been connected to by the client since we haven't accessed
-      // any data.
-      assertEquals(3, client.getConnectionListCopy().size());
-      assertFalse(allConnectionsTerminated(client));
+    HostAndPort masterHostPort = harness.getMasterServers().get(0);
+    ServerInfo firstMaster = new ServerInfo("fake-uuid",
+                                            masterHostPort,
+                                            NetUtil.getInetAddress(masterHostPort.getHost()),
+                                            /*location=*/"");
 
-      final RpcProxy proxy = client.newRpcProxy(firstMaster);
+    // 3 masters in the cluster. Connections should have been cached since we forced
+    // a cluster connection above.
+    // No tservers have been connected to by the client since we haven't accessed
+    // any data.
+    assertEquals(3, client.getConnectionListCopy().size());
+    assertFalse(allConnectionsTerminated(client));
 
-      // Disconnect from the server.
-      proxy.getConnection().disconnect().awaitUninterruptibly();
-      waitForConnectionToTerminate(proxy.getConnection());
-      assertTrue(proxy.getConnection().isTerminated());
+    final RpcProxy proxy = client.newRpcProxy(firstMaster);
 
-      // Make sure not all the connections in the connection cache are disconnected yet. Actually,
-      // only the connection to server '0' should be disconnected.
-      assertFalse(allConnectionsTerminated(client));
+    // Disconnect from the server.
+    proxy.getConnection().disconnect().awaitUninterruptibly();
+    waitForConnectionToTerminate(proxy.getConnection());
+    assertTrue(proxy.getConnection().isTerminated());
 
-      // For a new RpcProxy instance, a new connection to the same destination is established.
-      final RpcProxy newHelper = client.newRpcProxy(firstMaster);
-      final Connection newConnection = newHelper.getConnection();
-      assertNotNull(newConnection);
-      assertNotSame(proxy.getConnection(), newConnection);
+    // Make sure not all the connections in the connection cache are disconnected yet. Actually,
+    // only the connection to server '0' should be disconnected.
+    assertFalse(allConnectionsTerminated(client));
 
-      // The client-->server connection should not be established at this point yet. Wait a little
-      // before checking the state of the connection: this is to check for the status of the
-      // underlying connection _after_ the negotiation is run, if a regression happens. The
-      // negotiation on the underlying connection should be run upon submitting the very first
-      // RPC via the proxy object, not upon creating RpcProxy instance (see KUDU-1878).
-      Thread.sleep(500);
-      assertFalse(newConnection.isReady());
-      pingConnection(newHelper);
-      assertTrue(newConnection.isReady());
+    // For a new RpcProxy instance, a new connection to the same destination is established.
+    final RpcProxy newHelper = client.newRpcProxy(firstMaster);
+    final Connection newConnection = newHelper.getConnection();
+    assertNotNull(newConnection);
+    assertNotSame(proxy.getConnection(), newConnection);
 
-      // Test disconnecting and make sure we cleaned up all the connections.
-      for (Connection c : client.getConnectionListCopy()) {
-        c.disconnect().awaitUninterruptibly();
-        waitForConnectionToTerminate(c);
-      }
-      assertTrue(allConnectionsTerminated(client));
+    // The client-->server connection should not be established at this point yet. Wait a little
+    // before checking the state of the connection: this is to check for the status of the
+    // underlying connection _after_ the negotiation is run, if a regression happens. The
+    // negotiation on the underlying connection should be run upon submitting the very first
+    // RPC via the proxy object, not upon creating RpcProxy instance (see KUDU-1878).
+    Thread.sleep(500);
+    assertFalse(newConnection.isReady());
+    pingConnection(newHelper);
+    assertTrue(newConnection.isReady());
+
+    // Test disconnecting and make sure we cleaned up all the connections.
+    for (Connection c : client.getConnectionListCopy()) {
+      c.disconnect().awaitUninterruptibly();
+      waitForConnectionToTerminate(c);
     }
+    assertTrue(allConnectionsTerminated(client));
   }
 
   private boolean allConnectionsTerminated(AsyncKuduClient client) {
