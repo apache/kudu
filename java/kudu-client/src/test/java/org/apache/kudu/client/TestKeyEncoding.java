@@ -40,6 +40,7 @@ import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.CharUtil;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestKeyEncoding {
@@ -419,7 +420,7 @@ public class TestKeyEncoding {
     row.addDecimal(8, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64));
     row.addDecimal(9, new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128));
     row.addVarchar(10, "varchar bar");
-    row.addDate(11, new Date(0));
+    row.addDate(11, DateUtil.epochDaysToSqlDate(0));
     row.addBoolean(12, true);
     row.addFloat(13, 7.8f);
     row.addDouble(14, 9.9);

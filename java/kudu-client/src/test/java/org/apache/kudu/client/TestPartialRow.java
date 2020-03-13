@@ -577,7 +577,7 @@ public class TestPartialRow {
         partialRow.addDecimal(columnName, BigDecimal.valueOf(12345, 3));
         break;
       case DATE:
-        partialRow.addDate(columnName, new Date(0));
+        partialRow.addDate(columnName, DateUtil.epochDaysToSqlDate(0));
         break;
       default:
         throw new UnsupportedOperationException();
@@ -623,7 +623,7 @@ public class TestPartialRow {
         partialRow.addDecimal(columnIndex, BigDecimal.valueOf(12345, 3));
         break;
       case DATE:
-        partialRow.addDate(columnIndex, new Date(0));
+        partialRow.addDate(columnIndex, DateUtil.epochDaysToSqlDate(0));
         break;
       default:
         throw new UnsupportedOperationException();

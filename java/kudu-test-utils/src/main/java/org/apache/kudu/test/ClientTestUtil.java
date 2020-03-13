@@ -60,6 +60,7 @@ import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
 import org.apache.kudu.client.Upsert;
 import org.apache.kudu.util.CharUtil;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 /**
@@ -238,7 +239,7 @@ public abstract class ClientTestUtil {
     row.addInt("int32", 44);
     row.addLong("int64", 45);
     row.addTimestamp("timestamp", new Timestamp(1234567890));
-    row.addDate("date", new Date(0));
+    row.addDate("date", DateUtil.epochDaysToSqlDate(0));
     row.addBoolean("bool", true);
     row.addFloat("float", 52.35F);
     row.addDouble("double", 53.35);
