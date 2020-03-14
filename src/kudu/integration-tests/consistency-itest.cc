@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -62,7 +63,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_clock_sync_error_usec);
@@ -80,6 +80,7 @@ using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;
 using std::string;
+using std::thread;
 using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
@@ -827,30 +828,33 @@ class ScanYourWritesMultiClientsParamTest :
 //    replicas that count the rows. The count of the rows
 //    should never go down from the previous observed one.
 TEST_P(ScanYourWritesMultiClientsParamTest, Test) {
+  const int kNumThreads = 5;
+  const int rows_to_insert = 1000;
+  const int scans_to_perform = AllowSlowTests() ? 10 : 3;
   const KuduClient::ReplicaSelection sel = GetParam();
+
   shared_ptr<KuduClient> client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
   ASSERT_OK(CreateTable(client.get(), table_name_, 3));
 
   for (int run = 1; run <= 3; run++) {
-    vector<scoped_refptr<Thread>> threads;
-    const int kNumThreads = 5;
-    const int rows_to_insert = 1000;
-    const int scans_to_performs = AllowSlowTests() ? 10 : 3;
+    vector<thread> threads;
     for (int i = 0; i < kNumThreads; i++) {
-      Random first_row(rows_to_insert * kNumThreads);
-      scoped_refptr<kudu::Thread> new_thread;
-      CHECK_OK(kudu::Thread::Create(
-          "test", strings::Substitute("test-scanner-$0", i),
-          &ConsistencyITest::ScannerThread, this,
-          sel, rows_to_insert, first_row.Next32(),
-          scans_to_performs, &new_thread));
-      threads.push_back(new_thread);
+      // TODO(adar): this is broken: each call to Next32() yields the same
+      // value. Fixing it is non-trivial because 'first_row' is multiplied in
+      // various code paths, causing it to overflow an int32. It just so happens
+      // that the first Next32() using this particular seed generates a low
+      // enough value to avoid overflow.
+      Random rng(rows_to_insert * kNumThreads);
+      uint32_t first_row = rng.Next32();
+      threads.emplace_back([=]() {
+        this->ScannerThread(sel, rows_to_insert, first_row, scans_to_perform);
+      });
     }
     SleepFor(MonoDelta::FromMilliseconds(50));
 
-    for (const scoped_refptr<kudu::Thread> &thr : threads) {
-      CHECK_OK(ThreadJoiner(thr.get()).Join());
+    for (auto& t : threads) {
+      t.join();
     }
   }
 }

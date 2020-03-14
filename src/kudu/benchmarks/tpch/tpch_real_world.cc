@@ -49,6 +49,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -63,7 +64,6 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
@@ -80,7 +80,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
-#include "kudu/util/thread.h"
 
 DEFINE_bool(tpch_use_mini_cluster, true,
             "Create a mini cluster for the work to be performed against");
@@ -126,6 +125,7 @@ using kudu::client::KuduSchema;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -156,7 +156,7 @@ class TpchRealWorld {
 
   void WaitForRowCount(int64_t row_count);
 
-  Status Run();
+  void Run();
 
  private:
   static const char* kLineItemBase;
@@ -385,19 +385,12 @@ void TpchRealWorld::WaitForRowCount(int64_t row_count) {
   }
 }
 
-Status TpchRealWorld::Run() {
-  vector<scoped_refptr<Thread> > threads;
+void TpchRealWorld::Run() {
+  vector<thread> threads;
   if (FLAGS_tpch_load_data) {
     for (int i = 0; i < FLAGS_tpch_num_inserters; i++) {
-      scoped_refptr<kudu::Thread> thr;
-      RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-gen$0", i),
-                                         &TpchRealWorld::MonitorDbgenThread, this, i,
-                                         &thr));
-      threads.push_back(thr);
-      RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-load$0", i),
-                                         &TpchRealWorld::LoadLineItemsThread, this, i,
-                                         &thr));
-      threads.push_back(thr);
+      threads.emplace_back([this, i]() { this->MonitorDbgenThread(i); });
+      threads.emplace_back([this, i]() { this->LoadLineItemsThread(i); });
     }
 
     // It takes some time for dbgen to start outputting rows so there's no need to query yet.
@@ -406,11 +399,7 @@ Status TpchRealWorld::Run() {
   }
 
   if (FLAGS_tpch_run_queries) {
-    scoped_refptr<kudu::Thread> thr;
-    RETURN_NOT_OK(kudu::Thread::Create("test", "lineitem-query",
-                                       &TpchRealWorld::RunQueriesThread, this,
-                                       &thr));
-    threads.push_back(thr);
+    threads.emplace_back([this]() { this->RunQueriesThread(); });
   }
 
   // We'll wait until all the dbgens finish or after tpch_test_runtime_sec,
@@ -431,10 +420,9 @@ Status TpchRealWorld::Run() {
 
   stop_threads_.Store(true);
 
-  for (const auto& thr : threads) {
-    RETURN_NOT_OK(ThreadJoiner(thr.get()).Join());
+  for (auto& t : threads) {
+    t.join();
   }
-  return Status::OK();
 }
 
 } // namespace kudu
@@ -449,10 +437,6 @@ int main(int argc, char* argv[]) {
     std::cerr << "Couldn't initialize the benchmarking tool, reason: "<< s.ToString() << std::endl;
     return 1;
   }
-  s = benchmarker.Run();
-  if (!s.ok()) {
-    std::cerr << "Couldn't run the benchmarking tool, reason: "<< s.ToString() << std::endl;
-    return 1;
-  }
+  benchmarker.Run();
   return 0;
 }

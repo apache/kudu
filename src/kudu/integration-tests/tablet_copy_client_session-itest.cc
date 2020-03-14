@@ -31,7 +31,6 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -45,10 +44,10 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 METRIC_DECLARE_gauge_uint64(tablets_num_failed);
 
@@ -146,10 +145,10 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
     cluster_->tablet_server(0)->Shutdown();
 
     const int kNumStartTabletThreads = 4;
-    vector<scoped_refptr<Thread>> threads;
+    vector<thread> threads;
+    threads.reserve(kNumStartTabletThreads);
     for (int j = 0; j < kNumStartTabletThreads; j++) {
-      scoped_refptr<Thread> t;
-      CHECK_OK(Thread::Create("test", "start-tablet-copy", [&]() {
+      threads.emplace_back([&]() {
         // Retry until it succeeds (we will intially race against TS 0 startup).
         MonoTime deadline = MonoTime::Now() + kTimeout;
         Status s;
@@ -172,19 +171,22 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
         }
         // If we got here, we either successfully started a tablet copy or we
         // observed the tablet running.
-      }, &t));
-      threads.push_back(t);
+      });
     }
 
-    // Restart the source tablet server (TS 0).
-    ASSERT_OK(cluster_->tablet_server(0)->Restart());
+    {
+      SCOPED_CLEANUP({
+        for (auto& t : threads) {
+          t.join();
+        }
+      });
 
-    // Wait for one of the threads to succeed with its tablet copy and for the
-    // tablet to be running on TS 1.
-    ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kTimeout));
+      // Restart the source tablet server (TS 0).
+      ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-    for (auto& t : threads) {
-      t->Join();
+      // Wait for one of the threads to succeed with its tablet copy and for the
+      // tablet to be running on TS 1.
+      ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kTimeout));
     }
 
     NO_FATALS(cluster_->AssertNoCrashes());

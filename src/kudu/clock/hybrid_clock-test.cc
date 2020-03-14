@@ -49,7 +49,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(time_source);
@@ -311,21 +310,18 @@ void StresserThread(HybridClock* clock, AtomicBool* stop) {
 // Regression test for KUDU-953: if threads are updating and polling the
 // clock concurrently, the clock should still never run backwards.
 TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
-  vector<scoped_refptr<kudu::Thread>> threads;
+  vector<thread> threads;
   AtomicBool stop(false);
 
   SCOPED_CLEANUP({
     stop.Store(true);
-    for (const auto& t : threads) {
-      t->Join();
+    for (auto& t : threads) {
+      t.join();
     }
   });
 
   for (int i = 0; i < 4; i++) {
-    scoped_refptr<Thread> thread;
-    ASSERT_OK(Thread::Create("test", "stresser", &StresserThread, &clock_, &stop,
-                             &thread));
-    threads.push_back(thread);
+    threads.emplace_back([&]() { StresserThread(&clock_, &stop); });
   }
 
   SleepFor(MonoDelta::FromSeconds(1));

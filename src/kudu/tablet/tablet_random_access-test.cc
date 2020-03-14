@@ -20,9 +20,9 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
@@ -38,7 +38,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
@@ -47,11 +46,11 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DEFINE_int32(keyspace_size, 3000, "number of unique row keys to insert/mutate");
 DEFINE_int32(runtime_seconds, 1, "number of seconds to run the test");
@@ -63,6 +62,7 @@ DECLARE_int32(deltafile_default_block_size);
 
 using boost::optional;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -333,14 +333,12 @@ class TestRandomAccess : public KuduTabletTest {
 };
 
 TEST_F(TestRandomAccess, Test) {
-  scoped_refptr<Thread> flush_thread;
-  CHECK_OK(Thread::Create("test", "flush",
-                          boost::bind(&TestRandomAccess::BackgroundOpThread, this),
-                          &flush_thread));
-
-  DoRandomBatches();
-  done_.CountDown();
-  flush_thread->Join();
+  thread flush_thread([this]() { this->BackgroundOpThread(); });
+  SCOPED_CLEANUP({
+    done_.CountDown();
+    flush_thread.join();
+  });
+  NO_FATALS(DoRandomBatches());
 }
 
 

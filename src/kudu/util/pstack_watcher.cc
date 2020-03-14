@@ -21,6 +21,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <initializer_list>
 #include <string>
 #include <vector>
 

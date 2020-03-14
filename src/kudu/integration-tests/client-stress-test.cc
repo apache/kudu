@@ -22,6 +22,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -35,7 +36,6 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -49,25 +49,24 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
-using strings::Substitute;
+using kudu::client::KuduClient;
+using kudu::client::KuduScanner;
+using kudu::client::KuduTable;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using std::set;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
-
-using client::KuduClient;
-using client::KuduScanner;
-using client::KuduTable;
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
 
 class ClientStressTest : public KuduTest {
  public:
@@ -154,25 +153,22 @@ TEST_F(ClientStressTest, TestStartScans) {
     CHECK_OK(cluster_->CreateClient(nullptr, &client));
 
     CountDownLatch go_latch(1);
-    vector<scoped_refptr<Thread> > threads;
-    const int kNumThreads = 60;
+    constexpr int kNumThreads = 60;
+    vector<thread> threads;
+    threads.reserve(kNumThreads);
     Random rng(run);
     for (int i = 0; i < kNumThreads; i++) {
       int32_t start_key = rng.Next32();
-      scoped_refptr<kudu::Thread> new_thread;
-      CHECK_OK(kudu::Thread::Create(
-          "test", strings::Substitute("test-scanner-$0", i),
-          &ClientStressTest_TestStartScans_Test::ScannerThread, this,
-          client.get(), &go_latch, start_key,
-          &new_thread));
-      threads.push_back(new_thread);
+      threads.emplace_back([this, client, &go_latch, start_key]() {
+        this->ScannerThread(client.get(), &go_latch, start_key);
+      });
     }
     SleepFor(MonoDelta::FromMilliseconds(50));
 
     go_latch.CountDown();
 
-    for (const scoped_refptr<kudu::Thread>& thr : threads) {
-      CHECK_OK(ThreadJoiner(thr.get()).Join());
+    for (auto& t : threads) {
+      t.join();
     }
   }
 }

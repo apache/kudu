@@ -17,19 +17,18 @@
 
 #include "kudu/util/maintenance_manager.h"
 
-#include <math.h>
-
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -41,14 +40,13 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 using std::list;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using strings::Substitute;
 
 METRIC_DEFINE_entity(test);
@@ -239,15 +237,12 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
   // already registered.
   op1.set_remaining_runs(0);
   manager_->RegisterOp(&op1);
-  scoped_refptr<kudu::Thread> thread;
-  CHECK_OK(Thread::Create(
-      "TestThread", "TestRegisterUnregister",
-      boost::bind(&TestMaintenanceOp::set_remaining_runs, &op1, 1), &thread));
+  thread thread([&op1]() { op1.set_remaining_runs(1); });
+  SCOPED_CLEANUP({ thread.join(); });
   ASSERT_EVENTUALLY([&]() {
-      ASSERT_EQ(op1.DurationHistogram()->TotalCount(), 1);
-    });
+    ASSERT_EQ(op1.DurationHistogram()->TotalCount(), 1);
+  });
   manager_->UnregisterOp(&op1);
-  ThreadJoiner(thread.get()).Join();
 }
 
 // Regression test for KUDU-1495: when an operation is being unregistered,

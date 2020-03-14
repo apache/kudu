@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/lock_manager.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -28,18 +31,15 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/tablet/lock_manager.h"
 #include "kudu/util/env.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::vector;
 
 DEFINE_int32(num_test_threads, 10, "number of stress test client threads");
@@ -161,7 +161,7 @@ class LmTestThread {
       : manager_(manager), keys_(std::move(keys)), resources_(resources) {}
 
   void Start() {
-    CHECK_OK(kudu::Thread::Create("test", "test", &LmTestThread::Run, this, &thread_));
+    thread_ = thread([this]() { this->Run(); });
   }
 
   void Run() {
@@ -187,11 +187,7 @@ class LmTestThread {
   }
 
   void Join() {
-    CHECK_OK(ThreadJoiner(thread_.get()).
-             warn_after_ms(1000).
-             warn_every_ms(5000).
-             Join());
-    thread_ = nullptr;
+    thread_.join();
   }
 
  private:
@@ -200,7 +196,7 @@ class LmTestThread {
   vector<const Slice*> keys_;
   const vector<LmTestResource*> resources_;
   uint64_t tid_;
-  scoped_refptr<kudu::Thread> thread_;
+  thread thread_;
 };
 
 static void runPerformanceTest(const char *test_type,

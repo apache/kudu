@@ -19,20 +19,19 @@
 
 #include <mutex>
 #include <ostream>
+#include <thread>
 #include <utility>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/status.h"
-#include "kudu/util/thread.h"
 
 using std::shared_ptr;
 using std::string;
+using std::thread;
 
 namespace kudu {
 
@@ -74,14 +73,13 @@ void TimeSeriesCollector::StartDumperThread() {
   CHECK(!started_);
   exit_latch_.Reset(1);
   started_ = true;
-  CHECK_OK(kudu::Thread::Create("time series", "dumper",
-      &TimeSeriesCollector::DumperThread, this, &dumper_thread_));
+  dumper_thread_ = thread([this]() { this->DumperThread(); });
 }
 
 void TimeSeriesCollector::StopDumperThread() {
   CHECK(started_);
   exit_latch_.CountDown();
-  CHECK_OK(ThreadJoiner(dumper_thread_.get()).Join());
+  dumper_thread_.join();
   started_ = false;
 }
 

@@ -16,21 +16,19 @@
 // under the License.
 
 #include <ostream>
+#include <thread>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/once.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
+using std::thread;
 using std::vector;
-using strings::Substitute;
 
 namespace kudu {
 
@@ -114,16 +112,15 @@ TYPED_TEST(TestOnce, KuduOnceThreadSafeTest) {
 
   // The threads will read and write to thing.once_.initted. If access to
   // it is not synchronized, TSAN will flag the access as data races.
-  vector<scoped_refptr<Thread> > threads;
-  for (int i = 0; i < 10; i++) {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create("test", Substitute("thread $0", i),
-                             &InitOrGetInitted<TypeParam>, &thing, i, &t));
-    threads.push_back(t);
+  constexpr int kNumThreads = 10;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&thing, i]() { InitOrGetInitted<TypeParam>(&thing, i); });
   }
 
-  for (const scoped_refptr<Thread>& t : threads) {
-    t->Join();
+  for (auto& t : threads) {
+    t.join();
   }
 }
 

@@ -15,23 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/cfile/bloomfile-test-base.h"
-
-#include <cstdint>
+#include <thread>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/status.h"
+#include "kudu/cfile/bloomfile-test-base.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/thread.h"
 
 DEFINE_int32(benchmark_num_threads, 8, "Number of threads to use for the benchmark");
+
+using std::thread;
+using std::vector;
 
 namespace kudu {
 namespace cfile {
@@ -43,17 +39,13 @@ TEST_F(MTBloomFileTest, Benchmark) {
   NO_FATALS(WriteTestBloomFile());
   ASSERT_OK(OpenBloomFile());
 
-  std::vector<scoped_refptr<kudu::Thread> > threads;
-
+  vector<thread> threads;
+  threads.reserve(FLAGS_benchmark_num_threads);
   for (int i = 0; i < FLAGS_benchmark_num_threads; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(Thread::Create("test", strings::Substitute("t$0", i),
-                            boost::bind(&BloomFileTestBase::ReadBenchmark, this),
-                            &new_thread));
-    threads.push_back(new_thread);
+    threads.emplace_back([this]() { this->ReadBenchmark(); });
   }
-  for (scoped_refptr<kudu::Thread>& t : threads) {
-    t->Join();
+  for (auto& t : threads) {
+    t.join();
   }
 }
 

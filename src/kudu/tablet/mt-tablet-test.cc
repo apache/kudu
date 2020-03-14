@@ -17,13 +17,14 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -36,13 +37,10 @@
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
-#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
@@ -52,7 +50,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_graph.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_double(tablet_delta_store_major_compact_min_ratio);
@@ -78,7 +75,9 @@ DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {
@@ -424,23 +423,19 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     }
   }
 
-  template<typename FunctionType>
-  void StartThreads(int n_threads, const FunctionType &function) {
+  void StartThreads(int n_threads, const std::function<void(int)>& function) {
     for (int i = 0; i < n_threads; i++) {
-      scoped_refptr<kudu::Thread> new_thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("test$0", i),
-          function, this, i, &new_thread));
-      threads_.push_back(new_thread);
+      threads_.emplace_back([=]() { function(i); });
     }
   }
 
   void JoinThreads() {
-    for (scoped_refptr<kudu::Thread> thr : threads_) {
-     CHECK_OK(ThreadJoiner(thr.get()).Join());
+    for (auto& t : threads_) {
+      t.join();
     }
   }
 
-  std::vector<scoped_refptr<kudu::Thread> > threads_;
+  vector<thread> threads_;
   CountDownLatch running_insert_count_;
 
   // Projection with only an int column.
@@ -462,20 +457,29 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
   }
 
   // Spawn a bunch of threads, each of which will do updates.
-  this->StartThreads(1, &TestFixture::CollectStatisticsThread);
-  this->StartThreads(FLAGS_num_insert_threads, &TestFixture::InsertThread);
-  this->StartThreads(FLAGS_num_counter_threads, &TestFixture::CountThread);
-  this->StartThreads(FLAGS_num_summer_threads, &TestFixture::SummerThread);
-  this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
-  this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
-  this->StartThreads(FLAGS_num_undo_delta_gc_threads, &TestFixture::DeleteAncientUndoDeltasThread);
-  this->StartThreads(FLAGS_num_flush_delta_threads, &TestFixture::FlushDeltasThread);
+  this->StartThreads(1, [this](int i) { this->CollectStatisticsThread(i); });
+  this->StartThreads(FLAGS_num_insert_threads,
+                     [this](int i) { this->InsertThread(i); });
+  this->StartThreads(FLAGS_num_counter_threads,
+                     [this](int i) { this->CountThread(i); });
+  this->StartThreads(FLAGS_num_summer_threads,
+                     [this](int i) { this->SummerThread(i); });
+  this->StartThreads(FLAGS_num_flush_threads,
+                     [this](int i) { this->FlushThread(i); });
+  this->StartThreads(FLAGS_num_compact_threads,
+                     [this](int i) { this->CompactThread(i); });
+  this->StartThreads(FLAGS_num_undo_delta_gc_threads,
+                     [this](int i) { this->DeleteAncientUndoDeltasThread(i); });
+  this->StartThreads(FLAGS_num_flush_delta_threads,
+                     [this](int i) { this->FlushDeltasThread(i); });
   this->StartThreads(FLAGS_num_minor_compact_deltas_threads,
-                     &TestFixture::MinorCompactDeltasThread);
+                     [this](int i) { this->MinorCompactDeltasThread(i); });
   this->StartThreads(FLAGS_num_major_compact_deltas_threads,
-                     &TestFixture::MajorCompactDeltasThread);
-  this->StartThreads(FLAGS_num_slowreader_threads, &TestFixture::SlowReaderThread);
-  this->StartThreads(FLAGS_num_updater_threads, &TestFixture::UpdateThread);
+                     [this](int i) { this->MajorCompactDeltasThread(i); });
+  this->StartThreads(FLAGS_num_slowreader_threads,
+                     [this](int i) { this->SlowReaderThread(i); });
+  this->StartThreads(FLAGS_num_updater_threads,
+                     [this](int i) { this->UpdateThread(i); });
   this->JoinThreads();
   LOG_TIMING(INFO, "Summing int32 column") {
     uint64_t sum = this->CountSum(shared_ptr<TimeSeries>());
@@ -493,21 +497,27 @@ TYPED_TEST(MultiThreadedTabletTest, DoTestAllAtOnce) {
 // of DELETE/REINSERT during flushes.
 TYPED_TEST(MultiThreadedTabletTest, DeleteAndReinsert) {
   google::FlagSaver saver;
-  FLAGS_flusher_backoff = 1.0f;
+  FLAGS_flusher_backoff = 1.0F;
   FLAGS_flusher_initial_frequency_ms = 1;
-  FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01f;
+  FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01F;
   FLAGS_tablet_delta_store_minor_compact_max = 10;
-  this->StartThreads(1, &TestFixture::CollectStatisticsThread);
-  this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
-  this->StartThreads(FLAGS_num_compact_threads, &TestFixture::CompactThread);
-  this->StartThreads(FLAGS_num_undo_delta_gc_threads, &TestFixture::DeleteAncientUndoDeltasThread);
-  this->StartThreads(FLAGS_num_flush_delta_threads, &TestFixture::FlushDeltasThread);
+  this->StartThreads(1, [this](int i) { this->CollectStatisticsThread(i); });
+  this->StartThreads(FLAGS_num_flush_threads,
+                     [this](int i) { this->FlushThread(i); });
+  this->StartThreads(FLAGS_num_compact_threads,
+                     [this](int i) { this->CompactThread(i); });
+  this->StartThreads(FLAGS_num_undo_delta_gc_threads,
+                     [this](int i) { this->DeleteAncientUndoDeltasThread(i); });
+  this->StartThreads(FLAGS_num_flush_delta_threads,
+                     [this](int i) { this->FlushDeltasThread(i); });
   this->StartThreads(FLAGS_num_minor_compact_deltas_threads,
-                     &TestFixture::MinorCompactDeltasThread);
+                     [this](int i) { this->MinorCompactDeltasThread(i); });
   this->StartThreads(FLAGS_num_major_compact_deltas_threads,
-                     &TestFixture::MajorCompactDeltasThread);
-  this->StartThreads(10, &TestFixture::DeleteAndReinsertCycleThread);
-  this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
+                     [this](int i) { this->MajorCompactDeltasThread(i); });
+  this->StartThreads(10,
+                     [this](int i) { this->DeleteAndReinsertCycleThread(i); });
+  this->StartThreads(10,
+                     [this](int i) { this->StubbornlyUpdateSameRowThread(i); });
 
   // Run very quickly in dev builds, longer in slow builds.
   float runtime_seconds = AllowSlowTests() ? 2 : 0.1;
@@ -542,17 +552,22 @@ TYPED_TEST(MultiThreadedHybridClockTabletTest, UpdateNoMergeCompaction) {
   google::FlagSaver saver;
   FLAGS_tablet_history_max_age_sec = 0; // GC data as aggressively as possible.
 
-  FLAGS_flusher_backoff = 1.0f;
+  FLAGS_flusher_backoff = 1.0F;
   FLAGS_flusher_initial_frequency_ms = 1;
-  FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01f;
+  FLAGS_tablet_delta_store_major_compact_min_ratio = 0.01F;
   FLAGS_tablet_delta_store_minor_compact_max = 10;
-  this->StartThreads(FLAGS_num_flush_threads, &TestFixture::FlushThread);
-  this->StartThreads(FLAGS_num_flush_delta_threads, &TestFixture::FlushDeltasThread);
+  this->StartThreads(FLAGS_num_flush_threads,
+                     [this](int i) { this->FlushThread(i); });
+  this->StartThreads(FLAGS_num_flush_delta_threads,
+                     [this](int i) { this->FlushDeltasThread(i); });
   this->StartThreads(FLAGS_num_major_compact_deltas_threads,
-                     &TestFixture::MajorCompactDeltasThread);
-  this->StartThreads(10, &TestFixture::DeleteAndReinsertCycleThread);
-  this->StartThreads(10, &TestFixture::StubbornlyUpdateSameRowThread);
-  this->StartThreads(FLAGS_num_undo_delta_gc_threads, &TestFixture::DeleteAncientUndoDeltasThread);
+                     [this](int i) { this->MajorCompactDeltasThread(i); });
+  this->StartThreads(10,
+                     [this](int i) { this->DeleteAndReinsertCycleThread(i); });
+  this->StartThreads(10,
+                     [this](int i) { this->StubbornlyUpdateSameRowThread(i); });
+  this->StartThreads(FLAGS_num_undo_delta_gc_threads,
+                     [this](int i) { this->DeleteAncientUndoDeltasThread(i); });
 
   // Run very quickly in dev builds, longer in slow builds.
   float runtime_seconds = AllowSlowTests() ? 2 : 0.1;

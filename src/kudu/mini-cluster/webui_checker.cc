@@ -23,6 +23,7 @@
 #include <iostream>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <glog/logging.h>
@@ -34,9 +35,9 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/thread.h"
 
 using std::string;
+using std::thread;
 using std::vector;
 using strings::Substitute;
 
@@ -79,16 +80,13 @@ PeriodicWebUIChecker::PeriodicWebUIChecker(
   std::random_device rdev;
   std::mt19937 gen(rdev());
   std::shuffle(urls_.begin(), urls_.end(), gen);
-  CHECK_OK(Thread::Create("test", "webui-checker",
-                          &PeriodicWebUIChecker::CheckThread, this, &checker_));
+  checker_ = thread([this]() { this->CheckThread(); });
 }
 
 PeriodicWebUIChecker::~PeriodicWebUIChecker() {
+  LOG(INFO) << "shutting down CURL thread";
   is_running_ = false;
-  if (checker_) {
-    LOG(INFO) << "shutting down CURL thread";
-    checker_->Join();
-  }
+  checker_.join();
 }
 
 void PeriodicWebUIChecker::CheckThread() {

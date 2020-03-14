@@ -24,6 +24,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -64,7 +65,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
@@ -77,6 +77,7 @@ DECLARE_int32(tcp_keepalive_retry_count);
 
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
@@ -880,7 +881,7 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
   //    value. This tests the client's ability to send the maximal message.
   //    The server will reject the message after it has been transferred.
   //    This test is disabled for TSAN due to high memory requirements.
-  std::vector<int64_t> rpc_max_message_values;
+  vector<int64_t> rpc_max_message_values;
   rpc_max_message_values.push_back(FLAGS_rpc_max_message_size);
 #ifndef THREAD_SANITIZER
   rpc_max_message_values.push_back(std::numeric_limits<int64_t>::max());
@@ -1002,10 +1003,8 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
   ASSERT_OK(StartFakeServer(&listen_sock, &server_addr));
 
   // Create another thread to accept the connection on the fake server.
-  scoped_refptr<Thread> acceptor_thread;
-  ASSERT_OK(Thread::Create("test", "acceptor",
-                           AcceptAndReadForever, &listen_sock,
-                           &acceptor_thread));
+  thread acceptor_thread([&listen_sock]() { AcceptAndReadForever(&listen_sock); });
+  SCOPED_CLEANUP({ acceptor_thread.join(); });
 
   // Set up client.
   shared_ptr<Messenger> client_messenger;
@@ -1017,8 +1016,6 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
   NO_FATALS(DoTestExpectTimeout(
       p, MonoDelta::FromMilliseconds(100), false, &is_negotiation_error));
   EXPECT_TRUE(is_negotiation_error);
-
-  acceptor_thread->Join();
 }
 
 // Test that client calls get failed properly when the server they're connected to
@@ -1470,15 +1467,15 @@ TEST_P(TestRpc, TestCancellationMultiThreads) {
   Slice slice(buf);
 
   // Start a bunch of threads which invoke async RPC and cancellation.
-  std::vector<scoped_refptr<Thread>> threads;
-  for (int i = 0; i < 30; ++i) {
-    scoped_refptr<Thread> rpc_thread;
-    ASSERT_OK(Thread::Create("test", "rpc", SendAndCancelRpcs, &p, slice, &rpc_thread));
-    threads.push_back(rpc_thread);
+  constexpr int kNumThreads = 30;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads.emplace_back([&p, slice]() { SendAndCancelRpcs(&p, slice); });
   }
   // Wait for all threads to complete.
-  for (scoped_refptr<Thread>& rpc_thread : threads) {
-    rpc_thread->Join();
+  for (auto& t : threads) {
+    t.join();
   }
   client_messenger->Shutdown();
 }

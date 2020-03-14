@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -47,7 +48,6 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -82,11 +82,10 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
-DECLARE_int64(client_inserts_per_thread);
-DECLARE_int64(client_num_batches_per_thread);
+DECLARE_int32(client_inserts_per_thread);
+DECLARE_int32(client_num_batches_per_thread);
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_int32(num_client_threads);
 DECLARE_int32(num_replicas);
@@ -146,6 +145,7 @@ using kudu::rpc::RpcController;
 using kudu::server::SetFlagRequestPB;
 using kudu::server::SetFlagResponsePB;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
@@ -229,7 +229,7 @@ class RaftConsensusITest : public RaftConsensusITestBase {
 
  protected:
   shared_ptr<KuduTable> table_;
-  vector<scoped_refptr<kudu::Thread> > threads_;
+  vector<thread> threads_;
 };
 
 int64_t RaftConsensusITest::GetTimestampOnServer(TServerDetails* tserver) const {
@@ -676,8 +676,7 @@ TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
   for (int i = 0; i < num_iters; i++) {
     InsertTestRowsRemoteThread(i * FLAGS_client_inserts_per_thread,
                                FLAGS_client_inserts_per_thread,
-                               FLAGS_client_num_batches_per_thread,
-                               vector<CountDownLatch*>());
+                               FLAGS_client_num_batches_per_thread);
   }
   NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters));
 }
@@ -738,27 +737,20 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
 
   int num_threads = FLAGS_num_client_threads;
   for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
-                                  &RaftConsensusITest::InsertTestRowsRemoteThread,
-                                  this, i * FLAGS_client_inserts_per_thread,
-                                  FLAGS_client_inserts_per_thread,
-                                  FLAGS_client_num_batches_per_thread,
-                                  vector<CountDownLatch*>(),
-                                  &new_thread));
-    threads_.push_back(new_thread);
+    threads_.emplace_back([this, i]() {
+      this->InsertTestRowsRemoteThread(i * FLAGS_client_inserts_per_thread,
+                                       FLAGS_client_inserts_per_thread,
+                                       FLAGS_client_num_batches_per_thread);
+    });
   }
   for (int i = 0; i < FLAGS_num_replicas; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", Substitute("chaos-test$0", i),
-                                  &RaftConsensusITest::DelayInjectorThread,
-                                  this, cluster_->tablet_server(i),
-                                  kConsensusRpcTimeoutForTests,
-                                  &new_thread));
-    threads_.push_back(new_thread);
+    auto* ts = cluster_->tablet_server(i);
+    threads_.emplace_back([this, ts]() {
+      this->DelayInjectorThread(ts, kConsensusRpcTimeoutForTests);
+    });
   }
-  for (scoped_refptr<kudu::Thread> thr : threads_) {
-   CHECK_OK(ThreadJoiner(thr.get()).Join());
+  for (auto& t : threads_) {
+    t.join();
   }
 
   NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads));
@@ -1010,39 +1002,35 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
       Substitute("$0", (FLAGS_client_num_batches_per_thread * 100)));
 
   int num_threads = FLAGS_num_client_threads;
-  int64_t total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
+  int total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
 
   // We create 2 * (kNumReplicas - 1) latches so that we kill the same node at least
   // twice.
-  vector<CountDownLatch*> latches;
+  vector<unique_ptr<CountDownLatch>> latches;
+  latches.reserve(kNumElections);
   for (int i = 1; i < kNumElections; i++) {
-    latches.push_back(new CountDownLatch((i * total_num_rows)  / kNumElections));
+    latches.emplace_back(new CountDownLatch((i * total_num_rows)  / kNumElections));
   }
 
   for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
-                                  &RaftConsensusITest::InsertTestRowsRemoteThread,
-                                  this, i * FLAGS_client_inserts_per_thread,
-                                  FLAGS_client_inserts_per_thread,
-                                  FLAGS_client_num_batches_per_thread,
-                                  latches,
-                                  &new_thread));
-    threads_.push_back(new_thread);
+    threads_.emplace_back([this, i, &latches]() {
+      this->InsertTestRowsRemoteThread(i * FLAGS_client_inserts_per_thread,
+                                       FLAGS_client_inserts_per_thread,
+                                       FLAGS_client_num_batches_per_thread, latches);
+    });
   }
 
-  for (const auto* latch : latches) {
+  for (const auto& latch : latches) {
     NO_FATALS(cluster_->AssertNoCrashes());
     latch->Wait();
     StopOrKillLeaderAndElectNewOne();
   }
 
-  for (const auto& thr : threads_) {
-    CHECK_OK(ThreadJoiner(thr.get()).Join());
+  for (auto& t : threads_) {
+    t.join();
   }
 
   NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads));
-  STLDeleteElements(&latches);
 }
 
 // Regression test for KUDU-597, an issue where we could mis-order operations on
@@ -1067,23 +1055,22 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
 
   AtomicBool finish(false);
   for (int i = 0; i < FLAGS_num_tablet_servers; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
-                                  &RaftConsensusITest::StubbornlyWriteSameRowThread,
-                                  this, i, &finish, &new_thread));
-    threads_.push_back(new_thread);
+    threads_.emplace_back([this, i, &finish]() {
+      this->StubbornlyWriteSameRowThread(i, &finish);
+    });
   }
+  SCOPED_CLEANUP({
+    finish.Store(true);
+    for (auto& t : threads_) {
+      t.join();
+    }
+  });
 
   const int num_loops = AllowSlowTests() ? 10 : 1;
   for (int i = 0; i < num_loops; i++) {
     StopOrKillLeaderAndElectNewOne();
     SleepFor(MonoDelta::FromSeconds(1));
     ASSERT_OK(CheckTabletServersAreAlive(FLAGS_num_tablet_servers));
-  }
-
-  finish.Store(true);
-  for (scoped_refptr<kudu::Thread> thr : threads_) {
-    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 }
 
@@ -1551,7 +1538,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Resume());
 
   // Insert some data and verify that it propagates to all servers.
-  NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1, vector<CountDownLatch*>()));
+  NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1));
   NO_FATALS(AssertAllReplicasAgree(10));
 
   // Try another config change.
@@ -1559,7 +1546,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // config change didn't properly unset the 'pending' configuration.
   ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[2],
                          MonoDelta::FromSeconds(5), -1));
-  NO_FATALS(InsertTestRowsRemoteThread(10, 10, 1, vector<CountDownLatch*>()));
+  NO_FATALS(InsertTestRowsRemoteThread(10, 10, 1));
 }
 
 // Test the atomic CAS arguments to ChangeConfig() add server and remove server.
@@ -1675,30 +1662,19 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
   // Start a write workload.
   LOG(INFO) << "Starting write workload...";
-  vector<scoped_refptr<Thread>> threads;
+  vector<thread> threads;
+  threads.reserve(FLAGS_num_client_threads);
   AtomicInt<int32_t> rows_inserted(0);
   AtomicBool finish(false);
-  const auto num_threads = FLAGS_num_client_threads;
-  for (auto i = 0; i < num_threads; i++) {
-    scoped_refptr<Thread> thread;
-    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(), Substitute("row-writer-$0", i),
-                             &DoWriteTestRows,
-                             leader_tserver, tablet_id_, kTimeout,
-                             &rows_inserted, &finish,
-                             &thread));
-    threads.push_back(thread);
+  for (auto i = 0; i < FLAGS_num_client_threads; i++) {
+    threads.emplace_back([this, leader_tserver, kTimeout, &rows_inserted, &finish]() {
+      DoWriteTestRows(leader_tserver, this->tablet_id_, kTimeout, &rows_inserted, &finish);
+    });
   }
   auto thread_join_func = [&]() {
-    Status ret;
-    for (const auto& thread : threads) {
-      Status s = ThreadJoiner(thread.get()).Join();
-      if (!s.ok()) {
-        LOG(WARNING) << "failed to join thread " << thread->name()
-                     << " : " << s.ToString();
-        ret = ret.ok() ? s : ret.CloneAndAppend(s.ToString());
-      }
+    for (auto& t : threads) {
+      t.join();
     }
-    return ret;
   };
   auto thread_joiner = MakeScopedCleanup(thread_join_func);
 
@@ -1747,7 +1723,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
   LOG(INFO) << "Joining writer threads...";
   finish.Store(true);
-  ASSERT_OK(thread_join_func());
+  thread_join_func();
   thread_joiner.cancel();
 
   LOG(INFO) << "Waiting for replicas to agree...";

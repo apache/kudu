@@ -14,32 +14,27 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/tablet_server-test-base.h"
-
 #include <cstdint>
 #include <ostream>
 #include <string>
-#include <vector>
 #include <thread>
+#include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
-#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DEFINE_int32(runtime_secs, 10,
              "Maximum number of seconds to run. If the threads have not completed "
@@ -60,6 +55,10 @@ METRIC_DEFINE_histogram(test, insert_latency,
                         kudu::MetricLevel::kInfo,
                         10000000,
                         2);
+
+using std::ostringstream;
+using std::thread;
+using std::vector;
 
 namespace kudu {
 namespace tserver {
@@ -87,16 +86,13 @@ class TSStressTest : public TabletServerTestBase {
 
   void StartThreads() {
     for (int i = 0; i < FLAGS_num_inserter_threads; i++) {
-      scoped_refptr<kudu::Thread> new_thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("test$0", i),
-                                    &TSStressTest::InserterThread, this, i, &new_thread));
-      threads_.push_back(new_thread);
+      threads_.emplace_back([this, i]() { this->InserterThread(i); });
     }
   }
 
   void JoinThreads() {
-    for (scoped_refptr<kudu::Thread> thr : threads_) {
-     CHECK_OK(ThreadJoiner(thr.get()).Join());
+    for (auto& t : threads_) {
+      t.join();
     }
   }
 
@@ -106,7 +102,7 @@ class TSStressTest : public TabletServerTestBase {
   scoped_refptr<Histogram> histogram_;
   CountDownLatch start_latch_;
   CountDownLatch stop_latch_;
-  std::vector<scoped_refptr<kudu::Thread> > threads_;
+  vector<thread> threads_;
 };
 
 void TSStressTest::InserterThread(int thread_idx) {
@@ -128,14 +124,14 @@ void TSStressTest::InserterThread(int thread_idx) {
 }
 
 TEST_F(TSStressTest, TestMTInserts) {
-  std::thread timeout_thread;
+  thread timeout_thread;
   StartThreads();
   Stopwatch s(Stopwatch::ALL_THREADS);
   s.start();
 
   // Start a thread to fire 'stop_latch_' after the prescribed number of seconds.
   if (FLAGS_runtime_secs > 0) {
-    timeout_thread = std::thread([&]() {
+    timeout_thread = thread([&]() {
       stop_latch_.WaitFor(MonoDelta::FromSeconds(FLAGS_runtime_secs));
       stop_latch_.CountDown();
     });
@@ -149,7 +145,7 @@ TEST_F(TSStressTest, TestMTInserts) {
   LOG(INFO) << "CPU efficiency: " << (num_rows / s.elapsed().user_cpu_seconds()) << " rows/cpusec";
 
   // Generate the JSON.
-  std::ostringstream out;
+  ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(histogram_->WriteAsJson(&writer, MetricJsonOptions()));
 

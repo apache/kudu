@@ -19,6 +19,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -53,10 +54,10 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
@@ -77,6 +78,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::itest::GetInt64Metric;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -130,13 +132,11 @@ class MasterReplicationTest : public KuduTest {
   Status ConnectToClusterDuringStartup(const vector<string>& master_addrs) {
     // Shut the cluster down and ...
     cluster_->Shutdown();
-    // ... start the cluster after a delay.
-    scoped_refptr<kudu::Thread> start_thread;
-    RETURN_NOT_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
-                                  &MasterReplicationTest::StartClusterDelayed,
-                                  this,
-                                  1000, // start after 1000 millis.
-                                  &start_thread));
+    // ... start the cluster after a 1000 ms delay.
+    thread start_thread([this]() { this->StartClusterDelayed(1000); });
+    SCOPED_CLEANUP({
+      start_thread.join();
+    });
 
     // The timeouts for both RPCs and operations are increased to cope with slow
     // clusters (i.e. TSAN builds).
@@ -145,10 +145,7 @@ class MasterReplicationTest : public KuduTest {
     builder.master_server_addrs(master_addrs);
     builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
     builder.default_rpc_timeout(MonoDelta::FromSeconds(15));
-    Status s = builder.Build(&client);
-
-    RETURN_NOT_OK(ThreadJoiner(start_thread.get()).Join());
-    return s;
+    return builder.Build(&client);
   }
 
   Status CreateClient(shared_ptr<KuduClient>* out) {

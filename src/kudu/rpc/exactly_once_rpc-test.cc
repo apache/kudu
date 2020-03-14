@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -50,7 +51,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int64(remember_clients_ttl_ms);
 DECLARE_int64(remember_responses_ttl_ms);
@@ -60,6 +60,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::atomic_int;
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -218,33 +219,30 @@ class ExactlyOnceRpcTest : public RpcTestBase {
                      const scoped_refptr<RequestTracker>& request_tracker,
                      shared_ptr<Messenger> messenger,
                      int value,
-                     int server_sleep = 0) : latch_(1) {
+                     int server_sleep = 0) : latch(1) {
       MonoTime now = MonoTime::Now();
       now.AddDelta(MonoDelta::FromMilliseconds(10000));
-      rpc_ = new CalculatorServiceRpc(server_picker,
-                                      request_tracker,
-                                      now,
-                                      std::move(messenger),
-                                      value,
-                                      &latch_,
-                                      server_sleep);
+      rpc = new CalculatorServiceRpc(server_picker,
+                                     request_tracker,
+                                     now,
+                                     std::move(messenger),
+                                     value,
+                                     &latch,
+                                     server_sleep);
     }
 
     void Start() {
-      CHECK_OK(kudu::Thread::Create(
-                   "test",
-                   "test",
-                   &RetriableRpcExactlyOnceAdder::SleepAndSend, this, &thread));
+      thr = thread([this]() { this->SleepAndSend(); });
     }
 
     void SleepAndSend() {
-      rpc_->SendRpc();
-      latch_.Wait();
+      rpc->SendRpc();
+      latch.Wait();
     }
 
-    CountDownLatch latch_;
-    scoped_refptr<kudu::Thread> thread;
-    CalculatorServiceRpc* rpc_;
+    CountDownLatch latch;
+    thread thr;
+    CalculatorServiceRpc* rpc;
   };
 
   // An exactly once adder that sends multiple, simultaneous calls, to the server
@@ -264,10 +262,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     }
 
     void Start() {
-      CHECK_OK(kudu::Thread::Create(
-          "test",
-          "test",
-          &SimultaneousExactlyOnceAdder::SleepAndSend, this, &thread));
+      thr = thread([this]() { this->SleepAndSend(); });
     }
 
     // Sleeps the preset number of msecs before sending the call.
@@ -282,7 +277,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     RpcController controller;
     ExactlyOnceRequestPB req;
     ExactlyOnceResponsePB resp;
-    scoped_refptr<kudu::Thread> thread;
+    thread thr;
   };
 
 
@@ -314,7 +309,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
       // This thread is used in the stress test where we're constantly running GC.
       // So, once we get a "success" response, it's likely that the result will be
       // GCed on the server side, and thus it's not safe to spuriously retry.
-      adder->rpc_->sometimes_retry_successful_ = false;
+      adder->rpc->sometimes_retry_successful_ = false;
       adder->SleepAndSend();
       SleepFor(MonoDelta::FromMilliseconds(rand() % 10));
       counter++;
@@ -471,7 +466,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsWithReplicatedRpc) {
       count += j;
     }
     for (int j = 0; j < kNumRpcs; j++) {
-      CHECK_OK(ThreadJoiner(adders[j]->thread.get()).Join());
+      adders[j]->thr.join();
     }
     CheckValueMatches(count);
   }
@@ -513,7 +508,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsWithConcurrentUpdaters) {
     }
     uint64_t time_micros = 0;
     for (int j = 0; j < kNumThreads; j++) {
-      CHECK_OK(ThreadJoiner(adders[j]->thread.get()).Join());
+      adders[j]->thr.join();
       ASSERT_EQ(adders[j]->resp.current_val(), i + 1);
       if (time_micros == 0) {
         time_micros = adders[j]->resp.current_time_micros();
@@ -602,18 +597,16 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) 
   CHECK_OK(request_tracker_->NewSeqNo(&stubborn_req_seq_num));
   ASSERT_EQ(stubborn_req_seq_num, 0);
 
-  scoped_refptr<kudu::Thread> stubborn_thread;
-  CHECK_OK(kudu::Thread::Create(
-      "stubborn", "stubborn", &ExactlyOnceRpcTest::StubbornlyWriteTheSameRequestThread,
-      this, stubborn_req_seq_num, stubborn_run_for, &stubborn_thread));
+  thread stubborn_thread([this, stubborn_req_seq_num, stubborn_run_for]() {
+    this->StubbornlyWriteTheSameRequestThread(stubborn_req_seq_num, stubborn_run_for);
+  });
 
-  scoped_refptr<kudu::Thread> write_thread;
-  CHECK_OK(kudu::Thread::Create(
-      "write", "write", &ExactlyOnceRpcTest::DoLongWritesThread,
-      this, writes_run_for, &write_thread));
+  thread write_thread([this, writes_run_for]() {
+    this->DoLongWritesThread(writes_run_for);
+  });
 
-  write_thread->Join();
-  stubborn_thread->Join();
+  write_thread.join();
+  stubborn_thread.join();
 
   // Within a few seconds, the consumption should be back to zero.
   // Really, this should be within 100ms, but we'll give it a bit of

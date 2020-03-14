@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -57,10 +57,9 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
   void ScanReplica(TabletServerServiceProxy* replica_proxy,
                    std::vector<std::string>* results);
 
-  void InsertTestRowsRemoteThread(uint64_t first_row,
-                                  uint64_t count,
-                                  uint64_t num_batches,
-                                  const std::vector<CountDownLatch*>& latches);
+  void InsertTestRowsRemoteThread(
+      int first_row, int count, int num_batches,
+      const std::vector<std::unique_ptr<CountDownLatch>>& latches = {});
  protected:
   // Retrieve the current term of the first tablet on this tablet server.
   static Status GetTermMetricValue(cluster::ExternalTabletServer* ts,

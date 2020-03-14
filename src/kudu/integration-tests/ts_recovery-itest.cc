@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -75,7 +76,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 METRIC_DECLARE_gauge_uint64(tablets_num_failed);
 
@@ -103,6 +103,7 @@ using kudu::log::LogOptions;
 using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletSuperBlockPB;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -717,11 +718,9 @@ class UpdaterThreads {
   void Start() {
     CHECK(!should_run_.Load());
     should_run_.Store(true);
-    threads_.resize(kNumThreads);
-    for (int i = 0; i < threads_.size(); i++) {
-      CHECK_OK(kudu::Thread::Create("test", "updater",
-                                    &UpdaterThreads::Run, this,
-                                    &threads_[i]));
+    threads_.reserve(kNumThreads);
+    for (int i = 0; i < kNumThreads; i++) {
+      threads_.emplace_back([this]() { this->Run(); });
     }
   }
 
@@ -730,10 +729,9 @@ class UpdaterThreads {
     CHECK(should_run_.Load());
     should_run_.Store(false);
 
-    for (const auto& t : threads_) {
-      t->Join();
+    for (auto& t : threads_) {
+      t.join();
     }
-    threads_.clear();
   }
 
  protected:
@@ -760,7 +758,7 @@ class UpdaterThreads {
   AtomicInt<int32_t>* inserted_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> table_;
-  vector<scoped_refptr<Thread> > threads_;
+  vector<thread> threads_;
 };
 
 // Parameterized test which acts as a regression test for KUDU-969.

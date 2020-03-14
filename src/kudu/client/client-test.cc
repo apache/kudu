@@ -5570,14 +5570,12 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
   }
 
   bool stop = false;
-  vector<scoped_refptr<kudu::Thread> > threads;
-  int t = 0;
+  vector<thread> threads;
   while (!stop) {
-    scoped_refptr<kudu::Thread> thread;
-    ASSERT_OK(kudu::Thread::Create("test", Substitute("t$0", t++),
-                                   &ClientTest::CheckRowCount, this, client_table_.get(), kNumRows,
-                                   &thread));
-    threads.push_back(thread);
+    threads.emplace_back([this]() {
+      this->CheckRowCount(this->client_table_.get(), kNumRows);
+    });
+
     // Don't start threads too fast - otherwise we could accumulate tens or hundreds
     // of threads before any of them starts their actual scans, and then it would
     // take a long time to join on them all eventually finishing down below.
@@ -5590,8 +5588,8 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
     }
   }
 
-  for (const scoped_refptr<kudu::Thread>& thread : threads) {
-    thread->Join();
+  for (auto& t : threads) {
+    t.join();
   }
 }
 

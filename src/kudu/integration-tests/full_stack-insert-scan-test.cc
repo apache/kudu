@@ -22,6 +22,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -99,6 +99,7 @@ using kudu::client::KuduTableCreator;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Split;
@@ -285,24 +286,23 @@ TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
 }
 
 void FullStackInsertScanTest::DoConcurrentClientInserts() {
-  vector<scoped_refptr<Thread> > threads(kNumInsertClients);
+  vector<thread> threads;
+  threads.reserve(kNumInsertClients);
   CountDownLatch start_latch(kNumInsertClients + 1);
   for (int i = 0; i < kNumInsertClients; ++i) {
     NO_FATALS(CreateNewClient(i));
-    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                             StrCat(CURRENT_TEST_CASE_NAME(), "-id", i),
-                             &FullStackInsertScanTest::InsertRows, this,
-                             &start_latch, i, random_.Next(), &threads[i]));
+    uint32_t seed = random_.Next32();
+    threads.emplace_back([this, &start_latch, i, seed]() {
+      this->InsertRows(&start_latch, i, seed);
+    });
     start_latch.CountDown();
   }
   LOG_TIMING(INFO,
              strings::Substitute("concurrent inserts ($0 rows, $1 threads)",
                                  kNumRows, kNumInsertClients)) {
     start_latch.CountDown();
-    for (const scoped_refptr<Thread>& thread : threads) {
-      ASSERT_OK(ThreadJoiner(thread.get())
-                .warn_every_ms(15000)
-                .Join());
+    for (auto& t : threads) {
+      t.join();
     }
   }
 }
@@ -431,7 +431,7 @@ void FullStackInsertScanTest::RandomRow(Random* rng, KuduPartialRow* row, char* 
   buf[len] = '\0';
   CHECK_OK(row->SetStringCopy(kStrCol, buf));
   CHECK_OK(row->SetInt32(kInt32ColBase, id));
-  CHECK_OK(row->SetInt64(kInt64ColBase, Thread::current_thread()->tid()));
+  CHECK_OK(row->SetInt64(kInt64ColBase, Thread::CurrentThreadId()));
   for (int i = 1; i < kNumIntCols; ++i) {
     CHECK_OK(row->SetInt32(kInt32ColBase + i, rng->Next32()));
     CHECK_OK(row->SetInt64(kInt64ColBase + i, rng->Next64()));

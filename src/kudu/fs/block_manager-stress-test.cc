@@ -23,6 +23,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -58,7 +59,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
@@ -89,6 +89,7 @@ DEFINE_int32(max_open_files, 32, "Maximum size of the test's file cache");
 
 using std::string;
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
@@ -194,41 +195,31 @@ class BlockManagerStressTest : public KuduTest {
     SleepFor(MonoDelta::FromSeconds(secs));
     LOG(INFO) << "Stopping all threads";
     this->StopThreads();
-    this->JoinThreads();
     this->stop_latch_.Reset(1);
+    this->threads_.clear();
   }
 
   void StartThreads() {
-    scoped_refptr<Thread> new_thread;
     for (int i = 0; i < FLAGS_num_writer_threads; i++) {
-      CHECK_OK(Thread::Create("BlockManagerStressTest", Substitute("writer-$0", i),
-                              &BlockManagerStressTest::WriterThread, this, &new_thread));
-      threads_.push_back(new_thread);
+      threads_.emplace_back([this]() { this->WriterThread(); });
     }
     for (int i = 0; i < FLAGS_num_reader_threads; i++) {
-      CHECK_OK(Thread::Create("BlockManagerStressTest", Substitute("reader-$0", i),
-                              &BlockManagerStressTest::ReaderThread, this, &new_thread));
-      threads_.push_back(new_thread);
+      threads_.emplace_back([this]() { this->ReaderThread(); });
     }
     for (int i = 0; i < FLAGS_num_deleter_threads; i++) {
-      CHECK_OK(Thread::Create("BlockManagerStressTest", Substitute("deleter-$0", i),
-                              &BlockManagerStressTest::DeleterThread, this, &new_thread));
-      threads_.push_back(new_thread);
+      threads_.emplace_back([this]() { this->DeleterThread(); });
     }
   }
 
   void StopThreads() {
     stop_latch_.CountDown();
+    for (auto& t : threads_) {
+      t.join();
+    }
   }
 
   bool ShouldStop(const MonoDelta& wait_time) {
     return stop_latch_.WaitFor(wait_time);
-  }
-
-  void JoinThreads() {
-    for (const scoped_refptr<kudu::Thread>& thr : threads_) {
-     CHECK_OK(ThreadJoiner(thr.get()).Join());
-    }
   }
 
   void WriterThread();
@@ -277,7 +268,7 @@ class BlockManagerStressTest : public KuduTest {
   string test_tablet_name_;
 
   // The running threads.
-  vector<scoped_refptr<Thread> > threads_;
+  vector<thread> threads_;
 
   // Some performance counters.
 
@@ -552,7 +543,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
     FsReport report;
     ASSERT_OK(this->bm_->Open(&report));
     ASSERT_OK(this->dd_manager_->LoadDataDirGroupFromPB(this->test_tablet_name_,
-                                                              this->test_group_pb_));
+                                                        this->test_group_pb_));
     ASSERT_OK(report.LogAndCheckForFatalErrors());
     this->RunTest(FLAGS_test_duration_secs / kNumStarts);
   }

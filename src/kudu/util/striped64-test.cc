@@ -16,25 +16,28 @@
 // under the License.
 
 
+#include "kudu/util/striped64.h"
+
 #include <cstdint>
 #include <ostream>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/striped64.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 // These flags are used by the multi-threaded tests, can be used for microbenchmarking.
 DEFINE_int32(num_operations, 10*1000, "Number of operations to perform");
 DEFINE_int32(num_threads, 2, "Number of worker threads");
+
+using std::thread;
+using std::vector;
 
 namespace kudu {
 
@@ -57,8 +60,6 @@ TEST(Striped64Test, TestBasic) {
 template <class Adder>
 class MultiThreadTest {
  public:
-  typedef std::vector<scoped_refptr<Thread> > thread_vec_t;
-
   MultiThreadTest(int64_t num_operations, int64_t num_threads)
    :  num_operations_(num_operations),
       num_threads_(num_threads) {
@@ -79,26 +80,24 @@ class MultiThreadTest {
   void Run() {
     // Increment
     for (int i = 0; i < num_threads_; i++) {
-      scoped_refptr<Thread> ref;
-      Thread::Create("Striped64", "Incrementer", &MultiThreadTest::IncrementerThread, this,
-                     num_operations_, &ref);
-      threads_.push_back(ref);
+      threads_.emplace_back([this]() {
+        this->IncrementerThread(this->num_operations_);
+      });
     }
-    for (const scoped_refptr<Thread> &t : threads_) {
-      t->Join();
+    for (auto& t : threads_) {
+      t.join();
     }
     ASSERT_EQ(num_threads_*num_operations_, adder_.Value());
     threads_.clear();
 
     // Decrement back to zero
     for (int i = 0; i < num_threads_; i++) {
-      scoped_refptr<Thread> ref;
-      Thread::Create("Striped64", "Decrementer", &MultiThreadTest::DecrementerThread, this,
-                     num_operations_, &ref);
-      threads_.push_back(ref);
+      threads_.emplace_back([this]() {
+        this->DecrementerThread(this->num_operations_);
+      });
     }
-    for (const scoped_refptr<Thread> &t : threads_) {
-      t->Join();
+    for (auto& t : threads_) {
+      t.join();
     }
     ASSERT_EQ(0, adder_.Value());
   }
@@ -108,7 +107,7 @@ class MultiThreadTest {
   int64_t num_operations_;
   // This is rounded down to the nearest even number
   int32_t num_threads_;
-  thread_vec_t threads_;
+  vector<thread> threads_;
 };
 
 // Test adder implemented by a single AtomicInt for comparison

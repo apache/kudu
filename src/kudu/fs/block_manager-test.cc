@@ -62,11 +62,11 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 using google::protobuf::util::MessageDifferencer;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -811,15 +811,14 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
   unique_ptr<ReadableBlock> reader;
   ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
 
-  vector<scoped_refptr<Thread> > threads;
-  for (int i = 0; i < 100; i++) {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create("test", Substitute("t$0", i),
-                             &CloseHelper, reader.get(), &t));
-    threads.push_back(t);
+  constexpr int kNumThreads = 100;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&reader]() { CloseHelper(reader.get()); });
   }
-  for (const scoped_refptr<Thread>& t : threads) {
-    t->Join();
+  for (auto& t : threads) {
+    t.join();
   }
 }
 
@@ -1097,8 +1096,10 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseFinalizedWritableBlockTest) {
     }
   };
 
-  vector<std::thread> threads;
-  for (int i = 0; i < 100; i++) {
+  constexpr int kNumThreads = 100;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
     threads.emplace_back(write_data);
   }
   for (auto& t : threads) {

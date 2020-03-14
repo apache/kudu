@@ -20,6 +20,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "kudu/gutil/walltime.h"
@@ -289,11 +290,8 @@ class CalculatorService : public CalculatorServiceIf {
     }
 
     if (req->deferred()) {
-      // Spawn a new thread which does the sleep and responds later.
-      scoped_refptr<Thread> thread;
-      CHECK_OK(Thread::Create("rpc-test", "deferred",
-                              &CalculatorService::DoSleep, this, req, context,
-                              &thread));
+      std::thread t([this, req, context]() { this->DoSleep(req, context); });
+      t.detach();
       return;
     }
     DoSleep(req, context);

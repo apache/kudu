@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <memory>
+#include "kudu/util/countdown_latch.h"
 
-#include <boost/bind.hpp> // IWYU pragma: keep
+#include <memory>
+#include <thread>
+
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
+
+using std::thread;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -40,8 +42,7 @@ static void DecrementLatch(CountDownLatch* latch, int amount) {
 // Tests that we can decrement the latch by arbitrary amounts, as well
 // as 1 by one.
 TEST(TestCountDownLatch, TestLatch) {
-
-  std::unique_ptr<ThreadPool> pool;
+  unique_ptr<ThreadPool> pool;
   ASSERT_OK(ThreadPoolBuilder("cdl-test").set_max_threads(1).Build(&pool));
 
   CountDownLatch latch(1000);
@@ -63,13 +64,12 @@ TEST(TestCountDownLatch, TestLatch) {
 // continue.
 TEST(TestCountDownLatch, TestResetToZero) {
   CountDownLatch cdl(100);
-  scoped_refptr<Thread> t;
-  ASSERT_OK(Thread::Create("test", "cdl-test", &CountDownLatch::Wait, &cdl, &t));
+  thread t([&]() { cdl.Wait(); });
 
   // Sleep for a bit until it's likely the other thread is waiting on the latch.
   SleepFor(MonoDelta::FromMilliseconds(10));
   cdl.Reset(0);
-  t->Join();
+  t.join();
 }
 
 } // namespace kudu

@@ -20,6 +20,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -35,8 +36,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/strcat.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -50,7 +49,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(log_segment_size_mb);
@@ -79,6 +77,7 @@ using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -220,44 +219,17 @@ void UpdateScanDeltaCompactionTest::InsertBaseData() {
 }
 
 void UpdateScanDeltaCompactionTest::RunThreads() {
-  vector<scoped_refptr<Thread> > threads;
-
+  vector<thread> threads;
   CountDownLatch stop_latch(1);
 
-  {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                             StrCat(CURRENT_TEST_CASE_NAME(), "-update"),
-                             &UpdateScanDeltaCompactionTest::UpdateRows, this,
-                             &stop_latch, &t));
-    threads.push_back(t);
-  }
-
-  {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                             StrCat(CURRENT_TEST_CASE_NAME(), "-scan"),
-                             &UpdateScanDeltaCompactionTest::ScanRows, this,
-                             &stop_latch, &t));
-    threads.push_back(t);
-  }
-
-  {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                             StrCat(CURRENT_TEST_CASE_NAME(), "-curl"),
-                             &UpdateScanDeltaCompactionTest::CurlWebPages, this,
-                             &stop_latch, &t));
-    threads.push_back(t);
-  }
+  threads.emplace_back([this, &stop_latch]() { this->UpdateRows(&stop_latch); });
+  threads.emplace_back([this, &stop_latch]() { this->ScanRows(&stop_latch); });
+  threads.emplace_back([this, &stop_latch]() { this->CurlWebPages(&stop_latch); });
 
   SleepFor(MonoDelta::FromSeconds(FLAGS_seconds_to_run * 1.0));
   stop_latch.CountDown();
-
-  for (const scoped_refptr<Thread>& thread : threads) {
-    ASSERT_OK(ThreadJoiner(thread.get())
-              .warn_every_ms(500)
-              .Join());
+  for (auto& t : threads) {
+    t.join();
   }
 }
 

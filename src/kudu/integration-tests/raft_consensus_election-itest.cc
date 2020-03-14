@@ -45,6 +45,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
@@ -53,8 +54,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int64(client_inserts_per_thread);
-DECLARE_int64(client_num_batches_per_thread);
+DECLARE_int32(client_inserts_per_thread);
+DECLARE_int32(client_num_batches_per_thread);
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_int32(num_client_threads);
 DECLARE_int32(num_replicas);

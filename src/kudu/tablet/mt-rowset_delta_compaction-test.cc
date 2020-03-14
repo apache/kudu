@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -29,19 +30,15 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 enum {
   kDefaultNumSecondsPerThread = 1,
@@ -56,6 +53,7 @@ DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
              "Minimum number of seconds each thread should work");
 
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -129,34 +127,19 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void StartThreads(DiskRowSet *rs) {
     for (int i = 0; i < FLAGS_num_update_threads; i++) {
-      scoped_refptr<kudu::Thread> thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("log_writer$0", i),
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetUpdateThread, this, rs, &thread));
-      update_threads_.push_back(thread);
+      threads_.emplace_back([this, rs]() { this->RowSetUpdateThread(rs); });
     }
     for (int i = 0; i < FLAGS_num_flush_threads; i++) {
-      scoped_refptr<kudu::Thread> thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("delta_flush$0", i),
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetFlushThread, this, rs, &thread));
-      flush_threads_.push_back(thread);
+      threads_.emplace_back([this, rs]() { this->RowSetFlushThread(rs); });
     }
     for (int i = 0; i < FLAGS_num_compaction_threads; i++) {
-      scoped_refptr<kudu::Thread> thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("delta_compaction$0", i),
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetDeltaCompactionThread, this, rs, &thread));
-      compaction_threads_.push_back(thread);
+      threads_.emplace_back([this, rs]() { this->RowSetDeltaCompactionThread(rs); });
     }
   }
 
   void JoinThreads() {
-    for (const auto& thread : update_threads_) {
-      ASSERT_OK(ThreadJoiner(thread.get()).Join());
-    }
-    for (const auto& thread : flush_threads_) {
-      ASSERT_OK(ThreadJoiner(thread.get()).Join());
-    }
-    for (const auto& thread : compaction_threads_) {
-      ASSERT_OK(ThreadJoiner(thread.get()).Join());
+    for (auto& t : threads_) {
+      t.join();
     }
   }
 
@@ -192,9 +175,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   Atomic32 update_counter_;
   Atomic32 should_run_;
-  vector<scoped_refptr<kudu::Thread> > update_threads_;
-  vector<scoped_refptr<kudu::Thread> > flush_threads_;
-  vector<scoped_refptr<kudu::Thread> > compaction_threads_;
+  vector<thread> threads_;
 };
 
 static void SetupFlagsForSlowTests() {

@@ -62,10 +62,10 @@
 
 DEFINE_int32(num_client_threads, 8,
              "Number of client threads to launch");
-DEFINE_int64(client_inserts_per_thread, 50,
+DEFINE_int32(client_inserts_per_thread, 50,
              "Number of rows inserted by each client thread");
 DECLARE_int32(consensus_rpc_timeout_ms);
-DEFINE_int64(client_num_batches_per_thread, 5,
+DEFINE_int32(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
 
 METRIC_DECLARE_entity(tablet);
@@ -136,10 +136,8 @@ void RaftConsensusITestBase::ScanReplica(TabletServerServiceProxy* replica_proxy
 }
 
 void RaftConsensusITestBase::InsertTestRowsRemoteThread(
-    uint64_t first_row,
-    uint64_t count,
-    uint64_t num_batches,
-    const vector<CountDownLatch*>& latches) {
+    int first_row, int count, int num_batches,
+    const vector<unique_ptr<CountDownLatch>>& latches) {
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableId, &table));
 
@@ -148,8 +146,8 @@ void RaftConsensusITestBase::InsertTestRowsRemoteThread(
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   for (int i = 0; i < num_batches; i++) {
-    uint64_t first_row_in_batch = first_row + (i * count / num_batches);
-    uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
+    int first_row_in_batch = first_row + (i * count / num_batches);
+    int last_row_in_batch = first_row_in_batch + count / num_batches;
 
     for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
@@ -163,7 +161,7 @@ void RaftConsensusITestBase::InsertTestRowsRemoteThread(
     FlushSessionOrDie(session);
 
     int inserted = last_row_in_batch - first_row_in_batch;
-    for (CountDownLatch* latch : latches) {
+    for (const auto& latch : latches) {
       latch->CountDown(inserted);
     }
   }

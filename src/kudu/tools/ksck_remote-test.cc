@@ -21,10 +21,10 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
-#include <boost/core/ref.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -36,7 +36,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/data_gen_util.h"
@@ -59,7 +58,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(checksum_scan);
 DECLARE_bool(consensus);
@@ -88,6 +86,7 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using std::thread;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -424,20 +423,18 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   CountDownLatch started_writing(1);
   AtomicBool continue_writing(true);
   Promise<Status> promise;
-  scoped_refptr<Thread> writer_thread;
 
   // Allow the checksum scan to wait for longer in case it takes a while for the
   // writer thread to advance safe time.
   FLAGS_scanner_max_wait_ms = 10000;
 
-  Thread::Create("RemoteKsckTest", "TestChecksumSnapshot",
-                 &RemoteKsckTest::GenerateRowWritesLoop, this,
-                 &started_writing, boost::cref(continue_writing), &promise,
-                 &writer_thread);
+  thread writer_thread([&]() {
+    this->GenerateRowWritesLoop(&started_writing, continue_writing, &promise);
+  });
   {
     SCOPED_CLEANUP({
       continue_writing.Store(false);
-      writer_thread->Join();
+      writer_thread.join();
     });
     started_writing.Wait();
 
@@ -468,20 +465,18 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   CountDownLatch started_writing(1);
   AtomicBool continue_writing(true);
   Promise<Status> promise;
-  scoped_refptr<Thread> writer_thread;
 
   // Allow the checksum scan to wait for longer in case it takes a while for the
   // writer thread to advance safe time.
   FLAGS_scanner_max_wait_ms = 10000;
 
-  Thread::Create("RemoteKsckTest", "TestChecksumSnapshotCurrentTimestamp",
-                 &RemoteKsckTest::GenerateRowWritesLoop, this,
-                 &started_writing, boost::cref(continue_writing), &promise,
-                 &writer_thread);
+  thread writer_thread([&]() {
+    this->GenerateRowWritesLoop(&started_writing, continue_writing, &promise);
+  });
   {
     SCOPED_CLEANUP({
       continue_writing.Store(false);
-      writer_thread->Join();
+      writer_thread.join();
     });
     started_writing.Wait();
 

@@ -24,6 +24,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -39,7 +40,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -52,10 +52,10 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 namespace kudu {
 class HostPort;
@@ -64,6 +64,7 @@ class HostPort;
 using std::multimap;
 using std::set;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -477,27 +478,28 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
            .Create());
 
   // Spin off a bunch of threads that repeatedly look up random key ranges in the table.
+  constexpr int kNumThreads = 16;
   AtomicBool quit(false);
-  vector<scoped_refptr<Thread>> threads;
-  for (int i = 0; i < 16; i++) {
-    scoped_refptr<Thread> t;
-    ASSERT_OK(Thread::Create("test", "lookup_thread",
-                             &LookUpRandomKeysLoop, cluster_->master_proxy(),
-                             kTableName, &quit, &t));
-    threads.push_back(t);
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    auto proxy = cluster_->master_proxy();
+    threads.emplace_back([proxy, kTableName, &quit]() {
+      LookUpRandomKeysLoop(proxy, kTableName, &quit);
+    });
   }
+  SCOPED_CLEANUP({
+    quit.Store(true);
+    for (auto& t : threads) {
+      t.join();
+    }
+  });
 
   // Give the lookup threads some time to crash the master.
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(15);
   while (MonoTime::Now() < deadline) {
     ASSERT_TRUE(cluster_->master()->IsProcessAlive()) << "Master crashed!";
     SleepFor(MonoDelta::FromMilliseconds(100));
-  }
-
-  quit.Store(true);
-
-  for (const auto& t : threads) {
-    t->Join();
   }
 }
 

@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -42,7 +43,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int64(tablet_transaction_memory_limit_mb);
 
@@ -56,6 +56,7 @@ METRIC_DECLARE_counter(transaction_memory_limit_rejections);
 
 using std::pair;
 using std::shared_ptr;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -174,10 +175,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
 // Regression test for KUDU-384 (thread safety issue with TestWaitForAllToFinish)
 TEST_F(TransactionTrackerTest, TestWaitForAllToFinish) {
   CountDownLatch finish_latch(1);
-  scoped_refptr<Thread> thr;
-  CHECK_OK(Thread::Create("test", "txn-thread",
-                          &TransactionTrackerTest::RunTransactionsThread, this, &finish_latch,
-                          &thr));
+  thread thr([this, &finish_latch]() { this->RunTransactionsThread(&finish_latch); });
 
   // Wait for the txns to start.
   while (tracker_.GetNumPendingForTests() == 0) {
@@ -189,7 +187,7 @@ TEST_F(TransactionTrackerTest, TestWaitForAllToFinish) {
   finish_latch.CountDown();
   tracker_.WaitForAllToFinish();
 
-  CHECK_OK(ThreadJoiner(thr.get()).Join());
+  thr.join();
   ASSERT_EQ(tracker_.GetNumPendingForTests(), 0);
 }
 

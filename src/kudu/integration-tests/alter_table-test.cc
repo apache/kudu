@@ -27,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -70,7 +69,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(heartbeat_interval_ms);
@@ -107,6 +105,7 @@ using std::atomic;
 using std::map;
 using std::pair;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -1193,20 +1192,18 @@ TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
   // Increase chances of a race between flush and alter.
   FLAGS_flush_threshold_mb = 3;
 
-  scoped_refptr<Thread> writer;
-  CHECK_OK(Thread::Create("test", "inserter",
-                          boost::bind(&AlterTableTest::InserterThread, this),
-                          &writer));
+  vector<thread> threads;
+  threads.reserve(3);
+  threads.emplace_back([this]() { this->InserterThread(); });
+  threads.emplace_back([this]() { this->UpdaterThread(); });
+  threads.emplace_back([this]() { this->ScannerThread(); });
 
-  scoped_refptr<Thread> updater;
-  CHECK_OK(Thread::Create("test", "updater",
-                          boost::bind(&AlterTableTest::UpdaterThread, this),
-                          &updater));
-
-  scoped_refptr<Thread> scanner;
-  CHECK_OK(Thread::Create("test", "scanner",
-                          boost::bind(&AlterTableTest::ScannerThread, this),
-                          &scanner));
+  SCOPED_CLEANUP({
+    stop_threads_ = true;
+    for (auto& t : threads) {
+      t.join();
+    }
+  });
 
   // Add columns until we reach 10.
   for (int i = 2; i < 10; i++) {
@@ -1222,10 +1219,6 @@ TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
                                      i));
   }
 
-  stop_threads_ = true;
-  writer->Join();
-  updater->Join();
-  scanner->Join();
   // A sanity check: the updater should have generate at least one update
   // given the parameters the test is running with.
   CHECK_GE(update_ops_cnt_, 0U);

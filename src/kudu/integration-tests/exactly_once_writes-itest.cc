@@ -19,6 +19,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -32,7 +33,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/log_verifier.h"
@@ -44,21 +44,23 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 
@@ -203,40 +205,33 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
   const int num_threads = FLAGS_num_replicas * kNumThreadsPerReplica;
   vector<vector<WriteResponsePB>> responses(num_threads);
   Barrier barrier(num_threads);
-  vector<scoped_refptr<kudu::Thread>> threads;
+  CountDownLatch threads_running(num_threads);
+  vector<thread> threads;
   threads.reserve(num_threads);
 
   // Create kNumThreadsPerReplica write threads per replica.
   for (int i = 0; i < num_threads; i++) {
-    int thread_idx = i;
-    Sockaddr address = cluster_->tablet_server(
-        thread_idx % FLAGS_num_replicas)->bound_rpc_addr();
-    string worker_name = strings::Substitute(
-        "writer-$0-$1", thread_idx, address.ToString());
-
-    scoped_refptr<kudu::Thread> thread;
-    ASSERT_OK(kudu::Thread::Create(
-        "TestWritesWithExactlyOnceSemantics",
-        worker_name,
-        &ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses,
-        this,
-        address,
-        thread_idx,
-        num_batches,
-        &barrier,
-        &responses[i],
-        &thread));
-    threads.emplace_back(thread);
+    Sockaddr address = cluster_->tablet_server(i % FLAGS_num_replicas)->bound_rpc_addr();
+    auto& my_responses = responses[i];
+    threads.emplace_back([this, address, i, num_batches,
+                          &barrier, &my_responses, &threads_running]() {
+      this->WriteRowsAndCollectResponses(address, i, num_batches, &barrier, &my_responses);
+      threads_running.CountDown();
+    });
   }
 
-  bool done = false;
-  while (!done) {
-    done = true;
-    for (auto& thread : threads) {
-      if (ThreadJoiner(thread.get()).give_up_after_ms(0).Join().IsAborted()) {
-        done = false;
-        break;
-      }
+  auto thread_join_func = [&]() {
+    for (auto& t : threads) {
+      t.join();
+    }
+  };
+  auto thread_cleanup = MakeScopedCleanup(thread_join_func);
+
+  while (true) {
+    if (!threads_running.count()) {
+      thread_join_func();
+      thread_cleanup.cancel();
+      break;
     }
     if (allow_crashes) {
       RestartAnyCrashedTabletServers();

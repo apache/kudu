@@ -16,26 +16,24 @@
 // under the License.
 
 #include <cstdint>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 
 DEFINE_int32(histogram_test_num_threads, 16,
     "Number of threads to spawn for mt-hdr_histogram test");
 DEFINE_uint64(histogram_test_num_increments_per_thread, 100000LU,
     "Number of times to call Increment() per thread in mt-hdr_histogram test");
 
+using std::thread;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -64,19 +62,19 @@ TEST_F(MtHdrHistogramTest, ConcurrentWriteTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  auto threads = new scoped_refptr<kudu::Thread>[num_threads_];
+  vector<thread> threads;
+  threads.reserve(num_threads_);
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
-        IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));
+    threads.emplace_back([this, &hist]() {
+      IncrementSameHistValue(&hist, kValue, this->num_times_);
+    });
   }
-  for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(ThreadJoiner(threads[i].get()).Join());
+  for (auto& t : threads) {
+    t.join();
   }
 
   HdrHistogram snapshot(hist);
   ASSERT_EQ(num_threads_ * num_times_, snapshot.CountInBucketForValue(kValue));
-
-  delete[] threads;
 }
 
 // Copy while writing, then iterate to ensure copies are consistent.
@@ -86,31 +84,30 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  auto threads = new scoped_refptr<kudu::Thread>[num_threads_];
+  vector<thread> threads;
+  threads.reserve(num_threads_);
   for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
-        IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));
+    threads.emplace_back([this, &hist]() {
+      IncrementSameHistValue(&hist, kValue, this->num_times_);
+    });
   }
 
   // This is somewhat racy but the goal is to catch this issue at least
   // most of the time. At the time of this writing, before fixing a bug where
   // the total count stored in a copied histogram may not match its internal
   // counts (under concurrent writes), this test fails for me on 100/100 runs.
-  vector<HdrHistogram *> snapshots;
-  ElementDeleter deleter(&snapshots);
+  vector<unique_ptr<HdrHistogram>> snapshots;
   for (int i = 0; i < kNumCopies; i++) {
-    snapshots.push_back(new HdrHistogram(hist));
+    snapshots.emplace_back(new HdrHistogram(hist));
     SleepFor(MonoDelta::FromMicroseconds(100));
   }
   for (int i = 0; i < kNumCopies; i++) {
     snapshots[i]->MeanValue(); // Will crash if underlying iterator is inconsistent.
   }
 
-  for (int i = 0; i < num_threads_; i++) {
-    CHECK_OK(ThreadJoiner(threads[i].get()).Join());
+  for (auto& t : threads) {
+    t.join();
   }
-
-  delete[] threads;
 }
 
 } // namespace kudu

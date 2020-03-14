@@ -14,15 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TEST_GRAPH_COLLECTOR_H
-#define KUDU_TEST_GRAPH_COLLECTOR_H
+#pragma once
 
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
@@ -31,8 +30,7 @@
 
 namespace kudu {
 
-class Thread;
-class faststring;
+class faststring; // NOLINT
 
 class TimeSeries {
  public:
@@ -77,7 +75,7 @@ class TimeSeriesCollector {
   SeriesMap series_map_;
   mutable Mutex series_lock_;
 
-  scoped_refptr<kudu::Thread> dumper_thread_;
+  std::thread dumper_thread_;
 
   // Latch used to stop the dumper_thread_. When the thread is started,
   // this is set to 1, and when the thread should exit, it is counted down.
@@ -87,4 +85,3 @@ class TimeSeriesCollector {
 };
 
 } // namespace kudu
-#endif

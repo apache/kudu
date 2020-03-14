@@ -23,12 +23,12 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -37,9 +37,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/thread.h"
 
 DEFINE_int32(num_files, 40, "number of files to write");
 DEFINE_int32(file_size_mb, 16, "size of each file");
@@ -65,6 +63,7 @@ DEFINE_bool(page_align_wal_writes, false,
             "write to the fake WAL with exactly 4KB writes to never cross pages");
 
 using std::string;
+using std::thread;
 using std::vector;
 
 namespace kudu {
@@ -244,10 +243,7 @@ void WalHiccupBenchmarker::PrintConfig() {
 
 void WalHiccupBenchmarker::RunOnce() {
   finished_.Reset(1);
-  scoped_refptr<Thread> thr;
-  CHECK_OK(Thread::Create("test", "wal", &WalHiccupBenchmarker::WALThread, this, &thr));
-
-
+  thread thr([this]() { this->WALThread(); });
   int fds[FLAGS_num_files];
   for (int i = 0; i < FLAGS_num_files; i++) {
     WriteFile(strings::Substitute("file-$0", i),
@@ -282,7 +278,7 @@ void WalHiccupBenchmarker::RunOnce() {
 
   LOG(INFO) << "Done closing...";
   finished_.CountDown();
-  thr->Join();
+  thr.join();
 }
 
 } // namespace kudu

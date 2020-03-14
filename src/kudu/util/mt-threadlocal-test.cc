@@ -16,32 +16,33 @@
 // under the License.
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <vector>
+#include <thread>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
 #include "kudu/util/threadlocal_cache.h"
 
 using std::string;
+using std::thread;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -54,6 +55,7 @@ class ThreadLocalTest : public KuduTest {};
 const int kTargetCounterVal = 1000000;
 
 class Counter;
+
 typedef unordered_set<Counter*> CounterPtrSet;
 typedef Mutex RegistryLockType;
 typedef simple_spinlock CounterLockType;
@@ -185,18 +187,18 @@ static uint64_t Iterate(CounterRegistry* registry, int expected_counters) {
 
 static void TestThreadLocalCounters(CounterRegistry* registry, const int num_threads) {
   LOG(INFO) << "Starting threads...";
-  vector<scoped_refptr<kudu::Thread> > threads;
+  vector<thread> threads;
+  threads.reserve(num_threads);
 
   CountDownLatch counters_ready(num_threads);
   CountDownLatch reader_ready(1);
   CountDownLatch counters_done(num_threads);
   CountDownLatch reader_done(1);
   for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
-        &RegisterCounterAndLoopIncr, registry, &counters_ready, &reader_ready,
-        &counters_done, &reader_done, &new_thread));
-    threads.push_back(new_thread);
+    threads.emplace_back([&]() {
+      RegisterCounterAndLoopIncr(registry, &counters_ready, &reader_ready,
+                                 &counters_done, &reader_done);
+    });
   }
 
   // Wait for all threads to start and register their Counters.
@@ -222,8 +224,8 @@ static void TestThreadLocalCounters(CounterRegistry* registry, const int num_thr
   reader_done.CountDown();
 
   LOG(INFO) << "Joining & deleting threads...";
-  for (scoped_refptr<kudu::Thread> thread : threads) {
-    CHECK_OK(ThreadJoiner(thread.get()).Join());
+  for (auto& t : threads) {
+    t.join();
   }
   LOG(INFO) << "Done.";
 }
@@ -241,24 +243,24 @@ TEST_F(ThreadLocalTest, TestConcurrentCounters) {
 // This class cannot be instantiated. The methods are all static.
 class ThreadLocalString {
  public:
-  static void set(std::string value);
-  static const std::string& get();
+  static void set(string value);
+  static const string& get();
  private:
   ThreadLocalString() {
   }
-  DECLARE_STATIC_THREAD_LOCAL(std::string, value_);
+  DECLARE_STATIC_THREAD_LOCAL(string, value_);
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalString);
 };
 
-DEFINE_STATIC_THREAD_LOCAL(std::string, ThreadLocalString, value_);
+DEFINE_STATIC_THREAD_LOCAL(string, ThreadLocalString, value_);
 
-void ThreadLocalString::set(std::string value) {
-  INIT_STATIC_THREAD_LOCAL(std::string, value_);
-  *value_ = value;
+void ThreadLocalString::set(string value) {
+  INIT_STATIC_THREAD_LOCAL(string, value_);
+  *value_ = std::move(value);
 }
 
-const std::string& ThreadLocalString::get() {
-  INIT_STATIC_THREAD_LOCAL(std::string, value_);
+const string& ThreadLocalString::get() {
+  INIT_STATIC_THREAD_LOCAL(string, value_);
   return *value_;
 }
 
@@ -266,8 +268,8 @@ static void RunAndAssign(CountDownLatch* writers_ready,
                          CountDownLatch *readers_ready,
                          CountDownLatch *all_done,
                          CountDownLatch *threads_exiting,
-                         const std::string& in,
-                         std::string* out) {
+                         const string& in,
+                         string* out) {
   writers_ready->Wait();
   // Ensure it starts off as an empty string.
   CHECK_EQ("", ThreadLocalString::get());
@@ -282,28 +284,27 @@ static void RunAndAssign(CountDownLatch* writers_ready,
 TEST_F(ThreadLocalTest, TestTLSMember) {
   const int num_threads = 8;
 
-  vector<CountDownLatch*> writers_ready;
-  vector<CountDownLatch*> readers_ready;
-  vector<std::string*> out_strings;
-  vector<scoped_refptr<kudu::Thread> > threads;
-
-  ElementDeleter writers_deleter(&writers_ready);
-  ElementDeleter readers_deleter(&readers_ready);
-  ElementDeleter out_strings_deleter(&out_strings);
+  vector<unique_ptr<CountDownLatch>> writers_ready;
+  writers_ready.reserve(num_threads);
+  vector<unique_ptr<CountDownLatch>> readers_ready;
+  readers_ready.reserve(num_threads);
+  vector<unique_ptr<string>> out_strings;
+  out_strings.reserve(num_threads);
+  vector<thread> threads;
+  threads.reserve(num_threads);
 
   CountDownLatch all_done(1);
   CountDownLatch threads_exiting(num_threads);
 
   LOG(INFO) << "Starting threads...";
   for (int i = 0; i < num_threads; i++) {
-    writers_ready.push_back(new CountDownLatch(1));
-    readers_ready.push_back(new CountDownLatch(1));
-    out_strings.push_back(new std::string());
-    scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
-        &RunAndAssign, writers_ready[i], readers_ready[i],
-        &all_done, &threads_exiting, Substitute("$0", i), out_strings[i], &new_thread));
-    threads.push_back(new_thread);
+    writers_ready.emplace_back(new CountDownLatch(1));
+    readers_ready.emplace_back(new CountDownLatch(1));
+    out_strings.emplace_back(new string());
+    threads.emplace_back([&, i]() {
+      RunAndAssign(writers_ready[i].get(), readers_ready[i].get(), &all_done,
+                   &threads_exiting, Substitute("$0", i), out_strings[i].get());
+    });
   }
 
   // Unlatch the threads in order.
@@ -324,8 +325,8 @@ TEST_F(ThreadLocalTest, TestTLSMember) {
   }
 
   LOG(INFO) << "Joining & deleting threads...";
-  for (scoped_refptr<kudu::Thread> thread : threads) {
-    CHECK_OK(ThreadJoiner(thread.get()).Join());
+  for (auto& t : threads) {
+    t.join();
   }
 }
 

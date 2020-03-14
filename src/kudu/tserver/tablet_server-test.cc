@@ -117,7 +117,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/zlib.h"
 
 using google::protobuf::util::MessageDifferencer;
@@ -3829,10 +3828,6 @@ class DelayFsyncLogHook : public log::LogFaultHooks {
 
 namespace {
 
-void DeleteOneRowAsync(TabletServerTest* test) {
-  test->DeleteTestRowsRemote(10, 1);
-}
-
 void CompactAsync(Tablet* tablet, CountDownLatch* flush_done_latch) {
   CHECK_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
   flush_done_latch->CountDown();
@@ -3865,9 +3860,7 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   log->SetLogFaultHooksForTests(log_hook);
 
   // Now start a transaction (delete) and stop just before commit.
-  scoped_refptr<kudu::Thread> thread1;
-  CHECK_OK(kudu::Thread::Create("DeleteThread", "DeleteThread",
-                                DeleteOneRowAsync, this, &thread1));
+  thread delete_thread([this]() { this->DeleteTestRowsRemote(10, 1); });
 
   // Wait for the replicate message to arrive and continue.
   log_hook->Continue();
@@ -3876,13 +3869,11 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   usleep(100* 1000); // 100 msecs
 
   // Now start a compaction before letting the commit message go through.
-  scoped_refptr<kudu::Thread> flush_thread;
+  Tablet* tablet = tablet_replica_->tablet();
   CountDownLatch flush_done_latch(1);
-  CHECK_OK(kudu::Thread::Create("CompactThread", "CompactThread",
-                                CompactAsync,
-                                tablet_replica_->tablet(),
-                                &flush_done_latch,
-                                &flush_thread));
+  thread flush_thread([tablet, &flush_done_latch]() {
+    CompactAsync(tablet, &flush_done_latch);
+  });
 
   // At this point we have both a compaction and a transaction going on.
   // If we allow the transaction to return before the commit message is
@@ -3905,6 +3896,8 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   log_hook->Continue();
   log_hook->Continue();
   flush_done_latch.Wait();
+  flush_thread.join();
+  delete_thread.join();
 }
 
 // Test DNS resolution failure in the master heartbeater.

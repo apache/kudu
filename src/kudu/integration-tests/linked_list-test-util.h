@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <algorithm>
@@ -23,9 +22,12 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
+#include <boost/bind.hpp>
+#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/client-test-util.h"
@@ -47,7 +49,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/thread.h"
 
 namespace kudu {
 
@@ -267,16 +268,13 @@ class ScopedRowUpdater {
   // the lifetime of this object.
   explicit ScopedRowUpdater(client::KuduTable* table)
     : table_(table),
-      to_update_(kint64max) { // no limit
-    CHECK_OK(Thread::Create("linked_list-test", "updater",
-                            &ScopedRowUpdater::RowUpdaterThread, this, &updater_));
+      to_update_(kint64max), // no limit
+      updater_([this]() { this->RowUpdaterThread(); }) {
   }
 
   ~ScopedRowUpdater() {
     to_update_.Shutdown();
-    if (updater_) {
-      updater_->Join();
-    }
+    updater_.join();
   }
 
   BlockingQueue<int64_t>* to_update() { return &to_update_; }
@@ -300,7 +298,7 @@ class ScopedRowUpdater {
 
   client::KuduTable* table_;
   BlockingQueue<int64_t> to_update_;
-  scoped_refptr<Thread> updater_;
+  std::thread updater_;
 };
 
 // Helper class to hold results from a linked list scan and perform the

@@ -14,18 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <atomic>
 #include <string>
+#include <thread>
 #include <vector>
 
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
-class Thread;
 namespace cluster {
 class ExternalMiniCluster;
 }  // namespace cluster
@@ -64,7 +62,7 @@ class PeriodicWebUIChecker {
 
   const MonoDelta period_;
   std::atomic<bool> is_running_;
-  scoped_refptr<Thread> checker_;
+  std::thread checker_;
   std::vector<std::string> urls_;
 };
 
