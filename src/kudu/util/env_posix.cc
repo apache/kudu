@@ -1520,7 +1520,7 @@ class PosixEnv : public Env {
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
     unique_ptr<char[], FreeDeleter> name_dup(strdup(root.c_str()));
-    char *(paths[]) = { name_dup.get(), nullptr };
+    char* paths[] = { name_dup.get(), nullptr };
 
     // FTS_NOCHDIR is important here to make this thread-safe.
     FTS* ret;
@@ -1531,7 +1531,7 @@ class PosixEnv : public Env {
     }
     unique_ptr<FTS, FtsCloser> tree(ret);
 
-    FTSENT *ent = nullptr;
+    FTSENT* ent = nullptr;
     bool had_errors = false;
     while ((ent = fts_read(tree.get())) != nullptr) {
       bool doCb = false;

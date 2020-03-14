@@ -1789,7 +1789,7 @@ class CBTreeIterator {
 
       retry_in_leaf:
       {
-        memcpy(&leaf_copy_, leaf, sizeof(leaf_copy_));
+        memcpy(static_cast<void*>(&leaf_copy_), leaf, sizeof(leaf_copy_));
 
         AtomicVersion new_version = leaf->StableVersion();
         if (VersionField::HasSplit(version, new_version)) {
@@ -1831,7 +1831,7 @@ class CBTreeIterator {
 
     while (true) {
       AtomicVersion version = next->StableVersion();
-      memcpy(&leaf_copy_, next, sizeof(leaf_copy_));
+      memcpy(static_cast<void*>(&leaf_copy_), next, sizeof(leaf_copy_));
       AtomicVersion new_version = next->StableVersion();
       if (VersionField::IsDifferent(new_version, version)) {
         version = new_version;
