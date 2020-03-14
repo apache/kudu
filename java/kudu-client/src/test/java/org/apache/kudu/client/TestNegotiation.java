@@ -25,14 +25,20 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.MasterServerConfig;
 import org.apache.kudu.test.cluster.FakeDNS;
-import org.apache.kudu.test.cluster.MiniKuduCluster;
-import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 public class TestNegotiation {
+  private static final MiniKuduClusterBuilder clusterBuilder =
+      new MiniKuduClusterBuilder()
+          .numMasterServers(1)
+          .numTabletServers(0)
+          .enableKerberos();
 
   @Rule
-  public RetryRule retryRule = new RetryRule();
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   /**
    * Test that a non-Kerberized client will use SASL PLAIN to connect to a
@@ -40,29 +46,19 @@ public class TestNegotiation {
    * KUDU-2121.
    */
   @Test
+  @MasterServerConfig(flags = {
+      "--rpc-authentication=optional",
+      "--rpc-trace-negotiation",
+      "--user-acl=*" })
   public void testSaslPlainFallback() throws Exception {
     FakeDNS.getInstance().install();
-    MiniKuduCluster.MiniKuduClusterBuilder clusterBuilder =
-        new MiniKuduCluster.MiniKuduClusterBuilder();
-
-    clusterBuilder.numMasterServers(1)
-                  .numTabletServers(0)
-                  .enableKerberos()
-                  .addMasterServerFlag("--rpc-authentication=optional")
-                  .addMasterServerFlag("--rpc-trace-negotiation")
-                  .addMasterServerFlag("--user-acl=*");
 
     CapturingLogAppender cla = new CapturingLogAppender();
-    try (MiniKuduCluster cluster = clusterBuilder.build()) {
-      cluster.kdestroy();
-      try (Closeable c = cla.attach();
-           KuduClient client =
-               new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString()).build()
-      ) {
-        assertTrue(client.getTablesList().getTablesList().isEmpty());
-      }
+    harness.kdestroy();
+    harness.resetClients();
+    try (Closeable c = cla.attach()) {
+      assertTrue(harness.getClient().getTablesList().getTablesList().isEmpty());
     }
-
     assertTrue(cla.getAppendedText(),
                cla.getAppendedText().contains("Client requested to use mechanism: PLAIN"));
   }
