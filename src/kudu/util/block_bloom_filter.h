@@ -23,10 +23,9 @@
 #include <limits>
 #include <memory>
 
-#include <gflags/gflags_declare.h>
-#include <glog/logging.h>
+// Including glog/logging.h causes problems while compiling in Apache Impala for codegen.
+// IWYU pragma: no_include <glog/logging.h>
 
-#include "kudu/gutil/cpu.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/hash.pb.h"
@@ -35,12 +34,14 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+namespace base {
+class CPU;
+}  // namespace base
+
 namespace kudu {
 class Arena;
 class BlockBloomFilterPB;
 }  // namespace kudu
-
-DECLARE_bool(disable_blockbloomfilter_avx2);
 
 namespace kudu {
 
@@ -159,6 +160,11 @@ class BlockBloomFilter {
   // - Or'ing with kAlwaysTrueFilter is disallowed.
   Status Or(const BlockBloomFilter& other);
 
+  // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n' bytes where 'n'
+  // is multiple of 32-bytes.
+  static Status OrEqualArray(size_t n, const uint8_t* __restrict__ in,
+                             uint8_t* __restrict__ out);
+
   // Returns whether the Bloom filter is empty and hence would return false for all lookups.
   bool always_false() const {
     return always_false_;
@@ -195,6 +201,8 @@ class BlockBloomFilter {
 
   // log2(number of bytes in a bucket)
   static constexpr int kLogBucketByteSize = 5;
+  // Bucket size in bytes.
+  static constexpr size_t kBucketByteSize = 1UL << kLogBucketByteSize;
 
   static_assert((1 << kLogBucketWordBits) == std::numeric_limits<BucketWord>::digits,
       "BucketWord must have a bit-width that is be a power of 2, like 64 for uint64_t.");
@@ -229,8 +237,10 @@ class BlockBloomFilter {
 
   bool BucketFind(uint32_t bucket_idx, uint32_t hash) const noexcept;
 
-  // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n'.
-  static void OrEqualArray(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict__ out);
+  // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n' without using AVX2
+  // operations.
+  static void OrEqualArrayNoAVX2(size_t n, const uint8_t* __restrict__ in,
+                                 uint8_t* __restrict__ out);
 
 #ifdef USE_AVX2
   // Same as Insert(), but skips the CPU check and assumes that AVX2 is available.
@@ -250,11 +260,16 @@ class BlockBloomFilter {
                                uint8_t* __restrict__ out) __attribute__((target("avx2")));
 #endif
 
-  // Function pointers initialized in constructor to avoid run-time cost
-  // in hot-path of Find and Insert operations.
-  decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
-  decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
-  decltype(&BlockBloomFilter::OrEqualArray) or_equal_array_func_ptr_;
+  // Function pointers initialized just once to avoid run-time cost
+  // in hot-path of Find, Insert and Or operations.
+  static decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
+  static decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
+  static decltype(&BlockBloomFilter::OrEqualArrayNoAVX2) or_equal_array_func_ptr_;
+
+  // Helper function to initialize the function pointers above based on whether
+  // compiler and/or CPU at run-time supports AVX2.
+  // It also helps testing both AVX2 and non-AVX2 code paths.
+  static void InitializeFunctionPtrs();
 
   // Size of the internal directory structure in bytes.
   int64_t directory_size() const {
@@ -262,9 +277,7 @@ class BlockBloomFilter {
   }
 
   // Detect at run-time whether CPU supports AVX2
-  static bool has_avx2() {
-    return !FLAGS_disable_blockbloomfilter_avx2 && kCpu.has_avx2();
-  }
+  static bool has_avx2();
 
   // Some constants used in hashing. #defined for efficiency reasons.
 #define BLOOM_HASH_CONSTANTS                                             \
@@ -292,6 +305,10 @@ class BlockBloomFilter {
   }
 
   DISALLOW_COPY_AND_ASSIGN(BlockBloomFilter);
+
+  // Allow BlockBloomFilterTest unit test to invoke the private InitializeFunctionPtrs()
+  // function to test both AVX2 and non-AVX2 code paths.
+  friend class BlockBloomFilterTest;
 };
 
 // Generic interface to allocate and de-allocate memory for the BlockBloomFilter.

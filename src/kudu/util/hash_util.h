@@ -19,7 +19,9 @@
 #define KUDU_UTIL_HASH_UTIL_H
 
 #include <cstdint>
-#include <glog/logging.h>
+
+// Including glog/logging.h causes problems while compiling in Apache Impala for codegen.
+// IWYU pragma: no_include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/hash.pb.h"
@@ -134,7 +136,9 @@ class HashUtil {
       case FAST_HASH:
         return FastHash32(data.data(), data.size(), seed);
       default:
-        LOG(FATAL) << "Not implemented 32-bit hash function: " << hash_algorithm;
+        // Can't use LOG(FATAL)/CHECK() since including glog/logging.h causes problems
+        // with code-gen in Impala.
+        abort();
     }
   }
 

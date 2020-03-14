@@ -82,8 +82,11 @@ void BlockBloomFilter::InsertAvx2(const uint32_t hash) noexcept {
 
 void BlockBloomFilter::OrEqualArrayAVX2(size_t n, const uint8_t* __restrict__ in,
                                         uint8_t* __restrict__ out) {
-  constexpr size_t kAVXRegisterBytes = sizeof(__m256d);
+  static constexpr size_t kAVXRegisterBytes = sizeof(__m256d);
+  static_assert(kAVXRegisterBytes == kBucketByteSize,
+      "Unexpected AVX register bytes");
   DCHECK_EQ(n % kAVXRegisterBytes, 0) << "Invalid Bloom filter directory size";
+
   const uint8_t* const in_end = in + n;
   for (; in != in_end; (in += kAVXRegisterBytes), (out += kAVXRegisterBytes)) {
     const double* double_in = reinterpret_cast<const double*>(in);

@@ -24,10 +24,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/cpu.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_bloom_filter.pb.h"
 #include "kudu/util/flag_tags.h"
@@ -43,13 +45,40 @@ DEFINE_bool(disable_blockbloomfilter_avx2, false,
             "that doesn't support AVX2.");
 TAG_FLAG(disable_blockbloomfilter_avx2, hidden);
 
+// Flag used to initialize the static function pointers for the BlockBloomFilter class.
+static std::once_flag g_init_func_ptrs_flag;
+
 namespace kudu {
 
+// Initialize the static member variables from BlockBloomFilter class.
 constexpr uint32_t BlockBloomFilter::kRehash[8] __attribute__((aligned(32)));
 const base::CPU BlockBloomFilter::kCpu = base::CPU();
 // constexpr data member requires initialization in the class declaration.
 // Hence no duplicate initialization in the definition here.
 constexpr BlockBloomFilter* const BlockBloomFilter::kAlwaysTrueFilter;
+
+decltype(&BlockBloomFilter::BucketInsert) BlockBloomFilter::bucket_insert_func_ptr_ = nullptr;
+decltype(&BlockBloomFilter::BucketFind) BlockBloomFilter::bucket_find_func_ptr_ = nullptr;
+decltype(&BlockBloomFilter::OrEqualArrayNoAVX2) BlockBloomFilter::or_equal_array_func_ptr_ =
+    nullptr;
+
+void BlockBloomFilter::InitializeFunctionPtrs() {
+#ifdef USE_AVX2
+  if (has_avx2()) {
+    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
+    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFindAVX2;
+    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayAVX2;
+  } else {
+    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
+    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayNoAVX2;
+  }
+#else
+  bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
+  bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+  or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayNoAVX2;
+#endif
+}
 
 BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_allocator) :
   always_false_(true),
@@ -59,21 +88,11 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
   directory_(nullptr),
   hash_algorithm_(UNKNOWN_HASH),
   hash_seed_(0) {
-#ifdef USE_AVX2
-  if (has_avx2()) {
-    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
-    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFindAVX2;
-    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayAVX2;
-  } else {
-    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
-    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
-    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArray;
-  }
-#else
-  bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
-  bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
-  or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArray;
-#endif
+  std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
+
+  DCHECK_NOTNULL(bucket_insert_func_ptr_);
+  DCHECK_NOTNULL(bucket_find_func_ptr_);
+  DCHECK_NOTNULL(or_equal_array_func_ptr_);
 }
 
 BlockBloomFilter::~BlockBloomFilter() {
@@ -273,8 +292,20 @@ bool BlockBloomFilter::operator!=(const BlockBloomFilter& rhs) const {
   return !(rhs == *this);
 }
 
-void BlockBloomFilter::OrEqualArray(size_t n, const uint8_t* __restrict__ in,
-                                    uint8_t* __restrict__ out) {
+Status BlockBloomFilter::OrEqualArray(size_t n, const uint8_t* __restrict__ in,
+                                      uint8_t* __restrict__ out) {
+  if ((n % kBucketByteSize) != 0) {
+    return Status::InvalidArgument(Substitute("Input size $0 not a multiple of 32-bytes", n));
+  }
+
+  std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
+  DCHECK_NOTNULL(or_equal_array_func_ptr_);
+  (*or_equal_array_func_ptr_)(n, in, out);
+  return Status::OK();
+}
+
+void BlockBloomFilter::OrEqualArrayNoAVX2(size_t n, const uint8_t* __restrict__ in,
+                                          uint8_t* __restrict__ out) {
   // The trivial loop out[i] |= in[i] should auto-vectorize with gcc at -O3, but it is not
   // written in a way that is very friendly to auto-vectorization. Instead, we manually
   // vectorize, increasing the speed by up to 56x.
@@ -321,6 +352,10 @@ Status BlockBloomFilter::Or(const BlockBloomFilter& other) {
                               reinterpret_cast<uint8_t*>(directory_));
   always_false_ = false;
   return Status::OK();
+}
+
+bool BlockBloomFilter::has_avx2() {
+  return !FLAGS_disable_blockbloomfilter_avx2 && kCpu.has_avx2();
 }
 
 shared_ptr<DefaultBlockBloomFilterBufferAllocator>

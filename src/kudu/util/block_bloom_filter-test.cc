@@ -20,6 +20,7 @@
 #include <cmath> // IWYU pragma: keep
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iosfwd>
 #include <memory>
 #include <unordered_set>
@@ -60,6 +61,7 @@ class BlockBloomFilterTest : public KuduTest {
 
   BlockBloomFilter* CreateBloomFilter(size_t log_space_bytes) {
     FLAGS_disable_blockbloomfilter_avx2 = (MakeRand() & 0x1) == 0;
+    BlockBloomFilter::InitializeFunctionPtrs();
 
     unique_ptr<BlockBloomFilter> bf(new BlockBloomFilter(allocator_));
     CHECK_OK(bf->Init(log_space_bytes, FAST_HASH, 0));
@@ -318,5 +320,14 @@ TEST_F(BlockBloomFilterTest, Or) {
   Status s = bf4->Or(*bf5);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "Directory size don't match");
+
+  // Test the public OrEqualArray() function.
+  static constexpr size_t kNumBytes = 64;
+  unique_ptr<uint8_t[]> a_ptr(new uint8_t[kNumBytes]);
+  unique_ptr<uint8_t[]> b_ptr(new uint8_t[kNumBytes]);
+  memset(a_ptr.get(), 0xDE, kNumBytes);
+  memset(b_ptr.get(), 0, kNumBytes);
+  ASSERT_OK(BlockBloomFilter::OrEqualArray(kNumBytes, a_ptr.get(), b_ptr.get()));
+  ASSERT_EQ(0, memcmp(a_ptr.get(), b_ptr.get(), kNumBytes));
 }
 }  // namespace kudu
