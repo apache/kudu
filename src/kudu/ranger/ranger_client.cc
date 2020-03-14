@@ -17,6 +17,8 @@
 
 #include "kudu/ranger/ranger_client.h"
 
+#include <stdint.h>
+
 #include <ostream>
 #include <string>
 #include <utility>
@@ -202,6 +204,15 @@ static bool ValidateRangerConfiguration() {
 }
 GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
 
+static const char* ScopeToString(RangerClient::Scope scope) {
+  switch (scope) {
+    case RangerClient::Scope::DATABASE: return "database";
+    case RangerClient::Scope::TABLE: return "table";
+  }
+  LOG(FATAL) << static_cast<uint16_t>(scope) << ": unknown scope";
+  __builtin_unreachable();
+}
+
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
   HISTINIT(sp_inbound_queue_length, ranger_subprocess_inbound_queue_length);
@@ -232,7 +243,8 @@ Status RangerClient::Start() {
 // TODO(abukor): refactor to avoid code duplication
 Status RangerClient::AuthorizeAction(const string& user_name,
                                      const ActionPB& action,
-                                     const string& table_name) {
+                                     const string& table_name,
+                                     Scope scope) {
   DCHECK(subprocess_);
   string db;
   Slice tbl;
@@ -251,7 +263,10 @@ Status RangerClient::AuthorizeAction(const string& user_name,
 
   req->set_action(action);
   req->set_database(db);
-  req->set_table(tbl.ToString());
+  // Only pass the table name if this is table level request.
+  if (scope == Scope::TABLE) {
+    req->set_table(tbl.ToString());
+  }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
@@ -260,8 +275,8 @@ Status RangerClient::AuthorizeAction(const string& user_name,
     return Status::OK();
   }
 
-  LOG(WARNING) << Substitute("User $0 is not authorized to perform $1 on $2",
-                             user_name, ActionPB_Name(action), table_name);
+  LOG(WARNING) << Substitute("User $0 is not authorized to perform $1 on $2 at scope ($3)",
+                             user_name, ActionPB_Name(action), table_name, ScopeToString(scope));
   return Status::NotAuthorized(kUnauthorizedAction);
 }
 

@@ -39,6 +39,7 @@ using kudu::security::ColumnPrivilegePB;
 using kudu::security::TablePrivilegePB;
 using kudu::ranger::ActionPB;
 using kudu::ranger::ActionHash;
+using kudu::ranger::RangerClient;
 using std::string;
 using std::unordered_set;
 
@@ -57,7 +58,9 @@ Status RangerAuthzProvider::AuthorizeCreateTable(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
-  return client_.AuthorizeAction(user, ActionPB::CREATE, table_name);
+  // Table creation requires 'CREATE ON DATABASE' privilege.
+  return client_.AuthorizeAction(user, ActionPB::CREATE, table_name,
+                                 RangerClient::Scope::DATABASE);
 }
 
 Status RangerAuthzProvider::AuthorizeDropTable(const string& table_name,
@@ -65,6 +68,7 @@ Status RangerAuthzProvider::AuthorizeDropTable(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+  // Table deletion requires 'DROP ON TABLE' privilege.
   return client_.AuthorizeAction(user, ActionPB::DROP, table_name);
 }
 
@@ -74,15 +78,16 @@ Status RangerAuthzProvider::AuthorizeAlterTable(const string& old_table,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
-  // Table alteration requires ALTER ON TABLE if no rename is done. To prevent
-  // privilege escalation we require ALL on the old table and CREATE on the new
-  // table (database).
+  // Table alteration (without table rename) requires ALTER ON TABLE.
   if (old_table == new_table) {
     return client_.AuthorizeAction(user, ActionPB::ALTER, old_table);
   }
 
+  // To prevent privilege escalation we require ALL on the old TABLE
+  // and CREATE on the new DATABASE for table rename.
   RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALL, old_table));
-  return client_.AuthorizeAction(user, ActionPB::CREATE, new_table);
+  return client_.AuthorizeAction(user, ActionPB::CREATE, new_table,
+                                 RangerClient::Scope::DATABASE);
 }
 
 Status RangerAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
@@ -90,6 +95,7 @@ Status RangerAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+  // Get table metadata requires 'METADATA ON TABLE' privilege.
   return client_.AuthorizeAction(user, ActionPB::METADATA, table_name);
 }
 
@@ -102,6 +108,7 @@ Status RangerAuthzProvider::AuthorizeListTables(const string& user,
   }
 
   *checked_table_names = true;
+  // List tables requires 'METADATA ON TABLE' privilege on all tables being listed.
   return client_.AuthorizeActionMultipleTables(user, ActionPB::METADATA, table_names);
 }
 

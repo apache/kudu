@@ -51,6 +51,13 @@ typedef subprocess::SubprocessProxy<RangerRequestListPB, RangerResponseListPB,
 // A client for the Ranger service that communicates with a Java subprocess.
 class RangerClient {
  public:
+  // Similar to SentryAuthorizableScope scope which indicates the
+  // hierarchy of authorizables (database → table).
+  enum Scope {
+    DATABASE,
+    TABLE
+  };
+
   // Creates a Ranger client.
   explicit RangerClient(const scoped_refptr<MetricEntity>& metric_entity);
 
@@ -60,7 +67,8 @@ class RangerClient {
   // Authorizes an action on the table. Returns OK if 'user_name' is authorized
   // to perform 'action' on 'table_name', NotAuthorized otherwise.
   Status AuthorizeAction(const std::string& user_name, const ActionPB& action,
-                         const std::string& table_name) WARN_UNUSED_RESULT;
+                         const std::string& table_name, Scope scope = Scope::TABLE)
+      WARN_UNUSED_RESULT;
 
   // Authorizes action on multiple tables. If there is at least one table that
   // user is authorized to perform the action on, it sets 'table_names' to the
