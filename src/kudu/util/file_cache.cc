@@ -486,7 +486,7 @@ FileCache::~FileCache() {
 
 Status FileCache::Init() {
   return Thread::Create("cache", Substitute("$0-evict", cache_name_),
-                        &FileCache::RunDescriptorExpiry, this,
+                        [this]() { this->RunDescriptorExpiry(); },
                         &descriptor_expiry_thread_);
 }
 

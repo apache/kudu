@@ -71,8 +71,10 @@ Status InstanceDetector::Detect(unique_ptr<InstanceMetadata>* metadata) {
     CHECK(d.metadata);
     CHECK(!d.runner);
     scoped_refptr<Thread> runner;
-    RETURN_NOT_OK(Thread::Create("cloud detector", TypeToString(d.metadata->type()),
-        &InstanceDetector::GetInstanceInfo, this, d.metadata.get(), idx, &runner));
+    RETURN_NOT_OK(Thread::Create(
+        "cloud detector", TypeToString(d.metadata->type()),
+        [this, &d, idx]() { this->GetInstanceInfo(d.metadata.get(), idx); },
+        &runner));
     d.runner = std::move(runner);
   }
 

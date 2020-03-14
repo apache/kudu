@@ -630,7 +630,7 @@ Status BuiltInNtp::InitImpl() {
   RETURN_NOT_OK_PREPEND(socket_.SetRecvTimeout(MonoDelta::FromSeconds(0.5)),
                         "could not set socket recv timeout");
   RETURN_NOT_OK_PREPEND(
-      Thread::Create("ntp", "ntp client", &BuiltInNtp::PollThread, this, &thread_),
+      Thread::Create("ntp", "ntp client", [this]() { this->PollThread(); }, &thread_),
       "could not start NTP client thread");
   return Status::OK();
 }

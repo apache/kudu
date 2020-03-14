@@ -130,7 +130,7 @@ Status HmsCatalog::Start(HmsClientVerifyKuduSyncConfig verify_service_config) {
   RETURN_NOT_OK(ha_client_.Start(std::move(addresses), std::move(options)));
 
   RETURN_NOT_OK(Thread::Create("hms_catalog", "fetch_uuid",
-                               &HmsCatalog::LoopInitializeUuid, this,
+                               [this](){ this->LoopInitializeUuid(); },
                                &uuid_initializing_thread_));
   return Status::OK();
 }

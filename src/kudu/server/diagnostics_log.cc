@@ -140,8 +140,7 @@ Status DiagnosticsLog::Start() {
   RETURN_NOT_OK_PREPEND(l->Open(), "unable to open diagnostics log");
   log_ = std::move(l);
   Status s = Thread::Create("server", "diag-logger",
-                            &DiagnosticsLog::RunThread,
-                            this, &thread_);
+                            [this]() { this->RunThread(); }, &thread_);
   if (!s.ok()) {
     // Don't leave the log open if we failed to start our thread.
     log_.reset();

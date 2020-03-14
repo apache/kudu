@@ -113,7 +113,7 @@ ScannerManager::~ScannerManager() {
 
 Status ScannerManager::StartRemovalThread() {
   RETURN_NOT_OK(Thread::Create("scanners", "removal_thread",
-                               &ScannerManager::RunRemovalThread, this,
+                               [this]() { this->RunRemovalThread(); },
                                &removal_thread_));
   return Status::OK();
 }

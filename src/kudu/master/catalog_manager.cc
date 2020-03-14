@@ -578,7 +578,7 @@ class CatalogManagerBgTasks {
 
 Status CatalogManagerBgTasks::Init() {
   RETURN_NOT_OK(kudu::Thread::Create("catalog manager", "bgtasks",
-      &CatalogManagerBgTasks::Run, this, &thread_));
+                                     [this]() { this->Run(); }, &thread_));
   return Status::OK();
 }
 

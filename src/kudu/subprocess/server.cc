@@ -114,8 +114,9 @@ Status SubprocessServer::Init() {
   VLOG(2) << "Starting the subprocess";
   Synchronizer sync;
   auto cb = sync.AsStdStatusCallback();
-  RETURN_NOT_OK(Thread::Create("subprocess", "start", &SubprocessServer::StartSubprocessThread,
-                               this, cb, &read_thread_));
+  RETURN_NOT_OK(Thread::Create("subprocess", "start",
+                               [this, &cb]() { this->StartSubprocessThread(cb); },
+                               &read_thread_));
   RETURN_NOT_OK_PREPEND(sync.Wait(), "Failed to start subprocess");
 
   // Start the message protocol.
@@ -127,16 +128,19 @@ Status SubprocessServer::Init() {
   const int num_threads = FLAGS_subprocess_num_responder_threads;
   responder_threads_.resize(num_threads);
   for (int i = 0; i < num_threads; i++) {
-    RETURN_NOT_OK(Thread::Create("subprocess", "responder", &SubprocessServer::ResponderThread,
-                                 this, &responder_threads_[i]));
+    RETURN_NOT_OK(Thread::Create("subprocess", "responder",
+                                 [this]() { this->ResponderThread(); },
+                                 &responder_threads_[i]));
   }
-  RETURN_NOT_OK(Thread::Create("subprocess", "reader", &SubprocessServer::ReceiveMessagesThread,
-                               this, &read_thread_));
-  RETURN_NOT_OK(Thread::Create("subprocess", "writer", &SubprocessServer::SendMessagesThread,
-                               this, &write_thread_));
+  RETURN_NOT_OK(Thread::Create("subprocess", "reader",
+                               [this]() { this->ReceiveMessagesThread(); },
+                               &read_thread_));
+  RETURN_NOT_OK(Thread::Create("subprocess", "writer",
+                               [this]() { this->SendMessagesThread(); },
+                               &write_thread_));
   return Thread::Create("subprocess", "deadline-checker",
-                        &SubprocessServer::CheckDeadlinesThread,
-                        this, &deadline_checker_);
+                        [this]() { this->CheckDeadlinesThread(); },
+                        &deadline_checker_);
 }
 
 Status SubprocessServer::Execute(SubprocessRequestPB* req,

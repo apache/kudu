@@ -697,7 +697,7 @@ void ThreadPool::DispatchThread() {
 
 Status ThreadPool::CreateThread() {
   return kudu::Thread::Create("thread pool", strings::Substitute("$0 [worker]", name_),
-                              &ThreadPool::DispatchThread, this, nullptr);
+                              [this]() { this->DispatchThread(); }, nullptr);
 }
 
 void ThreadPool::CheckNotPoolThreadUnlocked() {

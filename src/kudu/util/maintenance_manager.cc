@@ -28,7 +28,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
@@ -192,8 +191,8 @@ MaintenanceManager::~MaintenanceManager() {
 Status MaintenanceManager::Start() {
   CHECK(!monitor_thread_);
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
-      boost::bind(&MaintenanceManager::RunSchedulerThread, this),
-      &monitor_thread_));
+                               [this]() { this->RunSchedulerThread(); },
+                               &monitor_thread_));
   return Status::OK();
 }
 

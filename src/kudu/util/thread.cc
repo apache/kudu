@@ -23,6 +23,7 @@
 #include <sys/prctl.h>
 #endif // defined(__linux__)
 #include <sys/resource.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -35,7 +36,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -64,8 +64,6 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
-using boost::bind;
-using boost::mem_fn;
 using std::ostringstream;
 using std::pair;
 using std::shared_ptr;
@@ -307,11 +305,13 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
         Bind(&GetInVoluntaryContextSwitches)));
 
   if (web) {
-    auto thread_callback = bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler),
-                                      this, _1, _2);
-    DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", "Threads", thread_callback,
-                                             /* is_styled= */ true,
-                                             /* is_on_nav_bar= */ true);
+    DCHECK_NOTNULL(web)->RegisterPathHandler(
+        "/threadz", "Threads", [this](const WebCallbackRegistry::WebRequest& req,
+                                      WebCallbackRegistry::WebResponse* resp) {
+          this->ThreadPathHandler(req, resp);
+        },
+        /* is_styled= */ true,
+        /* is_on_nav_bar= */ true);
   }
   return Status::OK();
 }
@@ -573,8 +573,8 @@ int64_t Thread::WaitForTid() const {
 }
 
 
-Status Thread::StartThread(const string& category, const string& name,
-                           const ThreadFunctor& functor, uint64_t flags,
+Status Thread::StartThread(string category, string name,
+                           std::function<void()> functor, uint64_t flags,
                            scoped_refptr<Thread> *holder) {
   TRACE_COUNTER_INCREMENT("threads_started", 1);
   TRACE_COUNTER_SCOPE_LATENCY_US("thread_start_us");
@@ -584,7 +584,8 @@ Status Thread::StartThread(const string& category, const string& name,
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "starting thread");
 
   // Temporary reference for the duration of this function.
-  scoped_refptr<Thread> t(new Thread(category, name, functor));
+  scoped_refptr<Thread> t(new Thread(
+      std::move(category), std::move(name), std::move(functor)));
 
   // Optional, and only set if the thread was successfully created.
   //
@@ -639,7 +640,7 @@ Status Thread::StartThread(const string& category, const string& name,
   t->joinable_ = true;
   cleanup.cancel();
 
-  VLOG(2) << "Started thread " << t->tid()<< " - " << category << ":" << name;
+  VLOG(2) << Substitute("Started thread $0 - $1: $2", t->tid(), t->category(), t->name());
   return Status::OK();
 }
 

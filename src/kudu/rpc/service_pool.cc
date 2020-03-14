@@ -90,7 +90,7 @@ Status ServicePool::Init(int num_threads) {
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     CHECK_OK(kudu::Thread::Create("service pool", "rpc worker",
-        &ServicePool::RunThread, this, &new_thread));
+                                  [this]() { this->RunThread(); }, &new_thread));
     threads_.push_back(new_thread);
   }
   return Status::OK();

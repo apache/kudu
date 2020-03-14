@@ -644,7 +644,7 @@ Status Heartbeater::Thread::Start() {
 
   should_run_ = true;
   return kudu::Thread::Create("heartbeater", "heartbeat",
-      &Heartbeater::Thread::RunThread, this, &thread_);
+                              [this]() { this->RunThread(); }, &thread_);
 }
 
 Status Heartbeater::Thread::Stop() {

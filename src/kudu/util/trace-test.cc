@@ -20,7 +20,6 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <map>
 #include <ostream>
 #include <string>
@@ -173,7 +172,7 @@ TEST_F(TraceTest, TestChromeTracing) {
   for (int i = 0; i < kNumThreads; i++) {
     CHECK_OK(Thread::CreateWithFlags(
         "test", "gen-traces",
-        std::bind(GenerateTraceEvents, i, kEventsPerThread),
+        [i, kEventsPerThread]() { GenerateTraceEvents(i, kEventsPerThread); },
         Thread::NO_STACK_WATCHDOG, &threads[i]));
   }
 
@@ -208,7 +207,7 @@ TEST_F(TraceTest, TestTraceFromExitedThread) {
   int kNumEvents = 10;
   scoped_refptr<Thread> t;
   CHECK_OK(Thread::CreateWithFlags(
-      "test", "gen-traces", std::bind(GenerateTraceEvents, 1, kNumEvents),
+      "test", "gen-traces", [kNumEvents]() { GenerateTraceEvents(1, kNumEvents); },
       Thread::NO_STACK_WATCHDOG, &t));
   t->Join();
   tl->SetDisabled();
@@ -286,7 +285,7 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
   scoped_refptr<Thread> t;
   CHECK_OK(Thread::CreateWithFlags(
       "test", "gen-traces",
-      std::bind(GenerateTracesUntilLatch, &num_events_generated, &latch),
+      [&]() { GenerateTracesUntilLatch(&num_events_generated, &latch); },
       Thread::NO_STACK_WATCHDOG, &t));
 
   const int num_flushes = AllowSlowTests() ? 50 : 3;

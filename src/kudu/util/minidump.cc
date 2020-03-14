@@ -281,8 +281,8 @@ void MinidumpExceptionHandler::UnregisterMinidumpExceptionHandler() {
 Status MinidumpExceptionHandler::StartUserSignalHandlerThread() {
   user_signal_handler_thread_running_.store(true, std::memory_order_relaxed);
   return Thread::Create("minidump", "sigusr1-handler",
-                        &MinidumpExceptionHandler::RunUserSignalHandlerThread,
-                        this, &user_signal_handler_thread_);
+                        [this]() { this->RunUserSignalHandlerThread(); },
+                        &user_signal_handler_thread_);
 }
 
 void MinidumpExceptionHandler::StopUserSignalHandlerThread() {

@@ -92,7 +92,7 @@ HmsNotificationLogListenerTask::~HmsNotificationLogListenerTask() {
 Status HmsNotificationLogListenerTask::Init() {
   CHECK(!thread_) << "HmsNotificationLogListenerTask is already initialized";
   return kudu::Thread::Create("catalog manager", "hms-notification-log-listener",
-                              &HmsNotificationLogListenerTask::RunLoop, this, &thread_);
+                              [this]() { this->RunLoop(); }, &thread_);
 }
 
 void HmsNotificationLogListenerTask::Shutdown() {

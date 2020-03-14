@@ -17,7 +17,6 @@
 
 #include "kudu/util/thread.h"
 
-#include <sys/types.h>
 #include <unistd.h>
 
 #include <ostream>
@@ -52,7 +51,8 @@ TEST_F(ThreadTest, TestJoinAndWarn) {
   }
 
   scoped_refptr<Thread> holder;
-  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
+  ASSERT_OK(Thread::Create("test", "sleeper thread",
+                           []() { usleep(1000*1000); }, &holder));
   ASSERT_OK(ThreadJoiner(holder.get())
                    .warn_after_ms(10)
                    .warn_every_ms(100)
@@ -66,7 +66,8 @@ TEST_F(ThreadTest, TestFailedJoin) {
   }
 
   scoped_refptr<Thread> holder;
-  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
+  ASSERT_OK(Thread::Create("test", "sleeper thread",
+                           []() { usleep(1000*1000); }, &holder));
   Status s = ThreadJoiner(holder.get())
     .give_up_after_ms(50)
     .Join();
@@ -89,7 +90,8 @@ TEST_F(ThreadTest, TestJoinOnSelf) {
 
 TEST_F(ThreadTest, TestDoubleJoinIsNoOp) {
   scoped_refptr<Thread> holder;
-  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 0, &holder));
+  ASSERT_OK(Thread::Create("test", "sleeper thread",
+                           []() { usleep(0); }, &holder));
   ThreadJoiner joiner(holder.get());
   ASSERT_OK(joiner.Join());
   ASSERT_OK(joiner.Join());
@@ -99,7 +101,8 @@ TEST_F(ThreadTest, ThreadStartBenchmark) {
   std::vector<scoped_refptr<Thread>> threads(1000);
   LOG_TIMING(INFO, "starting threads") {
     for (auto& t : threads) {
-      ASSERT_OK(Thread::Create("test", "TestCallOnExit", usleep, 0, &t));
+      ASSERT_OK(Thread::Create("test", "TestCallOnExit",
+                               []() { usleep(0); }, &t));
     }
   }
   LOG_TIMING(INFO, "waiting for all threads to publish TIDs") {

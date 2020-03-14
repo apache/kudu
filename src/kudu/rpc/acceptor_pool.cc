@@ -84,7 +84,7 @@ Status AcceptorPool::Start(int num_threads) {
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     Status s = kudu::Thread::Create("acceptor pool", "acceptor",
-        &AcceptorPool::RunThread, this, &new_thread);
+                                    [this]() { this->RunThread(); }, &new_thread);
     if (!s.ok()) {
       Shutdown();
       return s;

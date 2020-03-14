@@ -459,8 +459,8 @@ void ResultTracker::FailAndRespond(const RequestIdPB& request_id,
 
 void ResultTracker::StartGCThread() {
   CHECK(!gc_thread_);
-  CHECK_OK(Thread::Create("server", "result-tracker", &ResultTracker::RunGCThread,
-                          this, &gc_thread_));
+  CHECK_OK(Thread::Create("server", "result-tracker",
+                          [this]() { this->RunGCThread(); }, &gc_thread_));
 }
 
 void ResultTracker::RunGCThread() {

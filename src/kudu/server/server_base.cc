@@ -709,8 +709,9 @@ Status ServerBase::StartExcessLogFileDeleterThread() {
   }
   RETURN_NOT_OK_PREPEND(minidump_handler_->DeleteExcessMinidumpFiles(options_.env),
                         "Unable to delete excess minidump files");
-  return Thread::Create("server", "excess-log-deleter", &ServerBase::ExcessLogFileDeleterThread,
-                        this, &excess_log_deleter_thread_);
+  return Thread::Create("server", "excess-log-deleter",
+                        [this]() { this->ExcessLogFileDeleterThread(); },
+                        &excess_log_deleter_thread_);
 }
 
 void ServerBase::ExcessLogFileDeleterThread() {
@@ -754,8 +755,9 @@ void ServerBase::ShutdownImpl() {
 
 #ifdef TCMALLOC_ENABLED
 Status ServerBase::StartTcmallocMemoryGcThread() {
-  return Thread::Create("server", "tcmalloc-memory-gc", &ServerBase::TcmallocMemoryGcThread,
-                        this, &tcmalloc_memory_gc_thread_);
+  return Thread::Create("server", "tcmalloc-memory-gc",
+                        [this]() { this->TcmallocMemoryGcThread(); },
+                        &tcmalloc_memory_gc_thread_);
 }
 
 void ServerBase::TcmallocMemoryGcThread() {

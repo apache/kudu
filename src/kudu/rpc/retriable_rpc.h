@@ -19,6 +19,8 @@
 #include <memory>
 #include <string>
 
+#include <boost/bind.hpp>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
