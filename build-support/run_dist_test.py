@@ -153,21 +153,13 @@ def main():
   env['SENTRY_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/sentry-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
-  # Restore the symlinks to the chrony, hms-plugin, and subprocess binaries;
-  # tests expect to find them in same directory as the test binaries themselves.
+  # Restore the symlinks to the chrony binaries; tests expect to find them in
+  # same directory as the test binaries themselves.
   for bin_path in glob.glob(os.path.join(ROOT, "build/*/bin")):
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin/chronyc"),
                os.path.join(bin_path, "chronyc"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/sbin/chronyd"),
                os.path.join(bin_path, "chronyd"))
-    os.symlink(
-        glob.glob(os.path.join(ROOT,
-                               "java/kudu-hive/build/libs/kudu-hive*"))[0],
-        os.path.join(bin_path, "hms-plugin.jar"))
-    os.symlink(
-        glob.glob(os.path.join(ROOT,
-                               "java/kudu-subprocess/build/libs/kudu-subprocess*"))[0],
-        os.path.join(bin_path, "kudu-subprocess.jar"))
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +

@@ -39,7 +39,7 @@ set(SUBPROCESS_JAR ${EXECUTABLE_OUTPUT_PATH}/kudu-subprocess.jar)
 
 add_custom_command(OUTPUT ${SUBPROCESS_JAR}
   COMMAND ./gradlew :kudu-subprocess:jar ${GRADLE_FLAGS}
-  COMMAND ln -nsf
+  COMMAND cp -f
     "${JAVA_DIR}/kudu-subprocess/build/libs/kudu-subprocess-${KUDU_VERSION_NUMBER}.jar"
     "${SUBPROCESS_JAR}"
   WORKING_DIRECTORY "${JAVA_DIR}"
