@@ -54,7 +54,9 @@ DEFINE_string(ranger_config_path, "",
 TAG_FLAG(ranger_config_path, experimental);
 
 DEFINE_string(ranger_jar_path, "",
-              "Path to the JAR file containing the Ranger subprocess.");
+              "Path to the JAR file containing the Ranger subprocess. "
+              "If not set, the default JAR file path is expected to be"
+              "next to the master binary");
 TAG_FLAG(ranger_jar_path, experimental);
 
 METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
@@ -125,23 +127,39 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-static bool ValidateRangerJavaPath() {
-  // First, check the specified path.
-  if (!FLAGS_ranger_config_path.empty() &&
-      !Env::Default()->FileExists(FLAGS_ranger_java_path)) {
-    // Otherwise, since the specified path is not absolute, check if
-    // the Java binary is on the PATH.
-    string p;
-    Status s = Subprocess::Call({ "which", FLAGS_ranger_java_path }, "", &p);
-    if (!s.ok()) {
-      LOG(ERROR) << Substitute("FLAGS_ranger_java_path has invalid java binary path: $0",
-                                FLAGS_ranger_java_path);
+// Returns the path to the JAR file containing the Ranger subprocess.
+static string GetRangerJarPath() {
+  string exe;
+  CHECK_OK(Env::Default()->GetExecutablePath(&exe));
+  const string bin_dir = DirName(exe);
+  return FLAGS_ranger_jar_path.empty() ? JoinPathSegments(bin_dir, "kudu-subprocess.jar") :
+         FLAGS_ranger_jar_path;
+}
+
+static bool ValidateRangerConfiguration() {
+  if (!FLAGS_ranger_config_path.empty()) {
+    // First, check the specified path.
+    if (!Env::Default()->FileExists(FLAGS_ranger_java_path)) {
+      // Otherwise, since the specified path is not absolute, check if
+      // the Java binary is on the PATH.
+      string p;
+      Status s = Subprocess::Call({ "which", FLAGS_ranger_java_path }, "", &p);
+      if (!s.ok()) {
+        LOG(ERROR) << Substitute("FLAGS_ranger_java_path has invalid java binary path: $0",
+                                 FLAGS_ranger_java_path);
+        return false;
+      }
+    }
+    string ranger_jar_path = GetRangerJarPath();
+    if (!Env::Default()->FileExists(ranger_jar_path)) {
+      LOG(ERROR) << Substitute("FLAGS_ranger_jar_path has invalid JAR file path: $0",
+                               ranger_jar_path);
       return false;
     }
   }
   return true;
 }
-GROUP_FLAG_VALIDATOR(ranger_java_path_flags, ValidateRangerJavaPath);
+GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
 
 static const char* kUnauthorizedAction = "Unauthorized action";
 static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
@@ -356,15 +374,7 @@ Status RangerClient::AuthorizeActions(const string& user_name,
 }
 
 string RangerClient::GetJavaClasspath() {
-  Env* env = Env::Default();
-  string exe;
-  CHECK_OK(env->GetExecutablePath(&exe));
-  const string bin_dir = DirName(exe);
-  string jar_path = FLAGS_ranger_jar_path.empty() ?
-    JoinPathSegments(bin_dir, "kudu-subprocess.jar") :
-    FLAGS_ranger_jar_path;
-
-  return Substitute("$0:$1", jar_path, FLAGS_ranger_config_path);
+  return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
 }
 
 } // namespace ranger
