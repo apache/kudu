@@ -484,6 +484,17 @@ class PeerMessageQueue {
   void TransferLeadershipIfNeeded(const TrackedPeer& peer,
                                   const ConsensusStatusPB& status);
 
+  // returns true if basic checks to transfer leadership to this peer are OK
+  // current queue should be in leader state and peer must be a VOTER
+  // Also returns a pointer to the RaftPeerPB if successful
+  bool BasicChecksOKToTransferAndGetPeerUnlocked(
+      const TrackedPeer& peer, RaftPeerPB **peer_pb_ptr);
+
+  // If the peer is caught up, notify the peer to start an election
+  // immediately
+  bool PeerTransferLeadershipImmediatelyUnlocked(
+      const std::string& peer_uuid);
+
   // Calculate a peer's up-to-date health status based on internal fields.
   static HealthReportPB::HealthStatus PeerHealthStatus(const TrackedPeer& peer);
 

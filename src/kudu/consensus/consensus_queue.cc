@@ -84,6 +84,11 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_bool(safe_time_advancement_without_writes);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
+DEFINE_bool(synchronous_transfer_leadership, false,
+            "When a transfer leadership call is made, it checks if peer is already "
+            "caught up and initiates transfer leadership, short circuiting async "
+            "wait for next response");
+TAG_FLAG(synchronous_transfer_leadership, advanced);
 
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
@@ -882,6 +887,12 @@ void PeerMessageQueue::BeginWatchForSuccessor(
     const boost::optional<string>& successor_uuid,
     const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
+
+  if (successor_uuid && FLAGS_synchronous_transfer_leadership &&
+      PeerTransferLeadershipImmediatelyUnlocked(successor_uuid.get())) {
+    return;
+  }
+
   successor_watch_in_progress_ = true;
   designated_successor_uuid_ = successor_uuid;
   tl_filter_fn_ = filter_fn;
@@ -1051,6 +1062,56 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
   }
 }
 
+bool PeerMessageQueue::BasicChecksOKToTransferAndGetPeerUnlocked(
+    const TrackedPeer& peer, RaftPeerPB **peer_pb_ptr) {
+  DCHECK(queue_lock_.is_locked());
+
+  // This check is redundant for ResponseFromPeer common path
+  if (PREDICT_FALSE(queue_state_.state != kQueueOpen)) {
+    return false;
+  }
+
+  // Only in LEADER mode can you transfer leadership,
+  // Peer has to be healthily communicating to LEADER
+  if (queue_state_.mode != PeerMessageQueue::LEADER ||
+      peer.last_exchange_status != PeerStatus::OK) {
+    return false;
+  }
+
+  Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
+                                 peer.uuid(), peer_pb_ptr);
+  if (!s.ok() || (*peer_pb_ptr)->member_type() != RaftPeerPB::VOTER) {
+    return false;
+  }
+
+  return true;
+}
+
+bool PeerMessageQueue::PeerTransferLeadershipImmediatelyUnlocked(
+    const std::string& peer_uuid) {
+  DCHECK(queue_lock_.is_locked());
+  TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
+  if (PREDICT_FALSE(peer == nullptr)) {
+    return false;
+  }
+
+  RaftPeerPB *peer_pb = nullptr;
+  if (!BasicChecksOKToTransferAndGetPeerUnlocked(*peer, &peer_pb)) {
+    return false;
+  }
+
+  // peer needs to be caught up so that if it runs an election,
+  // it has the longest log and is ready to become LEADER
+  // TODO - Verify if first check is redundant
+  bool peer_caught_up =
+      !OpIdEquals(peer->last_received, MinimumOpId()) &&
+      OpIdEquals(peer->last_received, queue_state_.last_appended);
+  if (peer_caught_up) {
+    NotifyObserversOfSuccessor(peer_uuid);
+  }
+  return peer_caught_up;
+}
+
 void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
                                                   const ConsensusStatusPB& status) {
   DCHECK(queue_lock_.is_locked());
@@ -1062,15 +1123,8 @@ void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
     return;
   }
 
-  if (queue_state_.mode != PeerMessageQueue::LEADER ||
-      peer.last_exchange_status != PeerStatus::OK) {
-    return;
-  }
-
-  RaftPeerPB* peer_pb;
-  Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
-                                 peer.uuid(), &peer_pb);
-  if (!s.ok() || peer_pb->member_type() != RaftPeerPB::VOTER) {
+  RaftPeerPB *peer_pb = nullptr;
+  if (!BasicChecksOKToTransferAndGetPeerUnlocked(peer, &peer_pb)) {
     return;
   }
 
