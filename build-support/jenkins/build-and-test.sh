@@ -293,6 +293,8 @@ fi
 export EXTRA_GRADLE_FLAGS="--console=plain"
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
+# Temporarily disable parallel builds for automated builds.
+EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-parallel"
 # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
 # incompatibility issue.
 EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
