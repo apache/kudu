@@ -147,6 +147,19 @@ public class TestRemoteTablet {
   }
 
   @Test
+  public void testReplicaWithNoValidLocation() {
+    RemoteTablet tablet = getTablet(0, 1, 2);
+
+    // Test removing all tablet servers doesn't break.
+    for (String uuid : kUuids) {
+      assertTrue(tablet.removeTabletClient(uuid));
+    }
+    assertNull(tablet.getLeaderServerInfo());
+    assertNull(tablet.getClosestServerInfo(kNoLocation));
+    assertNull(tablet.getClosestServerInfo(kClientLocation));
+  }
+
+  @Test
   public void testReplicaSelection() {
     {
       RemoteTablet tablet = getTablet(0, 1, 2);

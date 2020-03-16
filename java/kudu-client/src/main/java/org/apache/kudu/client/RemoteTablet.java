@@ -196,6 +196,9 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     // TODO(wdberkeley): Eventually, the client might use the hierarchical
     // structure of a location to determine proximity.
     synchronized (tabletServers) {
+      if (tabletServers.isEmpty()) {
+        return null;
+      }
       ServerInfo result = null;
       List<ServerInfo> localServers = new ArrayList<>();
       List<ServerInfo> serversInSameLocation = new ArrayList<>();
