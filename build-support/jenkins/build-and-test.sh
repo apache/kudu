@@ -281,8 +281,8 @@ fi
 
 # Make sure we use JDK8
 if [ -n "$JAVA8_HOME" ]; then
-  export JAVA_HOME=$JAVA8_HOME
-  export PATH=$JAVA_HOME/bin:$PATH
+  export JAVA_HOME="$JAVA8_HOME"
+  export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
 # Some portions of the C++ build may depend on Java code, so we may run Gradle
