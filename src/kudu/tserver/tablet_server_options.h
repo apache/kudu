@@ -20,6 +20,7 @@
 #include <vector>
 #include <memory>
 
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/net/net_util.h"
 
@@ -63,6 +64,8 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   // with NORCB.
   std::function<void()> ldcb;
   bool disable_noop = false;
+
+  consensus::TopologyConfigPB topology_config;
 
   bool IsDistributed() const;
 };
