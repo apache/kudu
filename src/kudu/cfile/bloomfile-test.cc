@@ -15,17 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/bloomfile.h"
+
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <ostream>
 #include <utility>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/bloomfile-test-base.h"
-#include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
@@ -36,14 +38,20 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 
+DECLARE_int32(bloom_size_bytes);
+DECLARE_int32(n_keys);
+DECLARE_double(fp_rate);
+
+DECLARE_int64(benchmark_queries);
+DECLARE_bool(benchmark_should_hit);
+
+using kudu::fs::CountingReadableBlock;
+using kudu::fs::ReadableBlock;
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 namespace cfile {
-
-using fs::CountingReadableBlock;
-using fs::ReadableBlock;
-using std::unique_ptr;
 
 class BloomFileTest : public BloomFileTestBase {
 
@@ -55,7 +63,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
       bool present = false;
-      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
+      ASSERT_OK_FAST(bfr()->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
       ASSERT_TRUE(present);
     }
 
@@ -66,7 +74,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
       bool present = false;
-      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
+      ASSERT_OK_FAST(bfr()->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
       if (present) {
         positive_count++;
       }
@@ -115,7 +123,7 @@ TEST_F(BloomFileTest, TestLazyInit) {
 
   // Open the bloom file using a "counting" readable block.
   unique_ptr<ReadableBlock> block;
-  ASSERT_OK(fs_manager_->OpenBlock(block_id_, &block));
+  ASSERT_OK(fs_manager()->OpenBlock(block_id(), &block));
   size_t bytes_read = 0;
   unique_ptr<ReadableBlock> count_block(
       new CountingReadableBlock(std::move(block), &bytes_read));
@@ -142,7 +150,7 @@ TEST_F(BloomFileTest, TestLazyInit) {
 
   // And let's test non-lazy open for good measure; it should yield the
   // same number of bytes read.
-  ASSERT_OK(fs_manager_->OpenBlock(block_id_, &block));
+  ASSERT_OK(fs_manager()->OpenBlock(block_id(), &block));
   bytes_read = 0;
   count_block.reset(new CountingReadableBlock(std::move(block), &bytes_read));
   ASSERT_OK(BloomFileReader::Open(std::move(count_block), ReaderOptions(), &reader));
