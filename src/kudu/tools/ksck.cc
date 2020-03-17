@@ -65,7 +65,7 @@ DEFINE_string(flags_categories_to_check, STR_FLAGS_CATEGORY_TIME_SOURCE,
               "Comma-separated list of flag categories to check for divergence "
               "across the cluster; default is "
               STR_FLAGS_CATEGORY_TIME_SOURCE "; available categories are "
-              STR_FLAGS_CATEGORY_TIME_SOURCE ","
+              STR_FLAGS_CATEGORY_TIME_SOURCE ", "
               STR_FLAGS_CATEGORY_UNUSUAL ".");
 
 DEFINE_string(ksck_format, "plain_concise",
@@ -689,8 +689,8 @@ Status Ksck::CheckTabletServerDivergedFlags() {
         continue;
       }
       results_.warning_messages.push_back(Status::ConfigurationError(
-          Substitute("Different tservers have different settings for same "
-                     "flags of checked category '$0'",
+          Substitute("Different tablet servers have different settings "
+                     "for same flags of checked category '$0'",
                      FlagsCategoryToString(cat))));
       break;
     }
@@ -742,7 +742,7 @@ Status Ksck::CheckDivergedFlags() {
     }
 
     results_.warning_messages.push_back(Status::ConfigurationError(
-        "Same flags have different values between masters and tservers "
+        "Same flags have different values between masters and tablet servers "
         "for at least one checked flag category"));
   }
   return Status::OK();
