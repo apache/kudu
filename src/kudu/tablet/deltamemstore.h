@@ -81,7 +81,7 @@ class DeltaMemStore : public DeltaStore,
 
   virtual Status Init(const fs::IOContext* io_context) OVERRIDE;
 
-  virtual bool Initted() OVERRIDE {
+  virtual bool Initted() const OVERRIDE {
     return true;
   }
 

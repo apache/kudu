@@ -668,10 +668,6 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithRedoFiles) {
   NO_FATALS(DeleteOriginalRows(kNumRowsets, rows_per_rowset_, /*flush_dms*/true));
   ASSERT_EQ(kNumRowsets, tablet()->CountRedoDeltasForTests());
 
-  // TODO(awong): keep the delta stats cached after flushing a DMS so we don't
-  // have to scan to read stats.
-  NO_FATALS(VerifyTestRows(0, 0));
-
   // We shouldn't have any ancient rowsets since we haven't passed the AHM.
   int64_t bytes = 0;
   ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTA_STORE_H
-#define KUDU_TABLET_DELTA_STORE_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -179,7 +178,7 @@ class DeltaStore {
   virtual Status Init(const fs::IOContext* io_context) = 0;
 
   // Whether this delta store was initialized or not.
-  virtual bool Initted() = 0;
+  virtual bool Initted() const = 0;
 
   // Create a DeltaIterator for the given projection.
   //
@@ -204,10 +203,17 @@ class DeltaStore {
 
   virtual std::string ToString() const = 0;
 
-  // TODO remove this once we don't need to have delta_stats for both DMS and DFR. Currently
-  // DeltaTracker#GetColumnsIdxWithUpdates() needs to filter out DMS from the redo list but it
-  // can't without RTTI.
+  // TODO(jdcryans): remove this once we don't need to have delta_stats for
+  // both DMS and DFR. Currently DeltaTracker#GetColumnsIdxWithUpdates() needs
+  // to filter out DMS from the redo list but it can't without RTTI.
   virtual const DeltaStats& delta_stats() const = 0;
+
+  // Returns whether callers can use 'delta_stats()', either because they've
+  // been read from disk, or because the store has been initialized with the
+  // stats cached.
+  virtual bool has_delta_stats() const  {
+    return Initted();
+  }
 
   virtual ~DeltaStore() {}
 };
@@ -558,4 +564,3 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
 } // namespace tablet
 } // namespace kudu
 
-#endif

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -32,12 +33,12 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/once.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -147,33 +148,40 @@ class DeltaFileReader : public DeltaStore,
   static Status OpenNoInit(std::unique_ptr<fs::ReadableBlock> block,
                            DeltaType delta_type,
                            cfile::ReaderOptions options,
+                           std::unique_ptr<DeltaStats> delta_stats,
                            std::shared_ptr<DeltaFileReader>* reader_out);
 
-  virtual Status Init(const fs::IOContext* io_context) OVERRIDE;
+  Status Init(const fs::IOContext* io_context) override;
 
-  virtual bool Initted() OVERRIDE {
+  bool Initted() const override {
     return init_once_.init_succeeded();
   }
 
   // See DeltaStore::NewDeltaIterator(...)
   Status NewDeltaIterator(const RowIteratorOptions& opts,
-                          std::unique_ptr<DeltaIterator>* iterator) const OVERRIDE;
+                          std::unique_ptr<DeltaIterator>* iterator) const override;
 
   // See DeltaStore::CheckRowDeleted
-  virtual Status CheckRowDeleted(rowid_t row_idx,
-                                 const fs::IOContext* io_context,
-                                 bool *deleted) const OVERRIDE;
+  Status CheckRowDeleted(rowid_t row_idx,
+                         const fs::IOContext* io_context,
+                         bool *deleted) const override;
 
-  virtual uint64_t EstimateSize() const OVERRIDE;
+  uint64_t EstimateSize() const override;
 
   const BlockId& block_id() const { return reader_->block_id(); }
 
-  virtual const DeltaStats& delta_stats() const OVERRIDE {
-    DCHECK(init_once_.init_succeeded());
+  const DeltaStats& delta_stats() const override {
+    std::lock_guard<simple_spinlock> l(stats_lock_);
+    DCHECK(delta_stats_);
     return *delta_stats_;
   }
 
-  virtual std::string ToString() const OVERRIDE {
+  bool has_delta_stats() const override {
+    std::lock_guard<simple_spinlock> l(stats_lock_);
+    return delta_stats_ != nullptr;
+  }
+
+  std::string ToString() const override {
     if (!init_once_.init_succeeded()) return reader_->ToString();
     return strings::Substitute("$0 ($1)", reader_->ToString(), delta_stats_->ToString());
   }
@@ -201,6 +209,7 @@ class DeltaFileReader : public DeltaStore,
   }
 
   DeltaFileReader(std::unique_ptr<cfile::CFileReader> cf_reader,
+                  std::unique_ptr<DeltaStats> delta_stats,
                   DeltaType delta_type);
 
   // Callback used in 'init_once_' to initialize this delta file.
@@ -209,6 +218,8 @@ class DeltaFileReader : public DeltaStore,
   Status ReadDeltaStats();
 
   std::shared_ptr<cfile::CFileReader> reader_;
+
+  mutable simple_spinlock stats_lock_;
   std::unique_ptr<DeltaStats> delta_stats_;
 
   // The type of this delta, i.e. UNDO or REDO.

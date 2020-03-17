@@ -323,11 +323,11 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     }
   }
 
-  void MinorCompactDeltasThread(int tid) {
+  void MinorCompactDeltasThread(int /*tid*/) {
     CompactDeltas(RowSet::MINOR_DELTA_COMPACTION);
   }
 
-  void MajorCompactDeltasThread(int tid) {
+  void MajorCompactDeltasThread(int /*tid*/) {
     CompactDeltas(RowSet::MAJOR_DELTA_COMPACTION);
   }
 

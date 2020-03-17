@@ -122,6 +122,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     s = DeltaFileReader::OpenNoInit(std::move(block),
                                     type,
                                     std::move(options),
+                                    /*delta_stats*/nullptr,
                                     &dfr);
     if (!s.ok()) {
       LOG_WITH_PREFIX(ERROR) << "Failed to open " << DeltaType_Name(type)
@@ -193,7 +194,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(const IOContext* io_context
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
     shared_ptr<DeltaFileReader> dfr = std::static_pointer_cast<DeltaFileReader>(delta_store);
 
-    if (dfr->Initted()) {
+    if (dfr->has_delta_stats()) {
       delete_count += dfr->delta_stats().delete_count();
       reinsert_count += dfr->delta_stats().reinsert_count();
       update_count += dfr->delta_stats().UpdateCount();
@@ -461,9 +462,7 @@ bool DeltaTracker::EstimateAllRedosAreAncient(Timestamp ancient_history_mark) {
   if (!redo_delta_stores_.empty()) {
     newest_redo = redo_delta_stores_.back();
   }
-  // TODO(awong): keep the delta stats cached after flushing a DMS so a flush
-  // doesn't invalidate this rowset.
-  return newest_redo && newest_redo->Initted() &&
+  return newest_redo && newest_redo->has_delta_stats() &&
       newest_redo->delta_stats().max_timestamp() < ancient_history_mark;
 }
 
@@ -477,7 +476,7 @@ Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancie
   int64_t tmp_bytes = 0;
   for (const auto& undo : boost::adaptors::reverse(undos_newest_first)) {
     // Short-circuit once we hit an initialized delta block with 'max_timestamp' > AHM.
-    if (undo->Initted() &&
+    if (undo->has_delta_stats() &&
         undo->delta_stats().max_timestamp() >= ancient_history_mark) {
       break;
     }
@@ -552,7 +551,7 @@ Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
 
   // Traverse oldest-first.
   for (auto& undo : boost::adaptors::reverse(undos_newest_first)) {
-    if (!undo->Initted()) break; // Never initialize the deltas in this code path (it's slow).
+    if (!undo->has_delta_stats()) break;
     if (undo->delta_stats().max_timestamp() >= ancient_history_mark) break;
     tmp_blocks_deleted++;
     tmp_bytes_deleted += undo->EstimateSize();
@@ -762,6 +761,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(readable_block),
                                             REDO,
                                             std::move(options),
+                                            std::move(stats),
                                             dfr));
   VLOG_WITH_PREFIX(1) << "Opened new delta block " << block_id.ToString() << " for read";
 
@@ -890,7 +890,7 @@ void DeltaTracker::GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const
   set<ColumnId> column_ids_with_updates;
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
     // We won't force open files just to read their stats.
-    if (!ds->Initted()) {
+    if (!ds->has_delta_stats()) {
       continue;
     }
 

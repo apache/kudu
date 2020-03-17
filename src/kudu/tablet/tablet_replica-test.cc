@@ -810,7 +810,8 @@ TEST_F(TabletReplicaTest, TestRestartAfterGCDeletedRowsets) {
   auto live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
       tablet->GetMetricEntity(), [] () { return 0; });
 
-  // Insert some rows and flush so we get a DRS.
+  // Insert some rows and flush so we get a DRS, and then delete them so we
+  // have an ancient, fully deleted DRS.
   ASSERT_OK(ExecuteInsertsAndRollLogs(kNumRows));
   ASSERT_OK(tablet->Flush());
   ASSERT_OK(ExecuteDeletesAndRollLogs(kNumRows));
@@ -828,14 +829,29 @@ TEST_F(TabletReplicaTest, TestRestartAfterGCDeletedRowsets) {
   ASSERT_OK(tablet->DeleteAncientDeletedRowsets());
   ASSERT_EQ(1, tablet->num_rowsets());
   ASSERT_EQ(kNumRows, live_row_count->value());
+  ASSERT_OK(ExecuteDeletesAndRollLogs(kNumRows));
+  ASSERT_EQ(0, live_row_count->value());
 
-  // Restart and ensure we can get online okay.
+  // Restart and ensure we can rebuild our DMS okay.
   NO_FATALS(RestartReplica());
   tablet = tablet_replica_->tablet();
   ASSERT_EQ(1, tablet->num_rowsets());
   live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
       tablet->GetMetricEntity(), [] () { return 0; });
-  ASSERT_EQ(kNumRows, live_row_count->value());
+  ASSERT_EQ(0, live_row_count->value());
+
+  // Now do that again but with deltafiles.
+  ASSERT_OK(tablet->FlushBiggestDMS());
+  NO_FATALS(RestartReplica());
+  tablet = tablet_replica_->tablet();
+  ASSERT_EQ(1, tablet->num_rowsets());
+
+  // Wait for our deleted rowset to become ancient. Since we just started up,
+  // we shouldn't have read any delta stats, so running the GC won't pick up
+  // our deleted DRS.
+  SleepFor(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
+  ASSERT_OK(tablet->DeleteAncientDeletedRowsets());
+  ASSERT_EQ(1, tablet->num_rowsets());
 }
 
 } // namespace tablet
