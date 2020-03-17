@@ -66,6 +66,13 @@ subprojects {
   }
 }
 
+// A task that does nothing, but is useful to ensure the Gradle build and tasks are initialized.
+task initializeTasks() {
+  doLast {
+    println("Initialized Gradle tasks")
+  }
+}
+
 task javadocAggregate(type: Javadoc, group: "Documentation") {
   description = "Generates Aggregate Javadoc API documentation for the main source code."
   source subprojects.collect { it.sourceSets.main.allJava }

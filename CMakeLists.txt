@@ -107,6 +107,7 @@ list(REMOVE_DUPLICATES GRADLE_FLAGS)
 set(GRADLE_WRAPPER_JAR ${JAVA_DIR}/gradle/wrapper/gradle-wrapper.jar)
 add_custom_command(OUTPUT ${GRADLE_WRAPPER_JAR}
   COMMAND ./gradlew --version ${GRADLE_FLAGS}
+  COMMAND ./gradlew initializeTasks ${GRADLE_FLAGS}
   WORKING_DIRECTORY "${JAVA_DIR}")
 add_custom_target(init_gradle DEPENDS ${GRADLE_WRAPPER_JAR})
 
