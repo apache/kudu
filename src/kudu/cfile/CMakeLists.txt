@@ -61,7 +61,8 @@ add_library(cfile_test_util
   bloomfile-test-base.cc)
 
 target_link_libraries(cfile_test_util
-  cfile)
+  cfile
+  kudu_test_util)
 
 # Tests
 SET_KUDU_TEST_LINK_LIBS(cfile)
