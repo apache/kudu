@@ -90,9 +90,9 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
   hash_seed_(0) {
   std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
 
-  DCHECK_NOTNULL(bucket_insert_func_ptr_);
-  DCHECK_NOTNULL(bucket_find_func_ptr_);
-  DCHECK_NOTNULL(or_equal_array_func_ptr_);
+  DCHECK(bucket_insert_func_ptr_);
+  DCHECK(bucket_find_func_ptr_);
+  DCHECK(or_equal_array_func_ptr_);
 }
 
 BlockBloomFilter::~BlockBloomFilter() {
@@ -131,7 +131,7 @@ Status BlockBloomFilter::InitInternal(const int log_space_bytes,
 Status BlockBloomFilter::Init(const int log_space_bytes, HashAlgorithm hash_algorithm,
                               uint32_t hash_seed) {
   RETURN_NOT_OK(InitInternal(log_space_bytes, hash_algorithm, hash_seed));
-  DCHECK_NOTNULL(directory_);
+  DCHECK(directory_);
   memset(directory_, 0, directory_size());
   always_false_ = true;
   return Status::OK();
@@ -143,7 +143,7 @@ Status BlockBloomFilter::InitFromDirectory(int log_space_bytes,
                                            HashAlgorithm hash_algorithm,
                                            uint32_t hash_seed) {
   RETURN_NOT_OK(InitInternal(log_space_bytes, hash_algorithm, hash_seed));
-  DCHECK_NOTNULL(directory_);
+  DCHECK(directory_);
 
   if (directory_size() != directory.size()) {
     return Status::InvalidArgument(
@@ -170,7 +170,7 @@ Status BlockBloomFilter::Clone(BlockBloomFilterBufferAllocatorIf* allocator,
   unique_ptr<BlockBloomFilter> bf_clone(new BlockBloomFilter(allocator));
 
   RETURN_NOT_OK(bf_clone->InitInternal(log_space_bytes(), hash_algorithm_, hash_seed_));
-  DCHECK_NOTNULL(bf_clone->directory_);
+  DCHECK(bf_clone->directory_);
   CHECK_EQ(bf_clone->directory_size(), directory_size());
   memcpy(bf_clone->directory_, directory_, bf_clone->directory_size());
   bf_clone->always_false_ = always_false_;
@@ -299,7 +299,7 @@ Status BlockBloomFilter::OrEqualArray(size_t n, const uint8_t* __restrict__ in,
   }
 
   std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
-  DCHECK_NOTNULL(or_equal_array_func_ptr_);
+  DCHECK(or_equal_array_func_ptr_);
   (*or_equal_array_func_ptr_)(n, in, out);
   return Status::OK();
 }
@@ -404,7 +404,7 @@ ArenaBlockBloomFilterBufferAllocator::~ArenaBlockBloomFilterBufferAllocator() {
 }
 
 Status ArenaBlockBloomFilterBufferAllocator::AllocateBuffer(size_t bytes, void** ptr) {
-  DCHECK_NOTNULL(arena_);
+  DCHECK(arena_);
   static_assert(CACHELINE_SIZE >= 32,
                 "For AVX operations, need buffers to be 32-bytes aligned or higher");
   *ptr = arena_->AllocateBytesAligned(bytes, CACHELINE_SIZE);
