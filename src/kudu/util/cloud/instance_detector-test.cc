@@ -61,8 +61,9 @@ TEST(InstanceDetectorTest, Basic) {
   const auto s_aws = AwsInstanceMetadata().Init();
   const auto s_azure = AzureInstanceMetadata().Init();
   const auto s_gce = GceInstanceMetadata().Init();
+  const auto s_openstack = OpenStackInstanceMetadata().Init();
 
-  if (s_aws.ok() || s_azure.ok() || s_gce.ok()) {
+  if (s_aws.ok() || s_azure.ok() || s_gce.ok() || s_openstack.ok()) {
     ASSERT_TRUE(s.ok()) << s.ToString();
     ASSERT_NE(nullptr, metadata.get());
     LOG(INFO) << Substitute("detected $0 environment",
@@ -76,15 +77,23 @@ TEST(InstanceDetectorTest, Basic) {
   if (s_aws.ok()) {
     ASSERT_FALSE(s_azure.ok());
     ASSERT_FALSE(s_gce.ok());
+    ASSERT_FALSE(s_openstack.ok());
     ASSERT_EQ(CloudType::AWS, metadata->type());
   } else if (s_azure.ok()) {
     ASSERT_FALSE(s_aws.ok());
     ASSERT_FALSE(s_gce.ok());
+    ASSERT_FALSE(s_openstack.ok());
     ASSERT_EQ(CloudType::AZURE, metadata->type());
   } else if (s_gce.ok()) {
     ASSERT_FALSE(s_aws.ok());
     ASSERT_FALSE(s_azure.ok());
+    ASSERT_FALSE(s_openstack.ok());
     ASSERT_EQ(CloudType::GCE, metadata->type());
+  } else if (s_openstack.ok()) {
+    ASSERT_FALSE(s_aws.ok());
+    ASSERT_FALSE(s_azure.ok());
+    ASSERT_FALSE(s_gce.ok());
+    ASSERT_EQ(CloudType::OPENSTACK, metadata->type());
   }
 }
 

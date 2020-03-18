@@ -91,6 +91,18 @@ DEFINE_string(cloud_gce_instance_id_url,
 TAG_FLAG(cloud_gce_instance_id_url, advanced);
 TAG_FLAG(cloud_gce_instance_id_url, runtime);
 
+// See https://docs.openstack.org/nova/latest/user/metadata.html#metadata-service
+// and https://docs.openstack.org/nova/latest/user/metadata.html#metadata-openstack-format
+// for details.
+DEFINE_string(cloud_openstack_metadata_url,
+              "http://169.254.169.254/openstack/latest/meta_data.json",
+              "The URL to fetch metadata of an OpenStack instance via Nova "
+              "metadata service. OpenStack Nova metadata server does not "
+              "provide a separate URL to fetch instance UUID, at least with "
+              "12.0.0 (Liberty) release.");
+TAG_FLAG(cloud_openstack_metadata_url, advanced);
+TAG_FLAG(cloud_openstack_metadata_url, runtime);
+
 DEFINE_validator(cloud_metadata_server_request_timeout_ms,
                  [](const char* name, const uint32_t val) {
   if (val == 0) {
@@ -112,6 +124,7 @@ const char* TypeToString(CloudType type) {
   static const char* const kTypeAws = "AWS";
   static const char* const kTypeAzure = "Azure";
   static const char* const kTypeGce = "GCE";
+  static const char* const kTypeOpenStack = "OpenStack";
   switch (type) {
     case CloudType::AWS:
       return kTypeAws;
@@ -119,6 +132,8 @@ const char* TypeToString(CloudType type) {
       return kTypeAzure;
     case CloudType::GCE:
       return kTypeGce;
+    case CloudType::OPENSTACK:
+      return kTypeOpenStack;
     default:
       LOG(FATAL) << static_cast<uint16_t>(type) << ": unknown cloud type";
       break;  // unreachable
@@ -133,7 +148,7 @@ Status InstanceMetadata::Init() {
   // As of now, fetching the instance identifier from metadata service is
   // the criterion for successful initialization of the instance metadata.
   DCHECK(!is_initialized_);
-  RETURN_NOT_OK(FetchInstanceId(nullptr));
+  RETURN_NOT_OK(Fetch(instance_id_url(), request_timeout(), request_headers()));
   is_initialized_ = true;
   return Status::OK();
 }
@@ -162,8 +177,19 @@ Status InstanceMetadata::Fetch(const string& url,
   return Status::OK();
 }
 
-Status InstanceMetadata::FetchInstanceId(string* id) {
-  return Fetch(instance_id_url(), request_timeout(), request_headers(), id);
+Status AwsInstanceMetadata::Init() {
+  // Try if the metadata server speaks AWS API.
+  RETURN_NOT_OK(InstanceMetadata::Init());
+
+  // If OpenStack instance metadata server is configured to emulate EC2,
+  // one way to tell it apart from a true EC2 instance is to check whether it
+  // speaks OpenStack API:
+  //   https://docs.openstack.org/nova/latest/user/metadata.html#metadata-ec2-format
+  OpenStackInstanceMetadata openstack;
+  if (openstack.Init().ok()) {
+    return Status::ServiceUnavailable("found OpenStack instance, not AWS one");
+  }
+  return Status::OK();
 }
 
 Status AwsInstanceMetadata::GetNtpServer(string* server) const {
@@ -211,6 +237,25 @@ const vector<string>& GceInstanceMetadata::request_headers() const {
 
 const string& GceInstanceMetadata::instance_id_url() const {
   return FLAGS_cloud_gce_instance_id_url;
+}
+
+Status OpenStackInstanceMetadata::GetNtpServer(string* /* server */) const {
+  // OpenStack doesn't provide a dedicated NTP server for an instance.
+  return Status::NotSupported("OpenStack doesn't provide a dedicated NTP server");
+}
+
+const vector<string>& OpenStackInstanceMetadata::request_headers() const {
+  // OpenStack Nova doesn't require any specific headers supplied with a
+  // generic query to the metadata server.
+  static const vector<string> kRequestHeaders = {};
+  return kRequestHeaders;
+}
+
+const string& OpenStackInstanceMetadata::instance_id_url() const {
+  // NOTE: OpenStack Nova metadata server doesn't provide a separate URL to
+  //   fetch ID of an instance (at least with 1.12.0 release):
+  //   https://docs.openstack.org/nova/latest/user/metadata.html#metadata-openstack-format
+  return FLAGS_cloud_openstack_metadata_url;
 }
 
 } // namespace cloud

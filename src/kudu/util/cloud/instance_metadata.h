@@ -34,6 +34,7 @@ enum class CloudType {
   AWS,
   AZURE,
   GCE,
+  OPENSTACK,
 };
 
 const char* TypeToString(CloudType type);
@@ -45,6 +46,12 @@ const char* TypeToString(CloudType type);
 //
 // Concrete classes implementing this interface use stable APIs to retrieve
 // corresponding information (published by corresponding cloud providers).
+//
+// NOTE:
+//   It's assumed Kudu processes can access the metadata service (i.e. query
+//   particular URLs of a metadata server) without specifying any credentials.
+//   In other words, the metadata server should not be firewalled or hardened
+//   with access controls to allow this code to work.
 class InstanceMetadata {
  public:
   InstanceMetadata();
@@ -77,7 +84,7 @@ class InstanceMetadata {
   static Status Fetch(const std::string& url,
                       MonoDelta timeout,
                       const std::vector<std::string>& headers,
-                      std::string* out);
+                      std::string* out = nullptr);
 
   // The timeout used for HTTP requests sent to the metadata server. The base
   // implementation assumes the metadata server is robust enough to respond
@@ -94,11 +101,6 @@ class InstanceMetadata {
   virtual const std::string& instance_id_url() const = 0;
 
  private:
-  // Fetch cloud instance identifier from the metadata server. Returns
-  // Status::OK() in case of success, populating the output parameter 'id' with
-  // the identifier of the instance. Returns non-OK status in case of errors.
-  Status FetchInstanceId(std::string* id);
-
   // Whether this object has been initialized.
   bool is_initialized_;
 };
@@ -110,6 +112,8 @@ class AwsInstanceMetadata : public InstanceMetadata {
  public:
   AwsInstanceMetadata() = default;
   ~AwsInstanceMetadata() = default;
+
+  Status Init() override WARN_UNUSED_RESULT;
 
   CloudType type() const override { return CloudType::AWS; }
   Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
@@ -143,6 +147,25 @@ class GceInstanceMetadata : public InstanceMetadata {
   ~GceInstanceMetadata() = default;
 
   CloudType type() const override { return CloudType::GCE; }
+  Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
+
+ protected:
+  const std::vector<std::string>& request_headers() const override;
+  const std::string& instance_id_url() const override;
+};
+
+// More information on Nova metadata server for OpenStack cloud instances is at:
+//   https://docs.openstack.org/nova/latest/user/metadata.html#metadata-service
+//
+// TODO(aserbin): when necessary, implement extracting instance uuid out of the
+//                meta_data.json content fetched from
+//                FLAGS_cloud_openstack_metadata_url.
+class OpenStackInstanceMetadata : public InstanceMetadata {
+ public:
+  OpenStackInstanceMetadata() = default;
+  ~OpenStackInstanceMetadata() = default;
+
+  CloudType type() const override { return CloudType::OPENSTACK; }
   Status GetNtpServer(std::string* server) const override WARN_UNUSED_RESULT;
 
  protected:

@@ -46,6 +46,8 @@ InstanceDetector::InstanceDetector()
       { unique_ptr<InstanceMetadata>(new AzureInstanceMetadata), nullptr });
   detectors_.push_back(
       { unique_ptr<InstanceMetadata>(new GceInstanceMetadata), nullptr });
+  detectors_.push_back(
+      { unique_ptr<InstanceMetadata>(new OpenStackInstanceMetadata), nullptr });
 }
 
 InstanceDetector::~InstanceDetector() {
