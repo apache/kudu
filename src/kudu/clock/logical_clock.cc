@@ -20,12 +20,11 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
@@ -51,8 +50,7 @@ LogicalClock::LogicalClock(const Timestamp& timestamp,
     : now_(timestamp.value() - 1) {
   if (metric_entity) {
     METRIC_logical_clock_timestamp.InstantiateFunctionGauge(
-        metric_entity,
-        Bind(&LogicalClock::GetCurrentTime, Unretained(this)))->
+        metric_entity, [this]() { return this->GetCurrentTime(); })->
             AutoDetachToLastValue(&metric_detacher_);
   }
 }

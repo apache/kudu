@@ -48,7 +48,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
@@ -781,8 +780,9 @@ TEST_F(TabletReplicaTest, TestLiveRowCountMetric) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
+  // We don't care what the function is, since the metric is already instantiated.
   auto live_row_count = METRIC_live_row_count.InstantiateFunctionGauge(
-      tablet_replica_->tablet()->GetMetricEntity(), Callback<uint64_t(void)>());
+      tablet_replica_->tablet()->GetMetricEntity(), [](){ return 0; });
   ASSERT_EQ(0, live_row_count->value());
 
   // Insert some rows.

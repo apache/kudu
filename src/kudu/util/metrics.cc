@@ -650,8 +650,8 @@ FunctionGaugeDetacher::FunctionGaugeDetacher() {
 }
 
 FunctionGaugeDetacher::~FunctionGaugeDetacher() {
-  for (const Closure& c : callbacks_) {
-    c.Run();
+  for (const auto& f : functions_) {
+    f();
   }
 }
 

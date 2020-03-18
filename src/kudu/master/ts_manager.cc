@@ -30,8 +30,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -97,9 +95,8 @@ TSManager::TSManager(LocationCache* location_cache,
     : ts_state_lock_(RWMutex::Priority::PREFER_READING),
       location_cache_(location_cache) {
   METRIC_cluster_replica_skew.InstantiateFunctionGauge(
-      metric_entity,
-      Bind(&TSManager::ClusterSkew, Unretained(this)))
-    ->AutoDetach(&metric_detacher_);
+      metric_entity, [this]() { return this->ClusterSkew(); })
+      ->AutoDetach(&metric_detacher_);
 }
 
 TSManager::~TSManager() {

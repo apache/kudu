@@ -24,7 +24,6 @@
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
@@ -273,7 +272,7 @@ void RegisterSpinLockContentionMetrics(const scoped_refptr<MetricEntity>& entity
   InitSpinLockContentionProfiling();
   entity->NeverRetire(
       METRIC_spinlock_contention_time.InstantiateFunctionGauge(
-          entity, Bind(&GetSpinLockContentionMicros)));
+          entity, []() { return GetSpinLockContentionMicros(); }));
 }
 
 uint64_t GetSpinLockContentionMicros() {

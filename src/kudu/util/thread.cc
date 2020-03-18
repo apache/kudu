@@ -41,8 +41,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -286,23 +284,23 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
   // Use function gauges here so that we can register a unique copy of these metrics in
   // multiple tservers, even though the ThreadMgr is itself a singleton.
   metrics->NeverRetire(
-      METRIC_threads_started.InstantiateFunctionGauge(metrics,
-        Bind(&ThreadMgr::ReadThreadsStarted, Unretained(this))));
+      METRIC_threads_started.InstantiateFunctionGauge(
+          metrics, [this]() { return this->ReadThreadsStarted(); }));
   metrics->NeverRetire(
-      METRIC_threads_running.InstantiateFunctionGauge(metrics,
-        Bind(&ThreadMgr::ReadThreadsRunning, Unretained(this))));
+      METRIC_threads_running.InstantiateFunctionGauge(
+          metrics, [this]() { return this->ReadThreadsRunning(); }));
   metrics->NeverRetire(
-      METRIC_cpu_utime.InstantiateFunctionGauge(metrics,
-        Bind(&GetCpuUTime)));
+      METRIC_cpu_utime.InstantiateFunctionGauge(
+          metrics, []() { return GetCpuUTime(); }));
   metrics->NeverRetire(
-      METRIC_cpu_stime.InstantiateFunctionGauge(metrics,
-        Bind(&GetCpuSTime)));
+      METRIC_cpu_stime.InstantiateFunctionGauge(
+          metrics, []() { return GetCpuSTime(); }));
   metrics->NeverRetire(
-      METRIC_voluntary_context_switches.InstantiateFunctionGauge(metrics,
-        Bind(&GetVoluntaryContextSwitches)));
+      METRIC_voluntary_context_switches.InstantiateFunctionGauge(
+          metrics, []() { return GetVoluntaryContextSwitches(); }));
   metrics->NeverRetire(
-      METRIC_involuntary_context_switches.InstantiateFunctionGauge(metrics,
-        Bind(&GetInVoluntaryContextSwitches)));
+      METRIC_involuntary_context_switches.InstantiateFunctionGauge(
+          metrics, []() { return GetInVoluntaryContextSwitches(); }));
 
   if (web) {
     DCHECK_NOTNULL(web)->RegisterPathHandler(

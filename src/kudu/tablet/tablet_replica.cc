@@ -39,8 +39,6 @@
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -208,15 +206,14 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
         txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
 
         METRIC_on_disk_size.InstantiateFunctionGauge(
-            tablet_->GetMetricEntity(), Bind(&TabletReplica::OnDiskSize, Unretained(this)))
+            tablet_->GetMetricEntity(), [this]() { return this->OnDiskSize(); })
             ->AutoDetach(&metric_detacher_);
         METRIC_state.InstantiateFunctionGauge(
-            tablet_->GetMetricEntity(), Bind(&TabletReplica::StateName, Unretained(this)))
+            tablet_->GetMetricEntity(), [this]() { return this->StateName(); })
             ->AutoDetach(&metric_detacher_);
         if (tablet_->metadata()->supports_live_row_count()) {
           METRIC_live_row_count.InstantiateFunctionGauge(
-              tablet_->GetMetricEntity(),
-              Bind(&TabletReplica::CountLiveRowsNoFail, Unretained(this)))
+              tablet_->GetMetricEntity(), [this]() { return this->CountLiveRowsNoFail(); })
               ->AutoDetach(&metric_detacher_);
         } else {
           METRIC_live_row_count.InstantiateInvalid(tablet_->GetMetricEntity(), 0);

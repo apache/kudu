@@ -51,7 +51,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -240,20 +239,22 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id(), attrs);
     metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
-      ->AutoDetach(&metric_detacher_);
+        metric_entity_, [this]() { return this->MemRowSetSize(); })
+        ->AutoDetach(&metric_detacher_);
     METRIC_on_disk_data_size.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::OnDiskDataSize, Unretained(this)))
-      ->AutoDetach(&metric_detacher_);
+        metric_entity_, [this]() { return this->OnDiskDataSize(); })
+        ->AutoDetach(&metric_detacher_);
     METRIC_num_rowsets_on_disk.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::num_rowsets, Unretained(this)))
-      ->AutoDetach(&metric_detacher_);
+        metric_entity_, [this]() { return this->num_rowsets(); })
+        ->AutoDetach(&metric_detacher_);
     METRIC_last_read_elapsed_time.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::LastReadElapsedSeconds, Unretained(this)), MergeType::kMin)
-      ->AutoDetach(&metric_detacher_);
+        metric_entity_, [this]() { return this->LastReadElapsedSeconds(); },
+        MergeType::kMin)
+        ->AutoDetach(&metric_detacher_);
     METRIC_last_write_elapsed_time.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::LastWriteElapsedSeconds, Unretained(this)), MergeType::kMin)
-      ->AutoDetach(&metric_detacher_);
+        metric_entity_, [this]() { return this->LastWriteElapsedSeconds(); },
+        MergeType::kMin)
+        ->AutoDetach(&metric_detacher_);
   }
 
   if (FLAGS_tablet_throttler_rpc_per_sec > 0 || FLAGS_tablet_throttler_bytes_per_sec > 0) {

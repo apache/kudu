@@ -39,8 +39,6 @@
 #include <glog/logging.h>
 
 #include "kudu/clock/builtin_ntp-internal.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -1108,17 +1106,14 @@ Status BuiltInNtp::CombineClocks() {
 
 void BuiltInNtp::RegisterMetrics(const scoped_refptr<MetricEntity>& entity) {
   METRIC_builtin_ntp_local_clock_delta.InstantiateFunctionGauge(
-      entity,
-      Bind(&BuiltInNtp::LocalClockDeltaForMetrics, Unretained(this)))->
-          AutoDetachToLastValue(&metric_detacher_);
+      entity, [this]() { return this->LocalClockDeltaForMetrics(); })->
+      AutoDetachToLastValue(&metric_detacher_);
   METRIC_builtin_ntp_time.InstantiateFunctionGauge(
-      entity,
-      Bind(&BuiltInNtp::WalltimeForMetrics, Unretained(this)))->
-          AutoDetachToLastValue(&metric_detacher_);
+      entity, [this]() { return this->WalltimeForMetrics(); })->
+      AutoDetachToLastValue(&metric_detacher_);
   METRIC_builtin_ntp_error.InstantiateFunctionGauge(
-      entity,
-      Bind(&BuiltInNtp::MaxErrorForMetrics, Unretained(this)))->
-          AutoDetachToLastValue(&metric_detacher_);
+      entity, [this]() { return this->MaxErrorForMetrics(); })->
+      AutoDetachToLastValue(&metric_detacher_);
   max_errors_histogram_ =
       METRIC_builtin_ntp_max_errors.Instantiate(entity);
 }

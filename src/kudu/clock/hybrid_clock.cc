@@ -33,8 +33,6 @@
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/system_ntp.h"
 #include "kudu/clock/system_unsync_time.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -605,12 +603,10 @@ Status HybridClock::InitWithTimeSource(TimeSource time_source,
   // values when the object is not ready for that yet. Gauges produce special
   // values for corresponding metrics, but there is no value in that anyways.
   METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
-      metric_entity_,
-      Bind(&HybridClock::NowForMetrics, Unretained(this)))->
+      metric_entity_, [this]() { return this->NowForMetrics(); })->
           AutoDetachToLastValue(&metric_detacher_);
   METRIC_hybrid_clock_error.InstantiateFunctionGauge(
-      metric_entity_,
-      Bind(&HybridClock::ErrorForMetrics, Unretained(this)))->
+      metric_entity_, [this]() { return this->ErrorForMetrics(); })->
           AutoDetachToLastValue(&metric_detacher_);
 
   return Status::OK();

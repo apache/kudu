@@ -47,7 +47,6 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -249,10 +248,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                                        failed_elections_since_stable_leader_);
 
   METRIC_time_since_last_leader_heartbeat.InstantiateFunctionGauge(
-      metric_entity,
-      Bind(&RaftConsensus::GetMillisSinceLastLeaderHeartbeat, Unretained(this)),
+      metric_entity, [this]() { return this->GetMillisSinceLastLeaderHeartbeat(); },
       MergeType::kMax)
-    ->AutoDetach(&metric_detacher_);
+      ->AutoDetach(&metric_detacher_);
 
   // A single Raft thread pool token is shared between RaftConsensus and
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a

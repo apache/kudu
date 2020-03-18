@@ -261,44 +261,44 @@ TSTabletManager::TSTabletManager(TabletServer* server)
   next_update_time_ = MonoTime::Now();
 
   METRIC_tablets_num_not_initialized.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::NOT_INITIALIZED))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::NOT_INITIALIZED);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_initialized.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::INITIALIZED))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::INITIALIZED);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_bootstrapping.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::BOOTSTRAPPING))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::BOOTSTRAPPING);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_running.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::RUNNING))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::RUNNING);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_failed.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::FAILED))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::FAILED);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_stopping.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::STOPPING))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::STOPPING);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_stopped.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::STOPPED))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::STOPPED);
+      })
       ->AutoDetach(&metric_detacher_);
   METRIC_tablets_num_shutdown.InstantiateFunctionGauge(
-          server->metric_entity(),
-          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
-               Unretained(this), tablet::SHUTDOWN))
+      server->metric_entity(), [this]() {
+        return this->RefreshTabletStateCacheAndReturnCount(tablet::SHUTDOWN);
+      })
       ->AutoDetach(&metric_detacher_);
 }
 

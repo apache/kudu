@@ -29,8 +29,6 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -86,9 +84,8 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
-        metric_entity, Bind(&ScannerManager::CountActiveScanners,
-                               Unretained(this)))
-      ->AutoDetach(&metric_detacher_);
+        metric_entity, [this]() { return this->CountActiveScanners(); })
+        ->AutoDetach(&metric_detacher_);
   }
   for (size_t i = 0; i < kNumScannerMapStripes; i++) {
     scanner_maps_.push_back(new ScannerMapStripe());

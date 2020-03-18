@@ -64,7 +64,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -1859,7 +1858,7 @@ TEST_F(TabletServerTest, TestReadLatest) {
   ASSERT_TRUE(mini_server_->server()->metric_entity());
   // We don't care what the function is, since the metric is already instantiated.
   auto active_scanners = METRIC_active_scanners.InstantiateFunctionGauge(
-      mini_server_->server()->metric_entity(), Callback<size_t(void)>());
+      mini_server_->server()->metric_entity(), []() {return 0; });
   scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   ASSERT_TRUE(tablet->tablet()->GetMetricEntity());
@@ -3991,7 +3990,7 @@ TEST_F(TabletServerTest, TestTabletNumberOfDiskRowSetsMetric) {
 
   // We don't care what the function is, since the metric is already instantiated.
   auto num_diskrowsets = METRIC_num_rowsets_on_disk.InstantiateFunctionGauge(
-      tablet->tablet()->GetMetricEntity(), Callback<size_t(void)>());
+      tablet->tablet()->GetMetricEntity(), []() { return 0; });
 
   // No data, no diskrowsets.
   ASSERT_EQ(0, num_diskrowsets->value());

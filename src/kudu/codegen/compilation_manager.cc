@@ -30,9 +30,6 @@
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
@@ -162,16 +159,12 @@ Status CompilationManager::StartInstrumentation(const scoped_refptr<MetricEntity
   // register the same metric in multiple registries. Using a gauge which loads
   // an atomic int is a suitable workaround: each TS's registry ends up with a
   // unique gauge which reads the value of the singleton's integer.
-  Callback<int64_t(void)> hits = Bind(&AtomicInt<int64_t>::Load,
-                                      Unretained(&hit_counter_),
-                                      kMemOrderNoBarrier);
-  Callback<int64_t(void)> queries = Bind(&AtomicInt<int64_t>::Load,
-                                         Unretained(&query_counter_),
-                                         kMemOrderNoBarrier);
   metric_entity->NeverRetire(
-      METRIC_code_cache_hits.InstantiateFunctionGauge(metric_entity, hits));
+      METRIC_code_cache_hits.InstantiateFunctionGauge(
+          metric_entity, [this]() { return this->hit_counter_.Load(kMemOrderNoBarrier); }));
   metric_entity->NeverRetire(
-      METRIC_code_cache_queries.InstantiateFunctionGauge(metric_entity, queries));
+      METRIC_code_cache_queries.InstantiateFunctionGauge(
+          metric_entity, [this]() { return this->query_counter_.Load(kMemOrderNoBarrier); }));
   return Status::OK();
 }
 
