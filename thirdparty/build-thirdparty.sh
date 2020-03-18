@@ -347,6 +347,15 @@ if [ -n "$F_COMMON" -o -n "$F_LLVM" ]; then
   build_llvm normal
 fi
 
+# From this point forward, clang is available for us to use if needed.
+if which ccache >/dev/null ; then
+  CLANG="$TP_DIR/../build-support/ccache-clang/clang"
+  CLANGXX="$TP_DIR/../build-support/ccache-clang/clang++"
+else
+  CLANG="$TP_DIR/clang-toolchain/bin/clang"
+  CLANGXX="$TP_DIR/clang-toolchain/bin/clang++"
+fi
+
 save_env
 
 # Enable debug symbols so that stacktraces and linenumbers are available at
@@ -354,6 +363,15 @@ save_env
 # 20GiB of disk space.
 EXTRA_CFLAGS="-g $EXTRA_CFLAGS"
 EXTRA_CXXFLAGS="-g $EXTRA_CXXFLAGS"
+
+# Build libc++abi first as it is a dependency for libc++.
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LLVM" ]; then
+  build_libcxxabi
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LLVM" ]; then
+  build_libcxx normal
+fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GFLAGS" ]; then
   build_gflags
@@ -447,13 +465,6 @@ fi
 #   * -Wl,-rpath,... - Add instrumented libc++ location to the rpath so that it
 #                      can be found at runtime.
 
-if which ccache >/dev/null ; then
-  CLANG="$TP_DIR/../build-support/ccache-clang/clang"
-  CLANGXX="$TP_DIR/../build-support/ccache-clang/clang++"
-else
-  CLANG="$TP_DIR/clang-toolchain/bin/clang"
-  CLANGXX="$TP_DIR/clang-toolchain/bin/clang++"
-fi
 export CC=$CLANG
 export CXX=$CLANGXX
 

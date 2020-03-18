@@ -1,0 +1,116 @@
+--- tools/clang/tools/include-what-you-use/iwyu_ast_util.cc.orig	2020-03-23 14:03:01.060932783 -0700
++++ tools/clang/tools/include-what-you-use/iwyu_ast_util.cc	2020-03-23 14:04:37.056235116 -0700
+@@ -47,6 +47,7 @@
+ class FileEntry;
+ }  // namespace clang
+ 
++using clang::ASTContext;
+ using clang::BlockPointerType;
+ using clang::CXXConstructExpr;
+ using clang::CXXConstructorDecl;
+@@ -78,6 +79,7 @@
+ using clang::FullSourceLoc;
+ using clang::FunctionDecl;
+ using clang::FunctionType;
++using clang::IdentifierInfo;
+ using clang::ImplicitCastExpr;
+ using clang::InjectedClassNameType;
+ using clang::LValueReferenceType;
+@@ -929,13 +931,81 @@
+       !StartsWith(decl_name, "operator delete"))
+     return false;
+ 
+-  // Placement-new/delete has 2 args, second is void*.  The only other
+-  // 2-arg overloads of new/delete in <new> take a const nothrow_t&.
+-  if (decl->getNumParams() == 2 &&
+-      !decl->getParamDecl(1)->getType().isConstQualified())
+-    return false;
+-
+-  return true;
++  // The following variants of operator new[1] are implicitly defined in every
++  // translation unit and should not require including <new>.
++  //
++  // void* operator new  ( std::size_t count );
++  // void* operator new[]( std::size_t count );
++  // void* operator new  ( std::size_t count, std::align_val_t al ); (since C++17)
++  // void* operator new[]( std::size_t count, std::align_val_t al ); (since C++17)
++  //  
++  // Likewise, the following variants of operator delete[2] are implicitly
++  // defined in every translation unit and should not require including <new>.
++  //
++  // void operator delete  ( void* ptr ) throw(); (until C++11)
++  // void operator delete  ( void* ptr ) noexcept; (since C++11)
++  // void operator delete[]( void* ptr ) throw(); (until C++11)
++  // void operator delete[]( void* ptr ) noexcept; (since C++11)
++  // void operator delete  ( void* ptr, std::align_val_t al ) noexcept; (since C++17)
++  // void operator delete[]( void* ptr, std::align_val_t al ) noexcept; (since C++17)
++  // void operator delete  ( void* ptr, std::size_t sz ) noexcept; (since C++14)
++  // void operator delete[]( void* ptr, std::size_t sz ) noexcept; (since C++14)
++  // void operator delete  ( void* ptr, std::size_t sz,
++  //                         std::align_val_t al ) noexcept; (since C++17)
++  // void operator delete[]( void* ptr, std::size_t sz,
++  //                         std::align_val_t al ) noexcept; (since C++17)
++  // void operator delete  ( void* ptr, const std::nothrow_t& tag ) throw(); (until C++11)
++  // void operator delete  ( void* ptr, const std::nothrow_t& tag ) noexcept; (since C++11)
++  // void operator delete[]( void* ptr, const std::nothrow_t& tag ) throw(); (until C++11)
++  // void operator delete[]( void* ptr, const std::nothrow_t& tag ) noexcept; (since C++11)
++  //
++  // The below code attempts to return true for these variants while returning
++  // false for all others. FunctionDecl::isReplaceableGlobalAllocationFunction
++  // comes very very close, but returns true for nothrow new, which is not
++  // implicitly defined.
++  //
++  // 1. https://en.cppreference.com/w/cpp/memory/new/operator_new
++  // 2. https://en.cppreference.com/w/cpp/memory/new/operator_delete
++  switch (decl->getNumParams()) {
++    case 1:
++      // All 1-arg variants are implicitly declared.
++      return true;
++    case 2: {
++      // Amongst 2-arg variants, aligned (C++17) new/delete, sized delete (C++14), and
++      // nothrow delete are implicitly declared.
++      ASTContext& ctx = decl->getASTContext();
++      QualType t = decl->getParamDecl(1)->getType();
++      if (t->isAlignValT() ||                     // aligned new/delete
++          ctx.hasSameType(t, ctx.getSizeType()))  // sized delete
++        return true;
++      // We have to work a bit harder to figure out if it's a nothrow delete.
++      //
++      // This cribs from FunctionDecl::isReplaceableGlobalAllocationFunction.
++      if (StartsWith(decl_name, "operator delete") && t->isReferenceType()) {
++        t = t->getPointeeType();
++        if (t.isConstQualified()) {
++          const CXXRecordDecl* recordDecl = t->getAsCXXRecordDecl();
++          if (recordDecl) {
++            const IdentifierInfo* iInfo = recordDecl->getIdentifier();
++            if (iInfo && iInfo->isStr("nothrow_t") && recordDecl->isInStdNamespace())
++              return true;
++          }
++        }
++      }
++      return false;
++    }
++    case 3: {
++      // Amongst 3-arg variants, only sized aligned delete (C++17) is implicitly
++      // declared.
++      ASTContext& ctx = decl->getASTContext();
++      QualType t = decl->getParamDecl(1)->getType();
++      return ctx.hasSameType(t, ctx.getSizeType()) &&
++             decl->getParamDecl(2)->getType()->isAlignValT();
++    }
++    default:
++      return false;
++    return true;
++  }
+ }
+ 
+ bool IsFriendDecl(const Decl* decl) {
+@@ -1082,7 +1152,7 @@
+ 
+ bool IsBuiltinFunction(const clang::NamedDecl* decl,
+                        const std::string& symbol_name) {
+-  if (const clang::IdentifierInfo* iden = decl->getIdentifier()) {
++  if (const IdentifierInfo* iden = decl->getIdentifier()) {
+     return iden->getBuiltinID() != 0 &&
+            !clang::Builtin::Context::isBuiltinFunc(symbol_name.c_str());
+   }

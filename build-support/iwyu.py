@@ -54,37 +54,9 @@ _RE_SOURCE_FILE = re.compile(r'\.(c|cc|h)$')
 _RE_CLANG_ERROR = re.compile(r'^.+?:\d+:\d+:\s*'
                              r'(fatal )?error:', re.MULTILINE)
 
-# Files that we don't want to ever run IWYU on, because they aren't clean yet.
+# Files that we don't want to ever run IWYU on because it doesn't handle them properly.
 _MUTED_FILES = set([
-  "src/kudu/cfile/cfile_reader.h",
-  "src/kudu/cfile/cfile_writer.h",
-  "src/kudu/client/client-internal.h",
-  "src/kudu/client/client-test.cc",
-  "src/kudu/common/encoded_key-test.cc",
-  "src/kudu/common/schema.h",
-  "src/kudu/experiments/rwlock-perf.cc",
-  "src/kudu/rpc/reactor.cc",
-  "src/kudu/rpc/reactor.h",
-  "src/kudu/security/ca/cert_management.cc",
-  "src/kudu/security/ca/cert_management.h",
-  "src/kudu/security/cert-test.cc",
-  "src/kudu/security/cert.cc",
-  "src/kudu/security/cert.h",
-  "src/kudu/security/openssl_util.cc",
-  "src/kudu/security/openssl_util.h",
-  "src/kudu/security/tls_context.cc",
-  "src/kudu/security/tls_handshake.cc",
-  "src/kudu/security/tls_socket.h",
-  "src/kudu/security/x509_check_host.cc",
-  "src/kudu/server/default-path-handlers.cc",
-  "src/kudu/server/webserver.cc",
-  "src/kudu/util/bit-util-test.cc",
-  "src/kudu/util/group_varint-test.cc",
   "src/kudu/util/metrics.h",
-  "src/kudu/util/minidump.cc",
-  "src/kudu/util/mt-metrics-test.cc",
-  "src/kudu/util/process_memory.cc",
-  "src/kudu/util/rle-test.cc"
 ])
 
 # Flags to pass to iwyu/fix_includes.py for Kudu-specific style.
@@ -95,7 +67,7 @@ _FIX_INCLUDES_STYLE_FLAGS = [
   '--reorder'
 ]
 
-# Directory containin the compilation database
+# Directory containing the compilation database.
 _BUILD_DIR = os.path.join(ROOT, 'build/latest')
 
 def _get_file_list_from_git():
@@ -109,12 +81,14 @@ def _get_paths_from_compilation_db():
     compilation_db = json.load(fileobj)
   return [entry['file'] for entry in compilation_db]
 
-def _run_iwyu_tool(paths):
+def _run_iwyu_tool(verbose, paths):
   iwyu_args = ['--max_line_length=256']
   for m in glob.glob(os.path.join(_MAPPINGS_DIR, "*.imp")):
     iwyu_args.append("--mapping_file=%s" % os.path.abspath(m))
 
   cmdline = [_IWYU_TOOL, '-p', _BUILD_DIR]
+  if verbose:
+    cmdline.append('--verbose')
   cmdline.extend(paths)
   cmdline.append('--')
   cmdline.extend(iwyu_args)
@@ -172,7 +146,7 @@ def _get_fixer_flags(flags):
 
 
 def _do_iwyu(flags, paths):
-  iwyu_output = _run_iwyu_tool(paths)
+  iwyu_output = _run_iwyu_tool(flags.verbose, paths)
   if flags.dump_iwyu_output:
     logging.info("Dumping iwyu output to %s", flags.dump_iwyu_output)
     with open(flags.dump_iwyu_output, "w") as f:
@@ -220,6 +194,8 @@ def main(argv):
                     help=('Just sort #includes of files listed on cmdline;'
                           ' do not add or remove any #includes'))
 
+  parser.add_option('--verbose', action='store_true',
+                    help=('Run iwyu_tool.py in verbose mode. Useful for debugging'))
   parser.add_option('--dump-iwyu-output', type='str',
                     help=('A path to dump the raw IWYU output to. This can be useful for '
                           'debugging this tool.'))

@@ -107,7 +107,10 @@ build_libcxxabi() {
   mkdir -p $LIBCXXABI_BDIR
   pushd $LIBCXXABI_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
-  cmake \
+
+  # libcxxabi requires gcc5 or newer. Since we can't guarantee that universally,
+  # let's always build it with clang.
+  CC="$CLANG" CXX="$CLANGXX" cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
@@ -121,8 +124,11 @@ build_libcxxabi() {
 build_libcxx() {
   local BUILD_TYPE=$1
   case $BUILD_TYPE in
+    "normal")
+      SANITIZER_ARG=
+      ;;
     "tsan")
-      SANITIZER_TYPE=Thread
+      SANITIZER_ARG="-DLLVM_USE_SANITIZER=Thread"
       ;;
     *)
       echo "Unknown build type: $BUILD_TYPE"
@@ -134,7 +140,9 @@ build_libcxx() {
   mkdir -p $LIBCXX_BDIR
   pushd $LIBCXX_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
-  cmake \
+  # Since libcxxabi requires gcc5 or newer, we build it with clang. As libcxx is
+  # a dependency, let's also always use clang to build it.
+  CC="$CLANG" CXX="$CLANGXX" cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
@@ -145,7 +153,7 @@ build_libcxx() {
     -DLIBCXX_CXX_ABI=libcxxabi \
     -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$LLVM_SOURCE/projects/libcxxabi/include \
     -DLIBCXX_CXX_ABI_LIBRARY_PATH=$PREFIX/lib \
-    -DLLVM_USE_SANITIZER=$SANITIZER_TYPE \
+    $SANITIZER_ARG \
     $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE/projects/libcxx
   ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install

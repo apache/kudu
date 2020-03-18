@@ -76,6 +76,7 @@ See iwyu_tool.py -h for more details on command-line arguments.
 """
 
 import argparse
+import glob
 import json
 import multiprocessing
 from multiprocessing.pool import ThreadPool
@@ -210,6 +211,42 @@ class RelativeIncludeTest(unittest.TestCase):
         self.assertEquals(f('/foo/bar', 'gcc -I/abs/dir'),
                           'gcc -I/abs/dir')
 
+def workaround_add_libcpp(build_dir, command):
+    """
+    Modify 'command' to include C++ standard library headers from the libc++
+    found in Kudu's thirdparty tree.
+
+    By default, IWYU will use the system's libstdc++ for standard library
+    headers. This is problematic as every system has a different version of
+    libstdc++, leading to differing recommendations depending on the host system.
+
+    If we standardize on libc++ from Kudu's thirdparty tree, we can ensure the
+    same recommendations regardless of system, though those recommendations will
+    change when libc++ is upgraded.
+    """
+    nostdinc = "-nostdinc++"
+    if nostdinc not in command:
+        command += " " + nostdinc
+
+    # Check for and add any dynamic (path-based) flags.
+    #
+    # Some sanitizer builds (like TSAN) already include libc++; if the command
+    # already has a flag including libc++, we don't want to add it again.
+    path_to_libcpp_prefix = os.path.join(build_dir, "..", "..", "thirdparty", "installed")
+    path_to_libcpp_suffix = os.path.join("include", "c++", "v1")
+    tp_pattern = os.path.join(path_to_libcpp_prefix, "*", path_to_libcpp_suffix)
+    found = False
+    for path in glob.glob(tp_pattern):
+        search_string = "-isystem " + path
+        if search_string in command:
+            found = True
+            break
+    if not found:
+        path_to_libcpp = os.path.join(path_to_libcpp_prefix, "uninstrumented",
+                                      path_to_libcpp_suffix)
+        command += " -isystem " + os.path.abspath(path_to_libcpp)
+
+    return command
 
 def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
     """ Entry point. """
@@ -249,10 +286,12 @@ def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
                       source)
 
     # Run analysis
+    build_dir = os.path.dirname(compilation_db_path)
     def run_iwyu_task(entry):
         cwd, compile_command = entry['directory'], entry['command']
         compile_command = workaround_parent_dir_relative_includes(
             cwd, compile_command)
+        compile_command = workaround_add_libcpp(build_dir, compile_command)
         return run_iwyu(cwd, compile_command, iwyu_args, verbose)
     pool = ThreadPool(multiprocessing.cpu_count())
     try:
