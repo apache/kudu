@@ -85,13 +85,34 @@
 #
 #   KUDU_REPORT_TEST_RESULTS Default: 0
 #     If non-zero, tests are reported to the central test server.
+#
+#   KUDU_ALLOW_SKIPPED_TESTS Default: 0
+#     If set to 1, commits with changes that do not impact the build or tests exit early.
+#     Additionally, commits with "DONT_BUILD" in the commit message will exit early.
 
-# If a commit messages contains a line that says 'DONT_BUILD', exit
-# immediately.
-DONT_BUILD=$(git show|egrep '^\s{4}DONT_BUILD$')
-if [ "x$DONT_BUILD" != "x" ]; then
+if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
+  # If the commit only contains changes that do not impact the build or tests, exit immediately.
+  # This check is conservative and attempts to have no false positives, but may have false negatives.
+  if ! git diff-tree --no-commit-id --name-only -r HEAD |
+     grep -qvE "^\.dockerignore|^\.gitignore|^\.ycm_extra_conf.py|^docker/|^docs/|^kubernetes/|LICENSE\.txt|NOTICE\.txt|.*\.adoc|.*\.md"; then
+    echo
+    echo ------------------------------------------------------------
+    echo "*** Changes are only in files or directories that do not impact the build or tests. Exiting."
+    echo ------------------------------------------------------------
+    echo
+    exit 0
+  fi
+
+  # If a commit messages contains a line that says 'DONT_BUILD', exit immediately.
+  DONT_BUILD=$(git show|egrep '^\s{4}DONT_BUILD$')
+  if [ "x$DONT_BUILD" != "x" ]; then
+    echo
+    echo ------------------------------------------------------------
     echo "*** Build not requested. Exiting."
+    echo ------------------------------------------------------------
+    echo
     exit 1
+  fi
 fi
 
 set -e
