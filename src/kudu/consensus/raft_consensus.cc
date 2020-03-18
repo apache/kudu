@@ -1676,6 +1676,13 @@ void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* respons
   DCHECK(lock_.is_locked());
   TRACE("Filling consensus response to leader.");
   response->set_responder_term(CurrentTermUnlocked());
+
+  // if RESPONSE STATUS does not have error - i.e. common case
+  // and there are messages in the request, then last_received_cur_leader_
+  // = last_from_leader
+  // and AppendOperations also uses the same OpId (last_id) to
+  // update queue_state_.last_appended.
+  // So in COMMON case both the first and second OpId's should be the same.
   response->mutable_status()->mutable_last_received()->CopyFrom(
       queue_->GetLastOpIdInLog());
   response->mutable_status()->mutable_last_received_current_leader()->CopyFrom(
