@@ -1089,6 +1089,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// Create a new IN Bloom filter predicate which can be used for scanners on
   /// this table.
   ///
+  /// @note This method is experimental and may change or disappear in future.
+  ///
   /// A Bloom filter is a space-efficient probabilistic data structure used to
   /// test set membership with a possibility of false positive matches.
   /// See @c KuduBloomFilter for creating Bloom filters.
