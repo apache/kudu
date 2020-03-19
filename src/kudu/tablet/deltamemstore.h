@@ -105,9 +105,7 @@ class DeltaMemStore : public DeltaStore,
   void DebugPrint() const;
 
   // Flush the DMS to the given file writer.
-  // Returns statistics in *stats.
-  Status FlushToFile(DeltaFileWriter *dfw,
-                     std::unique_ptr<DeltaStats>* stats);
+  Status FlushToFile(DeltaFileWriter* dfw);
 
   // Create an iterator for applying deltas from this DMS.
   //

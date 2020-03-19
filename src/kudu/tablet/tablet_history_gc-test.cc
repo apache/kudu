@@ -98,6 +98,20 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
     NO_FLUSH
   };
 
+  // Attempt to run the deleted rowset GC, triggering an assertion failure if
+  // it failed or if our metrics don't make sense.
+  void TryRunningDeletedRowsetGC() {
+    const auto& metrics = tablet()->metrics();
+    int orig_bytes = metrics->deleted_rowset_gc_bytes_deleted->value();
+    int orig_count = metrics->deleted_rowset_gc_duration->TotalCount();
+    int64_t bytes = 0;
+    ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
+    ASSERT_LT(0, bytes);
+    ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+    ASSERT_EQ(bytes + orig_bytes, metrics->deleted_rowset_gc_bytes_deleted->value());
+    ASSERT_GT(metrics->deleted_rowset_gc_duration->TotalCount(), orig_count);
+  }
+
   // Helper functions that mutate rows in batches of keys:
   //   [0, rows_per_rowset)
   //   [rows_per_rowset, 2*rows_per_rowset)
@@ -107,7 +121,7 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   // ...flushing MRS or DMS (depending on the workload) in between batches.
   void InsertOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset);
   void UpdateOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset, int32_t val);
-  void DeleteOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset, bool flush_dms);
+  void DeleteOriginalRows(int64_t num_batches, int64_t rows_per_batch, bool flush_dms);
 
   void AddTimeToHybridClock(MonoDelta delta) {
     uint64_t now = HybridClock::GetPhysicalValueMicros(clock()->Now());
@@ -142,15 +156,14 @@ void TabletHistoryGcTest::InsertOriginalRows(int64_t num_rowsets, int64_t rows_p
   ASSERT_EQ(num_rowsets, tablet()->num_rowsets());
 }
 
-void TabletHistoryGcTest::DeleteOriginalRows(int64_t num_rowsets,
-    int64_t rows_per_rowset, bool flush_dms) {
-  for (int rowset_id = 0; rowset_id < num_rowsets; rowset_id++) {
-    NO_FATALS(DeleteTestRows(rowset_id * rows_per_rowset, rows_per_rowset));
+void TabletHistoryGcTest::DeleteOriginalRows(int64_t num_batches,
+    int64_t rows_per_batch, bool flush_dms) {
+  for (int rowset_id = 0; rowset_id < num_batches; rowset_id++) {
+    NO_FATALS(DeleteTestRows(rowset_id * rows_per_batch, rows_per_batch));
     if (flush_dms) {
       ASSERT_OK(tablet()->FlushAllDMSForTests());
     }
   }
-  ASSERT_EQ(num_rowsets, tablet()->num_rowsets());
 }
 
 void TabletHistoryGcTest::UpdateOriginalRows(int64_t num_rowsets, int64_t rows_per_rowset,
@@ -686,15 +699,9 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithRedoFiles) {
   // Move the clock so all rowsets are ancient. Our GC should succeed and we
   // should be left with no rowsets.
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
-  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
-  ASSERT_LT(0, bytes);
-  ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
+  NO_FATALS(TryRunningDeletedRowsetGC());
   ASSERT_EQ(0, tablet()->CountUndoDeltasForTests());
   ASSERT_EQ(0, tablet()->CountRedoDeltasForTests());
-
-  // Check that these show up.
-  ASSERT_EQ(bytes, metrics->deleted_rowset_gc_bytes_deleted->value());
-  ASSERT_EQ(1, metrics->deleted_rowset_gc_duration->TotalCount());
 }
 
 TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithDMS) {
@@ -702,12 +709,40 @@ TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsWithDMS) {
   NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
   NO_FATALS(DeleteOriginalRows(kNumRowsets, rows_per_rowset_, /*flush_dms*/false));
   NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
-  int64_t bytes = 0;
-  ASSERT_OK(tablet()->GetBytesInAncientDeletedRowsets(&bytes));
-  ASSERT_LT(0, bytes);
-  ASSERT_OK(tablet()->DeleteAncientDeletedRowsets());
-  ASSERT_EQ(bytes, tablet()->metrics()->deleted_rowset_gc_bytes_deleted->value());
-  ASSERT_EQ(1, tablet()->metrics()->deleted_rowset_gc_duration->TotalCount());
+  NO_FATALS(TryRunningDeletedRowsetGC());
+}
+
+TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsAfterMinorCompaction) {
+  FLAGS_tablet_history_max_age_sec = 1000;
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  // Flush twice as frequently when deleting so we end up with multiple delta
+  // files per DRS.
+  NO_FATALS(DeleteOriginalRows(kNumRowsets * 2, rows_per_rowset_ / 2, /*flush_dms*/true));
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
+  int num_redos_before_compaction = tablet()->CountRedoDeltasForTests();
+  for (int i = 0; i < kNumRowsets; i++) {
+    ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION));
+  }
+  ASSERT_GT(num_redos_before_compaction, tablet()->CountRedoDeltasForTests());
+  NO_FATALS(TryRunningDeletedRowsetGC());
+}
+
+TEST_F(TabletHistoryGcNoMaintMgrTest, TestGCDeletedRowsetsAfterMajorCompaction) {
+  FLAGS_tablet_history_max_age_sec = 1000;
+  NO_FATALS(InsertOriginalRows(kNumRowsets, rows_per_rowset_));
+  // Major delta compaction is a no-op if we only have deletes, so trick the
+  // rowsets into major compacting by throwing in some updates.
+  NO_FATALS(UpdateOriginalRows(kNumRowsets, rows_per_rowset_, 5));
+  // Flush twice as frequently when deleting so we end up with multiple delta
+  // files per DRS.
+  NO_FATALS(DeleteOriginalRows(kNumRowsets * 2, rows_per_rowset_ / 2, /*flush_dms*/true));
+  NO_FATALS(AddTimeToHybridClock(MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec + 1)));
+  int num_redos_before_compaction = tablet()->CountRedoDeltasForTests();
+  for (int i = 0; i < kNumRowsets; i++) {
+    ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
+  }
+  ASSERT_GT(num_redos_before_compaction, tablet()->CountRedoDeltasForTests());
+  NO_FATALS(TryRunningDeletedRowsetGC());
 }
 
 } // namespace tablet

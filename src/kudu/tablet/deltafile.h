@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -101,7 +102,11 @@ class DeltaFileWriter {
   template<DeltaType Type>
   Status AppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
-  void WriteDeltaStats(const DeltaStats& stats);
+  void WriteDeltaStats(std::unique_ptr<DeltaStats> stats);
+
+  std::unique_ptr<DeltaStats> release_delta_stats() {
+    return std::move(delta_stats_);
+  }
 
   size_t written_size() const {
     return writer_->written_size();
@@ -110,6 +115,7 @@ class DeltaFileWriter {
  private:
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
+  std::unique_ptr<DeltaStats> delta_stats_;
   std::unique_ptr<cfile::CFileWriter> writer_;
 
   // Buffer used as a temporary for storing the serialized form
@@ -219,6 +225,8 @@ class DeltaFileReader : public DeltaStore,
 
   std::shared_ptr<cfile::CFileReader> reader_;
 
+  // TODO(awong): it'd be nice to not heap-allocate this and other usages of
+  // delta stats.
   mutable simple_spinlock stats_lock_;
   std::unique_ptr<DeltaStats> delta_stats_;
 

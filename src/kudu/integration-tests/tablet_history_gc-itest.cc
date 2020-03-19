@@ -284,7 +284,6 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
 TEST_F(TabletHistoryGcITest, TestDeletedRowsetGc) {
   // Disable merge compactions, since they may also cull deleted rowsets.
   FLAGS_enable_rowset_compaction = false;
-  FLAGS_enable_flush_deltamemstores = false; // Don't flush DMS so we don't have to init deltafiles.
   FLAGS_flush_threshold_secs = 0; // Flush as aggressively as possible.
   FLAGS_maintenance_manager_num_threads = 4; // Encourage concurrency.
   FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.

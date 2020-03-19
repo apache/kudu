@@ -1588,6 +1588,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   {
     TRACE_EVENT0("tablet", "Opening compaction results");
     for (const shared_ptr<RowSetMetadata>& meta : new_drs_metas) {
+      // TODO(awong): it'd be nice to plumb delta stats from the rowset writer
+      // into the new deltafile readers opened here.
       shared_ptr<DiskRowSet> new_rowset;
       Status s = DiskRowSet::Open(meta,
                                   log_anchor_registry_.get(),

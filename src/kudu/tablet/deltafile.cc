@@ -195,13 +195,14 @@ Status DeltaFileWriter::AppendDelta<UNDO>(
   return DoAppendDelta(key, delta);
 }
 
-void DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
+void DeltaFileWriter::WriteDeltaStats(std::unique_ptr<DeltaStats> stats) {
   DeltaStatsPB delta_stats_pb;
-  stats.ToPB(&delta_stats_pb);
+  stats->ToPB(&delta_stats_pb);
 
   faststring buf;
   pb_util::SerializeToString(delta_stats_pb, &buf);
   writer_->AddMetadataPair(DeltaFileReader::kDeltaStatsEntryName, buf.ToString());
+  delta_stats_ = std::move(stats);
 }
 
 

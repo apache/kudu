@@ -132,8 +132,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   RowBlock block(&partial_schema_, kRowsPerBlock, &arena);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
-  DeltaStats redo_stats;
-  DeltaStats undo_stats;
+  unique_ptr<DeltaStats> redo_stats(new DeltaStats);
+  unique_ptr<DeltaStats> undo_stats(new DeltaStats);
   size_t nrows = 0;
   // We know that we're reading everything from disk so we're including all transactions.
   MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
@@ -199,7 +199,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       for (const Mutation *mut = new_undos_head; mut != nullptr; mut = mut->next()) {
         DeltaKey undo_key(nrows + dst_row.row_index(), mut->timestamp());
         RETURN_NOT_OK(new_undo_delta_writer_->AppendDelta<UNDO>(undo_key, mut->changelist()));
-        undo_stats.UpdateStats(mut->timestamp(), mut->changelist());
+        undo_stats->UpdateStats(mut->timestamp(), mut->changelist());
         undo_delta_mutations_written_++;
       }
     }
@@ -227,7 +227,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
                << key_and_update.Stringify(DeltaType::REDO, base_schema_);
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(redo_stats.UpdateStats(key_and_update.key.timestamp(), update),
+      WARN_NOT_OK(redo_stats->UpdateStats(key_and_update.key.timestamp(), update),
                   "Failed to update stats");
     }
     redo_delta_mutations_written_ += out.size();
@@ -239,12 +239,12 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   RETURN_NOT_OK(base_data_writer_->FinishAndReleaseBlocks(transaction.get()));
 
   if (redo_delta_mutations_written_ > 0) {
-    new_redo_delta_writer_->WriteDeltaStats(redo_stats);
+    new_redo_delta_writer_->WriteDeltaStats(std::move(redo_stats));
     RETURN_NOT_OK(new_redo_delta_writer_->FinishAndReleaseBlock(transaction.get()));
   }
 
   if (undo_delta_mutations_written_ > 0) {
-    new_undo_delta_writer_->WriteDeltaStats(undo_stats);
+    new_undo_delta_writer_->WriteDeltaStats(std::move(undo_stats));
     RETURN_NOT_OK(new_undo_delta_writer_->FinishAndReleaseBlock(transaction.get()));
   }
   transaction->CommitCreatedBlocks();
@@ -417,19 +417,23 @@ Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker,
   // diskrowset operations.
 
   // Create blocks for the new redo deltas.
-  vector<BlockId> new_redo_blocks;
+  vector<DeltaBlockIdAndStats> new_redo_blocks;
   if (redo_delta_mutations_written_ > 0) {
-    new_redo_blocks.push_back(new_redo_delta_block_);
+    new_redo_blocks.emplace_back(std::make_pair(new_redo_delta_block_,
+        new_redo_delta_writer_->release_delta_stats()));
   }
   SharedDeltaStoreVector new_redo_stores;
-  RETURN_NOT_OK(tracker->OpenDeltaReaders(new_redo_blocks, io_context, &new_redo_stores, REDO));
+  RETURN_NOT_OK(tracker->OpenDeltaReaders(std::move(new_redo_blocks), io_context,
+                                          &new_redo_stores, REDO));
 
   // Create blocks for the new undo deltas.
   SharedDeltaStoreVector new_undo_stores;
   if (undo_delta_mutations_written_ > 0) {
-    vector<BlockId> new_undo_blocks;
-    new_undo_blocks.push_back(new_undo_delta_block_);
-    RETURN_NOT_OK(tracker->OpenDeltaReaders(new_undo_blocks, io_context, &new_undo_stores, UNDO));
+    vector<DeltaBlockIdAndStats> new_undo_blocks;
+    new_undo_blocks.emplace_back(std::make_pair(new_undo_delta_block_,
+        new_undo_delta_writer_->release_delta_stats()));
+    RETURN_NOT_OK(tracker->OpenDeltaReaders(std::move(new_undo_blocks), io_context,
+                                            &new_undo_stores, UNDO));
   }
 
   // 2. Only now that we cannot fail do we update the in-memory state.

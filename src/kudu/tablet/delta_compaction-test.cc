@@ -143,7 +143,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     // and update number (see update_value assignment).
     size_t kNumUpdates = 10;
     size_t kNumMultipleUpdates = kNumUpdates / 2;
-    DeltaStats stats;
+    unique_ptr<DeltaStats> stats(new DeltaStats);
     for (size_t i = 0; i < kNumUpdates; ++i) {
       buf.clear();
       RowChangeListEncoder update(&buf);
@@ -151,7 +151,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
         ColumnId col_id = schema.column_id(col_idx);
         DCHECK_GE(col_id, 0);
 
-        stats.IncrUpdateCount(col_id, 1);
+        stats->IncrUpdateCount(col_id, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
         switch (col_schema.type_info()->physical_type()) {
@@ -180,12 +180,12 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
       RowChangeList row_changes = update.as_changelist();
       ASSERT_OK(dfw->AppendDelta<REDO>(key, row_changes));
-      ASSERT_OK(stats.UpdateStats(key.timestamp(), row_changes));
+      ASSERT_OK(stats->UpdateStats(key.timestamp(), row_changes));
       curr_timestamp++;
       row_id++;
     }
 
-    dfw->WriteDeltaStats(stats);
+    dfw->WriteDeltaStats(std::move(stats));
     ASSERT_OK(dfw->Finish());
     shared_ptr<DeltaFileReader> dfr;
     ASSERT_OK(GetDeltaFileReader(block_id, &dfr));

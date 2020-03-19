@@ -129,8 +129,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   return Status::OK();
 }
 
-Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
-                                  unique_ptr<DeltaStats>* stats_ret) {
+Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw) {
   unique_ptr<DeltaStats> stats(new DeltaStats());
 
   unique_ptr<DMSTreeIter> iter(tree_.NewIterator());
@@ -146,9 +145,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
     stats->UpdateStats(key.timestamp(), rcl);
     iter->Next();
   }
-  dfw->WriteDeltaStats(*stats);
-
-  stats_ret->swap(stats);
+  dfw->WriteDeltaStats(std::move(stats));
   return Status::OK();
 }
 

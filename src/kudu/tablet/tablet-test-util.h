@@ -870,16 +870,16 @@ Status CreateRandomDeltaFile(const Schema& schema,
   BlockId block_id = wb->id();
   std::unique_ptr<DeltaFileWriter> writer(new DeltaFileWriter(std::move(wb)));
   RETURN_NOT_OK(writer->Start());
-  DeltaStats stats;
+  std::unique_ptr<DeltaStats> stats(new DeltaStats);
   for (const auto& e1 : mirror->all_deltas()) {
     for (const auto& e2 : e1.second) {
       DeltaKey k(e1.first, e2.first);
       RowChangeList changes(e2.second);
       RETURN_NOT_OK(writer->AppendDelta<T::kTag>(k, changes));
-      RETURN_NOT_OK(stats.UpdateStats(k.timestamp(), changes));
+      RETURN_NOT_OK(stats->UpdateStats(k.timestamp(), changes));
     }
   }
-  writer->WriteDeltaStats(stats);
+  writer->WriteDeltaStats(std::move(stats));
   RETURN_NOT_OK(writer->Finish());
 
   // Open a reader for this newly written delta file.

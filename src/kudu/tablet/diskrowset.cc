@@ -449,8 +449,8 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     RETURN_NOT_OK(writer_status);
     CHECK_GT(cur_writer_->written_count(), 0);
 
-    cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats_);
-    cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats_);
+    cur_undo_writer_->WriteDeltaStats(std::move(cur_undo_delta_stats_));
+    cur_redo_writer_->WriteDeltaStats(std::move(cur_redo_delta_stats_));
 
     // Commit the UNDO block. Status::Aborted() indicates that there
     // were no UNDOs written.
@@ -458,8 +458,6 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
-    } else {
-      DCHECK_EQ(cur_undo_delta_stats_->min_timestamp(), Timestamp::kMax);
     }
 
     // Same for the REDO block.
@@ -467,8 +465,6 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, 0, cur_redo_ds_block_id_);
-    } else {
-      DCHECK_EQ(cur_redo_delta_stats_->min_timestamp(), Timestamp::kMax);
     }
 
     written_size_ += cur_writer_->written_size();

@@ -211,8 +211,8 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   ASSERT_OK(fs.CreateNewBlock({}, &block));
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
-  unique_ptr<DeltaStats> stats;
-  dms_->FlushToFile(&dfw, &stats);
+  dms_->FlushToFile(&dfw);
+  unique_ptr<DeltaStats> stats = dfw.release_delta_stats();
 
   ASSERT_EQ(n_rows / 2, stats->update_count_for_col_id(schema_.column_id(kIntColumn)));
   ASSERT_EQ(n_rows / 4, stats->update_count_for_col_id(schema_.column_id(kStringColumn)));
