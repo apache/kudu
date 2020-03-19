@@ -150,8 +150,9 @@ LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 # The include-what-you-use is built along with LLVM in its source tree.
 IWYU_VERSION=0.13
 
-# Python 2.7 is required to build LLVM 3.6+. It is only built and installed if
-# the system Python version is not 2.7.
+# Python is required to build LLVM 3.6+ because it uses
+# llvm/utils/llvm-build/llvmbuild script. It is only built and installed if
+# the system Python version is less than 2.7.
 PYTHON_VERSION=2.7.13
 PYTHON_NAME=python-$PYTHON_VERSION
 PYTHON_SOURCE=$TP_SOURCE_DIR/$PYTHON_NAME

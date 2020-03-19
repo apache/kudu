@@ -158,10 +158,13 @@ build_or_find_python() {
   fi
 
   # Build Python only if necessary.
-  if [[ $(python2.7 -V 2>&1) =~ "Python 2.7." ]]; then
-    PYTHON_EXECUTABLE=$(which python2.7)
-  elif [[ $(python -V 2>&1) =~ "Python 2.7." ]]; then
+  if [[ $(python3 -V 2>&1) =~ "Python 3." ]]; then
+    PYTHON_EXECUTABLE=$(which python3)
+  elif [[ $(python -V 2>&1) =~ "Python 3." ||
+          $(python -V 2>&1) =~ "Python 2.7." ]]; then
     PYTHON_EXECUTABLE=$(which python)
+  elif [[ $(python2 -V 2>&1) =~ "Python 2.7." ]]; then
+    PYTHON_EXECUTABLE=$(which python2)
   else
     PYTHON_BDIR=$TP_BUILD_DIR/$PYTHON_NAME$MODE_SUFFIX
     mkdir -p $PYTHON_BDIR
