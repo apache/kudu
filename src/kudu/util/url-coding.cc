@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-//
 
 #include "kudu/util/url-coding.h"
 
@@ -33,9 +32,11 @@
 #include <boost/function.hpp>
 #include <glog/logging.h>
 
+using boost::archive::iterators::base64_from_binary;
+using boost::archive::iterators::binary_from_base64;
+using boost::archive::iterators::transform_width;
 using std::string;
 using std::vector;
-using namespace boost::archive::iterators; // NOLINT(*)
 
 namespace kudu {
 

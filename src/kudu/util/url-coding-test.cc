@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/url-coding.h"
+
 #include <cstring>
 #include <cstdint>
 #include <iostream>
@@ -23,9 +25,9 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/util/url-coding.h"
-
-using namespace std; // NOLINT(*)
+using std::ostringstream;
+using std::string;
+using std::vector;
 
 namespace kudu {
 

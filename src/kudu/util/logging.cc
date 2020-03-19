@@ -29,7 +29,6 @@
 #include <utility>
 
 #include <boost/uuid/random_generator.hpp>
-#include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -75,11 +74,13 @@ TAG_FLAG(max_log_files, experimental);
 
 bool logging_initialized = false;
 
-using namespace std; // NOLINT(*)
-using namespace boost::uuids; // NOLINT(*)
-
 using base::SpinLock;
 using base::SpinLockHolder;
+using boost::uuids::random_generator;
+using std::string;
+using std::ofstream;
+using std::ostream;
+using std::ostringstream;
 
 namespace kudu {
 

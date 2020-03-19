@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <iosfwd>
 #include <memory>
 #include <unordered_set>
 #include <utility>
@@ -40,7 +39,9 @@
 
 DECLARE_bool(disable_blockbloomfilter_avx2);
 
-using namespace std; // NOLINT(*)
+using std::unique_ptr;
+using std::unordered_set;
+using std::vector;
 
 namespace kudu {
 
