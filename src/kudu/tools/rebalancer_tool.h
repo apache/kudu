@@ -30,7 +30,7 @@
 
 #include <boost/optional/optional.hpp>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/rebalance/rebalance_algo.h"
 #include "kudu/rebalance/rebalancer.h"
 #include "kudu/util/monotime.h"

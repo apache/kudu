@@ -35,7 +35,7 @@
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/session-internal.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"

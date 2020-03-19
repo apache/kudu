@@ -32,7 +32,7 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_configuration.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/partition_pruner.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"

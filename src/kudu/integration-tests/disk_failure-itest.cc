@@ -19,6 +19,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -27,7 +28,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -22,7 +22,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"

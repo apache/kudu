@@ -20,6 +20,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -28,7 +29,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/substitute.h"

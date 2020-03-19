@@ -32,7 +32,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/partial_row.h"

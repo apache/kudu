@@ -21,7 +21,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/test_util.h"
 

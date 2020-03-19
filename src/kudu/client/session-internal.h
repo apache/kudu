@@ -26,7 +26,7 @@
 #include "kudu/client/batcher.h"
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"

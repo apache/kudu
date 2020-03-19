@@ -28,10 +28,10 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"

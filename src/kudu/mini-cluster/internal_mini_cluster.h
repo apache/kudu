@@ -24,7 +24,7 @@
 
 #include <glog/logging.h>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/gutil/macros.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/util/net/net_util.h"

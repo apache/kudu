@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -30,7 +31,7 @@
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/replica_management.pb.h"

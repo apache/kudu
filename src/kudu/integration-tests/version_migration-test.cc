@@ -26,7 +26,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"

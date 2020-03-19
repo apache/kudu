@@ -33,7 +33,7 @@
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"

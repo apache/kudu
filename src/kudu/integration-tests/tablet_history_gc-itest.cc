@@ -34,7 +34,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"

@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
-#include <stdint.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -26,7 +27,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"

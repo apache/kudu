@@ -29,7 +29,7 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"

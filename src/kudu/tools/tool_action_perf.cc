@@ -184,7 +184,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"

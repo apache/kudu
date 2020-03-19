@@ -39,7 +39,7 @@
 
 #if defined(_LIBCPP_VERSION)
 
-#include <memory> // IWYU pragma: export
+#include <memory>
 
 namespace kudu {
 namespace client {

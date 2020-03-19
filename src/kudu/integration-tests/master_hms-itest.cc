@@ -29,7 +29,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/table_util.h"
 #include "kudu/gutil/strings/substitute.h"

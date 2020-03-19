@@ -33,7 +33,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"

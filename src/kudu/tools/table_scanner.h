@@ -29,7 +29,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/util/atomic.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"

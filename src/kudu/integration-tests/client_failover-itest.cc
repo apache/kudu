@@ -20,6 +20,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -27,7 +28,7 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"

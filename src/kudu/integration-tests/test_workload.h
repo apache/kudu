@@ -29,7 +29,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"

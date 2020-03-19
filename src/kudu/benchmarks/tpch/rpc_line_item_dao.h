@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/row_result.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"

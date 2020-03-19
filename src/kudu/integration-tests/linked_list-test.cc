@@ -43,7 +43,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/integration-tests/cluster_itest_util.h"

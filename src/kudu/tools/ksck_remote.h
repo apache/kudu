@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tools/ksck.h"

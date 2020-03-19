@@ -28,6 +28,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -39,7 +40,7 @@
 #include "kudu/client/client-internal.h"  // IWYU pragma: keep
 #include "kudu/client/client.h"
 #include "kudu/client/master_proxy_rpc.h"
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"

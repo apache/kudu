@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "kudu/client/shared_ptr.h"
+#include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
