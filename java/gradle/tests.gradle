@@ -67,6 +67,12 @@ tasks.withType(Test) {
   systemProperty "java.net.preferIPv4Stack", true
   systemProperty "java.security.egd", "file:/dev/urandom" // Improve RNG generation speed.
 
+  if (propertyExists("securityDebug")) {
+    systemProperty "sun.security.krb5.debug", true
+    systemProperty "sun.security.spnego.debug", true
+    systemProperty "javax.net.debug", "all"
+  }
+
   // Only use the local KuduBinDir if we are not using the kudu-binary jar.
   if (!propertyExists("useBinJar")) {
     // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
