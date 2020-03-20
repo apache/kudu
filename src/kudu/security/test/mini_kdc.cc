@@ -28,11 +28,13 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
@@ -305,7 +307,24 @@ Status MiniKdc::Kinit(const string& username) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("kinit for $0", username));
   string kinit;
   RETURN_NOT_OK(GetBinaryPath("kinit", &kinit));
-  RETURN_NOT_OK(Subprocess::Call(MakeArgv({ kinit, username }), username));
+  unique_ptr<WritableFile> tmp_cc_file;
+  string tmp_cc_path;
+  const auto tmp_template = Substitute("kinit-temp-$0.XXXXXX", username);
+  RETURN_NOT_OK_PREPEND(Env::Default()->NewTempWritableFile(
+      WritableFileOptions(),
+      JoinPathSegments(options_.data_root, tmp_template),
+      &tmp_cc_path, &tmp_cc_file),
+      "could not create temporary file");
+  auto delete_tmp_cc = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(Env::Default()->DeleteFile(tmp_cc_path),
+                "could not delete file " + tmp_cc_path);
+  });
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({ kinit, "-c", tmp_cc_path, username }), username));
+  const auto env_vars_map = GetEnvVars();
+  const auto& ccache_path = FindOrDie(env_vars_map, "KRB5CCNAME");
+  RETURN_NOT_OK_PREPEND(Env::Default()->RenameFile(tmp_cc_path, ccache_path),
+                        "could not move new file into place");
+  delete_tmp_cc.cancel();
   return Status::OK();
 }
 
