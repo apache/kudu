@@ -492,11 +492,16 @@ string GetBindIpForDaemon(int index, BindMode bind_mode) {
   CHECK(0 < index && index <= kServersMaxNum) << Substitute(
       "server index $0 is not in range ($1, $2]", index, 0, kServersMaxNum);
 
+  static constexpr uint32_t kMaxPid = 1 << kPidBits;
   switch (bind_mode) {
     case BindMode::UNIQUE_LOOPBACK: {
       uint32_t pid = getpid();
-      CHECK_LT(pid, 1 << kPidBits) << Substitute(
-          "PID $0 is more than $1 bits wide", pid, kPidBits);
+      if (pid >= kMaxPid) {
+        LOG(INFO) << Substitute(
+            "PID $0 is more than $1 bits wide, substituted with $2",
+            pid, kPidBits, pid % kMaxPid);
+        pid %= kMaxPid;
+      }
       uint32_t ip = (pid << kServerIdxBits) | static_cast<uint32_t>(index);
       uint8_t octets[] = {
           static_cast<uint8_t>((ip >> 16) & 0xff),
