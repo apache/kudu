@@ -186,17 +186,20 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
     SubprocessMetricsPB m = receiveResponse().getMetrics();
     Assert.assertEquals(2, m.getOutboundQueueLength());
 
+    // NOTE: timing on the exact slept time sometimes yields a small error, so
+    // leave some buffer in checking for correctness.
+    final int BUFFER_MS = 5;
     m = receiveResponse().getMetrics();
     Assert.assertEquals(1, m.getOutboundQueueLength());
     Assert.assertTrue(
         String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
-        m.getOutboundQueueTimeMs() >= BLOCK_MS);
+        m.getOutboundQueueTimeMs() + BUFFER_MS >= BLOCK_MS);
 
     m = receiveResponse().getMetrics();
     Assert.assertEquals(0, m.getOutboundQueueLength());
     Assert.assertTrue(
         String.format("Expected a higher outbound queue time: %s ms", m.getOutboundQueueTimeMs()),
-        m.getOutboundQueueTimeMs() >= 2 * BLOCK_MS);
+        m.getOutboundQueueTimeMs() + BUFFER_MS >= 2 * BLOCK_MS);
   }
 
   /**
