@@ -71,6 +71,76 @@ message HealthReportPB {
   optional HealthStatus overall_health = 1;
 }
 
+// The following structs `RegionRuleSpecPB`, `CommitRulePB` &
+// `ReplicationTopologyPB` need to be kept in sync with the plugin.
+
+// Analogue of RegionRuleSpec on the plugin.
+message RegionRuleSpecPB {
+  // Region identifier could be a valid 3-letter region, "any" or "master"
+  required string region_identifier = 1;
+  // Commit requirement could be a positive integer (encoded as string) or
+  // "majority"
+  required string commit_requirement = 2;
+}
+
+// Struct specifying commit requirements. Analogue of CommitRule on the plugin.
+message CommitRulePB {
+  repeated RegionRuleSpecPB rule_conjunctions = 1;
+}
+
+// Represents the arrangement of master and its slaves for a MySQL replica set.
+// Borrowed from `dba/prod_config.thrift` with some amendments. Analogue of
+// ReplicationTopology on the plugin.
+message ReplicationTopologyPB {
+
+  // master region
+  // This is where MySQL Infra automation will prefer to have the master
+  // located for this replica set. If a working replica exists in this region
+  // and the master is not in this region, automation will (eventually)
+  // do a promotion to this region.
+  optional string master_region = 1;
+
+  // fallback regions
+  // When there are no more working replicas in the preferred master region, a
+  // replica from one of these regions will be selected (in order) as the new
+  // master. If this is not provided and you run out of replicas in the master
+  // region, your replica set may break.
+  repeated string fallback_regions = 2;
+
+  // followers that exist per region
+  // This should include the replicas for the master, fallback regions and
+  // include LBU counts.
+  map<string, int32> follower_distribution = 3;
+}
+
+// Analogue of RaftTopology on the plugin.
+message RaftTopologyPB {
+  // Server properties of each member in the replicaset's raft ring.
+  repeated RaftPeerPB raft_server_properties = 1;
+
+  // Replication topology of the replicaset
+  optional ReplicationTopologyPB replication_topology = 2;
+}
+
+// Analogue of TopologyConfig on the plugin.
+message TopologyConfigPB {
+  // Data commit rule defined for the replicaset.
+  optional CommitRulePB commit_rule = 2;
+
+  // Master ban to be updated once the protocol is finalized.
+  // optional bool master_ban_info = 3;
+  // optional string master_ban_instance = 4;
+
+  // Name of the replicaset being configured: eg. mysql.replicaset.10001
+  optional string replicaset_name = 5;
+
+  // Server properties of the instance being configured.
+  optional RaftPeerPB server_config = 6;
+
+  // Replicaset topology information.
+  optional RaftTopologyPB raft_topology = 7;
+}
+
 // A peer in a configuration.
 message RaftPeerPB {
   // The possible roles for peers.
@@ -135,6 +205,9 @@ message RaftConfigPB {
 
   // The set of peers in the configuration.
   repeated RaftPeerPB peers = 3;
+
+  // Name of the replicaset.
+  optional string replicaset_name = 6;
 }
 
 // Represents a snapshot of a configuration at a given moment in time.
