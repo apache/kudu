@@ -16,43 +16,34 @@
 # under the License.
 
 #######################################
-# ranger_proto
+# mini_postgres
 #######################################
 
-PROTOBUF_GENERATE_CPP(
-  RANGER_PROTO_SRCS RANGER_PROTO_HDRS RANGER_PROTO_TGTS
-  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES ranger.proto)
+execute_process(COMMAND ln -nsf
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/bin"
+  "${EXECUTABLE_OUTPUT_PATH}/postgres")
+execute_process(COMMAND ln -nsf
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/lib"
+  "${EXECUTABLE_OUTPUT_PATH}/postgres-lib")
+execute_process(COMMAND ln -nsf
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/share/postgresql"
+  "${EXECUTABLE_OUTPUT_PATH}/postgres-share")
+execute_process(COMMAND ln -nsf
+  "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/jdbc/postgresql.jar"
+  "${EXECUTABLE_OUTPUT_PATH}/postgresql.jar")
 
-add_library(ranger_proto
-  ${RANGER_PROTO_SRCS}
-  ${RANGER_PROTO_HDRS})
-target_link_libraries(ranger_proto
-  protobuf
+add_library(mini_postgres
+  mini_postgres.cc)
+target_link_libraries(mini_postgres
+  gutil
+  kudu_test_util
+  kudu_util
 )
 
-##############################
-# kudu_ranger
-##############################
-
-set(RANGER_SRCS
-  ranger_client.cc)
-set(RANGER_DEPS
-  gflags
-  kudu_subprocess
-  ranger_proto
-  security)
-
-add_library(kudu_ranger ${RANGER_SRCS})
-target_link_libraries(kudu_ranger ${RANGER_DEPS})
-
 #######################################
-# Unit tests
+# unit tests
 #######################################
 
-SET_KUDU_TEST_LINK_LIBS(
-  kudu_ranger
-  mini_postgres)
+SET_KUDU_TEST_LINK_LIBS(mini_postgres)
 
-ADD_KUDU_TEST(ranger_client-test)
+ADD_KUDU_TEST(mini_postgres-test)

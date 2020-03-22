@@ -51,6 +51,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
@@ -433,6 +434,18 @@ Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
   }
   hp->set_host(host);
   hp->set_port(addr.port());
+  return Status::OK();
+}
+
+Status GetRandomPort(uint16_t* port) {
+  Sockaddr address;
+  address.ParseString("127.0.0.1", 0);
+  Socket listener;
+  RETURN_NOT_OK(listener.Init(0));
+  RETURN_NOT_OK(listener.Bind(address));
+  Sockaddr listen_address;
+  RETURN_NOT_OK(listener.GetSocketAddress(&listen_address));
+  *port = listen_address.port();
   return Status::OK();
 }
 

@@ -104,6 +104,9 @@ fetch_and_expand() {
         rm "$FILENAME"
         continue
       fi
+    elif [[ "$FILENAME" =~ \.jar$ ]]; then
+      mkdir ${FILENAME%.jar}
+      cp $FILENAME ${FILENAME%.jar}/
     else
       echo "Error: unknown file format: $FILENAME"
       exit 1
@@ -443,6 +446,18 @@ fetch_and_patch \
  $GUMBO_QUERY_SOURCE \
  $GUMBO_QUERY_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/gumbo-query-namespace.patch"
+
+POSTGRES_PATCHLEVEL=0
+fetch_and_patch \
+ $POSTGRES_NAME.tar.gz \
+ $POSTGRES_SOURCE \
+ $POSTGRES_PATCHLEVEL
+
+POSTGRES_JDBC_PATCHLEVEL=0
+fetch_and_patch \
+ $POSTGRES_JDBC_NAME.jar \
+ $POSTGRES_JDBC_SOURCE \
+ $POSTGRES_JDBC_PATCHLEVEL
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

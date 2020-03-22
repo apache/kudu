@@ -661,3 +661,8 @@ NOTE: build-time dependency
 thirdparty/src/gumbo-query-*/: MIT license
 Source: https://github.com/lazytiger/gumbo-query
 NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/src/postgresql-*/: PostgreSQL license
+Source: https://postgresql.org
+NOTE: build-time dependency

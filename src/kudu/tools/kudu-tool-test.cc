@@ -355,7 +355,7 @@ class ToolTest : public KuduTest {
     RunTool(arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
     ASSERT_GE(err_lines.size(), 3) << err_lines;
     ASSERT_EQ(expected_status.ToString(), err_lines[0]);
-    ASSERT_STR_MATCHES(err_lines[2], "Usage: kudu.*");
+    ASSERT_STR_MATCHES(err_lines[2], "Usage: .*kudu.*");
   }
 
   void RunFsCheck(const string& arg_str,

@@ -1025,3 +1025,21 @@ build_gumbo_query() {
   ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
+
+build_postgres() {
+  POSTGRES_BDIR=$TP_BUILD_DIR/$POSTGRES_NAME$MODE_SUFFIX
+  mkdir -p $POSTGRES_BDIR
+  pushd $POSTGRES_BDIR
+
+  # We don't need extra features like readline and zlib so so let's just
+  # simplify build.
+  CFLAGS="$EXTRA_CFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    $POSTGRES_SOURCE/configure \
+    --prefix=$PREFIX \
+    --without-readline \
+    --without-zlib
+
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}

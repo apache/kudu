@@ -113,6 +113,12 @@ DEPS_FOR_ALL = \
      # Add the Kudu echo subprocess.
      "build/latest/bin/kudu-subprocess.jar",
 
+     # Add Postgres. These are symlinks to directories in thirdparty.
+     "build/latest/bin/postgres",
+     "build/latest/bin/postgres-lib",
+     "build/latest/bin/postgres-share",
+     "build/latest/bin/postgresql.jar",
+
      # Add the Kudu HMS plugin.
      "build/latest/bin/hms-plugin.jar",
 

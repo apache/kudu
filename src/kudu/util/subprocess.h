@@ -112,6 +112,10 @@ class Subprocess {
   // exit code.
   Status WaitNoBlock(int* wait_status = nullptr) WARN_UNUSED_RESULT;
 
+  // Like Wait, but it also checks the exit code is 0. If it's not, or if it's
+  // not a clean exit, it returns RemoteError.
+  Status WaitAndCheckExitCode() WARN_UNUSED_RESULT;
+
   // Send a signal to the subprocess.
   // Note that this does not reap the process -- you must still Wait()
   // in order to reap it. Only call after starting.

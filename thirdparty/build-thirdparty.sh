@@ -103,6 +103,8 @@ else
       "chrony")       F_CHRONY=1 ;;
       "gumbo-parser") F_GUMBO_PARSER=1 ;;
       "gumbo-query")  F_GUMBO_QUERY=1 ;;
+      "postgres")     F_POSTGRES=1 ;;
+      "psql-jdbc")    F_POSTGRES_JDBC=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -250,6 +252,15 @@ fi
 
 if [ -n "$F_COMMON" -o -n "$F_CHRONY" ]; then
   build_chrony
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_POSTGRES" ]; then
+  build_postgres
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_POSTGRES_JDBC" ]; then
+  mkdir -p $PREFIX/opt/jdbc
+  ln -nsf $POSTGRES_JDBC_SOURCE/$POSTGRES_JDBC_NAME.jar $PREFIX/opt/jdbc/postgresql.jar
 fi
 
 # Install Hadoop, Hive, and Sentry by symlinking their source directories (which

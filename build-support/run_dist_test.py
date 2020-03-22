@@ -153,13 +153,21 @@ def main():
   env['SENTRY_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/sentry-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
-  # Restore the symlinks to the chrony binaries; tests expect to find them in
-  # same directory as the test binaries themselves.
+  # Restore the symlinks to the chrony binaries and Postgres directories; tests
+  # expect to find them in same directory as the test binaries themselves.
   for bin_path in glob.glob(os.path.join(ROOT, "build/*/bin")):
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin/chronyc"),
                os.path.join(bin_path, "chronyc"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/sbin/chronyd"),
                os.path.join(bin_path, "chronyd"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin"),
+               os.path.join(bin_path, "postgres"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/lib"),
+               os.path.join(bin_path, "postgres-lib"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/share/postgresql"),
+               os.path.join(bin_path, "postgres-share"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/jdbc/postgresql.jar"),
+               os.path.join(bin_path, "postgresql.jar"))
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +

@@ -207,4 +207,10 @@ TEST_F(NetUtilTest, TestGetFQDN) {
   LOG(INFO) << "fqdn is " << fqdn;
 }
 
+TEST_F(NetUtilTest, TestGetRandomPort) {
+  uint16_t port;
+  ASSERT_OK(GetRandomPort(&port));
+  LOG(INFO) << "Random port is " << port;
+}
+
 } // namespace kudu
