@@ -485,8 +485,7 @@ Status ServerBase::Init() {
   Status s = fs_manager_->Open(&report);
   // No instance files existed. Try creating a new FS layout.
   if (s.IsNotFound()) {
-    LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
-    LOG(INFO) << "Attempting to create new FS layout instead";
+    LOG(INFO) << "This appears to be a new deployment of Kudu; creating new FS layout";
     is_first_run_ = true;
     s = fs_manager_->CreateInitialFileSystemLayout();
     if (s.IsAlreadyPresent()) {

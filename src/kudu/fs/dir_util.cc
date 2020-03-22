@@ -118,7 +118,7 @@ Status CheckHolePunch(Env* env, const string& path) {
     const Status _s_prepended = _s.CloneAndPrepend(msg); \
     if (_s.IsNotFound() || _s.IsDiskFailure()) { \
       health_status_ = _s_prepended; \
-      LOG(INFO) << "Instance is unhealthy: " << _s_prepended.ToString(); \
+      VLOG(1) << "Directory instance has status: " << _s_prepended.ToString(); \
       return Status::OK(); \
     } \
     return _s_prepended; \
