@@ -58,6 +58,9 @@ class ScanSpec {
   // Returns true if the result set is known to be empty.
   bool CanShortCircuit() const;
 
+  // Returns true if a Bloom filter predicate is present.
+  bool ContainsBloomFilterPredicate() const;
+
   // Optimizes the scan by unifying the lower and upper bound constraints and
   // the column predicates.
   //

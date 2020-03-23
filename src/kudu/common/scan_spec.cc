@@ -87,6 +87,13 @@ bool ScanSpec::CanShortCircuit() const {
                 });
 }
 
+bool ScanSpec::ContainsBloomFilterPredicate() const {
+  return any_of(predicates_.begin(), predicates_.end(),
+                [] (const pair<string, ColumnPredicate>& col_pred_pair) {
+                  return col_pred_pair.second.predicate_type() == PredicateType::InBloomFilter;
+                });
+}
+
 void ScanSpec::SetLowerBoundKey(const EncodedKey* key) {
   if (lower_bound_key_ == nullptr ||
       key->encoded_key().compare(lower_bound_key_->encoded_key()) > 0) {

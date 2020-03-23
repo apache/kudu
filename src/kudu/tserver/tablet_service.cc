@@ -1017,6 +1017,7 @@ bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {
     case TabletServerFeatures::COLUMN_PREDICATES:
     case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
     case TabletServerFeatures::QUIESCING:
+    case TabletServerFeatures::BLOOM_FILTER_PREDICATE:
       return true;
     default:
       return false;
@@ -2109,6 +2110,7 @@ bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
     case TabletServerFeatures::COLUMN_PREDICATES:
     case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
     case TabletServerFeatures::QUIESCING:
+    case TabletServerFeatures::BLOOM_FILTER_PREDICATE:
       return true;
     default:
       return false;

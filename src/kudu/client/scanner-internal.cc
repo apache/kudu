@@ -22,6 +22,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -38,6 +39,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -347,10 +349,20 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
     rpc_deadline = overall_deadline;
   }
 
+  // Capture previously sent Bloom filter predicate feature flag so that we don't have to make
+  // expensive call to determine the flag on scan continuations.
+  bool prev_bloom_filter_feature = ContainsKey(controller_.required_server_features(),
+                                               TabletServerFeatures::BLOOM_FILTER_PREDICATE);
+
   controller_.Reset();
   controller_.set_deadline(rpc_deadline);
   if (!configuration_.spec().predicates().empty()) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
+    if (prev_bloom_filter_feature ||
+        (next_req_.has_new_scan_request() &&
+         configuration().spec().ContainsBloomFilterPredicate())) {
+      controller_.RequireServerFeature(TabletServerFeatures::BLOOM_FILTER_PREDICATE);
+    }
   }
   if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
     controller_.RequireServerFeature(TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES);
