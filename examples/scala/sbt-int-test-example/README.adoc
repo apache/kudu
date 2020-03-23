@@ -1,0 +1,100 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= SBT Integration Test example README
+
+This is an example program that uses the Kudu test utilities to demonstrate integration testing
+in a Scala/SBT application:
+
+- Create a table
+
+To run the example integration tests, ensure SBT is installed and execute
+the following from the 'sbt-int-test-example' directory. This will execute all Scalatest test classes
+in the 'src/it/scala' directory:
+
+[source,bash]
+----
+$ sbt it:test
+----
+
+
+== Configuration
+To configure SBT for retrieving the correct kudu testing binary jar, there is a required SBT plugin:
+
+[source,sbt]
+.project/plugins.sbt
+----
+resolvers += "phData Releases" at "https://repository.phdata.io/artifactory/libs-release" //<1>
+classpathTypes += "maven-plugin"                                                          //<2>
+addSbtPlugin("io.phdata" % "sbt-os-detector" % "0.2.0")                                   //<3>
+----
+<1> Include an additional repository for plugin resolution
+<2> Include dependencies that are of type 'maven-plugin' which is required to resolve https://github.com/trustin/os-maven-plugin[OS Maven Plugin]
+<3> The https://github.com/phdata/sbt-os-detector[SBT OS Detector] plugin
+
+In the `build.sbt`, include the dependencies for kudu-test-utils and kudu-binary:
+[source,sbt]
+----
+
+lazy val root = (project in file("."))
+  .configs(IntegrationTest)
+  .enablePlugins(OsDetectorPlugin) //<1>
+  .settings(
+    Defaults.itSettings,
+    name := "sbt-int-test-example",
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.8" % "it,test",
+    libraryDependencies += "org.apache.kudu" % "kudu-client" % "1.11.1",
+    libraryDependencies += "org.apache.kudu" % "kudu-test-utils" % "1.11.1" % "it", //<2>
+    libraryDependencies += "org.apache.kudu" % "kudu-binary" % "1.11.1" % "it" classifier osDetectorClassifier.value, //<3>
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
+  )
+----
+<1> Enable the SBT OS Detector plugin
+<2> Provides utilities for working with the Kudu test cluster
+<3> `kudu-binary` dependency that matches the current operating system.  Note: Linux and MacOS are
+the only compile targets for Kudu.
+
+Once dependencies are resolved, creating integration tests are straightforward:
+[source,scala]
+----
+class KuduExampleITest extends FunSuite with BeforeAndAfter {
+
+  private val harness = new KuduTestHarness() //<1>
+
+  before {
+    harness.before() //<3>
+  }
+
+  after {
+    harness.after() //<3>
+  }
+
+  test("create table example") {
+    val kuduExample = new KuduExample(harness.getClient) //<2>
+    val tableName = "testMovies"
+    val testMovieTable = kuduExample.createMovieTable(tableName)
+    testMovieTable match {
+      case Failure(exception) => fail(exception)
+      case Success(table) => assertResult(tableName)(table.getName)
+    }
+  }
+}
+----
+<1> Create a new instance of the `KuduTestHarness` to use the default settings of the `MiniKuduCluster`
+<2> Kudu clients (both sync and async) are provided automatically by the test harness
+<3> Ensure your `MiniKuduCluster` is properly started and terminated after testing.
+
