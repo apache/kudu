@@ -41,12 +41,15 @@ class CPU {
   bool has_sse() const { return has_sse_; }
   bool has_sse2() const { return has_sse2_; }
   bool has_sse3() const { return has_sse3_; }
+  bool has_pclmulqdq() const { return has_pclmulqdq_; }
   bool has_ssse3() const { return has_ssse3_; }
   bool has_sse41() const { return has_sse41_; }
   bool has_sse42() const { return has_sse42_; }
   bool has_avx() const { return has_avx_; }
   bool has_avx2() const { return has_avx2_; }
   bool has_aesni() const { return has_aesni_; }
+  bool has_bmi() const { return has_bmi_; }
+  bool has_bmi2() const { return has_bmi2_; }
   bool has_non_stop_time_stamp_counter() const {
     return has_non_stop_time_stamp_counter_;
   }
@@ -73,12 +76,15 @@ class CPU {
   bool has_sse_;
   bool has_sse2_;
   bool has_sse3_;
+  bool has_pclmulqdq_;
   bool has_ssse3_;
   bool has_sse41_;
   bool has_sse42_;
   bool has_avx_;
   bool has_avx2_;
   bool has_aesni_;
+  bool has_bmi_;
+  bool has_bmi2_;
   bool has_non_stop_time_stamp_counter_;
   bool has_broken_neon_;
   std::string cpu_vendor_;
