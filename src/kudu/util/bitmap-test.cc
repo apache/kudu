@@ -19,26 +19,23 @@
 
 #include <cstdint>
 #include <cstring>
+#include <set>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/join.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 
 namespace kudu {
 
-static int ReadBackBitmap(uint8_t *bm, size_t bits,
-                           std::vector<size_t> *result) {
-  int iters = 0;
-  for (TrueBitIterator iter(bm, bits);
-       !iter.done();
-       ++iter) {
-    size_t val = *iter;
-    result->push_back(val);
-
-    iters++;
-  }
-  return iters;
+static void ReadBackBitmap(uint8_t *bm, size_t bits,
+                          std::vector<size_t> *result) {
+  ForEachSetBit(bm, bits, [&](size_t b) {
+                            result->push_back(b);
+                          });
 }
 
 TEST(TestBitMap, TestIteration) {
@@ -56,8 +53,7 @@ TEST(TestBitMap, TestIteration) {
 
   std::vector<size_t> read_back;
 
-  int iters = ReadBackBitmap(bm, sizeof(bm)*8, &read_back);
-  ASSERT_EQ(6, iters);
+  ReadBackBitmap(bm, sizeof(bm)*8, &read_back);
   ASSERT_EQ("0,8,31,32,33,63", JoinElements(read_back, ","));
 }
 
@@ -69,9 +65,61 @@ TEST(TestBitMap, TestIteration2) {
 
   std::vector<size_t> read_back;
 
-  int iters = ReadBackBitmap(bm, 3, &read_back);
-  ASSERT_EQ(1, iters);
+  ReadBackBitmap(bm, 3, &read_back);
   ASSERT_EQ("1", JoinElements(read_back, ","));
+}
+
+struct RandomBitmap {
+  RandomBitmap(int n_bits, double set_ratio) {
+    bm.resize(BitmapSize(n_bits));
+    Random r(GetRandomSeed32());
+    for (int i = 0; i < n_bits; i++) {
+      bool set = r.NextDoubleFraction() < set_ratio;
+      BitmapChange(bm.data(), i, set);
+      if (set) {
+        set_bits.insert(i);
+      }
+    }
+  }
+
+  faststring bm;
+  std::set<int> set_bits;
+};
+
+TEST(TestBitMap, TestIterationRandom) {
+  Random r(GetRandomSeed32());
+  const auto kNumBits = 1 + r.Uniform(100);
+  RandomBitmap bm(kNumBits, r.NextDoubleFraction());
+
+  std::set<int> remaining = bm.set_bits;
+
+  // Iterate over the set bits and remove them from the set. When we're
+  // done we should have none left in the set.
+  ForEachSetBit(bm.bm.data(), kNumBits,
+                [&](size_t b) {
+                  EXPECT_EQ(1, remaining.erase(b));
+                });
+  EXPECT_EQ(remaining.size(), 0);
+}
+
+
+
+TEST(TestBitMap, Benchmark) {
+  static constexpr int kNumBits = 1000;
+  static constexpr int kNumTrials = 1000;
+  for (int frac = 0; frac <= 100; frac++) {
+    RandomBitmap bm(kNumBits, frac/100.0);
+
+    volatile int sink = 0;
+    for (int i = 0; i < kNumTrials; i++) {
+      int sum = 0;
+      ForEachSetBit(bm.bm.data(), kNumBits,
+                    [&](size_t b) {
+                      sum += b;
+                    });
+      sink += sum;
+    }
+  }
 }
 
 TEST(TestBitMap, TestSetAndTestBits) {

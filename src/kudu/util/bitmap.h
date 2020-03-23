@@ -176,72 +176,83 @@ class BitmapIterator {
   const uint8_t *map_;
 };
 
-// Iterator which yields the set bits in a bitmap.
-// Example usage:
-//   for (TrueBitIterator iter(bitmap, n_bits);
-//        !iter.done();
-//        ++iter) {
-//     int next_onebit_position = *iter;
-//   }
-class TrueBitIterator {
- public:
-  TrueBitIterator(const uint8_t *bitmap, size_t n_bits)
-    : bitmap_(bitmap),
-      cur_byte_(0),
-      cur_byte_idx_(0),
-      n_bits_(n_bits),
-      n_bytes_(BitmapSize(n_bits_)),
-      bit_idx_(0) {
-    if (n_bits_ == 0) {
-      cur_byte_idx_ = 1; // sets done
-    } else {
-      cur_byte_ = bitmap[0];
-      AdvanceToNextOneBit();
+// Iterate over the bits in 'bitmap' and call 'func' for each set bit.
+// 'func' should take a single argument which is the bit's index.
+template<class F>
+void ForEachSetBit(const uint8_t* __restrict__ bitmap,
+                   int n_bits,
+                   const F& func);
+
+// Iterate over the bits in 'bitmap' and call 'func' for each unset bit.
+// 'func' should take a single argument which is the bit's index.
+template<class F>
+void ForEachUnsetBit(const uint8_t* __restrict__ bitmap,
+                     int n_bits,
+                     const F& func);
+
+
+////////////////////////////////////////////////////////////
+// Implementation details
+////////////////////////////////////////////////////////////
+
+template<bool SET, class F>
+inline void ForEachBit(const uint8_t* bitmap,
+                       int n_bits,
+                       const F& func) {
+  int rem = n_bits;
+  int base_idx = 0;
+  while (rem >= 64) {
+    uint64_t w = UnalignedLoad<uint64_t>(bitmap);
+    if (!SET) {
+      w = ~w;
     }
-  }
+    bitmap += sizeof(uint64_t);
 
-  TrueBitIterator &operator ++() {
-    DCHECK(!done());
-    DCHECK(cur_byte_ & 1);
-    cur_byte_ &= (~1);
-    AdvanceToNextOneBit();
-    return *this;
-  }
-
-  bool done() const {
-    return cur_byte_idx_ >= n_bytes_;
-  }
-
-  size_t operator *() const {
-    DCHECK(!done());
-    return bit_idx_;
-  }
-
- private:
-  void AdvanceToNextOneBit() {
-    while (cur_byte_ == 0) {
-      cur_byte_idx_++;
-      if (cur_byte_idx_ >= n_bytes_) return;
-      cur_byte_ = bitmap_[cur_byte_idx_];
-      bit_idx_ = cur_byte_idx_ * 8;
+    // Within each word, keep flipping the least significant non-zero bit and adding
+    // the bit index to the output until none are set.
+    //
+    // Get the count up front so that the loop can be unrolled without dependencies.
+    // The 'tzcnt' instruction that's generated here has a latency of 3 so unrolling
+    // and avoiding any cross-iteration dependencies is beneficial.
+    int tot_count = Bits::CountOnes64withPopcount(w);
+#pragma unroll(3)
+    while (tot_count--) {
+      func(base_idx + Bits::FindLSBSetNonZero64(w));
+      w &= w - 1;
     }
-    DVLOG(2) << "Found next nonzero byte at " << cur_byte_idx_
-             << " val=" << cur_byte_;
-
-    DCHECK_NE(cur_byte_, 0);
-    int set_bit = Bits::FindLSBSetNonZero(cur_byte_);
-    bit_idx_ += set_bit;
-    cur_byte_ >>= set_bit;
+    base_idx += 64;
+    rem -= 64;
   }
 
-  const uint8_t *bitmap_;
-  uint8_t cur_byte_;
-  uint8_t cur_byte_idx_;
+  while (rem > 0) {
+    uint8_t b = *bitmap++;
+    if (!SET) {
+      b = ~b;
+    }
+    while (b) {
+      int idx = base_idx + Bits::FindLSBSetNonZero(b);
+      if (idx >= n_bits) break;
+      func(idx);
+      b &= b - 1;
+    }
+    base_idx += 8;
+    rem -= 8;
+  }
+}
 
-  const size_t n_bits_;
-  const size_t n_bytes_;
-  size_t bit_idx_;
-};
+template<class F>
+inline void ForEachSetBit(const uint8_t* __restrict__ bitmap,
+                          int n_bits,
+                          const F& func) {
+  ForEachBit<true, F>(bitmap, n_bits, func);
+}
+
+template<class F>
+inline void ForEachUnsetBit(const uint8_t* __restrict__ bitmap,
+                            int n_bits,
+                            const F& func) {
+  ForEachBit<false, F>(bitmap, n_bits, func);
+}
 
 } // namespace kudu
 
