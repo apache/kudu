@@ -36,6 +36,7 @@ if [[ -f "/usr/bin/yum" ]]; then
   yum install -y \
     autoconf \
     automake \
+    chrony \
     chrpath \
     cyrus-sasl-devel \
     cyrus-sasl-gssapi \
@@ -49,8 +50,8 @@ if [[ -f "/usr/bin/yum" ]]; then
     krb5-server \
     krb5-workstation \
     libtool \
+    lsof \
     make \
-    ntp \
     openssl-devel \
     patch \
     pkgconfig \
@@ -67,6 +68,14 @@ if [[ -f "/usr/bin/yum" ]]; then
     libffi-devel \
     lzo-devel \
     tzdata
+
+  # Install libraries often used for Kudu development and build performance.
+  yum install -y epel-release
+  yum install -y \
+    ccache \
+    cmake \
+    ninja-build \
+    vim
 
   # Install docs build libraries.
   # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.
@@ -86,6 +95,7 @@ if [[ -f "/usr/bin/yum" ]]; then
     wget ${DTLS_RPM_URL} -O ${DTLS_RPM}
     yum install -y scl-utils ${DTLS_RPM}
     yum install -y devtoolset-3-toolchain
+    rm -f $DTLS_RPM
   fi
 
   # Reduce the image size by cleaning up after the install.
@@ -104,6 +114,7 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   apt-get install -y --no-install-recommends \
     autoconf \
     automake \
+    chrony \
     chrpath \
     curl \
     flex \
@@ -121,8 +132,8 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     libssl-dev \
     libtool \
     lsb-release \
+    lsof \
     make \
-    ntp \
     openssl \
     patch \
     pkg-config \
@@ -138,6 +149,13 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     libffi-dev \
     liblzo2-2 \
     tzdata
+
+  # Install libraries often used for Kudu development and build performance.
+  apt-get install -y --no-install-recommends \
+    ccache \
+    cmake \
+    ninja-build \
+    vim
 
   # Install docs build libraries.
   # Note: Uncomment to include in your dev images. These are excluded to reduce image size and build time.

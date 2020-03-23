@@ -70,6 +70,8 @@ RUN ./bootstrap-dev-env.sh \
   && rm bootstrap-java-env.sh \
   && rm bootstrap-python-env.sh
 
+ENV PATH /usr/lib/ccache:/usr/lib64/ccache/:$PATH
+
 # Common label arguments.
 # VCS_REF is not specified to improve docker caching.
 ARG DOCKERFILE
@@ -109,7 +111,7 @@ RUN build-support/enable_devtoolset.sh \
   # Remove all the source files except the hive, hadoop, and sentry sources
   # which are pre-built and symlinked into the installed/common/opt directory.
   && find thirdparty/src/* -maxdepth 0 -type d  \
-    \( ! -name 'hadoop-*' ! -name 'hive-*' ! -name 'apache-sentry-*' \) \
+    \( ! -name 'hadoop-*' ! -name 'hive-*' ! -name 'sentry-*' \) \
     -prune -exec rm -rf {} \; \
   # Remove all the build files except the llvm build which is symlinked into
   # the clang-toolchain directory.
