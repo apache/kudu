@@ -42,6 +42,7 @@ ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
 set(COMMON_SRCS
   columnblock.cc
   column_predicate.cc
+  columnar_serialization.cc
   encoded_key.cc
   generic_iterators.cc
   id_mapping.cc
@@ -60,7 +61,8 @@ set(COMMON_SRCS
   table_util.cc
   timestamp.cc
   types.cc
-  wire_protocol.cc)
+  wire_protocol.cc
+  zp7.cc)
 
 # Workaround for clang bug https://llvm.org/bugs/show_bug.cgi?id=23757
 # in which it incorrectly optimizes key_util.cc and causes incorrect results.
@@ -80,6 +82,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
   DEPS ${COMMON_LIBS})
 
 SET_KUDU_TEST_LINK_LIBS(kudu_common)
+ADD_KUDU_TEST(columnar_serialization-test)
 ADD_KUDU_TEST(columnblock-test)
 ADD_KUDU_TEST(column_predicate-test NUM_SHARDS 4)
 ADD_KUDU_TEST(encoded_key-test)
