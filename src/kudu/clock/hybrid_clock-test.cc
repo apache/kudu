@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -465,7 +466,30 @@ TEST_F(HybridClockTest, SlowClockInitialisation) {
 TEST_F(HybridClockTest, TimeSourceAutoSelection) {
   FLAGS_time_source = "auto";
   HybridClock clock(metric_entity_);
-  ASSERT_OK(clock.Init());
+  const auto s = clock.Init();
+  bool preconditions_satisfied = true;
+  if (!s.ok()) {
+    // In a testing environment where the auto-detected time source is 'system'
+    // (the local machine clock synchronized by the kernel NTP discipline),
+    // it doesn't make much sense running the test if corresponding system calls
+    // return an error (e.g., EPERM) or the clock is not synchronized.
+    // The code below is for a few cases like that: it's a set of cases seen
+    // so far in the wild.
+    if (s.IsRuntimeError()) {
+      ASSERT_STR_CONTAINS(s.ToString(), "Operation not permitted");
+      preconditions_satisfied = false;
+    } else if (s.IsServiceUnavailable()) {
+      ASSERT_STR_CONTAINS(
+          s.ToString(), "Error reading clock. Clock considered unsynchronized");
+      preconditions_satisfied = false;
+    }
+  }
+  if (!preconditions_satisfied) {
+    LOG(WARNING) << "preconditions are not satisfied, skipping the test";
+    return;
+  }
+
+  ASSERT_OK(s);
   Timestamp timestamp[2];
   uint64_t max_error_usec[2];
   ASSERT_OK(clock.NowWithError(&timestamp[0], &max_error_usec[0]));
@@ -477,7 +501,11 @@ TEST_F(HybridClockTest, TimeSourceAutoSelection) {
 TEST_F(HybridClockTest, TestNtpDiagnostics) {
   FLAGS_time_source = "system";
   HybridClock clock(metric_entity_);
-  ASSERT_OK(clock.Init());
+
+  // Even if HybridClock's initialization failed, the point of this scenario
+  // is to verify that diagnostics run appropriate tools. By design, the set
+  // of tools run these purposes doesn't depend on the initialization status.
+  WARN_NOT_OK(clock.Init(), "clock initialization failed");
 
   vector<string> log;
   clock.time_service()->DumpDiagnostics(&log);
