@@ -74,6 +74,13 @@ Status CheckCPUFlags() {
     return BadCPUStatus(cpu, "SSSE3");
   }
 
+  // POPCNT should always be present on machines with SSE4.2 support, but just in case
+  // there's some sort of weird missing support in virtualized environments, we'll check
+  // it explicitly.
+  if (!cpu.has_popcnt()) {
+    return BadCPUStatus(cpu, "POPCNT");
+  }
+
   return Status::OK();
 }
 

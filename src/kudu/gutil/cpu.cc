@@ -34,6 +34,7 @@ CPU::CPU()
     has_ssse3_(false),
     has_sse41_(false),
     has_sse42_(false),
+    has_popcnt_(false),
     has_avx_(false),
     has_avx2_(false),
     has_aesni_(false),
@@ -226,6 +227,7 @@ void CPU::Initialize() {
     has_ssse3_ = (cpu_info[2] & 0x00000200) != 0;
     has_sse41_ = (cpu_info[2] & 0x00080000) != 0;
     has_sse42_ = (cpu_info[2] & 0x00100000) != 0;
+    has_popcnt_ = (cpu_info[2] & 0x00800000) != 0;
     // AVX instructions will generate an illegal instruction exception unless
     //   a) they are supported by the CPU,
     //   b) XSAVE is supported by the CPU and

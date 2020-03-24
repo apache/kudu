@@ -5,6 +5,9 @@
 #include "kudu/gutil/bits.h"
 
 #include <assert.h>
+#include <stdint.h>
+
+#include "kudu/gutil/port.h"
 
 // this array gives the number of bits for any number from 0 to 255
 // (We could make these ints.  The tradeoff is size (eg does it overwhelm
@@ -29,9 +32,23 @@ const char Bits::num_bits[] = {
 
 int Bits::Count(const void *m, int num_bytes) {
   int nbits = 0;
-  const uint8 *s = (const uint8 *) m;
-  for (int i = 0; i < num_bytes; i++)
+  const uint8 *s = static_cast<const uint8*>(m);
+#ifdef __x86_64__
+  // Assume POPCNT since Kudu checks for it at startup.
+  while (num_bytes >= 8) {
+    nbits += __builtin_popcountll(UnalignedLoad<uint64_t>(s));
+    s += 8;
+    num_bytes -= 8;
+  }
+  while (num_bytes--) {
+    nbits += __builtin_popcount(*s++);
+  }
+#else
+  // Use lookup table on non-x86.
+  for (int i = 0; i < num_bytes; i++) {
     nbits += num_bits[*s++];
+  }
+#endif
   return nbits;
 }
 
