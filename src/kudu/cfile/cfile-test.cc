@@ -811,7 +811,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   RETURN_IF_NO_NVM_CACHE(GetParam());
 
   const int kNumItems = 64;
-  uint8_t null_bitmap[BitmapSize(kNumItems)];
+  uint8_t non_null_bitmap[BitmapSize(kNumItems)];
   uint32_t data[kNumItems];
 
   // Test Int Default Value
@@ -828,7 +828,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   // Test Int Nullable Default Value
   int_value = 321;
   DefaultColumnValueIterator nullable_iter(GetTypeInfo(UINT32), &int_value);
-  ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, nullptr);
+  ColumnBlock nullable_col(GetTypeInfo(UINT32), non_null_bitmap, data, kNumItems, nullptr);
   ColumnMaterializationContext nullable_ctx = CreateNonDecoderEvalContext(&nullable_col, &sel);
   ASSERT_OK(nullable_iter.Scan(&nullable_ctx));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
@@ -838,7 +838,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
 
   // Test NULL Default Value
   DefaultColumnValueIterator null_iter(GetTypeInfo(UINT32),  nullptr);
-  ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, nullptr);
+  ColumnBlock null_col(GetTypeInfo(UINT32), non_null_bitmap, data, kNumItems, nullptr);
   ColumnMaterializationContext null_ctx = CreateNonDecoderEvalContext(&null_col, &sel);
   ASSERT_OK(null_iter.Scan(&null_ctx));
   for (size_t i = 0; i < null_col.nrows(); ++i) {

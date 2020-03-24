@@ -399,7 +399,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
     base_data = direct_sidecar.data() + i * row_stride;
     // With padding, the null bitmap is at offset 68.
     // See the calculations below to understand why.
-    const uint8_t* null_bitmap = base_data + 68;
+    const uint8_t* non_null_bitmap = base_data + 68;
 
     // 'col1' comes at 0 bytes offset in the projection schema.
     const Slice* col1 = reinterpret_cast<const Slice*>(base_data);
@@ -419,12 +419,12 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
     // 8 bytes padding.
     const int64_t col4 = *reinterpret_cast<const int64_t*>(base_data + 48);
     EXPECT_EQ(col4, 0);
-    EXPECT_TRUE(BitmapTest(null_bitmap, 3));
+    EXPECT_TRUE(BitmapTest(non_null_bitmap, 3));
 
     // 'col3' comes at 64 bytes offset: 48 bytes previous, 8 bytes 'col4', 8 bytes padding
     const int32_t col3 = *reinterpret_cast<const int32_t*>(base_data + 64);
     EXPECT_EQ(col3, i);
-    EXPECT_FALSE(BitmapTest(null_bitmap, 4));
+    EXPECT_FALSE(BitmapTest(non_null_bitmap, 4));
   }
 }
 

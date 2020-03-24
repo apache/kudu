@@ -47,9 +47,9 @@ Status ColumnBlock::CopyTo(const SelectionVector& sel_vec,
     memcpy(dst->data_ + (dst_cell_off * type_->size()),
            data_ + (src_cell_off * type_->size()),
            num_cells * type_->size());
-    if (null_bitmap_) {
-      BitmapCopy(dst->null_bitmap_, dst_cell_off,
-                 null_bitmap_, src_cell_off,
+    if (non_null_bitmap_) {
+      BitmapCopy(dst->non_null_bitmap_, dst_cell_off,
+                 non_null_bitmap_, src_cell_off,
                  num_cells);
   }
 }

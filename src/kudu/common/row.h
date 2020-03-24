@@ -381,16 +381,16 @@ inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
 
 class ContiguousRowHelper {
  public:
-  static size_t null_bitmap_size(const Schema& schema) {
+  static size_t non_null_bitmap_size(const Schema& schema) {
     return schema.has_nullables() ? BitmapSize(schema.num_columns()) : 0;
   }
 
-  static uint8_t* null_bitmap_ptr(const Schema& schema, uint8_t* row_data) {
+  static uint8_t* non_null_bitmap_ptr(const Schema& schema, uint8_t* row_data) {
     return row_data + schema.byte_size();
   }
 
   static size_t row_size(const Schema& schema) {
-    return schema.byte_size() + null_bitmap_size(schema);
+    return schema.byte_size() + non_null_bitmap_size(schema);
   }
 
   static void InitNullsBitmap(const Schema& schema, Slice& row_data) {
@@ -398,9 +398,9 @@ class ContiguousRowHelper {
   }
 
   static void InitNullsBitmap(const Schema& schema, uint8_t *row_data, size_t bitmap_size) {
-    uint8_t *null_bitmap = row_data + schema.byte_size();
+    uint8_t *non_null_bitmap = row_data + schema.byte_size();
     for (size_t i = 0; i < bitmap_size; ++i) {
-      null_bitmap[i] = 0x00;
+      non_null_bitmap[i] = 0x00;
     }
   }
 
@@ -410,8 +410,8 @@ class ContiguousRowHelper {
   }
 
   static void SetCellIsNull(const Schema& schema, uint8_t *row_data, size_t col_idx, bool is_null) {
-    uint8_t *null_bitmap = row_data + schema.byte_size();
-    BitmapChange(null_bitmap, col_idx, is_null);
+    uint8_t *non_null_bitmap = row_data + schema.byte_size();
+    BitmapChange(non_null_bitmap, col_idx, is_null);
   }
 
   static const uint8_t *cell_ptr(const Schema& schema, const uint8_t *row_data, size_t col_idx) {
@@ -577,7 +577,7 @@ class RowBuilder {
   explicit RowBuilder(const Schema* schema)
     : schema_(schema),
       arena_(1024),
-      bitmap_size_(ContiguousRowHelper::null_bitmap_size(*schema)) {
+      bitmap_size_(ContiguousRowHelper::non_null_bitmap_size(*schema)) {
     Reset();
   }
 

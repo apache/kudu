@@ -185,7 +185,7 @@ Status CFileWriter::Start() {
   if (is_nullable_) {
     size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
                     typeinfo_->size());
-    null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
+    non_null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
   }
 
   state_ = kWriterWriting;
@@ -328,16 +328,16 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
   size_t nitems;
-  bool is_null = false;
+  bool is_non_null = false;
   BitmapIterator bmap_iter(bitmap, count);
-  while ((nitems = bmap_iter.Next(&is_null)) > 0) {
-    if (is_null) {
+  while ((nitems = bmap_iter.Next(&is_non_null)) > 0) {
+    if (is_non_null) {
       size_t rem = nitems;
       do {
         int n = data_block_->Add(ptr, rem);
         DCHECK_GE(n, 0);
 
-        null_bitmap_builder_->AddRun(true, n);
+        non_null_bitmap_builder_->AddRun(true, n);
         ptr += n * typeinfo_->size();
         value_count_ += n;
         rem -= n;
@@ -348,7 +348,7 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
 
       } while (rem > 0);
     } else {
-      null_bitmap_builder_->AddRun(false, nitems);
+      non_null_bitmap_builder_->AddRun(false, nitems);
       ptr += nitems * typeinfo_->size();
       value_count_ += nitems;
     }
@@ -360,7 +360,7 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
 Status CFileWriter::FinishCurDataBlock() {
   uint32_t num_elems_in_block = data_block_->Count();
   if (is_nullable_) {
-    num_elems_in_block = null_bitmap_builder_->nitems();
+    num_elems_in_block = non_null_bitmap_builder_->nitems();
   }
 
   if (PREDICT_FALSE(num_elems_in_block == 0)) {
@@ -388,11 +388,11 @@ Status CFileWriter::FinishCurDataBlock() {
   vector<Slice> v;
   faststring null_headers;
   if (is_nullable_) {
-    Slice null_bitmap = null_bitmap_builder_->Finish();
+    Slice non_null_bitmap = non_null_bitmap_builder_->Finish();
     PutVarint32(&null_headers, num_elems_in_block);
-    PutVarint32(&null_headers, null_bitmap.size());
+    PutVarint32(&null_headers, non_null_bitmap.size());
     v.emplace_back(null_headers.data(), null_headers.size());
-    v.push_back(null_bitmap);
+    v.push_back(non_null_bitmap);
   }
   v.push_back(data);
   Status s = AppendRawBlock(v, first_elem_ord,
@@ -401,7 +401,7 @@ Status CFileWriter::FinishCurDataBlock() {
                             "data block");
 
   if (is_nullable_) {
-    null_bitmap_builder_->Reset();
+    non_null_bitmap_builder_->Reset();
   }
 
   if (validx_builder_ != nullptr) {

@@ -146,7 +146,7 @@ RowBlock::RowBlock(const Schema* schema,
                    Arena *arena)
   : schema_(schema),
     columns_data_(schema->num_columns()),
-    column_null_bitmaps_(schema->num_columns()),
+    column_non_null_bitmaps_(schema->num_columns()),
     row_capacity_(nrows),
     nrows_(nrows),
     arena_(arena),
@@ -160,7 +160,7 @@ RowBlock::RowBlock(const Schema* schema,
     columns_data_[i] = new uint8_t[col_size];
 
     if (col_schema.is_nullable()) {
-      column_null_bitmaps_[i] = new uint8_t[bitmap_size];
+      column_non_null_bitmaps_[i] = new uint8_t[bitmap_size];
     }
   }
 }
@@ -169,7 +169,7 @@ RowBlock::~RowBlock() {
   for (uint8_t* column_data : columns_data_) {
     delete[] column_data;
   }
-  for (uint8_t* bitmap_data : column_null_bitmaps_) {
+  for (uint8_t* bitmap_data : column_non_null_bitmaps_) {
     delete[] bitmap_data;
   }
 }

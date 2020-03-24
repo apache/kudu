@@ -713,8 +713,8 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
       }
     }
 
-    int null_bitmap_size = BitmapSize(num_nullable_cols);
-    row_stride += null_bitmap_size;
+    int non_null_bitmap_size = BitmapSize(num_nullable_cols);
+    row_stride += non_null_bitmap_size;
 
     Slice direct_data = batch.direct_data();
 
@@ -793,7 +793,7 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
         }
         row_data += projection_offsets[j];
       }
-      row_data += null_bitmap_size;
+      row_data += non_null_bitmap_size;
     }
     *total_rows_in_tablet += batch.NumRows();
   };

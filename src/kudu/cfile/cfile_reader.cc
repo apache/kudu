@@ -919,18 +919,18 @@ string CFileIterator::PreparedBlock::ToString() const {
 }
 
 // Decode the null header in the beginning of the data block
-Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *null_bitmap) {
+Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *non_null_bitmap) {
   if (!GetVarint32(data_block, num_rows_in_block)) {
     return Status::Corruption("bad null header, num elements in block");
   }
 
-  uint32_t null_bitmap_size;
-  if (!GetVarint32(data_block, &null_bitmap_size)) {
+  uint32_t non_null_bitmap_size;
+  if (!GetVarint32(data_block, &non_null_bitmap_size)) {
     return Status::Corruption("bad null header, bitmap size");
   }
 
-  *null_bitmap = Slice(data_block->data(), null_bitmap_size);
-  data_block->remove_prefix(null_bitmap_size);
+  *non_null_bitmap = Slice(data_block->data(), non_null_bitmap_size);
+  data_block->remove_prefix(non_null_bitmap_size);
   return Status::OK();
 }
 

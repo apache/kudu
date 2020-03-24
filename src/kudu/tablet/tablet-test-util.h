@@ -330,7 +330,8 @@ static inline Status DumpTablet(const Tablet& tablet,
 template<class RowSetWriterClass>
 static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   const Schema &schema = writer->schema();
-  DCHECK_EQ(row_slice.size(), schema.byte_size() + ContiguousRowHelper::null_bitmap_size(schema));
+  DCHECK_EQ(row_slice.size(), schema.byte_size() +
+            ContiguousRowHelper::non_null_bitmap_size(schema));
 
   RowBlock block(&schema, 1, nullptr);
   ConstContiguousRow row(&schema, row_slice.data());

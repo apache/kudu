@@ -63,7 +63,7 @@ class RowOperationsPBEncoder {
   // after adding the extra row specified.
   size_t GetRowsFieldSizeEstimate(const KuduPartialRow& partial_row,
                                   size_t* isset_bitmap_size,
-                                  size_t* isnull_bitmap_size) const;
+                                  size_t* isnon_null_bitmap_size) const;
 
   RowOperationsPB* pb_;
   std::string::size_type prev_indirect_data_size_;

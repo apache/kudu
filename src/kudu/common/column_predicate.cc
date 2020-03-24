@@ -680,7 +680,7 @@ int ApplyPredicatePrimitive(const ColumnBlock& block, uint8_t* __restrict__ sel_
   }
   if (block.is_nullable()) {
     for (int i = 0; i < n_chunks; i++) {
-      sel_bitmap[i] &= block.null_bitmap()[i];
+      sel_bitmap[i] &= block.non_null_bitmap()[i];
     }
   }
   return n_chunks * 8;
@@ -722,9 +722,9 @@ template<bool IS_NOT_NULL>
 void ApplyNullPredicate(const ColumnBlock& block, uint8_t* __restrict__ sel_vec) {
   int n_bytes = KUDU_ALIGN_UP(block.nrows(), 8) / 8;
   for (int i = 0; i < n_bytes; i++) {
-    uint8_t null_byte = block.null_bitmap()[i];
-    if (!IS_NOT_NULL) null_byte = ~null_byte;
-    sel_vec[i] &= null_byte;
+    uint8_t non_null_byte = block.non_null_bitmap()[i];
+    if (!IS_NOT_NULL) non_null_byte = ~non_null_byte;
+    sel_vec[i] &= non_null_byte;
   }
 }
 } // anonymous namespace

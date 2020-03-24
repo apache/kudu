@@ -123,9 +123,9 @@ size_t RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type,
   // At the end of the function, we'll resize() the string back down to the
   // right size.
   size_t isset_bitmap_size;
-  size_t null_bitmap_size;
+  size_t non_null_bitmap_size;
   const size_t new_size_estimate = GetRowsFieldSizeEstimate(
-      partial_row, &isset_bitmap_size, &null_bitmap_size);
+      partial_row, &isset_bitmap_size, &non_null_bitmap_size);
   dst->resize(new_size_estimate);
 
   uint8_t* dst_ptr = reinterpret_cast<uint8_t*>(&(*dst)[prev_rows_size_]);
@@ -134,9 +134,9 @@ size_t RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type,
   dst_ptr += isset_bitmap_size;
 
   memcpy(dst_ptr,
-         ContiguousRowHelper::null_bitmap_ptr(*schema, partial_row.row_data_),
-         null_bitmap_size);
-  dst_ptr += null_bitmap_size;
+         ContiguousRowHelper::non_null_bitmap_ptr(*schema, partial_row.row_data_),
+         non_null_bitmap_size);
+  dst_ptr += non_null_bitmap_size;
 
   size_t indirect_data_size_delta = 0;
   ContiguousRow row(schema, partial_row.row_data_);
@@ -185,19 +185,19 @@ void RowOperationsPBEncoder::RemoveLast() {
 size_t RowOperationsPBEncoder::GetRowsFieldSizeEstimate(
     const KuduPartialRow& partial_row,
     size_t* isset_bitmap_size,
-    size_t* isnull_bitmap_size) const {
+    size_t* isnon_null_bitmap_size) const {
   const Schema* schema = partial_row.schema();
 
   // See wire_protocol.proto for a description of the format.
   const string* dst = pb_->mutable_rows();
 
   auto isset_size = BitmapSize(schema->num_columns());
-  auto isnull_size = ContiguousRowHelper::null_bitmap_size(*schema);
+  auto isnull_size = ContiguousRowHelper::non_null_bitmap_size(*schema);
   constexpr auto type_size = 1; // type uses one byte
   auto max_size = type_size + schema->byte_size() + isset_size + isnull_size;
 
   *isset_bitmap_size = isset_size;
-  *isnull_bitmap_size = isnull_size;
+  *isnon_null_bitmap_size = isnull_size;
   return dst->size() + max_size;
 }
 

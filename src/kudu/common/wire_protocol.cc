@@ -733,7 +733,7 @@ Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& ro
   uint8_t* row_data = row_data_slice->mutable_data();
   const uint8_t* indir_data = indirect_data_slice.data();
   const size_t expected_data_size = rowblock_pb.num_rows() * row_stride;
-  const size_t null_bitmap_offset = schema.byte_size() + total_padding;
+  const size_t non_null_bitmap_offset = schema.byte_size() + total_padding;
 
   if (PREDICT_FALSE(row_data_slice->size() != expected_data_size)) {
     return Status::Corruption(
@@ -779,7 +779,7 @@ Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& ro
     for (const auto& t : to_rewrite) {
       uint8_t* cell_ptr = row_ptr + t.col_offset;
 
-      if (t.nullable && BitmapTest(row_ptr + null_bitmap_offset, t.col_idx)) {
+      if (t.nullable && BitmapTest(row_ptr + non_null_bitmap_offset, t.col_idx)) {
         // No need to rewrite null values.
         continue;
       }
@@ -894,7 +894,7 @@ static void CopyColumn(
     const vector<int>& row_idx_select) {
   DCHECK(dst_schema);
   uint8_t* dst = dst_base + column_offset;
-  size_t offset_to_null_bitmap = schema_byte_size - column_offset;
+  size_t offset_to_non_null_bitmap = schema_byte_size - column_offset;
 
   size_t cell_size = column_block.stride();
   const uint8_t* src = column_block.cell_ptr(0);
@@ -902,7 +902,7 @@ static void CopyColumn(
   for (auto index : row_idx_select) {
     src = column_block.cell_ptr(index);
     if (IS_NULLABLE && column_block.is_null(index)) {
-      BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
+      BitmapChange(dst + offset_to_non_null_bitmap, dst_col_idx, true);
     } else if (IS_VARLEN) {
       const Slice* slice = reinterpret_cast<const Slice *>(src);
       size_t offset_in_indirect = indirect_data->size();
@@ -912,12 +912,12 @@ static void CopyColumn(
       *dst_slice = Slice(reinterpret_cast<const uint8_t*>(offset_in_indirect),
                          slice->size());
       if (IS_NULLABLE) {
-        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
+        BitmapChange(dst + offset_to_non_null_bitmap, dst_col_idx, false);
       }
     } else { // non-string, non-null
       strings::memcpy_inlined(dst, src, cell_size);
       if (IS_NULLABLE) {
-        BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, false);
+        BitmapChange(dst + offset_to_non_null_bitmap, dst_col_idx, false);
       }
     }
     dst += row_stride;

@@ -83,7 +83,7 @@ int64_t KuduWriteOperation::SizeInBuffer() const {
   // Add size of isset bitmap (always present).
   size += BitmapSize(schema->num_columns());
   // Add size of null bitmap (present if the schema has nullables)
-  size += ContiguousRowHelper::null_bitmap_size(*schema);
+  size += ContiguousRowHelper::non_null_bitmap_size(*schema);
   // The column data itself:
   for (int i = 0; i < schema->num_columns(); i++) {
     if (row_.IsColumnSet(i) && !row_.IsNull(i)) {
