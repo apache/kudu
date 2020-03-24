@@ -17,6 +17,7 @@
 
 #include "kudu/util/yamlreader.h"
 
+#include <exception>
 #include <memory>
 #include <string>
 #include <vector>

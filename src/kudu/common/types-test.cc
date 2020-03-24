@@ -22,6 +22,7 @@
 #include <limits>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

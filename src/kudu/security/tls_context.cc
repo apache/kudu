@@ -17,6 +17,16 @@
 
 #include "kudu/security/tls_context.h"
 
+#include <openssl/crypto.h>
+#ifndef OPENSSL_NO_ECDH
+#include <openssl/ec.h> // IWYU pragma: keep
+#endif
+#include <openssl/err.h>
+#include <openssl/obj_mac.h> // IWYU pragma: keep
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+
 #include <algorithm>
 #include <mutex>
 #include <ostream>
@@ -26,10 +36,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/macros.h"

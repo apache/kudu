@@ -18,7 +18,6 @@
 #include "kudu/tserver/tablet_server_options.h"
 
 #include <ostream>
-#include <string>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

@@ -16,6 +16,7 @@
 // under the License.
 
 #include <cstdint> // IWYU pragma: keep
+#include <functional>
 #include <memory>
 #include <ostream> // IWYU pragma: keep
 #include <set>

@@ -32,8 +32,8 @@
 # define PLATFORM_WINDOWS 1
 #endif
 
-#include <ctype.h>
 #include <fcntl.h>    // for open()
+#include <strings.h>
 #include <unistd.h>   // for read()
 
 #if defined __MACH__          // Mac OS X, almost certainly
@@ -52,6 +52,7 @@
 #include "kudu/gutil/sysinfo.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>    // for errno
 #include <cstdio>    // for snprintf(), sscanf()
 #include <cstdlib>   // for getenv()

@@ -17,6 +17,7 @@
 
 #include "kudu/util/countdown_latch.h"
 
+#include <functional>
 #include <memory>
 #include <thread>
 

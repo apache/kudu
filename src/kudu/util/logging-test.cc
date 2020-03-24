@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/logging.h"
+
 #include <atomic>
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -31,7 +34,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/barrier.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"

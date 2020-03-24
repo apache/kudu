@@ -17,12 +17,12 @@
 
 #include "kudu/hms/hms_catalog.h"
 
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <mutex>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 

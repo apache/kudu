@@ -22,11 +22,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>

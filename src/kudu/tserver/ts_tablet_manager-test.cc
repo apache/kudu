@@ -18,6 +18,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

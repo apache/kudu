@@ -23,25 +23,28 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
 
 #if defined(__linux__)
 #include <breakpad/client/linux/handler/exception_handler.h>
+#include <breakpad/client/linux/handler/minidump_descriptor.h>
 #include <breakpad/common/linux/linux_libc_support.h>
+#include <breakpad/common/using_std_string.h>
+#include <breakpad/third_party/lss/linux_syscall_support.h>
 #endif // defined(__linux__)
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/linux_syscall_support.h"
 #include "kudu/gutil/strings/human_readable.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"

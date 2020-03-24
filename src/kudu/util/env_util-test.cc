@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/env_util.h"
+
 #include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -34,7 +37,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"

@@ -17,6 +17,7 @@
 
 #include "kudu/util/bitmap.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <set>

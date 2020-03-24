@@ -17,21 +17,20 @@
 
 #include "kudu/security/crypto.h"
 
+#include <openssl/bn.h>
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/rand.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
 
 #include <glog/logging.h>
-#include <openssl/bio.h>
-#include <openssl/bn.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/opensslv.h>
-#include <openssl/ossl_typ.h>
-#include <openssl/pem.h>
-#include <openssl/rand.h>
-#include <openssl/rsa.h>
-#include <openssl/x509.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"

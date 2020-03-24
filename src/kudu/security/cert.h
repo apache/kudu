@@ -17,11 +17,12 @@
 
 #pragma once
 
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <openssl/asn1.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/openssl_util.h"

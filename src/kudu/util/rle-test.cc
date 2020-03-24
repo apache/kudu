@@ -19,17 +19,30 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <ostream>
 #include <string>
 #include <vector>
 
-// Must come before gtest.h.
-#include "kudu/gutil/mathlimits.h"
-
+#include <boost/preprocessor/arithmetic/dec.hpp>
+#include <boost/preprocessor/arithmetic/inc.hpp>
+#include <boost/preprocessor/control/iif.hpp>
+#include <boost/preprocessor/control/while.hpp>
+#include <boost/preprocessor/list/fold_left.hpp>
+#include <boost/preprocessor/logical/bitand.hpp>
+#include <boost/preprocessor/logical/bool.hpp>
+#include <boost/preprocessor/logical/compl.hpp>
+#include <boost/preprocessor/seq/elem.hpp>
+#include <boost/preprocessor/seq/fold_left.hpp>
+#include <boost/preprocessor/seq/size.hpp>
+#include <boost/preprocessor/tuple/elem.hpp>
+#include <boost/preprocessor/variadic/elem.hpp>
+#include <boost/tti/has_template.hpp>
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/util/bit-stream-utils.h"
 #include "kudu/util/bit-stream-utils.inline.h"
 #include "kudu/util/bit-util.h"

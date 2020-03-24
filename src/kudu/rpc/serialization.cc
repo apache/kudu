@@ -19,12 +19,11 @@
 
 #include <limits>
 #include <ostream>
-#include <string>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <google/protobuf/message_lite.h>
 #include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/message_lite.h>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/port.h"

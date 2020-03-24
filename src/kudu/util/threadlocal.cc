@@ -16,11 +16,10 @@
 // under the License.
 #include "kudu/util/threadlocal.h"
 
+#include <pthread.h>
+
 #include <memory>
 #include <ostream>
-#include <string>
-
-#include <pthread.h>
 
 #include <glog/logging.h>
 

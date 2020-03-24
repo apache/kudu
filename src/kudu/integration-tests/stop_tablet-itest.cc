@@ -16,10 +16,10 @@
 // under the License.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

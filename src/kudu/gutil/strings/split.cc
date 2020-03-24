@@ -10,7 +10,6 @@
 #include <cstring>
 #include <iterator>
 #include <limits>
-#include <memory>
 #include <ostream>
 
 #include <glog/logging.h>

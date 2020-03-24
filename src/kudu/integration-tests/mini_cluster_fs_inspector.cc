@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <set>
+#include <type_traits>
+#include <utility>
 
 #include <glog/logging.h>
 

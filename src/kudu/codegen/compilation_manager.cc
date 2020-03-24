@@ -18,6 +18,7 @@
 #include "kudu/codegen/compilation_manager.h"
 
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

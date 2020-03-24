@@ -17,12 +17,12 @@
 
 #include "kudu/master/placement_policy.h"
 
-#include <cstdint>
 #include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
 #include <numeric>
+#include <ostream>
 #include <set>
 #include <string>
 #include <unordered_map>

@@ -19,13 +19,14 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"

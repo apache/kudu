@@ -18,9 +18,9 @@
 #include "kudu/util/cloud/instance_detector.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <ostream>
-#include <string>
 
 #include <glog/logging.h>
 

@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdlib>
-#include <memory>
-#include <queue>
 #include <string>
 #include <vector>
 

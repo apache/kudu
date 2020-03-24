@@ -9,6 +9,7 @@
 #include <glob.h>
 #include <pthread.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
@@ -18,6 +19,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -29,7 +32,6 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

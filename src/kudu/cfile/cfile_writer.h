@@ -35,18 +35,9 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-namespace google {
-namespace protobuf {
-template <typename Element>
-class RepeatedPtrField; // IWYU pragma: keep
-}
-}
-
 namespace kudu {
 
 class TypeInfo;
-template <typename Buffer>
-class KeyEncoder;
 
 namespace cfile {
 

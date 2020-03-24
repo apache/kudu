@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/quorum_util.h"
 
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <utility>

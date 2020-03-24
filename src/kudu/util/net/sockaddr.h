@@ -20,8 +20,8 @@
 #include <netinet/in.h>
 
 #include <cstdint>
-#include <functional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "kudu/util/status.h"

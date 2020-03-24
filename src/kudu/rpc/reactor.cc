@@ -17,31 +17,37 @@
 
 #include "kudu/rpc/reactor.h"
 
+#include <openssl/crypto.h>
+#include <openssl/err.h> // IWYU pragma: keep
+
 #include <cerrno>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/bind.hpp>
 #include <boost/intrusive/list.hpp>
-#include <boost/optional.hpp>
+#include <boost/ref.hpp>
 #include <ev++.h>
+#include <ev.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/bind.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/client_negotiation.h"
+#include "kudu/gutil/sysinfo.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
-#include "kudu/rpc/server_negotiation.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/flag_tags.h"
@@ -55,6 +61,10 @@
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
+
+namespace boost {
+template <typename Signature> class function;
+}  // namespace boost
 
 // When compiling on Mac OS X, use 'kqueue' instead of the default, 'select', for the event loop.
 // Otherwise we run into problems because 'select' can't handle connections when more than 1024

@@ -18,7 +18,6 @@
 #include "kudu/client/batcher.h"
 
 #include <cstddef>
-#include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>

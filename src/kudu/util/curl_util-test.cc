@@ -17,6 +17,7 @@
 
 #include "kudu/util/curl_util.h"
 
+#include <functional>
 #include <memory>
 
 #include <gtest/gtest.h>

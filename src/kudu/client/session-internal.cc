@@ -17,7 +17,6 @@
 
 #include "kudu/client/session-internal.h"
 
-#include <memory>
 #include <mutex>
 #include <utility>
 

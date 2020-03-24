@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/rpc-test-base.h"
+#include "kudu/rpc/negotiation.h"
 
+#include <sasl/sasl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -30,12 +31,11 @@
 #include <utility>
 #include <vector>
 
+#include <krb5/krb5.h> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <sasl/sasl.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
@@ -43,8 +43,8 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/remote_user.h"
+#include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/security/cert.h"

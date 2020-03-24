@@ -18,11 +18,11 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

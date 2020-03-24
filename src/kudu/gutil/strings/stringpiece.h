@@ -116,12 +116,11 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
-
-#include <functional>
 #include <iosfwd>
 #include <iterator>
 #include <limits>
 #include <string>
+#include <type_traits>
 
 #include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/strings/fastmem.h"

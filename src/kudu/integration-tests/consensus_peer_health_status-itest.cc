@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <ostream>

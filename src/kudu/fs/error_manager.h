@@ -19,12 +19,12 @@
 
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <glog/logging.h>
 
-#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/dir_manager.h"
 #include "kudu/fs/dir_util.h"
-#include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/mutex.h"

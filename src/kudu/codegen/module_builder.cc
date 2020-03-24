@@ -18,12 +18,12 @@
 #include "kudu/codegen/module_builder.h"
 
 #include <cstdint>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
 
 // NOTE: among the headers below, the MCJIT.h header file is needed
 //       for successful run-time operation of the code generator.

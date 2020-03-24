@@ -15,7 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/pb_util.h"
+
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -32,7 +35,6 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/pb_util-internal.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util_test.pb.h"
 #include "kudu/util/proto_container_test.pb.h"
 #include "kudu/util/proto_container_test2.pb.h"

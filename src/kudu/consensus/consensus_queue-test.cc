@@ -17,7 +17,6 @@
 
 #include "kudu/consensus/consensus_queue.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <deque>

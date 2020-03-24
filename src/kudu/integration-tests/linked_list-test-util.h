@@ -37,6 +37,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"

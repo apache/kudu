@@ -22,6 +22,7 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/schema.h"

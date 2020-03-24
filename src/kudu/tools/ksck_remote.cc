@@ -19,10 +19,10 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <ostream>
-#include <unordered_map>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>

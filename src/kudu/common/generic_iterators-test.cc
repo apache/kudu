@@ -32,7 +32,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -42,6 +41,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/iterator_stats.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
@@ -71,8 +71,6 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-struct IteratorStats;
 
 static const int kValColIdx = 0; // Index of 'val' column in these test schemas.
 static const Schema kIntSchema({ ColumnSchema("val", INT64) },

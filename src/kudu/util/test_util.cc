@@ -17,10 +17,11 @@
 
 #include "kudu/util/test_util.h"
 
-#include <errno.h>
 #include <limits.h>
+#include <strings.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <limits>

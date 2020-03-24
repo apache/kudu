@@ -17,7 +17,6 @@
 
 #include "kudu/mini-cluster/mini_cluster.h"
 
-#include <ostream>
 #include <string>
 #include <utility>
 

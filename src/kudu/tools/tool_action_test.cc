@@ -19,11 +19,12 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <utility>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>

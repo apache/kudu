@@ -26,7 +26,6 @@
 #include <ostream>
 #include <string>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

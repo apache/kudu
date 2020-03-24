@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/rowset_tree.h"
+
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
-#include <string.h>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -33,7 +37,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/rowset_tree.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"

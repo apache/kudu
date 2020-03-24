@@ -18,6 +18,8 @@
 #include "kudu/util/bitset.h"
 
 #include <cstddef>
+#include <initializer_list>
+#include <ostream>
 #include <set>
 #include <string>
 #include <utility>

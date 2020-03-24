@@ -17,7 +17,6 @@
 
 #include "kudu/client/schema.h"
 
-#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <unordered_map>

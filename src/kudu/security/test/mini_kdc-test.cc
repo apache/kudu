@@ -15,13 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/security/test/mini_kdc.h"
+
+#include <initializer_list>
 #include <string>
 
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/security/init.h"
-#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

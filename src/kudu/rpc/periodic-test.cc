@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/rpc/periodic.h"
+
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -27,7 +30,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/periodic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"

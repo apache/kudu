@@ -3,7 +3,6 @@
 #include "kudu/gutil/stringprintf.h"
 
 #include <cstdio> // MSVC requires this for _vsnprintf
-#include <memory>
 #include <ostream>
 #include <vector>
 

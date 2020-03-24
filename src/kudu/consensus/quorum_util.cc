@@ -17,7 +17,6 @@
 #include "kudu/consensus/quorum_util.h"
 
 #include <map>
-#include <memory>
 #include <ostream>
 #include <queue>
 #include <set>

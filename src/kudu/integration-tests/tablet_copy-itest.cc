@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <memory>

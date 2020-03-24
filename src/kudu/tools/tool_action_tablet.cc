@@ -16,6 +16,7 @@
 // under the License.
 
 #include <fstream>  // IWYU pragma: keep
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>

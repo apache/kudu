@@ -15,14 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/knapsack_solver.h"
+
 #include <cstdlib>
-#include <memory>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
-#include "kudu/util/knapsack_solver.h"
 #include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/test_util.h"
 

@@ -20,9 +20,10 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
-#include <system_error>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>

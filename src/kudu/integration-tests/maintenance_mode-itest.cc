@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <unordered_map>

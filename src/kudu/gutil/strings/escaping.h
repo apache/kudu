@@ -21,7 +21,8 @@
 #ifndef STRINGS_ESCAPING_H_
 #define STRINGS_ESCAPING_H_
 
-#include <stddef.h>
+#include <cstddef>
+#include <ostream>
 #include <string>
 #include <vector>
 

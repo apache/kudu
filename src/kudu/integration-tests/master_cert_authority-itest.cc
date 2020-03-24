@@ -21,7 +21,6 @@
 #include <ostream>
 #include <string>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

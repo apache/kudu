@@ -17,8 +17,10 @@
 
 #include "kudu/common/types.h"
 
+#include <cstddef>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"

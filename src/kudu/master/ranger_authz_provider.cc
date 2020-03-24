@@ -17,7 +17,6 @@
 
 #include "kudu/master/ranger_authz_provider.h"
 
-#include <algorithm>
 #include <ostream>
 
 #include <gflags/gflags.h>
@@ -33,6 +32,7 @@ DECLARE_string(ranger_config_path);
 
 namespace kudu {
 class MetricEntity;
+
 namespace master {
 
 using kudu::security::ColumnPrivilegePB;

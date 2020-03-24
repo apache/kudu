@@ -17,10 +17,10 @@
 
 #include "kudu/clock/logical_clock.h"
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <utility>
 
 #include <glog/logging.h>
 

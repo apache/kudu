@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_replica.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

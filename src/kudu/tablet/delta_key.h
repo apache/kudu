@@ -14,9 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_DELTA_KEY_H
-#define KUDU_TABLET_DELTA_KEY_H
+#pragma once
 
+#include <cstddef>
 #include <string>
 
 #include "kudu/common/rowid.h"
@@ -177,5 +177,3 @@ struct DeltaKeyHashFunctor {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif

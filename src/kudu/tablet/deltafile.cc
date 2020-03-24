@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/deltafile.h"
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

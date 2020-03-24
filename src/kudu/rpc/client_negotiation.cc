@@ -17,8 +17,13 @@
 
 #include "kudu/rpc/client_negotiation.h"
 
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_krb5.h>
+#include <sasl/sasl.h>
+
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -27,9 +32,6 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <gssapi/gssapi.h>
-#include <gssapi/gssapi_krb5.h>
-#include <sasl/sasl.h>
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"

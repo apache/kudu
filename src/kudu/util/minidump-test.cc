@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/minidump.h"
+
 #include <unistd.h>
 
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <initializer_list>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -28,11 +32,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/util/minidump.h"
-#include "kudu/util/path_util.h"
-#include "kudu/util/test_macros.h"
 #include "kudu/util/env.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;

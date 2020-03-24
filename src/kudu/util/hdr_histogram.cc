@@ -27,7 +27,6 @@
 #include <cmath>
 #include <limits>
 #include <ostream>
-#include <string>
 
 #include <glog/logging.h>
 

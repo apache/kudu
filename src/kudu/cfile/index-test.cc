@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <ostream>
 #include <string>
 
 #include <glog/logging.h>

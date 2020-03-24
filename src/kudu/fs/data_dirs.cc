@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <random>
 #include <set>
 #include <string>

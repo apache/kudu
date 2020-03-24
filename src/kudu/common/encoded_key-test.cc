@@ -23,9 +23,9 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/common/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/int128.h"
@@ -34,15 +34,20 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h" // IWYU pragma: keep
-#include "kudu/util/test_util.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 using std::unique_ptr;
 
 namespace kudu {
+class EncodedKeyTest;
+class EncodedKeyTest_TestConstructFromEncodedString_Test;
+class EncodedKeyTest_TestDecodeCompoundKeys_Test;
+class EncodedKeyTest_TestDecodeSimpleKeys_Test;
+} // namespace kudu
 
-#define EXPECT_ROWKEY_EQ(schema, expected, enc_key)  \
+#define EXPECT_ROWKEY_EQ(schema, expected, enc_key)     \
   do { \
     SCOPED_TRACE(""); \
     EXPECT_NO_FATAL_FAILURE(ExpectRowKeyEq((schema), (expected), (enc_key))); \
@@ -53,6 +58,8 @@ namespace kudu {
     SCOPED_TRACE(""); \
     EXPECT_NO_FATAL_FAILURE(ExpectDecodedKeyEq<(type)>((expected), (encoded_form), (val))); \
   } while (0)
+
+namespace kudu {
 
 class EncodedKeyTest : public KuduTest {
  public:

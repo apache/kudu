@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/thread_restrictions.h"
+
 #include <ostream>
-#include <string>
 
 #include <glog/logging.h>
 
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
-#include "kudu/util/thread_restrictions.h"
 
 #ifdef ENABLE_THREAD_RESTRICTIONS
 

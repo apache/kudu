@@ -16,6 +16,7 @@
 // under the License.
 
 #include <csignal>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>

@@ -234,12 +234,14 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/casts.h"
@@ -278,7 +280,7 @@
   ::kudu::GaugePrototype<std::string> METRIC_##name(                 \
       ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 #define METRIC_DEFINE_gauge_bool(entity, name, label, unit, desc, level, ...) \
-  ::kudu::GaugePrototype<bool> METRIC_##  name(                    \
+  ::kudu::GaugePrototype<bool> METRIC_##name(                    \
       ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 #define METRIC_DEFINE_gauge_int32(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<int32_t> METRIC_##name(                   \
@@ -295,7 +297,9 @@
 #define METRIC_DEFINE_gauge_double(entity, name, label, unit, desc, level, ...) \
   ::kudu::GaugePrototype<double> METRIC_##name(                      \
       ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
-
+#define METRIC_DEFINE_gauge_size(entity, name, label, unit, desc, level, ...) \
+  ::kudu::GaugePrototype<size_t> METRIC_##name(                    \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 #define METRIC_DEFINE_histogram(entity, name, label, unit, desc, level, max_val, num_sig_digits) \
   ::kudu::HistogramPrototype METRIC_##name(                                       \
       ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level), \
@@ -320,14 +324,10 @@
   extern ::kudu::GaugePrototype<uint64_t> METRIC_##name
 #define METRIC_DECLARE_gauge_double(name) \
   extern ::kudu::GaugePrototype<double> METRIC_##name
-#define METRIC_DECLARE_histogram(name) \
-  extern ::kudu::HistogramPrototype METRIC_##name
-
-#define METRIC_DEFINE_gauge_size(entity, name, label, unit, desc, level, ...) \
-  ::kudu::GaugePrototype<size_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, level, ## __VA_ARGS__))
 #define METRIC_DECLARE_gauge_size(name) \
   extern ::kudu::GaugePrototype<size_t> METRIC_##name
+#define METRIC_DECLARE_histogram(name) \
+  extern ::kudu::HistogramPrototype METRIC_##name
 
 template <typename Type> class Singleton;
 

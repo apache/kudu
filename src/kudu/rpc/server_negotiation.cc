@@ -17,9 +17,12 @@
 
 #include "kudu/rpc/server_negotiation.h"
 
+#include <sasl/sasl.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -28,9 +31,7 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <sasl/sasl.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"

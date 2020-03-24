@@ -17,6 +17,7 @@
 
 #include "kudu/sentry/sentry_client.h"
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>

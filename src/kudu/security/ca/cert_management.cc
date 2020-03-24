@@ -17,26 +17,25 @@
 
 #include "kudu/security/ca/cert_management.h"
 
+#include <openssl/bn.h>
+#include <openssl/obj_mac.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
 
 #include <glog/logging.h>
-#include <openssl/conf.h>
-#ifndef OPENSSL_NO_ENGINE
-#include <openssl/engine.h>
-#endif
-#include <openssl/pem.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
-#include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 

@@ -19,7 +19,9 @@
 #include <deque>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

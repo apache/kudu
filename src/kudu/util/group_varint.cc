@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/group_varint-inl.h"
+
 #include <cstdint>
 #include <cstring>
 #include <ostream>
-#include <string>
 
 #include <boost/utility/binary.hpp>
 #include <glog/logging.h>
 
-#include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/slice.h"
 

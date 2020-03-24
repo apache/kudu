@@ -17,13 +17,13 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

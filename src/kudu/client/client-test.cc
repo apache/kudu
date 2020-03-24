@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/client/client.h"
+
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -36,16 +40,16 @@
 #include <boost/function.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gmock/gmock-generated-matchers.h>
+#include <gmock/gmock-matchers.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
@@ -62,6 +66,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
@@ -84,11 +89,11 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
-#include "kudu/security/token_signer.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -106,7 +111,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/pb_util.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/semaphore.h"
@@ -115,7 +120,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/thread_restrictions.h"
 
 DECLARE_bool(allow_unsafe_replication_factor);
@@ -188,7 +192,14 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+namespace boost {
+template <typename Signature> class function;
+}  // namespace boost
+
 namespace kudu {
+
+class RWMutex;
+
 namespace client {
 
 class ClientTest : public KuduTest {

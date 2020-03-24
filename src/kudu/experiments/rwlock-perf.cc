@@ -26,7 +26,7 @@
 #include <thread>
 #include <vector>
 
-#include <boost/smart_ptr/detail/spinlock.hpp>
+#include <boost/smart_ptr/shared_array.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 

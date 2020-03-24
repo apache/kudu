@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <sasl/sasl.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -24,10 +26,10 @@
 #include <utility>
 #include <vector>
 
-#include <sasl/sasl.h>
 #include <thrift/transport/TTransportException.h>
 #include <thrift/transport/TVirtualTransport.h>
 
+#include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
@@ -42,9 +44,6 @@ class TTransport;
 } // namespace apache
 
 namespace kudu {
-namespace rpc {
-struct SaslDeleter;
-} // namespace rpc
 namespace thrift {
 
 // An exception representing a SASL or Kerberos failure.

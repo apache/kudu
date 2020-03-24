@@ -17,19 +17,28 @@
 
 #pragma once
 
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
 
 #include <glog/logging.h>
-#include <openssl/err.h>
-#include <openssl/pem.h>
-#include <openssl/ssl.h>
-#include <openssl/x509.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+namespace security {
+namespace internal {
+struct ScopedCheckNoPendingSSLErrors;
+}  // namespace internal
+}  // namespace security
+}  // namespace kudu
 
 // Forward declarations for the OpenSSL typedefs.
 typedef struct X509_req_st X509_REQ;

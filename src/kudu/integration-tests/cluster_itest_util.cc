@@ -18,6 +18,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 
 #include <algorithm>
+#include <functional>
 #include <ostream>
 #include <set>
 #include <utility>

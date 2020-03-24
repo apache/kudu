@@ -40,6 +40,10 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
+namespace boost {
+template <typename Signature> class function;
+}  // namespace boost
+
 namespace kudu {
 
 class Sockaddr;
@@ -54,6 +58,7 @@ class DumpConnectionsResponsePB;
 class OutboundCall;
 class Reactor;
 class ReactorThread;
+
 enum class CredentialsPolicy;
 
 // Simple metrics information from within a reactor.

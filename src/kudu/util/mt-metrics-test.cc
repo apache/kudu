@@ -17,23 +17,19 @@
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/status.h"
-#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(mt_metrics_test_num_threads, 4,

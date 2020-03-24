@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <string>

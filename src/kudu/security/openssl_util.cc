@@ -17,6 +17,10 @@
 
 #include "kudu/security/openssl_util.h"
 
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/rand.h> // IWYU pragma: keep
+
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -25,16 +29,17 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <openssl/crypto.h>
-#include <openssl/err.h>
-#include <openssl/rand.h>
 
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 #include "kudu/util/debug/leakcheck_disabler.h"
+#endif
 #include "kudu/util/errno.h"
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 #include "kudu/util/mutex.h"
+#endif
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"

@@ -24,13 +24,13 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
 #include <gtest/gtest.h>

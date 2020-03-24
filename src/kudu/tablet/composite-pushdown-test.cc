@@ -18,8 +18,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

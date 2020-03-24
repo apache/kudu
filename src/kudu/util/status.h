@@ -21,6 +21,11 @@
 #include <cstddef>
 #include <string>
 
+// This macro is not defined when status.h is consumed by third party applications.
+#ifdef KUDU_HEADERS_USE_SHORT_STATUS_MACROS
+#include <glog/logging.h>
+#endif
+
 #ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"

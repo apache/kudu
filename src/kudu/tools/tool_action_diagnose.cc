@@ -18,9 +18,11 @@
 #include <algorithm>
 #include <cerrno>
 #include <fstream> // IWYU pragma: keep
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

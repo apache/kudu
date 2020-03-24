@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 

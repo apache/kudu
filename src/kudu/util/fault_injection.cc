@@ -20,7 +20,6 @@
 #include <unistd.h>
 
 #include <ostream>
-#include <string>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

@@ -16,6 +16,7 @@
 # under the License.
 [
     { include: ["<boost/core/explicit_operator_bool.hpp>", private, "<boost/optional/optional.hpp>", public ] },
+    { include: ["<boost/core/ref.hpp>", private, "<boost/ref.hpp>", public ] },
     { include: ["<boost/cstdint.hpp>", private, "<cstdint>", public ] },
     { include: ["<boost/container/detail/std_fwd.hpp>", private, "<utility>", public ] },
     { include: ["<boost/none.hpp>", private, "<boost/optional/optional.hpp>", public ] },

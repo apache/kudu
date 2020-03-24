@@ -15,13 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/security/tls_handshake.h"
-
-#include <algorithm>
 #include <pthread.h>
 #include <sched.h>
-#include <sys/uio.h>
+#include <sys/socket.h>
 
+#include <algorithm>
 #include <atomic>
 #include <csignal>
 #include <cstdint>
@@ -38,6 +36,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/tls_handshake.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"

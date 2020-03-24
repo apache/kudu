@@ -19,6 +19,8 @@
 
 #include "kudu/client/client.h"
 
+#include <openssl/crypto.h>
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -26,7 +28,6 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <gtest/gtest.h>
-#include <openssl/opensslv.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"

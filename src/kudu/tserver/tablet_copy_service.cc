@@ -17,6 +17,7 @@
 #include "kudu/tserver/tablet_copy_service.h"
 
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <utility>

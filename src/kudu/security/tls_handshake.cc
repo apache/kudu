@@ -17,12 +17,12 @@
 
 #include "kudu/security/tls_handshake.h"
 
-#include <memory>
-#include <string>
-
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
-#include <openssl/x509v3.h>
+
+#include <memory>
+#include <string>
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -18,6 +18,7 @@
 #include "kudu/master/location_cache.h"
 
 #include <cstdint>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>

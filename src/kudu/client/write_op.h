@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 
+// IWYU pragma: no_include <memory>
 #include <string>
 
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep

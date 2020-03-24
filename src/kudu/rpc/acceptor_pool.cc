@@ -17,8 +17,9 @@
 
 #include "kudu/rpc/acceptor_pool.h"
 
-#include <string>
+#include <functional>
 #include <ostream>
+#include <string>
 #include <vector>
 
 #include <gflags/gflags.h>

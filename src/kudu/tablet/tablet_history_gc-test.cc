@@ -18,10 +18,10 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

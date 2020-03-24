@@ -18,6 +18,7 @@
 #include "kudu/master/hms_notification_log_listener.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <ostream>

@@ -20,8 +20,10 @@
 #include <time.h>
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <mutex>
+#include <ostream>
 #include <utility>
 
 #include <boost/optional/optional.hpp>

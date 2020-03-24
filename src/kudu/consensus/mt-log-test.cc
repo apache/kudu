@@ -22,7 +22,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <utility>
 #include <thread>
 #include <vector>
 

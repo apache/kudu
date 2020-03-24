@@ -17,8 +17,8 @@
 
 #include "kudu/util/metrics.h"
 
-#include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <ostream>

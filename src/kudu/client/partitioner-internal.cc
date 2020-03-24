@@ -18,7 +18,6 @@
 #include "kudu/client/partitioner-internal.h"
 
 #include <map>
-#include <memory>
 #include <string>
 
 #include "kudu/client/client-internal.h"

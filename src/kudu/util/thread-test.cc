@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <functional>
 #include <ostream>
 #include <string>
 #include <vector>

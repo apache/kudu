@@ -17,6 +17,7 @@
 
 #include "kudu/master/ts_descriptor.h"
 
+#include <initializer_list>
 #include <memory>
 #include <string>
 

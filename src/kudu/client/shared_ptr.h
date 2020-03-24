@@ -29,9 +29,10 @@
 /// are not implemented. As a workaround, we use std::shared_ptr with libc++.
 ///
 /// In order to allow applications to compile against Kudu with libstdc++ as
-/// well as with libc++, macros are provided that will resolve to the correct
-/// namespace in either case. Clients are encouraged to use these macros in
-/// order to ensure that applications compile universally.
+/// well as with libc++, the kudu::client::sp namespace "alias" is provided,
+/// whose classes will resolve to the correct namespace in either case. Clients
+/// are encouraged to use this alias in order to ensure that applications
+/// compile universally.
 
 // This include is not used directly, but we need to include some C++ header in
 // order to ensure the _LIBCPP_VERSION macro is defined appropriately.
@@ -39,6 +40,21 @@
 
 #if defined(_LIBCPP_VERSION)
 
+// TODO(adar): our IWYU runs with libc++ and misbehaves with this header:
+//
+// 1. All inclusions must append "// IWYU pragma: keep" otherwise IWYU removes them.
+// 2. IWYU adds <memory> to every file that includes this header.
+//
+// In theory, the second problem can be addressed by adding
+// "// IWYU pragma: export" to the inclusion of <memory> just below. However,
+// that actually inverts the effect: IWYU removes <memory> from every file that
+// includes this header. This is unsafe because if we're doing a regular Kudu
+// build, this header includes <tr1/memory>, leaving the source file without any
+// inclusion of <memory> and unable to satisfy references to e.g. std::unique_ptr.
+//
+// There must be a way to convince IWYU that the classes in kudu::client::sp are
+// "real" and not just aliases of std classes. One way to do that would be to
+// insert complete copies of those classes just for IWYU, but that seems like overkill.
 #include <memory>
 
 namespace kudu {
@@ -52,7 +68,7 @@ namespace sp {
 }
 
 #else
-#include <tr1/memory> // IWYU pragma: export
+#include <tr1/memory>
 
 namespace kudu {
 namespace client {

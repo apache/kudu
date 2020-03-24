@@ -22,7 +22,6 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

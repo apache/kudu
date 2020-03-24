@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>

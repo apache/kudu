@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <map>
 #include <memory>
@@ -30,6 +31,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>

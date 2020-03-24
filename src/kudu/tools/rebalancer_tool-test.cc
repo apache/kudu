@@ -19,9 +19,10 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iterator>
-#include <memory>
 #include <map>
+#include <memory>
 #include <numeric>
 #include <ostream>
 #include <string>

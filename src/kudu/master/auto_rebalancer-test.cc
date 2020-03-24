@@ -17,6 +17,7 @@
 #include "kudu/master/auto_rebalancer.h"
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>

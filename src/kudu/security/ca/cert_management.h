@@ -17,6 +17,11 @@
 
 #pragma once
 
+#include <openssl/asn1.h>
+#include <openssl/crypto.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
 #include <cstdint>
 #include <memory>
 #include <string>

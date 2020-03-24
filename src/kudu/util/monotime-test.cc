@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <ctime>
 #include <ostream>
-#include <string>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>

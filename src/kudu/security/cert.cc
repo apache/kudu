@@ -17,6 +17,15 @@
 
 #include "kudu/security/cert.h"
 
+#include <openssl/asn1.h>
+#include <openssl/crypto.h>
+#include <openssl/obj_mac.h>
+#include <openssl/objects.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -24,9 +33,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
-#include <openssl/evp.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/security/crypto.h"

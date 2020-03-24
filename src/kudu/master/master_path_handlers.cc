@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <iosfwd>
 #include <limits>
 #include <map>
 #include <memory>

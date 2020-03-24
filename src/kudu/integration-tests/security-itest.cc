@@ -19,6 +19,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <ostream>

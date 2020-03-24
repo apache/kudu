@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -25,6 +24,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
 #include "kudu/util/status.h"

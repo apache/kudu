@@ -5,13 +5,13 @@
 #include "kudu/util/cache.h"
 
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 

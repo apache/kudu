@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
 #include <unordered_map>

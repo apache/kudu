@@ -20,6 +20,7 @@
 #include <regex.h>
 
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <utility>
 

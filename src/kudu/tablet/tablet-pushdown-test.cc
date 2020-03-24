@@ -19,8 +19,10 @@
 #include <cinttypes>
 #include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

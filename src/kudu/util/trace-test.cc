@@ -20,6 +20,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <ostream>
 #include <string>

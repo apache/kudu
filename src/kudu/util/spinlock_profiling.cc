@@ -17,11 +17,11 @@
 
 #include "kudu/util/spinlock_profiling.h"
 
+#include <functional>
 #include <sstream>
-#include <string>
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"

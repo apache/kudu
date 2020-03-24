@@ -27,7 +27,6 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -91,6 +90,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"

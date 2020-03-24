@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <ostream>
@@ -24,7 +25,6 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

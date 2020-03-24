@@ -14,17 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
-#include <stdint.h>
-
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/random.h"
 
 namespace kudu {

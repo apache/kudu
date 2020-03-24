@@ -26,6 +26,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

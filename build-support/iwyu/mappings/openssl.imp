@@ -1,0 +1,39 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+#
+# This file contains OpenSSL-specific mappings for IWYU.
+#
+# The goal is of these mappings is to identify the "public" OpenSSL headers
+# and to force their inclusion instead of the inclusion of various private
+# headers. See the IWYU mapping documentation for additional details.
+#
+
+[
+    { include: ["<openssl/bio.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/evp.h>", private, "<openssl/ssl3.h>", private ] },
+    { include: ["<openssl/opensslconf.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/opensslv.h>", private, "<openssl/crypto.h>", public ] },
+    { include: ["<openssl/ossl_typ.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/rsa.h>", private, "<openssl/x509.h>", public ] },
+    { include: ["<openssl/safestack.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/ssl2.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/ssl23.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/ssl3.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/tls1.h>", private, "<openssl/ssl.h>", public ] },
+    { include: ["<openssl/x509err.h>", private, "<openssl/x509.h>", public ] },
+]

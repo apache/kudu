@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -29,8 +30,8 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/core/ref.hpp>
 #include <boost/function.hpp>
+#include <boost/ref.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>

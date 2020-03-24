@@ -11,15 +11,17 @@
 // of the functions are for the most part the same except where mentioned in special
 // comments. Explicit casts were also added to bypass compilation errors.
 
-#include <string.h>
+#include "kudu/security/x509_check_host.h"
 
 #include <openssl/asn1.h>
 #include <openssl/crypto.h>
 #include <openssl/obj_mac.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <strings.h>
 
-#include "kudu/security/x509_check_host.h"
+#include <cstring>
 
 // Ported from include/openssl/crypto.h from OpenSSL-1.1.0b
 // Modifed to use __FILE__ and __LINE__ instead of OPENSSL_FILE and OPENSSL_LINE.

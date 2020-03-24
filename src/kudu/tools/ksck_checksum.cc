@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <set>

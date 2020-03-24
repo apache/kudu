@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>

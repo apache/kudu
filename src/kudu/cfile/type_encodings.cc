@@ -20,14 +20,15 @@
 #include <memory>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "kudu/cfile/binary_dict_block.h"
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
-#include "kudu/cfile/binary_dict_block.h"
-#include "kudu/cfile/binary_plain_block.h"
-#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"

@@ -26,10 +26,11 @@
 #ifndef STRINGS_UTIL_H_
 #define STRINGS_UTIL_H_
 
+#include <strings.h>
+
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-
 #include <functional>
 #include <string>
 #include <vector>

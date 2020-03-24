@@ -20,8 +20,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <map>
-#include <memory>
 #include <mutex>
 #include <ostream>
 #include <set>
@@ -92,7 +92,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
@@ -157,6 +156,9 @@ MAKE_ENUM_LIMITS(kudu::client::KuduScanner::OrderMode,
 struct tm;
 
 namespace kudu {
+
+class BlockBloomFilter;
+class BlockBloomFilterBufferAllocatorIf;
 class simple_spinlock;
 
 namespace client {

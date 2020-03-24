@@ -119,25 +119,25 @@ TAG_FLAG(thread_inject_start_latency_ms, unsafe);
 namespace kudu {
 
 static uint64_t GetCpuUTime() {
-  rusage ru;
+  struct rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
   return ru.ru_utime.tv_sec * 1000UL + ru.ru_utime.tv_usec / 1000UL;
 }
 
 static uint64_t GetCpuSTime() {
-  rusage ru;
+  struct rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
   return ru.ru_stime.tv_sec * 1000UL + ru.ru_stime.tv_usec / 1000UL;
 }
 
 static uint64_t GetVoluntaryContextSwitches() {
-  rusage ru;
+  struct rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
   return ru.ru_nvcsw;
 }
 
 static uint64_t GetInVoluntaryContextSwitches() {
-  rusage ru;
+  struct rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
   return ru.ru_nivcsw;
 }

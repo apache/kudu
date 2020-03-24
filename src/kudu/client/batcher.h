@@ -17,9 +17,9 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <sparsehash/dense_hash_set>

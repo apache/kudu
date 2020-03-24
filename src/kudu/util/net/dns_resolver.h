@@ -18,9 +18,9 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "kudu/gutil/macros.h"

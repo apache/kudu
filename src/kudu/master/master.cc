@@ -18,6 +18,7 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

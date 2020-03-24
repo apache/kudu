@@ -17,7 +17,7 @@
 
 #include "kudu/rpc/transfer.h"
 
-#include <sys/uio.h>
+#include <sys/socket.h>
 
 #include <algorithm>
 #include <cstddef>

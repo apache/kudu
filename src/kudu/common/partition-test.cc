@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/partition.h"
+
 #include <algorithm>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,7 +30,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/util/slice.h"

@@ -17,6 +17,8 @@
 
 #include "kudu/security/init.h"
 
+#include <krb5/krb5.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -29,13 +31,10 @@
 #include <ostream>
 #include <random>
 #include <string>
-#include <type_traits>
-#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <krb5/krb5.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"

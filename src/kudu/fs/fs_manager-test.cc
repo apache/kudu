@@ -21,12 +21,14 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>

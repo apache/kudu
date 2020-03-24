@@ -18,7 +18,9 @@
 #include "kudu/client/authz_token_cache.h"
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>

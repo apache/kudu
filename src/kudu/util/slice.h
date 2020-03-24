@@ -16,6 +16,7 @@
 #include <cstring>
 #include <iosfwd>
 #include <map>
+#include <ostream>
 #include <string>
 
 #ifdef KUDU_HEADERS_USE_RICH_SLICE

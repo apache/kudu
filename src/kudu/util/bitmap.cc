@@ -18,6 +18,7 @@
 #include "kudu/util/bitmap.h"
 
 #include <cstring>
+#include <ostream>
 #include <string>
 
 #include <glog/logging.h>

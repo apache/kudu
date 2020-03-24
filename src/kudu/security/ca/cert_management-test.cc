@@ -17,6 +17,7 @@
 
 #include "kudu/security/ca/cert_management.h"
 
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>

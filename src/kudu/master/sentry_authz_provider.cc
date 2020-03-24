@@ -17,7 +17,7 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
-#include <algorithm>
+#include <ostream>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>

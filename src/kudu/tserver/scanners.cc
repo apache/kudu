@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>

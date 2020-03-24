@@ -15,20 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/key_encoder.h"
+
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "kudu/common/common.pb.h"
-#include "kudu/common/key_encoder.h"
 #include "kudu/gutil/singleton.h"
+#include "kudu/util/faststring.h"
 
 using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
-
-class faststring;
 
 // A resolver for Encoders
 template <typename Buffer>
@@ -90,7 +89,7 @@ const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
 ////------------------------------------------------------------
 
 template
-const KeyEncoder<std::string>& GetKeyEncoder(const TypeInfo* typeinfo);
+const KeyEncoder<std::string>& GetKeyEncoder(const TypeInfo* typeinfo); // NOLINT
 
 template
 const KeyEncoder<faststring>& GetKeyEncoder(const TypeInfo* typeinfo);

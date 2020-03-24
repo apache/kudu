@@ -34,9 +34,11 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <climits>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

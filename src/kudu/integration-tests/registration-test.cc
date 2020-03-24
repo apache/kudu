@@ -18,10 +18,10 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

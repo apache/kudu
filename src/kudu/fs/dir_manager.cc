@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <ostream>

@@ -23,13 +23,13 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/table_util.h"

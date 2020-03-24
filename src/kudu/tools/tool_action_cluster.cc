@@ -17,13 +17,13 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>

@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <ctime>
 #endif
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <ostream>

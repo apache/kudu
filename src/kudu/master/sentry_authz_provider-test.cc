@@ -19,16 +19,18 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
 #include <google/protobuf/util/message_differencer.h>

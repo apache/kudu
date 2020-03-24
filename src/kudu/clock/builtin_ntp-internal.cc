@@ -19,8 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <memory>
-#include <string>
+#include <ostream>
 #include <utility>
 #include <vector>
 

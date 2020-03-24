@@ -17,7 +17,6 @@
 
 #include "kudu/client/write_op.h"
 
-#include <memory>
 #include <ostream>
 
 #include <glog/logging.h>

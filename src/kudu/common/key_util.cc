@@ -17,6 +17,7 @@
 
 #include "kudu/common/key_util.h"
 
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <limits>

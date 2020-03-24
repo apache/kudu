@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <deque>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>

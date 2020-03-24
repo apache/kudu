@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/index_btree.h"
+
 #include <cstddef>
 #include <memory>
 #include <ostream>
-#include <string>
 #include <vector>
 
 #include <glog/logging.h>
@@ -30,7 +31,6 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
-#include "kudu/cfile/index_btree.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"

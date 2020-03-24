@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/consensus_peers.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>

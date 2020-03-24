@@ -17,7 +17,6 @@
 
 #include "kudu/util/compression/compression_codec.h"
 
-#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>

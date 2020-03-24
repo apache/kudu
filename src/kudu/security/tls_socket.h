@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <openssl/ssl.h>
+
 #include <cstdint>
 #include <memory>
 
@@ -26,6 +28,7 @@
 #include "kudu/util/status.h"
 
 struct iovec;
+
 typedef struct ssl_st SSL;
 
 namespace kudu {

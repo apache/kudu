@@ -17,9 +17,10 @@
 
 #include "kudu/integration-tests/cluster_verifier.h"
 
+#include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

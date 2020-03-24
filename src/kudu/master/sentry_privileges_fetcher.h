@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>

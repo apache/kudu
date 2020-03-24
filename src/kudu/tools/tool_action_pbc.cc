@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
 #include <cstdlib>
 #include <exception>
 #include <fstream>  // IWYU pragma: keep
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -38,6 +37,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/path_util.h"

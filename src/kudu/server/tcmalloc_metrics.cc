@@ -18,8 +18,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <ostream>
-#include <utility>
 
 #include <glog/logging.h>
 #ifdef TCMALLOC_ENABLED

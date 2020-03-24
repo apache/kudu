@@ -18,6 +18,7 @@
 #include "kudu/tablet/row_op.h"
 
 #include <memory>
+#include <ostream>
 #include <utility>
 
 #include <glog/logging.h>

@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <memory>

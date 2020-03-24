@@ -18,6 +18,7 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>

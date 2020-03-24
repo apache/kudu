@@ -17,6 +17,9 @@
 
 #include "kudu/server/webserver.h"
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #include <algorithm>
 #include <csignal>
 #include <cstdint>
@@ -24,16 +27,16 @@
 #include <cstring>
 #include <functional>
 #include <map>
-#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <boost/algorithm/string.hpp> // IWYU pragma: keep
-#include <boost/optional.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <mustache.h>
@@ -62,8 +65,6 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 #include "kudu/util/zlib.h"
-
-struct sockaddr_in;
 
 #if defined(__APPLE__)
 typedef sig_t sighandler_t;

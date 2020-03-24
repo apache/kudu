@@ -22,7 +22,7 @@
 #include <utility>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/core/ref.hpp>
+#include <boost/ref.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"

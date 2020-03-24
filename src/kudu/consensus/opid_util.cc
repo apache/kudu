@@ -18,6 +18,7 @@
 #include "kudu/consensus/opid_util.h"
 
 #include <limits>
+#include <ostream>
 #include <utility>
 
 #include <glog/logging.h>

@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <ostream>
 #include <utility>
 #include <vector>

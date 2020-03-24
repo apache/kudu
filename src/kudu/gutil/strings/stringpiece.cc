@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <climits>
 #include <cstring>
-#include <ostream>
 #include <string>
 
 #include <glog/logging.h>

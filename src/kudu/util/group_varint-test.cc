@@ -23,10 +23,26 @@
 #include <vector>
 #endif
 
+#include "kudu/util/group_varint-inl.h"
+
+#include <boost/preprocessor/arithmetic/dec.hpp>
+#include <boost/preprocessor/arithmetic/inc.hpp>
+#include <boost/preprocessor/control/iif.hpp>
+#include <boost/preprocessor/control/while.hpp>
+#include <boost/preprocessor/list/fold_left.hpp>
+#include <boost/preprocessor/logical/bitand.hpp>
+#include <boost/preprocessor/logical/bool.hpp>
+#include <boost/preprocessor/logical/compl.hpp>
+#include <boost/preprocessor/seq/elem.hpp>
+#include <boost/preprocessor/seq/fold_left.hpp>
+#include <boost/preprocessor/seq/size.hpp>
+#include <boost/preprocessor/tuple/elem.hpp>
+#include <boost/preprocessor/variadic/elem.hpp>
+#include <boost/tti/has_template.hpp>
+#include <boost/utility/binary.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/util/faststring.h"
-#include "kudu/util/group_varint-inl.h"
 #ifdef NDEBUG
 #include "kudu/util/stopwatch.h"
 #endif

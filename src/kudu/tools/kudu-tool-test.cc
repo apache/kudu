@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <map>
@@ -29,7 +30,6 @@
 #include <set>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>

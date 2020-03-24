@@ -30,7 +30,7 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/core/ref.hpp>
+#include <boost/ref.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>

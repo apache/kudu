@@ -17,14 +17,16 @@
 
 #include "kudu/security/tls_socket.h"
 
-#include <sys/uio.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <sys/socket.h>
 
 #include <cerrno>
+#include <functional>
 #include <string>
 #include <utility>
 
 #include <glog/logging.h>
-#include <openssl/err.h>
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"

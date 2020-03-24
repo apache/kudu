@@ -17,17 +17,15 @@
 
 #pragma once
 
+#include <openssl/ssl.h>
+
 #include <cstddef>
 #include <string>
-
-#include <openssl/bio.h>
-#include <openssl/rsa.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/security/openssl_util.h"
 
 // Forward declarations for the OpenSSL typedefs.
-typedef struct rsa_st RSA;
 typedef struct bio_st BIO;
 
 namespace kudu {

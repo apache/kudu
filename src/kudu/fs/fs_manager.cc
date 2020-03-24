@@ -17,7 +17,6 @@
 
 #include "kudu/fs/fs_manager.h"
 
-#include <algorithm>
 #include <cinttypes>
 #include <ctime>
 #include <initializer_list>

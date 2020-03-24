@@ -166,6 +166,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -175,7 +176,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

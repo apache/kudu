@@ -30,6 +30,16 @@
   { include: ["<asm-generic/int-l64.h>", private, "<linux/types.h>", public] },
   { include: ["<asm/int-l64.h>", private, "<linux/types.h>", public] },
   { include: ["<asm/ioctl.h>", private, "<linux/ioctl.h>", public] },
+  { include: ["<bits/types/__sigval_t.h>", private, "<signal.h>", public] },
+  { include: ["<bits/types/siginfo_t.h>", private, "<signal.h>", public] },
+  { include: ["<bits/types/struct_rusage.h>", private, "<sys/resource.h>", public] },
+  { include: ["<bits/types/struct_tm.h>", private, "<time.h>", public] },
   { include: ["<linux/sysinfo.h>", private, "<linux/kernel.h>", public] },
-  { symbol: ["statfs", private, "<sys/vfs.h>", public] }
+  { symbol: ["clockid_t", private, "<time.h>", public] },
+  { symbol: ["iovec", private, "<sys/socket.h>", public] },
+  { symbol: ["iovec", private, "<sys/types.h>", public] },
+  { symbol: ["strcasecmp", private, "<strings.h>", public] },
+  { symbol: ["strncasecmp", private, "<strings.h>", public] },
+  { symbol: ["statfs", private, "<sys/vfs.h>", public] },
+  { symbol: ["IOV_MAX", private, "<limits.h>", public] },
 ]

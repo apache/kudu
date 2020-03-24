@@ -18,6 +18,7 @@
 #include "kudu/client/meta_cache.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>

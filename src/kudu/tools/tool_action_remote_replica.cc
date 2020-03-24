@@ -16,6 +16,7 @@
 // under the License.
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -26,7 +27,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"

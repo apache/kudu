@@ -29,6 +29,9 @@
 
 #include <cstddef>
 #include <map>
+// Not safe to include <memory>; this header must remain compatible with C++98.
+//
+// IWYU pragma: no_include <memory>
 #include <string>
 #include <vector>
 

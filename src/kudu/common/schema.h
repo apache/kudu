@@ -23,13 +23,14 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <sparsehash/dense_hash_map>
 #include <glog/logging.h>
+#include <sparsehash/dense_hash_map>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/id_mapping.h"
@@ -37,7 +38,6 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -45,6 +45,10 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+class Schema;
+}  // namespace kudu
 
 // Check that two schemas are equal, yielding a useful error message in the case that
 // they are not.
@@ -60,6 +64,8 @@
                                  << (s1).ToString() << " does not match " \
                                  << (s2).ToString(); \
   } while (0)
+
+template <class X> struct GoodFastHash;
 
 namespace kudu {
 
