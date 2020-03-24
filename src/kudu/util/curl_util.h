@@ -84,6 +84,19 @@ class EasyCurl {
     custom_method_ = std::move(m);
   }
 
+  // A comma-separated list of host names to avoid requests being proxied to,
+  // or "*" glob to disable proxying of any requests even if proxying is
+  // configured via CURLOPT_PROXY or '{http,https}_proxy' environment variables.
+  // An empty string "" clears the setting. By default, it's set to "*" since
+  // EasyCurl is primarily used in scenarios fetching data from embedded
+  // webservers of kudu-master/kudu-tserver running at the same host from where
+  // a request is issued, while 'http_proxy' and 'https_proxy' environment
+  // variables might be disruptive in that regard.
+  // See 'man CURLOPT_NOPROXY' for details.
+  void set_noproxy(std::string noproxy) {
+    noproxy_ = std::move(noproxy);
+  }
+
   // Whether to return an error if server responds with HTTP code >= 400.
   // By default, curl returns the returned content and the response code
   // since it's handy in case of auth-related HTTP response codes such as
@@ -110,6 +123,8 @@ class EasyCurl {
   CURL* curl_;
 
   std::string custom_method_;
+
+  std::string noproxy_;
 
   // Whether to verify the server certificate.
   bool verify_peer_ = true;

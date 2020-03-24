@@ -71,7 +71,8 @@ size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* user_ptr) {
 #define CURL_RETURN_NOT_OK(expr) \
   RETURN_NOT_OK(TranslateError((expr), errbuf_))
 
-EasyCurl::EasyCurl() {
+EasyCurl::EasyCurl()
+    : noproxy_("*") {
   // Use our own SSL initialization, and disable curl's.
   // Both of these calls are idempotent.
   security::InitializeOpenSSL();
@@ -165,6 +166,10 @@ Status EasyCurl::DoRequest(const string& url,
   if (!custom_method_.empty()) {
     CURL_RETURN_NOT_OK(curl_easy_setopt(
         curl_, CURLOPT_CUSTOMREQUEST, custom_method_.c_str()));
+  }
+
+  if (!noproxy_.empty()) {
+    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_NOPROXY, noproxy_.c_str()));
   }
 
   CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY));
