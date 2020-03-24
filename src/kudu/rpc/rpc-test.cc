@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -47,6 +48,7 @@
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/rtest.pb.h"
@@ -60,6 +62,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -840,6 +843,29 @@ TEST_P(TestRpc, TestRpcSidecar) {
   DoTestOutgoingSidecarExpectOK(p, 3000 * 1024, 2000 * 1024);
 }
 
+// Test sending the maximum number of sidecars, each of them being a single
+// character. This makes sure we handle the limit of IOV_MAX iovecs per sendmsg
+// call.
+TEST_P(TestRpc, TestMaxSmallSidecars) {
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl));
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, GetParam()));
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
+
+  Random rng(GetRandomSeed32());
+  vector<string> strings(TransferLimits::kMaxSidecars);
+  for (auto& s : strings) {
+    s = RandomString(2, &rng);
+  }
+  ASSERT_OK(DoTestOutgoingSidecar(p, strings));
+}
+
 TEST_P(TestRpc, TestRpcSidecarLimits) {
   {
     // Test that the limits on the number of sidecars is respected.
@@ -907,11 +933,10 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
     int idx;
     ASSERT_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(max_string)), &idx));
 
-    PushTwoStringsRequestPB request;
-    request.set_sidecar1_idx(idx);
-    request.set_sidecar2_idx(idx);
-    PushTwoStringsResponsePB resp;
-    Status status = p.SyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+    PushStringsRequestPB request;
+    request.add_sidecar_indexes(idx);
+    PushStringsResponsePB resp;
+    Status status = p.SyncRequest(GenericCalculatorService::kPushStringsMethodName,
         request, &resp, &controller);
     ASSERT_TRUE(status.IsNetworkError()) << "Unexpected error: " << status.ToString();
     // Remote responds to extra-large payloads by closing the connection.
@@ -1423,16 +1448,16 @@ static void SendAndCancelRpcs(Proxy* p, const Slice& slice) {
   int i = 0;
   while (MonoTime::Now() < end_time) {
     controller.Reset();
-    PushTwoStringsRequestPB request;
-    PushTwoStringsResponsePB resp;
+    PushStringsRequestPB request;
+    PushStringsResponsePB resp;
     int idx;
     CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(slice), &idx));
-    request.set_sidecar1_idx(idx);
+    request.add_sidecar_indexes(idx);
     CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(slice), &idx));
-    request.set_sidecar2_idx(idx);
+    request.add_sidecar_indexes(idx);
 
     CountDownLatch latch(1);
-    p->AsyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+    p->AsyncRequest(GenericCalculatorService::kPushStringsMethodName,
                     request, &resp, &controller,
                     boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
 

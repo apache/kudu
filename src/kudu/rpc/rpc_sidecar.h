@@ -20,6 +20,7 @@
 #include <memory>
 #include <vector>
 
+#include <boost/container/small_vector.hpp>
 #include <google/protobuf/repeated_field.h> // IWYU pragma: keep
 #include <google/protobuf/stubs/port.h>
 
@@ -32,6 +33,8 @@ class Status;
 class faststring;
 
 namespace rpc {
+
+typedef boost::container::small_vector<Slice, 2> SidecarSliceVector;
 
 // An RpcSidecar is a mechanism which allows replies to RPCs to reference blocks of data
 // without extra copies. In other words, whenever a protobuf would have a large field
@@ -58,12 +61,11 @@ class RpcSidecar {
   static std::unique_ptr<RpcSidecar> FromSlice(Slice slice);
 
   // Utility method to parse a series of sidecar slices into 'sidecars' from 'buffer' and
-  // a set of offsets. 'sidecars' must have length >= TransferLimits::kMaxSidecars, and
-  // will be filled from index 0.
-  // TODO(henryr): Consider a vector instead here if there's no perf. impact.
+  // a set of offsets.
   static Status ParseSidecars(
       const ::google::protobuf::RepeatedField<::google::protobuf::uint32>& offsets,
-      Slice buffer, Slice* sidecars);
+      Slice buffer,
+      SidecarSliceVector* sidecars);
 
   // Append Slice representation of the sidecar's data to the given payload.
   //

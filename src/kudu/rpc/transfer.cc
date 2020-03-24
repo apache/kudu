@@ -225,7 +225,7 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
   CHECK_LT(cur_slice_idx_, payload_slices_.size());
 
   started_ = true;
-  int n_iovecs = payload_slices_.size() - cur_slice_idx_;
+  int n_iovecs = std::min<int>(payload_slices_.size() - cur_slice_idx_, IOV_MAX);
   struct iovec iovec[n_iovecs];
   {
     int offset_in_slice = cur_offset_in_slice_;

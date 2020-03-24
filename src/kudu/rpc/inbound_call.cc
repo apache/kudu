@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 
+#include <boost/container/vector.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
@@ -93,7 +94,7 @@ Status InboundCall::ParseFrom(unique_ptr<InboundTransfer> transfer) {
   }
 
   RETURN_NOT_OK(RpcSidecar::ParseSidecars(
-          header_.sidecar_offsets(), serialized_request_, inbound_sidecar_slices_));
+          header_.sidecar_offsets(), serialized_request_, &inbound_sidecar_slices_));
   if (header_.sidecar_offsets_size() > 0) {
     // Trim the request to just the message
     serialized_request_ = Slice(serialized_request_.data(), header_.sidecar_offsets(0));

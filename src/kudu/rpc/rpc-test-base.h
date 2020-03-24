@@ -39,6 +39,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/security/security-test-util.h"
+#include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
@@ -70,8 +71,8 @@ using kudu::rpc_test::ExactlyOnceResponsePB;
 using kudu::rpc_test::FeatureFlags;
 using kudu::rpc_test::PanicRequestPB;
 using kudu::rpc_test::PanicResponsePB;
-using kudu::rpc_test::PushTwoStringsRequestPB;
-using kudu::rpc_test::PushTwoStringsResponsePB;
+using kudu::rpc_test::PushStringsRequestPB;
+using kudu::rpc_test::PushStringsResponsePB;
 using kudu::rpc_test::SendTwoStringsRequestPB;
 using kudu::rpc_test::SendTwoStringsResponsePB;
 using kudu::rpc_test::SleepRequestPB;
@@ -93,7 +94,7 @@ class GenericCalculatorService : public ServiceIf {
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
   static const char *kSleepWithSidecarMethodName;
-  static const char *kPushTwoStringsMethodName;
+  static const char *kPushStringsMethodName;
   static const char *kSendTwoStringsMethodName;
   static const char *kAddExactlyOnce;
 
@@ -118,8 +119,8 @@ class GenericCalculatorService : public ServiceIf {
       DoSleepWithSidecar(incoming);
     } else if (incoming->remote_method().method_name() == kSendTwoStringsMethodName) {
       DoSendTwoStrings(incoming);
-    } else if (incoming->remote_method().method_name() == kPushTwoStringsMethodName) {
-      DoPushTwoStrings(incoming);
+    } else if (incoming->remote_method().method_name() == kPushStringsMethodName) {
+      DoPushStrings(incoming);
     } else {
       incoming->RespondFailure(ErrorStatusPB::ERROR_NO_SUCH_METHOD,
                                Status::InvalidArgument("bad method"));
@@ -179,28 +180,25 @@ class GenericCalculatorService : public ServiceIf {
     incoming->RespondSuccess(resp);
   }
 
-  void DoPushTwoStrings(InboundCall* incoming) {
+  static void DoPushStrings(InboundCall* incoming) {
     Slice param(incoming->serialized_request());
-    PushTwoStringsRequestPB req;
+    PushStringsRequestPB req;
     if (!req.ParseFromArray(param.data(), param.size())) {
       LOG(FATAL) << "couldn't parse: " << param.ToDebugString();
     }
 
-    Slice sidecar1;
-    CHECK_OK(incoming->GetInboundSidecar(req.sidecar1_idx(), &sidecar1));
-
-    Slice sidecar2;
-    CHECK_OK(incoming->GetInboundSidecar(req.sidecar2_idx(), &sidecar2));
-
     // Check that reading non-existant sidecars doesn't work.
     Slice tmp;
-    CHECK(!incoming->GetInboundSidecar(req.sidecar2_idx() + 2, &tmp).ok());
+    CHECK(!incoming->GetInboundSidecar(req.sidecar_indexes_size() + 2, &tmp).ok());
 
-    PushTwoStringsResponsePB resp;
-    resp.set_size1(sidecar1.size());
-    resp.set_data1(reinterpret_cast<const char*>(sidecar1.data()), sidecar1.size());
-    resp.set_size2(sidecar2.size());
-    resp.set_data2(reinterpret_cast<const char*>(sidecar2.data()), sidecar2.size());
+    PushStringsResponsePB resp;
+    for (const auto& sidecar_idx : req.sidecar_indexes()) {
+      Slice sidecar;
+      CHECK_OK(incoming->GetInboundSidecar(sidecar_idx, &sidecar));
+
+      resp.add_sizes(sidecar.size());
+      resp.add_crcs(crc::Crc32c(sidecar.data(), sidecar.size()));
+    }
 
     // Drop the sidecars etc, just to confirm that it's safe to do so.
     CHECK_GT(incoming->GetTransferSize(), 0);
@@ -405,7 +403,7 @@ const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalcul
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
 const char *GenericCalculatorService::kSleepWithSidecarMethodName = "SleepWithSidecar";
-const char *GenericCalculatorService::kPushTwoStringsMethodName = "PushTwoStrings";
+const char *GenericCalculatorService::kPushStringsMethodName = "PushStrings";
 const char *GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
 const char *GenericCalculatorService::kAddExactlyOnce = "AddExactlyOnce";
 
@@ -511,28 +509,29 @@ class RpcTestBase : public KuduTest {
     CHECK_EQ(0, second.compare(Slice(expected)));
   }
 
-  Status DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {
-    PushTwoStringsRequestPB request;
+  static Status DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {
+    return DoTestOutgoingSidecar(p, {std::string(size1, 'a'), std::string(size2, 'b')});
+  }
+
+  static Status DoTestOutgoingSidecar(const Proxy& p, const std::vector<std::string>& strings) {
+    PushStringsRequestPB request;
     RpcController controller;
 
-    int idx1;
-    std::string s1(size1, 'a');
-    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s1)), &idx1));
+    for (const auto& s : strings) {
+      int idx;
+      CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx));
+      request.add_sidecar_indexes(idx);
+    }
 
-    int idx2;
-    std::string s2(size2, 'b');
-    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s2)), &idx2));
-
-    request.set_sidecar1_idx(idx1);
-    request.set_sidecar2_idx(idx2);
-
-    PushTwoStringsResponsePB resp;
-    KUDU_RETURN_NOT_OK(p.SyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+    PushStringsResponsePB resp;
+    KUDU_RETURN_NOT_OK(p.SyncRequest(GenericCalculatorService::kPushStringsMethodName,
                                      request, &resp, &controller));
-    CHECK_EQ(size1, resp.size1());
-    CHECK_EQ(resp.data1(), s1);
-    CHECK_EQ(size2, resp.size2());
-    CHECK_EQ(resp.data2(), s2);
+    for (int i = 0; i < strings.size(); i++) {
+      CHECK_EQ(strings[i].size(), resp.sizes(i));
+      CHECK_EQ(crc::Crc32c(strings[i].data(), strings[i].size()),
+               resp.crcs(i));
+    }
+
     return Status::OK();
   }
 

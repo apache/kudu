@@ -33,6 +33,7 @@
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
@@ -55,7 +56,6 @@ class CallResponse;
 class DumpConnectionsRequestPB;
 class RpcCallInProgressPB;
 class RpcController;
-class RpcSidecar;
 
 // Tracks the status of a call on the client side.
 //
@@ -329,7 +329,7 @@ class CallResponse {
   Slice serialized_response_;
 
   // Slices of data for rpc sidecars. They point into memory owned by transfer_.
-  Slice sidecar_slices_[TransferLimits::kMaxSidecars];
+  SidecarSliceVector sidecar_slices_;
 
   // The incoming transfer data - retained because serialized_response_
   // and sidecar_slices_ refer into its data.

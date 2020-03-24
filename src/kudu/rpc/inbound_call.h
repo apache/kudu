@@ -30,6 +30,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/faststring.h"
@@ -55,7 +56,6 @@ class Connection;
 class DumpConnectionsRequestPB;
 class RemoteUser;
 class RpcCallInProgressPB;
-class RpcSidecar;
 
 struct InboundCallTiming {
   MonoTime time_received;   // Time the call was first accepted.
@@ -264,7 +264,7 @@ class InboundCall {
 
   // Inbound sidecars from the request. The slices are views onto transfer_. There are as
   // many slices as header_.sidecar_offsets_size().
-  Slice inbound_sidecar_slices_[TransferLimits::kMaxSidecars];
+  SidecarSliceVector inbound_sidecar_slices_;
 
   // The trace buffer.
   scoped_refptr<Trace> trace_;

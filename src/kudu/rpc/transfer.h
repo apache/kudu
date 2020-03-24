@@ -44,7 +44,7 @@ struct TransferCallbacks;
 class TransferLimits {
  public:
   enum {
-    kMaxSidecars = 10,
+    kMaxSidecars = 10000,
     kMaxTotalSidecarBytes = INT_MAX
   };
 

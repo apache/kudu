@@ -76,17 +76,16 @@ message SendTwoStringsResponsePB {
   required uint32 sidecar2 = 2;
 }
 
-// Push two strings to the server as part of the request, in sidecars.
-message PushTwoStringsRequestPB {
-  required uint32 sidecar1_idx = 1;
-  required uint32 sidecar2_idx = 2;
+// Push strings to the server as part of the request, in sidecars.
+message PushStringsRequestPB {
+  repeated uint32 sidecar_indexes = 1;
 }
 
-message PushTwoStringsResponsePB {
-  required uint32 size1 = 1;
-  required string data1 = 2;
-  required uint32 size2 = 3;
-  required string data2 = 4;
+// The server responds with the sizes and checksums of the sidecars that
+// it received.
+message PushStringsResponsePB {
+  repeated uint32 sizes = 1;
+  repeated uint32 crcs = 2;
 }
 
 message EchoRequestPB {
