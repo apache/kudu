@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -891,7 +892,7 @@ static void CopyColumn(
     const ColumnBlock& column_block, int dst_col_idx, uint8_t* __restrict__ dst_base,
     faststring* indirect_data, const Schema* dst_schema, size_t row_stride,
     size_t schema_byte_size, size_t column_offset,
-    const vector<int>& row_idx_select) {
+    const vector<uint16_t>& row_idx_select) {
   DCHECK(dst_schema);
   uint8_t* dst = dst_base + column_offset;
   size_t offset_to_non_null_bitmap = schema_byte_size - column_offset;
@@ -927,13 +928,28 @@ static void CopyColumn(
 // Because we use a faststring here, ASAN tests become unbearably slow
 // with the extra verifications.
 ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
-void SerializeRowBlock(const RowBlock& block,
-                       RowwiseRowBlockPB* rowblock_pb,
-                       const Schema* projection_schema,
-                       faststring* data_buf,
-                       faststring* indirect_data,
-                       bool pad_unixtime_micros_to_16_bytes) {
+int SerializeRowBlock(const RowBlock& block,
+                      const Schema* projection_schema,
+                      faststring* data_buf,
+                      faststring* indirect_data,
+                      bool pad_unixtime_micros_to_16_bytes) {
   DCHECK_GT(block.nrows(), 0);
+
+  vector<uint16_t> selected_row_indexes;
+  bool all_selected = !block.selection_vector()->GetSelectedRows(
+      &selected_row_indexes);
+  if (all_selected) {
+    // TODO(todd): add a fast-path for this in the 'Copy' functions.
+    selected_row_indexes.resize(block.nrows());
+    std::iota(selected_row_indexes.begin(),
+              selected_row_indexes.end(), 0);
+  }
+  size_t num_rows = selected_row_indexes.size();
+
+  // Fast-path empty blocks (eg because the predicate didn't match any rows or
+  // all rows in the block were deleted)
+  if (num_rows == 0) return 0;
+
   const Schema* tablet_schema = block.schema();
 
   if (projection_schema == nullptr) {
@@ -958,7 +974,6 @@ void SerializeRowBlock(const RowBlock& block,
 
   size_t old_size = data_buf->size();
   size_t row_stride = ContiguousRowHelper::row_size(*projection_schema) + total_padding;
-  size_t num_rows = block.selection_vector()->CountSelected();
   size_t schema_byte_size = projection_schema->byte_size() + total_padding;
   size_t additional_size = row_stride * num_rows;
 
@@ -971,8 +986,6 @@ void SerializeRowBlock(const RowBlock& block,
     memset(base, 0, additional_size);
   }
 
-  vector<int> selected_row_indexes;
-  block.selection_vector()->GetSelectedRows(&selected_row_indexes);
   size_t t_schema_idx = 0;
   size_t padding_so_far = 0;
   for (int p_schema_idx = 0; p_schema_idx < projection_schema->num_columns(); p_schema_idx++) {
@@ -1009,7 +1022,7 @@ void SerializeRowBlock(const RowBlock& block,
       padding_so_far += 8;
     }
   }
-  rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
+  return num_rows;
 }
 
 string StartTimeToString(const ServerRegistrationPB& reg) {

@@ -44,7 +44,6 @@
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"  // IWYU pragma: keep
@@ -157,14 +156,12 @@ class WireProtocolTest : public KuduTest,
     FillRowBlockForBenchmark(&block);
     SelectRandomRowsWithRate(&block, select_rate);
 
-    RowwiseRowBlockPB pb;
     faststring direct, indirect;
     int64_t cycle_start = CycleClock::Now();
     for (int i = 0; i < kNumTrials; ++i) {
-      pb.Clear();
       direct.clear();
       indirect.clear();
-      SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
+      SerializeRowBlock(block, nullptr, &direct, &indirect);
     }
     int64_t cycle_end = CycleClock::Now();
     LOG(INFO) << Substitute(
@@ -315,19 +312,20 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   FillRowBlockWithTestRows(&block);
 
   // Convert to PB.
-  RowwiseRowBlockPB pb;
   faststring direct, indirect;
-  SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
-  SCOPED_TRACE(pb_util::SecureDebugString(pb));
+  int num_rows = SerializeRowBlock(block, nullptr, &direct, &indirect);
   SCOPED_TRACE("Row data: " + direct.ToString());
   SCOPED_TRACE("Indirect data: " + indirect.ToString());
 
   // Convert back to a row, ensure that the resulting row is the same
   // as the one we put in.
+  RowwiseRowBlockPB pb;
+  pb.set_num_rows(num_rows);
+
   vector<const uint8_t*> row_ptrs;
   Slice direct_sidecar = direct;
   ASSERT_OK(ExtractRowsFromRowBlockPB(schema_, pb, indirect,
-                                             &direct_sidecar, &row_ptrs));
+                                      &direct_sidecar, &row_ptrs));
   ASSERT_EQ(block.nrows(), row_ptrs.size());
   for (int i = 0; i < block.nrows(); ++i) {
     ConstContiguousRow row_roundtripped(&schema_, row_ptrs[i]);
@@ -375,16 +373,17 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
                        ColumnSchema("col3", INT32, true /* nullable */)}, 0);
 
   // Convert to PB.
-  RowwiseRowBlockPB pb;
   faststring direct, indirect;
-  SerializeRowBlock(block, &pb, &proj_schema, &direct, &indirect, true /* pad timestamps */);
-  SCOPED_TRACE(pb_util::SecureDebugString(pb));
+  int num_rows = SerializeRowBlock(block, &proj_schema, &direct, &indirect,
+                                   true /* pad timestamps */);
   SCOPED_TRACE("Row data: " + HexDump(direct));
   SCOPED_TRACE("Indirect data: " + HexDump(indirect));
 
   // Convert back to a row, ensure that the resulting row is the same
   // as the one we put in. Can't reuse the decoding methods since we
   // won't support decoding padded rows within Kudu.
+  RowwiseRowBlockPB pb;
+  pb.set_num_rows(num_rows);
   vector<const uint8_t*> row_ptrs;
   Slice direct_sidecar = direct;
   Slice indirect_sidecar = indirect;
@@ -476,10 +475,9 @@ TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
   ASSERT_EQ(900, block.selection_vector()->CountSelected());
 
   // Convert it to protobuf, ensure that the results look right.
-  RowwiseRowBlockPB pb;
   faststring direct, indirect;
-  SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
-  ASSERT_EQ(900, pb.num_rows());
+  int num_rows = SerializeRowBlock(block, nullptr, &direct, &indirect);
+  ASSERT_EQ(900, num_rows);
 }
 
 TEST_F(WireProtocolTest, TestColumnDefaultValue) {

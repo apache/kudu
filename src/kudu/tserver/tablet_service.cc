@@ -91,7 +91,6 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
-#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -758,16 +757,16 @@ class ScanResultCopier : public ScanResultCollector {
         pad_unixtime_micros_to_16_bytes_(false) {}
 
   void HandleRowBlock(Scanner* scanner, const RowBlock& row_block) override {
-    int64_t num_selected = row_block.selection_vector()->CountSelected();
-    // Fast-path empty blocks (eg because the predicate didn't match any rows or
-    // all rows in the block were deleted)
-    if (num_selected == 0) return;
+    int num_selected = SerializeRowBlock(
+        row_block, scanner->client_projection_schema(),
+        rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
 
-    num_rows_returned_ += num_selected;
-    scanner->add_num_rows_returned(num_selected);
-    SerializeRowBlock(row_block, rowblock_pb_, scanner->client_projection_schema(),
-                      rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
-    SetLastRow(row_block, &last_primary_key_);
+    if (num_selected > 0) {
+      rowblock_pb_->set_num_rows(rowblock_pb_->num_rows() + num_selected);
+      num_rows_returned_ += num_selected;
+      scanner->add_num_rows_returned(num_selected);
+      SetLastRow(row_block, &last_primary_key_);
+    }
   }
 
   // Returns number of bytes buffered to return.

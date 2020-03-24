@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/status.h"
@@ -102,7 +104,11 @@ class SelectionVector {
 
   // Sets '*selected' to the indices of all rows marked as selected
   // in this selection vector.
-  void GetSelectedRows(std::vector<int>* selected) const;
+  //
+  // NOTE: in the case that all rows are selected, a fast path is triggered
+  // in which false is returned with an empty 'selected'. Otherwise, returns
+  // true.
+  bool GetSelectedRows(std::vector<uint16_t>* selected) const WARN_UNUSED_RESULT;
 
   uint8_t *mutable_bitmap() {
     return &bitmap_[0];

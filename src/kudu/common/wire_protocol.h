@@ -158,7 +158,7 @@ Status ParseInt32Config(const std::string& name, const std::string& value, int32
 Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb,
                             google::protobuf::Map<std::string, std::string>* configs);
 
-// Encode the given row block into the provided protobuf and data buffers.
+// Encode the given row block into the provided data buffers.
 //
 // All data (both direct and indirect) for each selected row in the RowBlock is
 // copied into the protobuf and faststrings.
@@ -172,10 +172,12 @@ Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb,
 // schema will be padded to the right by 8 (zero'd) bytes for a total of 16 bytes.
 //
 // Requires that block.nrows() > 0
-void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
-                       const Schema* projection_schema,
-                       faststring* data_buf, faststring* indirect_data,
-                       bool pad_unixtime_micros_to_16_bytes = false);
+//
+// Returns the number of rows serialized.
+int SerializeRowBlock(const RowBlock& block,
+                      const Schema* projection_schema,
+                      faststring* data_buf, faststring* indirect_data,
+                      bool pad_unixtime_micros_to_16_bytes = false);
 
 // Rewrites the data pointed-to by row data slice 'row_data_slice' by replacing
 // relative indirect data pointers with absolute ones in 'indirect_data_slice'.

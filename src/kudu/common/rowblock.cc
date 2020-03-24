@@ -16,7 +16,7 @@
 // under the License.
 #include "kudu/common/rowblock.h"
 
-#include <numeric>
+#include <limits>
 #include <vector>
 
 #include <glog/logging.h>
@@ -74,30 +74,34 @@ void SelectionVector::ClearToSelectAtMost(size_t max_rows) {
   }
 }
 
-void SelectionVector::GetSelectedRows(vector<int>* selected) const {
+
+// TODO(todd) this is a bit faster when implemented with target "bmi" enabled.
+// Consider duplicating it and doing runtime switching.
+static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
+                                    int n_bytes,
+                                    uint16_t* __restrict__ dst) {
+  ForEachSetBit(bitmap, n_bytes * 8,
+                [&](int bit) {
+                  *dst++ = bit;
+                });
+}
+
+bool SelectionVector::GetSelectedRows(vector<uint16_t>* selected) const {
+  CHECK_LE(n_rows_, std::numeric_limits<uint16_t>::max());
   int n_selected = CountSelected();
-  selected->resize(n_selected);
-  if (n_selected == 0) {
-    return;
-  }
   if (n_selected == n_rows_) {
-    std::iota(selected->begin(), selected->end(), 0);
-    return;
+    selected->clear();
+    return false;
   }
 
-  const uint8_t* bitmap = &bitmap_[0];
-  int* dst = selected->data();
-  // Within each byte, keep flipping the least significant non-zero bit and adding
-  // the bit index to the output until none are set.
-  for (int i = 0; i < n_bytes_; i++) {
-    uint8_t bm = *bitmap++;
-    while (bm != 0) {
-      int bit = Bits::FindLSBSetNonZero(bm);
-      *dst++ = (i * 8) + bit;
-      bm ^= (1 << bit);
-    }
+  selected->resize(n_selected);
+  if (n_selected == 0) {
+    return true;
   }
+  GetSelectedRowsInternal(&bitmap_[0], n_bytes_, selected->data());
+  return true;
 }
+
 
 size_t SelectionVector::CountSelected() const {
   return Bits::Count(&bitmap_[0], n_bytes_);
