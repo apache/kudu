@@ -217,7 +217,7 @@ inline void ForEachBit(const uint8_t* bitmap,
     int tot_count = Bits::CountOnes64withPopcount(w);
 #ifdef __clang__
 #pragma unroll(3)
-#else
+#elif __GNUC__ >= 8
 #pragma GCC unroll 3
 #endif
     for (int i = 0; i < tot_count; i++) {
