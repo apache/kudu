@@ -1,0 +1,14 @@
+*** ews/ranger-admin-services.sh.orig	2020-03-18 00:27:04.000000000 +0100
+--- ews/ranger-admin-services.sh	2020-03-18 00:27:14.000000000 +0100
+*************** action=$1
+*** 25,33 ****
+  arg2=$2
+  arg3=$3
+  action=`echo $action | tr '[:lower:]' '[:upper:]'`
+- realScriptPath=`readlink -f $0`
+- realScriptDir=`dirname $realScriptPath`
+- XAPOLICYMGR_DIR=`(cd $realScriptDir/..; pwd)`
+  
+  XAPOLICYMGR_EWS_DIR=${XAPOLICYMGR_DIR}/ews
+  RANGER_JAAS_LIB_DIR="${XAPOLICYMGR_EWS_DIR}/ranger_jaas"
+--- 25,30 ----

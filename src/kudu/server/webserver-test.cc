@@ -25,7 +25,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -153,9 +152,9 @@ TEST_F(PasswdWebserverTest, TestPasswdMissing) {
 }
 
 TEST_F(PasswdWebserverTest, TestPasswdPresent) {
-  string auth_url = Substitute("http://$0@$1/", security::kTestAuthString,
-                               addr_.ToString());
-  ASSERT_OK(curl_.FetchURL(auth_url, &buf_));
+  ASSERT_OK(curl_.set_auth(CurlAuthType::DIGEST, security::kTestAuthUsername,
+                           security::kTestAuthPassword));
+  ASSERT_OK(curl_.FetchURL(addr_.ToString(), &buf_));
 }
 
 
@@ -177,7 +176,7 @@ class SpnegoWebserverTest : public WebserverTest {
   }
 
   Status DoSpnegoCurl() {
-    curl_.set_use_spnego(true);
+    curl_.set_auth(CurlAuthType::SPNEGO);
     if (VLOG_IS_ON(1)) {
       curl_.set_verbose(true);
     }

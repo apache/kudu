@@ -36,6 +36,7 @@ set(MINI_CLUSTER_LIBS
   master_proto
   mini_hms
   mini_kdc
+  mini_ranger
   mini_sentry
   server_base_proto
   tablet_proto

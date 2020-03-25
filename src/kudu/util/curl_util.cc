@@ -104,8 +104,9 @@ Status EasyCurl::FetchURL(const string& url, faststring* dst,
 
 Status EasyCurl::PostToURL(const string& url,
                            const string& post_data,
-                           faststring* dst) {
-  return DoRequest(url, &post_data, dst);
+                           faststring* dst,
+                           const vector<string>& headers) {
+  return DoRequest(url, &post_data, dst, headers);
 }
 
 Status EasyCurl::DoRequest(const string& url,
@@ -122,12 +123,29 @@ Status EasyCurl::DoRequest(const string& url,
     CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_SSL_VERIFYPEER, 0));
   }
 
-  if (use_spnego_) {
-    CURL_RETURN_NOT_OK(curl_easy_setopt(
-        curl_, CURLOPT_HTTPAUTH, CURLAUTH_NEGOTIATE));
-    // It's necessary to pass an empty user/password to trigger the authentication
-    // code paths in curl, even though SPNEGO doesn't use them.
-    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_USERPWD, ":"));
+  switch (auth_type_) {
+    case CurlAuthType::SPNEGO:
+      CURL_RETURN_NOT_OK(curl_easy_setopt(
+            curl_, CURLOPT_HTTPAUTH, CURLAUTH_NEGOTIATE));
+      break;
+    case CurlAuthType::DIGEST:
+      CURL_RETURN_NOT_OK(curl_easy_setopt(
+            curl_, CURLOPT_HTTPAUTH, CURLAUTH_DIGEST));
+      break;
+    case CurlAuthType::BASIC:
+      CURL_RETURN_NOT_OK(curl_easy_setopt(
+            curl_, CURLOPT_HTTPAUTH, CURLAUTH_BASIC));
+      break;
+    case CurlAuthType::NONE:
+      break;
+    default:
+      CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY));
+      break;
+  }
+
+  if (auth_type_ != CurlAuthType::NONE) {
+    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_USERNAME, username_.c_str()));
+    CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_PASSWORD, password_.c_str()));
   }
 
   if (verbose_) {
@@ -172,7 +190,6 @@ Status EasyCurl::DoRequest(const string& url,
     CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_NOPROXY, noproxy_.c_str()));
   }
 
-  CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY));
   if (timeout_.Initialized()) {
     CURL_RETURN_NOT_OK(curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1));
     CURL_RETURN_NOT_OK(curl_easy_setopt(
@@ -184,7 +201,7 @@ Status EasyCurl::DoRequest(const string& url,
   num_connects_ = static_cast<int>(val);
 
   CURL_RETURN_NOT_OK(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &val));
-  if (val != 200) {
+  if (val < 200 || val >= 300) {
     return Status::RemoteError(Substitute("HTTP $0", val));
   }
   return Status::OK();

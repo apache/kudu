@@ -151,10 +151,12 @@ def main():
   env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
   env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
   env['SENTRY_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/sentry-*"))[0]
+  env['RANGER_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
-  # Restore the symlinks to the chrony binaries and Postgres directories; tests
-  # expect to find them in same directory as the test binaries themselves.
+  # Restore the symlinks to the chrony binaries and Postgres and Ranger
+  # directories; tests expect to find them in same directory as the test
+  # binaries themselves.
   for bin_path in glob.glob(os.path.join(ROOT, "build/*/bin")):
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/bin/chronyc"),
                os.path.join(bin_path, "chronyc"))
@@ -166,8 +168,17 @@ def main():
                os.path.join(bin_path, "postgres-lib"))
     os.symlink(os.path.join(ROOT, "thirdparty/installed/common/share/postgresql"),
                os.path.join(bin_path, "postgres-share"))
-    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/jdbc/postgresql.jar"),
+    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/postgresql-*/postgresql-*.jar"))[0],
                os.path.join(bin_path, "postgresql.jar"))
+    os.symlink(glob.glob(os.path.join(ROOT, "thirdparty/src/ranger-*"))[0],
+               os.path.join(bin_path, "ranger-home"))
+    os.symlink(os.path.join(ROOT, "thirdparty/installed/common/opt/hadoop"),
+               os.path.join(bin_path, "hadoop-home"))
+    # When building Ranger, we symlink conf.dist to conf. Overwrite the link we
+    # copied over with a link that's suitable for the remote machine.
+    os.unlink(os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf"))
+    os.symlink(os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf.dist"),
+               os.path.join(bin_path, "ranger-home/ews/webapp/WEB-INF/classes/conf"))
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +

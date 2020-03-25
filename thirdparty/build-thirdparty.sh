@@ -105,6 +105,7 @@ else
       "gumbo-query")  F_GUMBO_QUERY=1 ;;
       "postgres")     F_POSTGRES=1 ;;
       "psql-jdbc")    F_POSTGRES_JDBC=1 ;;
+      "ranger")       F_RANGER=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -282,6 +283,19 @@ if [ -n "$F_COMMON" -o -n "$F_SENTRY" ]; then
   # (one from Kudu's third-party dependency, the other from the Sentry package).
   rm -rf $SENTRY_SOURCE/lib/hadoop-[a-z-]*.jar
   ln -nsf $SENTRY_SOURCE $PREFIX/opt/sentry
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_RANGER" ]; then
+  mkdir -p $PREFIX/opt
+  # Remove any hadoop jars included in the Ranger package to avoid unexpected
+  # runtime behavior due to different versions of hadoop jars, similarly to
+  # Sentry.
+  rm -rf $RANGER_SOURCE/lib/hadoop-[a-z-]*.jar
+  ln -nsf $RANGER_SOURCE $PREFIX/opt/ranger
+
+  # Symlink conf.dist to conf
+  ln -nsf $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf.dist \
+  $PREFIX/opt/ranger/ews/webapp/WEB-INF/classes/conf
 fi
 
 ### Build C dependencies without instrumentation

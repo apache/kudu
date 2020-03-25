@@ -42,6 +42,9 @@ message CreateClusterRequestPB {
   // Whether or not the cluster should be Kerberized.
   optional bool enable_kerberos = 3;
 
+  // Whether or not Ranger should be enabled
+  optional bool enable_ranger = 9;
+
   // Whether or not to create a Hive Metastore, and/or enable Kudu Hive
   // Metastore integration.
   optional HmsMode hms_mode = 7;

@@ -19,15 +19,16 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <map>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 #include <google/protobuf/stubs/status.h>
 #include <google/protobuf/stubs/stringpiece.h>
 #include <google/protobuf/util/json_util.h>
@@ -159,6 +160,7 @@ Status ProcessRequest(const ControlShellRequestPB& req,
       }
       opts.enable_kerberos = cc.enable_kerberos();
       opts.hms_mode = cc.hms_mode();
+      opts.enable_ranger = cc.enable_ranger();
       if (cc.has_cluster_root()) {
         opts.cluster_root = cc.cluster_root();
       } else {

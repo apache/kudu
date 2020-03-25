@@ -50,6 +50,9 @@ MiniPostgres::~MiniPostgres() {
 }
 
 Status MiniPostgres::Start() {
+  if (process_) {
+    return Status::IllegalState("Postgres already running");
+  }
   Env* env = Env::Default();
 
   VLOG(1) << "Starting Postgres";
@@ -94,7 +97,11 @@ Status MiniPostgres::Start() {
 }
 
 Status MiniPostgres::Stop() {
-  return process_->KillAndWait(SIGTERM);
+  if (process_) {
+    RETURN_NOT_OK(process_->KillAndWait(SIGTERM));
+    process_.reset();
+  }
+  return Status::OK();
 }
 
 Status MiniPostgres::AddUser(const string& user, bool super) {

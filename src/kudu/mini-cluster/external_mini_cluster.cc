@@ -47,6 +47,7 @@
 #include "kudu/hms/mini_hms.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/ranger/mini_ranger.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
@@ -118,6 +119,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       enable_kerberos(false),
       hms_mode(HmsMode::NONE),
       enable_sentry(false),
+      enable_ranger(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3))
@@ -330,6 +332,11 @@ Status ExternalMiniCluster::Start() {
     if (opts_.bind_mode != BindMode::UNIQUE_LOOPBACK) {
       RETURN_NOT_OK_PREPEND(StartSentry(), "Failed to start the Sentry service");
     }
+  }
+
+  if (opts_.enable_ranger) {
+    ranger_.reset(new ranger::MiniRanger(cluster_root()));
+    RETURN_NOT_OK_PREPEND(ranger_->Start(), "Failed to start the Ranger service");
   }
 
   // Start the HMS.

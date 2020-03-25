@@ -1757,6 +1757,17 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  virtual Status CreateSymLink(const string& src, const string& dst) override {
+    ThreadRestrictions::AssertIOAllowed();
+    TRACE_EVENT2("io", "PosixEnv::CreateSymLink", "src", src, "dst", dst);
+    MAYBE_RETURN_EIO(dst, IOError(Env::kInjectedFailureStatusMsg, EIO));
+    Status result;
+    if (symlink(src.c_str(), dst.c_str()) != 0) {
+      result = IOError(dst, errno);
+    }
+    return result;
+  }
+
  private:
   // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {

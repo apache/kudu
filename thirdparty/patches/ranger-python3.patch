@@ -1,0 +1,667 @@
+--- ./update_property.py	(original)
++++ ./update_property.py	(refactored)
+@@ -23,7 +23,7 @@
+ 		try:
+ 			xml = ET.parse(xml_path)
+ 		except ExpatError:
+-			print "Error while parsing file:"+xml_path
++			print("Error while parsing file:"+xml_path)
+ 			return -1
+ 		root = xml.getroot()
+ 		for child in root.findall('property'):
+--- ./deleteUserGroupUtil.py	(original)
++++ ./deleteUserGroupUtil.py	(refactored)
+@@ -17,7 +17,7 @@
+ import pycurl
+ import getpass
+ import logging
+-from StringIO import StringIO as BytesIO
++from io import StringIO as BytesIO
+ def log(msg,type):
+ 	if type == 'info':
+ 		logging.info(" %s",msg)
+@@ -85,8 +85,8 @@
+ 	header.close()
+ 	c.close()
+ 	if isDebug ==True or (response_code!=200 and response_code!=204):
+-		print 'Request URL = ' + str(url)
+-		print 'Response    = ' + str(headerResponse)
++		print('Request URL = ' + str(url))
++		print('Response    = ' + str(headerResponse))
+ 	return response_code
+ def validateArgs(argv):
+ 	if(len(argv)<7):
+@@ -217,8 +217,8 @@
+ 	response_code=0
+ 	try:
+ 		response_code=processRequest(url,usernamepassword,None,'get',isHttps,certfile,False)
+-	except pycurl.error, e:
+-		print e
++	except pycurl.error as e:
++		print(e)
+ 		sys.exit(1)
+ 	if response_code == 302 or response_code==401 or response_code==403:
+ 		log("[E] Authentication Error:Please try with valid credentials!","error")
+--- ./dba_script.py	(original)
++++ ./dba_script.py	(refactored)
+@@ -101,10 +101,10 @@
+ 						f.write(msg+"\n")
+ 						f.close()
+ 				else:
+-					print("Unable to open file "+logFileName+" in write mode, Check file permissions.")
++					print(("Unable to open file "+logFileName+" in write mode, Check file permissions."))
+ 					sys.exit()
+ 			else:
+-				print(logFileName+" is Invalid input file name! Provide valid file path to write DBA scripts:")
++				print((logFileName+" is Invalid input file name! Provide valid file path to write DBA scripts:"))
+ 				sys.exit()
+ 		else:
+ 			print("Invalid input! Provide file path to write DBA scripts:")
+@@ -1494,7 +1494,7 @@
+ 			else :
+ 				while os.path.isfile(JAVA_BIN) == False:
+ 					log("Enter java executable path: :","info")
+-					JAVA_BIN=raw_input()
++					JAVA_BIN=input()
+ 			log("[I] Using Java:" + str(JAVA_BIN),"info")
+ 
+ 
+@@ -1505,7 +1505,7 @@
+ 		XA_DB_FLAVOR=''
+ 		while XA_DB_FLAVOR == "":
+ 			log("Enter db flavour{MYSQL|ORACLE|POSTGRES|MSSQL|SQLA} :","info")
+-			XA_DB_FLAVOR=raw_input()
++			XA_DB_FLAVOR=input()
+ 			AUDIT_DB_FLAVOR = XA_DB_FLAVOR
+ 
+ 	XA_DB_FLAVOR = XA_DB_FLAVOR.upper()
+@@ -1519,10 +1519,10 @@
+ 		if not dryMode:
+ 			if XA_DB_FLAVOR == "MYSQL" or XA_DB_FLAVOR == "ORACLE" or XA_DB_FLAVOR == "POSTGRES" or XA_DB_FLAVOR == "MSSQL" or XA_DB_FLAVOR == "SQLA":
+ 				log("Enter JDBC connector file for :"+XA_DB_FLAVOR,"info")
+-				CONNECTOR_JAR=raw_input()
++				CONNECTOR_JAR=input()
+ 				while os.path.isfile(CONNECTOR_JAR) == False:
+ 					log("JDBC connector file "+CONNECTOR_JAR+" does not exist, Please enter connector path :","error")
+-					CONNECTOR_JAR=raw_input()
++					CONNECTOR_JAR=input()
+ 			else:
+ 				log("[E] ---------- NO SUCH SUPPORTED DB FLAVOUR.. ----------", "error")
+ 				sys.exit(1)
+@@ -1539,7 +1539,7 @@
+ 			xa_db_host=''
+ 			while xa_db_host == "":
+ 				log("Enter DB Host :","info")
+-				xa_db_host=raw_input()
++				xa_db_host=input()
+ 				audit_db_host=xa_db_host
+ 			log("[I] DB Host:" + str(xa_db_host),"info")
+ 
+@@ -1554,7 +1554,7 @@
+ 			xa_db_root_user=''
+ 			while xa_db_root_user == "":
+ 				log("Enter db root user:","info")
+-				xa_db_root_user=raw_input()
++				xa_db_root_user=input()
+ 				log("Enter db root password:","info")
+ 				xa_db_root_password = getpass.getpass("Enter db root password:")
+ 
+@@ -1567,7 +1567,7 @@
+ 			db_name = ''
+ 			while db_name == "":
+ 				log("Enter DB Name :","info")
+-				db_name=raw_input()
++				db_name=input()
+ 
+ 	if (quiteMode):
+ 		db_user = globalDict['db_user']
+@@ -1578,7 +1578,7 @@
+ 			db_user=''
+ 			while db_user == "":
+ 				log("Enter db user name:","info")
+-				db_user=raw_input()
++				db_user=input()
+ 
+ 	if (quiteMode):
+ 		db_password = globalDict['db_password']
+@@ -1610,7 +1610,7 @@
+ 				audit_db_name=''
+ 				while audit_db_name == "":
+ 					log("Enter audit db name:","info")
+-					audit_db_name = raw_input()
++					audit_db_name = input()
+ 
+ 		if (quiteMode):
+ 			if 'audit_db_user' in globalDict:
+@@ -1622,7 +1622,7 @@
+ 				audit_db_user=''
+ 				while audit_db_user == "":
+ 					log("Enter audit user name:","info")
+-					audit_db_user = raw_input()
++					audit_db_user = input()
+ 
+ 		if (quiteMode):
+ 			if 'audit_db_password' in globalDict:
+--- ./bin/ranger_install.py	(original)
++++ ./bin/ranger_install.py	(refactored)
+@@ -16,15 +16,15 @@
+ import errno
+ import logging
+ import zipfile
+-import ConfigParser
+-import StringIO
++import configparser
++import io
+ import subprocess
+ import fileinput
+ #import MySQLdb
+ import zipfile
+ import re
+ import shutil
+-import commands
++import subprocess
+ from datetime import date
+ import getpass
+ import glob
+@@ -78,11 +78,11 @@
+     "sts = pipe.returncode
+     """
+     ret = subprocess.call(cmd, shell=True)
+-    print "------------------"
+-    print " cmd: " + str(cmd)
++    print("------------------")
++    print(" cmd: " + str(cmd))
+     #print " output: " + output
+-    print " ret: " + str(ret)
+-    print "------------------"
++    print(" ret: " + str(ret))
++    print("------------------")
+     return ret, ret
+     #if sts is None:
+     #    log("sts is None!!!! Manually setting to -1. PLEASE CHECK!!!!!!!!!!!!!!","info")
+@@ -380,7 +380,7 @@
+     file_path = os.path.dirname(os.path.realpath(__file__))
+     write_conf_to_file = os.path.join(file_path, "install_config.properties")
+     open(write_conf_to_file,'wb')
+-    for key,value in conf_dict.items():
++    for key,value in list(conf_dict.items()):
+         if 'PASSWORD' in key :
+             #call_keystore(library_path,key,value,jceks_file_path,'create')
+             value=''
+@@ -486,8 +486,8 @@
+ 
+     cmdStr = "\""+MYSQL_BIN+"\""+" -u root --password="+db_root_password+" -h "+MYSQL_HOST+" -s -e \"select version();\""
+     status, output = getstatusoutput(cmdStr)
+-    print "Status: " + str(status)
+-    print "output: " + str(output)
++    print("Status: " + str(status))
++    print("output: " + str(output))
+ 
+     if status == 0:
+         log("Checking MYSQL root password DONE", "info")
+@@ -696,7 +696,7 @@
+     ModConfig(xapolicymgr_properties,"xa.webapp.dir", WEBAPP_ROOT.replace('\\','/' ))
+ 
+ def updatePropertyToFilePy(propertyName ,newPropertyValue ,to_file):
+-    ret = subprocess.call(['python', '%s\update_property.py' %os.getenv("RANGER_ADMIN_HOME"), propertyName ,newPropertyValue ,to_file])
++    ret = subprocess.call(['python', '%s\\update_property.py' %os.getenv("RANGER_ADMIN_HOME"), propertyName ,newPropertyValue ,to_file])
+     if ret == 0:
+         log("Updated property for :"+to_file,"info")
+     else:
+@@ -1275,7 +1275,7 @@
+         statuscode = p.returncode
+         return statuscode, output
+     else:
+-        print 'proper command not received for input need get or create'
++        print('proper command not received for input need get or create')
+ 
+ 
+ # Entry point to script using --service
+--- ./bin/ranger_usersync.py	(original)
++++ ./bin/ranger_usersync.py	(refactored)
+@@ -20,7 +20,7 @@
+ #import ranger_install
+ from xml.dom.minidom import getDOMImplementation
+ import shutil
+-import commands
++import subprocess
+ import re
+ 
+ cmd = sys.argv[0]
+@@ -117,7 +117,7 @@
+ 		text_re = re.compile('>\n\s+([^<>\s].*?)\n\s+</', re.DOTALL)
+ 		prettyXml = text_re.sub('>\g<1></', uglyXml)
+ 
+-		print prettyXml
++		print(prettyXml)
+ 	except:
+ 		sys.exit(1)
+ 
+--- ./bin/service_start.py	(original)
++++ ./bin/service_start.py	(refactored)
+@@ -55,7 +55,7 @@
+ 		text_re = re.compile('>\n\s+([^<>\s].*?)\n\s+</', re.DOTALL)
+ 		prettyXml = text_re.sub('>\g<1></', uglyXml)
+ 
+-		print prettyXml
++		print(prettyXml)
+ 	except:
+-		print "######################## Ranger Setup failed! #######################"
++		print("######################## Ranger Setup failed! #######################")
+ 		sys.exit(1)
+--- ./rolebasedusersearchutil.py	(original)
++++ ./rolebasedusersearchutil.py	(refactored)
+@@ -77,7 +77,7 @@
+     else:
+         while os.path.isfile(JAVA_BIN) == False:
+             log("Enter java executable path: :","info")
+-            JAVA_BIN=raw_input()
++            JAVA_BIN=input()
+     log("[I] Using Java:" + str(JAVA_BIN),"info")
+     userName = ""
+     password = ""
+@@ -88,10 +88,10 @@
+     userroleFlag = False
+ 
+     if len(argv) == 1:
+-        print msgPrompt + " or \n" + msgCommand + "\n " +msgRoleList
+-        userName = raw_input('Enter a user name: ')
++        print(msgPrompt + " or \n" + msgCommand + "\n " +msgRoleList)
++        userName = input('Enter a user name: ')
+         password = getpass.getpass('Enter a user password:')
+-        userRole = raw_input('Enter a role: ')
++        userRole = input('Enter a role: ')
+     elif len(argv) > 1 and len(argv) < 8 :
+         for i in range(1, len(sys.argv)) :
+             if sys.argv[i] == "-u" :
+@@ -128,13 +128,13 @@
+             if userRole.lower() == "-p" or userRole.lower() == "-r" or userRole.lower() == "-u":
+                 userRoleMsgFlag = True
+     if userNameMsgFlag == True or  passwordMsgFlag == True or userRoleMsgFlag == True :
+-         print msgPrompt + " or \n" + msgCommand + "\n  " +msgRoleList
++         print(msgPrompt + " or \n" + msgCommand + "\n  " +msgRoleList)
+     if userNameMsgFlag == True :
+-        userName = raw_input('Enter a user name: ')
++        userName = input('Enter a user name: ')
+     if passwordMsgFlag == True :
+         password = getpass.getpass("Enter user password:")
+     if userRoleMsgFlag == True :
+-        userRole = raw_input('Enter a role: ')
++        userRole = input('Enter a role: ')
+     if userName != "" and password != "" :
+         if os_name == "LINUX":
+             path = os.path.join("%s","WEB-INF","classes","conf:%s","WEB-INF","classes","lib","*:%s","WEB-INF",":%s","META-INF",":%s","WEB-INF","lib","*:%s","WEB-INF","classes",":%s","WEB-INF","classes","META-INF:%s/*")%(app_home ,app_home ,app_home, app_home, app_home, app_home ,app_home,ews_lib)
+--- ./restrict_permissions.py	(original)
++++ ./restrict_permissions.py	(refactored)
+@@ -82,10 +82,10 @@
+ 						f.write(msg+"\n")
+ 						f.close()
+ 				else:
+-					print("Unable to open file "+logFileName+" in write mode, Check file permissions.")
++					print(("Unable to open file "+logFileName+" in write mode, Check file permissions."))
+ 					sys.exit()
+ 			else:
+-				print(logFileName+" is Invalid input file name! Provide valid file path to write DBA scripts:")
++				print((logFileName+" is Invalid input file name! Provide valid file path to write DBA scripts:"))
+ 				sys.exit()
+ 		else:
+ 			print("Invalid input! Provide file path to write DBA scripts:")
+@@ -306,7 +306,7 @@
+ 		else :	
+ 			while os.path.isfile(JAVA_BIN) == False:
+ 				log("Enter java executable path: :","info")
+-				JAVA_BIN=raw_input()
++				JAVA_BIN=input()
+ 	log("[I] Using Java:" + str(JAVA_BIN),"info")
+ 
+ 	if (quiteMode):
+@@ -316,7 +316,7 @@
+ 		XA_DB_FLAVOR=''
+ 		while XA_DB_FLAVOR == "":
+ 			log("Enter db flavour{MYSQL} :","info")
+-			XA_DB_FLAVOR=raw_input()
++			XA_DB_FLAVOR=input()
+ 			AUDIT_DB_FLAVOR = XA_DB_FLAVOR
+ 			XA_DB_FLAVOR = XA_DB_FLAVOR.upper()
+ 			AUDIT_DB_FLAVOR = AUDIT_DB_FLAVOR.upper()
+@@ -328,10 +328,10 @@
+ 	else:
+ 		if XA_DB_FLAVOR == "MYSQL":
+ 			log("Enter JDBC connector file for :"+XA_DB_FLAVOR,"info")
+-			CONNECTOR_JAR=raw_input()
++			CONNECTOR_JAR=input()
+ 			while os.path.isfile(CONNECTOR_JAR) == False:
+ 				log("JDBC connector file "+CONNECTOR_JAR+" does not exist, Please enter connector path :","error")
+-				CONNECTOR_JAR=raw_input()
++				CONNECTOR_JAR=input()
+ 		else:
+ 			log("[E] ---------- NO SUCH SUPPORTED DB FLAVOUR.. ----------", "error")
+ 			sys.exit(1)
+@@ -343,7 +343,7 @@
+ 		xa_db_host=''
+ 		while xa_db_host == "":
+ 			log("Enter DB Host :","info")
+-			xa_db_host=raw_input()
++			xa_db_host=input()
+ 			audit_db_host=xa_db_host
+ 	log("[I] DB Host:" + str(xa_db_host),"info")
+ 
+@@ -354,7 +354,7 @@
+ 		xa_db_root_user=''
+ 		while xa_db_root_user == "":
+ 			log("Enter db root user:","info")
+-			xa_db_root_user=raw_input()
++			xa_db_root_user=input()
+ 			log("Enter db root password:","info")
+ 			xa_db_root_password = getpass.getpass("Enter db root password:")
+ 
+@@ -364,7 +364,7 @@
+ 		db_name = ''
+ 		while db_name == "":
+ 			log("Enter DB Name :","info")
+-			db_name=raw_input()
++			db_name=input()
+ 
+ 	if (quiteMode):
+ 		db_user = globalDict['db_user']
+@@ -372,7 +372,7 @@
+ 		db_user=''
+ 		while db_user == "":
+ 			log("Enter db user name:","info")
+-			db_user=raw_input()
++			db_user=input()
+ 
+ 	if (quiteMode):
+ 		db_password = globalDict['db_password']
+@@ -388,7 +388,7 @@
+ 		audit_db_name=''
+ 		while audit_db_name == "":
+ 			log("Enter audit db name:","info")
+-			audit_db_name = raw_input()
++			audit_db_name = input()
+ 
+ 	if (quiteMode):
+ 		audit_db_user = globalDict['audit_db_user']
+@@ -396,7 +396,7 @@
+ 		audit_db_user=''
+ 		while audit_db_user == "":
+ 			log("Enter audit user name:","info")
+-			audit_db_user = raw_input()
++			audit_db_user = input()
+ 
+ 	if (quiteMode):
+ 		audit_db_password = globalDict['audit_db_password']
+--- ./upgrade_admin.py	(original)
++++ ./upgrade_admin.py	(refactored)
+@@ -13,9 +13,9 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+-import StringIO
++import io
+ import xml.etree.ElementTree as ET
+-import ConfigParser
++import configparser
+ import os,sys,getopt
+ from os import listdir
+ from os.path import isfile, join, dirname, basename
+@@ -29,10 +29,10 @@
+ tempLibFolder = "./upgrade-temp"
+ 
+ def showUsage():
+-	print "upgrade_admin.py [-g] [-h]"
+-	print "This script will generate %s based on currently installed ranger (v0.4.*) configuration." % (installPropFileName)
+-	print " -g option will generate ranger-admin-site.xml in the current directory."
+-	print " -h will display help text."
++	print("upgrade_admin.py [-g] [-h]")
++	print("This script will generate %s based on currently installed ranger (v0.4.*) configuration." % (installPropFileName))
++	print(" -g option will generate ranger-admin-site.xml in the current directory.")
++	print(" -h will display help text.")
+ 
+ try:
+ 	opts, args = getopt.getopt(sys.argv[1:],"gh")
+@@ -126,16 +126,16 @@
+ 		archiveDir = dirname(originalFileName)
+ 		archiveFileName = "." + basename(originalFileName) + "." + (strftime("%d%m%Y%H%M%S", localtime()))
+ 		movedFileName = join(archiveDir,archiveFileName)
+-		print "INFO: moving [%s] to [%s] ......." % (originalFileName,movedFileName)
++		print("INFO: moving [%s] to [%s] ......." % (originalFileName,movedFileName))
+ 		os.rename(originalFileName, movedFileName)
+ 
+ def getPropertiesConfigMap(configFileName):
+ 	ret = {}
+-	config = StringIO.StringIO()
++	config = io.StringIO()
+ 	config.write('[dummysection]\n')
+ 	config.write(open(configFileName).read())
+ 	config.seek(0,os.SEEK_SET)
+-	fcp = ConfigParser.ConfigParser()
++	fcp = configparser.ConfigParser()
+ 	fcp.optionxform = str
+ 	fcp.readfp(config)
+ 	for k,v in fcp.items('dummysection'):
+@@ -144,11 +144,11 @@
+ 
+ def getPropertiesKeyList(configFileName):
+ 	ret = []
+-	config = StringIO.StringIO()
++	config = io.StringIO()
+ 	config.write('[dummysection]\n')
+ 	config.write(open(configFileName).read())
+ 	config.seek(0,os.SEEK_SET)
+-	fcp = ConfigParser.ConfigParser()
++	fcp = configparser.ConfigParser()
+ 	fcp.optionxform = str
+ 	fcp.readfp(config)
+ 	for k,v in fcp.items('dummysection'):
+@@ -167,10 +167,10 @@
+ 	root = tree.getroot()
+ 	for config in root.iter('property'):
+ 		name = config.find('name').text
+-		if (name in prop.keys()):
++		if (name in list(prop.keys())):
+ 			config.find('value').text = prop[name]
+ 		else:
+-			print "ERROR: key not found: %s" % (name)
++			print("ERROR: key not found: %s" % (name))
+ 	if isfile(xmlOutputFileName):
+ 		archiveFile(xmlOutputFileName)
+ 	tree.write(xmlOutputFileName)
+@@ -192,15 +192,15 @@
+ 	webserverConfigFileName = join(configDirectory, webserverConfigFile)
+ 	webconfig = getPropertiesConfigMap(webserverConfigFileName)
+ 
+-	for k in config2xmlMAP.keys():
++	for k in list(config2xmlMAP.keys()):
+ 		xmlKey = config2xmlMAP[k]
+-		if (k in xaSysProps.keys()):
++		if (k in list(xaSysProps.keys())):
+ 			xmlVal = xaSysProps[k]
+-		elif (k in xaLdapProps.keys()):
++		elif (k in list(xaLdapProps.keys())):
+ 			xmlVal = xaLdapProps[k]
+-		elif (k in unixauthProps.keys()):
++		elif (k in list(unixauthProps.keys())):
+ 			xmlVal = unixauthProps[k]
+-		elif (k in webconfig.keys()):
++		elif (k in list(webconfig.keys())):
+ 			xmlVal = webconfig[k]
+ 		else:
+ 			xmlVal = 'Unknown'
+@@ -251,7 +251,7 @@
+ 		installProps['db_name'] = ''
+ 		installProps['audit_db_name'] = ''
+ 	else:
+-		print "ERROR: Unable to determine the DB_FLAVOR from url [%]" % (jdbcUrl)
++		print("ERROR: Unable to determine the DB_FLAVOR from url [%]" % (jdbcUrl))
+ 		sys.exit(1)
+ 
+ 	installProps['db_user'] = xaSysProps['jdbc.user']
+@@ -296,7 +296,7 @@
+ 	defValMap = getPropertiesConfigMap(installFileName)
+ 
+ 
+-	for wk,wv in webconfig.iteritems():
++	for wk,wv in webconfig.items():
+ 		nk = "ranger." + wk
+ 		nk = nk.replace('.','_')  
+ 		installProps[nk] = wv
+@@ -314,18 +314,18 @@
+ 	
+ 	outf = open(outFileName, 'w')
+ 
+-	print >> outf, "#"
+-	print >> outf, "# -----------------------------------------------------------------------------------"
+-	print >> outf, "# This file is generated as part of upgrade script and should be deleted after upgrade"
+-	print >> outf, "# Generated at %s " % (strftime("%d/%m/%Y %H:%M:%S", localtime()))
+-	print >> outf, "# -----------------------------------------------------------------------------------"
+-	print >> outf, "#"
++	print("#", file=outf)
++	print("# -----------------------------------------------------------------------------------", file=outf)
++	print("# This file is generated as part of upgrade script and should be deleted after upgrade", file=outf)
++	print("# Generated at %s " % (strftime("%d/%m/%Y %H:%M:%S", localtime())), file=outf)
++	print("# -----------------------------------------------------------------------------------", file=outf)
++	print("#", file=outf)
+ 
+ 	for key in keyList:
+ 		if (key in props):
+-			print >> outf, "%s=%s" % (key,props[key])
++			print("%s=%s" % (key,props[key]), file=outf)
+ 		else:
+-			print >> outf,  "# Default value for [%s] is used\n%s=%s\n#---" % (key, key,defValMap[key])
++			print("# Default value for [%s] is used\n%s=%s\n#---" % (key, key,defValMap[key]), file=outf)
+ 			
+ 	outf.flush()
+ 	outf.close()
+--- ./changeusernameutil.py	(original)
++++ ./changeusernameutil.py	(refactored)
+@@ -73,7 +73,7 @@
+         else:
+                 while os.path.isfile(JAVA_BIN) == False:
+                         log("Enter java executable path: :","info")
+-                        JAVA_BIN=raw_input()
++                        JAVA_BIN=input()
+         log("[I] Using Java:" + str(JAVA_BIN),"info")
+ 
+         USERNAME = ''
+@@ -90,8 +90,8 @@
+                 sys.exit(1)
+ 
+         while userName == "":
+-                print "Enter user name:"
+-                userName=raw_input()
++                print("Enter user name:")
++                userName=input()
+ 
+         while oldPassword == "":
+                 oldPassword=getpass.getpass("Enter current password:")
+--- ./ranger_credential_helper.py	(original)
++++ ./ranger_credential_helper.py	(refactored)
+@@ -20,11 +20,11 @@
+ from optparse import OptionParser
+ 
+ if os.getenv('JAVA_HOME') is None:
+-	print "ERROR: JAVA_HOME environment property was not defined, exit."
++	print("ERROR: JAVA_HOME environment property was not defined, exit.")
+ 	sys.exit(1)
+ else:
+ 	JAVA_BIN=os.path.join(os.getenv('JAVA_HOME'),'bin','java')
+-print "Using Java:" + str(JAVA_BIN)
++print("Using Java:" + str(JAVA_BIN))
+ 
+ def main():
+ 
+@@ -54,9 +54,9 @@
+ 		output, error = p.communicate()
+ 		statuscode = p.returncode
+ 		if statuscode == 0:
+-			print "Alias " + aliasKey + " created successfully!"
++			print("Alias " + aliasKey + " created successfully!")
+ 		else :
+-			print "Error creating Alias!! Error: " + str(error)
++			print("Error creating Alias!! Error: " + str(error))
+ 		
+ 	elif getorcreate == 'get':
+ 		commandtorun = [JAVA_BIN, '-cp', finalLibPath, 'org.apache.ranger.credentialapi.buildks' ,'get', aliasKey, '-provider',finalFilePath]
+@@ -64,12 +64,12 @@
+ 		output, error = p.communicate()
+ 		statuscode = p.returncode
+ 		if statuscode == 0:
+-			print "Alias : " + aliasKey + " Value : " + str(output)
++			print("Alias : " + aliasKey + " Value : " + str(output))
+ 		else :
+-			print "Error getting value!! Error: " + str(error)
++			print("Error getting value!! Error: " + str(error))
+ 		
+ 	else:
+-		print 'Invalid Arguments!!'
++		print('Invalid Arguments!!')
+ 	
+ if __name__ == '__main__':
+ 	main()
+--- ./db_setup.py	(original)
++++ ./db_setup.py	(refactored)
+@@ -55,7 +55,7 @@ def check_output(query):
+ 	elif os_name == "WINDOWS":
+ 	 	p = subprocess.Popen(query, stdout=subprocess.PIPE, shell=True)
+ 	output = p.communicate ()[0]
+-	return output
++	return output.decode()
+ 
+ def log(msg,type):
+ 	if type == 'info':
+@@ -423,7 +423,7 @@
+ 						key3 = int(version.strip("J"))
+ 						my_dict[key3] = filename
+ 
+-			keylist = my_dict.keys()
++			keylist = list(my_dict.keys())
+ 			keylist.sort()
+ 			for key in keylist:
+ 				#print "%s: %s" % (key, my_dict[key])
+@@ -1035,20 +1035,20 @@
+ 		lib_home = os.path.join(RANGER_ADMIN_HOME,"ews","webapp","WEB-INF","lib","*")
+ 		get_ranger_version_cmd="%s -cp %s org.apache.ranger.common.RangerVersionInfo"%(JAVA_BIN,lib_home)
+ 		ranger_version = check_output(get_ranger_version_cmd).split("\n")[1]
+-	except Exception, error:
++	except Exception as error:
+ 		ranger_version=''
+ 
+ 	try:
+ 		if ranger_version=="" or ranger_version=="ranger-admin - None":
+ 			script_path = os.path.join(RANGER_ADMIN_HOME,"ews","ranger-admin-services.sh")
+ 			ranger_version=check_output(script_path +" version").split("\n")[1]
+-	except Exception, error:
++	except Exception as error:
+ 		ranger_version=''
+ 
+ 	try:
+ 		if ranger_version=="" or ranger_version=="ranger-admin - None":
+ 			ranger_version=check_output("ranger-admin version").split("\n")[1]
+-	except Exception, error:
++	except Exception as error:
+ 		ranger_version=''
+ 
+ 	if ranger_version=="" or ranger_version is None:
+--- ./changepasswordutil.py	(original)
++++ ./changepasswordutil.py	(refactored)
+@@ -73,7 +73,7 @@
+ 	else:
+ 		while os.path.isfile(JAVA_BIN) == False:
+ 			log("Enter java executable path: :","info")
+-			JAVA_BIN=raw_input()
++			JAVA_BIN=input()
+ 	log("[I] Using Java:" + str(JAVA_BIN),"info")
+ 
+ 	USERNAME = ''
+@@ -90,8 +90,8 @@
+ 		sys.exit(1)
+ 
+ 	while userName == "":
+-		print "Enter user name:"
+-		userName=raw_input()
++		print("Enter user name:")
++		userName=input()
+ 
+ 	while oldPassword == "":
+ 		oldPassword=getpass.getpass("Enter current password:")

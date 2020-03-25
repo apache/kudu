@@ -26,9 +26,10 @@ namespace security {
 
 // Username and password for HTTP authentication, corresponding to
 // .htpasswd created by CreateTestHTPasswd()
-const std::string kTestAuthString = "test:test";
+const std::string kTestAuthUsername = "test";
+const std::string kTestAuthPassword = "test";
 
-// Creates .htpasswd for HTTP basic authentication in the format
+// Creates .htpasswd for HTTP digest authentication in the format
 // of 'user:realm:digest', returning the path in '*passwd_file'.
 Status CreateTestHTPasswd(const std::string &dir,
                           std::string *passwd_file);

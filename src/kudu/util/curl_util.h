@@ -32,6 +32,13 @@ namespace kudu {
 
 class faststring;
 
+enum class CurlAuthType {
+  NONE,
+  BASIC,
+  DIGEST,
+  SPNEGO,
+};
+
 // Simple wrapper around curl's "easy" interface, allowing the user to
 // fetch web pages into memory using a blocking API.
 //
@@ -51,9 +58,12 @@ class EasyCurl {
 
   // Issue an HTTP POST to the given URL with the given data.
   // Returns results in 'dst' as above.
+  // The optional param 'headers' holds additional headers.
+  // e.g. {"Accept-Encoding: gzip"}
   Status PostToURL(const std::string& url,
                    const std::string& post_data,
-                   faststring* dst);
+                   faststring* dst,
+                   const std::vector<std::string>& headers = {});
 
   // Set whether to verify the server's SSL certificate in the case of an HTTPS
   // connection.
@@ -69,8 +79,12 @@ class EasyCurl {
     timeout_ = t;
   }
 
-  void set_use_spnego(bool use_spnego) {
-    use_spnego_ = use_spnego;
+  Status set_auth(CurlAuthType auth_type, std::string username = "", std::string password = "") {
+    auth_type_ = std::move(auth_type);
+    username_ = std::move(username);
+    password_ = std::move(password);
+
+    return Status::OK();
   }
 
   // Enable verbose mode for curl. This dumps debugging output to stderr, so
@@ -132,8 +146,6 @@ class EasyCurl {
   // Whether to return the HTTP headers with the response.
   bool return_headers_ = false;
 
-  bool use_spnego_ = false;
-
   bool verbose_ = false;
 
   // The default setting for CURLOPT_FAILONERROR in libcurl is 0 (false).
@@ -144,6 +156,12 @@ class EasyCurl {
   int num_connects_ = 0;
 
   char errbuf_[kErrBufSize];
+
+  std::string username_;
+
+  std::string password_;
+
+  CurlAuthType auth_type_ = CurlAuthType::NONE;
 
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };

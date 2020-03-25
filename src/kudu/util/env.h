@@ -361,6 +361,9 @@ class Env {
   // On success, 'result' contains the answer. On failure, 'result' is unset.
   virtual Status IsFileWorldReadable(const std::string& path, bool* result) = 0;
 
+  // Creates symlink 'dst' that points to 'source'.
+  virtual Status CreateSymLink(const std::string& src, const std::string& dst) = 0;
+
   // Special string injected into file-growing operations' random failures
   // (if enabled).
   //

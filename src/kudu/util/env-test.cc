@@ -1194,4 +1194,19 @@ TEST_F(TestEnv, TestInjectEIO) {
   ASSERT_OK(rw2->Close());
 }
 
+TEST_F(TestEnv, TestCreateSymlink) {
+  const string kSrc = JoinPathSegments(test_dir_, "foo");
+  const string kDst = JoinPathSegments(test_dir_, "bar");
+  ASSERT_OK(env_->CreateDir(kSrc));
+  ASSERT_OK(env_->CreateSymLink(kSrc, kDst));
+
+  unique_ptr<WritableFile> file;
+  ASSERT_OK(env_->NewWritableFile(WritableFileOptions(),
+                                  JoinPathSegments(kSrc, "foobar"),
+                                  &file));
+
+  ASSERT_TRUE(env_->FileExists(JoinPathSegments(kDst, "foobar")));
+}
+
+
 }  // namespace kudu

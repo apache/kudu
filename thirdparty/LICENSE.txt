@@ -666,3 +666,8 @@ NOTE: build-time dependency
 thirdparty/src/postgresql-*/: PostgreSQL license
 Source: https://postgresql.org
 NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/src/ranger-*/: Apache 2.0 license
+Source: https://ranger.apache.org
+NOTE: build-time dependency

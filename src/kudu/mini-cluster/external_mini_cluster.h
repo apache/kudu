@@ -77,6 +77,10 @@ namespace sentry {
 class MiniSentry;
 } // namespace sentry
 
+namespace ranger {
+class MiniRanger;
+} // namespace ranger
+
 namespace server {
 class ServerStatusPB;
 } // namespace server
@@ -195,6 +199,11 @@ struct ExternalMiniClusterOptions {
   //
   // Default: false.
   bool enable_sentry;
+
+  // If true, set up a Ranger service as part of this ExternalMiniCluster.
+  //
+  // Default: false.
+  bool enable_ranger;
 
   // If true, sends logging output to stderr instead of a log file.
   //
@@ -351,6 +360,10 @@ class ExternalMiniCluster : public MiniCluster {
     return sentry_.get();
   }
 
+  ranger::MiniRanger* ranger() const {
+    return ranger_.get();
+  }
+
   const std::string& cluster_root() const {
     return opts_.cluster_root;
   }
@@ -484,6 +497,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
   std::unique_ptr<sentry::MiniSentry> sentry_;
+  std::unique_ptr<ranger::MiniRanger> ranger_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 

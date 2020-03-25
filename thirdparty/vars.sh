@@ -262,3 +262,12 @@ POSTGRES_SOURCE=$TP_SOURCE_DIR/$POSTGRES_NAME
 POSTGRES_JDBC_VERSION=42.2.10
 POSTGRES_JDBC_NAME=postgresql-$POSTGRES_JDBC_VERSION
 POSTGRES_JDBC_SOURCE=$TP_SOURCE_DIR/$POSTGRES_JDBC_NAME
+
+# If you need to rebuild the tarball for a specific hash instead of a release,
+# run the following commands:
+# mvn versions:set -DnewVersion=$(git rev-parse HEAD)
+# mvn versions:update-child-modules
+# mvn package
+RANGER_VERSION=f37f5407eee8d2627a4306a25938b151f8e2ba31
+RANGER_NAME=ranger-$RANGER_VERSION-admin
+RANGER_SOURCE=$TP_SOURCE_DIR/$RANGER_NAME
