@@ -70,11 +70,25 @@ class KuduTestBase(object):
         #
         # Only make one replica so that our tests don't need to worry about
         # setting consistency modes.
+        #
+        # By default, components of the external mini-cluster harness are run
+        # with shortest keys to save CPU resources and speed up tests. In
+        # contemporary or security-hardened OS distros that requires customizing
+        # OpenSSL's security level at the client side, lowering it down to 0
+        # (otherwise, the client side rejects certificates signed by
+        # not-strong-enough keys). Since customization of the security level
+        # for the kudu-client library via gflags is not trivial, let's override
+        # the length of the RSA keys used for CA and server certificates,
+        # making them acceptable even at OpenSSL's security level 2.
         cls.send_and_receive(
             p, { "create_cluster" :
                  { "numMasters" : cls.NUM_MASTER_SERVERS,
                    "numTservers" : cls.NUM_TABLET_SERVERS,
-                   "extraMasterFlags" : [ "--default_num_replicas=1" ]}})
+                   "extraMasterFlags" : [
+                       "--default_num_replicas=1",
+                       "--ipki_ca_key_size=2048",
+                       "--ipki_server_key_size=2048" ],
+                   "extraTserverFlags" : [ "--ipki_server_key_size=2048" ]}})
         cls.send_and_receive(p, { "start_cluster" : {}})
 
         # Get information about the cluster's masters.
