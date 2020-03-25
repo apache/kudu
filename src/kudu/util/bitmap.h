@@ -215,8 +215,12 @@ inline void ForEachBit(const uint8_t* bitmap,
     // The 'tzcnt' instruction that's generated here has a latency of 3 so unrolling
     // and avoiding any cross-iteration dependencies is beneficial.
     int tot_count = Bits::CountOnes64withPopcount(w);
+#ifdef __clang__
 #pragma unroll(3)
-    while (tot_count--) {
+#else
+#pragma GCC unroll 3
+#endif
+    for (int i = 0; i < tot_count; i++) {
       func(base_idx + Bits::FindLSBSetNonZero64(w));
       w &= w - 1;
     }

@@ -33,7 +33,9 @@ void PutFixed64(faststring *dst, uint64_t value) {
 }
 
 void PutVarint64(faststring *dst, uint64_t v) {
-  uint8_t buf[10];
+  // NOTE: buf only needs 10 bytes, but gcc issues some warnings that seem
+  // hard to suppress, since it can't infer the bound on the length.
+  uint8_t buf[16];
   uint8_t* ptr = EncodeVarint64(buf, v);
   dst->append(buf, ptr - buf);
 }
