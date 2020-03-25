@@ -19,7 +19,6 @@
 
 #include <immintrin.h>
 
-#include <cstdint>
 #include <cstring>
 #include <ostream>
 #include <string>
@@ -27,11 +26,17 @@
 
 #include <glog/logging.h>
 
+#include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/common/rowblock.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/zp7.h"
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/slice.h"
 
 using std::vector;
 
@@ -360,6 +365,133 @@ void CopySelectedRows(const vector<uint16_t>& sel_rows,
   }
 }
 
+namespace {
+// For each of the Slices in 'cells_buf', copy the pointed-to data into 'indirect' and
+// modify the Slice so that its 'pointer' field is not an actual memory pointer, but
+// rather an offset within the indirect data buffer.
+void RelocateSlicesToIndirect(uint8_t* __restrict__ cells_buf, int n_rows,
+                              faststring* indirect) {
+  Slice* cell_slices = reinterpret_cast<Slice*>(cells_buf);
+  size_t total_size = 0;
+  for (int i = 0; i < n_rows; i++) {
+    total_size += cell_slices[i].size();
+  }
+
+  int old_size = indirect->size();
+  indirect->resize_with_extra_capacity(old_size + total_size);
+
+  uint8_t* dst_base = indirect->data();
+  uint8_t* dst = dst_base + old_size;
+
+  for (int i = 0; i < n_rows; i++) {
+    Slice* s = &cell_slices[i];
+    if (!s->empty()) {
+      memcpy(dst, s->data(), s->size());
+    }
+    *s = Slice(reinterpret_cast<const uint8_t*>(dst - dst_base), s->size());
+    dst += s->size();
+  }
+}
+
+// Specialized division for the known type sizes. Despite having some branching here,
+// this is faster than a 'div' instruction which has a 20+ cycle latency.
+size_t div_type_size(size_t s, size_t divisor) {
+  switch (divisor) {
+    case 1: return s;
+    case 2: return s/2;
+    case 4: return s/4;
+    case 8: return s/8;
+    case 16: return s/16;
+    default: return s/divisor;
+  }
+}
+
+
+// Copy the selected cells (and non-null-bitmap bits) from 'cblock' into 'dst' according to
+// the given 'sel_rows'.
+void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
+                                 const SelectedRows& sel_rows,
+                                 ColumnarSerializedBatch::Column* dst) {
+  size_t type_size = cblock.type_info()->size();
+  int n_sel = sel_rows.num_selected();
+
+  // Number of initial rows in the dst values and null_bitmap.
+  DCHECK_EQ(dst->data.size() % type_size, 0);
+  size_t initial_rows = div_type_size(dst->data.size(), type_size);
+  size_t new_num_rows = initial_rows + n_sel;
+
+  dst->data.resize_with_extra_capacity(type_size * new_num_rows);
+  uint8_t* dst_buf = dst->data.data() + type_size * initial_rows;
+  const uint8_t* src_buf = cblock.cell_ptr(0);
+
+  if (sel_rows.all_selected()) {
+    memcpy(dst_buf, src_buf, type_size * n_sel);
+  } else {
+    CopySelectedRows(sel_rows.indexes(), type_size, src_buf, dst_buf);
+  }
+
+  if (cblock.is_nullable()) {
+    DCHECK_EQ(dst->non_null_bitmap->size(), BitmapSize(initial_rows));
+    dst->non_null_bitmap->resize_with_extra_capacity(BitmapSize(new_num_rows));
+    CopyNonNullBitmap(cblock.non_null_bitmap(),
+                      sel_rows.bitmap(),
+                      initial_rows, cblock.nrows(),
+                      dst->non_null_bitmap->data());
+    ZeroNullValues(type_size, initial_rows, n_sel, dst->data.data(), dst->non_null_bitmap->data());
+  }
+
+  if (cblock.type_info()->physical_type() == BINARY) {
+    RelocateSlicesToIndirect(dst_buf, n_sel, boost::get_pointer(dst->indirect_data));
+  }
+}
+} // anonymous namespace
 } // namespace internal
+
+int SerializeRowBlockColumnar(
+    const RowBlock& block,
+    const Schema* projection_schema,
+    ColumnarSerializedBatch* out) {
+  DCHECK_GT(block.nrows(), 0);
+  const Schema* tablet_schema = block.schema();
+
+  if (projection_schema == nullptr) {
+    projection_schema = tablet_schema;
+  }
+
+  // Initialize buffers for the columns.
+  // TODO(todd) don't pre-size these to 1MB per column -- quite
+  // expensive if there are a lot of columns!
+  if (out->columns.size() != projection_schema->num_columns()) {
+    CHECK_EQ(out->columns.size(), 0);
+    out->columns.reserve(projection_schema->num_columns());
+    for (const auto& col : projection_schema->columns()) {
+      out->columns.emplace_back();
+      out->columns.back().data.reserve(1024 * 1024);
+      if (col.type_info()->physical_type() == BINARY) {
+        out->columns.back().indirect_data.emplace();
+      }
+      if (col.is_nullable()) {
+        out->columns.back().non_null_bitmap.emplace();
+      }
+    }
+  }
+
+  SelectedRows sel = block.selection_vector()->GetSelectedRows();
+  int col_idx = 0;
+  for (const auto& col : projection_schema->columns()) {
+    int t_schema_idx = tablet_schema->find_column(col.name());
+    CHECK_NE(t_schema_idx, -1);
+    const ColumnBlock& column_block = block.column_block(t_schema_idx);
+
+    internal::CopySelectedCellsFromColumn(
+        column_block,
+        sel,
+        &out->columns[col_idx]);
+    col_idx++;
+  }
+
+  return sel.num_selected();
+}
+
 
 } // namespace kudu

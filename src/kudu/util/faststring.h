@@ -106,6 +106,16 @@ class faststring {
     ASAN_UNPOISON_MEMORY_REGION(data_, len_);
   }
 
+  // Resize to 'newsize'. In contrast to 'resize()', if this requires allocating a new
+  // backing array, the new capacity is rounded up in the same manner as if data had been
+  // appended to the buffer.
+  void resize_with_extra_capacity(size_t newsize) {
+    if (newsize > capacity_) {
+      GrowToAtLeast(newsize);
+    }
+    resize(newsize);
+  }
+
   // Releases the underlying array; after this, the buffer is left empty.
   //
   // NOTE: the data pointer returned by release() always points to dynamically

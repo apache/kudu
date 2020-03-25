@@ -19,7 +19,40 @@
 #include <cstdint>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
+#include "kudu/util/faststring.h"
+
 namespace kudu {
+
+class RowBlock;
+class Schema;
+
+// A pending batch of serialized rows, suitable for easy conversion
+// into the protobuf representation and a set of sidecars.
+struct ColumnarSerializedBatch {
+  struct Column {
+    // Underlying column data.
+    faststring data;
+
+    // Data for varlen columns (BINARY)
+    boost::optional<faststring> indirect_data;
+
+    // Each bit is set when a value is non-null
+    boost::optional<faststring> non_null_bitmap;
+  };
+  std::vector<Column> columns;
+};
+
+// Serialize the data in 'block' into the columnar batch 'out', appending to
+// any data already serialized to the same batch.
+//
+// Returns the number of selected rows serialized.
+int SerializeRowBlockColumnar(
+    const RowBlock& block,
+    const Schema* projection_schema,
+    ColumnarSerializedBatch* out);
+
 
 ////////////////////////////////////////////////////////////
 // Expose these internal functions for unit testing.
@@ -27,7 +60,7 @@ namespace kudu {
 // See .cc file for docs.
 ////////////////////////////////////////////////////////////
 namespace internal {
-void ZeroNullValues(int type_size,
+void ZeroNullValues(int sizeof_type,
                     int dst_idx,
                     int n_rows,
                     uint8_t* dst_values_buf,
@@ -40,7 +73,7 @@ void CopyNonNullBitmap(const uint8_t* non_null_bitmap,
                        uint8_t* dst_non_null_bitmap);
 
 void CopySelectedRows(const std::vector<uint16_t>& sel_rows,
-                      int type_size,
+                      int sizeof_type,
                       const uint8_t* __restrict__ src_buf,
                       uint8_t* __restrict__ dst_buf);
 
@@ -52,6 +85,7 @@ enum class PextMethod {
 #endif
   kSimple
 };
+
 extern PextMethod g_pext_method;
 
 std::vector<PextMethod> GetAvailablePextMethods();
