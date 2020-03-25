@@ -22,7 +22,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <numeric>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -935,15 +934,9 @@ int SerializeRowBlock(const RowBlock& block,
                       bool pad_unixtime_micros_to_16_bytes) {
   DCHECK_GT(block.nrows(), 0);
 
-  vector<uint16_t> selected_row_indexes;
-  bool all_selected = !block.selection_vector()->GetSelectedRows(
-      &selected_row_indexes);
-  if (all_selected) {
-    // TODO(todd): add a fast-path for this in the 'Copy' functions.
-    selected_row_indexes.resize(block.nrows());
-    std::iota(selected_row_indexes.begin(),
-              selected_row_indexes.end(), 0);
-  }
+  vector<uint16_t> selected_row_indexes =
+      block.selection_vector()->GetSelectedRows().ToRowIndexes();
+
   size_t num_rows = selected_row_indexes.size();
 
   // Fast-path empty blocks (eg because the predicate didn't match any rows or

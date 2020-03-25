@@ -17,6 +17,7 @@
 #include "kudu/common/rowblock.h"
 
 #include <limits>
+#include <numeric>
 #include <vector>
 
 #include <glog/logging.h>
@@ -86,22 +87,20 @@ static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
                 });
 }
 
-bool SelectionVector::GetSelectedRows(vector<uint16_t>* selected) const {
+SelectedRows SelectionVector::GetSelectedRows() const {
   CHECK_LE(n_rows_, std::numeric_limits<uint16_t>::max());
   int n_selected = CountSelected();
   if (n_selected == n_rows_) {
-    selected->clear();
-    return false;
+    return SelectedRows(this);
   }
 
-  selected->resize(n_selected);
-  if (n_selected == 0) {
-    return true;
+  vector<uint16_t> selected;
+  if (n_selected > 0) {
+    selected.resize(n_selected);
+    GetSelectedRowsInternal(&bitmap_[0], n_bytes_, selected.data());
   }
-  GetSelectedRowsInternal(&bitmap_[0], n_bytes_, selected->data());
-  return true;
+  return SelectedRows(this, std::move(selected));
 }
-
 
 size_t SelectionVector::CountSelected() const {
   return Bits::Count(&bitmap_[0], n_bytes_);
@@ -140,6 +139,12 @@ bool operator==(const SelectionVector& a, const SelectionVector& b) {
 
 bool operator!=(const SelectionVector& a, const SelectionVector& b) {
   return !(a == b);
+}
+
+std::vector<uint16_t> SelectedRows::CreateRowIndexes() {
+  std::vector<uint16_t> ret(num_selected());
+  std::iota(ret.begin(), ret.end(), 0);
+  return ret;
 }
 
 //////////////////////////////

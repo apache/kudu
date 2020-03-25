@@ -20,6 +20,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -28,7 +29,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/status.h"
@@ -37,6 +37,7 @@ namespace kudu {
 
 class Arena;
 class RowBlockRow;
+class SelectedRows;
 
 // Bit-vector representing the selection status of each row in a row block.
 //
@@ -102,13 +103,10 @@ class SelectionVector {
     return BitmapFindFirstSet(&bitmap_[0], row_offset, n_rows_, row);
   }
 
-  // Sets '*selected' to the indices of all rows marked as selected
-  // in this selection vector.
-  //
-  // NOTE: in the case that all rows are selected, a fast path is triggered
-  // in which false is returned with an empty 'selected'. Otherwise, returns
-  // true.
-  bool GetSelectedRows(std::vector<uint16_t>* selected) const WARN_UNUSED_RESULT;
+  // Processes the selection vector to return a SelectedRows object which indicates
+  // the indices of the selected rows. The returned object refers to the memory
+  // of this SelectionVector and must not be retained longer than this instance.
+  SelectedRows GetSelectedRows() const;
 
   uint8_t *mutable_bitmap() {
     return &bitmap_[0];
@@ -226,6 +224,61 @@ class SelectionVectorView {
   SelectionVector* sel_vec_;
   size_t row_offset_;
 };
+
+// Result type for SelectionVector::GetSelectedRows.
+class SelectedRows {
+ public:
+  bool all_selected() const {
+    return all_selected_;
+  }
+
+  int num_selected() const {
+    return all_selected_ ? sel_vector_->nrows() : indexes_.size();
+  }
+
+  // Get the selected rows.
+  //
+  // NOTE: callers must check all_selected() first, and not use this
+  // function if all rows are selected. 'AsRowIndexes()' may be used instead.
+  const std::vector<uint16_t>& indexes() const {
+    DCHECK(!all_selected_);
+    return indexes_;
+  }
+
+  const uint8_t* bitmap() const {
+    return sel_vector_->bitmap();
+  }
+
+  // Convert this object to a simple vector of row indexes, materializing that
+  // vector in the case that all of the rows are selected.
+  std::vector<uint16_t> ToRowIndexes() && {
+    if (!all_selected_) {
+      return std::move(indexes_);
+    }
+    return CreateRowIndexes();
+  }
+
+ private:
+  friend class SelectionVector;
+
+  explicit SelectedRows(const SelectionVector* sel_vector)
+      : sel_vector_(sel_vector),
+        all_selected_(true) {
+  }
+  explicit SelectedRows(const SelectionVector* sel_vector,
+                        std::vector<uint16_t> indexes)
+      : sel_vector_(sel_vector),
+        all_selected_(false),
+        indexes_(std::move(indexes)) {
+  }
+
+  std::vector<uint16_t> CreateRowIndexes();
+
+  const SelectionVector* const sel_vector_;
+  const bool all_selected_;
+  std::vector<uint16_t> indexes_;
+};
+
 
 // A block of decoded rows.
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,

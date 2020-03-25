@@ -60,16 +60,20 @@ TEST(TestSelectionVector, TestNonByteAligned) {
   ASSERT_EQ(sv.nrows(), sv.CountSelected());
   ASSERT_TRUE(sv.AnySelected());
 
-  vector<uint16_t> sel;
-  ASSERT_FALSE(sv.GetSelectedRows(&sel));
+  {
+    SelectedRows sel = sv.GetSelectedRows();
+    ASSERT_TRUE(sel.all_selected());
+    ASSERT_EQ(sv.nrows(), sel.num_selected());
+  }
 
   for (size_t i = 0; i < sv.nrows(); i++) {
     sv.SetRowUnselected(i);
   }
   ASSERT_EQ(0, sv.CountSelected());
   ASSERT_FALSE(sv.AnySelected());
-  ASSERT_TRUE(sv.GetSelectedRows(&sel));
-  ASSERT_EQ(0, sel.size());
+  SelectedRows sel = sv.GetSelectedRows();
+  ASSERT_EQ(0, sel.num_selected());
+  ASSERT_FALSE(sel.all_selected());
 }
 
 TEST(TestSelectionVector, TestGetSelectedRows) {
@@ -80,8 +84,9 @@ TEST(TestSelectionVector, TestGetSelectedRows) {
     sv.SetRowSelected(i);
   }
   vector<uint16_t> selected;
-  ASSERT_TRUE(sv.GetSelectedRows(&selected));
-  ASSERT_EQ(expected, selected);
+  SelectedRows sel = sv.GetSelectedRows();
+  ASSERT_FALSE(sel.all_selected());
+  ASSERT_EQ(expected, sel.indexes());
 }
 
 } // namespace kudu
