@@ -399,7 +399,7 @@ void HandleResponse(const ReqType* req, RespType* resp,
 }
 
 template <class ReqType, class RespType>
-static StdStatusCallback BindHandleResponse(
+static StatusCallback BindHandleResponse(
     const ReqType* req,
     RespType* resp,
     RpcContext* context) {

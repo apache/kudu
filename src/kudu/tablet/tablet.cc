@@ -51,7 +51,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -379,7 +378,7 @@ void Tablet::Shutdown() {
   // ShutDown(), and need to flush the metadata to indicate that the tablet is deleted.
   // During that flush, we don't want metadata to call back into the Tablet, so we
   // have to unregister the pre-flush callback.
-  metadata_->SetPreFlushCallback(Bind(DoNothingStatusClosure));
+  metadata_->SetPreFlushCallback(&DoNothingStatusClosure);
 }
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,

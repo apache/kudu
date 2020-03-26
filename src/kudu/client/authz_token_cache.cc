@@ -25,16 +25,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
 #include "kudu/client/master_proxy_rpc.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -47,28 +43,29 @@
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 
+using kudu::master::MasterFeatures;
+using kudu::master::MasterServiceProxy;
+using kudu::rpc::BackoffType;
+using kudu::rpc::ResponseCallback;
+using kudu::security::SignedTokenPB;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-using master::MasterFeatures;
-using master::MasterServiceProxy;
-using rpc::BackoffType;
-using security::SignedTokenPB;
-
 namespace client {
 namespace internal {
 
 RetrieveAuthzTokenRpc::RetrieveAuthzTokenRpc(const KuduTable* table,
                                              MonoTime deadline)
-    : AsyncLeaderMasterRpc(deadline, table->client(), BackoffType::LINEAR, req_, &resp_,
-                           &MasterServiceProxy::GetTableSchemaAsync, "RetrieveAuthzToken",
-                           Bind(&AuthzTokenCache::RetrievedNewAuthzTokenCb,
-                                Unretained(&table->client()->data_->authz_token_cache_),
-                                table->id()),
-                           { MasterFeatures::GENERATE_AUTHZ_TOKEN }),
+    : AsyncLeaderMasterRpc(
+          deadline, table->client(), BackoffType::LINEAR, req_, &resp_,
+          &MasterServiceProxy::GetTableSchemaAsync, "RetrieveAuthzToken",
+          [table](const Status& s) {
+            table->client()->data_->authz_token_cache_.RetrievedNewAuthzTokenCb(
+                table->id(), s);
+          },
+          { MasterFeatures::GENERATE_AUTHZ_TOKEN }),
       table_(table) {
   req_.mutable_table()->set_table_id(table_->id());
 }
@@ -98,7 +95,7 @@ void RetrieveAuthzTokenRpc::SendRpcCb(const Status& status) {
       client_->data_->authz_token_cache_.Put(table_->id(), resp_.authz_token());
     }
   }
-  user_cb_.Run(new_status);
+  user_cb_(new_status);
 }
 
 void AuthzTokenCache::Put(const string& table_id, SignedTokenPB authz_token) {
@@ -154,7 +151,7 @@ void AuthzTokenCache::RetrievedNewAuthzTokenCb(const string& table_id,
   }
   DCHECK(!cbs.empty());
   for (const auto& cb : cbs) {
-    cb.Run(status);
+    cb(status);
   }
 }
 

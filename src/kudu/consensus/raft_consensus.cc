@@ -46,7 +46,6 @@
 #include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/time_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -1817,7 +1816,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
 }
 
 Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
-                                   StdStatusCallback client_cb,
+                                   StatusCallback client_cb,
                                    boost::optional<TabletServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::ChangeConfig",
                "peer", peer_uuid(),
@@ -1844,7 +1843,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
 }
 
 Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
-                                       StdStatusCallback client_cb,
+                                       StatusCallback client_cb,
                                        boost::optional<TabletServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::BulkChangeConfig",
                "peer", peer_uuid(),
@@ -2249,7 +2248,7 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
-  StdStatusCallback client_cb = std::bind(&RaftConsensus::MarkDirtyOnSuccess,
+  StatusCallback client_cb = std::bind(&RaftConsensus::MarkDirtyOnSuccess,
                                           this,
                                           string("Replicated consensus-only round"),
                                           &DoNothingStatusCB,
@@ -2487,7 +2486,7 @@ void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
 Status RaftConsensus::ReplicateConfigChangeUnlocked(
     RaftConfigPB old_config,
     RaftConfigPB new_config,
-    StdStatusCallback client_cb) {
+    StatusCallback client_cb) {
   DCHECK(lock_.is_locked());
   auto cc_replicate = new ReplicateMsg();
   cc_replicate->set_op_type(CHANGE_CONFIG_OP);
@@ -2780,7 +2779,7 @@ void RaftConsensus::MarkDirty(const string& reason) {
 }
 
 void RaftConsensus::MarkDirtyOnSuccess(const string& reason,
-                                       const StdStatusCallback& client_cb,
+                                       const StatusCallback& client_cb,
                                        const Status& status) {
   if (PREDICT_TRUE(status.ok())) {
     MarkDirty(reason);
@@ -2789,7 +2788,7 @@ void RaftConsensus::MarkDirtyOnSuccess(const string& reason,
 }
 
 void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
-                                                  const StdStatusCallback& client_cb,
+                                                  const StatusCallback& client_cb,
                                                   const Status& status) {
   // NOTE: lock_ is held here because this is triggered by
   // PendingRounds::AbortOpsAfter() and AdvanceCommittedIndex().
@@ -2819,9 +2818,10 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
 
-  CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
-                                   Bind(CrashIfNotOkStatusCB,
-                                        "Enqueued commit operation failed to write to WAL")));
+  CHECK_OK(log_->AsyncAppendCommit(
+      std::move(commit_msg), [](const Status& s) {
+        CrashIfNotOkStatusCB("Enqueued commit operation failed to write to WAL", s);
+      }));
 
   client_cb(status);
 }

@@ -83,13 +83,13 @@ void DnsResolver::ResolveAddressesAsync(const HostPort& hostport,
                                         vector<Sockaddr>* addresses,
                                         const StatusCallback& cb) {
   if (GetCachedAddresses(hostport, addresses)) {
-    return cb.Run(Status::OK());
+    return cb(Status::OK());
   }
   const auto s = pool_->Submit([=]() {
     this->DoResolutionCb(hostport, addresses, cb);
   });
   if (!s.ok()) {
-    cb.Run(s);
+    cb(s);
   }
 }
 
@@ -123,7 +123,7 @@ Status DnsResolver::DoResolution(const HostPort& hostport,
 void DnsResolver::DoResolutionCb(const HostPort& hostport,
                                  vector<Sockaddr>* addresses,
                                  const StatusCallback& cb) {
-  cb.Run(DoResolution(hostport, addresses));
+  cb(DoResolution(hostport, addresses));
 }
 
 bool DnsResolver::GetCachedAddresses(const HostPort& hostport,

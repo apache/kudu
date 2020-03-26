@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/log_cache.h"
 
+#include <functional>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -35,8 +36,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -213,11 +212,9 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   metrics_.log_cache_num_ops->IncrementBy(msgs.size());
 
   Status log_status = log_->AsyncAppendReplicates(
-    msgs, Bind(&LogCache::LogCallback,
-               Unretained(this),
-               last_idx_in_batch,
-               borrowed_memory,
-               callback));
+      msgs, [this, last_idx_in_batch, borrowed_memory, callback](const Status& s) {
+        this->LogCallback(last_idx_in_batch, borrowed_memory, callback, s);
+      });
 
   if (!log_status.ok()) {
     LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Couldn't append to log: " << log_status.ToString();
@@ -249,7 +246,7 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
       }
     }
   }
-  user_callback.Run(log_status);
+  user_callback(log_status);
 }
 
 bool LogCache::HasOpBeenWritten(int64_t index) const {

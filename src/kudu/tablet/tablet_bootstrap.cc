@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -54,7 +55,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -529,10 +529,10 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   CHECK((*rebuilt_tablet && *rebuilt_log) || !bootstrap_status.ok())
       << "Tablet and Log not initialized";
   if (bootstrap_status.ok()) {
+    auto cb = make_scoped_refptr(new FlushInflightsToLogCallback(
+        rebuilt_tablet->get(), *rebuilt_log));
     tablet_meta_->SetPreFlushCallback(
-        Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
-             make_scoped_refptr(new FlushInflightsToLogCallback(
-                 rebuilt_tablet->get(), *rebuilt_log))));
+        [cb]() -> Status { return cb->WaitForInflightsAndFlushLog(); });
   }
 
   // This will cause any pending TabletMetadata flush to be executed.

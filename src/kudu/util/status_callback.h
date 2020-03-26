@@ -14,13 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_STATUS_CALLBACK_H
-#define KUDU_UTIL_STATUS_CALLBACK_H
+#pragma once
 
 #include <functional>
 #include <string>
-
-#include "kudu/gutil/callback_forward.h"
 
 namespace kudu {
 
@@ -28,12 +25,7 @@ class Status;
 
 // A callback which takes a Status. This is typically used for functions which
 // produce asynchronous results and may fail.
-typedef Callback<void(const Status& status)> StatusCallback;
-
-// Like StatusCallback but uses the STL function objects.
-//
-// TODO(adar): should eventually replace all StatusCallback usage with this.
-typedef std::function<void(const Status& status)> StdStatusCallback;
+typedef std::function<void(const Status& status)> StatusCallback;
 
 // To be used when a function signature requires a StatusCallback but none
 // is needed.
@@ -44,11 +36,9 @@ extern void CrashIfNotOkStatusCB(const std::string& message, const Status& statu
 
 // A closure (callback without arguments) that returns a Status indicating
 // whether it was successful or not.
-typedef Callback<Status(void)> StatusClosure;
+typedef std::function<Status(void)> StatusClosure;
 
 // To be used when setting a StatusClosure is optional.
 extern Status DoNothingStatusClosure();
 
 } // namespace kudu
-
-#endif

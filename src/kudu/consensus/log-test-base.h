@@ -252,7 +252,7 @@ class LogTestBase : public KuduTest {
     // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
     // need to pass it through to our callback.
     return log_->AsyncAppendReplicates(
-        { replicate }, Bind(&LogTestBase::CheckReplicateResult, replicate));
+        { replicate }, [replicate](const Status& s) { CheckReplicateResult(replicate, s); });
   }
 
   static void CheckCommitResult(const Status& s) {
@@ -321,7 +321,7 @@ class LogTestBase : public KuduTest {
       return s.Wait();
     }
     return log_->AsyncAppendCommit(std::move(commit),
-                                   Bind(&LogTestBase::CheckCommitResult));
+                                   [](const Status& s) { CheckCommitResult(s); });
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log

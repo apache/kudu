@@ -33,7 +33,6 @@
 #include <glog/logging.h>
 
 #include "kudu/common/table_util.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -757,7 +756,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   }
   CHECK_LE(1, info.callbacks.size());
   for (auto& cb : info.callbacks) {
-    cb.Run(s);
+    cb(s);
   }
   RETURN_NOT_OK(s);
   *privileges = *fetched_privileges;

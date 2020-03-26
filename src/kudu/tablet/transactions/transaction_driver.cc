@@ -33,7 +33,6 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -527,9 +526,10 @@ void TransactionDriver::ApplyTask() {
 
     {
       TRACE_EVENT1("txn", "AsyncAppendCommit", "txn", this);
-      CHECK_OK(log_->AsyncAppendCommit(std::move(commit_msg),
-                                       Bind(CrashIfNotOkStatusCB,
-                                       "Enqueued commit operation failed to write to WAL")));
+      CHECK_OK(log_->AsyncAppendCommit(
+          std::move(commit_msg), [](const Status& s) {
+            CrashIfNotOkStatusCB("Enqueued commit operation failed to write to WAL", s);
+          }));
     }
 
     // If the client requested COMMIT_WAIT as the external consistency mode

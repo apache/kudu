@@ -105,7 +105,7 @@ struct TabletVotingState {
 };
 
 typedef int64_t ConsensusTerm;
-typedef StdStatusCallback ConsensusReplicatedCallback;
+typedef StatusCallback ConsensusReplicatedCallback;
 
 class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public enable_make_shared<RaftConsensus>,
@@ -299,12 +299,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Implement a ChangeConfig() request.
   Status ChangeConfig(const ChangeConfigRequestPB& req,
-                      StdStatusCallback client_cb,
+                      StatusCallback client_cb,
                       boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Implement a BulkChangeConfig() request.
   Status BulkChangeConfig(const BulkChangeConfigRequestPB& req,
-                          StdStatusCallback client_cb,
+                          StatusCallback client_cb,
                           boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Implement an UnsafeChangeConfig() request.
@@ -494,7 +494,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status ReplicateConfigChangeUnlocked(
       RaftConfigPB old_config,
       RaftConfigPB new_config,
-      StdStatusCallback client_cb);
+      StatusCallback client_cb);
 
   // Update the peers and queue to be consistent with a new active configuration.
   // Should only be called by the leader.
@@ -707,7 +707,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Calls MarkDirty() if 'status' == OK. Then, always calls 'client_cb' with
   // 'status' as its argument.
   void MarkDirtyOnSuccess(const std::string& reason,
-                          const StdStatusCallback& client_cb,
+                          const StatusCallback& client_cb,
                           const Status& status);
 
   // Attempt to remove the follower with the specified 'uuid' from the config,
@@ -752,7 +752,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   //
   // NOTE: Must be called while holding 'lock_'.
   void NonTxRoundReplicationFinished(ConsensusRound* round,
-                                     const StdStatusCallback& client_cb,
+                                     const StatusCallback& client_cb,
                                      const Status& status);
 
   // As a leader, append a new ConsensusRound to the queue.

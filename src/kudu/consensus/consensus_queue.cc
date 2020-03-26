@@ -37,8 +37,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/time_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -377,12 +375,13 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
   }
   ResponseFromPeer(local_peer_pb_.permanent_uuid(), fake_response);
 
-  callback.Run(status);
+  callback(status);
 }
 
 Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
-  return AppendOperations({ msg }, Bind(CrashIfNotOkStatusCB,
-                                        "Enqueued replicate operation failed to write to WAL"));
+  return AppendOperations({ msg }, [](const Status& s) {
+    CrashIfNotOkStatusCB("Enqueued replicate operation failed to write to WAL", s);
+  });
 }
 
 Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
@@ -424,11 +423,10 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   // for the log buffer to empty, it may need to call LocalPeerAppendFinished()
   // which also needs queue_lock_.
   lock.unlock();
-  RETURN_NOT_OK(log_cache_.AppendOperations(msgs,
-                                            Bind(&PeerMessageQueue::LocalPeerAppendFinished,
-                                                 Unretained(this),
-                                                 last_id,
-                                                 log_append_callback)));
+  RETURN_NOT_OK(log_cache_.AppendOperations(
+      msgs, [this, last_id, log_append_callback](const Status& s) {
+        this->LocalPeerAppendFinished(last_id, log_append_callback, s);
+      }));
   lock.lock();
   DCHECK(last_id.IsInitialized());
   queue_state_.last_appended = last_id;

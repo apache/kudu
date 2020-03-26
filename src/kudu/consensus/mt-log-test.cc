@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -41,7 +42,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -95,7 +95,8 @@ class CustomLatchCallback : public RefCountedThreadSafe<CustomLatchCallback> {
   }
 
   StatusCallback AsStatusCallback() {
-    return Bind(&CustomLatchCallback::StatusCB, this);
+    scoped_refptr<CustomLatchCallback> self(this);
+    return [self](const Status& s) { self->StatusCB(s); };
   }
 
  private:

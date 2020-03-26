@@ -18,6 +18,7 @@
 #include "kudu/client/batcher.h"
 
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -44,7 +45,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -544,7 +544,7 @@ bool WriteRpc::GetNewAuthnTokenAndRetry() {
   KuduClient* c = batcher_->client_;
   VLOG(1) << "Retrieving new authn token from master";
   c->data_->ConnectToClusterAsync(c, retrier().deadline(),
-      Bind(&WriteRpc::GotNewAuthnTokenRetryCb, Unretained(this)),
+      [this](const Status& s) { this->GotNewAuthnTokenRetryCb(s); },
       CredentialsPolicy::PRIMARY_CREDENTIALS);
   return true;
 }
@@ -555,7 +555,7 @@ bool WriteRpc::GetNewAuthzTokenAndRetry() {
   KuduClient* c = batcher_->client_;
   VLOG(1) << "Retrieving new authz token from master";
   c->data_->RetrieveAuthzTokenAsync(table(),
-      Bind(&WriteRpc::GotNewAuthzTokenRetryCb, Unretained(this)),
+      [this](const Status& s) { this->GotNewAuthzTokenRetryCb(s); },
       retrier().deadline());
   return true;
 }
@@ -722,15 +722,17 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   //
   // deadline_ is set in FlushAsync(), after all Add() calls are done, so
   // here we're forced to create a new deadline.
+  auto op_raw = op.get();
   MonoTime deadline = ComputeDeadlineUnlocked();
   base::RefCountInc(&outstanding_lookups_);
+  scoped_refptr<Batcher> self(this);
   client_->data_->meta_cache_->LookupTabletByKey(
       op->write_op->table(),
       std::move(partition_key),
       deadline,
       MetaCache::LookupType::kPoint,
       &op->tablet,
-      Bind(&Batcher::TabletLookupFinished, this, op.get()));
+      [self, op_raw](const Status& s) { self->TabletLookupFinished(op_raw, s); });
   IgnoreResult(op.release());
 
   buffer_bytes_used_.IncrementBy(write_op->SizeInBuffer());

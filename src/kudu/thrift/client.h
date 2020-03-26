@@ -196,7 +196,7 @@ template<typename Service>
 Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
   const MonoTime start_time(MonoTime::Now());
   Synchronizer synchronizer;
-  auto callback = synchronizer.AsStdStatusCallback();
+  auto callback = synchronizer.AsStatusCallback();
 
   // TODO(todd): wrapping this in a TRACE_EVENT scope and a LOG_IF_SLOW and such
   // would be helpful. Perhaps a TRACE message and/or a TRACE_COUNTER_INCREMENT

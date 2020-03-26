@@ -31,7 +31,6 @@
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -132,7 +131,7 @@ void HmsNotificationLogListenerTask::RunLoop() {
 
     // Wakeup all threads which enqueued before beginning the poll.
     for (auto& cb : callback_batch) {
-      cb.Run(s);
+      cb(s);
     }
     callback_batch.clear();
 
@@ -164,7 +163,7 @@ void HmsNotificationLogListenerTask::RunLoop() {
   }
 
   for (auto& cb : callback_batch) {
-    cb.Run(Status::ServiceUnavailable(kShutdownMessage));
+    cb(Status::ServiceUnavailable(kShutdownMessage));
   }
 }
 

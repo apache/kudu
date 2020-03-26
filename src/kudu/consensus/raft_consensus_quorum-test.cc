@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -277,7 +278,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     // Use a latch in place of a Transaction callback.
     unique_ptr<Synchronizer> sync(new Synchronizer());
-    *round = peer->NewRound(std::move(msg), sync->AsStdStatusCallback());
+    *round = peer->NewRound(std::move(msg), sync->AsStatusCallback());
     EmplaceOrDie(&syncs_, round->get(), std::move(sync));
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
@@ -293,10 +294,11 @@ class RaftConsensusQuorumTest : public KuduTest {
                             shared_ptr<Synchronizer>* commit_sync = nullptr) {
     StatusCallback commit_callback;
     if (commit_sync != nullptr) {
-      commit_sync->reset(new Synchronizer());
-      commit_callback = Bind(&FireSharedSynchronizer, *commit_sync);
+      shared_ptr<Synchronizer> sync(std::make_shared<Synchronizer>());
+      commit_callback = [sync](const Status& s) { FireSharedSynchronizer(sync, s); };
+      *commit_sync = std::move(sync);
     } else {
-      commit_callback = Bind(&DoNothingStatusCB);
+      commit_callback = &DoNothingStatusCB;
     }
 
     unique_ptr<CommitMsg> msg(new CommitMsg());

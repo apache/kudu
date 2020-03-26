@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
+#include <functional>
 #include <mutex>
 #include <ostream>
 #include <string>
@@ -36,7 +37,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -300,7 +300,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
-      pre_flush_callback_(Bind(DoNothingStatusClosure)),
+      pre_flush_callback_(&DoNothingStatusClosure),
       supports_live_row_count_(supports_live_row_count) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
@@ -320,7 +320,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
-      pre_flush_callback_(Bind(DoNothingStatusClosure)),
+      pre_flush_callback_(&DoNothingStatusClosure),
       supports_live_row_count_(false) {}
 
 Status TabletMetadata::LoadFromDisk() {
@@ -580,7 +580,7 @@ Status TabletMetadata::Flush() {
     // is persisted. See KUDU-701 for details.
     orphaned.assign(orphaned_blocks_.begin(), orphaned_blocks_.end());
   }
-  pre_flush_callback_.Run();
+  pre_flush_callback_();
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
   l_flush.Unlock();

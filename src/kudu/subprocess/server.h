@@ -87,7 +87,7 @@ class SubprocessCall {
  public:
   SubprocessCall(const SubprocessRequestPB* req,
                  SubprocessResponsePB* resp,
-                 StdStatusCallback* cb,
+                 StatusCallback* cb,
                  MonoTime deadline)
       : id_(req->id()),
         deadline_(deadline),
@@ -168,7 +168,7 @@ class SubprocessCall {
 
   // Callback to wake up the caller that enqueued this call. This is called
   // exactly once per SubprocessCall.
-  StdStatusCallback* cb_;
+  StatusCallback* cb_;
 };
 
 // Used by BlockingQueue to determine the size of messages.
@@ -230,7 +230,7 @@ class SubprocessServer {
  private:
   FRIEND_TEST(SubprocessServerTest, TestCallsReturnWhenShuttingDown);
 
-  void StartSubprocessThread(const StdStatusCallback& cb);
+  void StartSubprocessThread(const StatusCallback& cb);
 
   // Stop the subprocess and stop processing messages.
   void Shutdown();

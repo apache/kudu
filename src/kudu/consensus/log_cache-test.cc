@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <ostream>
@@ -43,7 +44,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -129,7 +129,7 @@ class LogCacheTest : public KuduTest {
       vector<ReplicateRefPtr> msgs;
       msgs.push_back(make_scoped_refptr_replicate(
                        CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
-      RETURN_NOT_OK(cache_->AppendOperations(msgs, Bind(&FatalOnError)));
+      RETURN_NOT_OK(cache_->AppendOperations(msgs, [](const Status& s) { FatalOnError(s); }));
     }
     return Status::OK();
   }

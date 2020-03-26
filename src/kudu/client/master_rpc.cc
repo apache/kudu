@@ -32,7 +32,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
@@ -226,7 +225,7 @@ void ConnectToMasterRpc::SendRpcCb(const Status& status) {
       new_status = StatusFromPB(out_->error().status());
     }
   }
-  user_cb_.Run(new_status);
+  user_cb_(new_status);
 }
 
 } // anonymous namespace
@@ -277,8 +276,9 @@ void ConnectToClusterRpc::SendRpc() {
 
   std::lock_guard<simple_spinlock> l(lock_);
   for (int i = 0; i < addrs_with_names_.size(); i++) {
+    scoped_refptr<ConnectToClusterRpc> self(this);
     ConnectToMasterRpc* rpc = new ConnectToMasterRpc(
-        Bind(&ConnectToClusterRpc::SingleNodeCallback, this, i),
+        [self, i](const Status& s) { self->SingleNodeCallback(i, s); },
         addrs_with_names_[i],
         actual_deadline,
         retrier().messenger(),

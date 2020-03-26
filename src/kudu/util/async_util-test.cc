@@ -26,7 +26,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -69,12 +68,12 @@ TEST_F(AsyncUtilTest, TestSynchronizerCompletion) {
         ignore_result(sync.Wait());
     });
     SleepFor(MonoDelta::FromMilliseconds(5));
-    cb.Run(Status::OK());
+    cb(Status::OK());
     waiter.join();
   }
   sync.Reset();
   {
-    auto cb = sync.AsStdStatusCallback();
+    auto cb = sync.AsStatusCallback();
     auto waiter = thread([sync] {
         ignore_result(sync.Wait());
     });
@@ -118,7 +117,7 @@ TEST_P(AsyncUtilTimedWaitTest, SynchronizerTimedWaitSuccess) {
   auto cb = sync.AsStatusCallback();
   auto waiter = thread([cb] {
     SleepFor(MonoDelta::FromMilliseconds(5));
-    cb.Run(Status::OK());
+    cb(Status::OK());
   });
   SCOPED_CLEANUP({
     waiter.join();
@@ -144,7 +143,7 @@ TEST_P(AsyncUtilTimedWaitTest, SynchronizerTimedWaitTimeout) {
   auto cb = sync.AsStatusCallback();
   auto waiter = thread([cb] {
     SleepFor(MonoDelta::FromMilliseconds(1000));
-    cb.Run(Status::OK());
+    cb(Status::OK());
   });
   SCOPED_CLEANUP({
     waiter.join();

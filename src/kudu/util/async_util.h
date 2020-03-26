@@ -16,13 +16,11 @@
 // under the License.
 //
 // Utility functions which are handy when doing async/callback-based programming.
-
 #pragma once
 
 #include <functional>
 #include <memory>
 
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/status.h"
@@ -52,11 +50,8 @@ class Synchronizer {
   }
 
   StatusCallback AsStatusCallback() {
-    return Bind(Data::Callback, std::weak_ptr<Data>(data_));
-  }
-
-  StdStatusCallback AsStdStatusCallback() {
-    return std::bind(Data::Callback, std::weak_ptr<Data>(data_), std::placeholders::_1);
+    std::weak_ptr<Data> w_data(data_);
+    return [w_data](const Status& s) { Data::Callback(w_data, s); };
   }
 
   Status Wait() const {

@@ -646,7 +646,7 @@ void KuduClient::Data::ConnectedToClusterCb(
   }
 
   for (const StatusCallback& cb : cbs) {
-    cb.Run(status);
+    cb(status);
   }
 }
 
@@ -676,12 +676,12 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
       s = dns_resolver_->ResolveAddresses(hp, &addrs);
     }
     if (!s.ok()) {
-      cb.Run(s);
+      cb(s);
       return;
     }
     if (addrs.empty()) {
-      cb.Run(Status::InvalidArgument(Substitute("No master address specified by '$0'",
-                                                master_server_addr)));
+      cb(Status::InvalidArgument(Substitute("No master address specified by '$0'",
+                                            master_server_addr)));
       return;
     }
     if (addrs.size() > 1) {

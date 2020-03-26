@@ -99,7 +99,7 @@ SubprocessServer::~SubprocessServer() {
   Shutdown();
 }
 
-void SubprocessServer::StartSubprocessThread(const StdStatusCallback& cb) {
+void SubprocessServer::StartSubprocessThread(const StatusCallback& cb) {
   Status s = process_->Start();
   cb(s);
   if (PREDICT_TRUE(s.ok())) {
@@ -112,7 +112,7 @@ void SubprocessServer::StartSubprocessThread(const StdStatusCallback& cb) {
 Status SubprocessServer::Init() {
   VLOG(2) << "Starting the subprocess";
   Synchronizer sync;
-  auto cb = sync.AsStdStatusCallback();
+  auto cb = sync.AsStatusCallback();
   RETURN_NOT_OK(Thread::Create("subprocess", "start",
                                [this, &cb]() { this->StartSubprocessThread(cb); },
                                &read_thread_));
@@ -147,7 +147,7 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   DCHECK(!req->has_id());
   req->set_id(next_id_++);
   Synchronizer sync;
-  auto cb = sync.AsStdStatusCallback();
+  auto cb = sync.AsStatusCallback();
   // Before adding to the queue, record the size of the call queue.
   metrics_.server_outbound_queue_size_bytes->Increment(outbound_call_queue_.size());
   CallAndTimer call_and_timer = {

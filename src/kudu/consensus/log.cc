@@ -382,9 +382,9 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
       // abort all subsequent transactions in this batch or allow
       // them to be appended? What about transactions in future
       // batches?
-      if (!entry_batch->callback().is_null()) {
-        entry_batch->callback().Run(s);
-        entry_batch->callback_.Reset();
+      if (entry_batch->callback()) {
+        entry_batch->callback()(s);
+        entry_batch->callback_ = nullptr;
       }
     }
     if (is_all_commits && entry_batch->type_ != COMMIT) {
@@ -399,8 +399,8 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(ERROR) << "Error syncing log: " << s.ToString();
     for (LogEntryBatch* entry_batch : entry_batches) {
-      if (!entry_batch->callback().is_null()) {
-        entry_batch->callback().Run(s);
+      if (entry_batch->callback()) {
+        entry_batch->callback()(s);
       }
       delete entry_batch;
     }
@@ -409,8 +409,8 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
     VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
     SCOPED_WATCH_STACK(100);
     for (LogEntryBatch* entry_batch : entry_batches) {
-      if (PREDICT_TRUE(!entry_batch->callback().is_null())) {
-        entry_batch->callback().Run(Status::OK());
+      if (PREDICT_TRUE(entry_batch->callback())) {
+        entry_batch->callback()(Status::OK());
       }
       // It's important to delete each batch as we see it, because
       // deleting it may free up memory from memory trackers, and the

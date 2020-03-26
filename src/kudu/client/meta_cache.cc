@@ -27,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 #include <google/protobuf/repeated_field.h> // IWYU pragma: keep
 
@@ -39,8 +38,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -99,7 +96,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
 
   if (!s.ok()) {
     s = s.CloneAndPrepend("Failed to resolve address for TS " + uuid_);
-    user_callback.Run(s);
+    user_callback(s);
     return;
   }
 
@@ -111,7 +108,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
     proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
     proxy_->set_user_credentials(client->data_->user_credentials_);
   }
-  user_callback.Run(s);
+  user_callback(s);
 }
 
 void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb) {
@@ -122,7 +119,7 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
     if (proxy_) {
       // Already have a proxy created.
       l.unlock();
-      cb.Run(Status::OK());
+      cb(Status::OK());
       return;
     }
 
@@ -134,8 +131,9 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
 
   auto addrs = new vector<Sockaddr>();
   client->data_->dns_resolver_->ResolveAddressesAsync(
-      hp, addrs, Bind(&RemoteTabletServer::DnsResolutionFinished,
-                      Unretained(this), hp, addrs, client, cb));
+      hp, addrs, [=](const Status& s) {
+        this->DnsResolutionFinished(hp, addrs, client, cb, s);
+      });
 }
 
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
@@ -457,17 +455,17 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
         deadline,
         MetaCache::LookupType::kPoint,
         nullptr,
-        Bind(&MetaCacheServerPicker::LookUpTabletCb, Unretained(this), callback, deadline));
+        [this, callback, deadline](const Status& s) {
+          this->LookUpTabletCb(callback, deadline, s);
+        });
     return;
   }
 
   // If we have a current TS initialize the proxy.
   // Make sure we have a working proxy before sending out the RPC.
-  leader->InitProxy(client_,
-                    Bind(&MetaCacheServerPicker::InitProxyCb,
-                         Unretained(this),
-                         callback,
-                         leader));
+  leader->InitProxy(client_, [this, callback, leader](const Status& s) {
+    this->InitProxyCb(callback, leader, s);
+  });
 }
 
 void MetaCacheServerPicker::MarkServerFailed(RemoteTabletServer* replica, const Status& status) {
@@ -672,7 +670,7 @@ void LookupRpc::SendRpc() {
   Status fastpath_status = meta_cache_->DoFastPathLookup(
       table_, &partition_key_, lookup_type_, remote_tablet_);
   if (!fastpath_status.IsIncomplete()) {
-    user_cb_.Run(fastpath_status);
+    user_cb_(fastpath_status);
     delete this;
     return;
   }
@@ -720,7 +718,7 @@ void LookupRpc::ResetMasterLeaderAndRetry(CredentialsPolicy creds_policy) {
   table_->client()->data_->ConnectToClusterAsync(
       table_->client(),
       retrier().deadline(),
-      Bind(&LookupRpc::NewLeaderMasterDeterminedCb, Unretained(this), creds_policy),
+      [=](const Status& s) { this->NewLeaderMasterDeterminedCb(creds_policy, s); },
       creds_policy);
 }
 
@@ -764,7 +762,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
     new_status = new_status.CloneAndPrepend(Substitute("$0 failed", ToString()));
     KLOG_EVERY_N_SECS(WARNING, 1) << new_status.ToString();
   }
-  user_cb_.Run(new_status);
+  user_cb_(new_status);
 }
 
 Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
@@ -1016,7 +1014,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
   Status fastpath_status = DoFastPathLookup(
       table, &partition_key, lookup_type, remote_tablet);
   if (!fastpath_status.IsIncomplete()) {
-    callback.Run(fastpath_status);
+    callback(fastpath_status);
     return;
   }
 

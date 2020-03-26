@@ -36,7 +36,6 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -678,8 +677,8 @@ class TestDriver {
     std::unique_ptr<CommitMsg> msg(new CommitMsg);
     msg->set_op_type(round_->replicate_msg()->op_type());
     msg->mutable_commited_op_id()->CopyFrom(round_->id());
-    CHECK_OK(log_->AsyncAppendCommit(std::move(msg),
-                                     Bind(&TestDriver::CommitCallback, Unretained(this))));
+    CHECK_OK(log_->AsyncAppendCommit(
+        std::move(msg), [this](const Status& s) { this->CommitCallback(s); }));
   }
 
   void CommitCallback(const Status& s) {
