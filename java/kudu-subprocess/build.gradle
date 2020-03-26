@@ -19,10 +19,18 @@ apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile libs.hadoopCommon
+  compile(libs.hadoopCommon) {
+    // hadoopCommon and rangerPlugin use different versions of jersey.
+    exclude group: "com.sun.jersey"
+  }
   compile libs.protobufJava
   compile libs.protobufJavaUtil
-  compile libs.rangerPlugin
+
+  compile(libs.rangerPlugin) {
+    // rangerPlugin depends on kafka which includes different versions
+    // of jersey than rangerPlugin.
+    exclude group: "org.apache.kafka"
+  }
   compile libs.slf4jApi
 
   // Workaround for RANGER-2749. Remove once resolved.
