@@ -40,14 +40,6 @@ namespace master {
 // An implementation of AuthzProvider that connects to Ranger and translates
 // authorization requests to Ranger and allows or denies the actions based on
 // the received responses.
-//
-// The privilege model for Kudu operations with Ranger follows the existing
-// one enforced with Sentry (see sentry_authz_provider.cc). However note that
-// in terms of policy evaluation, Ranger is different than Sentry that a policy
-// with a higher scope in the hierarchy cannot imply a lower scope its hierarchy
-// tree. e.g. 'METADATA on db=a' cannot imply 'METADATA on db=a->table=tbl'.
-// Therefore, in Ranger world one can grant 'METADATA on db=a->table=*->column=*'
-// to match with Sentry policy 'METADATA on db=a'.
 class RangerAuthzProvider : public AuthzProvider {
  public:
 
