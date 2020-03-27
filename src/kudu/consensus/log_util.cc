@@ -27,7 +27,6 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
@@ -857,18 +856,6 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data,
 void WritableLogSegment::GoIdle() {
   compress_buf_.clear();
   compress_buf_.shrink_to_fit();
-}
-
-unique_ptr<LogEntryBatchPB> CreateBatchFromAllocatedOperations(
-    const vector<consensus::ReplicateRefPtr>& msgs) {
-  unique_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
-  entry_batch->mutable_entry()->Reserve(msgs.size());
-  for (const auto& msg : msgs) {
-    LogEntryPB* entry_pb = entry_batch->add_entry();
-    entry_pb->set_type(log::REPLICATE);
-    entry_pb->set_allocated_replicate(msg->get());
-  }
-  return entry_batch;
 }
 
 bool IsLogFileName(const string& fname) {

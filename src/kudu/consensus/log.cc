@@ -373,7 +373,7 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   SCOPED_LATENCY_METRIC(log_->ctx_.metrics, group_commit_latency);
 
   bool is_all_commits = true;
-  for (LogEntryBatch* entry_batch : entry_batches) {
+  for (auto* entry_batch : entry_batches) {
     TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
     Status s = log_->WriteBatch(entry_batch);
     if (PREDICT_FALSE(!s.ok())) {
@@ -382,10 +382,7 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
       // abort all subsequent transactions in this batch or allow
       // them to be appended? What about transactions in future
       // batches?
-      if (entry_batch->callback()) {
-        entry_batch->callback()(s);
-        entry_batch->callback_ = nullptr;
-      }
+      entry_batch->SetAppendError(s);
     }
     if (is_all_commits && entry_batch->type_ != COMMIT) {
       is_all_commits = false;
@@ -398,25 +395,21 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   }
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(ERROR) << "Error syncing log: " << s.ToString();
-    for (LogEntryBatch* entry_batch : entry_batches) {
-      if (entry_batch->callback()) {
-        entry_batch->callback()(s);
-      }
-      delete entry_batch;
+    for (auto* entry_batch : entry_batches) {
+      entry_batch->SetAppendError(s);
     }
   } else {
-    TRACE_EVENT0("log", "Callbacks");
     VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
-    SCOPED_WATCH_STACK(100);
-    for (LogEntryBatch* entry_batch : entry_batches) {
-      if (PREDICT_TRUE(entry_batch->callback())) {
-        entry_batch->callback()(Status::OK());
-      }
-      // It's important to delete each batch as we see it, because
-      // deleting it may free up memory from memory trackers, and the
-      // callback of a later batch may want to use that memory.
-      delete entry_batch;
-    }
+  }
+  TRACE_EVENT0("log", "Callbacks");
+  SCOPED_WATCH_STACK(100);
+  for (auto* entry_batch : entry_batches) {
+    entry_batch->RunCallback();
+
+    // It's important to delete each batch as we see it, because
+    // deleting it may free up memory from memory trackers, and the
+    // callback of a later batch may want to use that memory.
+    delete entry_batch;
   }
 }
 
@@ -836,23 +829,20 @@ Status Log::Init() {
   return Status::OK();
 }
 
-Status Log::CreateBatchFromPB(LogEntryTypePB type,
-                              unique_ptr<LogEntryBatchPB> entry_batch_pb,
-                              unique_ptr<LogEntryBatch>* entry_batch) {
+unique_ptr<LogEntryBatch> Log::CreateBatchFromPB(
+    LogEntryTypePB type,
+    unique_ptr<LogEntryBatchPB> entry_batch_pb,
+    StatusCallback cb) {
   int num_ops = entry_batch_pb->entry_size();
   unique_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(
-      type, std::move(entry_batch_pb), num_ops));
+      type, std::move(entry_batch_pb), num_ops, std::move(cb)));
   new_entry_batch->Serialize();
   TRACE("Serialized $0 byte log entry", new_entry_batch->total_size_bytes());
-
-  *entry_batch = std::move(new_entry_batch);
-  return Status::OK();
+  return new_entry_batch;
 }
 
-Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch, const StatusCallback& callback) {
+Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch) {
   TRACE_EVENT0("log", "Log::AsyncAppend");
-
-  entry_batch->set_callback(callback);
   TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch.get());
   if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(entry_batch.get()).ok())) {
     TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
@@ -864,17 +854,22 @@ Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch, const StatusCallb
 }
 
 Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
-                                  const StatusCallback& callback) {
-  unique_ptr<LogEntryBatchPB> batch_pb = CreateBatchFromAllocatedOperations(replicates);
-
-  unique_ptr<LogEntryBatch> batch;
-  RETURN_NOT_OK(CreateBatchFromPB(REPLICATE, std::move(batch_pb), &batch));
+                                  StatusCallback callback) {
+  unique_ptr<LogEntryBatchPB> batch_pb(new LogEntryBatchPB);
+  batch_pb->mutable_entry()->Reserve(replicates.size());
+  for (const auto& r : replicates) {
+    LogEntryPB* entry_pb = batch_pb->add_entry();
+    entry_pb->set_type(REPLICATE);
+    entry_pb->set_allocated_replicate(r->get());
+  }
+  unique_ptr<LogEntryBatch> batch = CreateBatchFromPB(
+      REPLICATE, std::move(batch_pb), std::move(callback));
   batch->SetReplicates(replicates);
-  return AsyncAppend(std::move(batch), callback);
+  return AsyncAppend(std::move(batch));
 }
 
 Status Log::AsyncAppendCommit(unique_ptr<consensus::CommitMsg> commit_msg,
-                              const StatusCallback& callback) {
+                              StatusCallback callback) {
   MAYBE_FAULT(FLAGS_fault_crash_before_append_commit);
 
   unique_ptr<LogEntryBatchPB> batch_pb(new LogEntryBatchPB);
@@ -882,9 +877,9 @@ Status Log::AsyncAppendCommit(unique_ptr<consensus::CommitMsg> commit_msg,
   entry->set_type(COMMIT);
   entry->set_allocated_commit(commit_msg.release());
 
-  unique_ptr<LogEntryBatch> entry_batch;
-  RETURN_NOT_OK(CreateBatchFromPB(COMMIT, std::move(batch_pb), &entry_batch));
-  AsyncAppend(std::move(entry_batch), callback);
+  unique_ptr<LogEntryBatch> entry_batch = CreateBatchFromPB(
+      COMMIT, std::move(batch_pb), std::move(callback));
+  AsyncAppend(std::move(entry_batch));
   return Status::OK();
 }
 
@@ -1012,7 +1007,8 @@ void Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
 Status Log::Append(LogEntryPB* entry) {
   unique_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
   entry_batch_pb->mutable_entry()->AddAllocated(entry);
-  LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1);
+  LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1,
+                            &DoNothingStatusCB);
   entry_batch.Serialize();
   Status s = WriteBatch(&entry_batch);
   if (s.ok()) {
@@ -1027,10 +1023,10 @@ Status Log::WaitUntilAllFlushed() {
   // the async api.
   unique_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
-  unique_ptr<LogEntryBatch> reserved_entry_batch;
-  RETURN_NOT_OK(CreateBatchFromPB(FLUSH_MARKER, std::move(entry_batch), &reserved_entry_batch));
   Synchronizer s;
-  AsyncAppend(std::move(reserved_entry_batch), s.AsStatusCallback());
+  unique_ptr<LogEntryBatch> reserved_entry_batch = CreateBatchFromPB(
+      FLUSH_MARKER, std::move(entry_batch), s.AsStatusCallback());
+  AsyncAppend(std::move(reserved_entry_batch));
   return s.Wait();
 }
 
@@ -1241,13 +1237,15 @@ Log::~Log() {
 
 LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
                              unique_ptr<LogEntryBatchPB> entry_batch_pb,
-                             size_t count)
+                             size_t count,
+                             StatusCallback cb)
     : type_(type),
       entry_batch_pb_(std::move(entry_batch_pb)),
       total_size_bytes_(
           PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
           0 : entry_batch_pb_->ByteSize()),
-      count_(count) {
+      count_(count),
+      callback_(std::move(cb)) {
 }
 
 LogEntryBatch::~LogEntryBatch() {

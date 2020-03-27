@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <list>
 #include <map>
@@ -296,13 +297,13 @@ class Log : public RefCountedThreadSafe<Log> {
   // Append the given set of replicate messages, asynchronously.
   // This requires that the replicates have already been assigned OpIds.
   Status AsyncAppendReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates,
-                               const StatusCallback& callback);
+                               StatusCallback callback);
 
   // Append the given commit message, asynchronously.
   //
   // Returns a bad status if the log is already shut down.
   Status AsyncAppendCommit(std::unique_ptr<consensus::CommitMsg> commit_msg,
-                           const StatusCallback& callback);
+                           StatusCallback callback);
 
   // Blocks the current thread until all the entries in the log queue
   // are flushed and fsynced (if fsync of log entries is enabled).
@@ -441,14 +442,17 @@ class Log : public RefCountedThreadSafe<Log> {
   // Sets that the current active segment is idle.
   void SetActiveSegmentIdle();
 
-  static Status CreateBatchFromPB(LogEntryTypePB type,
-                                  std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
-                                  std::unique_ptr<LogEntryBatch>* entry_batch);
+  // Creates a new LogEntryBatch from 'entry_batch_pb'; all entries must be of
+  // type 'type'.
+  //
+  // After the batch is appended to the log, 'cb' will be invoked with the
+  // result status of the append.
+  static std::unique_ptr<LogEntryBatch> CreateBatchFromPB(
+      LogEntryTypePB type, std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
+      StatusCallback cb);
 
-  // Asynchronously appends 'entry_batch' to the log. Once the append
-  // completes and is synced, 'callback' will be invoked.
-  Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch,
-                     const StatusCallback& callback);
+  // Asynchronously appends 'entry_batch' to the log.
+  Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch);
 
   // Writes serialized contents of 'entry' to the log. This is not thread-safe.
   Status WriteBatch(LogEntryBatch* entry_batch);
@@ -561,23 +565,11 @@ class LogEntryBatch {
 
   LogEntryBatch(LogEntryTypePB type,
                 std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
-                size_t count);
+                size_t count,
+                StatusCallback cb);
 
   // Serializes contents of the entry to an internal buffer.
   void Serialize();
-
-  // Sets the callback that will be invoked after the entry is
-  // appended and synced to disk
-  void set_callback(const StatusCallback& cb) {
-    callback_ = cb;
-  }
-
-  // Returns the callback that will be invoked after the entry is
-  // appended and synced to disk.
-  const StatusCallback& callback() {
-    return callback_;
-  }
-
 
   // Returns a Slice representing the serialized contents of the
   // entry.
@@ -605,6 +597,17 @@ class LogEntryBatch {
     replicates_ = replicates;
   }
 
+  void SetAppendError(const Status& s) {
+    DCHECK(!s.ok());
+    if (append_status_.ok()) {
+      append_status_ = s;
+    }
+  }
+
+  void RunCallback() {
+    callback_(append_status_);
+  }
+
   // The type of entries in this batch.
   const LogEntryTypePB type_;
 
@@ -630,6 +633,9 @@ class LogEntryBatch {
   // Buffer to which 'phys_entries_' are serialized by call to
   // 'Serialize()'
   faststring buffer_;
+
+  // Tracks whether this batch was successfully append to the log.
+  Status append_status_;
 
   DISALLOW_COPY_AND_ASSIGN(LogEntryBatch);
 };

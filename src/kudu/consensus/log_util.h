@@ -29,7 +29,6 @@
 
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -502,11 +501,6 @@ class WritableLogSegment {
 
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
-
-// Return a newly created batch that contains the pre-allocated
-// ReplicateMsgs in 'msgs'.
-std::unique_ptr<LogEntryBatchPB> CreateBatchFromAllocatedOperations(
-    const std::vector<consensus::ReplicateRefPtr>& msgs);
 
 // Checks if 'fname' is a correctly formatted name of log segment file.
 bool IsLogFileName(const std::string& fname);
