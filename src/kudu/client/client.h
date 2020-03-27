@@ -73,6 +73,7 @@ class RemoteKsckCluster;
 
 namespace client {
 
+class KuduColumnarScanBatch;
 class KuduDelete;
 class KuduInsert;
 class KuduInsertIgnore;
@@ -102,6 +103,7 @@ class RemoteTablet;
 class RemoteTabletServer;
 class ReplicaController;
 class RetrieveAuthzTokenRpc;
+class ScanBatchDataInterface;
 class WriteRpc;
 template <class ReqClass, class RespClass>
 class AsyncLeaderMasterRpc; // IWYU pragma: keep
@@ -2255,6 +2257,9 @@ class KUDU_EXPORT KuduScanner {
 
   /// Fetch the next batch of results for this scanner.
   ///
+  /// This variant may not be used when the scan is configured with the
+  /// COLUMNAR_LAYOUT RowFormatFlag.
+  ///
   /// A single KuduScanBatch object may be reused. Each subsequent call
   /// replaces the data from the previous call, and invalidates any
   /// KuduScanBatch::RowPtr objects previously obtained from the batch.
@@ -2262,6 +2267,19 @@ class KUDU_EXPORT KuduScanner {
   ///   Placeholder for the result.
   /// @return Operation result status.
   Status NextBatch(KuduScanBatch* batch);
+
+  /// Fetch the next batch of columnar results for this scanner.
+  ///
+  /// This variant may only be used when the scan is configured with the
+  /// COLUMNAR_LAYOUT RowFormatFlag.
+  ///
+  /// A single KuduColumnarScanBatch object may be reused. Each subsequent call
+  /// replaces the data from the previous call, and invalidates any
+  /// Slice objects previously obtained from the batch.
+  /// @param [out] batch
+  ///   Placeholder for the result.
+  /// @return Operation result status.
+  Status NextBatch(KuduColumnarScanBatch* batch);
 
   /// Get the KuduTabletServer that is currently handling the scan.
   ///
@@ -2389,6 +2407,15 @@ class KUDU_EXPORT KuduScanner {
   ///   results and might even cause the client to crash.
   static const uint64_t PAD_UNIXTIME_MICROS_TO_16_BYTES = 1 << 0;
 
+  /// Enable column-oriented data transfer. The server will transfer data to the client
+  /// in a columnar format rather than a row-wise format. The KuduColumnarScanBatch API
+  /// must be used to fetch results from this scan.
+  ///
+  /// NOTE: older versions of the Kudu server do not support this feature. Clients
+  /// aiming to support compatibility with previous versions should have a fallback
+  /// code path.
+  static const uint64_t COLUMNAR_LAYOUT = 1 << 1;
+
   /// Optionally set row format modifier flags.
   ///
   /// If flags is RowFormatFlags::NO_FLAGS, then no modifications will be made to the row
@@ -2435,6 +2462,8 @@ class KUDU_EXPORT KuduScanner {
 
  private:
   class KUDU_NO_EXPORT Data;
+
+  Status NextBatch(internal::ScanBatchDataInterface* batch);
 
   friend class KuduScanToken;
   FRIEND_TEST(ClientTest, TestBlockScannerHijackingAttempts);

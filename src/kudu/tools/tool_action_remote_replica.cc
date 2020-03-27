@@ -155,7 +155,7 @@ class ReplicaDumper {
                                   &schema,
                                   &client_schema,
                                   client::KuduScanner::NO_FLAGS,
-                                  unique_ptr<RowwiseRowBlockPB>(resp.release_data())));
+                                  &resp));
       vector<KuduRowResult> rows;
       results.ExtractRows(&rows);
       for (const auto& r : rows) {

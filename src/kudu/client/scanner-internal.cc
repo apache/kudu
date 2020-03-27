@@ -38,6 +38,7 @@
 #include "kudu/common/partition.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -49,11 +50,13 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/safe_math.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
@@ -70,6 +73,8 @@ using rpc::RpcController;
 using security::SignedTokenPB;
 using strings::Substitute;
 using tserver::NewScanRequestPB;
+using tserver::RowFormatFlags;
+using tserver::ScanResponsePB;
 using tserver::TabletServerFeatures;
 
 namespace client {
@@ -367,6 +372,10 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
     controller_.RequireServerFeature(TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES);
   }
+  if (configuration().row_format_flags() & KuduScanner::COLUMNAR_LAYOUT) {
+    controller_.RequireServerFeature(TabletServerFeatures::COLUMNAR_LAYOUT_FEATURE);
+  }
+
   if (next_req_.has_new_scan_request()) {
     // Only new scan requests require authz tokens. Scan continuations rely on
     // Kudu's prevention of scanner hijacking by different users.
@@ -386,7 +395,9 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
       rpc_deadline, overall_deadline);
   if (scan_status.result == ScanRpcStatus::OK) {
     UpdateResourceMetrics();
-    num_rows_returned_ += last_response_.data().num_rows();
+    num_rows_returned_ += last_response_.has_data() ? last_response_.data().num_rows() : 0;
+    num_rows_returned_ += last_response_.has_columnar_data() ?
+        last_response_.columnar_data().num_rows() : 0;
   }
   return scan_status;
 }
@@ -561,13 +572,15 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
 
   next_req_.clear_new_scan_request();
-  data_in_open_ = last_response_.has_data() && last_response_.data().num_rows() > 0;
+  data_in_open_ = (last_response_.has_data() && last_response_.data().num_rows() > 0) ||
+      (last_response_.has_columnar_data() && last_response_.columnar_data().num_rows() > 0);
   if (last_response_.has_more_results()) {
     next_req_.set_scanner_id(last_response_.scanner_id());
     VLOG(2) << "Opened tablet " << remote_->tablet_id()
             << ", scanner ID " << last_response_.scanner_id();
-  } else if (last_response_.has_data()) {
-    VLOG(2) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
+  } else if (last_response_.has_data() || last_response_.has_columnar_data()) {
+    VLOG(2) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned, "
+            << " data_in_open=" << data_in_open_;
   } else {
     VLOG(2) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
   }
@@ -670,13 +683,19 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
                                   const Schema* projection,
                                   const KuduSchema* client_projection,
                                   uint64_t row_format_flags,
-                                  unique_ptr<RowwiseRowBlockPB> resp_data) {
+                                  ScanResponsePB* response) {
   CHECK(controller->finished());
+  if (row_format_flags & RowFormatFlags::COLUMNAR_LAYOUT) {
+    return Status::InvalidArgument("columnar layout specified, must use KuduColumnarScanBatch");
+  }
+
   controller_.Swap(controller);
   projection_ = projection;
   projected_row_size_ = CalculateProjectedRowSize(*projection_);
   client_projection_ = client_projection;
   row_format_flags_ = row_format_flags;
+  unique_ptr<RowwiseRowBlockPB> resp_data(response->release_data());
+
   if (!resp_data) {
     // No new data; just clear out the old stuff.
     resp_data_.Clear();
@@ -747,6 +766,98 @@ void KuduScanBatch::Data::Clear() {
   resp_data_.Clear();
   controller_.Reset();
 }
+
+////////////////////////////////////////////////////////////
+// KuduColumnarScanBatch
+////////////////////////////////////////////////////////////
+
+Status KuduColumnarScanBatch::Data::Reset(
+    rpc::RpcController* controller,
+    const Schema* projection,
+    const KuduSchema* client_projection,
+    uint64_t row_format_flags,
+    tserver::ScanResponsePB* response) {
+  if (!(row_format_flags & RowFormatFlags::COLUMNAR_LAYOUT)) {
+    return Status::InvalidArgument("rowwise layout specified, must use KuduScanBatch");
+  }
+  CHECK(!response->has_data()) << "expected columnar data";
+
+  CHECK(controller->finished());
+  controller_.Swap(controller);
+  projection_ = projection;
+  client_projection_ = client_projection;
+  rewritten_varlen_columns_.clear();
+
+  unique_ptr<ColumnarRowBlockPB> resp_data(response->release_columnar_data());
+  if (!resp_data) {
+    // No new data; just clear out the old stuff.
+    resp_data_.Clear();
+    return Status::OK();
+  }
+  resp_data_ = std::move(*resp_data);
+  return Status::OK();
+}
+
+void KuduColumnarScanBatch::Data::Clear() {
+  resp_data_.Clear();
+  controller_.Reset();
+}
+
+Status KuduColumnarScanBatch::Data::CheckColumnIndex(int idx) const {
+  if (idx >= resp_data_.columns_size()) {
+    return Status::InvalidArgument(Substitute("bad column index $0 ($1 columns present)",
+                                              idx, resp_data_.columns_size()));
+  }
+  return Status::OK();
+}
+
+Status KuduColumnarScanBatch::Data::GetDataForColumn(int idx, Slice* data) const {
+  RETURN_NOT_OK(CheckColumnIndex(idx));
+  RETURN_NOT_OK(controller_.GetInboundSidecar(
+      resp_data_.columns(idx).data_sidecar(),
+      data));
+
+  // Rewrite slices to be real pointers instead of pointers relative to the
+  // indirect data buffer.
+  if (projection_->column(idx).type_info()->physical_type() == BINARY &&
+      !ContainsKey(rewritten_varlen_columns_, idx)) {
+
+    Slice indirect_data_slice;
+    RETURN_NOT_OK(controller_.GetInboundSidecar(
+        resp_data_.columns(idx).indirect_data_sidecar(),
+        &indirect_data_slice));
+
+    ArrayView<Slice> v(reinterpret_cast<Slice*>(data->mutable_data()),
+                       data->size() / sizeof(Slice));
+    for (int row_idx = 0; row_idx < v.size(); row_idx++) {
+      Slice* slice = &v[row_idx];
+      size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
+      // Ensure the updated pointer is within the bounds of the indirect data.
+      bool overflowed = false;
+      size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
+      if (PREDICT_FALSE(overflowed || max_offset > indirect_data_slice.size())) {
+        const auto& col = projection_->column(idx);
+        return Status::Corruption(
+            Substitute("Row #$0 contained bad indirect slice for column $1: ($2, $3)",
+                       row_idx, col.ToString(), offset_in_indirect, slice->size()));
+      }
+      *slice = Slice(&indirect_data_slice[offset_in_indirect], slice->size());
+    }
+    rewritten_varlen_columns_.insert(idx);
+  }
+  return Status::OK();
+}
+
+Status KuduColumnarScanBatch::Data::GetNonNullBitmapForColumn(int idx, Slice* data) const {
+  RETURN_NOT_OK(CheckColumnIndex(idx));
+  const auto& col = resp_data_.columns(idx);
+  if (!col.has_non_null_bitmap_sidecar()) {
+    return Status::NotFound("column is not nullable");
+  }
+  return controller_.GetInboundSidecar(col.non_null_bitmap_sidecar(), data);
+}
+
+
 
 } // namespace client
 } // namespace kudu

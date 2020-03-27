@@ -37,6 +37,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/client/client_builder-internal.h"
+#include "kudu/client/columnar_scan_batch.h"
 #include "kudu/client/error-internal.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/master_proxy_rpc.h"
@@ -1569,6 +1570,7 @@ Status KuduScanner::SetRowFormatFlags(uint64_t flags) {
   switch (flags) {
     case NO_FLAGS:
     case PAD_UNIXTIME_MICROS_TO_16_BYTES:
+    case COLUMNAR_LAYOUT:
       break;
     default:
       return Status::InvalidArgument(Substitute("Invalid row format flags: $0", flags));
@@ -1711,6 +1713,15 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
 }
 
 Status KuduScanner::NextBatch(KuduScanBatch* batch) {
+  return NextBatch(batch->data_);
+}
+
+Status KuduScanner::NextBatch(KuduColumnarScanBatch* batch) {
+  return NextBatch(batch->data_);
+}
+
+Status KuduScanner::NextBatch(internal::ScanBatchDataInterface* batch_data) {
+
   // TODO: do some double-buffering here -- when we return this batch
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid
@@ -1718,7 +1729,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
   CHECK(data_->open_);
   CHECK(data_->proxy_);
 
-  batch->data_->Clear();
+  batch_data->Clear();
 
   if (data_->short_circuit_) {
     return Status::OK();
@@ -1728,12 +1739,11 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     // We have data from a previous scan.
     VLOG(2) << "Extracting data from " << data_->DebugString();
     data_->data_in_open_ = false;
-    return batch->data_->Reset(&data_->controller_,
-                               data_->configuration().projection(),
-                               data_->configuration().client_projection(),
-                               data_->configuration().row_format_flags(),
-                               unique_ptr<RowwiseRowBlockPB>(
-                                   data_->last_response_.release_data()));
+    return batch_data->Reset(&data_->controller_,
+                             data_->configuration().projection(),
+                             data_->configuration().client_projection(),
+                             data_->configuration().row_format_flags(),
+                             &data_->last_response_);
   }
 
   if (data_->last_response_.has_more_results()) {
@@ -1753,12 +1763,11 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
           data_->last_primary_key_ = data_->last_response_.last_primary_key();
         }
         data_->scan_attempts_ = 0;
-        return batch->data_->Reset(&data_->controller_,
-                                   data_->configuration().projection(),
-                                   data_->configuration().client_projection(),
-                                   data_->configuration().row_format_flags(),
-                                   unique_ptr<RowwiseRowBlockPB>(
-                                       data_->last_response_.release_data()));
+        return batch_data->Reset(&data_->controller_,
+                                 data_->configuration().projection(),
+                                 data_->configuration().client_projection(),
+                                 data_->configuration().row_format_flags(),
+                                 &data_->last_response_);
       }
 
       data_->scan_attempts_++;
@@ -1797,7 +1806,11 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     set<string> blacklist;
 
     RETURN_NOT_OK(data_->OpenNextTablet(deadline, &blacklist));
-    // No rows written, the next invocation will pick them up.
+    if (data_->data_in_open_) {
+      // Avoid returning an empty batch in between tablets if we have data
+      // we can return from this call.
+      return NextBatch(batch_data);
+    }
     return Status::OK();
   } else {
     // No more data anywhere.

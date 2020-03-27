@@ -51,6 +51,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.pb.h"
+#include "kudu/client/columnar_scan_batch.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/resource_metrics.h"
@@ -104,6 +105,7 @@
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
@@ -1049,6 +1051,49 @@ TEST_F(ClientTest, TestScanAtFutureTimestamp) {
   Status s = scanner.Open();
   EXPECT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "in the future.");
+}
+
+TEST_F(ClientTest, TestColumnarScan) {
+  // Set the batch size such that a full scan could yield either multi-batch
+  // or single-batch scans.
+  int64_t num_rows = rand() % 2000;
+  int64_t batch_size = rand() % 1000;
+  FLAGS_scanner_batch_size_rows = batch_size;
+
+  NO_FATALS(InsertTestRows(client_table_.get(), num_rows));
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(scanner.SetRowFormatFlags(KuduScanner::COLUMNAR_LAYOUT));
+
+  ASSERT_OK(scanner.Open());
+  KuduColumnarScanBatch batch;
+  int total_rows = 0;
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&batch));
+
+    // Verify the data.
+    Slice col_data[4];
+    for (int i = 0; i < 4; i++) {
+      ASSERT_OK(batch.GetDataForColumn(i, &col_data[i]));
+    }
+    ArrayView<const int32_t> c0(reinterpret_cast<const int32_t*>(col_data[0].data()),
+                                batch.NumRows());
+    ArrayView<const int32_t> c1(reinterpret_cast<const int32_t*>(col_data[1].data()),
+                                batch.NumRows());
+    ArrayView<const Slice> c2(reinterpret_cast<const Slice*>(col_data[2].data()),
+                              batch.NumRows());
+    ArrayView<const int32_t> c3(reinterpret_cast<const int32_t*>(col_data[3].data()),
+                                batch.NumRows());
+
+    for (int i = 0; i < batch.NumRows(); i++) {
+      int row_idx = total_rows + i;
+      EXPECT_EQ(row_idx, c0[i]);
+      EXPECT_EQ(row_idx * 2, c1[i]);
+      EXPECT_EQ(Substitute("hello $0", row_idx), c2[i]);
+      EXPECT_EQ(row_idx * 3, c3[i]);
+    }
+    total_rows += batch.NumRows();
+  }
+  ASSERT_EQ(num_rows, total_rows);
 }
 
 const KuduScanner::ReadMode read_modes[] = {
