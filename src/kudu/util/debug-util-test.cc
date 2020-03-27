@@ -119,9 +119,14 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 
   // We have to loop a little bit because it takes a little while for the thread
   // to start up and actually call our function.
+  //
+  // Note: due to RELEASE build inlining, we need to make sure to pick a stack
+  // frame that isn't optimized away.
+  static constexpr const char* kTestThreadStackFrame =
+      "kudu::ConditionVariable::WaitUntil()";
   ASSERT_EVENTUALLY([&]() {
-      ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
-    });
+    ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
+  });
 
   // Test that we can change the signal and that the stack traces still work,
   // on the new signal.
@@ -135,7 +140,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR2));
 
   // Stack traces should work using the new handler.
-  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
+  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
 
   // Switch back to SIGUSR2 and ensure it changes back.
   ASSERT_OK(SetStackTraceSignal(SIGUSR2));
@@ -143,7 +148,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   ASSERT_FALSE(IsSignalHandlerRegistered(SIGHUP));
 
   // Stack traces should work using the new handler.
-  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
+  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
 
   // Register our own signal handler on SIGHUP, and ensure that
   // we get a bad Status if we try to use it.
