@@ -98,6 +98,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
@@ -2537,6 +2538,76 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   ASSERT_EQ(R"((int32 key=50, int32 int_val=100, string string_val="hello 50"))", results[0]);
   ASSERT_EQ(R"((int32 key=59, int32 int_val=118, string string_val="hello 59"))", results[9]);
 }
+
+TEST_F(TabletServerTest, TestColumnarScan) {
+  const int kNumRows = 100;
+  InsertTestRowsDirect(0, kNumRows);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  scan->set_row_format_flags(RowFormatFlags::COLUMNAR_LAYOUT);
+  rpc.RequireServerFeature(TabletServerFeatures::COLUMNAR_LAYOUT_FEATURE);
+  // Send the call
+  SCOPED_TRACE(SecureDebugString(req));
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+
+  // Verify the response
+  SCOPED_TRACE(SecureDebugString(resp));
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_EQ(3, resp.columnar_data().columns_size());
+
+  ASSERT_EQ(kNumRows, resp.columnar_data().num_rows());
+
+  // Verify column 0 (int32 key)
+  {
+    Slice col_data;
+    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(0).data_sidecar(), &col_data));
+    SCOPED_TRACE(col_data.ToDebugString());
+    ASSERT_EQ(col_data.size(), kNumRows * sizeof(int32_t));
+    ArrayView<const int32_t> cells(reinterpret_cast<const int32_t*>(col_data.data()), kNumRows);
+    for (int i = 0; i < kNumRows; i++) {
+      EXPECT_EQ(i, cells[i]);
+    }
+  }
+
+  // Verify column 1 (int32 val)
+  {
+    Slice col_data;
+    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(1).data_sidecar(), &col_data));
+    SCOPED_TRACE(col_data.ToDebugString());
+    ASSERT_EQ(col_data.size(), kNumRows * sizeof(int32_t));
+    ArrayView<const int32_t> cells(reinterpret_cast<const int32_t*>(col_data.data()), kNumRows);
+    for (int i = 0; i < kNumRows; i++) {
+      EXPECT_EQ(i * 2, cells[i]);
+    }
+  }
+  // Verify column 2 (string)
+  {
+    Slice col_data;
+    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(2).data_sidecar(), &col_data));
+
+    Slice indirect_data;
+    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(2).indirect_data_sidecar(),
+                                    &indirect_data));
+
+    SCOPED_TRACE(col_data.ToDebugString());
+    ASSERT_EQ(col_data.size(), kNumRows * sizeof(Slice));
+    ArrayView<const Slice> cells(reinterpret_cast<const Slice*>(col_data.data()), kNumRows);
+    for (int i = 0; i < kNumRows; i++) {
+      Slice s = cells[i];
+      Slice real_str(indirect_data.data() + reinterpret_cast<uintptr_t>(s.data()),
+                     s.size());
+      ASSERT_EQ(Substitute("hello $0", i), real_str);
+    }
+  }
+}
+
 
 TEST_F(TabletServerTest, TestNonPositiveLimitsShortCircuit) {
   InsertTestRowsDirect(0, 10);

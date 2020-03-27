@@ -224,6 +224,10 @@ message ColumnRangePredicateListPB {
 enum RowFormatFlags {
   NO_FLAGS = 0;
   PAD_UNIX_TIME_MICROS_TO_16_BYTES = 1;
+
+  // Return a ColumnarRowBlockPB instead of RowwiseRowBlockPB.
+  // Incompatible with PAD_UNIX_TIME_MICROS_TO_16_BYTES.
+  COLUMNAR_LAYOUT = 2;
 }
 
 message NewScanRequestPB {
@@ -405,6 +409,8 @@ message ScanResponsePB {
   // The schema will match the schema requested by the client when it created
   // the scanner.
   optional RowwiseRowBlockPB data = 4;
+  // Set instead of 'data' if COLUMNAR_LAYOUT is passed.
+  optional ColumnarRowBlockPB columnar_data = 5;
 
   // The snapshot timestamp at which the scan was executed. This is only set
   // in the first response (i.e. the response to the request that had
@@ -472,4 +478,6 @@ enum TabletServerFeatures {
   PAD_UNIXTIME_MICROS_TO_16_BYTES = 2;
   QUIESCING = 3;
   BLOOM_FILTER_PREDICATE = 4;
+  // Whether the server supports the COLUMNAR_LAYOUT format flag.
+  COLUMNAR_LAYOUT_FEATURE = 5;
 }

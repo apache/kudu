@@ -151,6 +151,25 @@ message RowwiseRowBlockPB {
   optional int32 indirect_data_sidecar = 3;
 }
 
+// A block of rows in columnar layout.
+message ColumnarRowBlockPB {
+  message Column {
+    // The index of the sidecar containing cell data of the column.
+    optional int32 data_sidecar = 1;
+
+    // The index of the sidecar containing any data referred to by binary/string data.
+    // In this case, the 'pointer' field of the Slices contained in the data sidecar
+    // will refer to offsets in this sidecar.
+    optional int32 indirect_data_sidecar = 2;
+
+    // If the column is nullable, The index of the sidecar containing a bitmap with a set
+    // bit for all non-null cells.
+    optional int32 non_null_bitmap_sidecar = 3;
+  }
+  repeated Column columns = 1;
+  optional int64 num_rows = 2;
+}
+
 // A set of operations (INSERT, UPDATE, UPSERT, or DELETE) to apply to a table,
 // or the set of split rows and range bounds when creating or altering table.
 // Range bounds determine the boundaries of range partitions during table
