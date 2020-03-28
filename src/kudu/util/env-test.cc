@@ -42,6 +42,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -84,6 +85,7 @@ namespace kudu {
 using std::pair;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
@@ -1210,5 +1212,35 @@ TEST_F(TestEnv, TestCreateSymlink) {
   ASSERT_TRUE(env_->FileExists(JoinPathSegments(kDst, "foobar")));
 }
 
+TEST_F(TestEnv, TestCreateFifo) {
+  const string kFifo = JoinPathSegments(test_dir_, "fifo");
+  unique_ptr<Fifo> fifo;
+  // Open a fifo for reads and writes.
+  ASSERT_OK(env_->NewFifo(kFifo, &fifo));
+  thread t([&] {
+    ASSERT_OK(fifo->OpenForReads());
+  });
+  ASSERT_OK(fifo->OpenForWrites());
+  t.join();
+
+  Slice data("it's the final countdown");
+  ssize_t written;
+  RETRY_ON_EINTR(written, write(fifo->write_fd(), data.data(), data.size()));
+  ASSERT_EQ(data.size(), written);
+  char buf[32];
+  ssize_t n;
+  RETRY_ON_EINTR(n, read(fifo->read_fd(), buf, arraysize(buf)));
+  ASSERT_EQ(data.size(), n);
+  Slice read_data(buf, n);
+  ASSERT_EQ(data, read_data);
+
+  // Trying to create the same fifo should fail.
+  Status s = env_->NewFifo(kFifo, &fifo);
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+
+  // Until our fifo gets deleted.
+  ASSERT_OK(env_->DeleteFile(kFifo));
+  ASSERT_OK(env_->NewFifo(kFifo, &fifo));
+}
 
 }  // namespace kudu

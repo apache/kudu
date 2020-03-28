@@ -286,6 +286,13 @@ ssize_t pwritev(int fd, const struct iovec* iovec, int count, off_t offset) {
 }
 #endif
 
+void DoClose(int fd) {
+  int err;
+  RETRY_ON_EINTR(err, close(fd));
+  if (PREDICT_FALSE(err != 0)) {
+    PLOG(WARNING) << "Failed to close fd " << fd;
+  }
+}
 
 // Close file descriptor when object goes out of scope.
 class ScopedFdCloser {
@@ -296,11 +303,7 @@ class ScopedFdCloser {
 
   ~ScopedFdCloser() {
     ThreadRestrictions::AssertIOAllowed();
-    int err;
-    RETRY_ON_EINTR(err, ::close(fd_));
-    if (PREDICT_FALSE(err != 0)) {
-      PLOG(WARNING) << "Failed to close fd " << fd_;
-    }
+    DoClose(fd_);
   }
 
  private:
@@ -345,6 +348,16 @@ Status DoSync(int fd, const string& filename) {
       return IOError(filename, errno);
     }
   }
+  return Status::OK();
+}
+
+Status DoOpen(const string& filename, int flags, const string& reason, int* fd) {
+  int f;
+  RETRY_ON_EINTR(f, open(filename.c_str(), flags));
+  if (f == -1) {
+    return IOError(Substitute("Error opening for $0: $1", reason, filename), errno);
+  }
+  *fd = f;
   return Status::OK();
 }
 
@@ -556,6 +569,49 @@ const char* ResourceLimitTypeToMacosRlimit(Env::ResourceLimitType t) {
 }
 #endif
 
+class PosixFifo : public Fifo {
+ public:
+  explicit PosixFifo(string fname) : filename_(std::move(fname)) {}
+
+  const string& filename() const override {
+    return filename_;
+  }
+
+  Status OpenForReads() override {
+    CHECK_EQ(-1, read_fd_);
+    return DoOpen(filename_, O_RDONLY, "reads", &read_fd_);
+  }
+
+  Status OpenForWrites() override {
+    CHECK_EQ(-1, write_fd_);
+    return DoOpen(filename_, O_WRONLY, "writes", &write_fd_);
+  }
+
+  int read_fd() const override {
+    CHECK_NE(-1, read_fd_);
+    return read_fd_;
+  }
+
+  int write_fd() const override {
+    CHECK_NE(-1, write_fd_);
+    return write_fd_;
+  }
+
+  ~PosixFifo() {
+    if (read_fd_ != -1) {
+      DoClose(read_fd_);
+    }
+    if (write_fd_ != -1) {
+      DoClose(write_fd_);
+    }
+  }
+
+ private:
+  const string filename_;
+  int read_fd_ = -1;
+  int write_fd_ = -1;
+};
+
 class PosixSequentialFile: public SequentialFile {
  private:
   const string filename_;
@@ -614,11 +670,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
   PosixRandomAccessFile(string fname, int fd)
       : filename_(std::move(fname)), fd_(fd) {}
   ~PosixRandomAccessFile() {
-    int err;
-    RETRY_ON_EINTR(err, close(fd_));
-    if (PREDICT_FALSE(err != 0)) {
-      PLOG(WARNING) << "Failed to close " << filename_;
-    }
+    DoClose(fd_);
   }
 
   virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
@@ -1171,6 +1223,16 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  virtual Status NewFifo(const string& fname, unique_ptr<Fifo>* fifo) override {
+    TRACE_EVENT1("io", "PosixEnv::NewFifo", "path", fname);
+    int m = mkfifo(fname.c_str(), 0666);
+    if (m != 0) {
+      return IOError(Substitute("Error creating fifo $0", fname), errno);
+    }
+    fifo->reset(new PosixFifo(fname));
+    return Status::OK();
+  }
+
   virtual bool FileExists(const string& fname) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::FileExists", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
@@ -1397,11 +1459,7 @@ class PosixEnv : public Env {
       result = IOError(fname, errno);
     } else if (LockOrUnlock(fd, true) == -1) {
       result = IOError("lock " + fname, errno);
-      int err;
-      RETRY_ON_EINTR(err, close(fd));
-      if (PREDICT_FALSE(err != 0)) {
-        PLOG(WARNING) << "Failed to close fd " << fd;
-      }
+      DoClose(fd);
     } else {
       auto my_lock = new PosixFileLock;
       my_lock->fd_ = fd;
@@ -1418,11 +1476,7 @@ class PosixEnv : public Env {
     if (LockOrUnlock(my_lock->fd_, false) == -1) {
       result = IOError("unlock", errno);
     }
-    int err;
-    RETRY_ON_EINTR(err, close(my_lock->fd_));
-    if (PREDICT_FALSE(err != 0)) {
-      PLOG(WARNING) << "Failed to close fd " << my_lock->fd_;
-    }
+    DoClose(my_lock->fd_);
     return result;
   }
 
