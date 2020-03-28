@@ -34,7 +34,6 @@
 
 #include "kudu/fs/dir_util.h"
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -103,12 +102,12 @@ void Dir::Shutdown() {
   is_shutdown_ = true;
 }
 
-void Dir::ExecClosure(const Closure& task) {
-  Status s = pool_->Submit([task]() { task.Run(); });
+void Dir::ExecClosure(const std::function<void()>& task) {
+  Status s = pool_->Submit(task);
   if (!s.ok()) {
     WARN_NOT_OK(
         s, "Could not submit task to thread pool, running it synchronously");
-    task.Run();
+    task();
   }
 }
 
@@ -577,7 +576,8 @@ Status DirManager::Open() {
   // Use the per-dir thread pools to delete temporary files in parallel.
   for (const auto& dir : dirs) {
     if (dir->instance()->healthy()) {
-      dir->ExecClosure(Bind(&DeleteTmpFilesRecursively, env_, dir->dir()));
+      auto* d = dir.get();
+      dir->ExecClosure([this, d]() { DeleteTmpFilesRecursively(this->env_, d->dir()); });
     }
   }
   for (const auto& dir : dirs) {

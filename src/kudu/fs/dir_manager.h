@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -26,7 +27,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
@@ -109,7 +109,7 @@ class Dir {
   //
   // Normally the task is performed asynchronously. However, if submission to
   // the pool fails, it runs synchronously on the current thread.
-  void ExecClosure(const Closure& task);
+  void ExecClosure(const std::function<void()>& task);
 
   // Waits for any outstanding closures submitted via ExecClosure() to finish.
   void WaitOnClosures();

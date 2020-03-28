@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -44,9 +45,6 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -502,7 +500,7 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   //
   // Normally the task is performed asynchronously. However, if submission to
   // the pool fails, it runs synchronously on the current thread.
-  void ExecClosure(const Closure& task);
+  void ExecClosure(const std::function<void()>& task);
 
   // Produces a debug-friendly string representation of this container.
   string ToString() const;
@@ -1337,7 +1335,7 @@ void LogBlockContainer::BlockDeleted(const LogBlockRefPtr& block) {
   live_blocks_.IncrementBy(-1);
 }
 
-void LogBlockContainer::ExecClosure(const Closure& task) {
+void LogBlockContainer::ExecClosure(const std::function<void()>& task) {
   data_dir_->ExecClosure(task);
 }
 
@@ -1496,11 +1494,11 @@ LogBlockDeletionTransaction::~LogBlockDeletionTransaction() {
                      Substitute("could not coalesce hole punching for container: $0",
                                 container->ToString()));
 
+    scoped_refptr<LogBlockContainer> self(container);
     for (const auto& interval : entry.second) {
-      container->ExecClosure(Bind(&LogBlockContainer::ContainerDeletionAsync,
-                                  container,
-                                  interval.first,
-                                  interval.second - interval.first));
+      container->ExecClosure([self, interval]() {
+        self->ContainerDeletionAsync(interval.first, interval.second - interval.first);
+      });
     }
   }
 }
@@ -2081,12 +2079,12 @@ Status LogBlockManager::Open(FsReport* report) {
     }
 
     // Open the data dir asynchronously.
-    dd->ExecClosure(
-        Bind(&LogBlockManager::OpenDataDir,
-             Unretained(this),
-             dd.get(),
-             &container_results[i],
-             &statuses[i]));
+    auto* dd_raw = dd.get();
+    auto* results = &container_results[i];
+    auto* s = &statuses[i];
+    dd->ExecClosure([this, dd_raw, results, s]() {
+      this->OpenDataDir(dd_raw, results, s);
+    });
   }
 
   // Wait for the opens to complete.
@@ -2136,8 +2134,9 @@ Status LogBlockManager::Open(FsReport* report) {
     }
     if (do_repair) {
       dir_results[i] = std::move(dir_result);
-      dd->ExecClosure(Bind(&LogBlockManager::RepairTask, Unretained(this),
-                           dd.get(), Unretained(dir_results[i].get())));
+      auto* dd_raw = dd.get();
+      auto* dr = dir_results[i].get();
+      dd->ExecClosure([this, dd_raw, dr]() { this->RepairTask(dd_raw, dr); });
     }
   }
 
@@ -2558,8 +2557,10 @@ void LogBlockManager::OpenDataDir(
     }
 
     // Load the container's records asynchronously.
-    dir->ExecClosure(Bind(&LogBlockManager::LoadContainer, Unretained(this),
-                          dir, container, Unretained(results->back().get())));
+    auto* r = results->back().get();
+    dir->ExecClosure([this, dir, container, r]() {
+      this->LoadContainer(dir, container, r);
+    });
   }
 }
 
