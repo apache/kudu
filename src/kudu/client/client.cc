@@ -69,8 +69,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -234,7 +232,11 @@ static void LoggingAdapterCB(KuduLoggingCallback* user_cb,
 }
 
 void InstallLoggingCallback(KuduLoggingCallback* cb) {
-  RegisterLoggingCallback(Bind(&LoggingAdapterCB, Unretained(cb)));
+  RegisterLoggingCallback(
+      [=](LogSeverity severity, const char* filename, int line_number,
+          const struct ::tm* time, const char* message, size_t message_len) {
+        LoggingAdapterCB(cb, severity, filename, line_number, time, message, message_len);
+      });
 }
 
 void UninstallLoggingCallback() {

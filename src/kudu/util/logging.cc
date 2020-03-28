@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <initializer_list>
 #include <mutex>
 #include <utility>
@@ -34,7 +35,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/callback.h"  // IWYU pragma: keep
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
@@ -118,7 +118,7 @@ class SimpleSink : public google::LogSink {
       default:
         LOG(FATAL) << "Unknown glog severity: " << severity;
     }
-    cb_.Run(kudu_severity, full_filename, line, tm_time, message, message_len);
+    cb_(kudu_severity, full_filename, line, tm_time, message, message_len);
   }
 
  private:
