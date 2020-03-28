@@ -18,6 +18,7 @@
 #include "kudu/tserver/tablet_copy_source_session.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -43,8 +44,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -158,14 +157,15 @@ class TabletCopyTest : public KuduTabletTest {
         new ConsensusMetadataManager(fs_manager()));
     ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, kMinimumTerm));
 
+    const auto& tablet_id = tablet()->tablet_id();
     tablet_replica_.reset(
         new TabletReplica(tablet()->metadata(),
                           cmeta_manager,
                           *config_peer,
                           apply_pool_.get(),
-                          Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
-                               Unretained(this),
-                               tablet()->tablet_id())));
+                          [this, tablet_id](const string& reason) {
+                            this->TabletReplicaStateChangedCallback(tablet_id, reason);
+                          }));
     ASSERT_OK(tablet_replica_->Init({ /*quiescing*/nullptr,
                                       /*num_leaders*/nullptr,
                                       raft_pool_.get() }));

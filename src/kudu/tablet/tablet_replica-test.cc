@@ -47,8 +47,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
@@ -144,14 +142,15 @@ class TabletReplicaTest : public KuduTabletTest {
     }
 
     // "Bootstrap" and start the TabletReplica.
+    const auto& tablet_id = tablet()->tablet_id();
     tablet_replica_.reset(
       new TabletReplica(tablet()->shared_metadata(),
                         cmeta_manager_,
                         *config_peer,
                         apply_pool_.get(),
-                        Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
-                             Unretained(this),
-                             tablet()->tablet_id())));
+                        [this, tablet_id](const string& reason) {
+                          this->TabletReplicaStateChangedCallback(tablet_id, reason);
+                        }));
     ASSERT_OK(tablet_replica_->Init({ /*quiescing*/nullptr,
                                       /*num_leaders*/nullptr,
                                       raft_pool_.get() }));

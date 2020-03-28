@@ -29,7 +29,6 @@
 #include "kudu/common/partition.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/callback.h"  // IWYU pragma: keep
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"

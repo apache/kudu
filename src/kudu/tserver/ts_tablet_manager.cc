@@ -26,7 +26,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -46,8 +45,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -830,15 +827,15 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
     scoped_refptr<TabletMetadata> meta,
     RegisterTabletReplicaMode mode,
     scoped_refptr<TabletReplica>* replica_out) {
-  const string& tablet_id = meta->tablet_id();
+  const auto& tablet_id = meta->tablet_id();
   scoped_refptr<TabletReplica> replica(
       new TabletReplica(std::move(meta),
                         cmeta_manager_,
                         local_peer_pb_,
                         server_->tablet_apply_pool(),
-                        Bind(&TSTabletManager::MarkTabletDirty,
-                             Unretained(this),
-                             tablet_id)));
+                        [this, tablet_id](const string& reason) {
+                          this->MarkTabletDirty(tablet_id, reason);
+                        }));
   Status s = replica->Init({ server_->mutable_quiescing(),
                              server_->num_raft_leaders(),
                              server_->raft_pool() });

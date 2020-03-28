@@ -54,7 +54,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -227,7 +226,7 @@ class RaftConsensusQuorumTest : public KuduTest {
           std::move(time_manager),
           txn_factories_.back().get(),
           metric_entity_,
-          Bind(&DoNothing)));
+          &DoNothing));
     }
     return Status::OK();
   }

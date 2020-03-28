@@ -227,14 +227,14 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                             unique_ptr<TimeManager> time_manager,
                             ConsensusRoundHandler* round_handler,
                             const scoped_refptr<MetricEntity>& metric_entity,
-                            Callback<void(const string& reason)> mark_dirty_clbk) {
+                            MarkDirtyCallback cb) {
   DCHECK(metric_entity);
 
   peer_proxy_factory_ = DCHECK_NOTNULL(std::move(peer_proxy_factory));
   log_ = DCHECK_NOTNULL(std::move(log));
   time_manager_ = DCHECK_NOTNULL(std::move(time_manager));
   round_handler_ = DCHECK_NOTNULL(round_handler);
-  mark_dirty_clbk_ = std::move(mark_dirty_clbk);
+  mark_dirty_clbk_ = std::move(cb);
 
   term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term,
                                                   CurrentTerm(),
@@ -2774,7 +2774,7 @@ log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {
 }
 
 void RaftConsensus::MarkDirty(const string& reason) {
-  WARN_NOT_OK(raft_pool_token_->Submit([=]() { this->mark_dirty_clbk_.Run(reason); }),
+  WARN_NOT_OK(raft_pool_token_->Submit([=]() { this->mark_dirty_clbk_(reason); }),
               LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
 }
 

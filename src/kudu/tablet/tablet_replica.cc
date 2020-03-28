@@ -102,6 +102,7 @@ namespace tablet {
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusOptions;
 using consensus::ConsensusRound;
+using consensus::MarkDirtyCallback;
 using consensus::OpId;
 using consensus::PeerProxyFactory;
 using consensus::RaftConfigPB;
@@ -129,13 +130,13 @@ TabletReplica::TabletReplica(
     scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
     consensus::RaftPeerPB local_peer_pb,
     ThreadPool* apply_pool,
-    Callback<void(const std::string& reason)> mark_dirty_clbk)
+    MarkDirtyCallback cb)
     : meta_(DCHECK_NOTNULL(std::move(meta))),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
       local_peer_pb_(std::move(local_peer_pb)),
       log_anchor_registry_(new LogAnchorRegistry()),
       apply_pool_(apply_pool),
-      mark_dirty_clbk_(std::move(mark_dirty_clbk)),
+      mark_dirty_clbk_(std::move(cb)),
       state_(NOT_INITIALIZED),
       last_status_("Tablet initializing...") {
 }

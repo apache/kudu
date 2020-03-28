@@ -24,14 +24,11 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
@@ -251,6 +248,7 @@ void LeaderElection::Run() {
   // The rest of the code below is for a typical multi-node configuration.
   vector<string> other_voter_info;
   other_voter_info.reserve(other_voter_uuids.size());
+  scoped_refptr<LeaderElection> self(this);
   for (const auto& voter_uuid : other_voter_uuids) {
     VoterState* state = nullptr;
     {
@@ -285,10 +283,7 @@ void LeaderElection::Run() {
         state->request,
         &state->response,
         &state->rpc,
-        // We use gutil Bind() for the refcounting and boost::bind to adapt the
-        // gutil Callback to a thunk.
-        boost::bind(&Closure::Run,
-                    Bind(&LeaderElection::VoteResponseRpcCallback, this, voter_uuid)));
+        [self, voter_uuid]() { self->VoteResponseRpcCallback(voter_uuid); });
   }
   LOG_WITH_PREFIX(INFO) << Substitute("Requested $0vote from peers $1",
                                       request_.is_pre_election() ? "pre-" : "",

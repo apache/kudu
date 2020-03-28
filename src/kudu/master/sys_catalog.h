@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_SYS_CATALOG_H_
-#define KUDU_MASTER_SYS_CATALOG_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +28,6 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -141,7 +139,7 @@ class SysCatalogTable {
   // The row ID of the latest notification log entry in the sys catalog table.
   static const char* const kLatestNotificationLogEntryIdRowId;
 
-  typedef Callback<Status()> ElectedLeaderCallback;
+  typedef std::function<Status()> ElectedLeaderCallback;
 
   enum CatalogEntryType {
     TABLES_ENTRY = 1,
@@ -382,5 +380,3 @@ class SysCatalogTable {
 
 } // namespace master
 } // namespace kudu
-
-#endif

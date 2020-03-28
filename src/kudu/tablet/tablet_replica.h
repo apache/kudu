@@ -30,7 +30,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -51,8 +50,6 @@ class MaintenanceOp;
 class MonoDelta;
 class ThreadPool;
 class ThreadPoolToken;
-template <typename Sig>
-class Callback;
 
 namespace consensus {
 class ConsensusMetadataManager;
@@ -91,7 +88,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                 scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                 consensus::RaftPeerPB local_peer_pb,
                 ThreadPool* apply_pool,
-                Callback<void(const std::string& reason)> mark_dirty_clbk);
+                consensus::MarkDirtyCallback cb);
 
   // Initializes RaftConsensus.
   // This must be called before publishing the instance to other threads.
@@ -290,7 +287,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Marks the tablet as dirty so that it's included in the next heartbeat.
   void MarkTabletDirty(const std::string& reason) {
-    mark_dirty_clbk_.Run(reason);
+    mark_dirty_clbk_(reason);
   }
 
   // Return the total on-disk size of this tablet replica, in bytes.
@@ -347,7 +344,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   //
   // Must be called whenever cluster membership or leadership changes, or when
   // the tablet's schema changes.
-  const Callback<void(const std::string& reason)> mark_dirty_clbk_;
+  const consensus::MarkDirtyCallback mark_dirty_clbk_;
 
   TabletStatePB state_;
   Status error_;

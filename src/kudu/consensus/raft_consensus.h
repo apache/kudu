@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <mutex>
@@ -36,7 +37,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -58,8 +58,6 @@ typedef std::unique_ptr<Lock> ScopedLock;
 class Status;
 class ThreadPool;
 class ThreadPoolToken;
-template <typename Sig>
-class Callback;
 
 namespace rpc {
 class PeriodicTimer;
@@ -106,6 +104,7 @@ struct TabletVotingState {
 
 typedef int64_t ConsensusTerm;
 typedef StatusCallback ConsensusReplicatedCallback;
+typedef std::function<void(const std::string& reason)> MarkDirtyCallback;
 
 class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public enable_make_shared<RaftConsensus>,
@@ -162,7 +161,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                std::unique_ptr<TimeManager> time_manager,
                ConsensusRoundHandler* round_handler,
                const scoped_refptr<MetricEntity>& metric_entity,
-               Callback<void(const std::string& reason)> mark_dirty_clbk);
+               MarkDirtyCallback cb);
 
   // Returns true if RaftConsensus is running.
   bool IsRunning() const;
@@ -908,7 +907,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // This is used to calculate back-off of the election timeout.
   int64_t failed_elections_since_stable_leader_;
 
-  Callback<void(const std::string& reason)> mark_dirty_clbk_;
+  MarkDirtyCallback mark_dirty_clbk_;
 
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.

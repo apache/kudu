@@ -24,7 +24,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/callback.h" // IWYU pragma: keep
 #include "kudu/gutil/port.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/malloc.h"

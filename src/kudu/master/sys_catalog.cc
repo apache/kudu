@@ -54,8 +54,6 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -365,7 +363,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
   LOG_WITH_PREFIX(INFO) << "This master's current role is: "
                         << RaftPeerPB::Role_Name(new_role);
   if (new_role == RaftPeerPB::LEADER) {
-    Status s = leader_cb_.Run();
+    Status s = leader_cb_();
 
     // Callback errors are non-fatal only if the catalog manager has shut down.
     if (!s.ok()) {
@@ -393,14 +391,15 @@ Status SysCatalogTable::SetupTablet(
 
   // TODO(matteo): handle crash mid-creation of tablet? do we ever end up with
   // a partially created tablet here?
+  const auto& tablet_id = metadata->tablet_id();
   tablet_replica_.reset(new TabletReplica(
       metadata,
       cmeta_manager_,
       local_peer_pb_,
       master_->tablet_apply_pool(),
-      Bind(&SysCatalogTable::SysCatalogStateChanged,
-           Unretained(this),
-           metadata->tablet_id())));
+      [this, tablet_id](const string& reason) {
+        this->SysCatalogStateChanged(tablet_id, reason);
+      }));
   RETURN_NOT_OK_SHUTDOWN(tablet_replica_->Init({ /*quiescing*/nullptr,
                                                  master_->num_raft_leaders(),
                                                  master_->raft_pool() }),
