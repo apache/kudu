@@ -32,6 +32,8 @@
 
 namespace kudu {
 
+class Env;
+
 namespace ranger {
 
 struct ActionHash {
@@ -64,7 +66,7 @@ class RangerClient {
   };
 
   // Creates a Ranger client.
-  explicit RangerClient(const scoped_refptr<MetricEntity>& metric_entity);
+  explicit RangerClient(Env* env, const scoped_refptr<MetricEntity>& metric_entity);
 
   // Starts the RangerClient, initializes the subprocess server.
   Status Start() WARN_UNUSED_RESULT;
@@ -105,12 +107,13 @@ class RangerClient {
   void ReplaceServerForTests(std::unique_ptr<subprocess::SubprocessServer> server) {
     // Creates a dummy RangerSubprocess if it is not initialized.
     if (!subprocess_) {
-      subprocess_.reset(new RangerSubprocess({""}, metric_entity_));
+      subprocess_.reset(new RangerSubprocess(env_, "", {""}, metric_entity_));
     }
     subprocess_->ReplaceServerForTests(std::move(server));
   }
 
  private:
+  Env* env_;
   std::unique_ptr<RangerSubprocess> subprocess_;
   scoped_refptr<MetricEntity> metric_entity_;
 };

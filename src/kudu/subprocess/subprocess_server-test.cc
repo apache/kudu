@@ -36,6 +36,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -74,6 +75,19 @@ SubprocessRequestPB CreateEchoSubprocessRequestPB(const string& payload,
   return request;
 }
 
+Status CheckMessage(const SubprocessResponsePB& resp, const string& expected_msg) {
+  EchoResponsePB echo_resp;
+  if (!resp.response().UnpackTo(&echo_resp)) {
+    return Status::Corruption(Substitute("Failed to unpack echo response: $0",
+                                         pb_util::SecureDebugString(resp)));
+  }
+  if (expected_msg != echo_resp.data()) {
+    return Status::Corruption(Substitute("Expected: '$0', got: '$1'",
+                                         expected_msg, echo_resp.data()));
+  }
+  return Status::OK();
+}
+
 const char* kHello = "hello world";
 
 } // anonymous namespace
@@ -81,16 +95,17 @@ const char* kHello = "hello world";
 class SubprocessServerTest : public KuduTest {
  public:
   SubprocessServerTest()
-      : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_,
+      : test_dir_(GetTestDataDirectory()),
+        metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_,
                                                         "subprocess_server-test")) {}
   void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(ResetSubprocessServer());
   }
 
-  // Resets the subprocess server to account for any new configuration.
-  Status ResetSubprocessServer(int java_queue_size = 0,
-                               int java_parser_threads = 0) {
+  Status InitSubprocessServer(int java_queue_size,
+                              int java_parser_threads,
+                              shared_ptr<SubprocessServer>* out) {
     // Set up a subprocess server pointing at the kudu-subprocess.jar that
     // contains an echo handler and call EchoSubprocessMain.
     string exe;
@@ -98,25 +113,34 @@ class SubprocessServerTest : public KuduTest {
     const string bin_dir = DirName(exe);
     string java_home;
     RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
+    const string pipe_path = SubprocessServer::FifoPath(JoinPathSegments(test_dir_, "echo_pipe"));
     vector<string> argv = {
       Substitute("$0/bin/java", java_home),
       "-cp", Substitute("$0/kudu-subprocess.jar", bin_dir),
-      "org.apache.kudu.subprocess.echo.EchoSubprocessMain"
+      "org.apache.kudu.subprocess.echo.EchoSubprocessMain",
+      "-o", pipe_path,
     };
     if (java_queue_size > 0) {
-      argv.emplace_back("q");
+      argv.emplace_back("-q");
       argv.emplace_back(std::to_string(java_queue_size));
     }
     if (java_parser_threads > 0) {
-      argv.emplace_back("p");
+      argv.emplace_back("-p");
       argv.emplace_back(std::to_string(java_parser_threads));
     }
-    server_ = make_shared<SubprocessServer>(std::move(argv),
-                                            EchoSubprocessMetrics(metric_entity_));
-    return server_->Init();
+    *out = make_shared<SubprocessServer>(env_, pipe_path, std::move(argv),
+                                         EchoSubprocessMetrics(metric_entity_));
+    return (*out)->Init();
+  }
+
+  // Resets the subprocess server to account for any new configuration.
+  Status ResetSubprocessServer(int java_queue_size = 0,
+                               int java_parser_threads = 0) {
+    return InitSubprocessServer(java_queue_size, java_parser_threads, &server_);
   }
 
  protected:
+  const string test_dir_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<SubprocessServer> server_;
@@ -170,11 +194,9 @@ TEST_F(SubprocessServerTest, TestManyConcurrentCalls) {
                           reqs_sent, elapsed_seconds, reqs_sent / elapsed_seconds);
   for (int t = 0; t < kNumThreads; t++) {
     for (int i = 0; i < kNumPerThread; i++) {
-      EchoResponsePB echo_resp;
-      ASSERT_TRUE(responses[t][i].response().UnpackTo(&echo_resp));
       EchoRequestPB echo_req;
       requests[t][i].request().UnpackTo(&echo_req);
-      ASSERT_EQ(echo_resp.data(), echo_req.data());
+      ASSERT_OK(CheckMessage(responses[t][i], echo_req.data()));
     }
   }
 }
@@ -278,6 +300,39 @@ TEST_F(SubprocessServerTest, TestInitFromThread) {
   SubprocessRequestPB request = CreateEchoSubprocessRequestPB(kHello);
   SubprocessResponsePB response;
   ASSERT_OK(server_->Execute(&request, &response));
+}
+
+// Test that we've configured out subprocess server such that we can run it
+// from multiple threads without having them collide with each other.
+TEST_F(SubprocessServerTest, TestRunFromMultipleThreads) {
+  const int kNumThreads = 3;
+  vector<thread> threads;
+  vector<Status> results(kNumThreads);
+#define EXIT_NOT_OK(s, n) do { \
+  Status _s = (s); \
+  if (!_s.ok()) { \
+    results[n] = _s; \
+    return; \
+  } \
+} while (0);
+
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i] {
+      shared_ptr<SubprocessServer> server;
+      EXIT_NOT_OK(InitSubprocessServer(0, 0, &server), i);
+      const string msg = Substitute("$0 bottles of tea on the wall", i);
+      SubprocessRequestPB req = CreateEchoSubprocessRequestPB(msg);
+      SubprocessResponsePB resp;
+      EXIT_NOT_OK(server->Execute(&req, &resp), i);
+      EXIT_NOT_OK(CheckMessage(resp, msg), i);
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  for (const auto& r : results) {
+    ASSERT_OK(r);
+  }
 }
 
 } // namespace subprocess

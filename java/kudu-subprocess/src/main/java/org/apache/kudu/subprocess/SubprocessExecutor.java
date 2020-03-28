@@ -103,8 +103,8 @@ public class SubprocessExecutor {
     // a message to ensure the underlying buffer can hold the entire message before
     // flushing.
     try (BufferedInputStream in = new BufferedInputStream(System.in);
-         BufferedOutputStream out = new BufferedOutputStream(
-             new SubprocessOutputStream(System.out), maxMessageBytes)) {
+         BufferedOutputStream out = new BufferedOutputStream(conf.getOutputStream(),
+                                                             maxMessageBytes)) {
       MessageIO messageIO = new MessageIO(maxMessageBytes, in, out);
 
       // Start a single reader thread and run the task asynchronously.

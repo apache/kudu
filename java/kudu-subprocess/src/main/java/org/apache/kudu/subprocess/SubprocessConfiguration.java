@@ -17,6 +17,13 @@
 
 package org.apache.kudu.subprocess;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.cli.BasicParser;
 import org.apache.commons.cli.CommandLine;
@@ -24,6 +31,7 @@ import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.log4j.BasicConfigurator;
 import org.apache.yetus.audience.InterfaceAudience;
 
 /**
@@ -40,12 +48,20 @@ public class SubprocessConfiguration {
   private static final String KEYTAB_FILE_DEFAULT = "";
   private String servicePrincipal;
   private static final String SERVICE_PRINCIPAL_DEFAULT = "";
+  private OutputStream outputStream;
 
   @VisibleForTesting
   static final int MAX_MESSAGE_BYTES_DEFAULT = 1024 * 1024;
 
   public SubprocessConfiguration(String[] args) {
     parse(args);
+  }
+
+  /**
+   * @return the output stream to output messages to.
+   */
+  OutputStream getOutputStream() {
+    return outputStream;
   }
 
   /**
@@ -131,26 +147,56 @@ public class SubprocessConfiguration {
     principalOpt.setRequired(false);
     options.addOption(principalOpt);
 
+    final String outputPipeLongOpt = "outputPipe";
+    Option outputPipeOpt = new Option(
+        "o", outputPipeLongOpt, /* hasArg= */ true,
+        "The pipe to output messages to. If not set, outputs to stdout (this " +
+        "is generally unsafe and should only be used in tests)");
+    outputPipeOpt.setRequired(false);
+    options.addOption(outputPipeOpt);
+
     CommandLineParser parser = new BasicParser();
+    String outputPipePath;
     try {
       CommandLine cmd = parser.parse(options, args);
       String queueSize = cmd.getOptionValue(queueSizeLongOpt);
       this.queueSize = queueSize == null ?
           QUEUE_SIZE_DEFAULT : Integer.parseInt(queueSize);
+
       String maxParserThreads = cmd.getOptionValue(maxMsgParserThreadsLongOpt);
       this.maxMsgParserThreads = maxParserThreads == null ?
           MAX_MSG_PARSER_THREADS_DEFAULT : Integer.parseInt(maxParserThreads);
+
       String maxMsgBytes = cmd.getOptionValue(maxMsgBytesLongOpt);
       this.maxMsgBytes = maxMsgBytes == null ?
           MAX_MESSAGE_BYTES_DEFAULT : Integer.parseInt(maxMsgBytes);
+
       String keytab = cmd.getOptionValue(keytabFileLongOpt);
       this.keytabFile = keytab == null ?
           KEYTAB_FILE_DEFAULT : keytab;
+
       String principal = cmd.getOptionValue(principalLongOpt);
       this.servicePrincipal = principal == null ?
           SERVICE_PRINCIPAL_DEFAULT : principal;
+
+      outputPipePath = cmd.getOptionValue(outputPipeLongOpt);
     } catch (ParseException e) {
       throw new KuduSubprocessException("Cannot parse the subprocess command line", e);
+    }
+
+    try {
+      if (outputPipePath == null) {
+        this.outputStream = new SubprocessOutputStream(System.out);
+      } else {
+        // If we're not sending messages to System.out, redirect our logs to it.
+        BasicConfigurator.configure();
+        RandomAccessFile outputFile = new RandomAccessFile(new File(outputPipePath), "rw");
+        this.outputStream = new FileOutputStream(outputFile.getFD());
+      }
+    } catch (FileNotFoundException e) {
+      throw new KuduSubprocessException("Output file not found", e);
+    } catch (IOException e) {
+      throw new KuduSubprocessException("IO error opening file", e);
     }
   }
 }

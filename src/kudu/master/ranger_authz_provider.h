@@ -28,6 +28,7 @@
 
 namespace kudu {
 
+class Env;
 class MetricEntity;
 class SchemaPB;
 
@@ -43,7 +44,7 @@ namespace master {
 class RangerAuthzProvider : public AuthzProvider {
  public:
 
-  explicit RangerAuthzProvider(const scoped_refptr<MetricEntity>& metric_entity);
+  explicit RangerAuthzProvider(Env* env, const scoped_refptr<MetricEntity>& metric_entity);
 
   Status Start() override;
 

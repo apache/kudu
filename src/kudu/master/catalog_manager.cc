@@ -787,7 +787,8 @@ CatalogManager::CatalogManager(Master* master)
   if (SentryAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
   } else if (RangerAuthzProvider::IsEnabled()) {
-    authz_provider_.reset(new RangerAuthzProvider(master_->metric_entity()));
+    authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->env(),
+                                                  master_->metric_entity()));
   } else {
     authz_provider_.reset(new DefaultAuthzProvider);
   }

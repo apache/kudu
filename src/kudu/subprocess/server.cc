@@ -17,6 +17,8 @@
 
 #include "kudu/subprocess/server.h"
 
+#include <unistd.h>
+
 #include <csignal>
 #include <memory>
 #include <ostream>
@@ -33,6 +35,7 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/subprocess/subprocess_protocol.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -83,16 +86,25 @@ using strings::Substitute;
 namespace kudu {
 namespace subprocess {
 
-SubprocessServer::SubprocessServer(vector<string> subprocess_argv, SubprocessMetrics metrics)
+string SubprocessServer::FifoPath(const string& base) {
+  return Substitute("$0.$1.$2", base, getpid(), Thread::CurrentThreadId());
+}
+
+SubprocessServer::SubprocessServer(Env* env, const string& receiver_file,
+                                   vector<string> subprocess_argv,
+                                   SubprocessMetrics metrics)
     : call_timeout_(MonoDelta::FromSeconds(FLAGS_subprocess_timeout_secs)),
       next_id_(1),
       closing_(1),
+      env_(env),
+      receiver_file_(receiver_file),
       process_(make_shared<Subprocess>(std::move(subprocess_argv))),
       outbound_call_queue_(FLAGS_subprocess_request_queue_size_bytes),
       inbound_response_queue_(FLAGS_subprocess_response_queue_size_bytes),
       metrics_(std::move(metrics)) {
   process_->ShareParentStdin(false);
-  process_->ShareParentStdout(false);
+  process_->ShareParentStdout(true);
+  process_->ShareParentStderr(true);
 }
 
 SubprocessServer::~SubprocessServer() {
@@ -111,6 +123,7 @@ void SubprocessServer::StartSubprocessThread(const StatusCallback& cb) {
 
 Status SubprocessServer::Init() {
   VLOG(2) << "Starting the subprocess";
+
   Synchronizer sync;
   auto cb = sync.AsStatusCallback();
   RETURN_NOT_OK(Thread::Create("subprocess", "start",
@@ -118,11 +131,20 @@ Status SubprocessServer::Init() {
                                &read_thread_));
   RETURN_NOT_OK_PREPEND(sync.Wait(), "Failed to start subprocess");
 
+  // NOTE: callers should try to ensure each receiver file path is used by a
+  // single subprocess.
+  if (env_->FileExists(receiver_file_)) {
+    RETURN_NOT_OK(env_->DeleteFile(receiver_file_));
+  }
+  // Open the file we'll use for receiving messages.
+  RETURN_NOT_OK(env_->NewFifo(receiver_file_, &receiver_fifo_));
+  RETURN_NOT_OK(receiver_fifo_->OpenForReads());
+
   // Start the message protocol.
   CHECK(!message_protocol_);
   message_protocol_.reset(new SubprocessProtocol(SubprocessProtocol::SerializationMode::PB,
                                                  SubprocessProtocol::CloseMode::CLOSE_ON_DESTROY,
-                                                 process_->ReleaseChildStdoutFd(),
+                                                 receiver_fifo_->read_fd(),
                                                  process_->ReleaseChildStdinFd()));
   const int num_threads = FLAGS_subprocess_num_responder_threads;
   responder_threads_.resize(num_threads);
@@ -195,6 +217,11 @@ void SubprocessServer::Shutdown() {
   for (const auto& t : responder_threads_) {
     t->Join();
   }
+  // Delete the receiver fifo.
+  receiver_fifo_.reset();
+  if (env_->FileExists(receiver_file_)) {
+    WARN_NOT_OK(env_->DeleteFile(receiver_file_), "Error deleting receiver file");
+  }
 
   // Call any of the remaining callbacks.
   std::map<CallId, shared_ptr<SubprocessCall>> calls;
@@ -216,7 +243,6 @@ void SubprocessServer::ReceiveMessagesThread() {
     Status s = message_protocol_->ReceiveMessage(&response);
     if (s.IsEndOfFile()) {
       // The underlying pipe was closed. We're likely shutting down.
-      DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "Received an EOF from the subprocess";
       return;
     }

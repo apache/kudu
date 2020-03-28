@@ -17,8 +17,7 @@
 
 #include "kudu/ranger/ranger_client.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -34,6 +33,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/security/init.h"
+#include "kudu/subprocess/server.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
@@ -59,8 +59,15 @@ TAG_FLAG(ranger_config_path, experimental);
 DEFINE_string(ranger_jar_path, "",
               "Path to the JAR file containing the Ranger subprocess. "
               "If not set, the default JAR file path is expected to be"
-              "next to the master binary");
+              "next to the master binary.");
 TAG_FLAG(ranger_jar_path, experimental);
+
+DEFINE_string(ranger_receiver_fifo_dir, "",
+              "Directory in which to create a fifo used to receive messages "
+              "from the Ranger subprocess. Existing fifos at this path will be "
+              "overwritten. If not specified, a fifo will be created in the "
+              "--ranger_config_path directory.");
+TAG_FLAG(ranger_receiver_fifo_dir, advanced);
 
 METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
     "Ranger subprocess execution time (ms)",
@@ -155,12 +162,21 @@ static string GetJavaClasspath() {
   return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
 }
 
-// Builds the arguments for the Ranger subprocess. Specifically pass
-// the principal and keytab file that the Ranger subprocess will log in with
-// if Kerberos is enabled. 'args' has the final arguments.
-// Returns 'OK' if arguments successfully created, error otherwise.
-static Status BuildArgv(vector<string>* argv) {
+
+static string ranger_fifo_base() {
+  DCHECK(!FLAGS_ranger_config_path.empty());
+  const string& fifo_dir = FLAGS_ranger_receiver_fifo_dir.empty() ?
+      FLAGS_ranger_config_path : FLAGS_ranger_receiver_fifo_dir;
+  return JoinPathSegments(fifo_dir, "ranger_receiever_fifo");
+}
+
+// Builds the arguments to start the Ranger subprocess with the given receiver
+// fifo path. Specifically pass the principal and keytab file that the Ranger
+// subprocess will log in with if Kerberos is enabled. 'args' has the final
+// arguments.  Returns 'OK' if arguments successfully created, error otherwise.
+static Status BuildArgv(const string& fifo_path, vector<string>* argv) {
   DCHECK(argv);
+  DCHECK(!FLAGS_ranger_config_path.empty());
   // Pass the required arguments to run the Ranger subprocess.
   vector<string> ret = { FLAGS_ranger_java_path, "-cp", GetJavaClasspath(), kMainClass };
   // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
@@ -174,7 +190,8 @@ static Status BuildArgv(vector<string>* argv) {
     ret.emplace_back("-k");
     ret.emplace_back(FLAGS_keytab_file);
   }
-
+  ret.emplace_back("-o");
+  ret.emplace_back(fifo_path);
   *argv = std::move(ret);
   return Status::OK();
 }
@@ -227,16 +244,17 @@ RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntit
 }
 #undef HISTINIT
 
-RangerClient::RangerClient(const scoped_refptr<MetricEntity>& metric_entity)
-    : metric_entity_(metric_entity) {
+RangerClient::RangerClient(Env* env, const scoped_refptr<MetricEntity>& metric_entity)
+    : env_(env), metric_entity_(metric_entity) {
   DCHECK(metric_entity);
 }
 
 Status RangerClient::Start() {
   VLOG(1) << "Initializing Ranger subprocess server";
   vector<string> argv;
-  RETURN_NOT_OK(BuildArgv(&argv));
-  subprocess_.reset(new RangerSubprocess(std::move(argv), metric_entity_));
+  const string fifo_path = subprocess::SubprocessServer::FifoPath(ranger_fifo_base());
+  RETURN_NOT_OK(BuildArgv(fifo_path, &argv));
+  subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_));
   return subprocess_->Start();
 }
 

@@ -29,6 +29,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 namespace subprocess {
@@ -39,8 +40,9 @@ namespace subprocess {
 template<class ReqPB, class RespPB, class MetricsPB>
 class SubprocessProxy {
  public:
-  SubprocessProxy(std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity)
-      : server_(new SubprocessServer(std::move(argv), MetricsPB(entity))) {}
+  SubprocessProxy(Env* env, const std::string& receiver_file,
+                  std::vector<std::string> argv, const scoped_refptr<MetricEntity>& entity)
+      : server_(new SubprocessServer(env, receiver_file, std::move(argv), MetricsPB(entity))) {}
 
   // Starts the underlying subprocess.
   Status Start() {

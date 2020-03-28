@@ -30,6 +30,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/subprocess/server.h"
 #include "kudu/subprocess/echo_subprocess.h"
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
@@ -64,7 +65,8 @@ class EchoSubprocessTest : public KuduTest {
  public:
   EchoSubprocessTest()
       : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_,
-                                                        "subprocess_proxy-test")) {}
+                                                        "subprocess_proxy-test")),
+        test_dir_(GetTestDataDirectory()) {}
 
   void SetUp() override {
     KuduTest::SetUp();
@@ -77,12 +79,15 @@ class EchoSubprocessTest : public KuduTest {
     const string bin_dir = DirName(exe);
     string java_home;
     RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
+    const string& pipe_file = SubprocessServer::FifoPath(JoinPathSegments(test_dir_, "echo_pipe"));
     vector<string> argv = {
       Substitute("$0/bin/java", java_home),
       "-cp", Substitute("$0/kudu-subprocess.jar", bin_dir),
-      "org.apache.kudu.subprocess.echo.EchoSubprocessMain"
+      "org.apache.kudu.subprocess.echo.EchoSubprocessMain",
+      "-o", pipe_file,
     };
-    echo_subprocess_.reset(new EchoSubprocess(std::move(argv), metric_entity_));
+    echo_subprocess_.reset(new EchoSubprocess(env_, pipe_file, std::move(argv),
+                                              metric_entity_));
     return echo_subprocess_->Start();
   }
 
@@ -90,6 +95,7 @@ class EchoSubprocessTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   unique_ptr<EchoSubprocess> echo_subprocess_;
+  const string test_dir_;
 };
 
 #define GET_HIST(metric_entity, metric_name) \

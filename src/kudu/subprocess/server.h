@@ -47,6 +47,8 @@
 
 namespace kudu {
 
+class Env;
+class Fifo;
 class Subprocess;
 class Thread;
 
@@ -216,7 +218,12 @@ typedef BlockingQueue<ResponsePBAndTimer, ResponseLogicalSize> ResponseQueue;
 // Public methods are virtual so a mock server can be used in tests.
 class SubprocessServer {
  public:
-  SubprocessServer(std::vector<std::string> subprocess_argv, SubprocessMetrics metrics);
+  // Returns a path based on 'base' that can be used as a fifo, avoiding
+  // collisions between subprocesses started in different process and threads.
+  static std::string FifoPath(const std::string& base);
+
+  SubprocessServer(Env* env, const std::string& receiver_file,
+      std::vector<std::string> subprocess_argv, SubprocessMetrics metrics);
   virtual ~SubprocessServer();
 
   // Initialize the server, starting the subprocess and worker threads.
@@ -269,6 +276,12 @@ class SubprocessServer {
 
   // Latch used to indicate that the server is shutting down.
   CountDownLatch closing_;
+
+  Env* env_;
+  const std::string receiver_file_;
+
+  // The fifo used to receieve messages from the subprocess.
+  std::unique_ptr<Fifo> receiver_fifo_;
 
   // The underlying subprocess.
   std::shared_ptr<Subprocess> process_;
