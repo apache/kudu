@@ -16,7 +16,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -87,7 +86,7 @@ struct TraceEventHandle {
 
 const int kTraceMaxNumArgs = 2;
 
-class BASE_EXPORT TraceEvent {
+class TraceEvent {
  public:
   union TraceValue {
     bool as_bool;
@@ -180,7 +179,7 @@ class BASE_EXPORT TraceEvent {
 };
 
 // TraceBufferChunk is the basic unit of TraceBuffer.
-class BASE_EXPORT TraceBufferChunk {
+class TraceBufferChunk {
  public:
   explicit TraceBufferChunk(uint32_t seq)
       : next_free_(0),
@@ -215,7 +214,7 @@ class BASE_EXPORT TraceBufferChunk {
 };
 
 // TraceBuffer holds the events as they are collected.
-class BASE_EXPORT TraceBuffer {
+class TraceBuffer {
  public:
   virtual ~TraceBuffer() {}
 
@@ -255,7 +254,7 @@ class TraceResultBuffer {
   std::string json_;
 };
 
-class BASE_EXPORT CategoryFilter {
+class CategoryFilter {
  public:
   typedef std::vector<std::string> StringList;
 
@@ -342,7 +341,7 @@ class BASE_EXPORT CategoryFilter {
 
 class TraceSamplingThread;
 
-class BASE_EXPORT TraceLog {
+class TraceLog {
  public:
   enum Mode {
     DISABLED = 0,
@@ -589,9 +588,9 @@ class BASE_EXPORT TraceLog {
   // category filter.
   void UpdateSyntheticDelaysFromCategoryFilter();
 
-  struct PerThreadInfo;
   class OptionalAutoLock;
   class ThreadLocalEventBuffer;
+  struct PerThreadInfo;
 
   TraceLog();
   ~TraceLog();

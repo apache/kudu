@@ -823,12 +823,8 @@
 #define TRACE_EVENT_API_ATOMIC_STORE(var, value) \
     base::subtle::NoBarrier_Store(&(var), (value))
 
-// Defines visibility for classes in trace_event.h
-#define TRACE_EVENT_API_CLASS_EXPORT BASE_EXPORT
-
 // The thread buckets for the sampling profiler.
-TRACE_EVENT_API_CLASS_EXPORT extern \
-    TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];
+extern TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];
 
 #define TRACE_EVENT_API_THREAD_BUCKET(thread_bucket)                           \
     g_trace_state[thread_bucket]
@@ -1377,10 +1373,10 @@ static inline kudu::debug::TraceEventHandle AddTraceEvent(
 }
 
 // Used by TRACE_EVENTx macros. Do not use directly.
-class TRACE_EVENT_API_CLASS_EXPORT ScopedTracer {
+class ScopedTracer {
  public:
   // Note: members of data_ intentionally left uninitialized. See Initialize.
-  ScopedTracer() : p_data_(NULL) {}
+  ScopedTracer() : p_data_(nullptr) {}
 
   ~ScopedTracer() {
     if (p_data_ && *data_.category_group_enabled)
@@ -1413,7 +1409,7 @@ class TRACE_EVENT_API_CLASS_EXPORT ScopedTracer {
 };
 
 // Used by TRACE_EVENT_BINARY_EFFICIENTx macro. Do not use directly.
-class TRACE_EVENT_API_CLASS_EXPORT ScopedTraceBinaryEfficient {
+class ScopedTraceBinaryEfficient {
  public:
   ScopedTraceBinaryEfficient(const char* category_group, const char* name);
   ~ScopedTraceBinaryEfficient();

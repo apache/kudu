@@ -22,6 +22,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -52,7 +53,7 @@ DEFINE_string(trace_to_console, "",
 TAG_FLAG(trace_to_console, experimental);
 
 // The thread buckets for the sampling profiler.
-BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];
+TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];
 
 using base::SpinLockHolder;
 using strings::SubstituteAndAppend;

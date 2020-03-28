@@ -15,16 +15,12 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
-#ifndef BASE_EXPORT
-#define BASE_EXPORT
-#endif
-
 namespace kudu {
 
 // A generic interface to memory. This object is reference counted because one
 // of its two subclasses own the data they carry, and we need to have
 // heterogeneous containers of these two types of memory.
-class BASE_EXPORT RefCountedMemory
+class RefCountedMemory
     : public RefCountedThreadSafe<RefCountedMemory> {
  public:
   // Retrieves a pointer to the beginning of the data we point to. If the data
@@ -50,12 +46,12 @@ class BASE_EXPORT RefCountedMemory
 
 // An implementation of RefCountedMemory, where the ref counting does not
 // matter.
-class BASE_EXPORT RefCountedStaticMemory : public RefCountedMemory {
+class RefCountedStaticMemory : public RefCountedMemory {
  public:
   RefCountedStaticMemory()
-      : data_(NULL), length_(0) {}
+      : data_(nullptr), length_(0) {}
   RefCountedStaticMemory(const void* data, size_t length)
-      : data_(static_cast<const unsigned char*>(length ? data : NULL)),
+      : data_(static_cast<const unsigned char*>(length ? data : nullptr)),
         length_(length) {}
 
   // Overridden from RefCountedMemory:
@@ -72,7 +68,7 @@ class BASE_EXPORT RefCountedStaticMemory : public RefCountedMemory {
 };
 
 // An implementation of RefCountedMemory, where we own the data in a vector.
-class BASE_EXPORT RefCountedBytes : public RefCountedMemory {
+class RefCountedBytes : public RefCountedMemory {
  public:
   RefCountedBytes();
 
@@ -104,7 +100,7 @@ class BASE_EXPORT RefCountedBytes : public RefCountedMemory {
 
 // An implementation of RefCountedMemory, where the bytes are stored in an STL
 // string. Use this if your data naturally arrives in that format.
-class BASE_EXPORT RefCountedString : public RefCountedMemory {
+class RefCountedString : public RefCountedMemory {
  public:
   RefCountedString();
 
@@ -131,7 +127,7 @@ class BASE_EXPORT RefCountedString : public RefCountedMemory {
 // An implementation of RefCountedMemory that holds a chunk of memory
 // previously allocated with malloc or calloc, and that therefore must be freed
 // using free().
-class BASE_EXPORT RefCountedMallocedMemory : public RefCountedMemory {
+class RefCountedMallocedMemory : public RefCountedMemory {
  public:
   RefCountedMallocedMemory(void* data, size_t length);
 

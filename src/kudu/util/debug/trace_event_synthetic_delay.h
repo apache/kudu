@@ -68,7 +68,7 @@ namespace kudu {
 namespace debug {
 
 // Time source for computing delay durations. Used for testing.
-class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelayClock {
+class TraceEventSyntheticDelayClock {
  public:
   TraceEventSyntheticDelayClock();
   virtual ~TraceEventSyntheticDelayClock();
@@ -79,7 +79,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelayClock {
 };
 
 // Single delay point instance.
-class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
+class TraceEventSyntheticDelay {
  public:
   enum Mode {
     STATIC,      // Apply the configured delay every time.
@@ -136,7 +136,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
 };
 
 // Set the target durations of all registered synthetic delay points to zero.
-TRACE_EVENT_API_CLASS_EXPORT void ResetTraceEventSyntheticDelays();
+void ResetTraceEventSyntheticDelays();
 
 }  // namespace debug
 }  // namespace kudu
@@ -144,7 +144,7 @@ TRACE_EVENT_API_CLASS_EXPORT void ResetTraceEventSyntheticDelays();
 namespace trace_event_internal {
 
 // Helper class for scoped delays. Do not use directly.
-class TRACE_EVENT_API_CLASS_EXPORT ScopedSyntheticDelay {
+class ScopedSyntheticDelay {
  public:
   explicit ScopedSyntheticDelay(const char* name,
                                 AtomicWord* impl_ptr);
@@ -158,7 +158,7 @@ class TRACE_EVENT_API_CLASS_EXPORT ScopedSyntheticDelay {
 };
 
 // Helper for registering delays. Do not use directly.
-TRACE_EVENT_API_CLASS_EXPORT kudu::debug::TraceEventSyntheticDelay*
+kudu::debug::TraceEventSyntheticDelay*
     GetOrCreateDelay(const char* name, AtomicWord* impl_ptr);
 
 }  // namespace trace_event_internal

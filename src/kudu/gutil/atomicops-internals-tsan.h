@@ -9,20 +9,15 @@
 #ifndef BASE_ATOMICOPS_INTERNALS_TSAN_H_
 #define BASE_ATOMICOPS_INTERNALS_TSAN_H_
 
-// Workaround for Chromium BASE_EXPORT definition
-#ifndef BASE_EXPORT
-#define BASE_EXPORT
-#endif
-
 // This struct is not part of the public API of this module; clients may not
-// use it.  (However, it's exported via BASE_EXPORT because clients implicitly
-// do use it at link time by inlining these functions.)
+// use it.
+//
 // Features of this x86.  Values may not be correct before main() is run,
 // but are set conservatively.
 struct AtomicOps_x86CPUFeatureStruct {
   bool has_sse2;             // Processor has SSE2.
 };
-BASE_EXPORT extern struct AtomicOps_x86CPUFeatureStruct
+extern struct AtomicOps_x86CPUFeatureStruct
     AtomicOps_Internalx86CPUFeatures;
 
 #define ATOMICOPS_COMPILER_BARRIER() __asm__ __volatile__("" : : : "memory")

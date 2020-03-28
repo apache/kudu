@@ -10,10 +10,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 
-#ifndef BASE_EXPORT
-#define BASE_EXPORT
-#endif
-
 // A helper class alongside macros to be used to verify assumptions about thread
 // safety of a class.
 //
@@ -134,17 +130,17 @@ namespace base {
 // AsserterBase is the interfaces and DCheckAsserter is the default asserter
 // used. During the unit tests is used another class that doesn't "DCHECK"
 // in case of collision (check thread_collision_warner_unittests.cc)
-struct BASE_EXPORT AsserterBase {
+struct AsserterBase {
   virtual ~AsserterBase() {}
   virtual void warn(int64_t previous_thread_id, int64_t current_thread_id) = 0;
 };
 
-struct BASE_EXPORT DCheckAsserter : public AsserterBase {
+struct DCheckAsserter : public AsserterBase {
   virtual ~DCheckAsserter() {}
   void warn(int64_t previous_thread_id, int64_t current_thread_id) override;
 };
 
-class BASE_EXPORT ThreadCollisionWarner {
+class ThreadCollisionWarner {
  public:
   // The parameter asserter is there only for test purpose
   explicit ThreadCollisionWarner(AsserterBase* asserter = new DCheckAsserter())
@@ -161,7 +157,7 @@ class BASE_EXPORT ThreadCollisionWarner {
   // it doesn't leave the critical section, as opposed to ScopedCheck,
   // because the critical section being pinned is allowed to be used only
   // from one thread
-  class BASE_EXPORT Check {
+  class Check {
    public:
     explicit Check(ThreadCollisionWarner* warner)
         : warner_(warner) {
@@ -178,7 +174,7 @@ class BASE_EXPORT ThreadCollisionWarner {
 
   // This class is meant to be used through the macro
   // DFAKE_SCOPED_LOCK
-  class BASE_EXPORT ScopedCheck {
+  class ScopedCheck {
    public:
     explicit ScopedCheck(ThreadCollisionWarner* warner)
         : warner_(warner) {
@@ -197,7 +193,7 @@ class BASE_EXPORT ThreadCollisionWarner {
 
   // This class is meant to be used through the macro
   // DFAKE_SCOPED_RECURSIVE_LOCK
-  class BASE_EXPORT ScopedRecursiveCheck {
+  class ScopedRecursiveCheck {
    public:
     explicit ScopedRecursiveCheck(ThreadCollisionWarner* warner)
         : warner_(warner) {

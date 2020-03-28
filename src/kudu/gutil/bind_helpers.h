@@ -149,10 +149,6 @@
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/template_util.h"
 
-// Unneeded define from Chromium
-#define BASE_EXPORT
-
-
 namespace kudu {
 namespace internal {
 
