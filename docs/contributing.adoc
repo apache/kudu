@@ -317,28 +317,18 @@ in many places. When interfacing with that code, you can continue to use `shared
 
 ==== Function Binding and Callbacks
 
-Existing code uses `boost::bind` and `boost::function` to capture and manage
-functors. For new code, use `std::bind` and `std::function`, which are
-functionally equivalent.
+All code should use {cpp}11 lambdas to capture and manage functors. Functions that
+take a lambda as an argument should use `std::function` as the argument's
+type. Do not use `boost::bind` or `std::bind` to create functors. Lambdas offer
+the compiler greater opportunity to inline, and `std::bind` in particular is
+link:https://abseil.io/tips/108[error-prone] and has a proclivity towards heap
+allocation for storing bound parameters.
 
-Alternatively, the `Bind` and `Callback` classes in `gutil` may also be used to
-capture functors. See _gutil/callback.h_ for more details and
-_util/callback_bind-test.cc_ for examples. While less full-featured, they
-provide different options from their counterparts by the way of argument
-lifecycle management. The benefits of each are described below:
-
-.`std::bind` and `std::function`
-[none]
-* natively supports binding `shared_ptr` and `weak_ptr` objects, so a bound
-smartpointer argument will increment its count during `bind`, and decrement it
-when the `function` leaves scope
-* supports argument placeholders, wrapped function pointers, and function objects
-
-.`Bind` and `Callback`
-[none]
-* natively supports binding `RefCounted` objects, so a bound argument whose
-class extends `RefCounted` will increment its count during `Bind` and decrement
-it when the `Callback` goes out of scope
+Until Kudu is upgraded to {cpp}14, lambda support will be
+link:https://stackoverflow.com/a/17545183[somewhat incomplete]. For example, it
+is not possible in {cpp}11 to capture an argument by move. Nor is it possible
+to define new variables in the context of a lambda capture. Workarounds for
+these deficiencies exist, and they must be used in the interim.
 
 ==== GFlags
 
