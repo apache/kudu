@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_ENV_UTIL_H
-#define KUDU_UTIL_ENV_UTIL_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -111,5 +110,3 @@ Status ListFilesInDir(Env* env,
 
 } // namespace env_util
 } // namespace kudu
-
-#endif

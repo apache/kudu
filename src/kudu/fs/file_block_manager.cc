@@ -18,6 +18,7 @@
 #include "kudu/fs/file_block_manager.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -921,11 +922,14 @@ Status GetAllBlockIdsForDataDirCb(Dir* dd,
 }
 
 void GetAllBlockIdsForDir(Env* env,
-                              Dir* dd,
-                              vector<BlockId>* block_ids,
-                              Status* status) {
-  *status = env->Walk(dd->dir(), Env::PRE_ORDER,
-                      Bind(&GetAllBlockIdsForDataDirCb, dd, block_ids));
+                          Dir* dd,
+                          vector<BlockId>* block_ids,
+                          Status* status) {
+  *status = env->Walk(
+      dd->dir(), Env::PRE_ORDER,
+      [dd, block_ids](Env::FileType type, const string& dirname, const string& basename) {
+        return GetAllBlockIdsForDataDirCb(dd, block_ids, type, dirname, basename);
+      });
 }
 
 } // anonymous namespace

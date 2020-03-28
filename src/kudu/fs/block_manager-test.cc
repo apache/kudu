@@ -43,7 +43,6 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -224,9 +223,11 @@ class BlockManagerTest : public KuduTest {
   // hierarchy, ignoring '.', '..', and file 'kInstanceMetadataFileName'.
   Status CountFiles(const string& root, int* num_files) {
     *num_files = 0;
-    RETURN_NOT_OK(env_->Walk(root, Env::PRE_ORDER,
-                             Bind(BlockManagerTest::CountFilesCb, num_files)));
-    return Status::OK();
+    return env_->Walk(
+        root, Env::PRE_ORDER,
+        [num_files](Env::FileType type, const string& dirname, const string& basename) {
+          return CountFilesCb(num_files, type, dirname, basename);
+        });
   }
 
   // Keep an internal copy of the data dir group to act as metadata.

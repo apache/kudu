@@ -9,19 +9,17 @@
 //
 // All Env implementations are safe for concurrent access from
 // multiple threads without any external synchronization.
-
-#ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
-#define STORAGE_LEVELDB_INCLUDE_ENV_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
@@ -278,7 +276,7 @@ class Env {
   //
   // Returning an error won't halt the walk, but it will cause it to return
   // with an error status when it's done.
-  typedef Callback<Status(FileType, const std::string&, const std::string&)> WalkCallback;
+  typedef std::function<Status(FileType, const std::string&, const std::string&)> WalkCallback;
 
   // Whether to walk directories in pre-order or post-order.
   enum DirectoryOrder {
@@ -702,5 +700,3 @@ extern Status ReadFileToString(Env* env, const std::string& fname,
 std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t);
 
 }  // namespace kudu
-
-#endif  // STORAGE_LEVELDB_INCLUDE_ENV_H_

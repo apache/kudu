@@ -52,7 +52,6 @@
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -752,13 +751,17 @@ TEST_F(TestEnv, TestWalk) {
 
   // Do the walk.
   unordered_set<string> actual;
-  ASSERT_OK(env_->Walk(root, Env::PRE_ORDER, Bind(&TestWalkCb, &actual)));
+  ASSERT_OK(env_->Walk(
+      root, Env::PRE_ORDER,
+      [&actual](Env::FileType type, const string& dirname, const string& basename) {
+        return TestWalkCb(&actual, type, dirname, basename);
+      }));
   ASSERT_EQ(expected, actual);
 }
 
 TEST_F(TestEnv, TestWalkNonExistentPath) {
   // A walk on a non-existent path should fail.
-  Status s = env_->Walk("/not/a/real/path", Env::PRE_ORDER, Bind(&NoopTestWalkCb));
+  Status s = env_->Walk("/not/a/real/path", Env::PRE_ORDER, &NoopTestWalkCb);
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "One or more errors occurred");
 }
@@ -777,7 +780,7 @@ TEST_F(TestEnv, TestWalkBadPermissions) {
 
   // A walk on a directory without execute permission should fail,
   // unless the calling process has super-user's effective ID.
-  Status s = env_->Walk(kTestPath, Env::PRE_ORDER, Bind(&NoopTestWalkCb));
+  Status s = env_->Walk(kTestPath, Env::PRE_ORDER, &NoopTestWalkCb);
   if (geteuid() == 0) {
     ASSERT_TRUE(s.ok()) << s.ToString();
   } else {
@@ -801,8 +804,11 @@ TEST_F(TestEnv, TestWalkCbReturnsError) {
   unique_ptr<WritableFile> writer;
   ASSERT_OK(env_->NewWritableFile(JoinPathSegments(new_dir, new_file), &writer));
   int num_calls = 0;
-  ASSERT_TRUE(env_->Walk(new_dir, Env::PRE_ORDER,
-                         Bind(&TestWalkErrorCb, &num_calls)).IsIOError());
+  ASSERT_TRUE(env_->Walk(
+      new_dir, Env::PRE_ORDER,
+      [&num_calls](Env::FileType type, const string& dirname, const string& basename) {
+        return TestWalkErrorCb(&num_calls, type, dirname, basename);
+      }).IsIOError());
 
   // Once for the directory and once for the file inside it.
   ASSERT_EQ(2, num_calls);

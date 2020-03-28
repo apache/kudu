@@ -1169,7 +1169,7 @@ class AtomicGauge : public Gauge {
 //  public:
 //   MyClassWithMetrics(const scoped_refptr<MetricEntity>& entity) {
 //     METRIC_my_metric.InstantiateFunctionGauge(entity,
-//       Bind(&MyClassWithMetrics::ComputeMyMetric, Unretained(this)))
+//       [this]() { return this->ComputeMyMetric(); })
 //       ->AutoDetach(&metric_detacher_);
 //   }
 //   ~MyClassWithMetrics() {

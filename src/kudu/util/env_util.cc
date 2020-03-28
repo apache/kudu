@@ -23,6 +23,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -32,7 +33,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
@@ -309,7 +309,11 @@ static Status DeleteTmpFilesRecursivelyCb(Env* env,
 }
 
 Status DeleteTmpFilesRecursively(Env* env, const string& path) {
-  return env->Walk(path, Env::PRE_ORDER, Bind(&DeleteTmpFilesRecursivelyCb, env));
+  return env->Walk(
+      path, Env::PRE_ORDER,
+      [env](Env::FileType type, const string& dirname, const string& basename) {
+        return DeleteTmpFilesRecursivelyCb(env, type, dirname, basename);
+      });
 }
 
 Status IsDirectoryEmpty(Env* env, const string& path, bool* is_empty) {

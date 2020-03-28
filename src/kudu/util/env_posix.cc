@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <functional>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -39,8 +40,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -1332,8 +1331,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status DeleteRecursively(const string &name) OVERRIDE {
-    return Walk(name, POST_ORDER, Bind(&PosixEnv::DeleteRecursivelyCb,
-                                       Unretained(this)));
+    return Walk(
+        name, POST_ORDER,
+        [this](FileType type, const string& dirname, const string& basename) -> Status {
+          return this->DeleteRecursivelyCb(type, dirname, basename);
+        });
   }
 
   virtual Status GetFileSize(const string& fname, uint64_t* size) OVERRIDE {
@@ -1373,9 +1375,11 @@ class PosixEnv : public Env {
                                               uint64_t* bytes_used) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::GetFileSizeOnDiskRecursively", "path", root);
     uint64_t total = 0;
-    RETURN_NOT_OK(Walk(root, Env::PRE_ORDER,
-                       Bind(&PosixEnv::GetFileSizeOnDiskRecursivelyCb,
-                            Unretained(this), &total)));
+    RETURN_NOT_OK(Walk(
+        root, PRE_ORDER,
+        [this, &total](FileType type, const string& dirname, const string& basename) -> Status {
+          return this->GetFileSizeOnDiskRecursivelyCb(&total, type, dirname, basename);
+        }));
     *bytes_used = total;
     return Status::OK();
   }
@@ -1625,7 +1629,7 @@ class PosixEnv : public Env {
           break;
       }
       if (doCb) {
-        if (!cb.Run(type, DirName(ent->fts_path), ent->fts_name).ok()) {
+        if (!cb(type, DirName(ent->fts_path), ent->fts_name).ok()) {
           had_errors = true;
         }
       }
@@ -1891,7 +1895,7 @@ class PosixEnv : public Env {
   }
 
   Status GetFileSizeOnDiskRecursivelyCb(uint64_t* bytes_used,
-                                        Env::FileType type,
+                                        FileType type,
                                         const string& dirname,
                                         const string& basename) {
     uint64_t file_bytes_used = 0;
