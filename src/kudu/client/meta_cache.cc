@@ -38,7 +38,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -495,7 +494,7 @@ void MetaCacheServerPicker::LookUpTabletCb(const ServerPickedCallback& callback,
 
   // If we couldn't lookup the tablet call the user callback immediately.
   if (!status.ok()) {
-    callback.Run(status, nullptr);
+    callback(status, nullptr);
     return;
   }
 
@@ -509,7 +508,7 @@ void MetaCacheServerPicker::LookUpTabletCb(const ServerPickedCallback& callback,
 void MetaCacheServerPicker::InitProxyCb(const ServerPickedCallback& callback,
                                         RemoteTabletServer* replica,
                                         const Status& status) {
-  callback.Run(status, replica);
+  callback(status, replica);
 }
 
 

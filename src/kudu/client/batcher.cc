@@ -45,7 +45,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -733,7 +733,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
       MetaCache::LookupType::kPoint,
       &op->tablet,
       [self, op_raw](const Status& s) { self->TabletLookupFinished(op_raw, s); });
-  IgnoreResult(op.release());
+  ignore_result(op.release());
 
   buffer_bytes_used_.IncrementBy(write_op->SizeInBuffer());
 

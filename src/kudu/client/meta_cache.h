@@ -164,9 +164,9 @@ class MetaCacheServerPicker : public rpc::ServerPicker<RemoteTabletServer> {
                       const Status& status);
 
   // Called when the proxy is initialized.
-  void InitProxyCb(const ServerPickedCallback& callback,
-                   RemoteTabletServer* replica,
-                   const Status& status);
+  static void InitProxyCb(const ServerPickedCallback& callback,
+                          RemoteTabletServer* replica,
+                          const Status& status);
 
   // Lock protecting accesses/updates to 'followers_'.
   mutable simple_spinlock lock_;

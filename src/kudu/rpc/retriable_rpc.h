@@ -21,7 +21,6 @@
 
 #include <boost/bind.hpp>
 
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -162,9 +161,11 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
   if (sequence_number_ == RequestTracker::kNoSeqNo) {
     CHECK_OK(request_tracker_->NewSeqNo(&sequence_number_));
   }
-  server_picker_->PickLeader(Bind(&RetriableRpc::ReplicaFoundCb,
-                                  Unretained(this)),
-                             retrier().deadline());
+  server_picker_->PickLeader(
+      [this](const Status& status, Server* server) {
+        this->ReplicaFoundCb(status, server);
+      },
+      retrier().deadline());
 }
 
 template <class Server, class RequestPB, class ResponsePB>

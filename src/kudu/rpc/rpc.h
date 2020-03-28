@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -90,7 +89,7 @@ class ServerPicker : public RefCountedThreadSafe<ServerPicker<Server>> {
  public:
   virtual ~ServerPicker() {}
 
-  typedef Callback<void(const Status& status, Server* server)> ServerPickedCallback;
+  typedef std::function<void(const Status&, Server*)> ServerPickedCallback;
 
   // Picks the leader among the replicas serving a resource.
   // If the leader was found, it calls the callback with Status::OK() and

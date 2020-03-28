@@ -32,7 +32,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/response_callback.h"
@@ -90,13 +89,13 @@ class TestServerPicker : public ServerPicker<CalculatorServiceProxy> {
  public:
   explicit TestServerPicker(CalculatorServiceProxy* proxy) : proxy_(proxy) {}
 
-  void PickLeader(const ServerPickedCallback& callback, const MonoTime& deadline) override {
-    callback.Run(Status::OK(), proxy_);
+  void PickLeader(const ServerPickedCallback& callback, const MonoTime& /*deadline*/) override {
+    callback(Status::OK(), proxy_);
   }
 
-  void MarkServerFailed(CalculatorServiceProxy*, const Status&) override {}
-  void MarkReplicaNotLeader(CalculatorServiceProxy*) override {}
-  void MarkResourceNotFound(CalculatorServiceProxy*) override {}
+  void MarkServerFailed(CalculatorServiceProxy* /*server*/, const Status& /*status*/) override {}
+  void MarkReplicaNotLeader(CalculatorServiceProxy* /*replica*/) override {}
+  void MarkResourceNotFound(CalculatorServiceProxy* /*replica*/) override {}
 
  private:
   CalculatorServiceProxy* proxy_;
