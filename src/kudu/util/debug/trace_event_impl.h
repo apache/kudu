@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <stack>
@@ -16,7 +17,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
@@ -436,7 +436,6 @@ class TraceLog {
   float GetBufferPercentFull() const;
   bool BufferIsFull() const;
 
-  // Not using kudu::Callback because of its limited by 7 parameters.
   // Also, using primitive type allows directly passing callback from WebCore.
   // WARNING: It is possible for the previously set callback to be called
   // after a call to SetEventCallbackEnabled() that replaces or a call to
@@ -470,8 +469,8 @@ class TraceLog {
   // done when tracing is enabled. If called when tracing is enabled, the
   // callback will be called directly with (empty_string, false) to indicate
   // the end of this unsuccessful flush.
-  typedef kudu::Callback<void(const scoped_refptr<kudu::RefCountedString>&,
-                              bool has_more_events)> OutputCallback;
+  typedef std::function<void(const scoped_refptr<kudu::RefCountedString>&,
+                             bool has_more_events)> OutputCallback;
   void Flush(const OutputCallback& cb);
   void FlushButLeaveBufferIntact(const OutputCallback& flush_output_callback);
 
@@ -523,7 +522,7 @@ class TraceLog {
                                 TraceEventHandle handle);
 
   // For every matching event, the callback will be called.
-  typedef kudu::Callback<void()> WatchEventCallback;
+  typedef std::function<void()> WatchEventCallback;
   void SetWatchEvent(const std::string& category_name,
                      const std::string& event_name,
                      const WatchEventCallback& callback);

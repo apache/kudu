@@ -21,8 +21,6 @@
 
 #include <gflags/gflags.h>
 
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -871,11 +869,15 @@ string TraceResultBuffer::FlushTraceLogToStringButLeaveBufferIntact() {
 
 string TraceResultBuffer::DoFlush(bool leave_intact) {
   TraceResultBuffer buf;
+  auto* buf_ptr = &buf;
   TraceLog* tl = TraceLog::GetInstance();
+  auto cb = [buf_ptr](const scoped_refptr<RefCountedString>& s, bool has_more_events) {
+    buf_ptr->Collect(s, has_more_events);
+  };
   if (leave_intact) {
-    tl->FlushButLeaveBufferIntact(Bind(&TraceResultBuffer::Collect, Unretained(&buf)));
+    tl->FlushButLeaveBufferIntact(cb);
   } else {
-    tl->Flush(Bind(&TraceResultBuffer::Collect, Unretained(&buf)));
+    tl->Flush(cb);
   }
   buf.json_.append("]}\n");
   return buf.json_;
@@ -908,7 +910,7 @@ void TraceResultBuffer::Collect(
 ////////////////////////////////////////////////////////////////////////////////
 class TraceBucketData;
 
-typedef Callback<void(TraceBucketData*)> TraceSampleCallback;
+typedef std::function<void(TraceBucketData*)> TraceSampleCallback;
 
 class TraceBucketData {
  public:
@@ -930,7 +932,7 @@ class TraceSamplingThread {
 
   void ThreadMain();
 
-  static void DefaultSamplingCallback(TraceBucketData* bucekt_data);
+  static void DefaultSamplingCallback(TraceBucketData* bucket_data);
 
   void Stop();
 
@@ -990,7 +992,7 @@ void TraceSamplingThread::DefaultSamplingCallback(
 void TraceSamplingThread::GetSamples() {
   for (auto& sample_bucket : sample_buckets_) {
     TraceBucketData* bucket_data = &sample_bucket;
-    bucket_data->callback.Run(bucket_data);
+    bucket_data->callback(bucket_data);
   }
 }
 
@@ -1349,15 +1351,15 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
       sampling_thread_->RegisterSampleBucket(
           &g_trace_state[0],
           "bucket0",
-          Bind(&TraceSamplingThread::DefaultSamplingCallback));
+          &TraceSamplingThread::DefaultSamplingCallback);
       sampling_thread_->RegisterSampleBucket(
           &g_trace_state[1],
           "bucket1",
-          Bind(&TraceSamplingThread::DefaultSamplingCallback));
+          &TraceSamplingThread::DefaultSamplingCallback);
       sampling_thread_->RegisterSampleBucket(
           &g_trace_state[2],
           "bucket2",
-          Bind(&TraceSamplingThread::DefaultSamplingCallback));
+          &TraceSamplingThread::DefaultSamplingCallback);
 
       Status s = Thread::CreateWithFlags(
           "tracing", "sampler",
@@ -1559,8 +1561,8 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
     // - deschedule the calling thread on some platforms causing inaccurate
     //   timing of the trace events.
     scoped_refptr<RefCountedString> empty_result = new RefCountedString;
-    if (!cb.is_null())
-      cb.Run(empty_result, false);
+    if (cb)
+      cb(empty_result, false);
     LOG(WARNING) << "Ignored TraceLog::Flush called when tracing is enabled";
     return;
   }
@@ -1620,7 +1622,7 @@ void TraceLog::ConvertTraceEventsToTraceFormat(
     unique_ptr<TraceBuffer> logged_events,
     const TraceLog::OutputCallback& flush_output_callback) {
 
-  if (flush_output_callback.is_null())
+  if (!flush_output_callback)
     return;
 
   // The callback need to be called at least once even if there is no events
@@ -1643,7 +1645,7 @@ void TraceLog::ConvertTraceEventsToTraceFormat(
       }
     }
 
-    flush_output_callback.Run(json_events_str_ptr, has_more_events);
+    flush_output_callback(json_events_str_ptr, has_more_events);
   } while (has_more_events);
   logged_events.reset();
 }
@@ -1673,7 +1675,7 @@ void TraceLog::FlushButLeaveBufferIntact(
     SpinLockHolder lock(&lock_);
     if (mode_ == DISABLED || (trace_options_ & RECORD_CONTINUOUSLY) == 0) {
       scoped_refptr<RefCountedString> empty_result = new RefCountedString;
-      flush_output_callback.Run(empty_result, false);
+      flush_output_callback(empty_result, false);
       LOG(WARNING) << "Ignored TraceLog::FlushButLeaveBufferIntact when monitoring is not enabled";
       return;
     }
@@ -1901,8 +1903,8 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
       watch_event_callback_copy = watch_event_callback_;
     }
     if (event_name_matches) {
-      if (!watch_event_callback_copy.is_null())
-        watch_event_callback_copy.Run();
+      if (watch_event_callback_copy)
+        watch_event_callback_copy();
     }
   }
 
@@ -2062,7 +2064,7 @@ void TraceLog::CancelWatchEvent() {
   SpinLockHolder lock(&lock_);
   base::subtle::NoBarrier_Store(&watch_category_, 0);
   watch_event_name_ = "";
-  watch_event_callback_.Reset();
+  watch_event_callback_ = nullptr;
 }
 
 void TraceLog::AddMetadataEventsWhileLocked() {
