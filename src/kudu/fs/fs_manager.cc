@@ -19,6 +19,7 @@
 
 #include <cinttypes>
 #include <ctime>
+#include <functional>
 #include <initializer_list>
 #include <iostream>
 #include <unordered_map>
@@ -37,8 +38,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -423,8 +422,10 @@ Status FsManager::Open(FsReport* report) {
   }
 
   // Set an initial error handler to mark data directories as failed.
-  error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
+  error_manager_->SetErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
+        this->dd_manager_->MarkDirFailedByUuid(uuid);
+      });
 
   // Finally, initialize and open the block manager if needed.
   if (!opts_.skip_block_manager) {

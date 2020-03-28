@@ -21,7 +21,6 @@
 #include <string>
 #include <utility>
 
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 
 using std::string;
@@ -33,9 +32,9 @@ namespace fs {
 static void DoNothingErrorNotification(const string& /* uuid */) {}
 
 FsErrorManager::FsErrorManager() {
-  InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, Bind(DoNothingErrorNotification));
-  InsertOrDie(&callbacks_, ErrorHandlerType::NO_AVAILABLE_DISKS, Bind(DoNothingErrorNotification));
-  InsertOrDie(&callbacks_, ErrorHandlerType::CFILE_CORRUPTION, Bind(DoNothingErrorNotification));
+  InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, &DoNothingErrorNotification);
+  InsertOrDie(&callbacks_, ErrorHandlerType::NO_AVAILABLE_DISKS, &DoNothingErrorNotification);
+  InsertOrDie(&callbacks_, ErrorHandlerType::CFILE_CORRUPTION, &DoNothingErrorNotification);
 }
 
 void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
@@ -45,12 +44,12 @@ void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificatio
 
 void FsErrorManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
   std::lock_guard<Mutex> l(lock_);
-  EmplaceOrUpdate(&callbacks_, e, Bind(DoNothingErrorNotification));
+  EmplaceOrUpdate(&callbacks_, e, &DoNothingErrorNotification);
 }
 
 void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e, const string& uuid) const {
   std::lock_guard<Mutex> l(lock_);
-  FindOrDie(callbacks_, e).Run(uuid);
+  FindOrDie(callbacks_, e)(uuid);
 }
 
 }  // namespace fs

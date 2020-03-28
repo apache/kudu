@@ -35,7 +35,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -169,9 +168,9 @@ Status Master::Start() {
 Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-                                      Bind(&Master::CrashMasterOnDiskError));
+                                      &CrashMasterOnDiskError);
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION,
-                                      Bind(&Master::CrashMasterOnCFileCorruption));
+                                      &CrashMasterOnCFileCorruption);
 
   RETURN_NOT_OK(maintenance_manager_->Start());
 

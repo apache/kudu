@@ -15,11 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/fs/error_manager.h"
+
+#include <cstdlib>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
 #include <sstream>
-#include <stdlib.h>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,9 +30,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/fs/error_manager.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
@@ -129,9 +129,10 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
 
   // Register a callback to update the first '-1' entry in test_vec_ to '0'
   // after waiting a random amount of time.
-  em()->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::DISK_ERROR));
+  em()->SetErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid);
+      });
   em()->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, "");
   ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK_ERROR));
 
@@ -141,9 +142,10 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
   ASSERT_EQ(-1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
 
   // Now register another callback.
-  em()->SetErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS,
-      Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::NO_AVAILABLE_DISKS));
+  em()->SetErrorNotificationCb(
+      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid);
+      });
   em()->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, "");
   ASSERT_EQ(1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
 
@@ -162,12 +164,14 @@ TEST_F(FsErrorManagerTest, TestBasicRegistration) {
 
 // Test that the callbacks get run serially.
 TEST_F(FsErrorManagerTest, TestSerialization) {
-  em()->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::DISK_ERROR));
-  em()->SetErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS,
-      Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::NO_AVAILABLE_DISKS));
+  em()->SetErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::DISK_ERROR, uuid);
+      });
+  em()->SetErrorNotificationCb(
+      ErrorHandlerType::NO_AVAILABLE_DISKS, [this](const string& uuid) {
+        this->SleepAndWriteFirstEmptyCb(ErrorHandlerType::NO_AVAILABLE_DISKS, uuid);
+      });
 
   // Swap back and forth between error-handler type.
   const auto IntToEnum = [&] (int i) {

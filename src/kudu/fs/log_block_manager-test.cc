@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <ostream>
@@ -45,8 +46,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager-test-util.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -1689,8 +1688,10 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
       DataDirManagerOptions(), &dd_manager_));
 
   // Wire in a callback to fail data directories.
-  error_manager_.SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
-      Bind(&DataDirManager::MarkDirFailedByUuid, Unretained(dd_manager_.get())));
+  error_manager_.SetErrorNotificationCb(
+      ErrorHandlerType::DISK_ERROR, [this](const string& uuid) {
+        this->dd_manager_->MarkDirFailedByUuid(uuid);
+      });
   bm_.reset(CreateBlockManager(nullptr));
 
   // Fail one of the directories, chosen randomly.
