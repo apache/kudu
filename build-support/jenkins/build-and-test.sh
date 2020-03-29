@@ -89,6 +89,13 @@
 #   KUDU_ALLOW_SKIPPED_TESTS Default: 0
 #     If set to 1, commits with changes that do not impact the build or tests exit early.
 #     Additionally, commits with "DONT_BUILD" in the commit message will exit early.
+#
+#   PARALLEL    Default: number of available cores
+#     Parallelism to use when compiling; by default is set to the number of
+#     available cores as reported by `getconf _NPROCESSORS_ONLN`. The latter
+#     might report total number of cores available to the _host_ OS in case of
+#     containerized VM instances: for optimal results, it's useful to override
+#     this variable to reflect actual restrictions.
 
 if [ "$KUDU_ALLOW_SKIPPED_TESTS" == "1" ]; then
   # If the commit only contains changes that do not impact the build or tests, exit immediately.
@@ -140,6 +147,7 @@ export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+export PARALLEL=${PARALLEL:-$(getconf _NPROCESSORS_ONLN)}
 BUILD_JAVA=${BUILD_JAVA:-1}
 BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
@@ -289,6 +297,8 @@ THIRDPARTY_TYPE=
 if [ "$BUILD_TYPE" = "TSAN" ]; then
   THIRDPARTY_TYPE=tsan
 fi
+
+# The settings for PARALLEL (see above) also affects the thirdparty build.
 $SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh $THIRDPARTY_TYPE
 
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
@@ -430,7 +440,7 @@ fi
 # Short circuit for TIDY builds: run the clang-tidy tool on the C++ source
 # files in the HEAD revision for the gerrit branch.
 if [ "$BUILD_TYPE" = "TIDY" ]; then
-  make -j$NUM_PROCS generated-headers 2>&1 | tee $TEST_LOGDIR/tidy.log
+  make -j$PARALLEL generated-headers 2>&1 | tee $TEST_LOGDIR/tidy.log
   $SOURCE_ROOT/build-support/clang_tidy_gerrit.py HEAD 2>&1 | \
       tee -a $TEST_LOGDIR/tidy.log
   exit $?
@@ -450,8 +460,7 @@ fi
 echo
 echo Building C++ code.
 echo ------------------------------------------------------------
-NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
-make -j$NUM_PROCS 2>&1 | tee build.log
+make -j$PARALLEL 2>&1 | tee build.log
 
 # If compilation succeeds, try to run all remaining steps despite any failures.
 set +e
@@ -477,7 +486,7 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
 fi
 
-if ! $THIRDPARTY_BIN/ctest -j$NUM_PROCS $EXTRA_TEST_FLAGS ; then
+if ! $THIRDPARTY_BIN/ctest -j$PARALLEL $EXTRA_TEST_FLAGS ; then
   TESTS_FAILED=1
   FAILURES="$FAILURES"$'C++ tests failed\n'
 fi
