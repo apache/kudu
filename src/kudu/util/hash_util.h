@@ -29,11 +29,22 @@
 
 namespace kudu {
 
-/// Utility class to compute hash values.
+// Constant imported from Apache Impala used to compute hash values for special cases. It's an
+// arbitrary constant obtained by taking lower bytes of generated UUID. Helps distinguish NULL
+// values from empty objects.
+// Impala uses the direct BlockBloomFilter API and inserts hash value directly using its own
+// implementation of the Fast hash. Hence the value must match with Impala.
+//
+// Note: Since address of this static constexpr variable is used, declaring this as
+//       a member variable of HashUtil requires an explicit definition in .cc file
+//       and this class is completely defined in the header file to allow inlining.
+static constexpr uint32_t kHashValNull = 0x58081667;
+
+// Utility class to compute hash values.
 class HashUtil {
  public:
 
-  /// Murmur2 hash implementation returning 64-bit hashes.
+  // Murmur2 hash implementation returning 64-bit hashes.
   ATTRIBUTE_NO_SANITIZE_INTEGER
   static uint64_t MurmurHash2_64(const void* input, int len, uint64_t seed) {
     static constexpr uint64_t MURMUR_PRIME = 0xc6a4a7935bd1e995UL;
@@ -75,9 +86,17 @@ class HashUtil {
   // FastHash is simple, robust, and efficient general-purpose hash function from Google.
   // Implementation is adapted from https://code.google.com/archive/p/fast-hash/
   //
+  // Adds special handling for nullptr input.
+  //
   // Compute 64-bit FastHash.
   ATTRIBUTE_NO_SANITIZE_INTEGER
   static uint64_t FastHash64(const void* buf, size_t len, uint64_t seed) {
+    // Special handling for nullptr input with possible non-zero length as could be the
+    // case with nullable column values.
+    if (buf == nullptr) {
+      buf = &kHashValNull;
+      len = sizeof(kHashValNull);
+    }
     static constexpr uint64_t kMultiplier = 0x880355f21e6d1965UL;
     const uint64_t* pos = static_cast<const uint64_t*>(buf);
     const uint64_t* end = pos + (len / 8);
@@ -131,7 +150,6 @@ class HashUtil {
   // Compute 32-bit hash of the supplied data using the specified hash algorithm.
   // Must be kept in sync with IsComputeHash32Available() function.
   static uint32_t ComputeHash32(const Slice& data, HashAlgorithm hash_algorithm, uint32_t seed) {
-    // TODO(bankim): Consider adding special handling for zero-length/NULL objects.
     switch (hash_algorithm) {
       case FAST_HASH:
         return FastHash32(data.data(), data.size(), seed);

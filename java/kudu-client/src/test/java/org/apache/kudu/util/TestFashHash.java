@@ -39,27 +39,39 @@ public class TestFashHash {
   public void testFastHash64() {
     long hash;
 
-    hash = HashUtil.fastHash64("ab".getBytes(UTF_8), 2, 0);
+    hash = HashUtil.fastHash64("ab".getBytes(UTF_8), 0);
     assertEquals(Long.parseUnsignedLong("17293172613997361769"), hash);
 
-    hash = HashUtil.fastHash64("abcdefg".getBytes(UTF_8), 7, 0);
+    hash = HashUtil.fastHash64("abcdefg".getBytes(UTF_8), 0);
     assertEquals(Long.parseUnsignedLong("10206404559164245992"), hash);
 
-    hash = HashUtil.fastHash64("quick brown fox".getBytes(UTF_8), 15, 42);
+    hash = HashUtil.fastHash64("quick brown fox".getBytes(UTF_8), 42);
     assertEquals(Long.parseUnsignedLong("3757424404558187042"), hash);
+
+    hash = HashUtil.fastHash64(null, 0);
+    assertEquals(Long.parseUnsignedLong("12680076593665652444"), hash);
+
+    hash = HashUtil.fastHash64("".getBytes(UTF_8), 0);
+    assertEquals(0, hash);
   }
 
   @Test
   public void testFastHash32() {
     int hash;
 
-    hash = HashUtil.fastHash32("ab".getBytes(UTF_8), 2, 0);
+    hash = HashUtil.fastHash32("ab".getBytes(UTF_8), 0);
     assertEquals(Integer.parseUnsignedInt("2564147595"), hash);
 
-    hash = HashUtil.fastHash32("abcdefg".getBytes(UTF_8), 7, 0);
+    hash = HashUtil.fastHash32("abcdefg".getBytes(UTF_8), 0);
     assertEquals(Integer.parseUnsignedInt("1497700618"), hash);
 
-    hash = HashUtil.fastHash32("quick brown fox".getBytes(UTF_8), 15, 42);
+    hash = HashUtil.fastHash32("quick brown fox".getBytes(UTF_8), 42);
     assertEquals(Integer.parseUnsignedInt("1676541068"), hash);
+
+    hash = HashUtil.fastHash32(null, 0);
+    assertEquals(Integer.parseUnsignedInt("842467426"), hash);
+
+    hash = HashUtil.fastHash32("".getBytes(UTF_8), 0);
+    assertEquals(0, hash);
   }
 }

@@ -21,18 +21,42 @@ package org.apache.kudu.util;
  * Hash utility functions.
  */
 public class HashUtil {
+  // Constant imported from Apache Impala used to compute hash values for special cases.
+  // It's an arbitrary constant obtained by taking lower bytes of generated UUID. Helps
+  // distinguish NULL values from empty objects.
+  // Impala uses the direct BlockBloomFilter C++ API and inserts hash value directly using
+  // its own implementation of the Fast hash. Hence the value must match with Impala.
+  // Though Impala will use C++ API, keeping the implementation of the Fast hash algorithm
+  // consistent across C++ and Java.
+  private static final int HASH_VAL_NULL = 0x58081667;
+  private static final byte[] HASH_VAL_NULL_BYTE_BUF = new byte[4];
+
+  static {
+    HASH_VAL_NULL_BYTE_BUF[0] = (byte) (HASH_VAL_NULL >>> 0);
+    HASH_VAL_NULL_BYTE_BUF[1] = (byte) (HASH_VAL_NULL >>> 8);
+    HASH_VAL_NULL_BYTE_BUF[2] = (byte) (HASH_VAL_NULL >>> 16);
+    HASH_VAL_NULL_BYTE_BUF[3] = (byte) (HASH_VAL_NULL >>> 24);
+  }
+
   /**
    * Compute 64-bit FastHash of the supplied data backed by byte array.
    *
    * FastHash is simple, robust, and efficient general-purpose hash function from Google.
    * Implementation is adapted from https://code.google.com/archive/p/fast-hash/
    *
+   * Adds special handling for null input.
+   *
    * @param buf the data to hash
-   * @param len length of the supplied data
    * @param seed seed to compute the hash
    * @return computed 64-bit hash value
    */
-  public static long fastHash64(final byte[] buf, int len, long seed) {
+  public static long fastHash64(byte[] buf, long seed) {
+    // Special handling for null input with possible non-zero length as could be the
+    // case with nullable column values.
+    if (buf == null) {
+      buf = HASH_VAL_NULL_BYTE_BUF;
+    }
+    final int len = buf.length;
     final long m = 0x880355f21e6d1965L;
     long h = seed ^ (len * m);
     long v;
@@ -89,15 +113,14 @@ public class HashUtil {
    * Implementation is adapted from https://code.google.com/archive/p/fast-hash/
    *
    * @param buf the data to compute the hash
-   * @param len length of the supplied data
    * @param seed seed to compute the hash
    * @return computed 32-bit hash value
    */
-  public static int fastHash32(final byte[] buf, int len, int seed) {
+  public static int fastHash32(byte[] buf, int seed) {
     // the following trick converts the 64-bit hashcode to Fermat
     // residue, which shall retain information from both the higher
     // and lower parts of hashcode.
-    long h = fastHash64(buf, len, seed);
+    long h = fastHash64(buf, seed);
     return (int)(h - (h >>> 32));
   }
 

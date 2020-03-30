@@ -57,6 +57,12 @@ TEST(HashUtilTest, TestFastHash64) {
 
   hash = HashUtil::FastHash64("quick brown fox", 15, 42);
   ASSERT_EQ(3757424404558187042UL, hash);
+
+  hash = HashUtil::FastHash64(nullptr, 0, 0);
+  ASSERT_EQ(12680076593665652444UL, hash);
+
+  hash = HashUtil::FastHash64("", 0, 0);
+  ASSERT_EQ(0, hash);
 }
 
 TEST(HashUtilTest, TestFastHash32) {
@@ -70,6 +76,12 @@ TEST(HashUtilTest, TestFastHash32) {
 
   hash = HashUtil::FastHash32("quick brown fox", 15, 42);
   ASSERT_EQ(1676541068U, hash);
+
+  hash = HashUtil::FastHash32(nullptr, 0, 0);
+  ASSERT_EQ(842467426U, hash);
+
+  hash = HashUtil::FastHash32("", 0, 0);
+  ASSERT_EQ(0, hash);
 }
 
 TEST(HashUtilTest, TestComputeHash32Available) {
