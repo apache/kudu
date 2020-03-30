@@ -334,8 +334,9 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
                                                    const ActionPB& action,
                                                    unordered_set<string>* table_names) {
   DCHECK(subprocess_);
+  // Return immediately if there is no tables to authorize against.
   if (table_names->empty()) {
-    return Status::InvalidArgument("Empty set of tables");
+    return Status::OK();
   }
 
   RangerRequestListPB req_list;

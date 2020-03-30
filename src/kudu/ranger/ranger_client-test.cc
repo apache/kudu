@@ -161,6 +161,12 @@ TEST_F(RangerClientTest, TestAuthorizeCreateTableAuthorized) {
 
 TEST_F(RangerClientTest, TestAuthorizeListNoTables) {
   unordered_set<string> tables;
+  ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
+  ASSERT_EQ(0, tables.size());
+}
+
+TEST_F(RangerClientTest, TestAuthorizeListNoTablesAuthorized) {
+  unordered_set<string> tables;
   tables.emplace("foo.bar");
   tables.emplace("foo.baz");
   auto s = client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables);
