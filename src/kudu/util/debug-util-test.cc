@@ -40,6 +40,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
@@ -53,6 +54,7 @@
 
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 DECLARE_int32(test_timeout_after);
 DECLARE_int32(stress_cpu_threads);
@@ -121,11 +123,16 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   // to start up and actually call our function.
   //
   // Note: due to RELEASE build inlining, we need to make sure to pick a stack
-  // frame that isn't optimized away.
-  static constexpr const char* kTestThreadStackFrame =
+  // frame that isn't optimized away. Different compilers behave differently, so
+  // we'll use a regular expression to get maximal coverage.
+  static constexpr const char* kTestThreadOneStackFrame =
+      "SleeperThread";
+  static constexpr const char* kTestThreadAnotherStackFrame =
       "kudu::ConditionVariable::WaitUntil()";
+  static const string kStackFrameRegExp = Substitute(
+      "$0|$1", kTestThreadOneStackFrame, kTestThreadAnotherStackFrame);
   ASSERT_EVENTUALLY([&]() {
-    ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
+    ASSERT_STR_MATCHES(DumpThreadStack(t->tid()), kStackFrameRegExp);
   });
 
   // Test that we can change the signal and that the stack traces still work,
@@ -140,7 +147,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR2));
 
   // Stack traces should work using the new handler.
-  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
+  ASSERT_STR_MATCHES(DumpThreadStack(t->tid()), kStackFrameRegExp);
 
   // Switch back to SIGUSR2 and ensure it changes back.
   ASSERT_OK(SetStackTraceSignal(SIGUSR2));
@@ -148,7 +155,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   ASSERT_FALSE(IsSignalHandlerRegistered(SIGHUP));
 
   // Stack traces should work using the new handler.
-  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), kTestThreadStackFrame);
+  ASSERT_STR_MATCHES(DumpThreadStack(t->tid()), kStackFrameRegExp);
 
   // Register our own signal handler on SIGHUP, and ensure that
   // we get a bad Status if we try to use it.
