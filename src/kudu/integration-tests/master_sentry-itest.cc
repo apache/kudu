@@ -48,6 +48,8 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/ranger/mini_ranger.h"
+#include "kudu/ranger/ranger.pb.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/user_credentials.h"
@@ -71,8 +73,10 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::hms::HmsClient;
 using kudu::master::AlterRoleGrantPrivilege;
@@ -85,6 +89,10 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::ResetAuthzCacheRequestPB;
 using kudu::master::ResetAuthzCacheResponsePB;
 using kudu::master::VOTER_REPLICA;
+using kudu::ranger::ActionPB;
+using kudu::ranger::AuthorizationPolicy;
+using kudu::ranger::MiniRanger;
+using kudu::ranger::PolicyItem;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using kudu::sentry::SentryClient;
@@ -92,6 +100,7 @@ using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
 using std::atomic;
 using std::function;
+using std::move;
 using std::ostream;
 using std::string;
 using std::thread;
@@ -99,6 +108,19 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+namespace {
+const char* const kAdminGroup = "admin";
+const char* const kAdminUser = "test-admin";
+const char* const kUserGroup = "user";
+const char* const kTestUser = "test-user";
+const char* const kImpalaUser = "impala";
+const char* const kDevRole = "developer";
+const char* const kAdminRole = "ad";
+const char* const kDatabaseName = "db";
+const char* const kTableName = "table";
+const char* const kSecondTable = "second_table";
+} // namespace
 
 namespace kudu {
 
@@ -130,17 +152,6 @@ struct PrivilegeParams {
 // integration enabled.
 class SentryITestBase : public HmsITestBase {
  public:
-  static const char* const kAdminGroup;
-  static const char* const kAdminUser;
-  static const char* const kUserGroup;
-  static const char* const kTestUser;
-  static const char* const kImpalaUser;
-  static const char* const kDevRole;
-  static const char* const kAdminRole;
-  static const char* const kDatabaseName;
-  static const char* const kTableName;
-  static const char* const kSecondTable;
-
   Status StopSentry() {
     RETURN_NOT_OK(sentry_client_->Stop());
     RETURN_NOT_OK(cluster_->sentry()->Stop());
@@ -359,16 +370,28 @@ class SentryITestBase : public HmsITestBase {
   unique_ptr<SentryClient> sentry_client_;
 };
 
-const char* const SentryITestBase::kAdminGroup = "admin";
-const char* const SentryITestBase::kAdminUser = "test-admin";
-const char* const SentryITestBase::kUserGroup = "user";
-const char* const SentryITestBase::kTestUser = "test-user";
-const char* const SentryITestBase::kImpalaUser = "impala";
-const char* const SentryITestBase::kDevRole = "developer";
-const char* const SentryITestBase::kAdminRole = "ad";
-const char* const SentryITestBase::kDatabaseName = "db";
-const char* const SentryITestBase::kTableName = "table";
-const char* const SentryITestBase::kSecondTable = "second_table";
+class RangerITestBase : public ExternalMiniClusterITestBase {
+ public:
+  void SetUp() override {
+    ExternalMiniClusterITestBase::SetUp();
+
+    cluster::ExternalMiniClusterOptions opts;
+    opts.enable_ranger = true;
+    opts.enable_kerberos = true;
+
+    StartClusterWithOpts(std::move(opts));
+    ranger_ = this->cluster_->ranger();
+
+    AuthorizationPolicy policy;
+    policy.databases.emplace_back(kDatabaseName);
+    policy.tables.emplace_back("*");
+    policy.items.emplace_back(PolicyItem({kAdminUser}, {ActionPB::ALL}));
+    ASSERT_OK(ranger_->AddPolicy(move(policy)));
+    SleepFor(MonoDelta::FromMilliseconds(1500));
+  }
+ private:
+  MiniRanger* ranger_;
+};
 
 // Functor that performs a certain operation (e.g. Create, Rename) on a table
 // given its name and its desired new name, if necessary (only used for Rename).
@@ -408,6 +431,44 @@ ostream& operator <<(ostream& out, const AuthzDescriptor& d) {
 // Test basic master authorization enforcement with Sentry and HMS integration
 // enabled.
 class MasterSentryTest : public SentryITestBase {};
+
+class MasterRangerTest : public RangerITestBase {};
+
+TEST_F(MasterRangerTest, TestCreateTableAuthorized) {
+  ASSERT_OK(cluster_->kdc()->Kinit(kAdminUser));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
+                    ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(Substitute("$0.$1",
+                                      kDatabaseName, kTableName))
+    .schema(&schema)
+    .num_replicas(1)
+    .set_range_partition_columns({"key"})
+    .Create());
+}
+
+TEST_F(MasterRangerTest, TestCreateTableUnauthorized) {
+  ASSERT_OK(cluster_->kdc()->Kinit(kTestUser));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
+                    ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_TRUE(table_creator->table_name(Substitute("$0.$1",
+                                        kDatabaseName, kTableName))
+    .schema(&schema)
+    .num_replicas(1)
+    .set_range_partition_columns({"key"})
+    .Create().IsNotAuthorized());
+}
 
 // Test that the trusted user can access the cluster without being authorized.
 TEST_F(MasterSentryTest, TestTrustedUserAcl) {
@@ -552,7 +613,7 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantCreateTablePrivilege,
         "CreateTable",
       },
-      SentryITestBase::kDatabaseName,
+      kDatabaseName,
       "new_table",
       ""
     },
@@ -562,8 +623,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantDropTablePrivilege,
         "DropTable",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -572,8 +633,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantAlterTablePrivilege,
         "AlterTable",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -582,8 +643,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantRenameTablePrivilege,
         "RenameTable",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       "new_table"
     },
     {
@@ -592,8 +653,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantGetMetadataTablePrivilege,
         "GetTableSchema",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -602,8 +663,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantGetMetadataTablePrivilege,
         "GetTableLocations",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -612,8 +673,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantGetMetadataTablePrivilege,
         "GetTabletLocations",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -622,8 +683,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantGetMetadataTablePrivilege,
         "IsCreateTableDone",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
     {
@@ -632,8 +693,8 @@ static const AuthzDescriptor kAuthzCombinations[] = {
         &SentryITestBase::GrantGetMetadataTablePrivilege,
         "IsAlterTableDone",
       },
-      SentryITestBase::kDatabaseName,
-      SentryITestBase::kTableName,
+      kDatabaseName,
+      kTableName,
       ""
     },
 };

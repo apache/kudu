@@ -51,6 +51,12 @@ typedef subprocess::SubprocessProxy<RangerRequestListPB, RangerResponseListPB,
                                     RangerSubprocessMetrics> RangerSubprocess;
 
 // A client for the Ranger service that communicates with a Java subprocess.
+//
+// The Ranger subprocess itself is configured using xml files, like
+// core-site.xml and ranger-kudu-security.xml. The only configuration that is
+// coming from this class are environmental, like Java binary location, location
+// of config files, and krb5.conf file (setting it doesn't enable Kerberos, that
+// depends on core-site.xml).
 class RangerClient {
  public:
   // Similar to SentryAuthorizableScope scope which indicates the

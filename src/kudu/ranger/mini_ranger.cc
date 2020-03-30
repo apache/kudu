@@ -85,29 +85,31 @@ Status MiniRanger::InitRanger(string admin_home, bool* fresh_install) {
   return Status::OK();
 }
 
-Status MiniRanger::CreateConfigs(const string& fqdn) {
+Status MiniRanger::CreateConfigs() {
   // Ranger listens on 2 ports:
   //
-  // - ranger_port_ is the RPC port (REST API) that the Ranger subprocess and
+  // - port_ is the RPC port (REST API) that the Ranger subprocess and
   //   EasyCurl can talk to
   // - ranger_shutdown_port is the port which Ranger listens on for a shutdown
   //   command. We're not using this shutdown port as we simply send a SIGTERM,
   //   but it's necessary to set it to a random value to avoid collisions in
   //   parallel testing.
-  RETURN_NOT_OK(GetRandomPort(&ranger_port_));
+  RETURN_NOT_OK(GetRandomPort(&port_));
   uint16_t ranger_shutdown_port;
   RETURN_NOT_OK(GetRandomPort(&ranger_shutdown_port));
   string admin_home = ranger_admin_home();
 
-  ranger_admin_url_ = Substitute("http://$0:$1", fqdn, ranger_port_);
+  ranger_admin_url_ = Substitute("http://127.0.0.1:$0", port_);
 
   // Write config files
   RETURN_NOT_OK(WriteStringToFile(
-      env_, GetRangerInstallProperties(bin_dir(), mini_pg_.bound_port()),
+      env_, GetRangerInstallProperties(bin_dir(), "127.0.0.1", mini_pg_.bound_port()),
       JoinPathSegments(admin_home, "install.properties")));
 
   RETURN_NOT_OK(WriteStringToFile(
-      env_, GetRangerAdminSiteXml(ranger_port_, mini_pg_.bound_port()),
+      env_, GetRangerAdminSiteXml("127.0.0.1", port_, "127.0.0.1", mini_pg_.bound_port(),
+                                  admin_ktpath_, lookup_ktpath_,
+                                  spnego_ktpath_),
       JoinPathSegments(admin_home, "ranger-admin-site.xml")));
 
   RETURN_NOT_OK(WriteStringToFile(
@@ -116,7 +118,7 @@ Status MiniRanger::CreateConfigs(const string& fqdn) {
         ranger_shutdown_port),
       JoinPathSegments(admin_home, "ranger-admin-default-site.xml")));
 
-  RETURN_NOT_OK(WriteStringToFile(env_, GetRangerCoreSiteXml(/*secure=*/ false),
+  RETURN_NOT_OK(WriteStringToFile(env_, GetRangerCoreSiteXml(kerberos_),
                                   JoinPathSegments(admin_home, "core-site.xml")));
 
   RETURN_NOT_OK(WriteStringToFile(env_, GetRangerLog4jProperties("info"),
@@ -144,7 +146,7 @@ Status MiniRanger::DbSetup(const string& admin_home, const string& ews_dir,
       { "RANGER_ADMIN_HOME", ranger_home_ },
       { "RANGER_ADMIN_CONF", admin_home },
       { "XAPOLICYMGR_DIR", admin_home },
-      { "RANGER_PID_DIR_PATH", ranger_home_ },
+      { "RANGER_PID_DIR_PATH", admin_home },
       });
   db_setup.SetCurrentDir(admin_home);
   RETURN_NOT_OK(db_setup.Start());
@@ -173,9 +175,7 @@ Status MiniRanger::StartRanger() {
 
     LOG(INFO) << "Starting Ranger out of " << kAdminHome;
 
-    string fqdn;
-    RETURN_NOT_OK(GetFQDN(&fqdn));
-    RETURN_NOT_OK(CreateConfigs(fqdn));
+    RETURN_NOT_OK(CreateConfigs());
 
     if (fresh_install) {
       RETURN_NOT_OK(DbSetup(kAdminHome, kEwsDir, kWebAppDir));
@@ -188,21 +188,26 @@ Status MiniRanger::StartRanger() {
 
     LOG(INFO) << "Using Ranger class path: " << classpath;
 
-    LOG(INFO) << "Using FQDN: " << fqdn;
-    process_.reset(new Subprocess({
+    std::vector<string> args({
         JoinPathSegments(java_home_, "bin/java"),
         "-Dproc_rangeradmin",
-        Substitute("-Dhostname=$0", fqdn),
+        "-Dhostname=127.0.0.1",
         Substitute("-Dlog4j.configuration=file:$0",
                    JoinPathSegments(kAdminHome, "log4j.properties")),
         "-Duser=miniranger",
-        Substitute("-Dranger.service.host=$0", fqdn),
+        "-Dranger.service.host=127.0.0.1",
         "-Dservername=miniranger",
         Substitute("-Dcatalina.base=$0", kEwsDir),
         Substitute("-Dlogdir=$0", JoinPathSegments(kAdminHome, "logs")),
         "-Dranger.audit.solr.bootstrap.enabled=false",
-        "-cp", classpath, "org.apache.ranger.server.tomcat.EmbeddedServer"
-    }));
+    });
+    if (kerberos_) {
+      args.emplace_back(Substitute("-Djava.security.krb5.conf=$0", krb5_config_));
+    }
+    args.emplace_back("-cp");
+    args.emplace_back(classpath);
+    args.emplace_back("org.apache.ranger.server.tomcat.EmbeddedServer");
+    process_.reset(new Subprocess(args));
     process_->SetEnvVars({
         { "XAPOLICYMGR_DIR", kAdminHome },
         { "XAPOLICYMGR_EWS_DIR", kEwsDir },
@@ -211,6 +216,7 @@ Status MiniRanger::StartRanger() {
         { "JAVA_HOME", java_home_ },
         { "RANGER_PID_DIR_PATH", JoinPathSegments(data_root_, "tmppid") },
         { "RANGER_ADMIN_PID_NAME", "rangeradmin.pid" },
+        { "RANGER_ADMIN_CONF_DIR", kAdminHome },
         { "RANGER_USER", "miniranger" },
     });
     RETURN_NOT_OK(process_->Start());
@@ -232,8 +238,13 @@ Status MiniRanger::CreateKuduService() {
   EasyJson service;
   service.Set("name", "kudu");
   service.Set("type", "kudu");
+  // The below config authorizes "kudu" to download the list of authorized users
+  // for policies and tags respectively.
+  EasyJson configs = service.Set("configs", EasyJson::kObject);
+  configs.Set("policy.download.auth.users", "kudu");
+  configs.Set("tag.download.auth.users", "kudu");
 
-  RETURN_NOT_OK_PREPEND(PostToRanger("service/plugins/services", std::move(service)),
+  RETURN_NOT_OK_PREPEND(PostToRanger("service/plugins/services", service),
                         "Failed to create Kudu service");
   LOG(INFO) << "Created Kudu service";
   return Status::OK();
@@ -299,6 +310,23 @@ Status MiniRanger::PostToRanger(string url, EasyJson payload) {
                                         std::move(payload.ToString()), &result,
                                         {"Content-Type: application/json"}),
                         Substitute("Error recceived from Ranger: $0", result.ToString()));
+  return Status::OK();
+}
+
+Status MiniRanger::CreateClientConfig(const string& client_config_path) {
+  auto policy_cache = JoinPathSegments(client_config_path, "policy-cache");
+  if (!env_->FileExists(client_config_path)) {
+    RETURN_NOT_OK(env_->CreateDir(client_config_path));
+    RETURN_NOT_OK(env_->CreateDir(policy_cache));
+  }
+
+  RETURN_NOT_OK(WriteStringToFile(env_, GetRangerCoreSiteXml(kerberos_),
+                                  JoinPathSegments(client_config_path, "core-site.xml")));
+  RETURN_NOT_OK(WriteStringToFile(env_, GetRangerKuduSecurityXml(policy_cache, "kudu",
+                                                                 ranger_admin_url_,
+                                                                 policy_poll_interval_ms_),
+                                  JoinPathSegments(client_config_path,
+                                                   "ranger-kudu-security.xml")));
   return Status::OK();
 }
 

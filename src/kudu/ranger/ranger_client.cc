@@ -18,6 +18,7 @@
 #include "kudu/ranger/ranger_client.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -43,10 +44,12 @@
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
-DEFINE_string(ranger_java_path, "java",
+DEFINE_string(ranger_java_path, "",
               "The path where the Java binary was installed. If "
-              "the value isn't an absolute path, it will be evaluated "
-              "using the Kudu user's PATH.");
+              "the value isn't an absolute path (e.g. 'java'), it will be "
+              "evaluated using the Kudu user's PATH. Empty string means "
+              "$JAVA_HOME/bin/java is used. If $JAVA_HOME is not found, Kudu "
+              "will attempt to find 'java' in $PATH.");
 TAG_FLAG(ranger_java_path, experimental);
 
 DEFINE_string(ranger_config_path, "",
@@ -133,6 +136,7 @@ DECLARE_string(principal);
 namespace kudu {
 namespace ranger {
 
+using kudu::security::GetKrb5ConfigFile;
 using kudu::subprocess::SubprocessMetrics;
 using std::move;
 using std::string;
@@ -162,12 +166,22 @@ static string GetJavaClasspath() {
   return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
 }
 
-
 static string ranger_fifo_base() {
   DCHECK(!FLAGS_ranger_config_path.empty());
   const string& fifo_dir = FLAGS_ranger_receiver_fifo_dir.empty() ?
       FLAGS_ranger_config_path : FLAGS_ranger_receiver_fifo_dir;
   return JoinPathSegments(fifo_dir, "ranger_receiever_fifo");
+}
+
+static string java_path() {
+  if (FLAGS_ranger_java_path.empty()) {
+    auto java_home = getenv("JAVA_HOME");
+    if (!java_home) {
+      return "java";
+    }
+    return JoinPathSegments(java_home, "bin/java");
+  }
+  return FLAGS_ranger_java_path;
 }
 
 // Builds the arguments to start the Ranger subprocess with the given receiver
@@ -178,7 +192,12 @@ static Status BuildArgv(const string& fifo_path, vector<string>* argv) {
   DCHECK(argv);
   DCHECK(!FLAGS_ranger_config_path.empty());
   // Pass the required arguments to run the Ranger subprocess.
-  vector<string> ret = { FLAGS_ranger_java_path, "-cp", GetJavaClasspath(), kMainClass };
+  vector<string> ret = { java_path() };
+
+  ret.emplace_back(Substitute("-Djava.security.krb5.conf=$0", GetKrb5ConfigFile()));
+  ret.emplace_back("-cp");
+  ret.emplace_back(GetJavaClasspath());
+  ret.emplace_back(kMainClass);
   // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
   // to the Ranger subprocess.
   if (!FLAGS_keytab_file.empty()) {
@@ -199,14 +218,14 @@ static Status BuildArgv(const string& fifo_path, vector<string>* argv) {
 static bool ValidateRangerConfiguration() {
   if (!FLAGS_ranger_config_path.empty()) {
     // First, check the specified path.
-    if (!Env::Default()->FileExists(FLAGS_ranger_java_path)) {
+    if (!Env::Default()->FileExists(java_path())) {
       // Otherwise, since the specified path is not absolute, check if
       // the Java binary is on the PATH.
       string p;
-      Status s = Subprocess::Call({ "which", FLAGS_ranger_java_path }, "", &p);
+      Status s = Subprocess::Call({ "which", java_path() }, "", &p);
       if (!s.ok()) {
         LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
-                                 FLAGS_ranger_java_path);
+                                 java_path());
         return false;
       }
     }

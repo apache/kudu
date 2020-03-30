@@ -507,6 +507,15 @@ Status InitKerberosForServer(const std::string& raw_principal, const std::string
   return Status::OK();
 }
 
+string GetKrb5ConfigFile() {
+  const char* config_file = getenv("KRB5_CONFIG");
+  if (!config_file) {
+    return "/etc/krb5.conf";
+  }
+
+  return string(config_file);
+}
+
 } // namespace security
 } // namespace kudu
 

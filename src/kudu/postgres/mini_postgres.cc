@@ -132,7 +132,7 @@ Status MiniPostgres::CreateConfigs() {
   string config_file = JoinPathSegments(pg_root(), "postgresql.conf");
   faststring config;
   ReadFileToString(env, config_file, &config);
-  config.append(Substitute("\nport=$0\n", port_));
+  config.append(Substitute("\nport = $0\n", port_));
   unique_ptr<WritableFile> file;
   RETURN_NOT_OK(env->NewWritableFile(config_file, &file));
   RETURN_NOT_OK(file->Append(config));

@@ -26,8 +26,8 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_util.h"
 #include "kudu/util/subprocess.h" // IWYU pragma: keep
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace postgres {

@@ -32,8 +32,8 @@ DECLARE_string(ranger_config_path);
 
 namespace kudu {
 
-class MetricEntity;
 class Env;
+class MetricEntity;
 
 namespace master {
 
@@ -46,7 +46,7 @@ using std::string;
 using std::unordered_set;
 
 RangerAuthzProvider::RangerAuthzProvider(Env* env,
-    const scoped_refptr<MetricEntity>& metric_entity) :
+                                         const scoped_refptr<MetricEntity>& metric_entity) :
   client_(env, metric_entity) {}
 
 Status RangerAuthzProvider::Start() {

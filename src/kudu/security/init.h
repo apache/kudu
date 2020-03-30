@@ -92,5 +92,13 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
 // with which one may Kinit.
 Status GetConfiguredPrincipal(const std::string& in_principal, std::string* out_principal);
 
+// Get the Kerberos config file location. It defaults to /etc/krb5.conf and it
+// can be overridden by the KRB5_CONFIG environment variable. As the Kerberos
+// libraries use the environment variable directly, this is not required
+// normally, but it can be useful if the file needs to be accessed directly
+// (e.g. when starting a Java subprocess, as Java doesn't respect the
+// environment variable).
+std::string GetKrb5ConfigFile();
+
 } // namespace security
 } // namespace kudu
