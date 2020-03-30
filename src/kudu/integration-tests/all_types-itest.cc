@@ -677,7 +677,7 @@ TYPED_TEST(AllTypesItest, TestAllKeyTypes) {
 TYPED_TEST(AllTypesItest, TestTimestampPadding) {
   vector<string> projection;
   this->SetupProjection(&projection);
-  auto scanner_setup = [&](KuduScanner* scanner) -> Status {
+  auto scanner_setup = [&](KuduScanner* scanner) {
     // Each time this function is called we shuffle the projection to get the chance
     // of having timestamps in different places of the projection and before/after
     // different types.

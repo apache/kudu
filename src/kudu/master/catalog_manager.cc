@@ -1303,7 +1303,7 @@ Status CatalogManager::VisitTablesAndTablets() {
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   std::lock_guard<LockType> l(lock_);
   unique_ptr<SysCatalogTable> new_catalog(new SysCatalogTable(
-      master_, [this]() -> Status { return this->ElectedAsLeaderCb(); }));
+      master_, [this]() { return this->ElectedAsLeaderCb(); }));
   if (is_first_run) {
     RETURN_NOT_OK(new_catalog->CreateNew(master_->fs_manager()));
   } else {

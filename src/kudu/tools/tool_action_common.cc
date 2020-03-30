@@ -445,7 +445,7 @@ Status PrintServerFlags(const string& address, uint16_t default_port) {
 
   std::sort(flags.begin(), flags.end(),
       [](const GetFlagsResponsePB::Flag& left,
-         const GetFlagsResponsePB::Flag& right) -> bool {
+         const GetFlagsResponsePB::Flag& right) {
         return left.name() < right.name();
       });
   DataTable table({ "flag", "value", "default value?", "tags" });

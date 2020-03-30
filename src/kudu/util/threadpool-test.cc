@@ -774,7 +774,7 @@ TEST_F(ThreadPoolTest, TestTokenConcurrency) {
   simple_spinlock lock;
 
   // Fetch a token from 'tokens' at random.
-  auto GetRandomToken = [&]() -> shared_ptr<ThreadPoolToken> {
+  auto GetRandomToken = [&]() {
     std::lock_guard<simple_spinlock> l(lock);
     int idx = rng.Uniform(kNumTokens);
     return tokens[idx];

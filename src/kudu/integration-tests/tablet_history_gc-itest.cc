@@ -141,7 +141,7 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   TestWorkload workload(cluster_.get());
   workload.Setup();
 
-  auto open_scanner_func = [](KuduClient* client) -> Status {
+  auto open_scanner_func = [](KuduClient* client) {
     shared_ptr<KuduTable> table;
     RETURN_NOT_OK(client->OpenTable(TestWorkload::kDefaultTableName, &table));
     KuduScanner scanner(table.get());

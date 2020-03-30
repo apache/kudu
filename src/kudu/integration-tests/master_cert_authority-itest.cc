@@ -376,7 +376,7 @@ class ConnectToClusterBaseTest : public KuduTest {
     builder.default_rpc_timeout(timeout);
     client::sp::shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(&builder, &client));
-    ASSERT_EQ(1, client->data_->messenger_-> tls_context().trusted_cert_count_for_tests());
+    ASSERT_EQ(1, client->data_->messenger_->tls_context().trusted_cert_count_for_tests());
     ASSERT_NE(boost::none, client->data_->messenger_->authn_token());
   }
 

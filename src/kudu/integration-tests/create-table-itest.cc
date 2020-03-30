@@ -280,7 +280,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
                               const string& table_name,
                               int32_t range_lower_bound,
                               int32_t range_upper_bound,
-                              const string& dimension_label) -> Status {
+                              const string& dimension_label) {
     unique_ptr<client::KuduTableCreator> table_creator(client->NewTableCreator());
     unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
     RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));
@@ -301,7 +301,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenlyWithDimension) {
                              const string& table_name,
                              int32_t range_lower_bound,
                              int32_t range_upper_bound,
-                             const string& dimension_label) -> Status {
+                             const string& dimension_label) {
     unique_ptr<client::KuduTableAlterer> table_alterer(client->NewTableAlterer(table_name));
     unique_ptr<KuduPartialRow> lower_bound(client_schema->NewRow());
     RETURN_NOT_OK(lower_bound->SetInt32("key2", range_lower_bound));

@@ -1333,7 +1333,7 @@ class PosixEnv : public Env {
   virtual Status DeleteRecursively(const string &name) OVERRIDE {
     return Walk(
         name, POST_ORDER,
-        [this](FileType type, const string& dirname, const string& basename) -> Status {
+        [this](FileType type, const string& dirname, const string& basename) {
           return this->DeleteRecursivelyCb(type, dirname, basename);
         });
   }
@@ -1377,7 +1377,7 @@ class PosixEnv : public Env {
     uint64_t total = 0;
     RETURN_NOT_OK(Walk(
         root, PRE_ORDER,
-        [this, &total](FileType type, const string& dirname, const string& basename) -> Status {
+        [this, &total](FileType type, const string& dirname, const string& basename) {
           return this->GetFileSizeOnDiskRecursivelyCb(&total, type, dirname, basename);
         }));
     *bytes_used = total;

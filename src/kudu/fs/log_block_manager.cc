@@ -1099,7 +1099,7 @@ Status LogBlockContainer::ProcessRecord(
 
 Status LogBlockContainer::DoCloseBlocks(const vector<LogWritableBlock*>& blocks,
                                         SyncMode mode) {
-  auto sync_blocks = [&]() -> Status {
+  auto sync_blocks = [&]() {
     if (mode == SYNC) {
       VLOG(3) << "Syncing data file " << data_file_->filename();
       RETURN_NOT_OK(SyncData());

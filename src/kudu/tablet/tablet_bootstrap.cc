@@ -532,7 +532,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     auto cb = make_scoped_refptr(new FlushInflightsToLogCallback(
         rebuilt_tablet->get(), *rebuilt_log));
     tablet_meta_->SetPreFlushCallback(
-        [cb]() -> Status { return cb->WaitForInflightsAndFlushLog(); });
+        [cb]() { return cb->WaitForInflightsAndFlushLog(); });
   }
 
   // This will cause any pending TabletMetadata flush to be executed.

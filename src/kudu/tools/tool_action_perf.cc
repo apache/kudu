@@ -543,7 +543,7 @@ void GeneratorThread(
   client::sp::shared_ptr<KuduSession> session(client->NewSession());
   int64_t idx = 0;
 
-  auto generator = [&]() -> Status {
+  auto generator = [&]() {
     const int64_t num_rows_per_gen = FLAGS_num_rows_per_thread;
     if (num_rows_per_gen == 0) {
       return Status::OK();

@@ -869,7 +869,7 @@ HealthCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
                                  tablet->id(), tablet->table()->name());
 
   auto leader_it = std::find_if(tablet->replicas().cbegin(), tablet->replicas().cend(),
-      [](const shared_ptr<KsckTabletReplica>& r) -> bool { return r->is_leader(); });
+      [](const shared_ptr<KsckTabletReplica>& r) { return r->is_leader(); });
   boost::optional<string> leader_uuid;
   if (leader_it != tablet->replicas().cend()) {
     leader_uuid = (*leader_it)->ts_uuid();

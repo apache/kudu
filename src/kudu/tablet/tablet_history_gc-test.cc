@@ -137,7 +137,7 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   // Returns a functor that returns whether all rows have 'expected_val' for
   // their values.
   static TestRowVerifier GenRowsEqualVerifier(int32_t expected_val) {
-    return [=](int32_t /*key*/, int32_t val) -> bool { return val == expected_val; };
+    return [=](int32_t /*key*/, int32_t val) { return val == expected_val; };
   }
   const TestRowVerifier kRowsEqual0 = GenRowsEqualVerifier(0);
   const TestRowVerifier kRowsEqual1 = GenRowsEqualVerifier(1);

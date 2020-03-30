@@ -219,7 +219,7 @@ TEST_F(TestRowSetTree, TestTreeRandomized) {
     BOUND_GREATER_EQUAL,
     BOUND_EQUAL
   };
-  const auto& GetStringPair = [] (const BoundOperator op) -> std::pair<string, string> {
+  const auto& GetStringPair = [] (const BoundOperator op) {
     while (true) {
       string s1 = Substitute("$0", rand() % 100);
       string s2 = Substitute("$0", rand() % 100);

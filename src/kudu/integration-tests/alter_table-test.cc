@@ -1776,7 +1776,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
                          ->wait(true)->Alter());
 
   // Turns an optional value into a row for the table.
-  auto fill_row = [&] (boost::optional<int32_t> value) -> unique_ptr<KuduPartialRow> {
+  auto fill_row = [&] (boost::optional<int32_t> value) {
     unique_ptr<KuduPartialRow> row(schema_.NewRow());
     if (value) {
       CHECK_OK(row->SetInt32("c0", *value));
@@ -1786,7 +1786,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
 
   // Attempts to add a range partition to the table with the specified bounds.
   auto add_range_partition = [&] (boost::optional<int32_t> lower_bound,
-                                  boost::optional<int32_t> upper_bound) -> Status {
+                                  boost::optional<int32_t> upper_bound) {
     table_alterer.reset(client_->NewTableAlterer(table_name));
     return table_alterer->AddRangePartition(fill_row(lower_bound).release(),
                                             fill_row(upper_bound).release())
@@ -1796,7 +1796,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
 
   // Attempts to drop a range partition to the table with the specified bounds.
   auto drop_range_partition = [&] (boost::optional<int32_t> lower_bound,
-                                   boost::optional<int32_t> upper_bound) -> Status {
+                                   boost::optional<int32_t> upper_bound) {
     table_alterer.reset(client_->NewTableAlterer(table_name));
     return table_alterer->DropRangePartition(fill_row(lower_bound).release(),
                                              fill_row(upper_bound).release())
@@ -1808,7 +1808,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
   auto add_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
                                    boost::optional<int32_t> a_upper_bound,
                                    boost::optional<int32_t> b_lower_bound,
-                                   boost::optional<int32_t> b_upper_bound) -> Status {
+                                   boost::optional<int32_t> b_upper_bound) {
     table_alterer.reset(client_->NewTableAlterer(table_name));
     return table_alterer->AddRangePartition(fill_row(a_lower_bound).release(),
                                             fill_row(a_upper_bound).release())
@@ -1822,7 +1822,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
   auto add_drop_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
                                         boost::optional<int32_t> a_upper_bound,
                                         boost::optional<int32_t> b_lower_bound,
-                                        boost::optional<int32_t> b_upper_bound) -> Status {
+                                        boost::optional<int32_t> b_upper_bound) {
     table_alterer.reset(client_->NewTableAlterer(table_name));
     return table_alterer->AddRangePartition(fill_row(a_lower_bound).release(),
                                             fill_row(a_upper_bound).release())

@@ -551,7 +551,7 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
 
   auto add_replica_func = [](const TSInfoPB& ts_info,
                              const RaftPeerPB::Role role,
-                             vector<const KuduReplica*>* replicas) -> Status {
+                             vector<const KuduReplica*>* replicas) {
     if (ts_info.rpc_addresses_size() == 0) {
       return Status::IllegalState(Substitute(
           "No RPC addresses found for tserver $0",

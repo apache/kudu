@@ -1131,7 +1131,7 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
   const int kNumBlocks = 1000;
 
   // Creates 'kNumBlocks' blocks with minimal data.
-  auto create_some_blocks = [&]() -> Status {
+  auto create_some_blocks = [&]() {
     for (int i = 0; i < kNumBlocks; i++) {
       unique_ptr<WritableBlock> block;
       RETURN_NOT_OK(bm_->CreateBlock(test_block_opts_, &block));

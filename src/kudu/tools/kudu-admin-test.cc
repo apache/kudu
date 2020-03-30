@@ -2509,7 +2509,7 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
   const auto add_range_partition_using_CLI = [&] (const string& lower_bound_json,
                                                   const string& upper_bound_json,
                                                   const string& lower_bound_type,
-                                                  const string& upper_bound_type) -> Status {
+                                                  const string& upper_bound_type) {
     string error, out;
     Status s = RunKuduTool({
       "table",
@@ -2528,7 +2528,7 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartition) {
   const auto drop_range_partition_using_CLI = [&] (const string& lower_bound_json,
                                                    const string& upper_bound_json,
                                                    const string& lower_bound_type,
-                                                   const string& upper_bound_type) -> Status {
+                                                   const string& upper_bound_type) {
     string error, out;
     Status s = RunKuduTool({
       "table",

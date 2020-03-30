@@ -2012,7 +2012,7 @@ TEST_P(AuthzTokenMasterTest, TestGenerateAuthzTokens) {
   FLAGS_master_support_authz_tokens = supports_authz;
   const char* kTableName = "testtb";
   const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
-  const auto send_req = [&] (GetTableSchemaResponsePB* resp) -> Status {
+  const auto send_req = [&] (GetTableSchemaResponsePB* resp) {
     RpcController rpc;
     GetTableSchemaRequestPB req;
     req.mutable_table()->set_table_name(kTableName);

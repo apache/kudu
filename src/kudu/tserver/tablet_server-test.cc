@@ -302,11 +302,11 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "log_dir";
           }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "help";
           }));
   }
@@ -318,15 +318,15 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "log_dir";
           }));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "help";
           }));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "logemaillevel";
           }));
   }
@@ -338,15 +338,15 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "log_dir";
           }));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "help";
           }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+          [](const server::GetFlagsResponsePB::Flag& flag) {
             return flag.name() == "logemaillevel";
           }));
   }
@@ -360,15 +360,15 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                            [](const server::GetFlagsResponsePB::Flag& flag) {
                                 return flag.name() == "log_dir";
                             }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "help";
                              }));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                            [](const server::GetFlagsResponsePB::Flag& flag) {
                                 return flag.name() == "logemaillevel";
                             }));
   }
@@ -382,15 +382,15 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "log_dir";
                              }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "help";
                              }));
     EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
-                            [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                            [](const server::GetFlagsResponsePB::Flag& flag) {
                                 return flag.name() == "logemaillevel";
                             }));
   }
@@ -404,15 +404,15 @@ TEST_F(TabletServerTest, TestGetFlags) {
     ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
     SCOPED_TRACE(SecureDebugString(resp));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "log_dir";
                              }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "help";
                              }));
     EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
-                             [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+                             [](const server::GetFlagsResponsePB::Flag& flag) {
                                  return flag.name() == "logemaillevel";
                              }));
   }

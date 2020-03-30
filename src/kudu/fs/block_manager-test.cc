@@ -941,7 +941,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
 
   // Creates a block with the given 'test_data', writing the result
   // to 'out' on success.
-  auto create_a_block = [&](BlockId* out, const string& test_data) -> Status {
+  auto create_a_block = [&](BlockId* out, const string& test_data) {
     unique_ptr<WritableBlock> block;
     RETURN_NOT_OK(this->bm_->CreateBlock(this->test_block_opts_, &block));
     for (int i = 0; i < kNumAppends; i++) {
@@ -957,7 +957,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   // Reads a block given by 'id', comparing its contents. Note that
   // we need to compare with both kLongTestData and kShortTestData as we
   // do not know the blocks' content ahead.
-  auto read_a_block = [&](const BlockId& id) -> Status {
+  auto read_a_block = [&](const BlockId& id) {
     unique_ptr<ReadableBlock> block;
     RETURN_NOT_OK(this->bm_->OpenBlock(id, &block));
     uint64_t size;

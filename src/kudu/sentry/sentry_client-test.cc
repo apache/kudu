@@ -72,8 +72,8 @@ TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
 
   ASSERT_OK(client.Start(vector<HostPort>({sentry_->address()}),
                          sentry_client_opts));
-  auto smoketest = [&]() -> Status {
-    return client.Execute([](SentryClient* client) -> Status {
+  auto smoketest = [&]() {
+    return client.Execute([](SentryClient* client) {
         TCreateSentryRoleRequest create_req;
         create_req.requestorUserName = "test-admin";
         create_req.roleName = "test-role";

@@ -717,7 +717,7 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
       FLAGS_raft_heartbeat_interval_ms * FLAGS_leader_failure_max_missed_heartbeat_periods;
 
   // Get the LEADER master.
-  const auto GetLeaderMaster = [&] () -> Master* {
+  const auto GetLeaderMaster = [&] () {
     int idx = 0;
     Master* master = nullptr;
     Status s = cluster_->GetLeaderMasterIndex(&idx);
@@ -727,7 +727,7 @@ TEST_F(TsTabletManagerITest, TestTableStats) {
     return CHECK_NOTNULL(master);
   };
   // Get the LEADER master's service proxy.
-  const auto GetLeaderMasterServiceProxy = [&] () -> shared_ptr<MasterServiceProxy> {
+  const auto GetLeaderMasterServiceProxy = [&]() {
     const auto& addr = GetLeaderMaster()->first_rpc_address();
     shared_ptr<MasterServiceProxy> proxy(
         new MasterServiceProxy(client_messenger_, addr, addr.host()));

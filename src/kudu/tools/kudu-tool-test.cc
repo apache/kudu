@@ -5333,7 +5333,7 @@ TEST_F(ToolTest, TestReplaceTablet) {
       ts = ts_map_[cluster_->tablet_server(i)->uuid()];
       ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablet_ids));
       ASSERT_TRUE(std::none_of(tablet_ids.begin(), tablet_ids.end(),
-            [&](const string& tablet_id) -> bool { return tablet_id == old_tablet_id; }));
+            [&](const string& tablet_id) { return tablet_id == old_tablet_id; }));
     }
   });
 

@@ -630,8 +630,7 @@ Status ModifyRangePartition(const RunnerContext& context, PartitionAction action
 
   const auto convert_bounds_type = [&] (const string& range_bound,
                                         const string& flags_range_bound_type,
-                                        KuduTableCreator::RangePartitionBound* range_bound_type)
-      -> Status {
+                                        KuduTableCreator::RangePartitionBound* range_bound_type) {
     string inclusive_bound = boost::iequals(flags_range_bound_type, "INCLUSIVE_BOUND") ?
         "INCLUSIVE_BOUND" : "";
     string exclusive_bound = boost::iequals(flags_range_bound_type, "EXCLUSIVE_BOUND") ?

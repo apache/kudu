@@ -400,7 +400,7 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   // client.
   options.verify_service_config = true;
 
-  auto start_client = [&options] (Sockaddr addr) -> Status {
+  auto start_client = [&options] (Sockaddr addr) {
     HmsClient client(HostPort(addr), options);
     return client.Start();
   };
