@@ -165,7 +165,11 @@ SANITIZER_HOOK_ATTRIBUTE const char *__tsan_default_suppressions() {
   // This is carried out by OPENSSL_cleanup, but TSAN's unwinder doesn't
   // include any stack frame above the libcrypto lock destruction or memory release
   // call for some reason, so we have to do something more generic.
-  "called_from_lib:libcrypto.so\n";
+  "called_from_lib:libcrypto.so\n"
+
+  // KUDU-2059: there may be outstanding reactor threads in DnsResolver at the
+  // time that the KuduClient (and DnsResolver) is destroyed.
+  "race:kudu::DnsResolver::ResolveAddressesAsync\n";
 }
 #endif  // THREAD_SANITIZER
 
