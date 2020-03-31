@@ -26,6 +26,7 @@
 #include <numeric>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -691,7 +692,9 @@ class ScanResultCollector {
   // request is decoded and checked for 'row_format_flags'.
   //
   // Does nothing by default.
-  virtual Status InitSerializer(uint64_t /* row_format_flags */) {
+  virtual Status InitSerializer(uint64_t /* row_format_flags */,
+                                const Schema& /* scanner_schema */,
+                                const Schema& /* client_schema */) {
     return Status::OK();
   }
 
@@ -754,6 +757,8 @@ class RowwiseResultSerializer : public ResultSerializer {
 
   int SerializeRowBlock(const RowBlock& row_block,
                         const Schema* client_projection_schema) override {
+    // TODO(todd) create some kind of serializer object that caches the projection
+    // information to avoid recalculating it on every SerializeRowBlock call.
     int num_selected = kudu::SerializeRowBlock(
         row_block, client_projection_schema,
         &rows_data_, &indirect_data_, pad_unixtime_micros_to_16_bytes_);
@@ -795,18 +800,21 @@ class RowwiseResultSerializer : public ResultSerializer {
 
 class ColumnarResultSerializer : public ResultSerializer {
  public:
-  static Status Create(uint64_t flags, unique_ptr<ResultSerializer>* serializer) {
+  static Status Create(uint64_t flags,
+                       const Schema& scanner_schema,
+                       const Schema& client_schema,
+                       unique_ptr<ResultSerializer>* serializer) {
     if (flags & ~RowFormatFlags::COLUMNAR_LAYOUT) {
       return Status::InvalidArgument("Row format flags not supported with columnar layout");
     }
-    serializer->reset(new ColumnarResultSerializer());
+    serializer->reset(new ColumnarResultSerializer(scanner_schema, client_schema));
     return Status::OK();
   }
 
   int SerializeRowBlock(const RowBlock& row_block,
-                        const Schema* client_projection_schema) override {
+                        const Schema* /* unused */) override {
     CHECK(!done_);
-    int n_sel = SerializeRowBlockColumnar(row_block, client_projection_schema, &results_);
+    int n_sel = results_.AddRowBlock(row_block);
     num_rows_ += n_sel;
     return n_sel;
   }
@@ -815,7 +823,7 @@ class ColumnarResultSerializer : public ResultSerializer {
     CHECK(!done_);
 
     int total = 0;
-    for (const auto& col : results_.columns) {
+    for (const auto& col : results_.columns()) {
       total += col.data.size();
       if (col.varlen_data) {
         total += col.varlen_data->size();
@@ -831,7 +839,8 @@ class ColumnarResultSerializer : public ResultSerializer {
     CHECK(!done_);
     done_ = true;
     ColumnarRowBlockPB* data = resp->mutable_columnar_data();
-    for (auto& col : results_.columns) {
+    auto cols = std::move(results_).TakeColumns();
+    for (auto& col : cols) {
       auto* col_pb = data->add_columns();
       int sidecar_idx;
       CHECK_OK(context->AddOutboundSidecar(
@@ -854,7 +863,10 @@ class ColumnarResultSerializer : public ResultSerializer {
   }
 
  private:
-  ColumnarResultSerializer() {}
+  ColumnarResultSerializer(const Schema& scanner_schema,
+                           const Schema& client_schema)
+      : results_(scanner_schema, client_schema) {
+  }
 
   int64_t num_rows_ = 0;
   ColumnarSerializedBatch results_;
@@ -898,14 +910,17 @@ class ScanResultCopier : public ScanResultCollector {
     return num_rows_returned_;
   }
 
-  Status InitSerializer(uint64_t row_format_flags) override {
+  Status InitSerializer(uint64_t row_format_flags,
+                        const Schema& scanner_schema,
+                        const Schema& client_schema) override {
     if (serializer_) {
       // TODO(todd) for the NewScanner case, this gets called twice
       // which is a bit ugly. Refactor to avoid!
       return Status::OK();
     }
     if (row_format_flags & COLUMNAR_LAYOUT) {
-      return ColumnarResultSerializer::Create(row_format_flags, &serializer_);
+      return ColumnarResultSerializer::Create(
+          row_format_flags, scanner_schema, client_schema, &serializer_);
     }
     serializer_.reset(new RowwiseResultSerializer(batch_size_bytes_, row_format_flags));
     return Status::OK();
@@ -2432,14 +2447,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",
                "tablet_id", scan_pb.tablet_id());
 
-  Status s = result_collector->InitSerializer(scan_pb.row_format_flags());
-  if (!s.ok()) {
-    *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
-    return s;
-  }
-
-  const Schema& tablet_schema = replica->tablet_metadata()->schema();
-
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(replica,
                                          rpc_context->remote_user(),
@@ -2455,7 +2462,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // Create the user's requested projection.
   // TODO(todd): Add test cases for bad projections including 0 columns.
   Schema projection;
-  s = ColumnPBsToSchema(scan_pb.projected_columns(), &projection);
+  Status s = ColumnPBsToSchema(scan_pb.projected_columns(), &projection);
   if (PREDICT_FALSE(!s.ok())) {
     *error_code = TabletServerErrorPB::INVALID_SCHEMA;
     return s;
@@ -2480,6 +2487,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     }
   }
 
+  const Schema& tablet_schema = replica->tablet_metadata()->schema();
+
   ScanSpec spec;
   s = SetupScanSpec(scan_pb, tablet_schema, scanner, &spec);
   if (PREDICT_FALSE(!s.ok())) {
@@ -2498,11 +2507,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // NOTE: We should build the missing column after optimizing scan which will
   // remove unnecessary predicates.
   vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
-  if (spec.CanShortCircuit()) {
-    VLOG(1) << "short-circuiting without creating a server-side scanner.";
-    *has_more_results = false;
-    return Status::OK();
-  }
 
   // Store the original projection.
   {
@@ -2550,6 +2554,20 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
   projection = projection_builder.BuildWithoutIds();
   VLOG(3) << "Scan projection: " << projection.ToString(Schema::BASE_INFO);
+
+  s = result_collector->InitSerializer(scan_pb.row_format_flags(),
+                                       projection,
+                                       *scanner->client_projection_schema());
+  if (!s.ok()) {
+    *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+    return s;
+  }
+
+  if (spec.CanShortCircuit()) {
+    VLOG(1) << "short-circuiting without creating a server-side scanner.";
+    *has_more_results = false;
+    return Status::OK();
+  }
 
   // It's important to keep the reference to the tablet for the case when the
   // tablet replica's shutdown is run concurrently with the code below.
@@ -2741,13 +2759,6 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
           << SecureShortDebugString(*req);
   TRACE("Found scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
 
-  // Set the row format flags on the ScanResultCollector.
-  s = result_collector->InitSerializer(scanner->row_format_flags());
-  if (!s.ok()) {
-    *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
-    return s;
-  }
-
   if (batch_size_bytes == 0 && req->close_scanner()) {
     *has_more_results = false;
     return Status::OK();
@@ -2761,11 +2772,20 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   RowwiseIterator* iter = scanner->iter();
 
+  // Set the row format flags on the ScanResultCollector.
+  s = result_collector->InitSerializer(scanner->row_format_flags(),
+                                       iter->schema(),
+                                       *scanner->client_projection_schema());
+  if (!s.ok()) {
+    *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+    return s;
+  }
+
   // TODO(todd): could size the RowBlock based on the user's requested batch size?
   // If people had really large indirect objects, we would currently overshoot
   // their requested batch size by a lot.
   Arena arena(32 * 1024);
-  RowBlock block(&scanner->iter()->schema(),
+  RowBlock block(&iter->schema(),
                  FLAGS_scanner_batch_size_rows, &arena);
 
   // TODO(todd): in the future, use the client timeout to set a budget. For now,

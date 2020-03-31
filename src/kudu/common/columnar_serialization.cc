@@ -587,34 +587,31 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
 } // anonymous namespace
 } // namespace internal
 
-int SerializeRowBlockColumnar(
-    const RowBlock& block,
-    const Schema* projection_schema,
-    ColumnarSerializedBatch* out) {
-  DCHECK_GT(block.nrows(), 0);
-  const Schema* tablet_schema = block.schema();
-
-  if (projection_schema == nullptr) {
-    projection_schema = tablet_schema;
-  }
-
+ColumnarSerializedBatch::ColumnarSerializedBatch(const Schema& rowblock_schema,
+                                                 const Schema& client_schema) {
   // Initialize buffers for the columns.
   // TODO(todd) don't pre-size these to 1MB per column -- quite
   // expensive if there are a lot of columns!
-  if (out->columns.size() != projection_schema->num_columns()) {
-    CHECK_EQ(out->columns.size(), 0);
-    out->columns.reserve(projection_schema->num_columns());
-    for (const auto& col : projection_schema->columns()) {
-      out->columns.emplace_back();
-      out->columns.back().data.reserve(1024 * 1024);
-      if (col.type_info()->physical_type() == BINARY) {
-        out->columns.back().varlen_data.emplace();
-      }
-      if (col.is_nullable()) {
-        out->columns.back().non_null_bitmap.emplace();
-      }
+  columns_.reserve(client_schema.num_columns());
+  for (const auto& schema_col : client_schema.columns()) {
+    columns_.emplace_back();
+    auto& col = columns_.back();
+
+    col.rowblock_schema_col_idx = rowblock_schema.find_column(schema_col.name());
+    CHECK_NE(col.rowblock_schema_col_idx, -1);
+
+    col.data.reserve(1024 * 1024);
+    if (schema_col.type_info()->physical_type() == BINARY) {
+      col.varlen_data.emplace();
+    }
+    if (schema_col.is_nullable()) {
+      col.non_null_bitmap.emplace();
     }
   }
+}
+
+int ColumnarSerializedBatch::AddRowBlock(const RowBlock& block) {
+  DCHECK_GT(block.nrows(), 0);
 
   SelectedRows sel = block.selection_vector()->GetSelectedRows();
   if (sel.num_selected() == 0) {
@@ -622,21 +619,18 @@ int SerializeRowBlockColumnar(
   }
 
   int col_idx = 0;
-  for (const auto& col : projection_schema->columns()) {
-    int t_schema_idx = tablet_schema->find_column(col.name());
-    CHECK_NE(t_schema_idx, -1);
-    const ColumnBlock& column_block = block.column_block(t_schema_idx);
-
+  for (const auto& col : columns_) {
+    const ColumnBlock& column_block = block.column_block(col.rowblock_schema_col_idx);
     if (column_block.type_info()->physical_type() == BINARY) {
       internal::CopySelectedVarlenCellsFromColumn(
           column_block,
           sel,
-          &out->columns[col_idx]);
+          &columns_[col_idx]);
     } else {
       internal::CopySelectedCellsFromColumn(
           column_block,
           sel,
-          &out->columns[col_idx]);
+          &columns_[col_idx]);
     }
     col_idx++;
   }

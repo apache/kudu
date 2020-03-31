@@ -306,13 +306,13 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
   }
 
   // Convert all of the RowBlocks to a single serialized (concatenated) columnar format.
-  ColumnarSerializedBatch batch;
+  ColumnarSerializedBatch batch(schema_, schema_);
   for (const auto& block : blocks) {
-    SerializeRowBlockColumnar(block, nullptr, &batch);
+    batch.AddRowBlock(block);
   }
 
   // Verify that the resulting serialized data matches the concatenated original data blocks.
-  ASSERT_EQ(5, batch.columns.size());
+  ASSERT_EQ(5, batch.columns().size());
   int dst_row_idx = 0;
   for (const auto& block : blocks) {
     for (int src_row_idx = 0; src_row_idx < block.nrows(); src_row_idx++) {
@@ -325,7 +325,7 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
       for (int c = 0; c < schema_.num_columns(); c++) {
         SCOPED_TRACE(c);
         const auto& col = schema_.column(c);
-        const auto& serialized_col = batch.columns[c];
+        const auto& serialized_col = batch.columns()[c];
         if (col.is_nullable()) {
           bool expect_null = row.is_null(c);;
           EXPECT_EQ(!BitmapTest(serialized_col.non_null_bitmap->data(), dst_row_idx),
@@ -464,8 +464,8 @@ struct RowwiseConverter {
 
 struct ColumnarConverter {
   static void Run(const RowBlock& block) {
-    ColumnarSerializedBatch batch;
-    SerializeRowBlockColumnar(block, nullptr, &batch);
+    ColumnarSerializedBatch batch(*block.schema(), *block.schema());
+    batch.AddRowBlock(block);
   }
 
   static constexpr const char* kName = "columnar";
