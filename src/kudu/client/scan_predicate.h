@@ -144,6 +144,7 @@ class KUDU_EXPORT KuduBloomFilterBuilder {
   /// @param [in] hash_algorithm
   ///   Hash algorithm used to hash keys before inserting to the Bloom filter.
   ///   If not provided, defaults to FAST_HASH.
+  /// @note Currently only FAST_HASH is supported.
   /// @return Reference to the updated object.
   KuduBloomFilterBuilder& hash_algorithm(HashAlgorithm hash_algorithm);
 
