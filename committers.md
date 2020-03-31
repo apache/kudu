@@ -37,6 +37,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | wdberkeley | William Berkeley | PMC |
 | yaoxu | Yao Xu | PMC |
 | yaozhang | Yao Zhang | PMC |
+| zhangyifan | Yifan Zhang | PMC |
 
 
 Committership is a recognition of an individual’s contribution within the
