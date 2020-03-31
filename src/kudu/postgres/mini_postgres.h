@@ -36,13 +36,14 @@ namespace postgres {
 // database connection (e.g. Apache Ranger).
 class MiniPostgres {
  public:
-  MiniPostgres()
-    : MiniPostgres(GetTestDataDirectory()) {}
+  explicit MiniPostgres(std::string host)
+    : MiniPostgres(GetTestDataDirectory(), std::move(host)) {}
 
   ~MiniPostgres();
 
-  explicit MiniPostgres(std::string data_root)
+  MiniPostgres(std::string data_root, std::string host)
     : data_root_(std::move(data_root)),
+      host_(std::move(host)),
       bin_dir_(GetBinDir()) {}
 
   Status Start();
@@ -88,6 +89,7 @@ class MiniPostgres {
 
   // Directory in which to put all our stuff.
   const std::string data_root_;
+  const std::string host_;
 
   // Directory that has the Postgres binary.
   // This may be in the thirdparty build, or may be shared across tests. As

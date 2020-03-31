@@ -437,12 +437,12 @@ Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
   return Status::OK();
 }
 
-Status GetRandomPort(uint16_t* port) {
-  Sockaddr address;
-  address.ParseString("127.0.0.1", 0);
+Status GetRandomPort(const string& address, uint16_t* port) {
+  Sockaddr sockaddr;
+  sockaddr.ParseString(address, 0);
   Socket listener;
   RETURN_NOT_OK(listener.Init(0));
-  RETURN_NOT_OK(listener.Bind(address));
+  RETURN_NOT_OK(listener.Bind(sockaddr));
   Sockaddr listen_address;
   RETURN_NOT_OK(listener.GetSocketAddress(&listen_address));
   *port = listen_address.port();

@@ -63,14 +63,15 @@ struct AuthorizationPolicy {
 // Wrapper around Apache Ranger to be used in integration tests.
 class MiniRanger {
  public:
-  MiniRanger()
-    : MiniRanger(GetTestDataDirectory()) {}
+  explicit MiniRanger(std::string host)
+    : MiniRanger(GetTestDataDirectory(), std::move(host)) {}
 
   ~MiniRanger();
 
-  explicit MiniRanger(std::string data_root)
+  MiniRanger(std::string data_root, std::string host)
     : data_root_(std::move(data_root)),
-      mini_pg_(data_root_),
+      host_(std::move(host)),
+      mini_pg_(data_root_, host_),
       kerberos_(false),
       env_(Env::Default()) {
         curl_.set_auth(CurlAuthType::BASIC, "admin", "admin");
@@ -149,6 +150,7 @@ class MiniRanger {
 
   // Directory in which to put all our stuff.
   const std::string data_root_;
+  const std::string host_;
 
   postgres::MiniPostgres mini_pg_;
   std::unique_ptr<Subprocess> process_;

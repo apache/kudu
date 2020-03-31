@@ -94,20 +94,22 @@ Status MiniRanger::CreateConfigs() {
   //   command. We're not using this shutdown port as we simply send a SIGTERM,
   //   but it's necessary to set it to a random value to avoid collisions in
   //   parallel testing.
-  RETURN_NOT_OK(GetRandomPort(&port_));
+  if (port_ == 0) {
+    RETURN_NOT_OK(GetRandomPort(host_, &port_));
+  }
   uint16_t ranger_shutdown_port;
-  RETURN_NOT_OK(GetRandomPort(&ranger_shutdown_port));
+  RETURN_NOT_OK(GetRandomPort(host_, &ranger_shutdown_port));
   string admin_home = ranger_admin_home();
 
-  ranger_admin_url_ = Substitute("http://127.0.0.1:$0", port_);
+  ranger_admin_url_ = Substitute("http://$0:$1", host_, port_);
 
   // Write config files
   RETURN_NOT_OK(WriteStringToFile(
-      env_, GetRangerInstallProperties(bin_dir(), "127.0.0.1", mini_pg_.bound_port()),
+      env_, GetRangerInstallProperties(bin_dir(), host_, mini_pg_.bound_port()),
       JoinPathSegments(admin_home, "install.properties")));
 
   RETURN_NOT_OK(WriteStringToFile(
-      env_, GetRangerAdminSiteXml("127.0.0.1", port_, "127.0.0.1", mini_pg_.bound_port(),
+      env_, GetRangerAdminSiteXml(host_, port_, host_, mini_pg_.bound_port(),
                                   admin_ktpath_, lookup_ktpath_,
                                   spnego_ktpath_),
       JoinPathSegments(admin_home, "ranger-admin-site.xml")));
@@ -188,14 +190,15 @@ Status MiniRanger::StartRanger() {
 
     LOG(INFO) << "Using Ranger class path: " << classpath;
 
+    LOG(INFO) << "Using host: " << host_;
     std::vector<string> args({
         JoinPathSegments(java_home_, "bin/java"),
         "-Dproc_rangeradmin",
-        "-Dhostname=127.0.0.1",
+        Substitute("-Dhostname=$0", host_),
         Substitute("-Dlog4j.configuration=file:$0",
                    JoinPathSegments(kAdminHome, "log4j.properties")),
         "-Duser=miniranger",
-        "-Dranger.service.host=127.0.0.1",
+        Substitute("-Dranger.service.host=$0", host_),
         "-Dservername=miniranger",
         Substitute("-Dcatalina.base=$0", kEwsDir),
         Substitute("-Dlogdir=$0", JoinPathSegments(kAdminHome, "logs")),

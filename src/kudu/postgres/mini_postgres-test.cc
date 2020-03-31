@@ -17,6 +17,8 @@
 
 #include "kudu/postgres/mini_postgres.h"
 
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "kudu/util/status.h"
@@ -27,6 +29,9 @@ namespace kudu {
 namespace postgres {
 class PostgresTest : public KuduTest {
  public:
+  PostgresTest()
+    : postgres_("127.0.0.1") {}
+
   void SetUp() override {
     postgres_.Start();
   }

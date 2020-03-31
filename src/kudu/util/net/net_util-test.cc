@@ -209,7 +209,7 @@ TEST_F(NetUtilTest, TestGetFQDN) {
 
 TEST_F(NetUtilTest, TestGetRandomPort) {
   uint16_t port;
-  ASSERT_OK(GetRandomPort(&port));
+  ASSERT_OK(GetRandomPort("127.0.0.1", &port));
   LOG(INFO) << "Random port is " << port;
 }
 

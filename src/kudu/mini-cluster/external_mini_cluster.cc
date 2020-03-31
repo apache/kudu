@@ -335,8 +335,10 @@ Status ExternalMiniCluster::Start() {
   }
 
   if (opts_.enable_ranger) {
-    ranger_.reset(new ranger::MiniRanger(cluster_root()));
-    string host = "127.0.0.1";
+    string host = GetBindIpForExternalServer(0);
+    ranger_.reset(new ranger::MiniRanger(cluster_root(), host));
+    // We're using the same service index as Sentry as they can't be both
+    // started at the same time.
     if (opts_.enable_kerberos) {
 
       // The SPNs match the ones defined in mini_ranger_configs.h.

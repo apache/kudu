@@ -35,6 +35,8 @@ namespace ranger {
 
 class MiniRangerTest : public KuduTest {
  public:
+  MiniRangerTest()
+    : ranger_("127.0.0.1") {}
   void SetUp() override {
     ASSERT_OK(ranger_.Start());
   }

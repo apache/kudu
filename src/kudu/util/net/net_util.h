@@ -232,12 +232,13 @@ enum class BindMode {
   LOOPBACK
 };
 
-// Gets a random port from the ephemeral range by binding to port 0 and letting
-// the kernel choose an unused one from the ephemeral port range. The socket is
-// then immediately closed and it remains in TIME_WAIT for 2*tcp_fin_timeout (by
-// default 2*60=120 seconds). The kernel won't assign this port until it's in
-// TIME_WAIT but it can still be used by binding it explicitly.
-Status GetRandomPort(uint16_t* port);
+// Gets a random port from the ephemeral range by binding to port 0 on address
+// 'address' and letting the kernel choose an unused one from the ephemeral port
+// range. The socket is then immediately closed and it remains in TIME_WAIT for
+// 2*tcp_fin_timeout (by default 2*60=120 seconds). The kernel won't assign this
+// port until it's in TIME_WAIT but it can still be used by binding it
+// explicitly.
+Status GetRandomPort(const std::string& address, uint16_t* port);
 
 #if defined(__APPLE__)
   static constexpr const BindMode kDefaultBindMode = BindMode::LOOPBACK;
