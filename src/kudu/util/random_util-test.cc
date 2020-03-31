@@ -19,13 +19,16 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <ostream>
 #include <unordered_set>
+#include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
@@ -77,6 +80,26 @@ TEST_F(RandomUtilTest, TestRandomString) {
   CheckEmpty(start, 0, 0, kLenMax);
 }
 
+// Static helper function for testing generation of random numbers in range.
+// CreateRandomUniqueIntegers() doesn't support 128-bit integers yet. Hence a separate
+// template function instead of member of TemplateRandomUtilTest class.
+// TODO(bankim): Once CreateRandomIntegersInRange() supports 128-bit integers make it a
+//               member function of TemplateRandomUtilTest class.
+template <typename IntType>
+static void RunCreateRandomIntegersInRangerHelper(int num_trials, IntType min_val, IntType max_val,
+                                                  Random* rng) {
+  static constexpr int kMaxNumVals = 1000;
+  for (int i = 0; i < num_trials; ++i) {
+    int num_vals = rng->Uniform(kMaxNumVals);
+    auto vals = CreateRandomIntegersInRange<IntType>(num_vals, min_val, max_val, rng);
+    ASSERT_EQ(num_vals, vals.size());
+    for (const auto& v : vals) {
+      ASSERT_GE(v, min_val);
+      ASSERT_LT(v, max_val);
+    }
+  }
+}
+
 template<typename IntType>
 class TemplateRandomUtilTest : public RandomUtilTest {
  public:
@@ -95,6 +118,15 @@ class TemplateRandomUtilTest : public RandomUtilTest {
       }
     }
   }
+
+  void RunCreateRandomIntegersInRange() {
+    static constexpr IntType min_val = std::numeric_limits<IntType>::min();
+    static constexpr IntType max_val = std::numeric_limits<IntType>::max();
+    // Exercise entire range.
+    RunCreateRandomIntegersInRangerHelper(kNumTrials, min_val, max_val, &rng_);
+    // Exercise partial range.
+    RunCreateRandomIntegersInRangerHelper(kNumTrials, min_val / 2, max_val / 2, &rng_);
+  }
 };
 
 // Testing with char, short data-types will result in compile-time error, as expected.
@@ -104,6 +136,24 @@ TYPED_TEST_CASE(TemplateRandomUtilTest, IntTypes);
 
 TYPED_TEST(TemplateRandomUtilTest, RunCreateRandomUniqueIntegers) {
   this->RunCreateRandomUniqueIntegers();
+}
+
+TYPED_TEST(TemplateRandomUtilTest, RunCreateRandomIntegersInRange) {
+  this->RunCreateRandomIntegersInRange();
+}
+
+// TODO(bankim): CreateRandomUniqueIntegers() doesn't support 128-bit integers yet.
+//               Once it does add int128_t and uint128_t types to IntTypes and use
+//               templatized TemplateRandomUtilTest instead.
+TEST_F(RandomUtilTest, RunCreateRandom128BitIntegersInRange) {
+  // Exercise entire range.
+  RunCreateRandomIntegersInRangerHelper<int128_t>(kNumTrials, INT128_MIN, INT128_MAX, &rng_);
+  RunCreateRandomIntegersInRangerHelper<uint128_t>(kNumTrials, 0, UINT128_MAX, &rng_);
+
+  // Exercise partial range.
+  RunCreateRandomIntegersInRangerHelper<int128_t>(kNumTrials, INT128_MIN / 2, INT128_MAX / 2,
+                                                  &rng_);
+  RunCreateRandomIntegersInRangerHelper<uint128_t>(kNumTrials, 0, UINT128_MAX / 2, &rng_);
 }
 
 } // namespace kudu

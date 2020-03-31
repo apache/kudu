@@ -12,6 +12,7 @@
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/locks.h"
 
 namespace kudu {
@@ -82,6 +83,16 @@ class Random {
     return large;
   }
 
+  // Next pseudo-random 128-bit unsigned integer.
+  uint128_t Next128() {
+    uint128_t large = Next64();
+    large <<= 64U;
+    large |= Next64();
+    // Next64() provides entire range of numbers up to 64th bit.
+    // So unlike Next64(), no need to fill MSB bit(s).
+    return large;
+  }
+
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
   uint32_t Uniform(uint32_t n) { return Next() % n; }
@@ -92,6 +103,9 @@ class Random {
   // Returns a uniformly distributed 64-bit value in the range [0..n-1]
   // REQUIRES: n > 0
   uint64_t Uniform64(uint64_t n) { return Next64() % n; }
+
+  // Returns a uniformly distributed 128-bit value in the range [0..n-1]
+  uint128_t Uniform128(uint128_t n) { return Next128() % n; }
 
   // Randomly returns true ~"1/n" of the time, and false otherwise.
   // REQUIRES: n > 0
@@ -140,6 +154,11 @@ class ThreadSafeRandom {
     return random_.Next64();
   }
 
+  uint128_t Next128() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return random_.Next128();
+  }
+
   uint32_t Uniform(uint32_t n) {
     std::lock_guard<simple_spinlock> l(lock_);
     return random_.Uniform(n);
@@ -153,6 +172,11 @@ class ThreadSafeRandom {
   uint64_t Uniform64(uint64_t n) {
     std::lock_guard<simple_spinlock> l(lock_);
     return random_.Uniform64(n);
+  }
+
+  uint128_t Uniform128(uint128_t n) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return random_.Uniform128(n);
   }
 
   bool OneIn(int n) {
@@ -207,18 +231,35 @@ inline double Random::Normal(double mean, double std_dev) {
 }
 
 // Generate next random integer with data-type specified by IntType template
-// parameter which must be a 32-bit or 64-bit integer. This constexpr function
+// parameter which must be a 32-bit, 64-bit, or 128-bit unsigned integer. This constexpr function
 // is useful when generating random numbers in a loop with template parameter
-// and avoids the run-time cost of determining Next32() v/s Next64() in RNG.
+// and avoids the run-time cost of determining Next32() v/s Next64() v/s Next128() in RNG.
 //
 // Note: This constexpr function can't be a member function of
 // Random/ThreadSafeRandom class because it invokes non-const member function.
 template<typename IntType, class RNG>
 constexpr IntType GetNextRandom(RNG* rand) {
-  static_assert(
-      std::is_integral<IntType>::value && (sizeof(IntType) == 4 || sizeof(IntType) == 8),
-      "Only 32-bit and 64-bit integers supported");
-  return sizeof(IntType) == 4 ? rand->Next32() : rand->Next64();
+  // type_traits not defined for 128-bit int data types, hence not checking for integral value.
+  static_assert(sizeof(IntType) == 4 || sizeof(IntType) == 8 || sizeof(IntType) == 16,
+                "Only 32-bit, 64-bit, or 128-bit integers supported");
+
+  // if/switch statement disallowed in constexpr function in C++11.
+  return sizeof(IntType) == 4 ? rand->Next32() :
+                                sizeof(IntType) == 8 ? rand->Next64() : rand->Next128();
+}
+
+// Generate next random integer in the [0, n-1] range with data-type specified by IntType template
+// parameter which must be a 32-bit, 64-bit, or 128-bit unsigned integer.
+// Note: Same comments apply to this constexpr function as GetNextRandom() function above.
+template<typename IntType, class RNG>
+constexpr IntType GetNextUniformRandom(IntType n, RNG* rand) {
+  // type_traits not defined for 128-bit int data types, hence not checking for integral value.
+  static_assert(sizeof(n) == 4 || sizeof(n) == 8 || sizeof(n) == 16,
+                "Only 32-bit, 64-bit, or 128-bit integers generated");
+
+  // if/switch statement disallowed in constexpr function in C++11.
+  return sizeof(n) == 4 ? rand->Uniform32(n) :
+                          sizeof(n) == 8 ? rand->Uniform64(n) : rand->Uniform128(n);
 }
 
 }  // namespace kudu

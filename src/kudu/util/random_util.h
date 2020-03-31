@@ -27,6 +27,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/random.h"
 
 namespace kudu {
@@ -103,13 +104,13 @@ void ReservoirSample(const Collection& c, int k, const Set& avoid,
 
 // Generates random and unique 32-bit or 64-bit integers that are not present in
 // the "avoid" set.
+// TODO(bankim): Add support for 128-bit integers by providing hash value for 128-bit data types.
 template<typename IntType, class Set, class RNG>
 std::unordered_set<IntType> CreateRandomUniqueIntegers(const int num_values,
                                                        const Set& avoid,
                                                        RNG* rand) {
-  static_assert(
-      std::is_integral<IntType>::value && (sizeof(IntType) == 4 || sizeof(IntType) == 8),
-      "Only 32-bit and 64-bit integers generated");
+  static_assert(std::is_integral<IntType>::value && (sizeof(IntType) == 4 || sizeof(IntType) == 8),
+                "Only 32-bit or 64-bit integers generated");
 
   std::unordered_set<IntType> result;
   while (result.size() < num_values) {
@@ -123,6 +124,30 @@ std::unordered_set<IntType> CreateRandomUniqueIntegers(const int num_values,
   }
   return result;
 }
+
+// Generates random 32-bit, 64-bit, or 128-bit integers in the [min_val, max_val) range.
+template<typename IntType, class RNG>
+// When entire range is specified for signed IntType, result of max_val - min_val is -1
+// which when converted to unsigned type correctly represents the max value for the
+// same unsigned IntType. Variants of Uniform() in RNG work with unsigned types.
+// Hence the ASAN suppression.
+ATTRIBUTE_NO_SANITIZE_INTEGER
+std::vector<IntType> CreateRandomIntegersInRange(const int num_values,
+                                                 IntType min_val,
+                                                 IntType max_val,
+                                                 RNG* rand) {
+  // type_traits not defined for 128-bit int data types, hence not checking for integral value.
+  static_assert(sizeof(IntType) == 4 || sizeof(IntType) == 8 || sizeof(IntType) == 16,
+                "Only 32-bit, 64-bit, or 128-bit integers generated");
+  CHECK_LT(min_val, max_val);
+
+  std::vector<IntType> result(num_values);
+  for (auto& v : result) {
+    v = min_val + GetNextUniformRandom(max_val - min_val, rand);
+  }
+  return result;
+}
+
 
 } // namespace kudu
 
