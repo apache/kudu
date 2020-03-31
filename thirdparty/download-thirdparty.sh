@@ -449,11 +449,13 @@ fetch_and_patch \
  $GUMBO_QUERY_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/gumbo-query-namespace.patch"
 
-POSTGRES_PATCHLEVEL=0
+POSTGRES_PATCHLEVEL=1
 fetch_and_patch \
  $POSTGRES_NAME.tar.gz \
  $POSTGRES_SOURCE \
- $POSTGRES_PATCHLEVEL
+ $POSTGRES_PATCHLEVEL \
+ "patch -p0 < $TP_DIR/patches/postgres-root-can-run-initdb.patch" \
+ "patch -p0 < $TP_DIR/patches/postgres-no-check-root.patch"
 
 POSTGRES_JDBC_PATCHLEVEL=0
 fetch_and_patch \

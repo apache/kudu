@@ -1,0 +1,16 @@
+--- src/backend/main/main.c.orig	2020-03-30 22:07:28.000000000 -0700
++++ src/backend/main/main.c	2020-03-30 22:07:58.000000000 -0700
+@@ -190,13 +190,6 @@
+ 	}
+ 
+ 	/*
+-	 * Make sure we are not running as root, unless it's safe for the selected
+-	 * option.
+-	 */
+-	if (do_check_root)
+-		check_root(progname);
+-
+-	/*
+ 	 * Dispatch to one of various subprograms depending on first argument.
+ 	 */
+ 

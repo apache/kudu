@@ -1,0 +1,28 @@
+--- src/bin/initdb/initdb.c.orig	2020-03-30 20:56:39.000000000 -0700
++++ src/bin/initdb/initdb.c	2020-03-30 20:56:57.000000000 -0700
+@@ -637,25 +637,11 @@
+ 
+ /*
+  * find the current user
+- *
+- * on unix make sure it isn't root
+  */
+ static char *
+ get_id(void)
+ {
+ 	const char *username;
+-
+-#ifndef WIN32
+-	if (geteuid() == 0)			/* 0 is root's uid */
+-	{
+-		pg_log_error("cannot be run as root");
+-		fprintf(stderr,
+-				_("Please log in (using, e.g., \"su\") as the (unprivileged) user that will\n"
+-				  "own the server process.\n"));
+-		exit(1);
+-	}
+-#endif
+-
+ 	username = get_user_name_or_exit(progname);
+ 
+ 	return pg_strdup(username);
