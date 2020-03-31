@@ -111,6 +111,12 @@ Status RangerAuthzProvider::AuthorizeListTables(const string& user,
   }
 
   *checked_table_names = true;
+
+  // Return immediately if there is no tables to authorize against.
+  if (table_names->empty()) {
+    return Status::OK();
+  }
+
   // List tables requires 'METADATA ON TABLE' privilege on all tables being listed.
   return client_.AuthorizeActionMultipleTables(user, ActionPB::METADATA, table_names);
 }

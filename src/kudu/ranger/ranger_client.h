@@ -77,10 +77,8 @@ class RangerClient {
                          const std::string& table_name, Scope scope = Scope::TABLE)
       WARN_UNUSED_RESULT;
 
-  // Authorizes action on multiple tables. If there is at least one table that
-  // user is authorized to perform the action on, it sets 'table_names' to the
-  // tables the user is authorized to access and returns OK, NotAuthorized
-  // otherwise.
+  // Authorizes action on multiple tables. It sets 'table_names' to the
+  // tables the user is authorized to access and returns OK.
   Status AuthorizeActionMultipleTables(const std::string& user_name, const ActionPB& action,
                                        std::unordered_set<std::string>* table_names)
       WARN_UNUSED_RESULT;

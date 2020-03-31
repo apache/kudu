@@ -352,10 +352,6 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
                                                    const ActionPB& action,
                                                    unordered_set<string>* table_names) {
   DCHECK(subprocess_);
-  // Return immediately if there is no tables to authorize against.
-  if (table_names->empty()) {
-    return Status::OK();
-  }
 
   RangerRequestListPB req_list;
   RangerResponseListPB resp_list;
@@ -389,12 +385,6 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
     if (resp_list.responses(i).allowed()) {
       EmplaceOrDie(&allowed_tables, move(orig_table_names[i]));
     }
-  }
-
-  if (allowed_tables.empty()) {
-    LOG(WARNING) << Substitute("User $0 is not authorized to perform $1 on $2 tables",
-                               user_name, ActionPB_Name(action), table_names->size());
-    return Status::NotAuthorized(kUnauthorizedAction);
   }
 
   *table_names = move(allowed_tables);

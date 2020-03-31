@@ -170,9 +170,8 @@ TEST_F(RangerClientTest, TestAuthorizeListNoTablesAuthorized) {
   unordered_set<string> tables;
   tables.emplace("foo.bar");
   tables.emplace("foo.baz");
-  auto s = client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables);
-  ASSERT_TRUE(s.IsNotAuthorized());
-  ASSERT_EQ(2, tables.size());
+  ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
+  ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataSubsetOfTablesAuthorized) {
@@ -201,8 +200,8 @@ TEST_F(RangerClientTest, TestAuthorizeMetadataAllNonRanger) {
   unordered_set<string> tables;
   tables.emplace("foo.");
   tables.emplace(".bar");
-  auto s = client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables);
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
+  ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataNoneAuthorizedContainsNonRanger) {
@@ -211,8 +210,8 @@ TEST_F(RangerClientTest, TestAuthorizeMetadataNoneAuthorizedContainsNonRanger) {
   tables.emplace(".bar");
   tables.emplace("foo.bar");
   tables.emplace("foo.baz");
-  auto s = client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables);
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
+  ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataAllAuthorizedContainsNonRanger) {
