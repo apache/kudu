@@ -214,11 +214,6 @@ TEST_F(TokenSignerITest, TskMasterLeadershipChange) {
 //   * Make sure the TSK stays valid and can be used for token verification
 //     up to the very end of the token validity interval.
 TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
-  using std::all_of;
-  using std::bind;
-  using std::equal_to;
-  using std::placeholders::_1;
-
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
@@ -300,8 +295,8 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
         ASSERT_LT(token.expire_unix_epoch_seconds(), time_post);
       }
     }
-    if (all_of(expired_at_tserver.begin(), expired_at_tserver.end(),
-               bind(equal_to<bool>(), _1, true))) {
+    if (std::all_of(expired_at_tserver.begin(), expired_at_tserver.end(),
+                    [](bool i) { return i; })) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(500));
@@ -309,8 +304,8 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
 
   // The end-of-TSK-activity-interval authn token should have been successfully
   // validated by all tablet servers.
-  ASSERT_TRUE(all_of(valid_at_tserver.begin(), valid_at_tserver.end(),
-              bind(equal_to<bool>(), _1, true)));
+  ASSERT_TRUE(std::all_of(valid_at_tserver.begin(), valid_at_tserver.end(),
+                          [](bool i) { return i; }));
 
   while (WallTime_Now() < key_expire) {
     SleepFor(MonoDelta::FromMilliseconds(500));

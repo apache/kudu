@@ -59,8 +59,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -1147,7 +1145,7 @@ void CatalogManager::PrepareForLeadershipTask() {
         "Loading table and tablet metadata into memory";
     LOG(INFO) << kLoadMetaOpDescription << "...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kLoadMetaOpDescription) {
-      if (!check(std::bind(&CatalogManager::VisitTablesAndTabletsUnlocked, this),
+      if (!check([this]() { return this->VisitTablesAndTabletsUnlocked(); },
                  *consensus, term, kLoadMetaOpDescription).ok()) {
         return;
       }
@@ -1158,7 +1156,7 @@ void CatalogManager::PrepareForLeadershipTask() {
         "Initializing Kudu internal certificate authority";
     LOG(INFO) << kCaInitOpDescription << "...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kCaInitOpDescription) {
-      if (!check(std::bind(&CatalogManager::InitCertAuthority, this),
+      if (!check([this]() { return this->InitCertAuthority(); },
                  *consensus, term, kCaInitOpDescription).ok()) {
         return;
       }
@@ -1167,7 +1165,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     static const char* const kTskOpDescription = "Loading token signing keys";
     LOG(INFO) << kTskOpDescription << "...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kTskOpDescription) {
-      if (!check(std::bind(&CatalogManager::InitTokenSigner, this),
+      if (!check([this]() { return this->InitTokenSigner(); },
                  *consensus, term, kTskOpDescription).ok()) {
         return;
       }
@@ -1177,9 +1175,10 @@ void CatalogManager::PrepareForLeadershipTask() {
         "Initializing in-progress tserver states";
     LOG(INFO) << kTServerStatesDescription << "...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kTServerStatesDescription) {
-      if (!check(std::bind(&TSManager::ReloadTServerStates, master_->ts_manager(),
-                           sys_catalog_.get()),
-                 *consensus, term, kTServerStatesDescription).ok()) {
+      if (!check([this]() {
+            return this->master_->ts_manager()->ReloadTServerStates(this->sys_catalog_.get());
+          },
+          *consensus, term, kTServerStatesDescription).ok()) {
         return;
       }
     }
@@ -1189,8 +1188,8 @@ void CatalogManager::PrepareForLeadershipTask() {
           "Loading latest processed Hive Metastore notification log event ID";
       LOG(INFO) << kNotificationLogEventIdDescription << "...";
       LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kNotificationLogEventIdDescription) {
-        if (!check(std::bind(&CatalogManager::InitLatestNotificationLogEventId, this),
-                   *consensus, term, kNotificationLogEventIdDescription).ok()) {
+      if (!check([this]() { return this->InitLatestNotificationLogEventId(); },
+                 *consensus, term, kNotificationLogEventIdDescription).ok()) {
           return;
         }
       }
@@ -3373,7 +3372,7 @@ bool RetryingTSRpcTask::RescheduleWithBackoffDelay() {
   VLOG(1) << Substitute("Scheduling retry of $0 with a delay of $1 ms (attempt = $2)",
                         description(), delay_millis, attempt_);
   master_->messenger()->ScheduleOnReactor(
-      boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
+      [this](const Status& s) { this->RunDelayedTask(s); },
       MonoDelta::FromMilliseconds(delay_millis));
   return true;
 }
@@ -3512,7 +3511,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
                           type_name(), target_ts_desc_->ToString(), attempt,
                           SecureDebugString(req_));
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
-                                 boost::bind(&AsyncCreateReplica::RpcCallback, this));
+                                 [this]() { this->RpcCallback(); });
     return true;
   }
 
@@ -3610,7 +3609,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
                           type_name(), target_ts_desc_->ToString(), attempt,
                           SecureDebugString(req));
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
-                                 boost::bind(&AsyncDeleteReplica::RpcCallback, this));
+                                 [this]() { this->RpcCallback(); });
     return true;
   }
 
@@ -3697,7 +3696,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
                           type_name(), target_ts_desc_->ToString(), attempt,
                           SecureDebugString(req));
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
-                                boost::bind(&AsyncAlterTable::RpcCallback, this));
+                                [this]() { this->RpcCallback(); });
     return true;
   }
 
@@ -3927,7 +3926,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
                         type_name(), target_ts_desc_->ToString(), attempt,
                         SecureDebugString(req));
   consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
-                                      boost::bind(&AsyncAddReplicaTask::RpcCallback, this));
+                                      [this]() { this->RpcCallback(); });
   return true;
 }
 
@@ -3978,7 +3977,7 @@ bool AsyncEvictReplicaTask::SendRequest(int attempt) {
                         type_name(), target_ts_desc_->ToString(), attempt,
                         SecureDebugString(req));
   consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
-                                      boost::bind(&AsyncEvictReplicaTask::RpcCallback, this));
+                                      [this]() { this->RpcCallback(); });
   return true;
 }
 

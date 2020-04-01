@@ -72,7 +72,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
  public:
   typedef std::function<void(
       const Status& status,
-      const std::pair<Sockaddr, std::string> leader_master,
+      const std::pair<Sockaddr, std::string>& leader_master,
       const master::ConnectToMasterResponsePB& connect_response)> LeaderCallback;
   // The host and port of the leader master server is stored in
   // 'leader_master', which must remain valid for the lifetime of this

@@ -29,7 +29,6 @@
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -471,8 +470,10 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
-  Webserver::PrerenderedPathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics,
-                                                                   _1, _2);
+  auto callback = [metrics](const Webserver::WebRequest& req,
+                            Webserver::PrerenderedWebResponse* resp) {
+    WriteMetricsAsJson(metrics, req, resp);
+  };
   bool not_styled = false;
   bool not_on_nav_bar = false;
   bool is_on_nav_bar = true;

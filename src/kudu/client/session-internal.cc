@@ -17,11 +17,10 @@
 
 #include "kudu/client/session-internal.h"
 
+#include <functional>
 #include <mutex>
 #include <utility>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/batcher.h"
@@ -560,8 +559,10 @@ void KuduSession::Data::TimeBasedFlushTask(
   std::shared_ptr<rpc::Messenger> messenger(weak_messenger.lock());
   if (PREDICT_TRUE(messenger)) {
     messenger->ScheduleOnReactor(
-        boost::bind(&KuduSession::Data::TimeBasedFlushTask, _1,
-                    std::move(weak_messenger), std::move(weak_session), false),
+        [weak_messenger, weak_session](const Status& s) {
+          TimeBasedFlushTask(s, weak_messenger, weak_session,
+                             /*do_startup_check=*/ false);
+        },
         next_run);
   }
 }

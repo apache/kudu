@@ -46,6 +46,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -53,8 +54,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -311,8 +310,7 @@ void TpchRealWorld::LoadLineItemsThread(int i) {
   unique_ptr<RpcLineItemDAO> dao = GetInittedDAO();
   LineItemTsvImporter importer(GetNthLineItemFileName(i));
 
-  boost::function<void(KuduPartialRow*)> f =
-      boost::bind(&LineItemTsvImporter::GetNextLine, &importer, _1);
+  auto f = [&importer](KuduPartialRow* row) { importer.GetNextLine(row); };
   const string time_spent_msg = Substitute(
         "by thread $0 to load generated data into the database", i);
   LOG_TIMING(INFO, time_spent_msg) {

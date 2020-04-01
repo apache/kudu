@@ -17,9 +17,9 @@
 
 #include "kudu/tserver/tserver_path_handlers.h"
 
-#include <stdint.h>
-
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -29,7 +29,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -192,39 +191,57 @@ TabletServerPathHandlers::~TabletServerPathHandlers() {
 Status TabletServerPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler(
     "/scans", "Scans",
-    boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleScansPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablets", "Tablets",
-    boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleTabletsPage(req, resp);
+    },
     true /* styled */, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet", "",
-    boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleTabletPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPrerenderedPathHandler(
     "/transactions", "",
-    boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+      this->HandleTransactionsPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet-rowsetlayout-svg", "",
-    boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleTabletSVGPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/tablet-consensus-status", "",
-    boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleConsensusStatusPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/log-anchors", "",
-    boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleLogAnchorsPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/dashboards", "Dashboards",
-    boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleDashboardsPage(req, resp);
+    },
     true /* styled */, true /* is_on_nav_bar */);
   server->RegisterPathHandler(
     "/maintenance-manager", "",
-    boost::bind(&TabletServerPathHandlers::HandleMaintenanceManagerPage, this, _1, _2),
+    [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+      this->HandleMaintenanceManagerPage(req, resp);
+    },
     true /* styled */, false /* is_on_nav_bar */);
 
   return Status::OK();

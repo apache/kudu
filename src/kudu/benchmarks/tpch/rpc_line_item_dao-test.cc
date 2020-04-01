@@ -19,13 +19,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -140,12 +139,12 @@ class RpcLineItemDAOTest : public KuduTest {
 }; // class RpcLineItemDAOTest
 
 TEST_F(RpcLineItemDAOTest, TestInsert) {
-  dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
+  dao_->WriteLine([](KuduPartialRow* row) { BuildTestRow(1, 1, row); });
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
   for (int i = 2; i < 10; i++) {
     for (int y = 0; y < 5; y++) {
-      dao_->WriteLine(boost::bind(BuildTestRow, i, y, _1));
+      dao_->WriteLine([=](KuduPartialRow* row) { BuildTestRow(i, y, row); });
     }
   }
   dao_->FinishWriting();
@@ -159,11 +158,11 @@ TEST_F(RpcLineItemDAOTest, TestInsert) {
 }
 
 TEST_F(RpcLineItemDAOTest, TestUpdate) {
-  dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
+  dao_->WriteLine([](KuduPartialRow* row) { BuildTestRow(1, 1, row); });
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
 
-  dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
+  dao_->MutateLine([](KuduPartialRow* row) { UpdateTestRow(1, 1, 12345, row); });
   dao_->FinishWriting();
   unique_ptr<RpcLineItemDAO::Scanner> scanner;
   dao_->OpenScanner({ tpch::kQuantityColName }, &scanner);

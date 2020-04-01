@@ -17,12 +17,12 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <list>
 #include <memory>
 #include <string>
 #include <unordered_map>
 
-#include <boost/function.hpp> // IWYU pragma: keep
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/list_hook.hpp>
 #include <ev++.h>
@@ -39,10 +39,6 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-
-namespace boost {
-template <typename Signature> class function;
-}  // namespace boost
 
 namespace kudu {
 
@@ -81,7 +77,7 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
   ReactorTask();
 
   // Run the task. 'reactor' is guaranteed to be the current thread.
-  virtual void Run(ReactorThread *reactor) = 0;
+  virtual void Run(ReactorThread* reactor) = 0;
 
   // Abort the task, in the case that the reactor shut down before the
   // task could be processed. This may or may not run on the reactor thread
@@ -89,7 +85,7 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
   //
   // The Reactor guarantees that the Reactor lock is free when this
   // method is called.
-  virtual void Abort(const Status &abort_status) {}
+  virtual void Abort(const Status& abort_status) {}
 
   virtual ~ReactorTask();
 
@@ -106,7 +102,7 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
 //    receives a Status as its first argument.
 class DelayedTask : public ReactorTask {
  public:
-  DelayedTask(boost::function<void(const Status &)> func, MonoDelta when);
+  DelayedTask(std::function<void(const Status&)> func, MonoDelta when);
 
   // Schedules the task for running later but doesn't actually run it yet.
   void Run(ReactorThread* thread) override;
@@ -119,7 +115,7 @@ class DelayedTask : public ReactorTask {
   void TimerHandler(ev::timer& watcher, int revents);
 
   // User function to invoke when timer fires or when task is aborted.
-  const boost::function<void(const Status&)> func_;
+  const std::function<void(const Status&)> func_;
 
   // Delay to apply to this task.
   const MonoDelta when_;
@@ -148,7 +144,7 @@ class ReactorThread {
                                   ConnectionIdHash, ConnectionIdEqual>
       conn_multimap_t;
 
-  ReactorThread(Reactor *reactor, const MessengerBuilder &bld);
+  ReactorThread(Reactor* reactor, const MessengerBuilder& bld);
 
   // This may be called from another thread.
   Status Init();
@@ -167,14 +163,14 @@ class ReactorThread {
   void WakeThread();
 
   // libev callback for handling async notifications in our epoll thread.
-  void AsyncHandler(ev::async &watcher, int revents);
+  void AsyncHandler(ev::async& watcher, int revents);
 
   // libev callback for handling timer events in our epoll thread.
-  void TimerHandler(ev::timer &watcher, int revents);
+  void TimerHandler(ev::timer& watcher, int revents);
 
   // Register an epoll timer watcher with our event loop.
   // Does not set a timeout or start it.
-  void RegisterTimeout(ev::timer *watcher);
+  void RegisterTimeout(ev::timer* watcher);
 
   // This may be called from another thread.
   const std::string &name() const;
@@ -245,7 +241,7 @@ class ReactorThread {
   // The connection is not explicitly deleted -- shared_ptr reference counting
   // may hold on to the object after this, but callers should assume that it
   // _may_ be deleted by this call.
-  void DestroyConnection(Connection *conn, const Status &conn_status,
+  void DestroyConnection(Connection* conn, const Status& conn_status,
                          std::unique_ptr<ErrorStatusPB> rpc_error = {});
 
   // Scan any open connections for idle ones that have been idle longer than
@@ -254,10 +250,10 @@ class ReactorThread {
   void ScanIdleConnections();
 
   // Create a new client socket (non-blocking, NODELAY)
-  static Status CreateClientSocket(Socket *sock);
+  static Status CreateClientSocket(Socket* sock);
 
   // Initiate a new connection on the given socket.
-  static Status StartConnect(Socket *sock, const Sockaddr &remote);
+  static Status StartConnect(Socket* sock, const Sockaddr& remote);
 
   // Assign a new outbound call to the appropriate connection object.
   // If this fails, the call is marked failed and completed.
@@ -268,7 +264,7 @@ class ReactorThread {
   // Also mark the call as slated for cancellation so the callback
   // may be invoked early if the RPC hasn't yet been sent or if it's
   // waiting for a response from the remote.
-  void CancelOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void CancelOutboundCall(const std::shared_ptr<OutboundCall>& call);
 
   // Register a new connection.
   void RegisterConnection(scoped_refptr<Connection> conn);
@@ -349,7 +345,7 @@ class Reactor {
  public:
   Reactor(std::shared_ptr<Messenger> messenger,
           int index,
-          const MessengerBuilder &bld);
+          const MessengerBuilder& bld);
   Status Init();
 
   // Shuts down the reactor and its corresponding thread, optionally waiting
@@ -358,10 +354,10 @@ class Reactor {
 
   ~Reactor();
 
-  const std::string &name() const;
+  const std::string& name() const;
 
   // Collect metrics about the reactor.
-  Status GetMetrics(ReactorMetrics *metrics);
+  Status GetMetrics(ReactorMetrics* metrics);
 
   // Add any connections on this reactor thread into the given status dump.
   Status DumpConnections(const DumpConnectionsRequestPB& req,
@@ -370,14 +366,14 @@ class Reactor {
   // Queue a new incoming connection. Takes ownership of the underlying fd from
   // 'socket', but not the Socket object itself.
   // If the reactor is already shut down, takes care of closing the socket.
-  void RegisterInboundSocket(Socket *socket, const Sockaddr &remote);
+  void RegisterInboundSocket(Socket* socket, const Sockaddr& remote);
 
   // Queue a new call to be sent. If the reactor is already shut down, marks
   // the call as failed.
-  void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void QueueOutboundCall(std::shared_ptr<OutboundCall> call);
 
   // Queue a new reactor task to cancel an outbound call.
-  void QueueCancellation(const std::shared_ptr<OutboundCall> &call);
+  void QueueCancellation(std::shared_ptr<OutboundCall> call);
 
   // Schedule the given task's Run() method to be called on the
   // reactor thread.
@@ -385,15 +381,15 @@ class Reactor {
   // called.
   // Does _not_ take ownership of 'task' -- the task should take care of
   // deleting itself after running if it is allocated on the heap.
-  void ScheduleReactorTask(ReactorTask *task);
+  void ScheduleReactorTask(ReactorTask* task);
 
-  Status RunOnReactorThread(const boost::function<Status()>& f);
+  Status RunOnReactorThread(std::function<Status()> f);
 
   // If the Reactor is closing, returns false.
   // Otherwise, drains the pending_tasks_ queue into the provided list.
-  bool DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks);
+  bool DrainTaskQueue(boost::intrusive::list<ReactorTask>* tasks);
 
-  Messenger *messenger() const {
+  Messenger* messenger() const {
     return messenger_.get();
   }
 

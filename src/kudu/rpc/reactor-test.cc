@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <memory>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/function.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -57,10 +56,10 @@ class ReactorTest : public RpcTestBase {
     latch_.CountDown();
   }
 
-  void ScheduledTaskScheduleAgain(const Status& status) {
+  void ScheduledTaskScheduleAgain(const Status& /*status*/) {
+    auto* current = Thread::current_thread();
     messenger_->ScheduleOnReactor(
-        boost::bind(&ReactorTest::ScheduledTaskCheckThread, this, _1,
-                    Thread::current_thread()),
+        [=](const Status& s) { this->ScheduledTaskCheckThread(s, current); },
         MonoDelta::FromMilliseconds(0));
     latch_.CountDown();
   }
@@ -72,7 +71,7 @@ class ReactorTest : public RpcTestBase {
 
 TEST_F(ReactorTest, TestFunctionIsCalled) {
   messenger_->ScheduleOnReactor(
-      boost::bind(&ReactorTest::ScheduledTask, this, _1, Status::OK()),
+      [=](const Status& s) { this->ScheduledTask(s, Status::OK()); },
       MonoDelta::FromSeconds(0));
   latch_.Wait();
 }
@@ -80,7 +79,7 @@ TEST_F(ReactorTest, TestFunctionIsCalled) {
 TEST_F(ReactorTest, TestFunctionIsCalledAtTheRightTime) {
   MonoTime before = MonoTime::Now();
   messenger_->ScheduleOnReactor(
-      boost::bind(&ReactorTest::ScheduledTask, this, _1, Status::OK()),
+      [=](const Status& s) { this->ScheduledTask(s, Status::OK()); },
       MonoDelta::FromMilliseconds(100));
   latch_.Wait();
   MonoTime after = MonoTime::Now();
@@ -90,8 +89,7 @@ TEST_F(ReactorTest, TestFunctionIsCalledAtTheRightTime) {
 
 TEST_F(ReactorTest, TestFunctionIsCalledIfReactorShutdown) {
   messenger_->ScheduleOnReactor(
-      boost::bind(&ReactorTest::ScheduledTask, this, _1,
-                  Status::Aborted("doesn't matter")),
+      [=](const Status& s) { this->ScheduledTask(s, Status::Aborted("doesn't matter")); },
       MonoDelta::FromSeconds(60));
   messenger_->Shutdown();
   latch_.Wait();
@@ -102,7 +100,7 @@ TEST_F(ReactorTest, TestReschedulesOnSameReactorThread) {
   latch_.Reset(2);
 
   messenger_->ScheduleOnReactor(
-      boost::bind(&ReactorTest::ScheduledTaskScheduleAgain, this, _1),
+      [=](const Status& s) { this->ScheduledTaskScheduleAgain(s); },
       MonoDelta::FromSeconds(0));
   latch_.Wait();
   latch_.Wait();

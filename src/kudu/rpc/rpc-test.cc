@@ -29,8 +29,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/ref.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -532,8 +530,7 @@ TEST_P(TestRpc, TestClientConnectionMetrics) {
     for (int i = 0; i < n_calls; i++) {
       controllers.emplace_back(new RpcController());
       p.AsyncRequest(GenericCalculatorService::kAddMethodName, add_req, &add_resp,
-                     controllers.back().get(), boost::bind(
-                         &CountDownLatch::CountDown, boost::ref(latch)));
+                     controllers.back().get(), [&latch]() { latch.CountDown(); });
     }
     auto cleanup = MakeScopedCleanup([&](){
       latch.Wait();
@@ -1074,7 +1071,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   for (int i = 0; i < n_calls; i++) {
     controllers.emplace_back(new RpcController());
     p.AsyncRequest(GenericCalculatorService::kAddMethodName, req, &resp, controllers.back().get(),
-                   boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
+                   [&latch]() { latch.CountDown(); });
   }
 
   // Accept the TCP connection.
@@ -1197,7 +1194,9 @@ TEST_P(TestRpc, TestRpcCallbackDestroysMessenger) {
   {
     Proxy p(client_messenger, bad_addr, "xxx-host", "xxx-service");
     p.AsyncRequest("my-fake-method", req, &resp, &controller,
-                   boost::bind(&DestroyMessengerCallback, &client_messenger, &latch));
+                   [&client_messenger, &latch]() {
+                     DestroyMessengerCallback(&client_messenger, &latch);
+                   });
   }
   latch.Wait();
 }
@@ -1419,9 +1418,10 @@ TEST_P(TestRpc, TestCancellationAsync) {
     req.set_sidecar_idx(idx);
 
     CountDownLatch latch(1);
+    auto* payload_raw = payload.get();
     p.AsyncRequest(GenericCalculatorService::kSleepWithSidecarMethodName,
                    req, &resp, &controller,
-                   boost::bind(SleepCallback, payload.get(), &latch));
+                   [payload_raw, &latch]() { SleepCallback(payload_raw, &latch); });
     // Sleep for a while before cancelling the RPC.
     if (i > 0) SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(i * 30)));
     controller.Cancel();
@@ -1459,7 +1459,7 @@ static void SendAndCancelRpcs(Proxy* p, const Slice& slice) {
     CountDownLatch latch(1);
     p->AsyncRequest(GenericCalculatorService::kPushStringsMethodName,
                     request, &resp, &controller,
-                    boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
+                    [&latch]() { latch.CountDown(); });
 
     if ((i++ % 8) != 0) {
       // Sleep for a while before cancelling the RPC.

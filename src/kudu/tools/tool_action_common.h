@@ -14,10 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -28,11 +28,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/util/status.h"
-
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
 
 namespace kudu {
 
@@ -247,10 +242,10 @@ class LeaderMasterProxy {
   Status SyncRpc(const Req& req,
                  Resp* resp,
                  std::string func_name,
-                 const boost::function<void(master::MasterServiceProxy*,
-                                            const Req&, Resp*,
-                                            rpc::RpcController*,
-                                            const rpc::ResponseCallback&)>& func)
+                 const std::function<void(master::MasterServiceProxy*,
+                                          const Req&, Resp*,
+                                          rpc::RpcController*,
+                                          const rpc::ResponseCallback&)>& func)
       WARN_UNUSED_RESULT;
 
  private:

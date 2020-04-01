@@ -130,7 +130,7 @@ class TestEncoding : public KuduTest {
     // Insert "hello 0" through "hello 9"
     const uint kCount = 10;
     Slice s = CreateBinaryBlock(
-        &sbb, kCount, std::bind(StringPrintf, "hello %d", std::placeholders::_1));
+        &sbb, kCount, [](int item) { return StringPrintf("hello %d", item); });
     DecoderType sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -185,7 +185,7 @@ class TestEncoding : public KuduTest {
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
     Slice s = CreateBinaryBlock(
-        &sbb, kCount, std::bind(StringPrintf, "hello %03d", std::placeholders::_1));
+        &sbb, kCount, [](int item) { return StringPrintf("hello %03d", item); });
     BinaryPrefixBlockDecoder sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -476,7 +476,7 @@ class TestEncoding : public KuduTest {
     size_t sbsize;
 
     Slice s = CreateBinaryBlock(
-        &sbb, kCount, std::bind(StringPrintf, "hello %d", std::placeholders::_1));
+        &sbb, kCount, [](int item) { return StringPrintf("hello %d", item); });
     do {
       sbsize = s.size();
 

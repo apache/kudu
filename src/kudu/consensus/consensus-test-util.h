@@ -25,7 +25,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <gmock/gmock.h>
 
 #include "kudu/clock/clock.h"
@@ -223,9 +222,9 @@ class DelayablePeerProxy : public TestPeerProxy {
                    rpc::RpcController* controller,
                    const rpc::ResponseCallback& callback) override {
     RegisterCallback(kUpdate, callback);
-    return proxy_->UpdateAsync(request, response, controller,
-                               boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
-                                           this, kUpdate));
+    return proxy_->UpdateAsync(
+        request, response, controller,
+        [this]() { this->RespondUnlessDelayed(kUpdate); });
   }
 
   void StartElectionAsync(const RunLeaderElectionRequestPB& /*request*/,
@@ -240,9 +239,9 @@ class DelayablePeerProxy : public TestPeerProxy {
                                  rpc::RpcController* controller,
                                  const rpc::ResponseCallback& callback) override {
     RegisterCallback(kRequestVote, callback);
-    return proxy_->RequestConsensusVoteAsync(request, response, controller,
-                                             boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
-                                                         this, kRequestVote));
+    return proxy_->RequestConsensusVoteAsync(
+        request, response, controller,
+        [this]() { this->RespondUnlessDelayed(kRequestVote); });
   }
 
   ProxyType* proxy() const {
@@ -705,11 +704,10 @@ class TestTransactionFactory : public ConsensusRoundHandler {
   }
 
   Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& round) override {
-    auto txn = new TestDriver(pool_.get(), log_, round);
-    txn->round_->SetConsensusReplicatedCallback(std::bind(
-        &TestDriver::ReplicationFinished,
-        txn,
-        std::placeholders::_1));
+    // 'txn' is deleted when it completes.
+    auto* txn = new TestDriver(pool_.get(), log_, round);
+    txn->round_->SetConsensusReplicatedCallback(
+        [txn](const Status& s) { txn->ReplicationFinished(s); });
     return Status::OK();
   }
 

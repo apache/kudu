@@ -59,6 +59,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -66,8 +67,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -85,6 +84,10 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+
+namespace kudu {
+class KuduPartialRow;
+}  // namespace kudu
 
 DEFINE_string(tpch_path_to_data, "/tmp/lineitem.tbl",
               "The full path to the '|' separated file containing the lineitem table.");
@@ -148,9 +151,9 @@ struct Hash {
 void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
   LineItemTsvImporter importer(path);
 
+  auto f = [&importer](KuduPartialRow* row) { importer.GetNextLine(row); };
   while (importer.HasNextLine()) {
-    dao->WriteLine(boost::bind(&LineItemTsvImporter::GetNextLine,
-                               &importer, _1));
+    dao->WriteLine(f);
   }
   dao->FinishWriting();
 }

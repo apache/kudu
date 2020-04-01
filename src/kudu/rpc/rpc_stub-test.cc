@@ -29,9 +29,6 @@
 #include <thread>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
-#include <boost/ref.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -145,7 +142,7 @@ TEST_F(RpcStubTest, TestBigCallData) {
     controllers.emplace_back(new RpcController);
 
     p.EchoAsync(req, resps.back().get(), controllers.back().get(),
-                boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
+                [&latch]() { latch.CountDown(); });
   }
 
   latch.Wait();
@@ -318,7 +315,7 @@ TEST_F(RpcStubTest, TestCallWithMissingPBFieldClientSide) {
   // Request is missing the 'y' field.
   AddResponsePB resp;
   Atomic32 callback_count = 0;
-  p.AddAsync(req, &resp, &controller, boost::bind(&DoIncrement, &callback_count));
+  p.AddAsync(req, &resp, &controller, [&callback_count]() { DoIncrement(&callback_count); });
   while (NoBarrier_Load(&callback_count) == 0) {
     SleepFor(MonoDelta::FromMicroseconds(10));
   }
@@ -450,15 +447,17 @@ struct AsyncSleep {
 TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   CalculatorServiceProxy p(client_messenger_, server_addr_, server_addr_.host());
   vector<unique_ptr<AsyncSleep>> sleeps;
+  sleeps.reserve(n_worker_threads_);
 
   // Send enough sleep calls to occupy the worker threads.
   for (int i = 0; i < n_worker_threads_; i++) {
     unique_ptr<AsyncSleep> sleep(new AsyncSleep);
     sleep->rpc.set_timeout(MonoDelta::FromSeconds(1));
     sleep->req.set_sleep_micros(1000*1000); // 1sec
+    auto& l = sleep->latch;
     p.SleepAsync(sleep->req, &sleep->resp, &sleep->rpc,
-                 boost::bind(&CountDownLatch::CountDown, &sleep->latch));
-    sleeps.push_back(std::move(sleep));
+                 [&l]() { l.CountDown(); });
+    sleeps.emplace_back(std::move(sleep));
   }
 
   // We asynchronously sent the RPCs above, but the RPCs might still
@@ -586,8 +585,9 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   CalculatorServiceProxy p(client_messenger_, server_addr_, server_addr_.host());
   AsyncSleep sleep;
   sleep.req.set_sleep_micros(100 * 1000); // 100ms
+  auto& l = sleep.latch;
   p.SleepAsync(sleep.req, &sleep.resp, &sleep.rpc,
-               boost::bind(&CountDownLatch::CountDown, &sleep.latch));
+               [&l]() { l.CountDown(); });
 
   // Check the running RPC status on the client messenger.
   DumpConnectionsRequestPB dump_req;
@@ -635,8 +635,9 @@ TEST_F(RpcStubTest, TestDumpSampledCalls) {
   sleeps[1].req.set_sleep_micros(1500 * 1000); // 1500ms
 
   for (auto& sleep : sleeps) {
+    auto& l = sleep.latch;
     p.SleepAsync(sleep.req, &sleep.resp, &sleep.rpc,
-                 boost::bind(&CountDownLatch::CountDown, &sleep.latch));
+                 [&l]() { l.CountDown(); });
   }
   for (auto& sleep : sleeps) {
     sleep.latch.Wait();
@@ -694,7 +695,7 @@ TEST_F(RpcStubTest, TestCallbackClearedAfterRunning) {
   req.set_y(20);
   AddResponsePB resp;
   p.AddAsync(req, &resp, &controller,
-             boost::bind(MyTestCallback, &latch, my_refptr));
+             [&latch, my_refptr]() { MyTestCallback(&latch, my_refptr); });
   latch.Wait();
 
   // The ref count should go back down to 1. However, we need to loop a little

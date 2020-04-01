@@ -20,12 +20,12 @@
 #include "kudu/client/master_rpc.h"
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <utility>
 
-#include <boost/bind.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -146,15 +146,11 @@ void ConnectToMasterRpc::SendRpc() {
     ConnectToMasterRequestPB req;
     controller->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
     proxy.ConnectToMasterAsync(req, out_, controller,
-                               boost::bind(&ConnectToMasterRpc::SendRpcCb,
-                                           this,
-                                           Status::OK()));
+                               [this]() { this->SendRpcCb(Status::OK()); });
   } else {
     GetMasterRegistrationRequestPB req;
     proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, controller,
-                                     boost::bind(&ConnectToMasterRpc::SendRpcCb,
-                                                 this,
-                                                 Status::OK()));
+                                     [this]() { this->SendRpcCb(Status::OK()); });
   }
 }
 

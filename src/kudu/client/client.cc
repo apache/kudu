@@ -28,7 +28,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -69,7 +68,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -91,6 +89,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
@@ -156,8 +155,6 @@ struct tm;
 
 namespace kudu {
 
-class BlockBloomFilter;
-class BlockBloomFilterBufferAllocatorIf;
 class simple_spinlock;
 
 namespace client {
@@ -1684,9 +1681,10 @@ void KuduScanner::Close() {
     data_->PrepareRequest(KuduScanner::Data::CLOSE);
     data_->next_req_.set_close_scanner(true);
     closer->controller.set_timeout(data_->configuration().timeout());
-    data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
-                             boost::bind(&CloseCallback::Callback, closer.get()));
-    ignore_result(closer.release());
+    // CloseCallback::Callback() deletes the closer.
+    CloseCallback* closer_raw = closer.release();
+    data_->proxy_->ScanAsync(data_->next_req_, &closer_raw->response, &closer_raw->controller,
+                             [closer_raw]() { closer_raw->Callback(); });
   }
   data_->proxy_.reset();
   data_->open_ = false;

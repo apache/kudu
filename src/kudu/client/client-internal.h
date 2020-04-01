@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -37,11 +38,6 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
-
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
 
 namespace kudu {
 
@@ -101,40 +97,40 @@ class KuduClient::Data {
                          std::vector<internal::RemoteTabletServer*>* candidates,
                          internal::RemoteTabletServer** ts);
 
-  Status CreateTable(KuduClient* client,
-                     const master::CreateTableRequestPB& req,
-                     master::CreateTableResponsePB* resp,
-                     const MonoTime& deadline,
-                     bool has_range_partition_bounds);
+  static Status CreateTable(KuduClient* client,
+                            const master::CreateTableRequestPB& req,
+                            master::CreateTableResponsePB* resp,
+                            const MonoTime& deadline,
+                            bool has_range_partition_bounds);
 
-  Status IsCreateTableInProgress(KuduClient* client,
-                                 master::TableIdentifierPB table,
-                                 const MonoTime& deadline,
-                                 bool* create_in_progress);
+  static Status IsCreateTableInProgress(KuduClient* client,
+                                        master::TableIdentifierPB table,
+                                        const MonoTime& deadline,
+                                        bool* create_in_progress);
 
-  Status WaitForCreateTableToFinish(KuduClient* client,
-                                    master::TableIdentifierPB table,
-                                    const MonoTime& deadline);
+  static Status WaitForCreateTableToFinish(KuduClient* client,
+                                           master::TableIdentifierPB table,
+                                           const MonoTime& deadline);
 
-  Status DeleteTable(KuduClient* client,
-                     const std::string& table_name,
-                     const MonoTime& deadline,
-                     bool modify_external_catalogs = true);
+  static Status DeleteTable(KuduClient* client,
+                            const std::string& table_name,
+                            const MonoTime& deadline,
+                            bool modify_external_catalogs = true);
 
-  Status AlterTable(KuduClient* client,
-                    const master::AlterTableRequestPB& req,
-                    master::AlterTableResponsePB* resp,
-                    const MonoTime& deadline,
-                    bool has_add_drop_partition);
+  static Status AlterTable(KuduClient* client,
+                           const master::AlterTableRequestPB& req,
+                           master::AlterTableResponsePB* resp,
+                           const MonoTime& deadline,
+                           bool has_add_drop_partition);
 
-  Status IsAlterTableInProgress(KuduClient* client,
-                                master::TableIdentifierPB table,
-                                const MonoTime& deadline,
-                                bool* alter_in_progress);
+  static Status IsAlterTableInProgress(KuduClient* client,
+                                       master::TableIdentifierPB table,
+                                       const MonoTime& deadline,
+                                       bool* alter_in_progress);
 
-  Status WaitForAlterTableToFinish(KuduClient* client,
-                                   master::TableIdentifierPB table,
-                                   const MonoTime& deadline);
+  static Status WaitForAlterTableToFinish(KuduClient* client,
+                                          master::TableIdentifierPB table,
+                                          const MonoTime& deadline);
 
   // Open the table identified by 'table_identifier'.
   Status OpenTable(KuduClient* client,
@@ -325,7 +321,7 @@ class KuduClient::Data {
 Status RetryFunc(const MonoTime& deadline,
                  const std::string& retry_msg,
                  const std::string& timeout_msg,
-                 const boost::function<Status(const MonoTime&, bool*)>& func);
+                 const std::function<Status(const MonoTime&, bool*)>& func);
 
 // Set logging verbose level through environment variable.
 void SetVerboseLevelFromEnvVar();

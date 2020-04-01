@@ -17,12 +17,11 @@
 
 #include "kudu/rpc/proxy.h"
 
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <utility>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/ref.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -96,7 +95,7 @@ Status Proxy::SyncRequest(const string& method,
                           RpcController* controller) const {
   Notification note;
   AsyncRequest(method, req, DCHECK_NOTNULL(resp), controller,
-               boost::bind(&Notification::Notify, boost::ref(note)));
+               [&note]() { note.Notify(); });
   note.WaitForNotification();
   return controller->status();
 }

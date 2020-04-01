@@ -16,14 +16,13 @@
 // under the License.
 #include "kudu/server/tracing_path_handlers.h"
 
+#include <functional>
 #include <map>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
-
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 #include <rapidjson/document.h>
 
@@ -275,8 +274,10 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
   typedef pair<const string, Handler> HandlerPair;
   for (const HandlerPair& e : handlers) {
     server->RegisterPrerenderedPathHandler(
-      e.first, "",
-      boost::bind(&HandleRequest, e.second, _1, _2),
+        e.first, "", [e](const Webserver::WebRequest& req,
+                         Webserver::PrerenderedWebResponse* resp) {
+          HandleRequest(e.second, req, resp);
+        },
       false /* styled */, false /* is_on_nav_bar */);
   }
 }

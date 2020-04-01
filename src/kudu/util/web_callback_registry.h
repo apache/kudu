@@ -14,14 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #pragma once
 
+#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
-
-#include <boost/function.hpp>
 
 #include "kudu/util/easy_json.h"
 
@@ -93,12 +91,12 @@ class WebCallbackRegistry {
 
   // A function that handles an HTTP request where the response body will be rendered
   // with a mustache template from the JSON object held by 'resp'.
-  typedef boost::function<void (const WebRequest& args, WebResponse* resp)>
+  typedef std::function<void (const WebRequest& args, WebResponse* resp)>
       PathHandlerCallback;
 
   // A function that handles an HTTP request, where the response body is the contents
   // of the 'output' member of 'resp'.
-  typedef boost::function<void (const WebRequest& args, PrerenderedWebResponse* resp)>
+  typedef std::function<void (const WebRequest& args, PrerenderedWebResponse* resp)>
       PrerenderedPathHandlerCallback;
 
   virtual ~WebCallbackRegistry() {}

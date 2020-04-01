@@ -105,7 +105,6 @@
 #include "kudu/util/process_memory.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/util/status_callback.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/trace_metrics.h"
@@ -397,18 +396,6 @@ void HandleResponse(const ReqType* req, RespType* resp,
     return;
   }
   context->RespondSuccess();
-}
-
-template <class ReqType, class RespType>
-static StatusCallback BindHandleResponse(
-    const ReqType* req,
-    RespType* resp,
-    RpcContext* context) {
-  return std::bind(&HandleResponse<ReqType, RespType>,
-                   req,
-                   resp,
-                   context,
-                   std::placeholders::_1);
 }
 
 } // namespace
@@ -1540,7 +1527,11 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   boost::optional<TabletServerErrorPB::Code> error_code;
-  Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
+  Status s = consensus->ChangeConfig(
+      *req, [req, resp, context](const Status& s) {
+        HandleResponse(req, resp, context, s);
+      },
+      &error_code);
   if (PREDICT_FALSE(!s.ok())) {
     HandleErrorResponse(req, resp, context, error_code, s);
     return;
@@ -1564,7 +1555,11 @@ void ConsensusServiceImpl::BulkChangeConfig(const BulkChangeConfigRequestPB* req
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   boost::optional<TabletServerErrorPB::Code> error_code;
-  Status s = consensus->BulkChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
+  Status s = consensus->BulkChangeConfig(
+      *req, [req, resp, context](const Status& s) {
+        HandleResponse(req, resp, context, s);
+      },
+      &error_code);
   if (PREDICT_FALSE(!s.ok())) {
     HandleErrorResponse(req, resp, context, error_code, s);
     return;

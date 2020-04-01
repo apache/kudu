@@ -168,9 +168,7 @@ Status TransactionDriver::Init(unique_ptr<Transaction> transaction,
       // A raw pointer is required to avoid a refcount cycle.
       mutable_state()->set_consensus_round(
         consensus_->NewRound(std::move(replicate_msg),
-                             std::bind(&TransactionDriver::ReplicationFinished,
-                                       this,
-                                       std::placeholders::_1)));
+                             [this](const Status& s) { this->ReplicationFinished(s); }));
     }
   }
 

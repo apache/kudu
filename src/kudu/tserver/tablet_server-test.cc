@@ -36,7 +36,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -3649,7 +3648,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   for (int i = 0; i < kNumDeletes; i++) {
     SCOPED_TRACE(SecureDebugString(req));
     admin_proxy_->DeleteTabletAsync(req, &responses[i], &rpcs[i],
-                                    boost::bind(&CountDownLatch::CountDown, &latch));
+                                    [&]() { latch.CountDown(); });
   }
   latch.Wait();
 

@@ -31,6 +31,7 @@
 // either zero or one times, and no link_to refers to a missing key.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -38,7 +39,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -198,10 +198,9 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     // Restart a tserver during a scan to test scanner fault tolerance.
     WaitForTSAndReplicas();
     LOG(INFO) << "Will restart the tablet server during verification scan.";
-    ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written,
-                                     boost::bind(
-                                         &TabletServerIntegrationTestBase::RestartServerWithUUID,
-                                         this, _1)));
+    ASSERT_OK(tester_->WaitAndVerify(
+        FLAGS_seconds_to_run, written,
+        [this](const string& uuid) { return this->RestartServerWithUUID(uuid); }));
     LOG(INFO) << "Done with tserver restart test.";
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
 
@@ -209,10 +208,9 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     // Note that the previously restarted node is likely still be bootstrapping, which makes this
     // even harder.
     LOG(INFO) << "Will kill the tablet server during verification scan.";
-    ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written,
-                                     boost::bind(
-                                         &TabletServerIntegrationTestBase::ShutdownServerWithUUID,
-                                         this, _1)));
+    ASSERT_OK(tester_->WaitAndVerify(
+        FLAGS_seconds_to_run, written,
+        [this](const string& uuid) { return this->ShutdownServerWithUUID(uuid); }));
     LOG(INFO) << "Done with tserver kill test.";
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
     NO_FATALS(RestartCluster());

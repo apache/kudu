@@ -17,12 +17,11 @@
 
 #include "kudu/server/rpcz-path-handler.h"
 
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
-
-#include <boost/bind.hpp> // IWYU pragma: keep
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -77,9 +76,12 @@ void RpczPathHandler(const shared_ptr<Messenger>& messenger,
 } // anonymous namespace
 
 void AddRpczPathHandlers(const shared_ptr<Messenger>& messenger, Webserver* webserver) {
-  webserver->RegisterPrerenderedPathHandler("/rpcz", "RPCs",
-                                            boost::bind(RpczPathHandler, messenger, _1, _2),
-                                            false, true);
+  webserver->RegisterPrerenderedPathHandler(
+      "/rpcz", "RPCs",
+      [messenger](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+        RpczPathHandler(messenger, req, resp);
+      },
+      false, true);
 }
 
 } // namespace kudu

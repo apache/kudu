@@ -180,11 +180,6 @@ using std::vector;
 using strings::Split;
 using strings::Substitute;
 
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
-
 namespace kudu {
 namespace tools {
 
@@ -802,10 +797,10 @@ template<typename Req, typename Resp>
 Status LeaderMasterProxy::SyncRpc(const Req& req,
                                   Resp* resp,
                                   string func_name,
-                                  const boost::function<void(master::MasterServiceProxy*,
-                                                             const Req&, Resp*,
-                                                             rpc::RpcController*,
-                                                             const ResponseCallback&)>& func) {
+                                  const std::function<void(master::MasterServiceProxy*,
+                                                           const Req&, Resp*,
+                                                           rpc::RpcController*,
+                                                           const ResponseCallback&)>& func) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
   Synchronizer sync;
   AsyncLeaderMasterRpc<Req, Resp> rpc(deadline, client_.get(), BackoffType::EXPONENTIAL,
@@ -820,41 +815,41 @@ Status LeaderMasterProxy::SyncRpc(
     const master::ChangeTServerStateRequestPB& req,
     master::ChangeTServerStateResponsePB* resp,
     string func_name,
-    const boost::function<void(MasterServiceProxy*,
-                               const master::ChangeTServerStateRequestPB&,
-                               master::ChangeTServerStateResponsePB*,
-                               RpcController*,
-                               const ResponseCallback&)>& func);
+    const std::function<void(MasterServiceProxy*,
+                             const master::ChangeTServerStateRequestPB&,
+                             master::ChangeTServerStateResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func);
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ListTabletServersRequestPB& req,
     master::ListTabletServersResponsePB* resp,
     string func_name,
-    const boost::function<void(MasterServiceProxy*,
-                               const master::ListTabletServersRequestPB&,
-                               master::ListTabletServersResponsePB*,
-                               RpcController*,
-                               const ResponseCallback&)>& func);
+    const std::function<void(MasterServiceProxy*,
+                             const master::ListTabletServersRequestPB&,
+                             master::ListTabletServersResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func);
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ListMastersRequestPB& req,
     master::ListMastersResponsePB* resp,
     string func_name,
-    const boost::function<void(MasterServiceProxy*,
-                               const master::ListMastersRequestPB&,
-                               master::ListMastersResponsePB*,
-                               RpcController*,
-                               const ResponseCallback&)>& func);
+    const std::function<void(MasterServiceProxy*,
+                             const master::ListMastersRequestPB&,
+                             master::ListMastersResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func);
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ReplaceTabletRequestPB& req,
     master::ReplaceTabletResponsePB* resp,
     string func_name,
-    const boost::function<void(MasterServiceProxy*,
-                               const master::ReplaceTabletRequestPB&,
-                               master::ReplaceTabletResponsePB*,
-                               RpcController*,
-                               const ResponseCallback&)>& func);
+    const std::function<void(MasterServiceProxy*,
+                             const master::ReplaceTabletRequestPB&,
+                             master::ReplaceTabletResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func);
 
 } // namespace tools
 } // namespace kudu

@@ -1363,7 +1363,7 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
       Status s = Thread::CreateWithFlags(
           "tracing", "sampler",
-          std::bind(&TraceSamplingThread::ThreadMain,sampling_thread_.get()),
+          [this]() { this->sampling_thread_->ThreadMain(); },
           Thread::NO_STACK_WATCHDOG, &sampling_thread_handle_);
       if (!s.ok()) {
         LOG(DFATAL) << "failed to create trace sampling thread: " << s.ToString();

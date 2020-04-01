@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -30,7 +31,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
@@ -780,23 +780,33 @@ Status MasterPathHandlers::Register(Webserver* server) {
   bool is_on_nav_bar = true;
   server->RegisterPathHandler(
       "/tablet-servers", "Tablet Servers",
-      boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
+      [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+        this->HandleTabletServers(req, resp);
+      },
       is_styled, is_on_nav_bar);
   server->RegisterPathHandler(
       "/tables", "Tables",
-      boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
+      [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+        this->HandleCatalogManager(req, resp);
+      },
       is_styled, is_on_nav_bar);
   server->RegisterPathHandler(
       "/table", "",
-      boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
+      [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+        this->HandleTablePage(req, resp);
+      },
       is_styled, false);
   server->RegisterPathHandler(
       "/masters", "Masters",
-      boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
+      [this](const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+        this->HandleMasters(req, resp);
+      },
       is_styled, is_on_nav_bar);
   server->RegisterPrerenderedPathHandler(
       "/dump-entities", "Dump Entities",
-      boost::bind(&MasterPathHandlers::HandleDumpEntities, this, _1, _2),
+      [this](const Webserver::WebRequest& req, Webserver::PrerenderedWebResponse* resp) {
+        this->HandleDumpEntities(req, resp);
+      },
       false, false);
   return Status::OK();
 }

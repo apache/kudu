@@ -20,10 +20,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <functional>
 #include <string>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -51,7 +50,7 @@ void RpcRetrier::DelayedRetry(Rpc* rpc, const Status& why_status) {
   // RPC on our behalf.
   MonoDelta backoff = ComputeBackoff(attempt_num_++);
   messenger_->ScheduleOnReactor(
-      boost::bind(&RpcRetrier::DelayedRetryCb, this, rpc, _1), backoff);
+      [this, rpc](const Status& s) { this->DelayedRetryCb(rpc, s); }, backoff);
 }
 
 MonoDelta RpcRetrier::ComputeBackoff(int num_attempts) const {

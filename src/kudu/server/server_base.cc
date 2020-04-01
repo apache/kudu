@@ -523,8 +523,9 @@ Status ServerBase::Init() {
   }
 
   RETURN_NOT_OK(builder.Build(&messenger_));
-  rpc_server_->set_too_busy_hook(std::bind(
-      &ServerBase::ServiceQueueOverflowed, this, std::placeholders::_1));
+  rpc_server_->set_too_busy_hook([this](rpc::ServicePool* pool) {
+    this->ServiceQueueOverflowed(pool);
+  });
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK(rpc_server_->Bind());

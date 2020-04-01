@@ -1026,13 +1026,11 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifndef __APPLE__
-template<class T>
-using CheckerFunction = std::function<void(const Status&, T&)>;
 
 // Run GSSAPI negotiation from the server side. Runs
 // 'post_check' after negotiation to verify the result.
 static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
-                                       const CheckerFunction<ServerNegotiation>& post_check) {
+                                       const std::function<void(const Status&)>& post_check) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
@@ -1040,20 +1038,20 @@ static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
                                        &token_verifier, RpcEncryption::OPTIONAL, "kudu");
   server_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(server_negotiation.EnableGSSAPI());
-  post_check(server_negotiation.Negotiate(), server_negotiation);
+  post_check(server_negotiation.Negotiate());
 }
 
 // Run GSSAPI negotiation from the client side. Runs
 // 'post_check' after negotiation to verify the result.
 static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
-                                       const CheckerFunction<ClientNegotiation>& post_check) {
+                                       const std::function<void(const Status&)>& post_check) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(conn), &tls_context,
                                        boost::none, RpcEncryption::OPTIONAL, "kudu");
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
-  post_check(client_negotiation.Negotiate(), client_negotiation);
+  post_check(client_negotiation.Negotiate());
 }
 
 // Test invalid SASL negotiations using the GSSAPI (kerberos) mechanism over a socket.
@@ -1067,23 +1065,29 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   // Try to negotiate with no krb5 credentials on either side. It should fail on both
   // sides.
   RunNegotiationTest(
-      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, ServerNegotiation& server) {
-                  // The client notices there are no credentials and
-                  // doesn't send any failure message to the server.
-                  // Instead, it just disconnects.
-                  //
-                  // TODO(todd): it might be preferable to have the server
-                  // fail to start if it has no valid keytab.
-                  CHECK(s.IsNetworkError());
-                }),
-      std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, ClientNegotiation& client) {
-                  CHECK(s.IsNotAuthorized());
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationServer(
+            std::move(socket),
+            [](const Status& s) {
+              // The client notices there are no credentials and
+              // doesn't send any failure message to the server.
+              // Instead, it just disconnects.
+              //
+              // TODO(todd): it might be preferable to have the server
+              // fail to start if it has no valid keytab.
+              CHECK(s.IsNetworkError());
+            });
+      },
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationClient(
+            std::move(socket),
+            [](const Status& s) {
+              CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
-                  CHECK_GT(s.ToString().find("No Kerberos credentials available"), 0);
+              CHECK_GT(s.ToString().find("No Kerberos credentials available"), 0);
 #endif
-                }));
+            });
+      });
 
   // Create the server principal and keytab.
   string kt_path;
@@ -1093,20 +1097,26 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   // Try to negotiate with no krb5 credentials on the client. It should fail on both
   // sides.
   RunNegotiationTest(
-      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, ServerNegotiation& server) {
-                  // The client notices there are no credentials and
-                  // doesn't send any failure message to the server.
-                  // Instead, it just disconnects.
-                  CHECK(s.IsNetworkError());
-                }),
-      std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, ClientNegotiation& client) {
-                  CHECK(s.IsNotAuthorized());
-                  ASSERT_STR_MATCHES(s.ToString(),
-                                     "Not authorized: server requires authentication, "
-                                     "but client does not have Kerberos credentials available");
-                }));
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationServer(
+            std::move(socket),
+            [](const Status& s) {
+              // The client notices there are no credentials and
+              // doesn't send any failure message to the server.
+              // Instead, it just disconnects.
+              CHECK(s.IsNetworkError());
+            });
+      },
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationClient(
+            std::move(socket),
+            [](const Status& s) {
+              CHECK(s.IsNotAuthorized());
+              ASSERT_STR_MATCHES(s.ToString(),
+                                 "Not authorized: server requires authentication, "
+                                 "but client does not have Kerberos credentials available");
+            });
+      });
 
   // Create and kinit as a client user.
   ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
@@ -1120,22 +1130,28 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
   RunNegotiationTest(
-      std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, ServerNegotiation& server) {
-                  CHECK(s.IsNotAuthorized());
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationServer(
+            std::move(socket),
+            [](const Status& s) {
+              CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
-                  ASSERT_STR_CONTAINS(s.ToString(),
-                                      "No key table entry found matching kudu/127.0.0.1");
+              ASSERT_STR_CONTAINS(s.ToString(),
+                                  "No key table entry found matching kudu/127.0.0.1");
 #endif
-                }),
-      std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, ClientNegotiation& client) {
-                  CHECK(s.IsNotAuthorized());
+            });
+      },
+      [](unique_ptr<Socket> socket) {
+        RunGSSAPINegotiationClient(
+            std::move(socket),
+            [](const Status& s) {
+              CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
-                  ASSERT_STR_CONTAINS(s.ToString(),
-                                      "No key table entry found matching kudu/127.0.0.1");
+              ASSERT_STR_CONTAINS(s.ToString(),
+                                  "No key table entry found matching kudu/127.0.0.1");
 #endif
-                }));
+            });
+      });
 }
 #endif
 

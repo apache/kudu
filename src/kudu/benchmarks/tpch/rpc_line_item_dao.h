@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,11 +28,6 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/semaphore.h"
-
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
 
 namespace kudu {
 
@@ -59,8 +55,8 @@ class RpcLineItemDAO {
                  std::vector<const KuduPartialRow*> tablet_splits = {});
   ~RpcLineItemDAO();
   void Init();
-  void WriteLine(const boost::function<void(KuduPartialRow*)>& f);
-  void MutateLine(const boost::function<void(KuduPartialRow*)>& f);
+  void WriteLine(const std::function<void(KuduPartialRow*)>& f);
+  void MutateLine(const std::function<void(KuduPartialRow*)>& f);
   void FinishWriting();
 
   // Deletes previous scanner if one is open.

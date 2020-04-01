@@ -33,7 +33,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -935,7 +934,7 @@ TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   CountDownLatch latch(kNumRpcs);
   for (int i = 0; i < kNumRpcs; i++) {
     proxy_->GetTableLocationsAsync(req, &resps[i], &rpcs[i],
-                                   boost::bind(&CountDownLatch::CountDown, &latch));
+                                   [&latch]() { latch.CountDown(); });
   }
   latch.Wait();
 

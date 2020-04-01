@@ -27,7 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -652,7 +651,7 @@ TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits)
   ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema, 1, 1, "", req.mutable_row_operations());
   leader_ts->tserver_proxy->WriteAsync(req, &resp, &rpc,
-                                       boost::bind(&CountDownLatch::CountDown, &latch));
+                                       [&latch]() { latch.CountDown(); });
 
   // Wait for the replicate to show up (this doesn't wait for COMMIT messages).
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 3));

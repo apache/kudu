@@ -36,7 +36,6 @@
 #include <vector>
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <mustache.h>
@@ -185,8 +184,8 @@ Webserver::~Webserver() {
   STLDeleteValues(&path_handlers_);
 }
 
-void Webserver::RootHandler(const Webserver::WebRequest& /* args */,
-                            Webserver::WebResponse* resp) {
+void Webserver::RootHandler(const WebRequest& /* args */,
+                            WebResponse* resp) {
   EasyJson path_handlers = resp->output.Set("path_handlers", EasyJson::kArray);
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
@@ -361,11 +360,10 @@ Status Webserver::Start() {
     return Status::RuntimeError(err_msg);
   }
 
-  PathHandlerCallback default_callback =
-      std::bind<void>(std::mem_fn(&Webserver::RootHandler),
-                      this, std::placeholders::_1, std::placeholders::_2);
-
-  RegisterPathHandler("/", "Home", default_callback,
+  RegisterPathHandler("/", "Home",
+                      [this](const WebRequest& req, WebResponse* resp) {
+                        this->RootHandler(req, resp);
+                      },
                       /*is_styled=*/true, /*is_on_nav_bar=*/true);
 
   vector<Sockaddr> addrs;

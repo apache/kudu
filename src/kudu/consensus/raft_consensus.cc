@@ -527,15 +527,16 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     *request.mutable_candidate_status()->mutable_last_received() =
         queue_->GetLastOpIdInLog();
 
+    auto self = shared_from_this();
     election.reset(new LeaderElection(
         std::move(active_config),
         // The RaftConsensus ref passed below ensures that this raw pointer
         // remains safe to use for the entirety of LeaderElection's life.
         peer_proxy_factory_.get(),
         std::move(request), std::move(counter), timeout,
-        std::bind(&RaftConsensus::ElectionCallback,
-                  shared_from_this(),
-                  reason, std::placeholders::_1)));
+        [self, reason](const ElectionResult& result) {
+          self->ElectionCallback(reason, result);
+        }));
   }
 
   // Start the election outside the lock.
@@ -704,12 +705,11 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(replicate))));
-  round->SetConsensusReplicatedCallback(std::bind(
-      &RaftConsensus::NonTxRoundReplicationFinished,
-      this,
-      round.get(),
-      &DoNothingStatusCB,
-      std::placeholders::_1));
+  auto* round_raw = round.get();
+  round->SetConsensusReplicatedCallback(
+      [this, round_raw](const Status& s) {
+        this->NonTxRoundReplicationFinished(round_raw, &DoNothingStatusCB, s);
+      });
 
   last_leader_communication_time_micros_ = 0;
 
@@ -2022,12 +2022,11 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
     new_config.clear_opid_index();
 
     RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
-        committed_config, std::move(new_config), std::bind(
-            &RaftConsensus::MarkDirtyOnSuccess,
-            this,
-            string("Config change replication complete"),
-            std::move(client_cb),
-            std::placeholders::_1)));
+        committed_config, std::move(new_config),
+        [this, client_cb](const Status& s) {
+          this->MarkDirtyOnSuccess("Config change replication complete",
+                                   client_cb, s);
+        }));
   } // Release lock before signaling request.
   peer_manager_->SignalRequest();
   return Status::OK();
@@ -2247,18 +2246,16 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
       << ": " << SecureShortDebugString(*msg->get());
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << SecureShortDebugString(msg->get()->id());
+  auto client_cb = [this](const Status& s) {
+    this->MarkDirtyOnSuccess("Replicated consensus-only round",
+                             &DoNothingStatusCB, s);
+  };
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
-  StatusCallback client_cb = std::bind(&RaftConsensus::MarkDirtyOnSuccess,
-                                          this,
-                                          string("Replicated consensus-only round"),
-                                          &DoNothingStatusCB,
-                                          std::placeholders::_1);
-  round->SetConsensusReplicatedCallback(std::bind(
-      &RaftConsensus::NonTxRoundReplicationFinished,
-      this,
-      round.get(),
-      std::move(client_cb),
-      std::placeholders::_1));
+  auto* round_raw = round.get();
+  round->SetConsensusReplicatedCallback(
+      [this, round_raw, client_cb](const Status& s) {
+        this->NonTxRoundReplicationFinished(round_raw, client_cb, s);
+      });
   return AddPendingOperationUnlocked(round);
 }
 
@@ -2498,13 +2495,11 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(cc_replicate))));
-  round->SetConsensusReplicatedCallback(std::bind(
-      &RaftConsensus::NonTxRoundReplicationFinished,
-      this,
-      round.get(),
-      std::move(client_cb),
-      std::placeholders::_1));
-
+  auto* round_raw = round.get();
+  round->SetConsensusReplicatedCallback(
+      [this, round_raw, client_cb](const Status& s) {
+        this->NonTxRoundReplicationFinished(round_raw, client_cb, s);
+      });
   return AppendNewRoundToQueueUnlocked(round);
 }
 

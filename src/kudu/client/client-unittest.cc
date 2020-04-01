@@ -22,11 +22,10 @@
 #include <openssl/crypto.h>
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client-internal.h"
@@ -198,7 +197,9 @@ TEST(ClientUnitTest, TestRetryFunc) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(100);
   int counter = 0;
   Status s = RetryFunc(deadline, "retrying test func", "timed out",
-                       boost::bind(TestFunc, _1, _2, &counter));
+                       [&](const MonoTime& deadline, bool* retry) {
+                         return TestFunc(deadline, retry, &counter);
+                       });
   ASSERT_TRUE(s.IsTimedOut());
   ASSERT_GT(counter, 5);
   ASSERT_LT(counter, 20);

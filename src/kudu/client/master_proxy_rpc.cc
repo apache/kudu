@@ -127,8 +127,7 @@ void AsyncLeaderMasterRpc<ReqClass, RespClass>::SendRpc() {
     controller->RequireServerFeature(required_feature_flag);
   }
   func_(client_->data_->master_proxy().get(), *req_, resp_, controller,
-      std::bind(&AsyncLeaderMasterRpc<ReqClass, RespClass>::SendRpcCb,
-          this, Status::OK()));
+        [this]() { this->SendRpcCb(Status::OK()); });
 }
 
 template <class ReqClass, class RespClass>

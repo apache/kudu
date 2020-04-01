@@ -45,7 +45,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::bind;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -231,7 +230,7 @@ class ClientAsyncWorkload {
     proxy_->AddAsync(req_,
                      &resp_,
                      &controller_,
-                     bind(&ClientAsyncWorkload::CallOneRpc, this));
+                     [this]() { this->CallOneRpc(); });
   }
 
   void Start() {

@@ -28,9 +28,7 @@
 #include <string>
 #include <utility>
 
-#include <boost/bind.hpp>
 #include <boost/intrusive/list.hpp>
-#include <boost/ref.hpp>
 #include <ev++.h>
 #include <ev.h>
 #include <gflags/gflags.h>
@@ -61,10 +59,6 @@
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
-
-namespace boost {
-template <typename Signature> class function;
-}  // namespace boost
 
 // When compiling on Mac OS X, use 'kqueue' instead of the default, 'select', for the event loop.
 // Otherwise we run into problems because 'select' can't handle connections when more than 1024
@@ -154,7 +148,7 @@ void DoInitLibEv() {
 
 } // anonymous namespace
 
-ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
+ReactorThread::ReactorThread(Reactor* reactor, const MessengerBuilder& bld)
   : loop_(kDefaultLibEvFlags),
     cur_time_(MonoTime::Now()),
     last_unused_tcp_scan_(cur_time_),
@@ -432,7 +426,7 @@ void ReactorThread::TimerHandler(ev::timer& /*watcher*/, int revents) {
   ScanIdleConnections();
 }
 
-void ReactorThread::RegisterTimeout(ev::timer *watcher) {
+void ReactorThread::RegisterTimeout(ev::timer* watcher) {
   watcher->set(loop_);
 }
 
@@ -485,7 +479,7 @@ void ReactorThread::ScanIdleConnections() {
   VLOG_IF(1, shutdown > 0) << name() << ": shutdown " << shutdown << " TCP connections.";
 }
 
-const std::string& ReactorThread::name() const {
+const string& ReactorThread::name() const {
   return reactor_->name();
 }
 
@@ -493,7 +487,7 @@ MonoTime ReactorThread::cur_time() const {
   return cur_time_;
 }
 
-Reactor *ReactorThread::reactor() {
+Reactor* ReactorThread::reactor() {
   return reactor_;
 }
 
@@ -658,7 +652,7 @@ void ReactorThread::CompleteConnectionNegotiation(
   conn->EpollRegister(loop_);
 }
 
-Status ReactorThread::CreateClientSocket(Socket *sock) {
+Status ReactorThread::CreateClientSocket(Socket* sock) {
   Status ret = sock->Init(Socket::FLAG_NONBLOCKING);
   if (ret.ok()) {
     ret = sock->SetNoDelay(true);
@@ -669,7 +663,7 @@ Status ReactorThread::CreateClientSocket(Socket *sock) {
   return ret;
 }
 
-Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote) {
+Status ReactorThread::StartConnect(Socket* sock, const Sockaddr& remote) {
   const Status ret = sock->Connect(remote);
   if (ret.ok()) {
     VLOG(3) << "StartConnect: connect finished immediately for " << remote.ToString();
@@ -687,7 +681,7 @@ Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote) {
   return ret;
 }
 
-void ReactorThread::DestroyConnection(Connection *conn,
+void ReactorThread::DestroyConnection(Connection* conn,
                                       const Status& conn_status,
                                       unique_ptr<ErrorStatusPB> rpc_error) {
   DCHECK(IsCurrentThread());
@@ -718,7 +712,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
   }
 }
 
-DelayedTask::DelayedTask(boost::function<void(const Status&)> func,
+DelayedTask::DelayedTask(std::function<void(const Status&)> func,
                          MonoDelta when)
     : func_(std::move(func)),
       when_(when),
@@ -799,7 +793,7 @@ Reactor::~Reactor() {
   Shutdown(Messenger::ShutdownMode::ASYNC);
 }
 
-const std::string& Reactor::name() const {
+const string& Reactor::name() const {
   return name_;
 }
 
@@ -811,7 +805,7 @@ bool Reactor::closing() const {
 // Task to call an arbitrary function within the reactor thread.
 class RunFunctionTask : public ReactorTask {
  public:
-  explicit RunFunctionTask(boost::function<Status()> f)
+  explicit RunFunctionTask(std::function<Status()> f)
       : function_(std::move(f)), latch_(1) {}
 
   void Run(ReactorThread* /*reactor*/) override {
@@ -831,25 +825,24 @@ class RunFunctionTask : public ReactorTask {
   }
 
  private:
-  boost::function<Status()> function_;
+  const std::function<Status()> function_;
   Status status_;
   CountDownLatch latch_;
 };
 
-Status Reactor::GetMetrics(ReactorMetrics *metrics) {
-  return RunOnReactorThread(boost::bind(&ReactorThread::GetMetrics, &thread_, metrics));
+Status Reactor::GetMetrics(ReactorMetrics* metrics) {
+  return RunOnReactorThread([&]() { return this->thread_.GetMetrics(metrics); });
 }
 
-Status Reactor::RunOnReactorThread(const boost::function<Status()>& f) {
-  RunFunctionTask task(f);
+Status Reactor::RunOnReactorThread(std::function<Status()> f) {
+  RunFunctionTask task(std::move(f));
   ScheduleReactorTask(&task);
   return task.Wait();
 }
 
 Status Reactor::DumpConnections(const DumpConnectionsRequestPB& req,
                                 DumpConnectionsResponsePB* resp) {
-  return RunOnReactorThread(boost::bind(&ReactorThread::DumpConnections,
-                                        &thread_, boost::ref(req), resp));
+  return RunOnReactorThread([&]() { return this->thread_.DumpConnections(req, resp); });
 }
 
 class RegisterConnectionTask : public ReactorTask {
@@ -871,10 +864,10 @@ class RegisterConnectionTask : public ReactorTask {
   }
 
  private:
-  scoped_refptr<Connection> conn_;
+  const scoped_refptr<Connection> conn_;
 };
 
-void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr& remote) {
+void Reactor::RegisterInboundSocket(Socket* socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   unique_ptr<Socket> new_socket(new Socket(socket->Release()));
   auto task = new RegisterConnectionTask(
@@ -902,17 +895,17 @@ class AssignOutboundCallTask : public ReactorTask {
   }
 
  private:
-  shared_ptr<OutboundCall> call_;
+  const shared_ptr<OutboundCall> call_;
 };
 
-void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall>& call) {
+void Reactor::QueueOutboundCall(shared_ptr<OutboundCall> call) {
   DVLOG(3) << name_ << ": queueing outbound call "
            << call->ToString() << " to remote " << call->conn_id().remote().ToString();
   // Test cancellation when 'call_' is in 'READY' state.
   if (PREDICT_FALSE(call->ShouldInjectCancellation())) {
     QueueCancellation(call);
   }
-  ScheduleReactorTask(new AssignOutboundCallTask(call));
+  ScheduleReactorTask(new AssignOutboundCallTask(std::move(call)));
 }
 
 class CancellationTask : public ReactorTask {
@@ -930,14 +923,14 @@ class CancellationTask : public ReactorTask {
   }
 
  private:
-  shared_ptr<OutboundCall> call_;
+  const shared_ptr<OutboundCall> call_;
 };
 
-void Reactor::QueueCancellation(const shared_ptr<OutboundCall>& call) {
-  ScheduleReactorTask(new CancellationTask(call));
+void Reactor::QueueCancellation(shared_ptr<OutboundCall> call) {
+  ScheduleReactorTask(new CancellationTask(std::move(call)));
 }
 
-void Reactor::ScheduleReactorTask(ReactorTask *task) {
+void Reactor::ScheduleReactorTask(ReactorTask* task) {
   bool was_empty;
   {
     std::unique_lock<LockType> l(lock_);
@@ -955,7 +948,7 @@ void Reactor::ScheduleReactorTask(ReactorTask *task) {
   }
 }
 
-bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask> *tasks) { // NOLINT(*)
+bool Reactor::DrainTaskQueue(boost::intrusive::list<ReactorTask>* tasks) { // NOLINT(*)
   std::lock_guard<LockType> l(lock_);
   if (closing_) {
     return false;

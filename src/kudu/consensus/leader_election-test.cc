@@ -233,9 +233,9 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
       new LeaderElection(config_, proxy_factory_.get(),
                          std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         std::bind(&LeaderElectionTest::ElectionCallback,
-                                   this,
-                                   std::placeholders::_1)));
+                         [this](const ElectionResult& result) {
+                           this->ElectionCallback(result);
+                         }));
   return election;
 }
 
@@ -291,9 +291,9 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
       new LeaderElection(config_, proxy_factory_.get(),
                          std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         std::bind(&LeaderElectionTest::ElectionCallback,
-                                   this,
-                                   std::placeholders::_1)));
+                         [this](const ElectionResult& result) {
+                           this->ElectionCallback(result);
+                         }));
   return election;
 }
 
@@ -319,9 +319,9 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
         new LeaderElection(config_, proxy_factory_.get(),
                            std::move(request), std::move(counter),
                            MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                           std::bind(&LeaderElectionTest::ElectionCallback,
-                                     this,
-                                     std::placeholders::_1)));
+                           [this](const ElectionResult& result) {
+                             this->ElectionCallback(result);
+                           }));
     election->Run();
     latch_.Wait();
 
@@ -449,9 +449,9 @@ TEST_F(LeaderElectionTest, TestFailToCreateProxy) {
       new LeaderElection(config_, proxy_factory_.get(),
                          std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         std::bind(&LeaderElectionTest::ElectionCallback,
-                                   this,
-                                   std::placeholders::_1)));
+                         [this](const ElectionResult& result) {
+                           this->ElectionCallback(result);
+                         }));
   election->Run();
   latch_.Wait();
   ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());

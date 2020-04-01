@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <iostream>
 #include <list>
 #include <memory>
@@ -26,8 +27,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/client-test-util.h"
@@ -112,10 +111,10 @@ class LinkedListTester {
       int64_t *written_count);
 
   // Variant of VerifyLinkedListRemote that verifies at the specified snapshot timestamp.
-  Status VerifyLinkedListAtSnapshotRemote(const uint64_t snapshot_timestamp,
-                                          const int64_t expected,
-                                          const bool log_errors,
-                                          const boost::function<Status(const std::string&)>& cb,
+  Status VerifyLinkedListAtSnapshotRemote(uint64_t snapshot_timestamp,
+                                          int64_t expected,
+                                          bool log_errors,
+                                          const std::function<Status(const std::string&)>& cb,
                                           int64_t* verified_count) {
     return VerifyLinkedListRemote(snapshot_timestamp,
                                   expected,
@@ -124,9 +123,9 @@ class LinkedListTester {
                                   verified_count);
   }
 
-  Status VerifyLinkedListAtLatestRemote(const int64_t expected,
-                                        const bool log_errors,
-                                        const boost::function<Status(const std::string&)>& cb,
+  Status VerifyLinkedListAtLatestRemote(int64_t expected,
+                                        bool log_errors,
+                                        const std::function<Status(const std::string&)>& cb,
                                         int64_t* verified_count) {
     return VerifyLinkedListRemote(kNoSnapshot,
                                   expected,
@@ -136,9 +135,9 @@ class LinkedListTester {
   }
 
   // Variant of VerifyLinkedListremote that verifies at 'now'.
-  Status VerifyLinkedListAtNowSnapshotRemote(const int64_t expected,
-                                             const bool log_errors,
-                                             const boost::function<Status(const std::string&)>& cb,
+  Status VerifyLinkedListAtNowSnapshotRemote(int64_t expected,
+                                             bool log_errors,
+                                             const std::function<Status(const std::string&)>& cb,
                                              int64_t* verified_count) {
     return VerifyLinkedListRemote(kSnapshotAtNow,
                                   expected,
@@ -149,15 +148,15 @@ class LinkedListTester {
 
   // Run the verify step on a table with RPCs. Calls the provided callback 'cb' once during
   // verification to test scanner fault tolerance.
-  Status VerifyLinkedListRemote(const uint64_t snapshot_timestamp,
-                                const int64_t expected,
-                                const bool log_errors,
-                                const boost::function<Status(const std::string&)>& cb,
+  Status VerifyLinkedListRemote(uint64_t snapshot_timestamp,
+                                int64_t expected,
+                                bool log_errors,
+                                const std::function<Status(const std::string&)>& cb,
                                 int64_t* verified_count);
 
   // Run the verify step on a specific tablet.
   Status VerifyLinkedListLocal(const tablet::Tablet* tablet,
-                               const int64_t expected,
+                               int64_t expected,
                                int64_t* verified_count);
 
   // A variant of VerifyLinkedListRemote that is more robust towards ongoing
@@ -167,14 +166,14 @@ class LinkedListTester {
                        WaitAndVerifyMode mode = FINISH_WITH_SNAPSHOT_SCAN) {
     return WaitAndVerify(seconds_to_run,
                          expected,
-                         boost::bind(&LinkedListTester::ReturnOk, this, _1),
+                         [](const std::string& /*uuid*/) { return Status::OK(); },
                          mode);
   }
 
   // A variant of WaitAndVerify that also takes a callback to be run once during verification.
   Status WaitAndVerify(int seconds_to_run,
                        int64_t expected,
-                       const boost::function<Status(const std::string&)>& cb,
+                       const std::function<Status(const std::string&)>& cb,
                        WaitAndVerifyMode mode = FINISH_WITH_SNAPSHOT_SCAN);
 
   // Generates a vector of keys for the table such that each tablet is
@@ -197,9 +196,6 @@ class LinkedListTester {
   HdrHistogram latency_histogram_;
   client::sp::shared_ptr<client::KuduClient> client_;
   SnapsAndCounts sampled_timestamps_and_counts_;
-
- private:
-  Status ReturnOk(const std::string& str) { return Status::OK(); }
 };
 
 // Generates the linked list pattern.
@@ -338,7 +334,7 @@ class LinkedListVerifier {
 // LinkedListTester
 /////////////////////////////////////////////////////////////
 
-std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
+inline std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
     const client::KuduSchema& schema) {
   std::vector<const KuduPartialRow*> split_keys;
   for (int64_t val : GenerateSplitInts()) {
@@ -349,7 +345,7 @@ std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
   return split_keys;
 }
 
-std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
+inline std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
   std::vector<int64_t> ret;
   ret.reserve(num_tablets_ - 1);
   const int64_t increment = kint64max / num_tablets_;
@@ -359,7 +355,7 @@ std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
   return ret;
 }
 
-Status LinkedListTester::CreateLinkedListTable() {
+inline Status LinkedListTester::CreateLinkedListTable() {
   std::unique_ptr<client::KuduTableCreator> table_creator(
       client_->NewTableCreator());
 #pragma GCC diagnostic push
@@ -375,7 +371,7 @@ Status LinkedListTester::CreateLinkedListTable() {
   return Status::OK();
 }
 
-Status LinkedListTester::LoadLinkedList(
+inline Status LinkedListTester::LoadLinkedList(
     const MonoDelta& run_for,
     int num_samples,
     int64_t *written_count) {
@@ -450,7 +446,7 @@ Status LinkedListTester::LoadLinkedList(
   }
 }
 
-void LinkedListTester::DumpInsertHistogram(bool print_flags) {
+inline void LinkedListTester::DumpInsertHistogram(bool print_flags) {
   // We dump to cout instead of using glog so the output isn't prefixed with
   // line numbers. This makes it less ugly to copy-paste into JIRA, etc.
   using std::cout;
@@ -481,9 +477,9 @@ static void VerifyNoDuplicateEntries(const std::vector<int64_t>& ints, int* erro
   }
 }
 
-Status LinkedListTester::VerifyLinkedListRemote(
-    const uint64_t snapshot_timestamp, const int64_t expected, bool log_errors,
-    const boost::function<Status(const std::string&)>& cb, int64_t* verified_count) {
+inline Status LinkedListTester::VerifyLinkedListRemote(
+    uint64_t snapshot_timestamp, int64_t expected, bool log_errors,
+    const std::function<Status(const std::string&)>& cb, int64_t* verified_count) {
 
   client::sp::shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
@@ -561,10 +557,9 @@ Status LinkedListTester::VerifyLinkedListRemote(
   return s;
 }
 
-Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
-                                               int64_t expected,
-                                               int64_t* verified_count) {
-  DCHECK(tablet != NULL);
+inline Status LinkedListTester::VerifyLinkedListLocal(
+    const tablet::Tablet* tablet, int64_t expected, int64_t* verified_count) {
+  DCHECK(tablet);
   LinkedListVerifier verifier(num_chains_, enable_mutation_, expected,
                               GenerateSplitInts());
   verifier.StartScanTimer();
@@ -598,10 +593,9 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
   return verifier.VerifyData(verified_count, true);
 }
 
-Status LinkedListTester::WaitAndVerify(int seconds_to_run,
-                                       int64_t expected,
-                                       const boost::function<Status(const std::string&)>& cb,
-                                       WaitAndVerifyMode mode) {
+inline Status LinkedListTester::WaitAndVerify(
+    int seconds_to_run, int64_t expected,
+    const std::function<Status(const std::string&)>& cb, WaitAndVerifyMode mode) {
 
   std::list<std::pair<int64_t, int64_t>> samples_as_list(
       sampled_timestamps_and_counts_.begin(),
@@ -629,9 +623,10 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
                                              &seen);
         called = true;
       } else {
-        s = VerifyLinkedListAtSnapshotRemote((*iter).first, (*iter).second, last_attempt,
-                                             boost::bind(&LinkedListTester::ReturnOk, this, _1),
-                                             &seen);
+        s = VerifyLinkedListAtSnapshotRemote(
+            (*iter).first, (*iter).second, last_attempt,
+            [](const std::string& /*uuid*/) { return Status::OK(); },
+            &seen);
       }
 
       if (s.ok() && (*iter).second != seen) {
@@ -662,7 +657,8 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
       case FINISH_WITH_SNAPSHOT_SCAN:
         if (s.ok()) {
           RETURN_NOT_OK(VerifyLinkedListAtNowSnapshotRemote(
-              expected, last_attempt, boost::bind(&LinkedListTester::ReturnOk, this, _1), &seen));
+              expected, last_attempt,
+              [](const std::string& /*uuid*/) { return Status::OK(); }, &seen));
         }
         break;
       case FINISH_WITH_SCAN_LATEST:
@@ -670,7 +666,8 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
         // so, in this case, retry.
         if (s.ok()) {
           s = VerifyLinkedListAtLatestRemote(
-              expected, last_attempt, boost::bind(&LinkedListTester::ReturnOk, this, _1), &seen);
+              expected, last_attempt,
+              [](const std::string& /*uuid*/) { return Status::OK(); }, &seen);
         }
         break;
     }

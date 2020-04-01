@@ -36,8 +36,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -182,7 +180,6 @@ using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
-using std::bind;
 using std::function;
 using std::map;
 using std::pair;
@@ -193,10 +190,6 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
-
-namespace boost {
-template <typename Signature> class function;
-}  // namespace boost
 
 namespace kudu {
 
@@ -1462,7 +1455,7 @@ static void ReadBatchToStrings(KuduScanner* scanner, vector<string>* rows) {
 static void DoScanWithCallback(KuduTable* table,
                                const vector<string>& expected_rows,
                                int64_t limit,
-                               const boost::function<Status(const string&)>& cb) {
+                               const std::function<Status(const string&)>& cb) {
   // Initialize fault-tolerant snapshot scanner.
   KuduScanner scanner(table);
   if (limit > 0) {
@@ -1557,16 +1550,16 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 
       // Restarting and waiting should result in a SCANNER_EXPIRED error.
       LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
-      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
-          boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
-                      this, _1)));
+      NO_FATALS(internal::DoScanWithCallback(
+          table.get(), expected_rows, limit,
+          [this](const string& uuid) { return this->RestartTServerAndWait(uuid); }));
 
       // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
       // a TABLET_NOT_RUNNING error.
       LOG(INFO) << "Doing a scan while restarting a tserver...";
-      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
-          boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
-                      this, _1)));
+      NO_FATALS(internal::DoScanWithCallback(
+          table.get(), expected_rows, limit,
+          [this](const string& uuid) { return this->RestartTServerAsync(uuid); }));
       for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
         MiniTabletServer* ts = cluster_->mini_tablet_server(i);
         ASSERT_OK(ts->WaitStarted());
@@ -1574,9 +1567,9 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 
       // Killing the tserver should lead to an RPC timeout.
       LOG(INFO) << "Doing a scan while killing a tserver...";
-      NO_FATALS(internal::DoScanWithCallback(table.get(), expected_rows, limit,
-          boost::bind(&ClientTest_TestScanFaultTolerance_Test::KillTServer,
-                      this, _1)));
+      NO_FATALS(internal::DoScanWithCallback(
+          table.get(), expected_rows, limit,
+          [this](const string& uuid) { return this->KillTServer(uuid); }));
 
       // Restart the server that we killed.
       for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
@@ -3289,8 +3282,10 @@ TEST_F(ClientTest, TestSessionMutationBufferMaxNum) {
 
     size_t monitor_max_batchers_count = 0;
     CountDownLatch monitor_run_ctl(1);
-    thread monitor(bind(&ClientTest::MonitorSessionBatchersCount, session.get(),
-                        &monitor_run_ctl, &monitor_max_batchers_count));
+    thread monitor([&]() {
+      MonitorSessionBatchersCount(session.get(),
+                                  &monitor_run_ctl, &monitor_max_batchers_count);
+    });
 
     // Apply a big number of tiny operations, flushing after each to utilize
     // maximum possible number of session's batchers.
@@ -3503,8 +3498,10 @@ TEST_F(ClientTest, TestAutoFlushBackgroundSmallOps) {
 
   int64_t monitor_max_buffer_size = 0;
   CountDownLatch monitor_run_ctl(1);
-  thread monitor(bind(&ClientTest::MonitorSessionBufferSize, session.get(),
-                      &monitor_run_ctl, &monitor_max_buffer_size));
+  thread monitor([&]() {
+    MonitorSessionBufferSize(session.get(),
+                             &monitor_run_ctl, &monitor_max_buffer_size);
+  });
 
   for (size_t i = 0; i < kRowNum; ++i) {
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i, "x"));
@@ -3538,8 +3535,10 @@ TEST_F(ClientTest, TestAutoFlushBackgroundBigOps) {
 
   int64_t monitor_max_buffer_size = 0;
   CountDownLatch monitor_run_ctl(1);
-  thread monitor(bind(&ClientTest::MonitorSessionBufferSize, session.get(),
-                      &monitor_run_ctl, &monitor_max_buffer_size));
+  thread monitor([&]() {
+    MonitorSessionBufferSize(session.get(),
+                             &monitor_run_ctl, &monitor_max_buffer_size);
+  });
 
   // Starting from i == 3: this is the lowest i when
   // ((i - 1) * kBufferSizeBytes / i) has a value greater than
@@ -3579,8 +3578,10 @@ TEST_F(ClientTest, TestAutoFlushBackgroundRandomOps) {
   SeedRandom();
   int64_t monitor_max_buffer_size = 0;
   CountDownLatch monitor_run_ctl(1);
-  thread monitor(bind(&ClientTest::MonitorSessionBufferSize, session.get(),
-                      &monitor_run_ctl, &monitor_max_buffer_size));
+  thread monitor([&]() {
+    MonitorSessionBufferSize(session.get(),
+                             &monitor_run_ctl, &monitor_max_buffer_size);
+  });
 
   for (size_t i = 0; i < kRowNum; ++i) {
     // Every operation takes less than 2/3 of the buffer space, so no

@@ -30,10 +30,8 @@
 #include <utility>
 #include <vector>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/container/small_vector.hpp>
 #include <boost/container/vector.hpp>
-#include <boost/function.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -92,6 +90,7 @@ class SignedTokenPB;
 
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
+using master::ConnectToMasterResponsePB;
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
 using master::DeleteTableRequestPB;
@@ -122,7 +121,7 @@ using internal::RemoteTabletServer;
 Status RetryFunc(const MonoTime& deadline,
                  const string& retry_msg,
                  const string& timeout_msg,
-                 const boost::function<Status(const MonoTime&, bool*)>& func) {
+                 const std::function<Status(const MonoTime&, bool*)>& func) {
   DCHECK(deadline.Initialized());
 
   if (deadline < MonoTime::Now()) {
@@ -183,10 +182,11 @@ KuduClient::Data::~Data() {
   dns_resolver_.reset();
 }
 
-RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTablet>& rt,
-                                                    const ReplicaSelection selection,
-                                                    const set<string>& blacklist,
-                                                    vector<RemoteTabletServer*>* candidates) const {
+RemoteTabletServer* KuduClient::Data::SelectTServer(
+    const scoped_refptr<RemoteTablet>& rt,
+    const ReplicaSelection selection,
+    const set<string>& blacklist,
+    vector<RemoteTabletServer*>* candidates) const {
   RemoteTabletServer* ret = nullptr;
   candidates->clear();
   switch (selection) {
@@ -334,11 +334,13 @@ Status KuduClient::Data::WaitForCreateTableToFinish(
     KuduClient* client,
     TableIdentifierPB table,
     const MonoTime& deadline) {
-  return RetryFunc(deadline,
-                   "Waiting on Create Table to be completed",
-                   "Timed out waiting for Table Creation",
-                   boost::bind(&KuduClient::Data::IsCreateTableInProgress,
-                               this, client, std::move(table), _1, _2));
+  return RetryFunc(
+      deadline,
+      "Waiting on Create Table to be completed",
+      "Timed out waiting for Table Creation",
+      [&](const MonoTime& deadline, bool* retry) {
+        return IsCreateTableInProgress(client, table, deadline, retry);
+      });
 }
 
 Status KuduClient::Data::DeleteTable(KuduClient* client,
@@ -400,11 +402,13 @@ Status KuduClient::Data::WaitForAlterTableToFinish(
     KuduClient* client,
     TableIdentifierPB table,
     const MonoTime& deadline) {
-  return RetryFunc(deadline,
-                   "Waiting on Alter Table to be completed",
-                   "Timed out waiting for AlterTable",
-                   boost::bind(&KuduClient::Data::IsAlterTableInProgress,
-                               this, client, std::move(table), _1, _2));
+  return RetryFunc(
+      deadline,
+      "Waiting on Alter Table to be completed",
+      "Timed out waiting for AlterTable",
+      [&](const MonoTime& deadline, bool* retry) {
+        return IsAlterTableInProgress(client, table, deadline, retry);
+      });
 }
 
 Status KuduClient::Data::InitLocalHostNames() {
@@ -581,7 +585,7 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
 void KuduClient::Data::ConnectedToClusterCb(
     const Status& status,
     const pair<Sockaddr, string>& leader_addr_and_name,
-    const master::ConnectToMasterResponsePB& connect_response,
+    const ConnectToMasterResponsePB& connect_response,
     CredentialsPolicy cred_policy) {
 
   const auto& leader_addr = leader_addr_and_name.first;
@@ -734,11 +738,11 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     // policy.
     scoped_refptr<internal::ConnectToClusterRpc> rpc(
         new internal::ConnectToClusterRpc(
-            std::bind(&KuduClient::Data::ConnectedToClusterCb, this,
-            std::placeholders::_1,
-            std::placeholders::_2,
-            std::placeholders::_3,
-            creds_policy),
+            [this, creds_policy](const Status& status,
+                                 const std::pair<Sockaddr, string>& leader_master,
+                                 const ConnectToMasterResponsePB& connect_response) {
+              this->ConnectedToClusterCb(status, leader_master, connect_response, creds_policy);
+            },
         std::move(master_addrs_with_names),
         deadline,
         client->default_rpc_timeout(),

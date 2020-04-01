@@ -17,12 +17,12 @@
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <vector>
 #include <utility>
 
-#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -162,14 +162,14 @@ void RpcLineItemDAO::Init() {
                                   : KuduSession::AUTO_FLUSH_BACKGROUND));
 }
 
-void RpcLineItemDAO::WriteLine(const boost::function<void(KuduPartialRow*)> &f) {
+void RpcLineItemDAO::WriteLine(const std::function<void(KuduPartialRow*)>& f) {
   unique_ptr<KuduInsert> insert(client_table_->NewInsert());
   f(insert->mutable_row());
   CHECK_OK(session_->Apply(insert.release()));
   HandleLine();
 }
 
-void RpcLineItemDAO::MutateLine(const boost::function<void(KuduPartialRow*)> &f) {
+void RpcLineItemDAO::MutateLine(const std::function<void(KuduPartialRow*)>& f) {
   unique_ptr<KuduUpdate> update(client_table_->NewUpdate());
   f(update->mutable_row());
   CHECK_OK(session_->Apply(update.release()));

@@ -16,12 +16,12 @@
 // under the License.
 #pragma once
 
-#include <boost/function.hpp>
+#include <functional>
 
 namespace kudu {
 namespace rpc {
 
-typedef boost::function<void()> ResponseCallback;
+typedef std::function<void()> ResponseCallback;
 
 } // namespace rpc
 } // namespace kudu

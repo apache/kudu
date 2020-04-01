@@ -16,10 +16,9 @@
 // under the License.
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
-
-#include <boost/bind.hpp>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -305,7 +304,7 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::ReplicaFoundCb(const Status& s
 
   DCHECK_EQ(result.result, RetriableRpcStatus::OK);
   current_ = server;
-  Try(server, boost::bind(&RetriableRpc::SendRpcCb, this, Status::OK()));
+  Try(server, [this]() { this->SendRpcCb(Status::OK()); });
 }
 
 template <class Server, class RequestPB, class ResponsePB>

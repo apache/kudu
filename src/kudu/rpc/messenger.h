@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -37,11 +38,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
-
-namespace boost {
-template <typename Signature>
-class function;
-}
 
 namespace kudu {
 
@@ -271,7 +267,7 @@ class Messenger {
   //
   // The status argument conveys whether 'func' was run correctly (i.e.
   // after the elapsed time) or not.
-  void ScheduleOnReactor(const boost::function<void(const Status&)>& func,
+  void ScheduleOnReactor(std::function<void(const Status&)> func,
                          MonoDelta when);
 
   const security::TlsContext& tls_context() const { return *tls_context_; }

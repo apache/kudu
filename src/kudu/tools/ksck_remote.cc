@@ -24,7 +24,6 @@
 #include <mutex>
 #include <ostream>
 
-#include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -277,7 +276,7 @@ void RemoteKsckTabletServer::FetchCurrentTimestampAsync() {
   generic_proxy_->ServerClockAsync(cb->req,
                                    &cb->resp,
                                    &cb->rpc,
-                                   boost::bind(&ServerClockResponseCallback::Run, cb));
+                                   [cb]() { cb->Run(); });
 }
 
 Status RemoteKsckTabletServer::FetchCurrentTimestamp() {
@@ -469,10 +468,11 @@ class ChecksumStepper {
         LOG(FATAL) << "Unknown type";
         break;
     }
-    unique_ptr<ChecksumCallbackHandler> handler(new ChecksumCallbackHandler(this));
-    rpc::ResponseCallback cb = boost::bind(&ChecksumCallbackHandler::Run, handler.get());
+
+    // 'handler' deletes itself when complete.
+    auto* handler = new ChecksumCallbackHandler(this);
+    rpc::ResponseCallback cb = [handler]() { handler->Run(); };
     proxy_->ChecksumAsync(req_, &resp_, &rpc_, cb);
-    ignore_result(handler.release());
   }
 
   const Schema schema_;

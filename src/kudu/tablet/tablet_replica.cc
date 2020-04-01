@@ -654,10 +654,9 @@ Status TabletReplica::StartFollowerTransaction(const scoped_refptr<ConsensusRoun
   RETURN_NOT_OK(NewReplicaTransactionDriver(std::move(transaction), &driver));
 
   // A raw pointer is required to avoid a refcount cycle.
+  auto* driver_raw = driver.get();
   state->consensus_round()->SetConsensusReplicatedCallback(
-      std::bind(&TransactionDriver::ReplicationFinished,
-                driver.get(),
-                std::placeholders::_1));
+      [driver_raw](const Status& s) { driver_raw->ReplicationFinished(s); });
 
   RETURN_NOT_OK(driver->ExecuteAsync());
   return Status::OK();

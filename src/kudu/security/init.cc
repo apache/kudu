@@ -116,7 +116,7 @@ Status Krb5CallToStatus(krb5_context ctx, krb5_error_code code) {
 
   std::unique_ptr<const char, std::function<void(const char*)>> err_msg(
       krb5_get_error_message(ctx, code),
-      std::bind(krb5_free_error_message, ctx, std::placeholders::_1));
+      [ctx](const char* msg) { krb5_free_error_message(ctx, msg); });
   return Status::RuntimeError(err_msg.get());
 }
 #define KRB5_RETURN_NOT_OK_PREPEND(call, prepend) \
