@@ -347,12 +347,13 @@ fetch_and_patch \
  $TRACE_VIEWER_SOURCE \
  $TRACE_VIEWER_PATCHLEVEL
 
-BOOST_PATCHLEVEL=1
+BOOST_PATCHLEVEL=2
 fetch_and_patch \
  boost_${BOOST_VERSION}.tar.gz \
  $BOOST_SOURCE \
  $BOOST_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch"
+ "patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch" \
+ "patch -p0 < $TP_DIR/patches/boost-issue-440-darwin-version.patch"
 
 # Return 0 if the current system appears to be el6 (either CentOS or proper RHEL)
 needs_openssl_workaround() {
