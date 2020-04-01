@@ -111,6 +111,11 @@ public class SubprocessExecutor {
       MessageReader reader = new MessageReader(inboundQueue, messageIO, injectInterrupt);
       CompletableFuture<Void> readerFuture = CompletableFuture.runAsync(reader, readerService);
       readerFuture.exceptionally(errorHandler);
+      // Force the program to exit when reader future completes.
+      //
+      // TODO(abukor): Refactor code so the futures can be cancelled instead
+      //  of having to call System.exit()
+      readerFuture = readerFuture.thenRun(() -> System.exit(0));
 
       // Start multiple message parser threads and run the tasks asynchronously.
       MessageParser parser = new MessageParser(inboundQueue, outboundQueue, protocolHandler);

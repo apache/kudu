@@ -307,6 +307,12 @@
         <Bug pattern="MS_MUTABLE_ARRAY" />
     </Match>
     <Match>
+        <!-- We need to exit instead of throwing RuntimeException to make sure
+         all threads stop -->
+        <Class name="org.apache.kudu.subprocess.SubprocessExecutor"/>
+        <Bug pattern="DM_EXIT"/>
+    </Match>
+    <Match>
         <!-- This is done to simplify testing. -->
         <Class name="org.apache.kudu.subprocess.ranger.TestRangerSubprocess"/>
         <Method name="mockAuthorizer" />
