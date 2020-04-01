@@ -91,10 +91,11 @@ Status MiniPostgres::Start() {
   if (!wait.ok()) {
     // TODO(abukor): implement retry with a different port if it can't bind
     WARN_NOT_OK(process_->Kill(SIGINT), "failed to send SIGINT to Postgres");
-  } else {
-    LOG(INFO) << "Postgres bound to " << port_;
+    return wait;
   }
-  return wait;
+
+  LOG(INFO) << "Postgres bound to " << port_;
+  return WaitForReady();
 }
 
 Status MiniPostgres::Stop() {
@@ -140,6 +141,26 @@ Status MiniPostgres::CreateConfigs() {
   RETURN_NOT_OK(env->NewWritableFile(config_file, &file));
   RETURN_NOT_OK(file->Append(config));
   return file->Close();
+}
+
+Status MiniPostgres::WaitForReady() const {
+  Status s;
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
+  while (MonoTime::Now() < deadline) {
+    Subprocess psql({
+        JoinPathSegments(bin_dir_, "postgres/pg_isready"),
+        "-p", SimpleItoa(port_),
+        "-h", host_,
+    });
+    RETURN_NOT_OK(psql.Start());
+    s = psql.WaitAndCheckExitCode();
+    if (s.ok()) {
+      return s;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
+  return Status::TimedOut(s.ToString());
 }
 
 } // namespace postgres

@@ -23,6 +23,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -83,6 +84,9 @@ class MiniPostgres {
     CHECK_OK(env->GetExecutablePath(&exe));
     return DirName(exe);
   }
+
+  // Tests connection to Postgres, blocking until success or it times out.
+  Status WaitForReady() const WARN_UNUSED_RESULT;
 
   // 'pg_root' is the subdirectory in which the Postgres data files will live.
   Status CreateConfigs();
