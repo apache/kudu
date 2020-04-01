@@ -17,6 +17,7 @@
 
 #include "kudu/common/columnar_serialization.h"
 
+#include <emmintrin.h>
 #include <immintrin.h>
 
 #include <cstring>
@@ -319,6 +320,79 @@ void CopyNonNullBitmap(const uint8_t* non_null_bitmap,
 ////////////////////////////////////////////////////////////
 
 namespace {
+
+const bool kHasAvx2 = base::CPU().has_avx2();
+
+// Return the number of rows copied through an AVX-optimized implementation.
+// These implementations leave a "tail" of non-vectorizable rows that get
+// handled by the scalar implementation.
+template<int sizeof_type>
+int CopySelectedRowsAvx(
+    const uint16_t* __restrict__ /* sel_rows */,
+    int /* n_sel_rows */,
+    const uint8_t* __restrict__ /* src_buf */,
+    uint8_t* __restrict__ /* dst_buf */) {
+  return 0;
+}
+
+// Define AVX2-optimized variants where possible.
+// These are disabled on GCC4 because it doesn't support per-function
+// enabling of intrinsics.
+#if __x86_64__ && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 5))
+template<>
+__attribute__((target("avx2")))
+int CopySelectedRowsAvx<4>(
+    const uint16_t* __restrict__ sel_rows,
+    int n_sel_rows,
+    const uint8_t* __restrict__ src_buf,
+    uint8_t* __restrict__ dst_buf) {
+
+  static constexpr int sizeof_type = 4;
+  static constexpr int ints_per_vector = sizeof(__m256i)/sizeof_type;
+  int iters = n_sel_rows / ints_per_vector;
+  while (iters--) {
+    // Load 8x16-bit indexes from sel_rows, zero-extending them to 8x32-bit integers
+    // since the 'gather' instructions don't support 16-bit indexes.
+    __m256i indexes = _mm256_cvtepu16_epi32(*reinterpret_cast<const __m128i*>(sel_rows));
+    // Gather 8x32-bit elements from src_buf[index*sizeof_type] for each index.
+    __m256i elems = _mm256_i32gather_epi32(src_buf, indexes, sizeof_type);
+    // Store the 8x32-bit elements into the destination.
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_buf), elems);
+    dst_buf += ints_per_vector * sizeof_type;
+    sel_rows += ints_per_vector;
+  }
+  return KUDU_ALIGN_DOWN(n_sel_rows, ints_per_vector);
+}
+
+template<>
+__attribute__((target("avx2")))
+int CopySelectedRowsAvx<8>(
+    const uint16_t* __restrict__ sel_rows,
+    int n_sel_rows,
+    const uint8_t* __restrict__ src_buf,
+    uint8_t* __restrict__ dst_buf) {
+
+  static constexpr int sizeof_type = 8;
+  static constexpr int ints_per_vector = sizeof(__m256i)/sizeof_type;
+  int iters = n_sel_rows / ints_per_vector;
+  while (iters--) {
+    // Load 4x16-bit indexes from sel_rows into 'indexes'. This compiles down
+    // into a single vpmovzxwd instruction despite looking like four separate loads.
+    __m128i indexes = _mm_set_epi32(sel_rows[3],
+                                    sel_rows[2],
+                                    sel_rows[1],
+                                    sel_rows[0]);
+    // Load 4x64-bit integers from src_buf[index * sizeof_type] for each index.
+    __m256i elems = _mm256_i32gather_epi64(src_buf, indexes, sizeof_type);
+    // Store the 4x64-bit integers in the destination.
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_buf), elems);
+    dst_buf += ints_per_vector * sizeof_type;
+    sel_rows += ints_per_vector;
+  }
+  return KUDU_ALIGN_DOWN(n_sel_rows, ints_per_vector);
+}
+#endif
+
 template<int sizeof_type>
 ATTRIBUTE_NOINLINE
 void CopySelectedRowsImpl(const uint16_t* __restrict__ sel_rows,
@@ -326,6 +400,13 @@ void CopySelectedRowsImpl(const uint16_t* __restrict__ sel_rows,
                           const uint8_t* __restrict__ src_buf,
                           uint8_t* __restrict__ dst_buf) {
   int rem = n_sel_rows;
+  if (kHasAvx2) {
+    int copied = CopySelectedRowsAvx<sizeof_type>(sel_rows, n_sel_rows, src_buf, dst_buf);
+    rem -= copied;
+    dst_buf += copied * sizeof_type;
+    sel_rows += copied;
+  }
+
   while (rem--) {
     int idx = *sel_rows++;
     memcpy(dst_buf, src_buf + idx * sizeof_type, sizeof_type);
@@ -345,6 +426,8 @@ void CopySelectedRowsImpl(const vector<uint16_t>& sel_rows,
 
 } // anonymous namespace
 
+// Copy the selected cells from the column data 'src_buf' into 'dst_buf' as indicated by
+// the indices in 'sel_rows'. 'sizeof_type' is the size in bytes of each cell.
 void CopySelectedRows(const vector<uint16_t>& sel_rows,
                       int sizeof_type,
                       const uint8_t* __restrict__ src_buf,
@@ -395,7 +478,7 @@ void RelocateSlicesToIndirect(uint8_t* __restrict__ cells_buf, int n_rows,
 
 // Specialized division for the known type sizes. Despite having some branching here,
 // this is faster than a 'div' instruction which has a 20+ cycle latency.
-size_t div_type_size(size_t s, size_t divisor) {
+size_t div_sizeof_type(size_t s, size_t divisor) {
   switch (divisor) {
     case 1: return s;
     case 2: return s/2;
@@ -412,22 +495,22 @@ size_t div_type_size(size_t s, size_t divisor) {
 void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
                                  const SelectedRows& sel_rows,
                                  ColumnarSerializedBatch::Column* dst) {
-  size_t type_size = cblock.type_info()->size();
+  size_t sizeof_type = cblock.type_info()->size();
   int n_sel = sel_rows.num_selected();
 
   // Number of initial rows in the dst values and null_bitmap.
-  DCHECK_EQ(dst->data.size() % type_size, 0);
-  size_t initial_rows = div_type_size(dst->data.size(), type_size);
+  DCHECK_EQ(dst->data.size() % sizeof_type, 0);
+  size_t initial_rows = div_sizeof_type(dst->data.size(), sizeof_type);
   size_t new_num_rows = initial_rows + n_sel;
 
-  dst->data.resize_with_extra_capacity(type_size * new_num_rows);
-  uint8_t* dst_buf = dst->data.data() + type_size * initial_rows;
+  dst->data.resize_with_extra_capacity(sizeof_type * new_num_rows);
+  uint8_t* dst_buf = dst->data.data() + sizeof_type * initial_rows;
   const uint8_t* src_buf = cblock.cell_ptr(0);
 
   if (sel_rows.all_selected()) {
-    memcpy(dst_buf, src_buf, type_size * n_sel);
+    memcpy(dst_buf, src_buf, sizeof_type * n_sel);
   } else {
-    CopySelectedRows(sel_rows.indexes(), type_size, src_buf, dst_buf);
+    CopySelectedRows(sel_rows.indexes(), sizeof_type, src_buf, dst_buf);
   }
 
   if (cblock.is_nullable()) {
@@ -437,7 +520,8 @@ void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
                       sel_rows.bitmap(),
                       initial_rows, cblock.nrows(),
                       dst->non_null_bitmap->data());
-    ZeroNullValues(type_size, initial_rows, n_sel, dst->data.data(), dst->non_null_bitmap->data());
+    ZeroNullValues(sizeof_type, initial_rows, n_sel,
+        dst->data.data(), dst->non_null_bitmap->data());
   }
 
   if (cblock.type_info()->physical_type() == BINARY) {
