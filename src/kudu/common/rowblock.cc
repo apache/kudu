@@ -23,6 +23,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/bits.h"
+#include "kudu/gutil/cpu.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
 
@@ -76,8 +77,7 @@ void SelectionVector::ClearToSelectAtMost(size_t max_rows) {
 }
 
 
-// TODO(todd) this is a bit faster when implemented with target "bmi" enabled.
-// Consider duplicating it and doing runtime switching.
+template<bool BMI>
 static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
                                     int n_bytes,
                                     uint16_t* __restrict__ dst) {
@@ -86,6 +86,18 @@ static void GetSelectedRowsInternal(const uint8_t* __restrict__ bitmap,
                   *dst++ = bit;
                 });
 }
+
+static const bool kHasBmi = base::CPU().has_bmi();
+
+#ifdef __x86_64__
+// Explicit instantiation with the BMI instruction set enabled, which
+// makes this slightly faster.
+template
+__attribute__((target("bmi")))
+void GetSelectedRowsInternal<true>(const uint8_t* __restrict__ bitmap,
+                                   int n_bytes,
+                                   uint16_t* __restrict__ dst);
+#endif
 
 SelectedRows SelectionVector::GetSelectedRows() const {
   CHECK_LE(n_rows_, std::numeric_limits<uint16_t>::max());
@@ -97,7 +109,11 @@ SelectedRows SelectionVector::GetSelectedRows() const {
   vector<uint16_t> selected;
   if (n_selected > 0) {
     selected.resize(n_selected);
-    GetSelectedRowsInternal(&bitmap_[0], n_bytes_, selected.data());
+    if (kHasBmi) {
+      GetSelectedRowsInternal<true>(&bitmap_[0], n_bytes_, selected.data());
+    } else {
+      GetSelectedRowsInternal<false>(&bitmap_[0], n_bytes_, selected.data());
+    }
   }
   return SelectedRows(this, std::move(selected));
 }
