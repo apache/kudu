@@ -97,7 +97,7 @@ object KuduBackup {
     io.writeTableMetadata(tableMetadata, metadataPath)
   }
 
-  def run(options: BackupOptions, session: SparkSession): Int = {
+  def run(options: BackupOptions, session: SparkSession): Boolean = {
     // Set the job group for all the spark backup jobs.
     // Note: The job description will be overridden by each Kudu table job.
     session.sparkContext.setJobGroup(s"Kudu Backup @ ${options.toMs}", "Kudu Backup")
@@ -156,10 +156,7 @@ object KuduBackup {
         log.error(
           s"Failed to back up table $tableName: Look back in the logs for the full exception. Error: ${ex.toString}")
     }
-    if (backupResults.exists(_._2.isFailure))
-      1
-    else
-      0
+    !backupResults.exists(_._2.isFailure)
   }
 
   def main(args: Array[String]): Unit = {
@@ -172,6 +169,11 @@ object KuduBackup {
       .appName("Kudu Table Backup")
       .getOrCreate()
 
-    System.exit(run(options, session))
+    val isRunSuccessful: Boolean = run(options, session)
+    if (!isRunSuccessful) {
+      throw new RuntimeException("Kudu Table Backup application failed")
+    }
+
+    session.stop()
   }
 }

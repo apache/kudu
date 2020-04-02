@@ -153,7 +153,7 @@ object KuduRestore {
     }
   }
 
-  def run(options: RestoreOptions, session: SparkSession): Int = {
+  def run(options: RestoreOptions, session: SparkSession): Boolean = {
     // Set the job group for all the spark restore jobs.
     // Note: The job description will be overridden by each Kudu table job.
     session.sparkContext.setJobGroup(s"Kudu Restore @ ${options.timestampMs}", "Kudu Restore")
@@ -203,10 +203,7 @@ object KuduRestore {
         log.error(
           s"Failed to restore table $tableName: Look back in the logs for the full exception. Error: ${ex.toString}")
     }
-    if (restoreResults.exists(_._2.isFailure))
-      1
-    else
-      0
+    !restoreResults.exists(_._2.isFailure)
   }
 
   // Kudu isn't good at creating a lot of tablets at once, and by default tables may only be created
@@ -315,6 +312,11 @@ object KuduRestore {
       .appName("Kudu Table Restore")
       .getOrCreate()
 
-    System.exit(run(options, session))
+    val isRunSuccessful: Boolean = run(options, session)
+    if (!isRunSuccessful) {
+      throw new RuntimeException("Kudu Table Restore application failed!")
+    }
+
+    session.stop()
   }
 }
