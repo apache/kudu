@@ -938,11 +938,11 @@ HealthCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
                repl_info->status_pb->tablet_data_state() == tablet::TABLET_DATA_COPYING) {
       copying_replicas_count++;
     }
-    // Compare the master's and peers' consensus configs.
-    for (const auto& r : replicas) {
-      if (r.consensus_state && !r.consensus_state->Matches(master_config)) {
-        conflicting_states++;
-      }
+  }
+  // Compare the master's and peers' consensus configs.
+  for (const auto& r : replicas) {
+    if (r.consensus_state && !r.consensus_state->Matches(master_config)) {
+      conflicting_states++;
     }
   }
 

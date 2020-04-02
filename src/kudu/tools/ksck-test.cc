@@ -1470,7 +1470,7 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
             error_messages[0].ToString());
   const string err_str = err_stream_.str();
   ASSERT_STR_CONTAINS(err_str, "Tablet tablet-id-0 of table 'test' is conflicted: "
-                               "3 replicas' active configs disagree with the leader master's");
+                               "1 replicas' active configs disagree with the leader master's");
   ASSERT_STR_CONTAINS(err_str,
       "The consensus matrix is:\n"
       " Config source |     Replicas     | Current term | Config index | Committed?\n"
