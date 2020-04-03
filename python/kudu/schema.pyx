@@ -26,7 +26,8 @@ from kudu.compat import tobytes, frombytes
 from kudu.schema cimport *
 from kudu.errors cimport check_status
 from kudu.client cimport PartialRow
-from kudu.util import get_decimal_scale, to_unixtime_micros, to_unscaled_decimal
+from kudu.util import get_decimal_scale, to_unixtime_micros, to_unscaled_decimal, \
+    unix_epoch_days_to_date, date_to_unix_epoch_days
 from errors import KuduException
 
 import six
@@ -46,6 +47,7 @@ FLOAT = KUDU_FLOAT
 DOUBLE = KUDU_DOUBLE
 
 UNIXTIME_MICROS = KUDU_UNIXTIME_MICROS
+DATE = KUDU_DATE
 BINARY = KUDU_BINARY
 
 DECIMAL = KUDU_DECIMAL
@@ -125,6 +127,7 @@ binary = KuduType(KUDU_BINARY)
 unixtime_micros = KuduType(KUDU_UNIXTIME_MICROS)
 decimal = KuduType(KUDU_DECIMAL)
 varchar = KuduType(KUDU_VARCHAR)
+date = KuduType(KUDU_DATE)
 
 
 cdef dict _type_names = {
@@ -139,7 +142,8 @@ cdef dict _type_names = {
     BINARY: 'binary',
     UNIXTIME_MICROS: 'unixtime_micros',
     DECIMAL: 'decimal',
-    VARCHAR: 'varchar'
+    VARCHAR: 'varchar',
+    DATE: 'date'
 }
 
 
@@ -157,7 +161,8 @@ cdef dict _type_to_obj = {
     BINARY: binary,
     UNIXTIME_MICROS: unixtime_micros,
     DECIMAL: decimal,
-    VARCHAR: varchar
+    VARCHAR: varchar,
+    DATE: date
 }
 
 
@@ -796,6 +801,9 @@ cdef class KuduValue:
         elif (type_.name == 'unixtime_micros'):
             value = to_unixtime_micros(value)
             self._value = C_KuduValue.FromInt(value)
+        elif (type_.name == 'date'):
+            val = date_to_unix_epoch_days(value)
+            self._value = C_KuduValue.FromInt(val)
         elif (type_.name == 'decimal'):
             IF PYKUDU_INT128_SUPPORTED == 1:
                 scale = get_decimal_scale(value)

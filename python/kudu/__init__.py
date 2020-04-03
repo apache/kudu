@@ -40,6 +40,7 @@ from kudu.errors import (KuduException, KuduBadStatus, KuduNotFound,  # noqa
 from kudu.schema import (int8, int16, int32, int64, string_ as string,  # noqa
                          double_ as double, float_, float_ as float, binary,
                          unixtime_micros, bool_ as bool, decimal, varchar,
+                         date,
                          KuduType,
                          SchemaBuilder, ColumnSpec, Schema, ColumnSchema,
                          COMPRESSION_DEFAULT,

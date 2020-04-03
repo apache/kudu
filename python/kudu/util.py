@@ -180,3 +180,36 @@ def get_decimal_scale(decimal):
        int : The calculated scale
        """
     return max(0, -decimal.as_tuple().exponent)
+
+def unix_epoch_days_to_date(ndays):
+    """
+    Convert number of days since the unix epoch into datetime.date in UTC timezone.
+    Number of days converted into timestamp by multiplying days on number
+    of seconds per day (86400).
+
+    Parameters
+    ---------
+    ndays : integer
+      The number of days since the unix epoch
+
+    Returns
+    -------
+    datetime.date : calendar date for "ndays" days since unix epoch
+    """
+    return datetime.datetime.utcfromtimestamp(ndays * 86400).date()
+
+def date_to_unix_epoch_days(date):
+    """
+    Convert datetime.date value to a integer representing
+    the number of days since the unix epoch.
+
+    Parameters
+    ---------
+    date : datetime.date
+
+    Returns
+    -------
+    int : Number of days since unix epoch
+    """
+    delta = date - datetime.datetime.utcfromtimestamp(0).date()
+    return delta.days

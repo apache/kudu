@@ -32,7 +32,8 @@ from kudu.compat import tobytes, frombytes, dict_iter
 from kudu.schema cimport Schema, ColumnSchema, ColumnSpec, KuduValue, KuduType
 from kudu.errors cimport check_status
 from kudu.util import to_unixtime_micros, from_unixtime_micros, \
-    from_hybridtime, to_unscaled_decimal, from_unscaled_decimal
+    from_hybridtime, to_unscaled_decimal, from_unscaled_decimal, \
+    unix_epoch_days_to_date, date_to_unix_epoch_days
 from errors import KuduException
 
 import six
@@ -86,7 +87,8 @@ cdef dict _type_names = {
     KUDU_BINARY : "KUDU_BINARY",
     KUDU_UNIXTIME_MICROS : "KUDU_UNIXTIME_MICROS",
     KUDU_DECIMAL : "KUDU_DECIMAL",
-    KUDU_VARCHAR : "KUDU_VARCHAR"
+    KUDU_VARCHAR : "KUDU_VARCHAR",
+    KUDU_DATE : "KUDU_DATE"
 }
 
 # Range Partition Bound Type enums
@@ -731,6 +733,14 @@ cdef class UnixtimeMicrosVal(RawValue):
 
     def __cinit__(self, obj):
         self.val = to_unixtime_micros(obj)
+        self.data = &self.val
+
+cdef class DateVal(RawValue):
+    cdef:
+        int32_t val
+
+    def __cinit__(self, obj):
+        self.val = date_to_unix_epoch_days(obj)
         self.data = &self.val
 
 #----------------------------------------------------------------------
@@ -1570,6 +1580,11 @@ cdef class Row:
         return cpython.PyBytes_FromStringAndSize(<char*> val.mutable_data(),
                                                  val.size())
 
+    cdef inline get_date(self, int i):
+        cdef int32_t val
+        check_status(self.row.GetDate(i, &val))
+        return unix_epoch_days_to_date(val)
+
     cdef inline get_slot(self, int i):
         cdef:
             Status s
@@ -1599,6 +1614,8 @@ cdef class Row:
             return self.get_decimal(i)
         elif t == KUDU_VARCHAR:
             return frombytes(self.get_varchar(i))
+        elif t == KUDU_DATE:
+            return self.get_date(i)
         else:
             raise TypeError("Cannot get kudu type <{0}>"
                                 .format(_type_names[t]))
@@ -2805,6 +2822,9 @@ cdef class PartialRow:
         elif t == KUDU_UNIXTIME_MICROS:
             check_status(self.row.SetUnixTimeMicros(i, <int64_t>
                 to_unixtime_micros(value)))
+        elif t == KUDU_DATE:
+            val = date_to_unix_epoch_days(value)
+            check_status(self.row.SetDate(i, <int32_t>val))
         elif t == KUDU_DECIMAL:
             IF PYKUDU_INT128_SUPPORTED == 1:
                 check_status(self.row.SetUnscaledDecimal(i, <int128_t>to_unscaled_decimal(value)))
@@ -2928,6 +2948,8 @@ cdef inline cast_pyvalue(DataType t, object o):
         return StringVal(o)
     elif t == KUDU_VARCHAR:
         return StringVal(o)
+    elif t == KUDU_DATE:
+        return DateVal(o)
     else:
         raise TypeError("Cannot cast kudu type <{0}>".format(_type_names[t]))
 

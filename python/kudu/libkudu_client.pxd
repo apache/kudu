@@ -126,6 +126,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KUDU_UNIXTIME_MICROS " kudu::client::KuduColumnSchema::UNIXTIME_MICROS"
         KUDU_DECIMAL " kudu::client::KuduColumnSchema::DECIMAL"
         KUDU_VARCHAR " kudu::client::KuduColumnSchema::VARCHAR"
+        KUDU_DATE " kudu::client::KuduColumnSchema::DATE"
 
     enum EncodingType" kudu::client::KuduColumnStorageAttributes::EncodingType":
         EncodingType_AUTO " kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING"
@@ -271,6 +272,9 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
         Status GetVarchar(const Slice& col_name, Slice* val)
         Status GetVarchar(int col_idx, Slice* val)
 
+        Status GetDate(Slice& col_name, int32_t* val)
+        Status GetDate(int col_idx, int32_t* val)
+
         const void* cell(int col_idx)
         string ToString()
 
@@ -368,6 +372,9 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
 
         Status SetVarchar(Slice& col_name, Slice& val)
         Status SetVarchar(int col_idx, Slice& val)
+
+        Status SetDate(Slice& col_name, int32_t val)
+        Status SetDate(int col_idx, int32_t val)
 
         Status SetNull(Slice& col_name)
         Status SetNull(int col_idx)

@@ -272,6 +272,10 @@ class TestScanToken(TestScanBase):
         # Test a varchar predicate
         self._test_varchar_pred()
 
+    def test_date_pred(self):
+        # Test a date predicate
+        self._test_date_pred()
+
     def test_scan_selection(self):
         """
         This test confirms that setting the scan selection policy on the

@@ -182,6 +182,19 @@ class TestSchema(unittest.TestCase):
         with self.assertRaises(kudu.KuduInvalidArgument):
             builder.build()
 
+    def test_date(self):
+        builder = kudu.schema_builder()
+        (builder.add_column('key')
+         .type('date')
+         .primary_key()
+         .nullable(False))
+        schema = builder.build()
+
+        column = schema[0]
+        tp = column.type
+        assert tp.name == 'date'
+        assert tp.type == kudu.schema.DATE
+
     def test_varchar(self):
         builder = kudu.schema_builder()
         (builder.add_column('key')
