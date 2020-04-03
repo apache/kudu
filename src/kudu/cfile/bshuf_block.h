@@ -174,7 +174,7 @@ class BShufBlockBuilder final : public BlockBuilder {
   }
 
   Slice Finish(rowid_t ordinal_pos, int final_size_of_type) {
-    data_.resize(kHeaderSize + final_size_of_type * count_);
+    data_.resize(final_size_of_type * count_);
 
     // Do padding so that the input num of element is multiple of 8.
     int num_elems_after_padding = KUDU_ALIGN_UP(count_, 8);
