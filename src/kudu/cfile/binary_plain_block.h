@@ -63,12 +63,7 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
 
   int Add(const uint8_t *vals, size_t count) OVERRIDE;
 
-  // Return a Slice which represents the encoded data.
-  //
-  // This Slice points to internal data of this class
-  // and becomes invalid after the builder is destroyed
-  // or after Finish() is called again.
-  Slice Finish(rowid_t ordinal_pos) OVERRIDE;
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) override;
 
   void Reset() OVERRIDE;
 
@@ -87,7 +82,7 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
   Status GetLastKey(void* key) const OVERRIDE;
 
   // Length of a header.
-  static const size_t kMaxHeaderSize = sizeof(uint32_t) * 3;
+  static constexpr size_t kHeaderSize = sizeof(uint32_t) * 3;
 
  private:
   faststring buffer_;

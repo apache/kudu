@@ -19,6 +19,7 @@
 #define KUDU_CFILE_BLOCK_ENCODINGS_H
 
 #include <algorithm>
+#include <vector>
 #include <stdint.h>
 #include <glog/logging.h>
 
@@ -58,12 +59,13 @@ class BlockBuilder {
   // than requested if the block is full.
   virtual int Add(const uint8_t *vals, size_t count) = 0;
 
-  // Return a Slice which represents the encoded data.
+  // Return one or more Slices which represents the encoded data.
+  // The multiple slices will be concatenated when appended to the file.
   //
-  // This Slice points to internal data of this class
-  // and becomes invalid after the builder is destroyed
-  // or after Finish() is called again.
-  virtual Slice Finish(rowid_t ordinal_pos) = 0;
+  // These Slices may point to internal data of this class
+  // and can become invalid after the builder is destroyed
+  // or after any other method is called.
+  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) = 0;
 
   // Reset the internal state of the encoder.
   //

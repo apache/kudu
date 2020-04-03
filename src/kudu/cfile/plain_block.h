@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_util.h"
@@ -66,10 +67,10 @@ class PlainBlockBuilder final : public BlockBuilder {
     return buffer_.size() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
     InlineEncodeFixed32(&buffer_[0], count_);
     InlineEncodeFixed32(&buffer_[4], ordinal_pos);
-    return Slice(buffer_);
+    *slices = { Slice(buffer_) };
   }
 
   virtual void Reset() OVERRIDE {

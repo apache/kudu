@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ostream>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -39,6 +40,8 @@
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
 
+using std::vector;
+
 namespace kudu {
 namespace cfile {
 
@@ -52,11 +55,11 @@ BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions *options)
 void BinaryPlainBlockBuilder::Reset() {
   offsets_.clear();
   buffer_.clear();
-  buffer_.resize(kMaxHeaderSize);
   buffer_.reserve(options_->storage_attributes.cfile_block_size);
+  buffer_.resize(kHeaderSize);
 
-  size_estimate_ = kMaxHeaderSize;
-  end_of_data_offset_ = kMaxHeaderSize;
+  size_estimate_ = kHeaderSize;
+  end_of_data_offset_ = kHeaderSize;
   finished_ = false;
 }
 
@@ -64,7 +67,7 @@ bool BinaryPlainBlockBuilder::IsBlockFull() const {
   return size_estimate_ > options_->storage_attributes.cfile_block_size;
 }
 
-Slice BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
+void BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices) {
   finished_ = true;
 
   size_t offsets_pos = buffer_.size();
@@ -79,7 +82,7 @@ Slice BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
     coding::AppendGroupVarInt32Sequence(&buffer_, 0, &offsets_[0], offsets_.size());
   }
 
-  return Slice(buffer_);
+  *slices = { Slice(buffer_) };
 }
 
 int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
@@ -131,8 +134,8 @@ Status BinaryPlainBlockBuilder::GetKeyAtIdx(void *key_void, int idx) const {
   }
 
   if (PREDICT_FALSE(offsets_.size() == 1)) {
-    *slice = Slice(&buffer_[kMaxHeaderSize],
-                   end_of_data_offset_ - kMaxHeaderSize);
+    *slice = Slice(&buffer_[kHeaderSize],
+                   end_of_data_offset_ - kHeaderSize);
   } else if (idx + 1 == offsets_.size()) {
     *slice = Slice(&buffer_[offsets_[idx]],
                    end_of_data_offset_ - offsets_[idx]);

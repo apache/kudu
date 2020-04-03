@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_util.h"
@@ -65,11 +66,11 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     writer_.Flush(false);
-    return Slice(buf_);
+    *slices = { Slice(buf_) };
   }
 
   virtual void Reset() OVERRIDE {

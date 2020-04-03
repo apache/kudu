@@ -29,6 +29,7 @@
 #include <cstring>
 #include <cstdint>
 #include <ostream>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -151,9 +152,9 @@ class BShufBlockBuilder final : public BlockBuilder {
     return Status::OK();
   }
 
-  Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
     RememberFirstAndLastKey();
-    return Finish(ordinal_pos, size_of_type);
+    *slices = { Finish(ordinal_pos, size_of_type) };
   }
 
  private:
@@ -224,7 +225,7 @@ class BShufBlockBuilder final : public BlockBuilder {
 };
 
 template<>
-Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos);
+void BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos, std::vector<Slice>* slices);
 
 template<DataType Type>
 class BShufBlockDecoder final : public BlockDecoder {

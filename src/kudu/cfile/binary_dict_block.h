@@ -38,6 +38,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <sparsehash/dense_hash_map>
 
@@ -89,7 +90,7 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
 
   int Add(const uint8_t* vals, size_t count) OVERRIDE;
 
-  Slice Finish(rowid_t ordinal_pos) OVERRIDE;
+  void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE;
 
   void Reset() OVERRIDE;
 
@@ -107,7 +108,8 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
   ATTRIBUTE_COLD
   bool AddToDict(Slice val, uint32_t* codeword);
 
-  faststring buffer_;
+  // Buffer used in Finish() for holding the encoded header.
+  faststring header_buffer_;
   bool finished_;
   const WriterOptions* options_;
 

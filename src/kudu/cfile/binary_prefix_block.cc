@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -47,6 +48,7 @@ namespace cfile {
 
 using kudu::coding::AppendGroupVarInt32;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
@@ -84,7 +86,6 @@ void BinaryPrefixBlockBuilder::Reset() {
   vals_since_restart_ = 0;
 
   buffer_.clear();
-  buffer_.resize(kHeaderReservedLength);
   buffer_.reserve(options_->storage_attributes.cfile_block_size);
 
   restarts_.clear();
@@ -96,24 +97,12 @@ bool BinaryPrefixBlockBuilder::IsBlockFull() const {
   return buffer_.size() > options_->storage_attributes.cfile_block_size;
 }
 
-Slice BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
+void BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos, vector<Slice>* slices) {
   CHECK(!finished_) << "already finished";
-  DCHECK_GE(buffer_.size(), kHeaderReservedLength);
 
-  faststring header(kHeaderReservedLength);
-
-  AppendGroupVarInt32(&header, val_count_, ordinal_pos,
+  header_buf_.clear();
+  AppendGroupVarInt32(&header_buf_, val_count_, ordinal_pos,
                       options_->block_restart_interval, 0);
-
-  int header_encoded_len = header.size();
-
-  // Copy the header into the buffer at the right spot.
-  // Since the header is likely shorter than the amount of space
-  // reserved for it, need to find where it fits:
-  int header_offset = kHeaderReservedLength - header_encoded_len;
-  DCHECK_GE(header_offset, 0);
-  uint8_t *header_dst = buffer_.data() + header_offset;
-  strings::memcpy_inlined(header_dst, header.data(), header_encoded_len);
 
   // Serialize the restart points.
   // Note that the values stored in restarts_ are relative to the
@@ -123,15 +112,14 @@ Slice BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
                   + restarts_.size() * sizeof(uint32_t) // the data
                   + sizeof(uint32_t)); // the restart count);
   for (uint32_t restart : restarts_) {
-    DCHECK_GE(static_cast<int>(restart), header_offset);
-    uint32_t relative_to_block = restart - header_offset;
-    VLOG(2) << "appending restart " << relative_to_block;
-    InlinePutFixed32(&buffer_, relative_to_block);
+    // The encoded offsets are relative to the start of the block,
+    // inclusive of the header.
+    InlinePutFixed32(&buffer_, restart + header_buf_.size());
   }
   InlinePutFixed32(&buffer_, restarts_.size());
 
   finished_ = true;
-  return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
+  *slices = { Slice(header_buf_), Slice(buffer_) };
 }
 
 int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
@@ -193,8 +181,9 @@ Status BinaryPrefixBlockBuilder::GetFirstKey(void *key) const {
     return Status::NotFound("no keys in data block");
   }
 
-  const uint8_t *p = &buffer_[kHeaderReservedLength];
-  uint32_t shared, non_shared;
+  const uint8_t *p = &buffer_[0];
+  uint32_t shared;
+  uint32_t non_shared;
   p = DecodeEntryLengths(p, &buffer_[buffer_.size()], &shared, &non_shared);
   if (p == nullptr) {
     return Status::Corruption("Could not decode first entry in string block");

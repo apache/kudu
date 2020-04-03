@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/port.h"
 #include "kudu/cfile/block_encodings.h"
@@ -70,11 +71,11 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
     return encoder_.len() > options_->storage_attributes.cfile_block_size;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     encoder_.Flush();
-    return Slice(buf_);
+    *slices = { buf_ };
   }
 
   virtual void Reset() OVERRIDE {
@@ -250,11 +251,11 @@ class RleIntBlockBuilder final : public BlockBuilder {
     return count;
   }
 
-  virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
+  virtual void Finish(rowid_t ordinal_pos, std::vector<Slice>* slices) OVERRIDE {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
     rle_encoder_.Flush();
-    return Slice(buf_);
+    *slices = { Slice(buf_) };
   }
 
   virtual void Reset() OVERRIDE {

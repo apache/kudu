@@ -21,6 +21,8 @@
 
 #include "kudu/gutil/port.h"
 
+using std::vector;
+
 namespace kudu {
 namespace cfile {
 
@@ -53,7 +55,7 @@ void AbortWithBitShuffleError(int64_t val) {
 // It dynamically switches the element size to UINT16 or UINT8 depending on the values
 // in the current block.
 template<>
-Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
+void BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos, vector<Slice>* slices) {
   RememberFirstAndLastKey();
   uint32_t max_value = 0;
   for (int i = 0; i < count_; i++) {
@@ -84,7 +86,7 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
     ret = Finish(ordinal_pos, sizeof(uint32_t));
     InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint32_t));
   }
-  return ret;
+  *slices = { ret };
 }
 
 // Template specialization for UINT32.
