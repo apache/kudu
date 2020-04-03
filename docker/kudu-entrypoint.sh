@@ -22,7 +22,7 @@
 # https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#entrypoint
 ################################################################################
 
-set -xe
+set -e
 set -o pipefail
 
 function print_help {
