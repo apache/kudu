@@ -316,19 +316,19 @@ Status MiniRanger::PostToRanger(string url, EasyJson payload) {
   return Status::OK();
 }
 
-Status MiniRanger::CreateClientConfig(const string& client_config_path) {
-  auto policy_cache = JoinPathSegments(client_config_path, "policy-cache");
-  if (!env_->FileExists(client_config_path)) {
-    RETURN_NOT_OK(env_->CreateDir(client_config_path));
+Status MiniRanger::CreateClientConfig(const string& client_config_dir) {
+  auto policy_cache = JoinPathSegments(client_config_dir, "policy-cache");
+  if (!env_->FileExists(client_config_dir)) {
+    RETURN_NOT_OK(env_->CreateDir(client_config_dir));
     RETURN_NOT_OK(env_->CreateDir(policy_cache));
   }
 
   RETURN_NOT_OK(WriteStringToFile(env_, GetRangerCoreSiteXml(kerberos_),
-                                  JoinPathSegments(client_config_path, "core-site.xml")));
+                                  JoinPathSegments(client_config_dir, "core-site.xml")));
   RETURN_NOT_OK(WriteStringToFile(env_, GetRangerKuduSecurityXml(policy_cache, "kudu",
                                                                  ranger_admin_url_,
                                                                  policy_poll_interval_ms_),
-                                  JoinPathSegments(client_config_path,
+                                  JoinPathSegments(client_config_dir,
                                                    "ranger-kudu-security.xml")));
   return Status::OK();
 }

@@ -691,6 +691,9 @@ class FileLock {
 // A utility routine: write "data" to the named file.
 extern Status WriteStringToFile(Env* env, const Slice& data,
                                 const std::string& fname);
+// Like above but also fsyncs the new file.
+extern Status WriteStringToFileSync(Env* env, const Slice& data,
+                                    const std::string& fname);
 
 // A utility routine: read contents of named file into *data
 extern Status ReadFileToString(Env* env, const std::string& fname,

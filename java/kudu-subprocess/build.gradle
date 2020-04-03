@@ -32,6 +32,8 @@ dependencies {
     exclude group: "org.apache.kafka"
   }
   compile libs.slf4jApi
+  compile libs.log4j
+  compile libs.log4jSlf4jImpl
 
   // Workaround for RANGER-2749. Remove once resolved.
   compile "commons-lang:commons-lang:2.6"

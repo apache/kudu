@@ -49,6 +49,7 @@ add_custom_target(subprocess_jar DEPENDS ${SUBPROCESS_JAR})
 add_library(kudu_subprocess
   server.cc
   subprocess_protocol.cc
+  subprocess_proxy.cc
 )
 target_link_libraries(kudu_subprocess
   gutil

@@ -86,8 +86,8 @@ class MiniRanger {
   // Adds a new policy to Ranger.
   Status AddPolicy(AuthorizationPolicy policy) WARN_UNUSED_RESULT;
 
-  // Creates the client configs files in client_config_path.
-  Status CreateClientConfig(const std::string& client_config_path) WARN_UNUSED_RESULT;
+  // Creates the client configs files in the given directory.
+  Status CreateClientConfig(const std::string& client_config_dir) WARN_UNUSED_RESULT;
 
   void EnableKerberos(std::string krb5_config,
                       std::string admin_ktpath,

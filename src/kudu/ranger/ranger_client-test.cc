@@ -22,27 +22,41 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include <boost/functional/hash/hash.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/any.pb.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/subprocess/server.h"
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_string(log_dir);
+DECLARE_string(ranger_config_path);
+DECLARE_string(ranger_log_config_dir);
+DECLARE_string(ranger_log_level);
+DECLARE_bool(ranger_logtostdout);
 
 namespace kudu {
 namespace ranger {
 
 using boost::hash_combine;
+using kudu::env_util::ListFilesInDir;
 using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessRequestPB;
 using kudu::subprocess::SubprocessResponsePB;
@@ -50,6 +64,7 @@ using kudu::subprocess::SubprocessServer;
 using std::move;
 using std::string;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 struct AuthorizedAction {
@@ -306,6 +321,59 @@ TEST_F(RangerClientTest, TestAuthorizeActionsAllAuthorized) {
   actions.emplace(ActionPB::INSERT);
   ASSERT_OK(client_.AuthorizeActions("jdoe", "default.foobar", &actions));
   ASSERT_EQ(3, actions.size());
+}
+
+class RangerClientTestBase : public KuduTest {
+ public:
+  RangerClientTestBase()
+      : test_dir_(GetTestDataDirectory()) {}
+
+  void SetUp() override {
+    metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "ranger_client-test");
+    FLAGS_ranger_log_level = "debug";
+    FLAGS_ranger_logtostdout = true;
+    FLAGS_ranger_config_path = test_dir_;
+    FLAGS_ranger_log_config_dir = JoinPathSegments(test_dir_, "log_conf");
+    FLAGS_log_dir = JoinPathSegments(test_dir_, "logs");
+    ASSERT_OK(env_->CreateDir(FLAGS_log_dir));
+    ASSERT_OK(InitializeRanger());
+  }
+
+  Status InitializeRanger() {
+    ranger_.reset(new MiniRanger("127.0.0.1"));
+    RETURN_NOT_OK(ranger_->Start());
+    RETURN_NOT_OK(ranger_->CreateClientConfig(test_dir_));
+    client_.reset(new RangerClient(env_, metric_entity_));
+    return client_->Start();
+  }
+
+ protected:
+  const string test_dir_;
+  MetricRegistry metric_registry_;
+
+  scoped_refptr<MetricEntity> metric_entity_;
+  std::unique_ptr<MiniRanger> ranger_;
+  std::unique_ptr<RangerClient> client_;
+};
+
+TEST_F(RangerClientTestBase, TestLogging) {
+  {
+    // Check that a logging configuration was produced by the Ranger client.
+    vector<string> files;
+    ASSERT_OK(ListFilesInDir(env_, FLAGS_ranger_log_config_dir, &files));
+    SCOPED_TRACE(JoinStrings(files, "\n"));
+    ASSERT_STRINGS_ANY_MATCH(files, ".*log4j2.properties");
+  }
+  // Make a request. It doesn't matter whether it succeeds or not -- debug logs
+  // should include info about each request.
+  Status s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
+  ASSERT_TRUE(s.IsNotAuthorized());
+
+  // Check that the Ranger client logs some things.
+  vector<string> files;
+  ASSERT_OK(ListFilesInDir(env_, FLAGS_log_dir, &files));
+  SCOPED_TRACE(JoinStrings(files, "\n"));
+  ASSERT_STRINGS_ANY_MATCH(files, "kudu-ranger-subprocess.*log");
 }
 
 } // namespace ranger

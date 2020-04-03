@@ -17,6 +17,7 @@
 
 #include "kudu/ranger/ranger_client.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <ostream>
@@ -39,9 +40,11 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 
 DEFINE_string(ranger_java_path, "",
@@ -71,6 +74,29 @@ DEFINE_string(ranger_receiver_fifo_dir, "",
               "overwritten. If not specified, a fifo will be created in the "
               "--ranger_config_path directory.");
 TAG_FLAG(ranger_receiver_fifo_dir, advanced);
+
+DEFINE_string(ranger_log_config_dir, "",
+              "Directory in which to look for a kudu-ranger-subprocess-log4j2.properties "
+              "file. If empty, will use the value of --log_dir. If such a file does not "
+              "exist, a properties file will be created to honor Kudu's logging "
+              "configurations.");
+TAG_FLAG(ranger_log_config_dir, advanced);
+TAG_FLAG(ranger_log_config_dir, evolving);
+
+DEFINE_string(ranger_log_level, "info",
+              "Log level to use in the Ranger Java subprocess. Supports \"all\", \"trace\", "
+              "\"debug\", \"info\", \"warn\", \"error\", \"fatal\", and \"off\"");
+TAG_FLAG(ranger_log_level, advanced);
+TAG_FLAG(ranger_log_level, evolving);
+
+DEFINE_bool(ranger_logtostdout, false,
+            "Whether to have the Ranger subprocess log to stdout.");
+TAG_FLAG(ranger_logtostdout, advanced);
+TAG_FLAG(ranger_logtostdout, evolving);
+
+DECLARE_int32(max_log_files);
+DECLARE_int32(max_log_size);
+DECLARE_string(log_dir);
 
 METRIC_DEFINE_histogram(server, ranger_subprocess_execution_time_ms,
     "Ranger subprocess execution time (ms)",
@@ -138,20 +164,34 @@ namespace ranger {
 
 using kudu::security::GetKrb5ConfigFile;
 using kudu::subprocess::SubprocessMetrics;
+using kudu::subprocess::SubprocessServer;
 using std::move;
 using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-static const char* kUnauthorizedAction = "Unauthorized action";
-static const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
-                                                 "Use 'kudu table rename_table' to rename it to "
-                                                 "a Ranger-compatible name.";
-static const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
+namespace {
+
+const char* kUnauthorizedAction = "Unauthorized action";
+const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
+                                          "Use 'kudu table rename_table' to rename it to "
+                                          "a Ranger-compatible name.";
+const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
+const char* kRangerClientLogFilename = "kudu-ranger-subprocess";
+const char* kRangerClientPropertiesFilename = "kudu-ranger-subprocess-log4j2.properties";
+
+const char* ScopeToString(RangerClient::Scope scope) {
+  switch (scope) {
+    case RangerClient::Scope::DATABASE: return "database";
+    case RangerClient::Scope::TABLE: return "table";
+  }
+  LOG(FATAL) << static_cast<uint16_t>(scope) << ": unknown scope";
+  __builtin_unreachable();
+}
 
 // Returns the path to the JAR file containing the Ranger subprocess.
-static string GetRangerJarPath() {
+string RangerJarPath() {
   if (FLAGS_ranger_jar_path.empty()) {
     string exe;
     CHECK_OK(Env::Default()->GetExecutablePath(&exe));
@@ -162,18 +202,19 @@ static string GetRangerJarPath() {
 }
 
 // Returns the classpath to be used for the Ranger subprocess.
-static string GetJavaClasspath() {
-  return Substitute("$0:$1", GetRangerJarPath(), FLAGS_ranger_config_path);
+string JavaClasspath() {
+  DCHECK(!FLAGS_ranger_config_path.empty());
+  return Substitute("$0:$1", RangerJarPath(), FLAGS_ranger_config_path);
 }
 
-static string ranger_fifo_base() {
+string RangerFifoBase() {
   DCHECK(!FLAGS_ranger_config_path.empty());
   const string& fifo_dir = FLAGS_ranger_receiver_fifo_dir.empty() ?
       FLAGS_ranger_config_path : FLAGS_ranger_receiver_fifo_dir;
   return JoinPathSegments(fifo_dir, "ranger_receiever_fifo");
 }
 
-static string java_path() {
+string JavaPath() {
   if (FLAGS_ranger_java_path.empty()) {
     auto java_home = getenv("JAVA_HOME");
     if (!java_home) {
@@ -184,20 +225,103 @@ static string java_path() {
   return FLAGS_ranger_java_path;
 }
 
+bool ValidateRangerConfiguration() {
+  if (!FLAGS_ranger_config_path.empty()) {
+    // First, check the specified Java path.
+    const string java_path = JavaPath();
+    if (!Env::Default()->FileExists(java_path)) {
+      // Otherwise, since the specified path is not absolute, check if
+      // the Java binary is on the PATH.
+      string p;
+      Status s = Subprocess::Call({ "which", java_path }, "", &p);
+      if (!s.ok()) {
+        LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
+                                 java_path);
+        return false;
+      }
+    }
+    const string ranger_jar_path = RangerJarPath();
+    if (!Env::Default()->FileExists(ranger_jar_path)) {
+      LOG(ERROR) << Substitute("--ranger_jar_path has invalid JAR file path: $0",
+                               ranger_jar_path);
+      return false;
+    }
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
+
+bool ValidateLog4jLevel(const char* /*flagname*/, const string& value) {
+  static const vector<string> kLevels = {
+    "all",
+    "trace",
+    "debug",
+    "info",
+    "warn",
+    "error",
+    "fatal",
+    "off",
+  };
+  string vlower = value;
+  ToLowerCase(&vlower);
+  if (std::any_of(kLevels.begin(), kLevels.end(),
+      [&vlower] (const string& level) { return level == vlower; })) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("expected one of {$0} but got $1",
+                           JoinStrings(kLevels, ", "), value);
+  return false;
+}
+DEFINE_validator(ranger_log_level, &ValidateLog4jLevel);
+
+Status GetOrCreateLog4j2PropertiesFile(Env* env, string* logging_properties_file) {
+  const string log_conf_dir = FLAGS_ranger_log_config_dir.empty() ?
+      FLAGS_log_dir : FLAGS_ranger_log_config_dir;
+  // It's generally expected that --log_dir has already been created elsewhere.
+  if (!FLAGS_ranger_log_config_dir.empty() && !env->FileExists(log_conf_dir)) {
+    RETURN_NOT_OK(env->CreateDir(log_conf_dir));
+  }
+  const string log4j2_properties_file = JoinPathSegments(log_conf_dir,
+                                                         kRangerClientPropertiesFilename);
+  string new_or_existing;
+  if (env->FileExists(log4j2_properties_file)) {
+    new_or_existing = "existing";
+  } else {
+    string exe;
+    RETURN_NOT_OK(env->GetExecutablePath(&exe));
+    const string program_name = BaseName(exe);
+    string hostname;
+    RETURN_NOT_OK(GetHostname(&hostname));
+    const string log_filename = Substitute("$0.$1", kRangerClientLogFilename, hostname);
+    RETURN_NOT_OK(WriteStringToFileSync(
+        env, subprocess::Log4j2Properties(program_name, FLAGS_log_dir, log_filename,
+                                          FLAGS_max_log_size, FLAGS_max_log_files,
+                                          FLAGS_ranger_log_level,
+                                          FLAGS_ranger_logtostdout),
+        log4j2_properties_file));
+    new_or_existing = "new";
+  }
+  LOG(INFO) << Substitute("Using $0 properties file: $1",
+                          new_or_existing, log4j2_properties_file);
+  *logging_properties_file = log4j2_properties_file;
+  return Status::OK();
+}
+
 // Builds the arguments to start the Ranger subprocess with the given receiver
 // fifo path. Specifically pass the principal and keytab file that the Ranger
 // subprocess will log in with if Kerberos is enabled. 'args' has the final
 // arguments.  Returns 'OK' if arguments successfully created, error otherwise.
-static Status BuildArgv(const string& fifo_path, vector<string>* argv) {
+Status BuildArgv(const string& fifo_path, const string& log_properties_file,
+                 vector<string>* argv) {
   DCHECK(argv);
   DCHECK(!FLAGS_ranger_config_path.empty());
   // Pass the required arguments to run the Ranger subprocess.
-  vector<string> ret = { java_path() };
-
-  ret.emplace_back(Substitute("-Djava.security.krb5.conf=$0", GetKrb5ConfigFile()));
-  ret.emplace_back("-cp");
-  ret.emplace_back(GetJavaClasspath());
-  ret.emplace_back(kMainClass);
+  vector<string> ret = {
+    JavaPath(),
+    Substitute("-Djava.security.krb5.conf=$0", GetKrb5ConfigFile()),
+    Substitute("-Dlog4j2.configurationFile=$0", log_properties_file),
+    "-cp", JavaClasspath(), kMainClass,
+  };
   // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
   // to the Ranger subprocess.
   if (!FLAGS_keytab_file.empty()) {
@@ -215,39 +339,7 @@ static Status BuildArgv(const string& fifo_path, vector<string>* argv) {
   return Status::OK();
 }
 
-static bool ValidateRangerConfiguration() {
-  if (!FLAGS_ranger_config_path.empty()) {
-    // First, check the specified path.
-    if (!Env::Default()->FileExists(java_path())) {
-      // Otherwise, since the specified path is not absolute, check if
-      // the Java binary is on the PATH.
-      string p;
-      Status s = Subprocess::Call({ "which", java_path() }, "", &p);
-      if (!s.ok()) {
-        LOG(ERROR) << Substitute("--ranger_java_path has invalid java binary path: $0",
-                                 java_path());
-        return false;
-      }
-    }
-    string ranger_jar_path = GetRangerJarPath();
-    if (!Env::Default()->FileExists(ranger_jar_path)) {
-      LOG(ERROR) << Substitute("--ranger_jar_path has invalid JAR file path: $0",
-                               ranger_jar_path);
-      return false;
-    }
-  }
-  return true;
-}
-GROUP_FLAG_VALIDATOR(ranger_config_flags, ValidateRangerConfiguration);
-
-static const char* ScopeToString(RangerClient::Scope scope) {
-  switch (scope) {
-    case RangerClient::Scope::DATABASE: return "database";
-    case RangerClient::Scope::TABLE: return "table";
-  }
-  LOG(FATAL) << static_cast<uint16_t>(scope) << ": unknown scope";
-  __builtin_unreachable();
-}
+} // anonymous namespace
 
 #define HISTINIT(member, x) member = METRIC_##x.Instantiate(entity)
 RangerSubprocessMetrics::RangerSubprocessMetrics(const scoped_refptr<MetricEntity>& entity) {
@@ -270,9 +362,11 @@ RangerClient::RangerClient(Env* env, const scoped_refptr<MetricEntity>& metric_e
 
 Status RangerClient::Start() {
   VLOG(1) << "Initializing Ranger subprocess server";
+  string log_properties_file;
+  RETURN_NOT_OK(GetOrCreateLog4j2PropertiesFile(env_, &log_properties_file));
+  const string fifo_path = SubprocessServer::FifoPath(RangerFifoBase());
   vector<string> argv;
-  const string fifo_path = subprocess::SubprocessServer::FifoPath(ranger_fifo_base());
-  RETURN_NOT_OK(BuildArgv(fifo_path, &argv));
+  RETURN_NOT_OK(BuildArgv(fifo_path, log_properties_file, &argv));
   subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_));
   return subprocess_->Start();
 }

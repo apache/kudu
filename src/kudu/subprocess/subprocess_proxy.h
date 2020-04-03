@@ -16,23 +16,36 @@
 // under the License.
 #pragma once
 
-#include <vector>
+#include <memory>
+#include <ostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <glog/logging.h>
+#include <google/protobuf/any.pb.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/subprocess/server.h"
-#include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/metrics.h"
+#include "kudu/subprocess/server.h"
+#include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/thread.h"
 
 namespace kudu {
+
+class Env;
+class MetricEntity;
+
 namespace subprocess {
+
+// Return a string that can serve as the contents of a log4j2 properties file,
+// with the given logging parameters.
+std::string Log4j2Properties(const std::string& creator, const std::string& log_dir,
+                             const std::string& log_filename, int rollover_size_mb,
+                             int max_files, const std::string& log_level,
+                             bool log_to_stdout);
 
 // Template that wraps a SubprocessServer, exposing only the underlying ReqPB
 // and RespPB as an interface. The given MetricsPB will be initialized,
