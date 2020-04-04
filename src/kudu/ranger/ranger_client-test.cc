@@ -33,6 +33,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
@@ -40,6 +41,7 @@
 #include "kudu/subprocess/subprocess.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -51,9 +53,7 @@ DECLARE_string(ranger_config_path);
 DECLARE_string(ranger_log_config_dir);
 DECLARE_string(ranger_log_level);
 DECLARE_bool(ranger_logtostdout);
-
-namespace kudu {
-namespace ranger {
+DECLARE_bool(ranger_overwrite_log_config);
 
 using boost::hash_combine;
 using kudu::env_util::ListFilesInDir;
@@ -65,7 +65,12 @@ using std::move;
 using std::string;
 using std::unordered_set;
 using std::vector;
+using strings::SkipEmpty;
+using strings::Split;
 using strings::Substitute;
+
+namespace kudu {
+namespace ranger {
 
 struct AuthorizedAction {
   string user_name;
@@ -356,6 +361,28 @@ class RangerClientTestBase : public KuduTest {
   std::unique_ptr<RangerClient> client_;
 };
 
+namespace {
+
+// Looks in --log_dir and returns the full Kudu Ranger subprocess log filename
+// and the lines contained therein.
+Status GetLinesFromLogFile(Env* env, string* file, vector<string>* lines) {
+  vector<string> matches;
+  RETURN_NOT_OK(env->Glob(JoinPathSegments(FLAGS_log_dir, "kudu-ranger-subprocess*.log"),
+                                           &matches));
+  if (matches.size() != 1) {
+    return Status::Corruption(Substitute("Expected one file but got $0: $1",
+                                         matches.size(), JoinStrings(matches, ", ")));
+  }
+  faststring contents;
+  const string& full_log_file = matches[0];
+  RETURN_NOT_OK(ReadFileToString(env, full_log_file, &contents));
+  *file = full_log_file;
+  *lines = Split(contents.ToString(), "\n", SkipEmpty());
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 TEST_F(RangerClientTestBase, TestLogging) {
   {
     // Check that a logging configuration was produced by the Ranger client.
@@ -368,12 +395,52 @@ TEST_F(RangerClientTestBase, TestLogging) {
   // should include info about each request.
   Status s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
   ASSERT_TRUE(s.IsNotAuthorized());
-
-  // Check that the Ranger client logs some things.
-  vector<string> files;
-  ASSERT_OK(ListFilesInDir(env_, FLAGS_log_dir, &files));
-  SCOPED_TRACE(JoinStrings(files, "\n"));
-  ASSERT_STRINGS_ANY_MATCH(files, "kudu-ranger-subprocess.*log");
+  {
+    // Check that the Ranger client logs some DEBUG messages.
+    vector<string> lines;
+    string log_file;
+    ASSERT_OK(GetLinesFromLogFile(env_, &log_file, &lines));
+    ASSERT_STRINGS_ANY_MATCH(lines, ".*DEBUG.*");
+    // Delete the log file so we can start a fresh log.
+    ASSERT_OK(env_->DeleteFile(log_file));
+  }
+  // Try reconfiguring our logging to spit out info-level logs and start a new
+  // log file by restarting the Ranger client. Since we're set up to not
+  // overwrite the logging config, this won't be effective -- we should still
+  // see DEBUG messages.
+  FLAGS_ranger_log_level = "info";
+  FLAGS_ranger_overwrite_log_config = false;
+  client_.reset(new RangerClient(env_, metric_entity_));
+  ASSERT_OK(client_->Start());
+  s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
+  ASSERT_TRUE(s.IsNotAuthorized());
+  {
+    // Our logs should still contain DEBUG messages since we didn't update the
+    // logging configuration.
+    vector<string> lines;
+    string log_file;
+    ASSERT_OK(GetLinesFromLogFile(env_, &log_file, &lines));
+    ASSERT_STRINGS_ANY_MATCH(lines, ".*DEBUG.*");
+    // Delete the log file so we can start a fresh log.
+    ASSERT_OK(env_->DeleteFile(log_file));
+  }
+  // Now try again but this time overwrite the logging configuration.
+  FLAGS_ranger_overwrite_log_config = true;
+  client_.reset(new RangerClient(env_, metric_entity_));
+  ASSERT_OK(client_->Start());
+  s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
+  ASSERT_TRUE(s.IsNotAuthorized());
+  {
+    // We shouldn't see any DEBUG messages since the client is configured to
+    // use INFO-level logging.
+    vector<string> lines;
+    string unused;
+    ASSERT_OK(GetLinesFromLogFile(env_, &unused, &lines));
+    // We should see no DEBUG messages.
+    for (const auto& l : lines) {
+      ASSERT_STR_NOT_CONTAINS(l, "DEBUG");
+    }
+  }
 }
 
 } // namespace ranger

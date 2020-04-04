@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -42,6 +43,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
@@ -82,6 +84,11 @@ DEFINE_string(ranger_log_config_dir, "",
               "configurations.");
 TAG_FLAG(ranger_log_config_dir, advanced);
 TAG_FLAG(ranger_log_config_dir, evolving);
+
+DEFINE_bool(ranger_overwrite_log_config, true,
+            "Whether to overwrite any existing logging configuration file, if found.");
+TAG_FLAG(ranger_overwrite_log_config, advanced);
+TAG_FLAG(ranger_overwrite_log_config, evolving);
 
 DEFINE_string(ranger_log_level, "info",
               "Log level to use in the Ranger Java subprocess. Supports \"all\", \"trace\", "
@@ -167,6 +174,7 @@ using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessServer;
 using std::move;
 using std::string;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -274,44 +282,70 @@ bool ValidateLog4jLevel(const char* /*flagname*/, const string& value) {
 }
 DEFINE_validator(ranger_log_level, &ValidateLog4jLevel);
 
-Status GetOrCreateLog4j2PropertiesFile(Env* env, string* logging_properties_file) {
+Status GetOrCreateLog4j2PropertiesFile(Env* env, string* logging_properties_path) {
   const string log_conf_dir = FLAGS_ranger_log_config_dir.empty() ?
       FLAGS_log_dir : FLAGS_ranger_log_config_dir;
   // It's generally expected that --log_dir has already been created elsewhere.
   if (!FLAGS_ranger_log_config_dir.empty() && !env->FileExists(log_conf_dir)) {
     RETURN_NOT_OK(env->CreateDir(log_conf_dir));
   }
-  const string log4j2_properties_file = JoinPathSegments(log_conf_dir,
+  const string log4j2_properties_path = JoinPathSegments(log_conf_dir,
                                                          kRangerClientPropertiesFilename);
-  string new_or_existing;
-  if (env->FileExists(log4j2_properties_file)) {
-    new_or_existing = "existing";
+  string file_state;
+  bool should_create_file = true;
+  if (env->FileExists(log4j2_properties_path)) {
+    if (FLAGS_ranger_overwrite_log_config) {
+      file_state = "overwritten";
+    } else {
+      file_state = "existing";
+      should_create_file = false;
+    }
   } else {
+    file_state = "new";
+  }
+  if (should_create_file) {
+    // Write our new properties file to a tmp file first so other processes
+    // don't read a partial file (not expected, but just in case).
+    unique_ptr<WritableFile> tmp_file;
+    string tmp_path;
+    RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(),
+                                           Substitute("$0.XXXXXX", log4j2_properties_path),
+                                           &tmp_path, &tmp_file));
+    // If anything fails, clean up the tmp file.
+    auto tmp_deleter = MakeScopedCleanup([&] {
+      WARN_NOT_OK(env->DeleteFile(tmp_path),
+                  Substitute("Couldn't clean up tmp file $0", tmp_path));
+    });
     string exe;
     RETURN_NOT_OK(env->GetExecutablePath(&exe));
     const string program_name = BaseName(exe);
     string hostname;
     RETURN_NOT_OK(GetHostname(&hostname));
     const string log_filename = Substitute("$0.$1", kRangerClientLogFilename, hostname);
-    RETURN_NOT_OK(WriteStringToFileSync(
-        env, subprocess::Log4j2Properties(program_name, FLAGS_log_dir, log_filename,
-                                          FLAGS_max_log_size, FLAGS_max_log_files,
-                                          FLAGS_ranger_log_level,
-                                          FLAGS_ranger_logtostdout),
-        log4j2_properties_file));
-    new_or_existing = "new";
+    RETURN_NOT_OK(tmp_file->Append(
+        subprocess::Log4j2Properties(program_name, FLAGS_log_dir, log_filename,
+                                     FLAGS_max_log_size, FLAGS_max_log_files,
+                                     FLAGS_ranger_log_level,
+                                     FLAGS_ranger_logtostdout)));
+    RETURN_NOT_OK(tmp_file->Sync());
+    RETURN_NOT_OK(tmp_file->Close());
+    // Now atomically swap in our file.
+    RETURN_NOT_OK_PREPEND(env->RenameFile(tmp_path, log4j2_properties_path),
+        Substitute("Failed to rename tmp file $0 to $1", tmp_path, log4j2_properties_path));
+    tmp_deleter.cancel();
   }
   LOG(INFO) << Substitute("Using $0 properties file: $1",
-                          new_or_existing, log4j2_properties_file);
-  *logging_properties_file = log4j2_properties_file;
+                          file_state, log4j2_properties_path);
+  *logging_properties_path = log4j2_properties_path;
   return Status::OK();
 }
 
 // Builds the arguments to start the Ranger subprocess with the given receiver
-// fifo path. Specifically pass the principal and keytab file that the Ranger
-// subprocess will log in with if Kerberos is enabled. 'args' has the final
-// arguments.  Returns 'OK' if arguments successfully created, error otherwise.
-Status BuildArgv(const string& fifo_path, const string& log_properties_file,
+// fifo path and logging properties file. Specifically pass the principal and
+// keytab file that the Ranger subprocess will log in with if Kerberos is
+// enabled. 'args' has the final arguments.  Returns 'OK' if arguments
+// successfully created, error otherwise.
+Status BuildArgv(const string& fifo_path, const string& log_properties_path,
                  vector<string>* argv) {
   DCHECK(argv);
   DCHECK(!FLAGS_ranger_config_path.empty());
@@ -319,7 +353,7 @@ Status BuildArgv(const string& fifo_path, const string& log_properties_file,
   vector<string> ret = {
     JavaPath(),
     Substitute("-Djava.security.krb5.conf=$0", GetKrb5ConfigFile()),
-    Substitute("-Dlog4j2.configurationFile=$0", log_properties_file),
+    Substitute("-Dlog4j2.configurationFile=$0", log_properties_path),
     "-cp", JavaClasspath(), kMainClass,
   };
   // When Kerberos is enabled in Kudu, pass both Kudu principal and keytab file
@@ -362,11 +396,11 @@ RangerClient::RangerClient(Env* env, const scoped_refptr<MetricEntity>& metric_e
 
 Status RangerClient::Start() {
   VLOG(1) << "Initializing Ranger subprocess server";
-  string log_properties_file;
-  RETURN_NOT_OK(GetOrCreateLog4j2PropertiesFile(env_, &log_properties_file));
+  string log_properties_path;
+  RETURN_NOT_OK(GetOrCreateLog4j2PropertiesFile(env_, &log_properties_path));
   const string fifo_path = SubprocessServer::FifoPath(RangerFifoBase());
   vector<string> argv;
-  RETURN_NOT_OK(BuildArgv(fifo_path, log_properties_file, &argv));
+  RETURN_NOT_OK(BuildArgv(fifo_path, log_properties_path, &argv));
   subprocess_.reset(new RangerSubprocess(env_, fifo_path, std::move(argv), metric_entity_));
   return subprocess_->Start();
 }
