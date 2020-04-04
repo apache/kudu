@@ -218,10 +218,9 @@ run_benchmarks() {
 
   # run wire_protocol-test 5 times.
   #
-  # We run the first shard, which uses a column count of 3 and a select rate of
-  # 1 (as this is most similar to the unsharded microbenchmark we ran for years).
+  # We run the non-null 10-column benchmark, selecting all rows.
   for i in $(seq 1 $NUM_SAMPLES); do
-    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/wire_protocol-test --gtest_filter=*Benchmark/0 \
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/wire_protocol-test --gtest_filter=*Benchmark/10_int64_non_null_sel_100pct \
       &> $LOGDIR/$WIRE_PROTOCOL_TEST$i.log
   done
 
@@ -361,10 +360,16 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER $MT_BLOOM_TEST $i $real
   done
 
-  # Parse out rate of cycles/sec from: "Converting to PB with column count 3 and row select rate 1: 32.987841 cycles/cell"
+  # Parse out row-wise rate of cycles/cell from:
+  #   "Converting 10_int64_non_null to PB (method row-wise) row select rate 1: 30.196263 cycles/cell"
+  # Parse out the columnar rate of cycles/cell from:
+  #   "Converting 10_int64_non_null to PB (method columnar) row select rate 1: 1.313369 cycles/cell"
   for i in $(seq 1 $NUM_SAMPLES); do
-    real=`grep "Converting to PB with column count" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | sed 's|^.*: \([[:digit:].]*\) cycles/cell$|\1|'`
-    record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real
+    real_rowwise=`grep "Converting.*to PB (method row-wise)" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | sed 's|^.*: \([[:digit:].]*\) cycles/cell$|\1|'`
+    record_result $BUILD_IDENTIFIER $WIRE_PROTOCOL_TEST $i $real_rowwise
+
+    real_colwise=`grep "Converting.*to PB (method columnar)" $LOGDIR/$WIRE_PROTOCOL_TEST$i.log | sed 's|^.*: \([[:digit:].]*\) cycles/cell$|\1|'`
+    record_result $BUILD_IDENTIFIER ${WIRE_PROTOCOL_TEST}_columnar $i $real_colwise
   done
 
   # parse the rate out of: "I1009 15:00:30.023576 27043 rpc-bench.cc:108] Reqs/sec:         84404.4"
@@ -513,12 +518,13 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${MEMROWSET_BENCH}${INSERT}" memrowset-bench-insert
   load_and_generate_plot "${MEMROWSET_BENCH}Scan%" memrowset-bench-scan
 
-  load_and_generate_plot $BLOOM_TEST bloom-test
-  load_and_generate_plot $MT_BLOOM_TEST mt-bloom-test
+  load_and_generate_plot "$BLOOM_TEST" bloom-test
+  load_and_generate_plot "$MT_BLOOM_TEST" mt-bloom-test
 
-  load_and_generate_plot $WIRE_PROTOCOL_TEST wire-protocol-test
+  load_and_generate_plot "${WIRE_PROTOCOL_TEST}" wire-protocol-test
+  load_and_generate_plot "${WIRE_PROTOCOL_TEST}_columnar" wire-protocol-test-columnar
 
-  load_and_generate_plot $RPC_BENCH_TEST rpc-bench-test
+  load_and_generate_plot "$RPC_BENCH_TEST" rpc-bench-test
 
   load_and_generate_plot "${TS_INSERT_LATENCY}%" ts-insert-latency
 
