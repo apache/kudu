@@ -17,6 +17,8 @@
 #ifndef KUDU_CFILE_TYPE_ENCODINGS_H_
 #define KUDU_CFILE_TYPE_ENCODINGS_H_
 
+#include <memory>
+
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
@@ -43,14 +45,14 @@ class TypeEncodingInfo {
 
   EncodingType encoding_type() const { return encoding_type_; }
 
-  Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) const;
+  Status CreateBlockBuilder(std::unique_ptr<BlockBuilder>* bb, const WriterOptions* options) const;
 
   // Create a BlockDecoder. Sets *bd to the newly created decoder,
   // if successful, otherwise returns a non-OK Status.
   //
-  // iter parameter will only be used when it is dictionary encoding
-  Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                            CFileIterator *iter) const;
+  // Input parent_cfile_iter parameter will only be used in case of dictionary encoding.
+  Status CreateBlockDecoder(std::unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                            CFileIterator* parent_cfile_iter) const;
  private:
   friend class TypeEncodingResolver;
 
@@ -59,11 +61,11 @@ class TypeEncodingInfo {
 
   EncodingType encoding_type_;
 
-  typedef Status (*CreateBlockBuilderFunc)(BlockBuilder **, const WriterOptions *);
+  typedef Status (*CreateBlockBuilderFunc)(std::unique_ptr<BlockBuilder>*, const WriterOptions*);
   const CreateBlockBuilderFunc create_builder_func_;
 
-  typedef Status (*CreateBlockDecoderFunc)(BlockDecoder **, const Slice &,
-                                           CFileIterator *);
+  typedef Status (*CreateBlockDecoderFunc)(std::unique_ptr<BlockDecoder>*, const Slice&,
+                                           CFileIterator*);
   const CreateBlockDecoderFunc create_decoder_func_;
 
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingInfo);

@@ -179,9 +179,7 @@ Status CFileWriter::Start() {
 
   RETURN_NOT_OK_PREPEND(WriteRawData(header_slices), "Couldn't write header");
 
-  BlockBuilder *bb;
-  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&bb, &options_));
-  data_block_.reset(bb);
+  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&data_block_, &options_));
 
   if (is_nullable_) {
     size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /

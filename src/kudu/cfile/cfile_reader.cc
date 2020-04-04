@@ -948,9 +948,9 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
                                                 prep_block->rle_bitmap.size(), 1);
   }
 
-  BlockDecoder *bd;
-  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(&bd, data_block, this));
-  prep_block->dblk_.reset(bd);
+  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(
+      &prep_block->dblk_, data_block, this));
+
   RETURN_NOT_OK_PREPEND(prep_block->dblk_->ParseHeader(),
                         Substitute("unable to decode data block header in block $0 ($1)",
                                    reader_->block_id().ToString(),
@@ -960,7 +960,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   // since the data block decoder only knows about the non-null values.
   // For non-nullable ones, we use the information from the block decoder.
   if (!reader_->is_nullable()) {
-    num_rows_in_block = bd->Count();
+    num_rows_in_block = prep_block->dblk_->Count();
   }
 
   io_stats_.cells_read += num_rows_in_block;

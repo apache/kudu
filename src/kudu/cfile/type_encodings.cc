@@ -25,6 +25,7 @@
 #include "kudu/cfile/binary_dict_block.h"
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/binary_prefix_block.h"
+#include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
@@ -58,14 +59,14 @@ template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
 template<DataType Type>
 struct DataTypeEncodingTraits<Type, PLAIN_ENCODING> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new PlainBlockBuilder<Type>(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new PlainBlockBuilder<Type>(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new PlainBlockDecoder<Type>(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new PlainBlockDecoder<Type>(slice));
     return Status::OK();
   }
 };
@@ -75,14 +76,14 @@ struct DataTypeEncodingTraits<Type, PLAIN_ENCODING> {
 template<DataType Type>
 struct DataTypeEncodingTraits<Type, BIT_SHUFFLE> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new BShufBlockBuilder<Type>(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new BShufBlockBuilder<Type>(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new BShufBlockDecoder<Type>(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new BShufBlockDecoder<Type>(slice));
     return Status::OK();
   }
 };
@@ -92,14 +93,14 @@ struct DataTypeEncodingTraits<Type, BIT_SHUFFLE> {
 template<>
 struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new BinaryPlainBlockBuilder(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new BinaryPlainBlockBuilder(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new BinaryPlainBlockDecoder(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new BinaryPlainBlockDecoder(slice));
     return Status::OK();
   }
 };
@@ -108,14 +109,14 @@ struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING> {
 template<>
 struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new PlainBitMapBlockBuilder(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new PlainBitMapBlockBuilder(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new PlainBitMapBlockDecoder(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new PlainBitMapBlockDecoder(slice));
     return Status::OK();
   }
 };
@@ -125,14 +126,14 @@ struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING> {
 template<>
 struct DataTypeEncodingTraits<BOOL, RLE> {
 
-  static Status CreateBlockBuilder(BlockBuilder** bb, const WriterOptions *options) {
-    *bb = new RleBitMapBlockBuilder(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new RleBitMapBlockBuilder(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new RleBitMapBlockDecoder(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new RleBitMapBlockDecoder(slice));
     return Status::OK();
   }
 };
@@ -142,14 +143,14 @@ struct DataTypeEncodingTraits<BOOL, RLE> {
 template<>
 struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new BinaryPrefixBlockBuilder(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new BinaryPrefixBlockBuilder(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new BinaryPrefixBlockDecoder(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new BinaryPrefixBlockDecoder(slice));
     return Status::OK();
   }
 };
@@ -158,14 +159,14 @@ struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING> {
 template<>
 struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
 
-  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new BinaryDictBlockBuilder(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new BinaryDictBlockBuilder(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
-                                   CFileIterator *iter) {
-    *bd = new BinaryDictBlockDecoder(slice, iter);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* iter) {
+    bd->reset(new BinaryDictBlockDecoder(slice, iter));
     return Status::OK();
   }
 };
@@ -173,14 +174,14 @@ struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
 template<DataType IntType>
 struct DataTypeEncodingTraits<IntType, RLE> {
 
-  static Status CreateBlockBuilder(BlockBuilder** bb, const WriterOptions *options) {
-    *bb = new RleIntBlockBuilder<IntType>(options);
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new RleIntBlockBuilder<IntType>(options));
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(BlockDecoder** bd, const Slice& slice,
-                                   CFileIterator *iter) {
-    *bd = new RleIntBlockDecoder<IntType>(slice);
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*iter*/) {
+    bd->reset(new RleIntBlockDecoder<IntType>(slice));
     return Status::OK();
   }
 };
@@ -193,14 +194,14 @@ TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass t)
       create_decoder_func_(TypeEncodingTraitsClass::CreateBlockDecoder) {
 }
 
-Status TypeEncodingInfo::CreateBlockDecoder(BlockDecoder **bd,
-                                            const Slice &slice,
-                                            CFileIterator *iter) const {
-  return create_decoder_func_(bd, slice, iter);
+Status TypeEncodingInfo::CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
+                                            const Slice& slice,
+                                            CFileIterator* parent_cfile_iter) const {
+  return create_decoder_func_(bd, slice, parent_cfile_iter);
 }
 
 Status TypeEncodingInfo::CreateBlockBuilder(
-    BlockBuilder **bb, const WriterOptions *options) const {
+    unique_ptr<BlockBuilder>* bb, const WriterOptions* options) const {
   return create_builder_func_(bb, options);
 }
 
