@@ -196,6 +196,11 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   LOG_SLOW_EXECUTION(WARNING, 200, op_description) {
     RETURN_NOT_OK(GetAddrInfo(host_, hints, op_description, &result));
   }
+
+  // DNS may return the same host multiple times. We want to return only the unique
+  // addresses, but in the same order as DNS returned them. To do so, we keep track
+  // of the already-inserted elements in a set.
+  unordered_set<Sockaddr> inserted;
   vector<Sockaddr> result_addresses;
   for (const addrinfo* ai = result.get(); ai != nullptr; ai = ai->ai_next) {
     CHECK_EQ(AF_INET, ai->ai_family);
@@ -204,7 +209,9 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
     Sockaddr sockaddr(*addr);
     VLOG(2) << Substitute("resolved address $0 for host/port $1",
                           sockaddr.ToString(), ToString());
-    result_addresses.emplace_back(sockaddr);
+    if (InsertIfNotPresent(&inserted, sockaddr)) {
+      result_addresses.emplace_back(sockaddr);
+    }
   }
   if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
     return Status::NetworkError("injected DNS resolution failure");
