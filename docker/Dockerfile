@@ -105,6 +105,8 @@ COPY ./thirdparty thirdparty
 COPY ./build-support/enable_devtoolset.sh \
   ./build-support/enable_devtoolset_inner.sh \
   build-support/
+COPY ./build-support/ccache-clang build-support/ccache-clang
+COPY ./build-support/ccache-devtoolset-3 build-support/ccache-devtoolset-3
 RUN build-support/enable_devtoolset.sh \
   thirdparty/build-if-necessary.sh \
   # Remove the files left behind that we don't need.
