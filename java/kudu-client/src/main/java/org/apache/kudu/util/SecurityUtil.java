@@ -138,12 +138,13 @@ public abstract class SecurityUtil {
         "can only handle X509 certs");
     X509Certificate x509 = (X509Certificate)cert;
     String sigAlg = x509.getSigAlgName();
+    String sigAlgUpper = sigAlg.toUpperCase(Locale.ENGLISH);
 
     // The signature algorithm name is a string like 'SHA256withRSA'.
     // There's no API available to actually find just the digest algorithm,
     // so we resort to some hackery.
-    String[] components = sigAlg.split("with", 2);
-    String digestAlg = CERT_DIGEST_TO_MESSAGE_DIGEST.get(components[0].toUpperCase(Locale.ENGLISH));
+    String[] components = sigAlgUpper.split("WITH", 2);
+    String digestAlg = CERT_DIGEST_TO_MESSAGE_DIGEST.get(components[0]);
     if (digestAlg == null) {
       // RFC 5929: if the certificate's signatureAlgorithm uses no hash functions or
       // uses multiple hash functions, then this channel binding type's channel
