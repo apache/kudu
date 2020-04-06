@@ -55,20 +55,17 @@ DEFINE_string(ranger_java_path, "",
               "evaluated using the Kudu user's PATH. Empty string means "
               "$JAVA_HOME/bin/java is used. If $JAVA_HOME is not found, Kudu "
               "will attempt to find 'java' in $PATH.");
-TAG_FLAG(ranger_java_path, experimental);
 
 DEFINE_string(ranger_config_path, "",
               "Path to directory containing Ranger client configuration. "
               "Enables Ranger authorization provider. "
               "sentry_service_rpc_addresses must not be set if this is "
               "enabled.");
-TAG_FLAG(ranger_config_path, experimental);
 
 DEFINE_string(ranger_jar_path, "",
               "Path to the JAR file containing the Ranger subprocess. "
               "If not set, the default JAR file path is expected to be"
               "next to the master binary.");
-TAG_FLAG(ranger_jar_path, experimental);
 
 DEFINE_string(ranger_receiver_fifo_dir, "",
               "Directory in which to create a fifo used to receive messages "
