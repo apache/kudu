@@ -154,7 +154,7 @@ const char* const SysCatalogTable::kSysCertAuthorityEntryId =
 const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
 const char* const SysCatalogTable::kLatestNotificationLogEntryIdRowId =
-  "latest_notification_log_entry_id";
+    "latest_notification_log_entry_id";
 
 namespace {
 
@@ -625,6 +625,17 @@ string SysCatalogTable::TskSeqNumberToEntryId(int64_t seq_number) {
   string entry_id;
   KeyEncoderTraits<DataType::INT64, string>::Encode(seq_number, &entry_id);
   return entry_id;
+}
+
+int64_t SysCatalogTable::TskEntryIdToSeqNumber(const string& entry_id) {
+  Slice to_decode(entry_id);
+  int64_t tsk_seq_id = 0;
+  // Extra parentheses in CHECK_OK() are because of the comma separating types
+  // for the template.
+  CHECK_OK((KeyEncoderTraits<DataType::INT64, string>::DecodeKeyPortion(
+      &to_decode, /* is_last */false, /* arena */nullptr,
+      reinterpret_cast<uint8_t*>(&tsk_seq_id))));
+  return tsk_seq_id;
 }
 
 Status SysCatalogTable::VisitTServerStates(TServerStateVisitor* visitor) {

@@ -354,6 +354,8 @@ class SysCatalogTable {
 
   static std::string TskSeqNumberToEntryId(int64_t seq_number);
 
+  static int64_t TskEntryIdToSeqNumber(const std::string& entry_id);
+
   // Special string injected into SyncWrite() random failures (if enabled).
   //
   // Only useful for tests.

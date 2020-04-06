@@ -4565,7 +4565,7 @@ Status CatalogManager::LoadTskEntries(set<string>* expired_entry_ids) {
   }
   if (expired_entry_ids) {
     set<string> ref(loader.expired_entry_ids());
-    expired_entry_ids->swap(ref);
+    *expired_entry_ids = std::move(ref);
   }
   return master_->token_signer()->ImportKeys(loader.entries());
 }
@@ -4588,8 +4588,14 @@ Status CatalogManager::LoadTspkEntries(vector<TokenSigningPublicKeyPB>* keys) {
 Status CatalogManager::DeleteTskEntries(const set<string>& entry_ids) {
   leader_lock_.AssertAcquiredForWriting();
   RETURN_NOT_OK(sys_catalog_->RemoveTskEntries(entry_ids));
-  LOG_WITH_PREFIX(INFO) << Substitute("Deleted TSKs: $0",
-                                      JoinStrings(entry_ids, ", "));
+  string msg = "Deleted TSKs: ";
+  msg += JoinMapped(
+      entry_ids,
+      [](const string& id) {
+        return Substitute("$0", SysCatalogTable::TskEntryIdToSeqNumber(id));
+      },
+      " ");
+  LOG_WITH_PREFIX(INFO) << msg;
   return Status::OK();
 }
 
