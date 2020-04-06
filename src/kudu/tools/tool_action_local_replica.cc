@@ -155,9 +155,10 @@ string Indent(int indent) {
   return string(indent, ' ');
 }
 
-Status FsInit(unique_ptr<FsManager>* fs_manager) {
+Status FsInit(bool skip_block_manager, unique_ptr<FsManager>* fs_manager) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
+  fs_opts.skip_block_manager = skip_block_manager;
   fs_opts.update_instances = fs::UpdateInstanceBehavior::DONT_UPDATE;
   unique_ptr<FsManager> fs_ptr(new FsManager(Env::Default(), fs_opts));
   RETURN_NOT_OK(fs_ptr->Open());
@@ -238,7 +239,7 @@ Status ParsePeerString(const string& peer_str,
 
 Status PrintReplicaUuids(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/true, &fs_manager));
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(
       new ConsensusMetadataManager(fs_manager.get()));
 
@@ -323,7 +324,9 @@ Status SetRaftTerm(const RunnerContext& context) {
 
   // Load the current metadata from disk and verify that the intended operation is safe.
   Env* env = Env::Default();
-  FsManager fs_manager(env, FsManagerOpts());
+  FsManagerOpts fs_opts = FsManagerOpts();
+  fs_opts.skip_block_manager = true;
+  FsManager fs_manager(env, fs_opts);
   RETURN_NOT_OK(fs_manager.Open());
   // Load the cmeta file and rewrite the raft config.
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
@@ -468,7 +471,7 @@ struct TabletSizeStats {
 Status SummarizeDataSize(const RunnerContext& context) {
   const string& tablet_id_pattern = FindOrDie(context.required_args, kTabletIdGlobArg);
   unique_ptr<FsManager> fs;
-  RETURN_NOT_OK(FsInit(&fs));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/false, &fs));
 
   vector<string> tablets;
   RETURN_NOT_OK(fs->ListTabletIds(&tablets));
@@ -525,7 +528,7 @@ Status SummarizeDataSize(const RunnerContext& context) {
 
 Status DumpWals(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/true, &fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   shared_ptr<LogReader> reader;
@@ -576,7 +579,7 @@ Status ListBlocksInRowSet(const Schema& schema,
 
 Status DumpBlockIdsForLocalReplica(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/false, &fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   scoped_refptr<TabletMetadata> meta;
@@ -628,7 +631,7 @@ Status DumpTabletMeta(FsManager* fs_manager,
 
 Status ListLocalReplicas(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/true, &fs_manager));
 
   vector<string> tablets;
   RETURN_NOT_OK(fs_manager->ListTabletIds(&tablets));
@@ -702,7 +705,7 @@ Status DumpRowSetInternal(const IOContext& ctx,
 Status DumpRowSet(const RunnerContext& context) {
   const int kIndent = 2;
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/false, &fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   scoped_refptr<TabletMetadata> meta;
@@ -740,14 +743,14 @@ Status DumpRowSet(const RunnerContext& context) {
 
 Status DumpMeta(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/false, &fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   return DumpTabletMeta(fs_manager.get(), tablet_id, 0);
 }
 
 Status DumpDataDirs(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
-  RETURN_NOT_OK(FsInit(&fs_manager));
+  RETURN_NOT_OK(FsInit(/*skip_block_manager*/false, &fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   // Load the tablet meta to make sure the tablet's data directories are loaded
   // into the manager.
