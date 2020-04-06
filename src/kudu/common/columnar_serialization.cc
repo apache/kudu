@@ -35,6 +35,7 @@
 #include "kudu/common/zp7.h"
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
@@ -449,32 +450,6 @@ void CopySelectedRows(const vector<uint16_t>& sel_rows,
 }
 
 namespace {
-// For each of the Slices in 'cells_buf', copy the pointed-to data into 'indirect' and
-// modify the Slice so that its 'pointer' field is not an actual memory pointer, but
-// rather an offset within the indirect data buffer.
-void RelocateSlicesToIndirect(uint8_t* __restrict__ cells_buf, int n_rows,
-                              faststring* indirect) {
-  Slice* cell_slices = reinterpret_cast<Slice*>(cells_buf);
-  size_t total_size = 0;
-  for (int i = 0; i < n_rows; i++) {
-    total_size += cell_slices[i].size();
-  }
-
-  int old_size = indirect->size();
-  indirect->resize_with_extra_capacity(old_size + total_size);
-
-  uint8_t* dst_base = indirect->data();
-  uint8_t* dst = dst_base + old_size;
-
-  for (int i = 0; i < n_rows; i++) {
-    Slice* s = &cell_slices[i];
-    if (!s->empty()) {
-      memcpy(dst, s->data(), s->size());
-    }
-    *s = Slice(reinterpret_cast<const uint8_t*>(dst - dst_base), s->size());
-    dst += s->size();
-  }
-}
 
 // Specialized division for the known type sizes. Despite having some branching here,
 // this is faster than a 'div' instruction which has a 20+ cycle latency.
@@ -489,12 +464,12 @@ size_t div_sizeof_type(size_t s, size_t divisor) {
   }
 }
 
-
-// Copy the selected cells (and non-null-bitmap bits) from 'cblock' into 'dst' according to
-// the given 'sel_rows'.
+// Copy the selected primitive cells (and non-null-bitmap bits) from 'cblock' into 'dst'
+// according to the given 'sel_rows'.
 void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
                                  const SelectedRows& sel_rows,
                                  ColumnarSerializedBatch::Column* dst) {
+  DCHECK(cblock.type_info()->physical_type() != BINARY);
   size_t sizeof_type = cblock.type_info()->size();
   int n_sel = sel_rows.num_selected();
 
@@ -523,11 +498,89 @@ void CopySelectedCellsFromColumn(const ColumnBlock& cblock,
     ZeroNullValues(sizeof_type, initial_rows, n_sel,
         dst->data.data(), dst->non_null_bitmap->data());
   }
-
-  if (cblock.type_info()->physical_type() == BINARY) {
-    RelocateSlicesToIndirect(dst_buf, n_sel, boost::get_pointer(dst->indirect_data));
-  }
 }
+
+
+// For each of the Slices in 'cells_buf', copy the pointed-to data into 'varlen' and
+// write the _end_ offset of the copied data into 'offsets_out'. This assumes (and
+// DCHECKs) that the _start_ offset of each cell was already previously written by a
+// previous invocation of this function.
+void CopySlicesAndWriteEndOffsets(const Slice* __restrict__ cells_buf,
+                                  const SelectedRows& sel_rows,
+                                  uint32_t* __restrict__ offsets_out,
+                                  faststring* varlen) {
+  const Slice* cell_slices = reinterpret_cast<const Slice*>(cells_buf);
+  size_t total_added_size = 0;
+  sel_rows.ForEachIndex(
+      [&](uint16_t i) {
+        total_added_size += cell_slices[i].size();
+      });
+
+  // The output array should already have an entry for the start offset
+  // of our first cell.
+  DCHECK_EQ(offsets_out[-1], varlen->size());
+
+  int old_size = varlen->size();
+  varlen->resize_with_extra_capacity(old_size + total_added_size);
+
+  uint8_t* dst_base = varlen->data();
+  uint8_t* dst = dst_base + old_size;
+
+  sel_rows.ForEachIndex(
+      [&](uint16_t i) {
+        const Slice* s = &cell_slices[i];
+        if (!s->empty()) {
+          strings::memcpy_inlined(dst, s->data(), s->size());
+        }
+        dst += s->size();
+        *offsets_out++ = dst - dst_base;
+      });
+}
+
+// Copy variable-length cells into 'dst' using an Arrow-style serialization:
+// a list of offsets in the 'data' array and the data itself in the 'varlen_data'
+// array.
+//
+// The offset array has a length one greater than the number of cells.
+void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
+                                       const SelectedRows& sel_rows,
+                                       ColumnarSerializedBatch::Column* dst) {
+  using offset_type = uint32_t;
+  DCHECK(cblock.type_info()->physical_type() == BINARY);
+  int n_sel = sel_rows.num_selected();
+  DCHECK_GT(n_sel, 0);
+
+  // If this is the first call, append a '0' entry for the offset of the first string.
+  if (dst->data.size() == 0) {
+    CHECK_EQ(dst->varlen_data->size(), 0);
+    offset_type zero_offset = 0;
+    dst->data.append(&zero_offset, sizeof(zero_offset));
+  }
+
+  // Number of initial rows in the dst values and null_bitmap.
+  DCHECK_EQ(dst->data.size() % sizeof(offset_type), 0);
+  size_t initial_offset_count = div_sizeof_type(dst->data.size(), sizeof(offset_type));
+  size_t initial_rows = initial_offset_count - 1;
+  size_t new_offset_count = initial_offset_count + n_sel;
+  size_t new_num_rows = initial_rows + n_sel;
+
+  if (cblock.is_nullable()) {
+    DCHECK_EQ(dst->non_null_bitmap->size(), BitmapSize(initial_rows));
+    dst->non_null_bitmap->resize_with_extra_capacity(BitmapSize(new_num_rows));
+    CopyNonNullBitmap(cblock.non_null_bitmap(),
+                      sel_rows.bitmap(),
+                      initial_rows, cblock.nrows(),
+                      dst->non_null_bitmap->data());
+    ZeroNullValues(sizeof(Slice), 0, cblock.nrows(),
+                   const_cast<ColumnBlock&>(cblock).data(), cblock.non_null_bitmap());
+  }
+  dst->data.resize_with_extra_capacity(sizeof(offset_type) * new_offset_count);
+  offset_type* dst_offset = reinterpret_cast<offset_type*>(dst->data.data()) + initial_offset_count;
+  const Slice* src_slices = reinterpret_cast<const Slice*>(cblock.cell_ptr(0));
+  CopySlicesAndWriteEndOffsets(src_slices, sel_rows,
+                               dst_offset, boost::get_pointer(dst->varlen_data));
+}
+
 } // anonymous namespace
 } // namespace internal
 
@@ -552,7 +605,7 @@ int SerializeRowBlockColumnar(
       out->columns.emplace_back();
       out->columns.back().data.reserve(1024 * 1024);
       if (col.type_info()->physical_type() == BINARY) {
-        out->columns.back().indirect_data.emplace();
+        out->columns.back().varlen_data.emplace();
       }
       if (col.is_nullable()) {
         out->columns.back().non_null_bitmap.emplace();
@@ -561,16 +614,27 @@ int SerializeRowBlockColumnar(
   }
 
   SelectedRows sel = block.selection_vector()->GetSelectedRows();
+  if (sel.num_selected() == 0) {
+    return 0;
+  }
+
   int col_idx = 0;
   for (const auto& col : projection_schema->columns()) {
     int t_schema_idx = tablet_schema->find_column(col.name());
     CHECK_NE(t_schema_idx, -1);
     const ColumnBlock& column_block = block.column_block(t_schema_idx);
 
-    internal::CopySelectedCellsFromColumn(
-        column_block,
-        sel,
-        &out->columns[col_idx]);
+    if (column_block.type_info()->physical_type() == BINARY) {
+      internal::CopySelectedVarlenCellsFromColumn(
+          column_block,
+          sel,
+          &out->columns[col_idx]);
+    } else {
+      internal::CopySelectedCellsFromColumn(
+          column_block,
+          sel,
+          &out->columns[col_idx]);
+    }
     col_idx++;
   }
 

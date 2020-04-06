@@ -23,7 +23,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include <glog/logging.h>
@@ -378,7 +377,8 @@ class KuduColumnarScanBatch::Data : public internal::ScanBatchDataInterface {
                tserver::ScanResponsePB* response) override;
   void Clear() override;
 
-  Status GetDataForColumn(int idx, Slice* data) const;
+  Status GetFixedLengthColumn(int idx, Slice* data) const;
+  Status GetVariableLengthColumn(int idx, Slice* offsets, Slice* data) const;
   Status GetNonNullBitmapForColumn(int idx, Slice* data) const;
 
  private:
@@ -393,12 +393,6 @@ class KuduColumnarScanBatch::Data : public internal::ScanBatchDataInterface {
 
   // The PB which contains the "direct data" slice.
   ColumnarRowBlockPB resp_data_;
-
-  // Tracks for each variable-length (binary) column whether the pointers have been
-  // rewritten yet to be "real" pointers instead of sidecar-relative offsets.
-  // Mutable since the 'GetDataForColumn' call is semantically const, but in fact
-  // needs to modify this member to do the lazy pointer rewrites.
-  mutable std::unordered_set<int> rewritten_varlen_columns_;
 
   // The projection being scanned.
   const Schema* projection_;

@@ -35,8 +35,8 @@ struct ColumnarSerializedBatch {
     // Underlying column data.
     faststring data;
 
-    // Data for varlen columns (BINARY)
-    boost::optional<faststring> indirect_data;
+    // Data for varlen columns (those with BINARY physical type)
+    boost::optional<faststring> varlen_data;
 
     // Each bit is set when a value is non-null
     boost::optional<faststring> non_null_bitmap;

@@ -158,9 +158,9 @@ message ColumnarRowBlockPB {
     optional int32 data_sidecar = 1;
 
     // The index of the sidecar containing any data referred to by binary/string data.
-    // In this case, the 'pointer' field of the Slices contained in the data sidecar
-    // will refer to offsets in this sidecar.
-    optional int32 indirect_data_sidecar = 2;
+    // In this case, the `data` sidecar will contain an array of `num_rows + 1` uint32s
+    // pointing to offsets in this sidecar.
+    optional int32 varlen_data_sidecar = 2;
 
     // If the column is nullable, The index of the sidecar containing a bitmap with a set
     // bit for all non-null cells.

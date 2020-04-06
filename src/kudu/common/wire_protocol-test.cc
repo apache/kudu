@@ -335,19 +335,21 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
           }
         }
         int type_size = col.type_info()->size();
-        Slice serialized_val(serialized_col.data.data() + type_size * dst_row_idx,
-                             type_size);
-        Slice orig_val(row.cell_ptr(c), type_size);
-
+        Slice serialized_val;
+        Slice orig_val;
         if (col.type_info()->physical_type() == BINARY) {
-          orig_val = *reinterpret_cast<const Slice*>(orig_val.data());
-          serialized_val = *reinterpret_cast<const Slice*>(serialized_val.data());
-
-          uintptr_t indirect_offset = reinterpret_cast<uintptr_t>(serialized_val.data());
-          serialized_val = Slice(serialized_col.indirect_data->data() + indirect_offset,
-                                 serialized_val.size());
+          const uint8_t* offset_ptr = serialized_col.data.data() + sizeof(uint32_t) * dst_row_idx;
+          uint32_t start_offset = UnalignedLoad<uint32_t>(offset_ptr);
+          uint32_t end_offset = UnalignedLoad<uint32_t>(offset_ptr + sizeof(uint32_t));
+          ASSERT_GE(end_offset, start_offset);
+          serialized_val = Slice(serialized_col.varlen_data->data() + start_offset,
+                                 end_offset - start_offset);
+          memcpy(&orig_val, row.cell_ptr(c), type_size);
+        } else {
+          serialized_val = Slice(serialized_col.data.data() + type_size * dst_row_idx,
+                                 type_size);
+          orig_val = Slice(row.cell_ptr(c), type_size);
         }
-
         EXPECT_EQ(orig_val, serialized_val);
       }
       dst_row_idx++;

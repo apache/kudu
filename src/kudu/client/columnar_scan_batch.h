@@ -41,6 +41,12 @@ namespace client {
 /// some CPU cycles on the Kudu cluster and can also enable faster processing of the
 /// returned data in certain client applications.
 ///
+/// The columnar data retrieved by this class matches the columnar encoding described by
+/// Apache Arrow[1], but without the alignment and padding guarantees that are made by
+/// the Arrow IPC serialization.
+///
+/// [1] https://arrow.apache.org/docs/format/Columnar.html
+///
 /// NOTE: this class is not thread-safe.
 class KUDU_EXPORT KuduColumnarScanBatch {
  public:
@@ -50,17 +56,26 @@ class KUDU_EXPORT KuduColumnarScanBatch {
   /// @return The number of rows in this batch.
   int NumRows() const;
 
-  /// Get the raw columnar data corresponding to the column with index 'idx'.
+  /// Get the raw columnar data corresponding to the primitive-typed column with index 'idx'.
   ///
-  /// The data is in little-endian packed array format. No alignment is guaranteed.
+  /// The data is in little-endian packed array format. No alignment or padding is guaranteed.
   /// Space is reserved for all cells regardless of whether they might be null.
   /// The data stored in a null cell may or may not be zeroed.
   ///
-  /// If this returns an error for a given column, then a second call for the same
-  /// column has undefined results.
+  /// For variable-length (e.g. STRING, BINARY, VARCHAR) columns, use
+  /// GetVariableLengthColumn instead.
   ///
   /// @note The Slice returned is only valid for the lifetime of the KuduColumnarScanBatch.
-  Status GetDataForColumn(int idx, Slice* data) const;
+  Status GetFixedLengthColumn(int idx, Slice* data) const;
+
+  /// Return the variable-length data for the variable-length-typed column with index 'idx'.
+  ///
+  /// If NumRows() is 0, the 'offsets' array will have length 0. Otherwise, this array
+  /// will contain NumRows() + 1 entries, each indicating an offset within the
+  /// variable-length data array returned in 'data'. For each cell with index 'n',
+  /// offsets[n] indicates the starting offset of that cell, and offsets[n+1] indicates
+  /// the ending offset of that cell.
+  Status GetVariableLengthColumn(int idx, Slice* offsets, Slice* data) const;
 
   /// Get a bitmap corresponding to the non-null status of the cells in the given column.
   ///

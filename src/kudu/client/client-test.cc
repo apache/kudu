@@ -1065,15 +1065,18 @@ TEST_F(ClientTest, TestColumnarScan) {
 
     // Verify the data.
     Slice col_data[4];
-    for (int i = 0; i < 4; i++) {
-      ASSERT_OK(batch.GetDataForColumn(i, &col_data[i]));
-    }
+    Slice string_indir_data;
+    ASSERT_OK(batch.GetFixedLengthColumn(0, &col_data[0]));
+    ASSERT_OK(batch.GetFixedLengthColumn(1, &col_data[1]));
+    ASSERT_OK(batch.GetVariableLengthColumn(2, &col_data[2], &string_indir_data));
+    ASSERT_OK(batch.GetFixedLengthColumn(3, &col_data[3]));
+
     ArrayView<const int32_t> c0(reinterpret_cast<const int32_t*>(col_data[0].data()),
                                 batch.NumRows());
     ArrayView<const int32_t> c1(reinterpret_cast<const int32_t*>(col_data[1].data()),
                                 batch.NumRows());
-    ArrayView<const Slice> c2(reinterpret_cast<const Slice*>(col_data[2].data()),
-                              batch.NumRows());
+    ArrayView<const uint32_t> c2_offsets(reinterpret_cast<const uint32_t*>(col_data[2].data()),
+                                         batch.NumRows() + 1);
     ArrayView<const int32_t> c3(reinterpret_cast<const int32_t*>(col_data[3].data()),
                                 batch.NumRows());
 
@@ -1081,7 +1084,10 @@ TEST_F(ClientTest, TestColumnarScan) {
       int row_idx = total_rows + i;
       EXPECT_EQ(row_idx, c0[i]);
       EXPECT_EQ(row_idx * 2, c1[i]);
-      EXPECT_EQ(Substitute("hello $0", row_idx), c2[i]);
+
+      Slice str(&string_indir_data[c2_offsets[i]],
+                c2_offsets[i + 1] - c2_offsets[i]);
+      EXPECT_EQ(Substitute("hello $0", row_idx), str);
       EXPECT_EQ(row_idx * 3, c3[i]);
     }
     total_rows += batch.NumRows();

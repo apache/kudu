@@ -2591,17 +2591,17 @@ TEST_F(TabletServerTest, TestColumnarScan) {
     Slice col_data;
     ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(2).data_sidecar(), &col_data));
 
-    Slice indirect_data;
-    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(2).indirect_data_sidecar(),
-                                    &indirect_data));
+    Slice varlen_data;
+    ASSERT_OK(rpc.GetInboundSidecar(resp.columnar_data().columns(2).varlen_data_sidecar(),
+                                    &varlen_data));
 
     SCOPED_TRACE(col_data.ToDebugString());
-    ASSERT_EQ(col_data.size(), kNumRows * sizeof(Slice));
-    ArrayView<const Slice> cells(reinterpret_cast<const Slice*>(col_data.data()), kNumRows);
+    ASSERT_EQ(col_data.size(), (kNumRows + 1) * sizeof(uint32_t));
+    ArrayView<const uint32_t> offsets(reinterpret_cast<const uint32_t*>(col_data.data()),
+                                      kNumRows + 1);
     for (int i = 0; i < kNumRows; i++) {
-      Slice s = cells[i];
-      Slice real_str(indirect_data.data() + reinterpret_cast<uintptr_t>(s.data()),
-                     s.size());
+      Slice real_str(varlen_data.data() + offsets[i],
+                     offsets[i + 1] - offsets[i]);
       ASSERT_EQ(Substitute("hello $0", i), real_str);
     }
   }

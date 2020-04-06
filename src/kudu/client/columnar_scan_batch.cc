@@ -38,8 +38,12 @@ int KuduColumnarScanBatch::NumRows() const {
   return data_->resp_data_.num_rows();
 }
 
-Status KuduColumnarScanBatch::GetDataForColumn(int idx, Slice* data) const {
-  return data_->GetDataForColumn(idx, data);
+Status KuduColumnarScanBatch::GetFixedLengthColumn(int idx, Slice* data) const {
+  return data_->GetFixedLengthColumn(idx, data);
+}
+
+Status KuduColumnarScanBatch::GetVariableLengthColumn(int idx, Slice* offsets, Slice* data) const {
+  return data_->GetVariableLengthColumn(idx, offsets, data);
 }
 
 Status KuduColumnarScanBatch::GetNonNullBitmapForColumn(int idx, Slice* data) const {

@@ -258,6 +258,21 @@ class SelectedRows {
     return CreateRowIndexes();
   }
 
+  // Call F(index) for each selected index.
+  template<class F>
+  void ForEachIndex(F func) const {
+    if (all_selected_) {
+      int n_sel = num_selected();
+      for (int i = 0; i < n_sel; i++) {
+        func(i);
+      }
+    } else {
+      for (uint16_t i : indexes_) {
+        func(i);
+      }
+    }
+  }
+
  private:
   friend class SelectionVector;
 

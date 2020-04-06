@@ -817,8 +817,8 @@ class ColumnarResultSerializer : public ResultSerializer {
     int total = 0;
     for (const auto& col : results_.columns) {
       total += col.data.size();
-      if (col.indirect_data) {
-        total += col.indirect_data->size();
+      if (col.varlen_data) {
+        total += col.varlen_data->size();
       }
       if (col.non_null_bitmap) {
         total += col.non_null_bitmap->size();
@@ -838,10 +838,10 @@ class ColumnarResultSerializer : public ResultSerializer {
           RpcSidecar::FromFaststring((std::move(col.data))), &sidecar_idx));
       col_pb->set_data_sidecar(sidecar_idx);
 
-      if (col.indirect_data) {
+      if (col.varlen_data) {
         CHECK_OK(context->AddOutboundSidecar(
-            RpcSidecar::FromFaststring((std::move(*col.indirect_data))), &sidecar_idx));
-        col_pb->set_indirect_data_sidecar(sidecar_idx);
+            RpcSidecar::FromFaststring((std::move(*col.varlen_data))), &sidecar_idx));
+        col_pb->set_varlen_data_sidecar(sidecar_idx);
       }
 
       if (col.non_null_bitmap) {

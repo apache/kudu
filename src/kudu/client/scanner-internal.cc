@@ -50,13 +50,11 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/array_view.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/safe_math.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
@@ -786,7 +784,6 @@ Status KuduColumnarScanBatch::Data::Reset(
   controller_.Swap(controller);
   projection_ = projection;
   client_projection_ = client_projection;
-  rewritten_varlen_columns_.clear();
 
   unique_ptr<ColumnarRowBlockPB> resp_data(response->release_columnar_data());
   if (!resp_data) {
@@ -811,48 +808,86 @@ Status KuduColumnarScanBatch::Data::CheckColumnIndex(int idx) const {
   return Status::OK();
 }
 
-Status KuduColumnarScanBatch::Data::GetDataForColumn(int idx, Slice* data) const {
+Status KuduColumnarScanBatch::Data::GetFixedLengthColumn(int idx, Slice* data) const {
   RETURN_NOT_OK(CheckColumnIndex(idx));
+  const auto& col = projection_->column(idx);
+  if (PREDICT_FALSE(col.type_info()->physical_type() == BINARY)) {
+    return Status::InvalidArgument("column is variable-length", col.ToString());
+  }
+
+  // Get the sidecar from the RPC.
+  if (PREDICT_FALSE(!resp_data_.columns(idx).has_data_sidecar())) {
+    return Status::Corruption("server did not send data for column", col.ToString());
+  }
   RETURN_NOT_OK(controller_.GetInboundSidecar(
       resp_data_.columns(idx).data_sidecar(),
       data));
 
-  // Rewrite slices to be real pointers instead of pointers relative to the
-  // indirect data buffer.
-  if (projection_->column(idx).type_info()->physical_type() == BINARY &&
-      !ContainsKey(rewritten_varlen_columns_, idx)) {
-
-    Slice indirect_data_slice;
-    RETURN_NOT_OK(controller_.GetInboundSidecar(
-        resp_data_.columns(idx).indirect_data_sidecar(),
-        &indirect_data_slice));
-
-    ArrayView<Slice> v(reinterpret_cast<Slice*>(data->mutable_data()),
-                       data->size() / sizeof(Slice));
-    for (int row_idx = 0; row_idx < v.size(); row_idx++) {
-      Slice* slice = &v[row_idx];
-      size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
-      // Ensure the updated pointer is within the bounds of the indirect data.
-      bool overflowed = false;
-      size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
-      if (PREDICT_FALSE(overflowed || max_offset > indirect_data_slice.size())) {
-        const auto& col = projection_->column(idx);
-        return Status::Corruption(
-            Substitute("Row #$0 contained bad indirect slice for column $1: ($2, $3)",
-                       row_idx, col.ToString(), offset_in_indirect, slice->size()));
-      }
-      *slice = Slice(&indirect_data_slice[offset_in_indirect], slice->size());
-    }
-    rewritten_varlen_columns_.insert(idx);
+  size_t expected_size = resp_data_.num_rows() * col.type_info()->size();
+  if (PREDICT_FALSE(data->size() != expected_size)) {
+    return Status::Corruption(Substitute(
+        "server sent unexpected data length $0 for column $1 (expected $2)",
+        data->size(), col.ToString(), expected_size));
   }
+  return Status::OK();
+}
+
+Status KuduColumnarScanBatch::Data::GetVariableLengthColumn(
+    int idx, Slice* offsets, Slice* data) const {
+  RETURN_NOT_OK(CheckColumnIndex(idx));
+  const auto& col = projection_->column(idx);
+  if (PREDICT_FALSE(col.type_info()->physical_type() != BINARY)) {
+    return Status::InvalidArgument("column is not variable-length", col.ToString());
+  }
+  const auto& resp_col = resp_data_.columns(idx);
+
+  // Get the offsets.
+  Slice offsets_tmp;
+  if (PREDICT_FALSE(!resp_col.has_data_sidecar())) {
+    return Status::Corruption("server did not send offset data for column", col.ToString());
+  }
+  RETURN_NOT_OK(controller_.GetInboundSidecar(
+      resp_col.data_sidecar(),
+      &offsets_tmp));
+
+  // Get the varlen data.
+  Slice data_tmp;
+  if (PREDICT_FALSE(!resp_col.has_varlen_data_sidecar())) {
+    return Status::Corruption("server did not send varlen data for column", col.ToString());
+  }
+  RETURN_NOT_OK(controller_.GetInboundSidecar(
+      resp_col.varlen_data_sidecar(),
+      &data_tmp));
+
+  // Validate the offsets.
+  auto expected_num_offsets = resp_data_.num_rows() == 0 ? 0 : (resp_data_.num_rows() + 1);
+  auto expected_size = expected_num_offsets * sizeof(uint32_t);
+  if (PREDICT_FALSE(offsets_tmp.size() != expected_size)) {
+    return Status::Corruption(Substitute("size $0 of offsets buffer for column $1 did not "
+                                         "match expected size $2",
+                                         offsets_tmp.size(), col.ToString(), expected_size));
+  }
+  for (int i = 0; i < resp_data_.num_rows(); i++) {
+    uint32_t offset = UnalignedLoad<uint32_t>(offsets_tmp.data() + i * sizeof(uint32_t));
+    if (PREDICT_FALSE(offset > data_tmp.size())) {
+      return Status::Corruption(Substitute(
+          "invalid offset $0 returned for column $1 at index $2 (max valid offset is $3)",
+          offset, col.ToString(), i, data_tmp.size()));
+    }
+  }
+
+  *offsets = offsets_tmp;
+  *data = data_tmp;
+
   return Status::OK();
 }
 
 Status KuduColumnarScanBatch::Data::GetNonNullBitmapForColumn(int idx, Slice* data) const {
   RETURN_NOT_OK(CheckColumnIndex(idx));
   const auto& col = resp_data_.columns(idx);
-  if (!col.has_non_null_bitmap_sidecar()) {
-    return Status::NotFound("column is not nullable");
+  if (PREDICT_FALSE(!col.has_non_null_bitmap_sidecar())) {
+    return Status::Corruption(Substitute("server did not send null bitmap for column $0",
+                                         projection_->column(idx).ToString()));
   }
   return controller_.GetInboundSidecar(col.non_null_bitmap_sidecar(), data);
 }
