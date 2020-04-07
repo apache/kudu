@@ -356,7 +356,9 @@ int CopySelectedRowsAvx<4>(
     // since the 'gather' instructions don't support 16-bit indexes.
     __m256i indexes = _mm256_cvtepu16_epi32(*reinterpret_cast<const __m128i*>(sel_rows));
     // Gather 8x32-bit elements from src_buf[index*sizeof_type] for each index.
-    __m256i elems = _mm256_i32gather_epi32(src_buf, indexes, sizeof_type);
+    // We need this cast to compile on some versions of GCC.
+    const auto* src_i32 = reinterpret_cast<const int32_t*>(src_buf);
+    __m256i elems = _mm256_i32gather_epi32(src_i32, indexes, sizeof_type);
     // Store the 8x32-bit elements into the destination.
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_buf), elems);
     dst_buf += ints_per_vector * sizeof_type;
@@ -384,7 +386,8 @@ int CopySelectedRowsAvx<8>(
                                     sel_rows[1],
                                     sel_rows[0]);
     // Load 4x64-bit integers from src_buf[index * sizeof_type] for each index.
-    __m256i elems = _mm256_i32gather_epi64(src_buf, indexes, sizeof_type);
+    const auto* src_lli = reinterpret_cast<const long long int*>(src_buf); // NOLINT(*)
+    __m256i elems = _mm256_i32gather_epi64(src_lli, indexes, sizeof_type);
     // Store the 4x64-bit integers in the destination.
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_buf), elems);
     dst_buf += ints_per_vector * sizeof_type;
