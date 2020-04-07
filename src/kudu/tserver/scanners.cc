@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <ostream>
 
 #include <gflags/gflags.h>
@@ -30,6 +31,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -188,13 +190,13 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
       return false;
     }
 
-    bool is_initialized = it->second->IsInitialized();
-    if (is_initialized) {
-      descriptor = it->second->descriptor();
+    bool is_initted = it->second->is_initted();
+    if (is_initted) {
+      descriptor = it->second->Descriptor();
       descriptor.state = it->second->iter()->HasNext() ? ScanState::kFailed : ScanState::kComplete;
     }
     stripe.scanners_by_id_.erase(it);
-    if (!is_initialized) {
+    if (!is_initted) {
       return true;
     }
   }
@@ -227,8 +229,8 @@ vector<ScanDescriptor> ScannerManager::ListScans() const {
   for (const ScannerMapStripe* stripe : scanner_maps_) {
     shared_lock<RWMutex> l(stripe->lock_);
     for (const auto& se : stripe->scanners_by_id_) {
-      if (se.second->IsInitialized()) {
-        ScanDescriptor desc = se.second->descriptor();
+      if (se.second->is_initted()) {
+        ScanDescriptor desc = se.second->Descriptor();
         desc.state = ScanState::kActive;
         EmplaceOrDie(&scans, se.first, std::move(desc));
       }
@@ -280,8 +282,8 @@ void ScannerManager::RemoveExpiredScanners() {
           scanner->tablet_id(),
           idle_time.ToMilliseconds(),
           scanner_ttl.ToMilliseconds());
-      if (scanner->IsInitialized()) {
-        descriptors.emplace_back(scanner->descriptor());
+      if (scanner->is_initted()) {
+        descriptors.emplace_back(scanner->Descriptor());
       }
       it = stripe->scanners_by_id_.erase(it);
       if (metrics_) {
@@ -320,11 +322,12 @@ Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
     : id_(std::move(id)),
       tablet_replica_(tablet_replica),
       remote_user_(std::move(remote_user)),
-      call_seq_id_(0),
       start_time_(MonoTime::Now()),
+      row_format_flags_(row_format_flags),
       metrics_(metrics),
       arena_(256),
-      row_format_flags_(row_format_flags),
+      last_access_time_(start_time_),
+      call_seq_id_(0),
       num_rows_returned_(0) {
   if (tablet_replica_) {
     auto tablet = tablet_replica->shared_tablet();
@@ -332,7 +335,6 @@ Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
       tablet->metrics()->tablet_active_scanners->Increment();
     }
   }
-  UpdateAccessTime();
 }
 
 Scanner::~Scanner() {
@@ -347,38 +349,46 @@ Scanner::~Scanner() {
   }
 }
 
-void Scanner::UpdateAccessTime() {
-  std::lock_guard<simple_spinlock> l(lock_);
-  last_access_time_ = MonoTime::Now();
-}
-
 void Scanner::AddTimings(const CpuTimes& elapsed) {
-  std::lock_guard<simple_spinlock> l(lock_);
+  std::unique_lock<RWMutex> l(cpu_times_lock_);
   cpu_times_.Add(elapsed);
 }
 
 void Scanner::Init(unique_ptr<RowwiseIterator> iter,
-                   unique_ptr<ScanSpec> spec) {
-  std::lock_guard<simple_spinlock> l(lock_);
+                   unique_ptr<ScanSpec> spec,
+                   unique_ptr<Schema> client_projection) {
+  lock_.AssertAcquired();
   CHECK(!iter_) << "Already initialized";
   iter_ = std::move(iter);
   spec_ = std::move(spec);
+  client_projection_schema_ = std::move(client_projection);
+  initted_.store(true, std::memory_order_release);
 }
 
 const ScanSpec& Scanner::spec() const {
   return *spec_;
 }
 
-void Scanner::GetIteratorStats(vector<IteratorStats>* stats) const {
-  iter_->GetIteratorStats(stats);
+IteratorStats Scanner::UpdateStatsAndGetDelta() {
+  // Here we have to dig into the per-column iterator stats, sum them up, and then
+  // subtract out the total that we already reported in a previous scan.
+  lock_.AssertAcquired();
+  vector<IteratorStats> stats_by_col;
+  iter_->GetIteratorStats(&stats_by_col);
+  IteratorStats total_stats = std::accumulate(stats_by_col.begin(),
+                                              stats_by_col.end(),
+                                              IteratorStats());
+  IteratorStats delta_stats = total_stats - already_reported_stats_;
+  already_reported_stats_ = total_stats;
+  return delta_stats;
 }
 
-ScanDescriptor Scanner::descriptor() const {
+ScanDescriptor Scanner::Descriptor() const {
   // Ignore non-initialized scans. The initializing state is transient, and
   // handling it correctly is complicated. Since the scanner is initialized we
-  // can assume iter(), spec(), and client_projection_schema() return valid
+  // can assume iter_, spec_, and client_projection_schema_ are valid
   // pointers.
-  CHECK(IsInitialized());
+  CHECK(is_initted());
 
   ScanDescriptor descriptor;
   descriptor.tablet_id = tablet_id();
@@ -386,7 +396,7 @@ ScanDescriptor Scanner::descriptor() const {
   descriptor.remote_user = remote_user();
   descriptor.start_time = start_time_;
 
-  for (const auto& column : client_projection_schema()->columns()) {
+  for (const auto& column : client_projection_schema_->columns()) {
     descriptor.projected_columns.emplace_back(column.name());
   }
 
@@ -408,26 +418,23 @@ ScanDescriptor Scanner::descriptor() const {
   }
 
   vector<IteratorStats> iterator_stats;
-  GetIteratorStats(&iterator_stats);
+  iter_->GetIteratorStats(&iterator_stats);
 
-  DCHECK_EQ(iterator_stats.size(), iter()->schema().num_columns());
+  DCHECK_EQ(iterator_stats.size(), iter_->schema().num_columns());
   for (int col_idx = 0; col_idx < iterator_stats.size(); col_idx++) {
-    descriptor.iterator_stats.emplace_back(iter()->schema().column(col_idx).name(),
+    descriptor.iterator_stats.emplace_back(iter_->schema().column(col_idx).name(),
                                            iterator_stats[col_idx]);
   }
 
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    descriptor.last_call_seq_id = call_seq_id_;
-    descriptor.last_access_time = last_access_time_;
-    descriptor.cpu_times = cpu_times_;
-  }
+  descriptor.last_call_seq_id = ANNOTATE_UNPROTECTED_READ(call_seq_id_);
+  descriptor.last_access_time = last_access_time_.load(std::memory_order_relaxed);
+  descriptor.cpu_times = cpu_times();
 
   return descriptor;
 }
 
 CpuTimes Scanner::cpu_times() const {
-  std::lock_guard<simple_spinlock> l(lock_);
+  shared_lock<RWMutex> l(cpu_times_lock_);
   return cpu_times_;
 }
 

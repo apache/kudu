@@ -23,7 +23,6 @@
 #include <cstring>
 #include <functional>
 #include <memory>
-#include <numeric>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -149,6 +148,12 @@ DEFINE_bool(scanner_inject_service_unavailable_on_continue_scan, false,
            "If set, the scanner will return a ServiceUnavailable Status on "
            "any Scan continuation RPC call. Used for tests.");
 TAG_FLAG(scanner_inject_service_unavailable_on_continue_scan, unsafe);
+
+DEFINE_bool(scanner_unregister_on_invalid_seq_id, true,
+            "If set, an invalid sequence ID will cause a scanner to get unregistered. "
+            "Used for tests.");
+TAG_FLAG(scanner_unregister_on_invalid_seq_id, unsafe);
+
 
 DEFINE_bool(tserver_enforce_access_control, false,
             "If set, the server will apply fine-grained access control rules "
@@ -1814,7 +1819,14 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
     SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
     return;
   }
-  scanner->UpdateAccessTime();
+  {
+    // Locking for access has the side effect of updating the access time.
+    // Here we do a trylock -- a failure indicates that there is already another
+    // thread currently accessing the scanner, so that thread will update the
+    // access time upon release of the lock.
+    auto lock = scanner->TryLockForAccess();
+  }
+
   context->RespondSuccess();
 }
 
@@ -2355,18 +2367,14 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     const void* lower_bound = nullptr;
     const void* upper_bound = nullptr;
     if (pred_pb.has_lower_bound()) {
-      const void* val;
       RETURN_NOT_OK(ExtractPredicateValue(*col, pred_pb.lower_bound(),
                                           scanner->arena(),
-                                          &val));
-      lower_bound = val;
+                                          &lower_bound));
     }
     if (pred_pb.has_inclusive_upper_bound()) {
-      const void* val;
       RETURN_NOT_OK(ExtractPredicateValue(*col, pred_pb.inclusive_upper_bound(),
                                           scanner->arena(),
-                                          &val));
-      upper_bound = val;
+                                          &upper_bound));
     }
 
     auto pred = ColumnPredicate::InclusiveRange(*col, lower_bound, upper_bound, scanner->arena());
@@ -2456,6 +2464,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
                                          scan_pb.row_format_flags(),
                                          &scanner);
   TRACE("Created scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
+  auto scanner_lock = scanner->LockForAccess();
 
   // If we early-exit out of this function, automatically unregister
   // the scanner.
@@ -2511,12 +2520,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // remove unnecessary predicates.
   vector<ColumnSchema> missing_cols = spec.GetMissingColumns(projection);
 
-  // Store the original projection.
-  {
-    unique_ptr<Schema> orig_projection(new Schema(projection));
-    scanner->set_client_projection_schema(std::move(orig_projection));
-  }
-
   // Build a new projection with the projection columns and the missing columns,
   // annotating each column as a key column appropriately.
   //
@@ -2555,6 +2558,10 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
       CHECK_OK(projection_builder.AddColumn(col, /* is_key= */ false));
     }
   }
+
+  // Store the client's specified projection, prior to adding any missing
+  // columns for predicates, etc.
+  unique_ptr<Schema> client_projection(new Schema(std::move(projection)));
   projection = projection_builder.BuildWithoutIds();
   VLOG(3) << "Scan projection: " << projection.ToString(Schema::BASE_INFO);
 
@@ -2688,7 +2695,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     return Status::OK();
   }
 
-  scanner->Init(std::move(iter), std::move(orig_spec));
+  scanner->Init(std::move(iter), std::move(orig_spec), std::move(client_projection));
 
   // Stop the scanner timer because ContinueScanRequest starts its own timer.
   scanner_timer.Stop();
@@ -2707,6 +2714,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     // from the first half that is no longer executed in this codepath.
     ScanRequestPB continue_req(*req);
     continue_req.set_scanner_id(scanner->id());
+    scanner_lock.Unlock();
     RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, rpc_context, result_collector,
                                             has_more_results, error_code));
   } else {
@@ -2729,9 +2737,6 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
-  // TODO(todd): need some kind of concurrency control on these scanner objects
-  // in case multiple RPCs hit the same scanner at the same time. Probably
-  // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
   TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
   Status s = server_->scanner_manager()->LookupScanner(req->scanner_id(),
@@ -2748,6 +2753,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     *error_code = code;
     return s;
   }
+  // TODO(todd) consider TryLockForAccess and return ServiceUnavailable in the case that
+  // another thread is already using the scanner? This should be rare in real
+  // circumstances -- only relevant when a client performs some retries on timeout.
+  auto scanner_lock = scanner->LockForAccess();
 
   if (PREDICT_FALSE(FLAGS_scanner_inject_service_unavailable_on_continue_scan)) {
     return Status::ServiceUnavailable("Injecting service unavailable status on Scan due to "
@@ -2769,6 +2778,9 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   if (req->call_seq_id() != scanner->call_seq_id()) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID;
+    if (!FLAGS_scanner_unregister_on_invalid_seq_id) {
+      unreg_scanner.Cancel();
+    }
     return Status::InvalidArgument("Invalid call sequence ID in scan request");
   }
   scanner->IncrementCallSeqId();
@@ -2854,17 +2866,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     return s;
   }
 
-  // Calculate the number of rows/cells/bytes actually processed. Here we have to dig
-  // into the per-column iterator stats, sum them up, and then subtract out the
-  // total that we already reported in a previous scan.
-  vector<IteratorStats> stats_by_col;
-  scanner->GetIteratorStats(&stats_by_col);
-  IteratorStats total_stats = std::accumulate(stats_by_col.begin(),
-                                              stats_by_col.end(),
-                                              IteratorStats());
-
-  IteratorStats delta_stats = total_stats - scanner->already_reported_stats();
-  scanner->set_already_reported_stats(total_stats);
+  // Calculate the number of rows/cells/bytes actually processed.
+  IteratorStats delta_stats = scanner->UpdateStatsAndGetDelta();
   TRACE_COUNTER_INCREMENT(SCANNER_BYTES_READ_METRIC_NAME, delta_stats.bytes_read);
 
   // Update metrics based on this scan request.

@@ -31,15 +31,14 @@
 
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
-#include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/condition_variable.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -51,6 +50,7 @@
 namespace kudu {
 
 class RowwiseIterator;
+class Schema;
 class Status;
 class Thread;
 
@@ -192,31 +192,87 @@ class ScopedUnregisterScanner {
 };
 
 // An open scanner on the server side.
+//
+// NOTE: unless otherwise specified, all methods of this class require that the
+// caller has acquired the access lock using Scanner::LockForAccess(). It's assumed
+// that any RPC related to a scanner will acquire that lock, so that only a single
+// RPC thread works on a given scanner at a time.
 class Scanner {
  public:
+  class AccessLock {
+   public:
+    AccessLock(AccessLock&& l) noexcept
+        : s_(l.s_),
+          lock_(std::move(l.lock_)) {
+    }
+    ~AccessLock() {
+      if (lock_.owns_lock()) {
+        Unlock();
+      }
+    }
+    void Unlock() {
+      s_->last_access_time_.store(MonoTime::Now(), std::memory_order_relaxed);
+      lock_.unlock();
+    }
+    bool owns_lock() {
+      return lock_.owns_lock();
+    }
+
+   private:
+    friend class Scanner;
+    explicit AccessLock(Scanner* s)
+        : s_(DCHECK_NOTNULL(s)),
+          lock_(s->lock_) {
+    }
+    AccessLock(Scanner* s, std::try_to_lock_t try_lock)
+        : s_(DCHECK_NOTNULL(s)),
+          lock_(s->lock_, try_lock) {
+    }
+
+    Scanner* const s_;
+    std::unique_lock<Mutex> lock_;
+  };
+
   Scanner(std::string id,
           const scoped_refptr<tablet::TabletReplica>& tablet_replica,
           rpc::RemoteUser remote_user, ScannerMetrics* metrics,
           uint64_t row_format_flags);
   ~Scanner();
 
-  // Attach an actual iterator and a ScanSpec to this Scanner.
-  // Takes ownership of 'iter' and 'spec'.
+  // Lock this scanner for the purposes of an RPC.
+  //
+  // While the lock is held, the TimeSinceLastAccess() method will return 0, indicating
+  // that a call is actively being processed. Upon destruction of the returned Lock
+  // object, the last-access time will be set to the current time and the internal lock
+  // released.
+  AccessLock LockForAccess() WARN_UNUSED_RESULT {
+    return AccessLock(this);
+  }
+
+  // Try to lock the scanner, but do not wait in the case that the scanner
+  // is already locked by another thread.
+  //
+  // Check result.owns_lock() to see if the lock was successful.
+  AccessLock TryLockForAccess() WARN_UNUSED_RESULT {
+    return AccessLock(this, std::try_to_lock);
+  }
+
+  // Mark the scanner as initialized. This indicates that it successfully
+  // created an iterator, passed validation, etc, and will allow it to
+  // show up in the scanner dashboard.
   void Init(std::unique_ptr<RowwiseIterator> iter,
-            std::unique_ptr<ScanSpec> spec);
+            std::unique_ptr<ScanSpec> spec,
+            std::unique_ptr<Schema> client_projection);
 
   RowwiseIterator* iter() {
+    lock_.AssertAcquired();
     return DCHECK_NOTNULL(iter_.get());
   }
 
   const RowwiseIterator* iter() const {
+    lock_.AssertAcquired();
     return DCHECK_NOTNULL(iter_.get());
   }
-
-  // Update the last-access time to the current time,
-  // delaying the expiration of the Scanner for another TTL
-  // period.
-  void UpdateAccessTime();
 
   // Add the timings in 'elapsed' to the total timings for this scanner.
   void AddTimings(const CpuTimes& elapsed);
@@ -229,6 +285,7 @@ class Scanner {
   }
 
   Arena* arena() {
+    lock_.AssertAcquired();
     return &arena_;
   }
 
@@ -248,73 +305,71 @@ class Scanner {
 
   // Returns the current call sequence ID of the scanner.
   uint32_t call_seq_id() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    lock_.AssertAcquired();
     return call_seq_id_;
   }
 
   // Increments the call sequence ID.
   void IncrementCallSeqId() {
-    std::lock_guard<simple_spinlock> l(lock_);
-    call_seq_id_ += 1;
+    lock_.AssertAcquired();
+    call_seq_id_++;
   }
 
   // Return the delta from the last time this scan was updated to 'now'.
   MonoDelta TimeSinceLastAccess(const MonoTime& now) const {
-    std::lock_guard<simple_spinlock> l(lock_);
-    return now - last_access_time_;
+    std::unique_lock<Mutex> l(lock_, std::try_to_lock);
+    if (l.owns_lock()) {
+      return now - last_access_time_;
+    }
+    return MonoDelta::FromMilliseconds(0);
   }
 
   // Returns the time this scan was started.
   const MonoTime& start_time() const { return start_time_; }
 
-  // Associate a projection schema with the Scanner. The scanner takes
-  // ownership of 'client_projection_schema'.
+
+  // Returns client's projection schema.
   //
-  // Note: 'client_projection_schema' is set if the client's
-  // projection is a subset of the iterator's schema -- the iterator's
-  // schema needs to include all columns that have predicates, whereas
-  // the client may not want to project all of them.
-  void set_client_projection_schema(std::unique_ptr<Schema> client_projection_schema) {
-    client_projection_schema_ = std::move(client_projection_schema);
+  // This may differ from the schema used by the iterator, which must contain all columns
+  // used as predicates).
+  const Schema* client_projection_schema() const {
+    lock_.AssertAcquired();
+    return DCHECK_NOTNULL(client_projection_schema_.get());
   }
 
-  // Returns request's projection schema if it differs from the schema
-  // used by the iterator (which must contain all columns used as
-  // predicates). Returns NULL if the iterator's schema is the same as
-  // the projection schema.
-  // See the note about 'set_client_projection_schema' above.
-  const Schema* client_projection_schema() const { return client_projection_schema_.get(); }
-
-  // Get per-column stats for each iterator.
-  void GetIteratorStats(std::vector<IteratorStats>* stats) const;
-
-  const IteratorStats& already_reported_stats() const {
-    return already_reported_stats_;
-  }
-  void set_already_reported_stats(const IteratorStats& stats) {
-    already_reported_stats_ = stats;
-  }
+  // Update the stats from the underlying scanner and return a delta since the
+  // previous call to this method.
+  IteratorStats UpdateStatsAndGetDelta();
 
   uint64_t row_format_flags() const {
+    lock_.AssertAcquired();
     return row_format_flags_;
   }
 
   void add_num_rows_returned(int64_t num_rows_added) {
+    lock_.AssertAcquired();
     num_rows_returned_ += num_rows_added;
     DCHECK_LE(num_rows_added, num_rows_returned_);
   }
 
   int64_t num_rows_returned() const {
+    lock_.AssertAcquired();
     return num_rows_returned_;
   }
 
   bool has_fulfilled_limit() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    lock_.AssertAcquired();
     return spec_ && spec_->has_limit() && num_rows_returned_ >= spec_->limit();
   }
 
-  ScanDescriptor descriptor() const;
+  // Return a descriptor of the current state of this scan.
+  // Does not require the AccessLock.
+  //
+  // REQUIRES: is_initted() must be true.
+  ScanDescriptor Descriptor() const;
 
+  // Returns the amount of CPU time accounted to this scanner.
+  // Does not require the AccessLock.
   CpuTimes cpu_times() const;
 
  private:
@@ -325,9 +380,8 @@ class Scanner {
   // Return true if the scanner has been initialized (i.e has an iterator).
   // Once a Scanner is initialized, it is safe to assume that iter() and spec()
   // return non-NULL for the lifetime of the Scanner object.
-  bool IsInitialized() const {
-    std::lock_guard<simple_spinlock> l(lock_);
-    return iter_ != nullptr;
+  bool is_initted() const {
+    return initted_.load(std::memory_order_acquire);
   }
 
   // The unique ID of this scanner.
@@ -340,34 +394,14 @@ class Scanner {
   // first request.
   const rpc::RemoteUser remote_user_;
 
-  // The last time that the scanner was accessed.
-  MonoTime last_access_time_;
-
-  // The current call sequence ID.
-  uint32_t call_seq_id_;
-
-  // Protects last_access_time_ call_seq_id_, iter_, spec_
-  mutable simple_spinlock lock_;
-
   // The time the scanner was started.
   const MonoTime start_time_;
 
+  // The row format flags the client passed, if any.
+  const uint64_t row_format_flags_;
+
   // (Optional) scanner metrics struct, for recording scanner's duration.
   ScannerMetrics* metrics_;
-
-  // A summary of the statistics already reported to the metrics system
-  // for this scanner. This allows us to report the metrics incrementally
-  // as the scanner proceeds.
-  IteratorStats already_reported_stats_;
-
-  // The spec used by 'iter_'
-  std::unique_ptr<ScanSpec> spec_;
-
-  std::unique_ptr<RowwiseIterator> iter_;
-
-  // Stores the request's projection schema, if it differs from the
-  // schema used by the iterator.
-  std::unique_ptr<Schema> client_projection_schema_;
 
   AutoReleasePool autorelease_pool_;
 
@@ -376,15 +410,44 @@ class Scanner {
   // response.
   Arena arena_;
 
-  // The row format flags the client passed, if any.
-  const uint64_t row_format_flags_;
+  // Protects access to this scanner by a single RPC at a time.
+  mutable Mutex lock_;
+
+  std::atomic<bool> initted_ { false };
+
+  // The spec used by 'iter_'
+  // Assumed to be set once initted_ is true.
+  std::unique_ptr<ScanSpec> spec_;
+
+  // Assumed to be set once initted_ is true.
+  std::unique_ptr<RowwiseIterator> iter_;
+
+  // Stores the request's projection schema, if it differs from the
+  // schema used by the iterator.
+  // Assumed to be set once initted_ is true.
+  std::unique_ptr<Schema> client_projection_schema_;
+
+  // The last time that the scanner was accessed.
+  // Only modified under lock_ but can be read outside.
+  std::atomic<MonoTime> last_access_time_;
+
+  // The current call sequence ID.
+  // Only modified under lock_ but can be read outside.
+  uint32_t call_seq_id_;
+
+  // A summary of the statistics already reported to the metrics system
+  // for this scanner. This allows us to report the metrics incrementally
+  // as the scanner proceeds.
+  // Protected by lock_.
+  IteratorStats already_reported_stats_;
 
   // The number of rows that have been serialized and sent over the wire by
   // this scanner.
-  std::atomic<int64_t> num_rows_returned_;
+  int64_t num_rows_returned_;
 
   // The cumulative amounts of wall, user cpu, and system cpu time spent on
   // this scanner, in seconds.
+  mutable RWMutex cpu_times_lock_;
   CpuTimes cpu_times_;
 
   DISALLOW_COPY_AND_ASSIGN(Scanner);
@@ -457,7 +520,6 @@ class ScopedAddScannerTiming {
     stopped_ = true;
     sw_.stop();
     scanner_->AddTimings(sw_.elapsed());
-    scanner_->UpdateAccessTime();
     *cpu_times_ = scanner_->cpu_times();
   }
 

@@ -166,6 +166,7 @@ DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_rowset_compaction);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
+DECLARE_bool(scanner_unregister_on_invalid_seq_id);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_double(env_inject_full);
@@ -2503,6 +2504,75 @@ TEST_F(TabletServerTest, TestScanYourWrites_PropagatedTimestampInTheFuture) {
   ASSERT_EQ(1, results.size());
   ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
 }
+
+// Test that, if multiple RPCs arrive concurrently for a single scanner, no state is
+// corrupted, etc. We expected errors but no crashes or TSAN issues.
+TEST_F(TabletServerTest, TestConcurrentAccessToOneScanner) {
+  constexpr int kNumRows = 1000;
+  constexpr int kNumThreads = 8;
+  // Perform a write.
+  InsertTestRowsRemote(0, kNumRows, 1, nullptr, kTabletId);
+
+  FLAGS_scanner_batch_size_rows = 10;
+  FLAGS_scanner_unregister_on_invalid_seq_id = false;
+  ScanResponsePB open_resp;
+  NO_FATALS(OpenScannerWithAllColumns(&open_resp));
+
+  std::atomic<bool> done { false };
+  vector<thread> threads;
+  // Add a thread which concurrently lists scans. The ListScans() function accesses
+  // scanners to expose diagnostic info such as stats, etc, so calling it in a loop can
+  // help uncover potential races in this code path.
+  threads.emplace_back(
+      [&]() {
+        while (!done) {
+          mini_server_->server()->scanner_manager()->ListScans();
+        }
+      });
+  std::atomic<int> next_seq_id { 1 };
+  std::atomic<int> total_rows { 0 };
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back(
+        [&]() {
+          while (!done) {
+            RpcController rpc;
+            rpc.set_timeout(MonoDelta::FromSeconds(10));
+            ScanRequestPB req;
+            ScanResponsePB resp;
+            req.set_scanner_id(open_resp.scanner_id());
+            // Try either the expected next sequence ID or the following one.
+            // We sometimes try the following one since otherwise the race of two
+            // RPCs processing concurrently is very very narrow -- we increment the
+            // call ID immediately after looking up the scanner.
+            req.set_call_seq_id(next_seq_id + (rand() % 2));
+            req.set_batch_size_bytes(100);
+            Status s = proxy_->Scan(req, &resp, &rpc);
+            CHECK_OK(s);
+            if (resp.has_error()) {
+              if (resp.error().code() == TabletServerErrorPB::SCANNER_EXPIRED) {
+                break;
+              }
+              CHECK(resp.error().code() == TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID)
+                  << "unexpected error: " << resp.error().DebugString();
+              VLOG(1) << "Got an invalid seq id " << req.call_seq_id();
+            } else {
+              VLOG(1) << "Continued scan: " << resp.data().num_rows() << " rows";
+              total_rows += resp.data().num_rows();
+              next_seq_id++;
+              if (!resp.has_more_results()) {
+                VLOG(1) << "Finished scan";
+                done = true;
+              }
+            }
+          }
+        });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  ASSERT_EQ(total_rows, kNumRows);
+}
+
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   InsertTestRowsDirect(0, 100);
