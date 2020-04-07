@@ -49,22 +49,25 @@
 #include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 
-DEFINE_string(ranger_java_path, "",
-              "The path where the Java binary was installed. If "
-              "the value isn't an absolute path (e.g. 'java'), it will be "
-              "evaluated using the Kudu user's PATH. Empty string means "
-              "$JAVA_HOME/bin/java is used. If $JAVA_HOME is not found, Kudu "
-              "will attempt to find 'java' in $PATH.");
-
 DEFINE_string(ranger_config_path, "",
               "Path to directory containing Ranger client configuration. "
-              "Enables Ranger authorization provider. "
-              "sentry_service_rpc_addresses must not be set if this is "
-              "enabled.");
+              "When set, Ranger integration is enabled, fine-grained access "
+              "control is enforced, and clients are issued authorization "
+              "tokens. In addition, both --ranger_java_path and --ranger_jar_path "
+              "flags need to be set properly for Ranger integration to work. "
+              "The --sentry_service_rpc_addresses flag, which enables Sentry "
+              "integration, must not be set if this is enabled.");
+
+DEFINE_string(ranger_java_path, "",
+              "Path where the Java binary was installed. If the value "
+              "isn't an absolute path (e.g. 'java'), it will be evaluated "
+              "using the Kudu user's PATH. If not specified, $JAVA_HOME/bin/java "
+              "is used. If $JAVA_HOME is not found, Kudu will attempt to "
+              "find 'java' in the Kudu user's PATH.");
 
 DEFINE_string(ranger_jar_path, "",
-              "Path to the JAR file containing the Ranger subprocess. "
-              "If not set, the default JAR file path is expected to be"
+              "Path to the JAR file containing the Ranger subprocess. If "
+              "not specified, the default JAR file path is expected to be "
               "next to the master binary.");
 
 DEFINE_string(ranger_receiver_fifo_dir, "",
