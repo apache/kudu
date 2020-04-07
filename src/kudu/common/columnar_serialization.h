@@ -35,10 +35,16 @@ class ColumnarSerializedBatch {
  public:
   // 'rowblock_schema': the schema of the RowBlocks that will be passed to
   //                    AddRowBlock().
+  //
   // 'client_schema': the schema to be returned to the client, which may
   //                  contain a subset of columns
+  //
+  // 'expected_batch_size_bytes':
+  //      the batch size at which the caller expects to stop adding new rows to
+  //      this batch. This is is only a hint and does not affect correctness.
   ColumnarSerializedBatch(const Schema& rowblock_schema,
-                          const Schema& client_schema);
+                          const Schema& client_schema,
+                          int expected_batch_size_bytes);
 
   // Append the data in 'block' into this columnar batch.
   //

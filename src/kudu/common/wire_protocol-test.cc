@@ -298,6 +298,7 @@ TEST_F(WireProtocolTest, TestRowBlockToRowwisePB) {
 TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
   // Generate several blocks of random data.
   static constexpr int kNumBlocks = 3;
+  static constexpr int kBatchSizeBytes = 8192 * 1024;
   Arena arena(1024);
   std::list<RowBlock> blocks;
   for (int i = 0; i < kNumBlocks; i++) {
@@ -306,7 +307,7 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
   }
 
   // Convert all of the RowBlocks to a single serialized (concatenated) columnar format.
-  ColumnarSerializedBatch batch(schema_, schema_);
+  ColumnarSerializedBatch batch(schema_, schema_, kBatchSizeBytes);
   for (const auto& block : blocks) {
     batch.AddRowBlock(block);
   }
@@ -464,7 +465,8 @@ struct RowwiseConverter {
 
 struct ColumnarConverter {
   static void Run(const RowBlock& block) {
-    ColumnarSerializedBatch batch(*block.schema(), *block.schema());
+    constexpr int kBatchSizeBytes = 8192 * 1024;
+    ColumnarSerializedBatch batch(*block.schema(), *block.schema(), kBatchSizeBytes);
     batch.AddRowBlock(block);
   }
 

@@ -588,10 +588,10 @@ void CopySelectedVarlenCellsFromColumn(const ColumnBlock& cblock,
 } // namespace internal
 
 ColumnarSerializedBatch::ColumnarSerializedBatch(const Schema& rowblock_schema,
-                                                 const Schema& client_schema) {
+                                                 const Schema& client_schema,
+                                                 int expected_batch_size_bytes) {
   // Initialize buffers for the columns.
-  // TODO(todd) don't pre-size these to 1MB per column -- quite
-  // expensive if there are a lot of columns!
+  int64_t row_bytes = client_schema.byte_size();
   columns_.reserve(client_schema.num_columns());
   for (const auto& schema_col : client_schema.columns()) {
     columns_.emplace_back();
@@ -600,7 +600,10 @@ ColumnarSerializedBatch::ColumnarSerializedBatch(const Schema& rowblock_schema,
     col.rowblock_schema_col_idx = rowblock_schema.find_column(schema_col.name());
     CHECK_NE(col.rowblock_schema_col_idx, -1);
 
-    col.data.reserve(1024 * 1024);
+    // Size the initial buffer based on the percentage of the total row that this column
+    // takes up. This isn't fully accurate because of costs like the null bitmap or varlen
+    // data, but tries to reasonably apportion the memory budget across the columns.
+    col.data.reserve(schema_col.type_info()->size() * expected_batch_size_bytes / row_bytes);
     if (schema_col.type_info()->physical_type() == BINARY) {
       col.varlen_data.emplace();
     }

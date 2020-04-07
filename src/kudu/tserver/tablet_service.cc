@@ -801,13 +801,15 @@ class RowwiseResultSerializer : public ResultSerializer {
 class ColumnarResultSerializer : public ResultSerializer {
  public:
   static Status Create(uint64_t flags,
+                       int batch_size_bytes,
                        const Schema& scanner_schema,
                        const Schema& client_schema,
                        unique_ptr<ResultSerializer>* serializer) {
     if (flags & ~RowFormatFlags::COLUMNAR_LAYOUT) {
       return Status::InvalidArgument("Row format flags not supported with columnar layout");
     }
-    serializer->reset(new ColumnarResultSerializer(scanner_schema, client_schema));
+    serializer->reset(new ColumnarResultSerializer(
+        scanner_schema, client_schema, batch_size_bytes));
     return Status::OK();
   }
 
@@ -864,8 +866,9 @@ class ColumnarResultSerializer : public ResultSerializer {
 
  private:
   ColumnarResultSerializer(const Schema& scanner_schema,
-                           const Schema& client_schema)
-      : results_(scanner_schema, client_schema) {
+                           const Schema& client_schema,
+                           int batch_size_bytes)
+      : results_(scanner_schema, client_schema, batch_size_bytes) {
   }
 
   int64_t num_rows_ = 0;
@@ -920,7 +923,7 @@ class ScanResultCopier : public ScanResultCollector {
     }
     if (row_format_flags & COLUMNAR_LAYOUT) {
       return ColumnarResultSerializer::Create(
-          row_format_flags, scanner_schema, client_schema, &serializer_);
+          row_format_flags, batch_size_bytes_, scanner_schema, client_schema, &serializer_);
     }
     serializer_.reset(new RowwiseResultSerializer(batch_size_bytes_, row_format_flags));
     return Status::OK();
