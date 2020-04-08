@@ -44,9 +44,9 @@ function install_python_packages() {
     curl https://bootstrap.pypa.io/get-pip.py | python - "pip < 19.0"
   fi
   pip install --upgrade \
-      cython \
-      setuptools \
-      setuptools_scm
+    cython \
+    setuptools \
+    setuptools_scm
 }
 
 # Install the prerequisite libraries, if they are not installed.
@@ -56,12 +56,24 @@ if [[ -f "/usr/bin/yum" ]]; then
   yum update -y
 
   # Install curl, used when installing pip.
-  yum install -y ca-certificates curl
+  yum install -y ca-certificates \
+    curl \
+    redhat-lsb-core
+
+  # Get the major version for version specific package logic below.
+  OS_MAJOR_VERSION=$(lsb_release -rs | cut -f1 -d.)
 
   # Install python development packages.
   yum install -y epel-release
   # g++ is required to check for int128 support in setup.py.
-  yum install -y gcc gcc-c++ python-devel
+  yum install -y gcc gcc-c++
+  if [[ "$OS_MAJOR_VERSION" -lt "8" ]]; then
+    yum install -y python-devel
+  else
+    yum install -y python3-devel
+    alternatives --set python /usr/bin/python3
+  fi
+
   install_python_packages
 
   # Reduce the image size by cleaning up after the install.
