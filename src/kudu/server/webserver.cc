@@ -350,7 +350,7 @@ Status Webserver::Start() {
   signal(SIGCHLD, sig_chld);
 
   if (context_ == nullptr) {
-    Sockaddr addr;
+    Sockaddr addr = Sockaddr::Wildcard();
     addr.set_port(opts_.port);
     TryRunLsof(addr);
     string err_msg = Substitute("Webserver: could not start on address $0", http_address_);

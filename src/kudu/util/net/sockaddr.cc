@@ -23,13 +23,18 @@
 
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <string>
 
-#include "kudu/gutil/hash/builtin_type_hash.h"
+#include <glog/logging.h>
+
+#include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 
 using std::string;
@@ -42,59 +47,102 @@ namespace kudu {
 /// Sockaddr
 ///
 Sockaddr::Sockaddr() {
-  memset(&addr_, 0, sizeof(addr_));
-  addr_.sin_family = AF_INET;
-  addr_.sin_addr.s_addr = INADDR_ANY;
+  set_length(0);
+}
+
+Sockaddr::Sockaddr(const Sockaddr& other) noexcept {
+  *this = other;
+}
+
+Sockaddr::~Sockaddr() {
+  ASAN_UNPOISON_MEMORY_REGION(&storage_, sizeof(storage_));
+}
+
+Sockaddr Sockaddr::Wildcard() {
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  return Sockaddr(addr);
+}
+
+Sockaddr& Sockaddr::operator=(const Sockaddr& other) noexcept {
+  if (&other == this) return *this;
+  set_length(other.len_);
+  memcpy(&storage_, &other.storage_, len_);
+  return *this;
 }
 
 Sockaddr::Sockaddr(const struct sockaddr_in& addr) {
-  memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
+  DCHECK_EQ(AF_INET, addr.sin_family);
+  set_length(sizeof(addr));
+  memcpy(&storage_.in, &addr, sizeof(struct sockaddr_in));
 }
 
 Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(s, default_port));
 
-  if (inet_pton(AF_INET, hp.host().c_str(), &addr_.sin_addr) != 1) {
+  struct in_addr addr;
+  if (inet_pton(AF_INET, hp.host().c_str(), &addr) != 1) {
     return Status::InvalidArgument("Invalid IP address", hp.host());
   }
+  set_length(sizeof(struct sockaddr_in));
+  storage_.in.sin_family = AF_INET;
+  storage_.in.sin_addr = addr;
   set_port(hp.port());
   return Status::OK();
 }
 
 Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
-  memcpy(&addr_, &addr, sizeof(struct sockaddr_in));
+  set_length(sizeof(addr));
+  memcpy(&storage_, &addr, sizeof(addr));
+  DCHECK_EQ(family(), AF_INET);
   return *this;
 }
 
 bool Sockaddr::operator==(const Sockaddr& other) const {
-  return memcmp(&other.addr_, &addr_, sizeof(addr_)) == 0;
+  return BytewiseCompare(*this, other) == 0;
+}
+int Sockaddr::BytewiseCompare(const Sockaddr& a, const Sockaddr& b) {
+  Slice a_slice(reinterpret_cast<const uint8_t*>(&a.storage_), a.len_);
+  Slice b_slice(reinterpret_cast<const uint8_t*>(&b.storage_), b.len_);
+  return a_slice.compare(b_slice);
 }
 
-bool Sockaddr::operator<(const Sockaddr &rhs) const {
-  return addr_.sin_addr.s_addr < rhs.addr_.sin_addr.s_addr;
+void Sockaddr::set_length(socklen_t len) {
+  DCHECK(len == 0 || len >= sizeof(sa_family_t));
+  DCHECK_LE(len, sizeof(storage_));
+  len_ = len;
+  ASAN_UNPOISON_MEMORY_REGION(&storage_, len_);
+  ASAN_POISON_MEMORY_REGION(reinterpret_cast<uint8_t*>(&storage_) + len_,
+                            sizeof(storage_) - len_);
 }
 
 uint32_t Sockaddr::HashCode() const {
-  uint32_t hash = Hash32NumWithSeed(addr_.sin_addr.s_addr, 0);
-  hash = Hash32NumWithSeed(addr_.sin_port, hash);
-  return hash;
+  return HashStringThoroughly(reinterpret_cast<const char*>(&storage_), addrlen());
 }
 
 void Sockaddr::set_port(int port) {
-  addr_.sin_port = htons(port);
+  DCHECK_EQ(family(), AF_INET);
+  DCHECK_GE(port, 0);
+  DCHECK_LE(port, std::numeric_limits<uint16_t>::max());
+  storage_.in.sin_port = htons(port);
 }
 
 int Sockaddr::port() const {
-  return ntohs(addr_.sin_port);
+  DCHECK_EQ(family(), AF_INET);
+  return ntohs(storage_.in.sin_port);
 }
 
 std::string Sockaddr::host() const {
-  return HostPort::AddrToString(addr_.sin_addr.s_addr);
+  DCHECK_EQ(family(), AF_INET);
+  return HostPort::AddrToString(storage_.in.sin_addr.s_addr);
 }
 
-const struct sockaddr_in& Sockaddr::addr() const {
-  return addr_;
+const struct sockaddr_in& Sockaddr::ipv4_addr() const {
+  DCHECK_EQ(family(), AF_INET);
+  return storage_.in;
 }
 
 std::string Sockaddr::ToString() const {
@@ -102,23 +150,24 @@ std::string Sockaddr::ToString() const {
 }
 
 bool Sockaddr::IsWildcard() const {
-  return addr_.sin_addr.s_addr == 0;
+  DCHECK_EQ(family(), AF_INET);
+  return storage_.in.sin_addr.s_addr == 0;
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
-  return HostPort::IsLoopback(addr_.sin_addr.s_addr);
+  DCHECK_EQ(family(), AF_INET);
+  return HostPort::IsLoopback(storage_.in.sin_addr.s_addr);
 }
 
 Status Sockaddr::LookupHostname(string* hostname) const {
   char host[NI_MAXHOST];
   int flags = 0;
 
+  auto* addr = reinterpret_cast<const sockaddr*>(&storage_);
   int rc = 0;
   LOG_SLOW_EXECUTION(WARNING, 200,
                      Substitute("DNS reverse-lookup for $0", ToString())) {
-    rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
-                     host, NI_MAXHOST,
-                     nullptr, 0, flags);
+    rc = getnameinfo(addr, addrlen(), host, NI_MAXHOST, nullptr, 0, flags);
   }
   if (PREDICT_FALSE(rc != 0)) {
     if (rc == EAI_SYSTEM) {

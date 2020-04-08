@@ -93,20 +93,6 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<bool> {
 // This is used to run all parameterized tests with and without SSL.
 INSTANTIATE_TEST_CASE_P(OptionalSSL, TestRpc, testing::Values(false, true));
 
-TEST_F(TestRpc, TestSockaddr) {
-  Sockaddr addr1, addr2;
-  addr1.set_port(1000);
-  addr2.set_port(2000);
-  // port is ignored when comparing Sockaddr objects
-  ASSERT_FALSE(addr1 < addr2);
-  ASSERT_FALSE(addr2 < addr1);
-  ASSERT_EQ(1000, addr1.port());
-  ASSERT_EQ(2000, addr2.port());
-  ASSERT_EQ(string("0.0.0.0:1000"), addr1.ToString());
-  ASSERT_EQ(string("0.0.0.0:2000"), addr2.ToString());
-  Sockaddr addr3(addr1);
-  ASSERT_EQ(string("0.0.0.0:1000"), addr3.ToString());
-}
 
 TEST_P(TestRpc, TestMessengerCreateDestroy) {
   shared_ptr<Messenger> messenger;
@@ -125,7 +111,7 @@ TEST_P(TestRpc, TestAcceptorPoolStartStop) {
     shared_ptr<Messenger> messenger;
     ASSERT_OK(CreateMessenger("TestAcceptorPoolStartStop", &messenger, 1, GetParam()));
     shared_ptr<AcceptorPool> pool;
-    ASSERT_OK(messenger->AddAcceptorPool(Sockaddr(), &pool));
+    ASSERT_OK(messenger->AddAcceptorPool(Sockaddr::Wildcard(), &pool));
     Sockaddr bound_addr;
     ASSERT_OK(pool->GetBoundAddress(&bound_addr));
     ASSERT_NE(0, bound_addr.port());
@@ -322,7 +308,7 @@ TEST_P(TestRpc, TestCallWithBadPasswordProtectedKey) {
 TEST_P(TestRpc, TestCallToBadServer) {
   shared_ptr<Messenger> client_messenger;
   ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, GetParam()));
-  Sockaddr addr;
+  Sockaddr addr = Sockaddr::Wildcard();
   addr.set_port(0);
   Proxy p(client_messenger, addr, addr.host(),
           GenericCalculatorService::static_service_name());
@@ -1189,7 +1175,7 @@ static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,
 TEST_P(TestRpc, TestRpcCallbackDestroysMessenger) {
   shared_ptr<Messenger> client_messenger;
   ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, GetParam()));
-  Sockaddr bad_addr;
+  Sockaddr bad_addr = Sockaddr::Wildcard();
   CountDownLatch latch(1);
 
   AddRequestPB req;

@@ -233,7 +233,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
   // Create the listening socket, client socket, and server socket.
   Socket listening_socket;
   ASSERT_OK(listening_socket.Init(0));
-  ASSERT_OK(listening_socket.BindAndListen(Sockaddr(), 1));
+  ASSERT_OK(listening_socket.BindAndListen(Sockaddr::Wildcard(), 1));
   Sockaddr server_addr;
   ASSERT_OK(listening_socket.GetSocketAddress(&server_addr));
 
@@ -1005,7 +1005,7 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
                                const SocketCallable& client_runner) {
   Socket server_sock;
   CHECK_OK(server_sock.Init(0));
-  ASSERT_OK(server_sock.BindAndListen(Sockaddr(), 1));
+  ASSERT_OK(server_sock.BindAndListen(Sockaddr::Wildcard(), 1));
   Sockaddr server_bind_addr;
   ASSERT_OK(server_sock.GetSocketAddress(&server_bind_addr));
   thread server(RunAcceptingDelegator, &server_sock, server_runner);

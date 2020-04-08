@@ -899,7 +899,6 @@ Status BuiltInNtp::SendRequests() {
 Status BuiltInNtp::SendPoll(ServerState* s) {
   CHECK_NE(-1, socket_.GetFd());
   const Sockaddr& addr = s->cur_addr();
-  sockaddr_in si_other = addr.addr();
 
   unique_ptr<PendingRequest> pr(new PendingRequest);
   pr->server = s;
@@ -914,8 +913,7 @@ Status BuiltInNtp::SendPoll(ServerState* s) {
     sched_yield();
     pr->send_time_mono_us = GetMonoTimeMicrosRaw();
     return sendto(socket_.GetFd(), &pr->request, sizeof(pr->request),
-                  /*flags=*/0, reinterpret_cast<sockaddr*>(&si_other),
-                  sizeof(si_other));
+                  /*flags=*/0, addr.addr(), addr.addrlen());
   };
   ssize_t rc = -1;
   RETRY_ON_EINTR(rc, sender());

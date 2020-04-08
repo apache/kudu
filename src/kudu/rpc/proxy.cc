@@ -52,7 +52,7 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
       is_started_(false) {
   CHECK(messenger_ != nullptr);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
-
+  DCHECK(remote.is_initialized());
   // By default, we set the real user to the currently logged-in user.
   // Effective user and password remain blank.
   string real_user;
