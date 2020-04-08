@@ -92,6 +92,7 @@ ROOT=$(cd $(dirname "$BASH_SOURCE")/.. ; pwd)
 # Tested options:
 #   centos:6
 #   centos:7
+#   centos:8
 #   debian:jessie
 #   debian:stretch
 #   ubuntu:trusty
