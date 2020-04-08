@@ -35,23 +35,207 @@
 [[rn_1.12.0_obsoletions]]
 == Obsoletions
 
+* The Flume sink has been migrated to the Apache Flume project and removed
+  from Kudu. Users depending on the Flume integration can use the old
+  `kudu-flume` jars or migrate to the Flume jars containing the Kudu sink.
+
+* Support for Apache Sentry authorization has been deprecated and may be
+  removed in the next minor release. Users depending on the Sentry integration
+  should migrate to the Apache Ranger integration for fine-grained authorization.
+
+* Support for Python 2 has been deprecated and may be removed in the next minor
+  release.
+
+* Support for CentOS/RHEL 6, Debian 8, Ubuntu 14 has been deprecated and may
+  be removed in the next minor release.
 
 [[rn_1.12.0_deprecations]]
 == Deprecations
 
-Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor release.
 
 [[rn_1.12.0_new_features]]
 == New features
+
+* Kudu now supports native fine-grained authorization via integration with
+  Apache Ranger. Kudu may now enforce access control policies defined for
+  Kudu tables and columns stored in Ranger. See the
+  link:security.html#fine_grained_authz[authorization documentation]
+  for more details.
+
+* Kudu’s web UI now supports proxying via Apache Knox. Kudu may be deployed
+  in a firewalled state behind a Knox Gateway which will forward HTTP requests
+  and responses between clients and the Kudu web UI.
+
+* Kudu’s web UI now supports HTTP keep-alive. Operations that access multiple
+  URLs will now reuse a single HTTP connection, improving their performance.
+
+* The `kudu tserver quiesce` tool is added to quiesce tablet servers. While a
+  tablet server is quiescing, it will stop hosting tablet leaders and stop
+  serving new scan requests. This can be used to orchestrate a rolling restart
+  without stopping on-going Kudu workloads.
+
+* Introduced `auto` time source for HybridClock timestamps. With
+  `--time_source=auto` in AWS and GCE cloud environments, Kudu masters and
+  tablet servers use the built-in NTP client synchronized with dedicated NTP
+  servers available via host-only networks. With `--time_source=auto` in
+  environments other than AWS/GCE, Kudu masters and tablet servers rely on
+  their local machine's clock synchronized by NTP. The default setting for
+  the HybridClock time source (`--time_source=system`) is backward-compatible,
+  requiring the local machine's clock to be synchronized by the kernel's NTP
+  discipline.
+
+* The `kudu cluster rebalance` tool now supports moving replicas away from
+  specific tablet servers by supplying the `--ignored_tservers` and
+  `--move_replicas_from_ignored_tservers` arguments (see
+  link:https://issues.apache.org/jira/browse/KUDU-2914[KUDU-2914] for more
+  details).
+
+* The `kudu table create` tool is added to allow users to specify table
+  creation options using JSON.
+
+* Kudu now supports DATE and VARCHAR data types. See the
+  link:http://kudu.apache.org/docs/schema_design.html[schema design documentation]
+  for more details.
 
 
 [[rn_1.12.0_improvements]]
 == Optimizations and improvements
 
+* Write Ahead Log file segments and index chunks are now managed by Kudu’s file
+  cache. With that, all long-lived file descriptors used by Kudu are managed by
+  the file cache, and there’s no longer a need for capacity planning of file
+  descriptor usage.
+
+* Kudu no longer requires the running of `kudu fs update_dirs` to change a
+  directory configuration or recover from a disk failure
+  (see link:https://issues.apache.org/jira/browse/KUDU-2993[KUDU-2993]).
+
+* Kudu tablet servers and masters now expose a tablet-level metric
+  `num_raft_leaders` for the number of Raft leaders hosted on the server.
+
+* Kudu's maintenance operation scheduling has been updated to prioritize
+  reducing WAL retention under memory pressure. Kudu would previously prioritize
+  operations that yielded high-memory reduction, which could result in high WAL
+  disk usage in workloads that contained updates
+  (see link:https://issues.apache.org/jira/browse/KUDU-3002[KUDU-3002]).
+
+* A new maintenance operation is introduced to remove rowsets that have had all
+  of their rows deleted and whose newest delete operations are considered
+  ancient (see link:https://issues.apache.org/jira/browse/KUDU-1625[KUDU-1625]).
+
+* The built-in NTP client is now fully supported as the time source for Kudu's
+  HybridTime clock, i.e. it's no longer marked as experimental. To switch the
+  time source from the existing `system` time source (which is the default)
+  to the built-in NTP client, use `--time_source=builtin`.
+
+* Introduced additional metrics for the built-in NTP client
+  (see link:https://issues.apache.org/jira/browse/KUDU-3048[KUDU-3048]).
+
+* Updated `/config` page of masters' and tablet servers' web UI to display
+  configured and effective time source. In addition, the effective list of
+  reference servers for the built-in NTP client is shown there as well,
+  if applicable.
+
+* `chronyd` (version 3.4 and newer) is now supported as NTP server for
+  synchronizing the local machine's clock in a Kudu cluster. It's important to
+  have the `rtcsync` option enabled in the configuration of the `chronyd` NTP
+  daemon (see link:https://issues.apache.org/jira/browse/KUDU-2573[KUDU-2573]).
+
+* Kudu now supports building and running on RHEL/CentOS 8. This has been tested
+  with CentOS 8.1.
+
+* The processing of Raft consensus vote requests has been improved to be more
+  robust during high contention scenarios like election storms.
+
+* Added a validator to enforce consistency between the maximum size of an RPC
+  and the maximum size of tablet transaction memory, controlled by
+  `--rpc_max_message_size` and `--tablet_transaction_memory` flags
+  correspondingly.  In prior releases, if the limit on the size of RPC requests
+  is increased and the limit on tablet transaction memory size is kept with the
+  default setting, certain Raft transactions could be committed but not applied
+  (see link:https://issues.apache.org/jira/browse/KUDU-3023[KUDU-3023]).
+
+* The metrics endpoint now supports filtering metrics by a metric severity level.
+  See the link:https://kudu.apache.org/docs/administration.html#_collecting_metrics_via_http[documentation]
+  for more details.
+
+* Many `kudu local_replica` tools are updated to not open the block manager,
+  which significantly reduces the amount of IO done when running them (see
+  link:https://issues.apache.org/jira/browse/KUDU-3070[KUDU-3070] for more
+  details).
+
+* The Kudu Java client now exposes a way to get the resource metrics associated
+  with a given scanner (see
+  link:https://issues.apache.org/jira/browse/KUDU-2162[KUDU-2162] for more
+  details).
+
+* Scan predicates are pushed down to RLE decoders, improving
+  predicate-evaluation-efficiency in some workloads (see
+  link:https://issues.apache.org/jira/browse/KUDU-2852[KUDU-2852] for more
+  details).
+
+* The log block manager will now attempt to use multiple threads to open blocks
+  in each data directory, in some tests reducing startup time by up to 20% (see
+  link:https://issues.apache.org/jira/browse/KUDU-2977[KUDU-2977] and
+  link:https://issues.apache.org/jira/browse/KUDU-3001[KUDU-3001] for more
+  details).
+
+* Kudu's tablet server web UI scans page is updated to show the number of round
+  trips per scanner.
+
+* Kudu's master and tablet server web UIs are updated to show critical
+  partition information, including tablet count and on-disk size.
+
+* Kudu servers now expose the `last_read_elapsed_seconds` and
+  `last_write_elapsed_seconds` tablet-level metrics that indicate how long ago
+  the most recent read and write operations to a given tablet were.
+
+* Kudu servers now expose the `transaction_memory_limit_rejections`
+  tablet-level metric that tracks the number of transactions rejected because a
+  given tablet's transactional memory limit was reached (see
+  link:https://issues.apache.org/jira/browse/KUDU-3021[KUDU-3021] for more
+  details).
 
 [[rn_1.12.0_fixed_issues]]
 == Fixed Issues
 
+* Fixed a bug in which Kudu would not schedule compactions if a server were
+  under memory pressure
+  (see link:https://issues.apache.org/jira/browse/KUDU-2929[KUDU-2929]).
+
+* Fixed a bug where DDL operations like ALTER TABLE on tables with huge
+  number of partitions might result in a DoS situation for Kudu masters
+  (see link:https://issues.apache.org/jira/browse/KUDU-3036[KUDU-3036]).
+
+* Fixed a bug where Kudu Java client cannot negotiate a secure connection
+  with Kudu masters and tablet servers if using BouncyCastle JCE provider
+  (see link:https://issues.apache.org/jira/browse/KUDU-3106[KUDU-3106]).
+
+* Kudu masters will now crash immediately upon hitting a disk failure (see
+  link:https://issues.apache.org/jira/browse/KUDU-2904[KUDU-2904] for more details).
+
+* Fixed an issue in the Kudu master in which delays in receiving tablet server
+  heartbeats could result in an excess amount of RPC traffic between the
+  masters and tablet servers (see
+  link:https://issues.apache.org/jira/browse/KUDU-2992[KUDU-2992] for more
+  details).
+
+* Fixed an issue with Kudu's location placement policy that would place all
+  replicas in one location when two locations were available (see
+  link:https://issues.apache.org/jira/browse/KUDU-3008[KUDU-3008] for more
+  details).
+
+* The Java client will now correctly propagate timestamps when sending write
+  batches (see link:https://issues.apache.org/jira/browse/KUDU-3035[KUDU-3035]
+  for more detail).
+
+* Fixed an issue with the Kudu backup Spark jobs in which Kudu would return
+  with a non-zero exit if the job succeeded but backed up no rows (see
+  link:https://issues.apache.org/jira/browse/KUDU-3099[KUDU-3099] for more
+  details).
+
+* The `raft_term` and `time_since_last_leader_heartbeat` aggregated table
+  metrics will now return the maximum metric reported instead of the sum.
 
 [[rn_1.12.0_wire_compatibility]]
 == Wire Protocol compatibility
@@ -103,6 +287,20 @@ documentation.
 
 [[rn_1.12.0_contributors]]
 == Contributors
+
+Kudu 1.12 includes contributions from 33 people, including 8 first-time
+contributors:
+
+* Andy Singer
+* Michele Milesi
+* Ning Wang
+* Renhai Zhao
+* Sheng Liu
+* Thomas D'Silva
+* Tianhua Huang
+* Waleed Fateem
+
+Thank you for your help in making Kudu even better!
 
 [[resources_and_next_steps]]
 == Resources
