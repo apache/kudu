@@ -250,7 +250,7 @@ class ReactorThread {
   void ScanIdleConnections();
 
   // Create a new client socket (non-blocking, NODELAY)
-  static Status CreateClientSocket(Socket* sock);
+  static Status CreateClientSocket(int family, Socket* sock);
 
   // Initiate a new connection on the given socket.
   static Status StartConnect(Socket* sock, const Sockaddr& remote);

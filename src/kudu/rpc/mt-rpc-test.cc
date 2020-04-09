@@ -266,7 +266,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 static void HammerServerWithTCPConns(const Sockaddr& addr) {
   while (true) {
     Socket socket;
-    CHECK_OK(socket.Init(0));
+    CHECK_OK(socket.Init(addr.family(), 0));
     Status s;
     LOG_SLOW_EXECUTION(INFO, 100, "Connect took long") {
       s = socket.Connect(addr);

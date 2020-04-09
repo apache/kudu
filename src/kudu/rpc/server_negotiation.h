@@ -213,7 +213,7 @@ class ServerNegotiation {
   Status RecvConnectionContext(faststring* recv_buf) WARN_UNUSED_RESULT;
 
   // Returns true if connection is from trusted subnets or local networks.
-  bool IsTrustedConnection(const Sockaddr& addr);
+  static bool IsTrustedConnection(const Sockaddr& addr);
 
   // The socket to the remote client.
   std::unique_ptr<Socket> socket_;

@@ -44,6 +44,15 @@ namespace security {
 TlsSocket::TlsSocket(int fd, c_unique_ptr<SSL> ssl)
     : Socket(fd),
       ssl_(std::move(ssl)) {
+  use_cork_ = true;
+  if (fd >= 0) {
+    int dom;
+    socklen_t len = sizeof(dom);
+    if (getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &dom, &len) == 0 &&
+        dom == AF_UNIX) {
+      use_cork_ = false;
+    }
+  }
 }
 
 TlsSocket::~TlsSocket() {
@@ -87,7 +96,9 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int64_t *nwritt
   CHECK(ssl_);
   *nwritten = 0;
   // Allows packets to be aggresively be accumulated before sending.
-  RETURN_NOT_OK(SetTcpCork(1));
+  if (use_cork_) {
+    RETURN_NOT_OK(SetTcpCork(1));
+  }
   Status write_status = Status::OK();
   for (int i = 0; i < iov_len; ++i) {
     int32_t frame_size = iov[i].iov_len;
@@ -100,7 +111,9 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int64_t *nwritt
     *nwritten += bytes_written;
     if (bytes_written < frame_size) break;
   }
-  RETURN_NOT_OK(SetTcpCork(0));
+  if (use_cork_) {
+    RETURN_NOT_OK(SetTcpCork(0));
+}
   // If we did manage to write something, but not everything, due to a temporary socket
   // error, then we should still return an OK status indicating a successful _partial_
   // write.

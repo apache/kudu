@@ -52,7 +52,7 @@ void ConnectionId::set_network_plane(string network_plane) {
 
 string ConnectionId::ToString() const {
   string remote;
-  if (hostname_ != remote_.host()) {
+  if (remote_.is_ip() && hostname_ != remote_.host()) {
     remote = strings::Substitute("$0 ($1)", remote_.ToString(), hostname_);
   } else {
     remote = remote_.ToString();

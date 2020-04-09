@@ -307,7 +307,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   }
 
   Socket sock;
-  RETURN_NOT_OK(sock.Init(0));
+  RETURN_NOT_OK(sock.Init(accept_addr.family(), 0));
   RETURN_NOT_OK(sock.SetReuseAddr(true));
   if (reuseport_) {
     RETURN_NOT_OK(sock.SetReusePort(true));

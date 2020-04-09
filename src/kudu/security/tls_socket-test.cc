@@ -111,7 +111,7 @@ Status DoNegotiationSide(Socket* sock, TlsHandshake* tls, const char* side) {
 
 void TlsSocketTest::ConnectClient(const Sockaddr& addr, unique_ptr<Socket>* sock) {
   unique_ptr<Socket> client_sock(new Socket());
-  ASSERT_OK(client_sock->Init(0));
+  ASSERT_OK(client_sock->Init(addr.family(), 0));
   ASSERT_OK(client_sock->Connect(addr));
 
   TlsHandshake client;
@@ -135,7 +135,7 @@ class EchoServer {
     ASSERT_OK(server_tls_.Init());
     ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey());
     ASSERT_OK(listen_addr_.ParseString("127.0.0.1", 0));
-    ASSERT_OK(listener_.Init(0));
+    ASSERT_OK(listener_.Init(listen_addr_.family(), 0));
     ASSERT_OK(listener_.BindAndListen(listen_addr_, /*listen_queue_size=*/10));
     ASSERT_OK(listener_.GetSocketAddress(&listen_addr_));
 

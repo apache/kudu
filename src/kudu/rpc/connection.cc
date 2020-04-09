@@ -907,7 +907,7 @@ Status Connection::DumpPB(const DumpConnectionsRequestPB& req,
     LOG(FATAL);
   }
 #ifdef __linux__
-  if (negotiation_complete_) {
+  if (negotiation_complete_ && remote_.is_ip()) {
     // TODO(todd): it's a little strange to not set socket level stats during
     // negotiation, but we don't have access to the socket here until negotiation
     // is complete.

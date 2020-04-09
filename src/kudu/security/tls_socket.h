@@ -57,6 +57,8 @@ class TlsSocket : public Socket {
 
   // Owned SSL handle.
   c_unique_ptr<SSL> ssl_;
+
+  bool use_cork_;
 };
 
 } // namespace security

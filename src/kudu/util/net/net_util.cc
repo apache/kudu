@@ -448,7 +448,7 @@ Status GetRandomPort(const string& address, uint16_t* port) {
   Sockaddr sockaddr;
   sockaddr.ParseString(address, 0);
   Socket listener;
-  RETURN_NOT_OK(listener.Init(0));
+  RETURN_NOT_OK(listener.Init(sockaddr.family(), 0));
   RETURN_NOT_OK(listener.Bind(sockaddr));
   Sockaddr listen_address;
   RETURN_NOT_OK(listener.GetSocketAddress(&listen_address));

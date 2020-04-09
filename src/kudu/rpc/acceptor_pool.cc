@@ -160,12 +160,14 @@ void AcceptorPool::RunThread() {
                                     << THROTTLE_MSG;
       continue;
     }
-    s = new_sock.SetNoDelay(true);
-    if (!s.ok()) {
-      KLOG_EVERY_N_SECS(WARNING, 1) << "Acceptor with remote = " << remote.ToString()
-          << " failed to set TCP_NODELAY on a newly accepted socket: "
-          << s.ToString() << THROTTLE_MSG;
-      continue;
+    if (remote.is_ip()) {
+      s = new_sock.SetNoDelay(true);
+      if (!s.ok()) {
+        KLOG_EVERY_N_SECS(WARNING, 1) << "Acceptor with remote = " << remote.ToString()
+                                      << " failed to set TCP_NODELAY on a newly accepted socket: "
+                                      << s.ToString() << THROTTLE_MSG;
+        continue;
+      }
     }
     rpc_connections_accepted_->Increment();
     messenger_->RegisterInboundSocket(&new_sock, remote);

@@ -20,10 +20,13 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 
 #include <cerrno>
+#include <cstddef>
 #include <cstring>
 #include <limits>
+#include <ostream>
 #include <string>
 
 #include <glog/logging.h>
@@ -73,13 +76,17 @@ Sockaddr& Sockaddr::operator=(const Sockaddr& other) noexcept {
   return *this;
 }
 
-Sockaddr::Sockaddr(const struct sockaddr_in& addr) {
-  DCHECK_EQ(AF_INET, addr.sin_family);
-  set_length(sizeof(addr));
-  memcpy(&storage_.in, &addr, sizeof(struct sockaddr_in));
+Sockaddr::Sockaddr(const struct sockaddr& addr, socklen_t len) {
+  set_length(len);
+  memcpy(&storage_, &addr, len);
 }
 
-Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
+Sockaddr::Sockaddr(const struct sockaddr_in& addr) :
+    Sockaddr(reinterpret_cast<const struct sockaddr&>(addr), sizeof(addr)) {
+  DCHECK_EQ(AF_INET, addr.sin_family);
+}
+
+Status Sockaddr::ParseString(const string& s, uint16_t default_port) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(s, default_port));
 
@@ -94,6 +101,64 @@ Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
   return Status::OK();
 }
 
+Status Sockaddr::ParseUnixDomainPath(const string& s) {
+  constexpr auto kMaxPathSize = SIZEOF_MEMBER(struct sockaddr_un, sun_path);
+  if (s[0] == '@') {
+    // Specify a path in the abstract namespace.
+    if (s.size() > kMaxPathSize) {
+      return Status::InvalidArgument(Substitute(
+          "UNIX domain socket path exceeds maximum length $0", kMaxPathSize));
+    }
+    set_length(offsetof(struct sockaddr_un, sun_path) + s.size());
+    storage_.un.sun_family = AF_UNIX;
+    memcpy(storage_.un.sun_path, s.data(), s.size());
+    storage_.un.sun_path[0] = '\0';
+  } else {
+    // Path names must be null-terminated. The null-terminated length
+    // may not match the length s.size().
+    int c_len = strlen(s.c_str());
+    if (c_len != s.size()) {
+      return Status::InvalidArgument("UNIX domain socket path must not contain null bytes");
+    }
+    // Per unix(7) the length of the path name, including the terminating null
+    // byte, should not exceed the size of sun_path.
+    if (c_len + 1 > kMaxPathSize) {
+      return Status::InvalidArgument(Substitute(
+          "UNIX domain socket path exceeds maximum length $0", kMaxPathSize));
+    }
+    // unix(7) says the addrlen can be specified as the full length of the
+    // structure.
+    set_length(sizeof(struct sockaddr_un));
+    storage_.un.sun_family = AF_UNIX;
+    memcpy(storage_.un.sun_path, s.c_str(), c_len + 1);
+  }
+  return Status::OK();
+}
+
+string Sockaddr::UnixDomainPath() const {
+  CHECK_EQ(family(), AF_UNIX);
+  switch  (unix_address_type()) {
+    case UnixAddressType::kUnnamed:
+      return "<unnamed>";
+    case UnixAddressType::kPath:
+      return string(storage_.un.sun_path);
+    case UnixAddressType::kAbstractNamespace:
+      size_t len = len_ - offsetof(struct sockaddr_un, sun_path) - 1;
+      return "@" + string(storage_.un.sun_path + 1, len);
+  }
+}
+
+Sockaddr::UnixAddressType Sockaddr::unix_address_type() const {
+  CHECK_EQ(family(), AF_UNIX);
+  if (len_ == sizeof(sa_family_t)) {
+    return UnixAddressType::kUnnamed;
+  }
+  if (storage_.un.sun_path[0] == '\0') {
+    return UnixAddressType::kAbstractNamespace;
+  }
+  return UnixAddressType::kPath;
+}
+
 Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
   set_length(sizeof(addr));
   memcpy(&storage_, &addr, sizeof(addr));
@@ -104,6 +169,7 @@ Sockaddr& Sockaddr::operator=(const struct sockaddr_in &addr) {
 bool Sockaddr::operator==(const Sockaddr& other) const {
   return BytewiseCompare(*this, other) == 0;
 }
+
 int Sockaddr::BytewiseCompare(const Sockaddr& a, const Sockaddr& b) {
   Slice a_slice(reinterpret_cast<const uint8_t*>(&a.storage_), a.len_);
   Slice b_slice(reinterpret_cast<const uint8_t*>(&b.storage_), b.len_);
@@ -136,8 +202,18 @@ int Sockaddr::port() const {
 }
 
 std::string Sockaddr::host() const {
-  DCHECK_EQ(family(), AF_INET);
-  return HostPort::AddrToString(storage_.in.sin_addr.s_addr);
+  switch (family()) {
+    case AF_INET:
+      return HostPort::AddrToString(storage_.in.sin_addr.s_addr);
+    case AF_UNIX:
+      DCHECK(false) << "unexpected host() call on unix socket";
+      // In case we missed a host() call somewhere in a vlog or error message not
+      // covered by tests, better to at least return some string here.
+      return "<unix socket>";
+    default:
+      DCHECK(false) << "unexpected host() call on socket with family " << family();
+      return "<unknown socket type>";
+  }
 }
 
 const struct sockaddr_in& Sockaddr::ipv4_addr() const {
@@ -146,7 +222,14 @@ const struct sockaddr_in& Sockaddr::ipv4_addr() const {
 }
 
 std::string Sockaddr::ToString() const {
-  return Substitute("$0:$1", host(), port());
+  switch (family()) {
+    case AF_INET:
+      return Substitute("$0:$1", host(), port());
+    case AF_UNIX:
+      return Substitute("unix:$0", UnixDomainPath());
+    default:
+      return "<invalid sockaddr>";
+  }
 }
 
 bool Sockaddr::IsWildcard() const {
@@ -155,6 +238,7 @@ bool Sockaddr::IsWildcard() const {
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
+  if (family() == AF_UNIX) return true;
   DCHECK_EQ(family(), AF_INET);
   return HostPort::IsLoopback(storage_.in.sin_addr.s_addr);
 }

@@ -18,6 +18,7 @@
 #include "kudu/rpc/server_negotiation.h"
 
 #include <sasl/sasl.h>
+#include <sys/socket.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -984,6 +985,7 @@ int ServerNegotiation::PlainAuthCb(sasl_conn_t* /*conn*/,
 }
 
 bool ServerNegotiation::IsTrustedConnection(const Sockaddr& addr) {
+  if (addr.family() == AF_UNIX) return true;
   static std::once_flag once;
   std::call_once(once, [] {
     g_trusted_subnets = new vector<Network>();

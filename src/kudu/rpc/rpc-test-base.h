@@ -606,7 +606,7 @@ class RpcTestBase : public KuduTest {
   static Status StartFakeServer(Socket *listen_sock, Sockaddr *listen_addr) {
     Sockaddr bind_addr = Sockaddr::Wildcard();
     bind_addr.set_port(0);
-    RETURN_NOT_OK(listen_sock->Init(0));
+    RETURN_NOT_OK(listen_sock->Init(bind_addr.family(), 0));
     RETURN_NOT_OK(listen_sock->BindAndListen(bind_addr, 1));
     RETURN_NOT_OK(listen_sock->GetSocketAddress(listen_addr));
     LOG(INFO) << "Bound to: " << listen_addr->ToString();
@@ -631,6 +631,10 @@ class RpcTestBase : public KuduTest {
                            const std::string& rpc_ca_certificate_file = "",
                            const std::string& rpc_private_key_password_cmd = "",
                            const std::shared_ptr<Messenger>& messenger = nullptr) {
+    // Default to binding on wildcard unless specified as an in-out parameter.
+    if (!server_addr->is_initialized()) {
+      *server_addr = Sockaddr::Wildcard();
+    }
     if (!messenger) {
       RETURN_NOT_OK(CreateMessenger(
           "TestServer", &server_messenger_, n_server_reactor_threads_, enable_ssl,
@@ -640,7 +644,7 @@ class RpcTestBase : public KuduTest {
       server_messenger_ = messenger;
     }
     std::shared_ptr<AcceptorPool> pool;
-    RETURN_NOT_OK(server_messenger_->AddAcceptorPool(Sockaddr::Wildcard(), &pool));
+    RETURN_NOT_OK(server_messenger_->AddAcceptorPool(*server_addr, &pool));
     RETURN_NOT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
     mem_tracker_ = MemTracker::CreateTracker(-1, "result_tracker");

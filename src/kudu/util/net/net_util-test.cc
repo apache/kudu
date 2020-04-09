@@ -15,6 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/net/net_util.h"
+
+#include <sys/socket.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <ostream>
@@ -26,9 +30,8 @@
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/net/net_util.h"
-#include "kudu/util/net/socket.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -185,10 +188,10 @@ TEST_F(NetUtilTest, TestReverseLookup) {
 }
 
 TEST_F(NetUtilTest, TestLsof) {
+  Sockaddr addr = Sockaddr::Wildcard();
   Socket s;
-  ASSERT_OK(s.Init(0));
+  ASSERT_OK(s.Init(addr.family(), 0));
 
-  Sockaddr addr = Sockaddr::Wildcard(); // wildcard
   ASSERT_OK(s.BindAndListen(addr, 1));
 
   ASSERT_OK(s.GetSocketAddress(&addr));
@@ -247,6 +250,31 @@ TEST_F(NetUtilTest, TestSockaddrEquality) {
 
   Sockaddr copy = ip_port;
   ASSERT_TRUE(ip_port == copy);
+}
+
+TEST_F(NetUtilTest, TestUnixSockaddr) {
+  Sockaddr addr;
+  ASSERT_OK(addr.ParseUnixDomainPath("/foo/bar"));
+  ASSERT_EQ(addr.family(), AF_UNIX);
+  ASSERT_EQ(addr.UnixDomainPath(), "/foo/bar");
+  ASSERT_EQ(addr.ToString(), "unix:/foo/bar");
+  ASSERT_EQ(Sockaddr::UnixAddressType::kPath, addr.unix_address_type());
+
+  Sockaddr addr2;
+  ASSERT_OK(addr2.ParseUnixDomainPath("@my-abstract"));
+  ASSERT_EQ(addr2.family(), AF_UNIX);
+  ASSERT_EQ(addr2.UnixDomainPath(), "@my-abstract");
+  ASSERT_EQ(addr2.ToString(), "unix:@my-abstract");
+  ASSERT_EQ(Sockaddr::UnixAddressType::kAbstractNamespace, addr2.unix_address_type());
+
+  ASSERT_TRUE(addr == addr);
+  ASSERT_TRUE(addr2 == addr2);
+  ASSERT_FALSE(addr == addr2);
+  ASSERT_FALSE(addr2 == addr);
+  ASSERT_FALSE(addr == Sockaddr::Wildcard());
+  ASSERT_FALSE(Sockaddr::Wildcard() == addr);
+  ASSERT_FALSE(addr == Sockaddr());
+  ASSERT_FALSE(Sockaddr() == addr);
 }
 
 } // namespace kudu

@@ -19,6 +19,7 @@
 
 #include <openssl/crypto.h>
 #include <openssl/err.h> // IWYU pragma: keep
+#include <sys/socket.h>
 
 #include <cerrno>
 #include <functional>
@@ -569,7 +570,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
 
   // Create a new socket and start connecting to the remote.
   Socket sock;
-  RETURN_NOT_OK(CreateClientSocket(&sock));
+  RETURN_NOT_OK(CreateClientSocket(conn_id.remote().family(), &sock));
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote()));
 
   unique_ptr<Socket> new_socket(new Socket(sock.Release()));
@@ -634,7 +635,8 @@ void ReactorThread::CompleteConnectionNegotiation(
     return;
   }
 
-  if (FLAGS_tcp_keepalive_probe_period_s > 0) {
+  if (conn->remote().is_ip() &&
+      FLAGS_tcp_keepalive_probe_period_s > 0) {
     // Try spreading out the idle poll period to avoid thundering herd in case connections
     // are all created at the same time (e.g. after a cluster is restarted).
     Status keepalive_status = conn->SetTcpKeepAlive(
@@ -652,9 +654,9 @@ void ReactorThread::CompleteConnectionNegotiation(
   conn->EpollRegister(loop_);
 }
 
-Status ReactorThread::CreateClientSocket(Socket* sock) {
-  Status ret = sock->Init(Socket::FLAG_NONBLOCKING);
-  if (ret.ok()) {
+Status ReactorThread::CreateClientSocket(int family, Socket* sock) {
+  Status ret = sock->Init(family, Socket::FLAG_NONBLOCKING);
+  if (ret.ok() && family == AF_INET) {
     ret = sock->SetNoDelay(true);
   }
   LOG_IF(WARNING, !ret.ok())

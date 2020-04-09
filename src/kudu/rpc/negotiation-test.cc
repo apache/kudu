@@ -232,13 +232,13 @@ TEST_P(TestNegotiation, TestNegotiation) {
 
   // Create the listening socket, client socket, and server socket.
   Socket listening_socket;
-  ASSERT_OK(listening_socket.Init(0));
-  ASSERT_OK(listening_socket.BindAndListen(Sockaddr::Wildcard(), 1));
-  Sockaddr server_addr;
+  Sockaddr server_addr = Sockaddr::Wildcard();
+  ASSERT_OK(listening_socket.Init(server_addr.family(), 0));
+  ASSERT_OK(listening_socket.BindAndListen(server_addr, 1));
   ASSERT_OK(listening_socket.GetSocketAddress(&server_addr));
 
   unique_ptr<Socket> client_socket(new Socket());
-  ASSERT_OK(client_socket->Init(0));
+  ASSERT_OK(client_socket->Init(server_addr.family(), 0));
   client_socket->Connect(server_addr);
 
   unique_ptr<Socket> server_socket(desc.use_test_socket ?
@@ -1004,14 +1004,14 @@ static void RunAcceptingDelegator(Socket* acceptor,
 static void RunNegotiationTest(const SocketCallable& server_runner,
                                const SocketCallable& client_runner) {
   Socket server_sock;
-  CHECK_OK(server_sock.Init(0));
-  ASSERT_OK(server_sock.BindAndListen(Sockaddr::Wildcard(), 1));
-  Sockaddr server_bind_addr;
+  Sockaddr server_bind_addr = Sockaddr::Wildcard();
+  CHECK_OK(server_sock.Init(server_bind_addr.family(), 0));
+  ASSERT_OK(server_sock.BindAndListen(server_bind_addr, 1));
   ASSERT_OK(server_sock.GetSocketAddress(&server_bind_addr));
   thread server(RunAcceptingDelegator, &server_sock, server_runner);
 
   unique_ptr<Socket> client_sock(new Socket());
-  CHECK_OK(client_sock->Init(0));
+  CHECK_OK(client_sock->Init(server_bind_addr.family(), 0));
   ASSERT_OK(client_sock->Connect(server_bind_addr));
   thread client(client_runner, std::move(client_sock));
 

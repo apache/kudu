@@ -40,6 +40,7 @@ class Socket {
 
   // Start managing a socket.
   explicit Socket(int fd);
+  Socket(Socket&& other) noexcept;
 
   // Close the socket.  Errors will be ignored.
   virtual ~Socket();
@@ -64,7 +65,8 @@ class Socket {
   // the socket.
   static bool IsTemporarySocketError(int err);
 
-  Status Init(int flags); // See FLAG_NONBLOCKING
+  // Init the socket for use with the given family (eg AF_INET or AF_UNIX).
+  Status Init(int family, int flags); // See FLAG_NONBLOCKING
 
   // Set or clear TCP_NODELAY
   Status SetNoDelay(bool enabled);
