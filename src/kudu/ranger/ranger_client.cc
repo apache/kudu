@@ -18,7 +18,6 @@
 #include "kudu/ranger/ranger_client.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <ostream>
@@ -181,22 +180,12 @@ using strings::Substitute;
 
 namespace {
 
-const char* kUnauthorizedAction = "Unauthorized action";
 const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
                                           "Use 'kudu table rename_table' to rename it to "
                                           "a Ranger-compatible name.";
 const char* kMainClass = "org.apache.kudu.subprocess.ranger.RangerSubprocessMain";
 const char* kRangerClientLogFilename = "kudu-ranger-subprocess";
 const char* kRangerClientPropertiesFilename = "kudu-ranger-subprocess-log4j2.properties";
-
-const char* ScopeToString(RangerClient::Scope scope) {
-  switch (scope) {
-    case RangerClient::Scope::DATABASE: return "database";
-    case RangerClient::Scope::TABLE: return "table";
-  }
-  LOG(FATAL) << static_cast<uint16_t>(scope) << ": unknown scope";
-  __builtin_unreachable();
-}
 
 // Returns the path to the JAR file containing the Ranger subprocess.
 string RangerJarPath() {
@@ -406,20 +395,10 @@ Status RangerClient::Start() {
 }
 
 // TODO(abukor): refactor to avoid code duplication
-Status RangerClient::AuthorizeAction(const string& user_name,
-                                     const ActionPB& action,
-                                     const string& table_name,
+Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& action,
+                                     const string& database, const string& table, bool* authorized,
                                      Scope scope) {
   DCHECK(subprocess_);
-  string db;
-  Slice tbl;
-
-  auto s = ParseRangerTableIdentifier(table_name, &db, &tbl);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table_name);
-    return Status::NotAuthorized(kUnauthorizedAction);
-  }
-
   RangerRequestListPB req_list;
   RangerResponseListPB resp_list;
   req_list.set_user(user_name);
@@ -427,39 +406,24 @@ Status RangerClient::AuthorizeAction(const string& user_name,
   RangerRequestPB* req = req_list.add_requests();
 
   req->set_action(action);
-  req->set_database(db);
+  req->set_database(database);
   // Only pass the table name if this is table level request.
   if (scope == Scope::TABLE) {
-    req->set_table(tbl.ToString());
+    req->set_table(table);
   }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
 
   CHECK_EQ(1, resp_list.responses_size());
-  if (resp_list.responses().begin()->allowed()) {
-    return Status::OK();
-  }
-
-  LOG(WARNING) << Substitute("User $0 is not authorized to perform $1 on $2 at scope ($3)",
-                             user_name, ActionPB_Name(action), table_name, ScopeToString(scope));
-  return Status::NotAuthorized(kUnauthorizedAction);
+  *authorized = resp_list.responses().begin()->allowed();
+  return Status::OK();
 }
 
-Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
-                                                    const ActionPB& action,
-                                                    const string& table_name,
+Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, const ActionPB& action,
+                                                    const string& database, const string& table,
                                                     unordered_set<string>* column_names) {
   DCHECK(subprocess_);
   DCHECK(!column_names->empty());
-
-  string db;
-  Slice tbl;
-
-  auto s = ParseRangerTableIdentifier(table_name, &db, &tbl);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table_name);
-    return Status::NotAuthorized(kUnauthorizedAction);
-  }
 
   RangerRequestListPB req_list;
   RangerResponseListPB resp_list;
@@ -468,8 +432,8 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
   for (const auto& col : *column_names) {
     auto req = req_list.add_requests();
     req->set_action(action);
-    req->set_database(db);
-    req->set_table(tbl.ToString());
+    req->set_database(database);
+    req->set_table(table);
     req->set_column(col);
   }
 
@@ -484,20 +448,13 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name,
     }
   }
 
-  if (allowed_columns.empty()) {
-    LOG(WARNING) << Substitute("User $0 is not authorized to perform $1 on table $2",
-                               user_name, ActionPB_Name(action), table_name);
-    return Status::NotAuthorized(kUnauthorizedAction);
-  }
-
   *column_names = move(allowed_columns);
 
   return Status::OK();
 }
 
-Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
-                                                   const ActionPB& action,
-                                                   unordered_set<string>* table_names) {
+Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, const ActionPB& action,
+                                                   unordered_set<string>* tables) {
   DCHECK(subprocess_);
 
   RangerRequestListPB req_list;
@@ -506,7 +463,7 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
 
   vector<string> orig_table_names;
 
-  for (const auto& table : *table_names) {
+  for (const auto& table : *tables) {
     string db;
     Slice tbl;
 
@@ -534,25 +491,16 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name,
     }
   }
 
-  *table_names = move(allowed_tables);
+  *tables = move(allowed_tables);
 
   return Status::OK();
 }
 
-Status RangerClient::AuthorizeActions(const string& user_name,
-                                      const string& table_name,
+Status RangerClient::AuthorizeActions(const string& user_name, const string& database,
+                                      const string& table,
                                       unordered_set<ActionPB, ActionHash>* actions) {
   DCHECK(subprocess_);
   DCHECK(!actions->empty());
-
-  string db;
-  Slice tbl;
-
-  auto s = ParseRangerTableIdentifier(table_name, &db, &tbl);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table_name);
-    return Status::NotAuthorized(kUnauthorizedAction);
-  }
 
   RangerRequestListPB req_list;
   RangerResponseListPB resp_list;
@@ -561,8 +509,8 @@ Status RangerClient::AuthorizeActions(const string& user_name,
   for (const auto& action : *actions) {
     auto req = req_list.add_requests();
     req->set_action(action);
-    req->set_database(db);
-    req->set_table(tbl.ToString());
+    req->set_database(database);
+    req->set_table(table);
   }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
@@ -574,12 +522,6 @@ Status RangerClient::AuthorizeActions(const string& user_name,
     if (resp_list.responses(i).allowed()) {
       EmplaceOrDie(&allowed_actions, move(req_list.requests(i).action()));
     }
-  }
-
-  if (allowed_actions.empty()) {
-    LOG(WARNING) << Substitute("User $0 is not authorized to perform actions $1 on table $2",
-                               user_name, JoinMapped(*actions, ActionPB_Name, ", "), table_name);
-    return Status::NotAuthorized(kUnauthorizedAction);
   }
 
   *actions = move(allowed_actions);

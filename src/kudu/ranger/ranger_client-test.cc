@@ -171,13 +171,16 @@ class RangerClientTest : public KuduTest {
 };
 
 TEST_F(RangerClientTest, TestAuthorizeCreateTableUnauthorized) {
-  auto s = client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar.baz");
-  ASSERT_TRUE(s.IsNotAuthorized());
+  bool authorized;
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar", "baz", &authorized));
+  ASSERT_FALSE(authorized);
 }
 
 TEST_F(RangerClientTest, TestAuthorizeCreateTableAuthorized) {
   Allow("jdoe", ActionPB::CREATE, "foo", "bar");
-  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo.bar"));
+  bool authorized;
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar", &authorized));
+  ASSERT_TRUE(authorized);
 }
 
 TEST_F(RangerClientTest, TestAuthorizeListNoTables) {
@@ -257,7 +260,7 @@ TEST_F(RangerClientTest, TestAuthorizeScanSubsetAuthorized) {
   columns.emplace("col3");
   columns.emplace("col4");
   ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                   "default.foobar", &columns));
+                                                   "default", "foobar", &columns));
   ASSERT_EQ(2, columns.size());
   ASSERT_TRUE(ContainsKey(columns, "col1"));
   ASSERT_TRUE(ContainsKey(columns, "col3"));
@@ -276,7 +279,7 @@ TEST_F(RangerClientTest, TestAuthorizeScanAllColumnsAuthorized) {
   columns.emplace("col3");
   columns.emplace("col4");
   ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                   "default.foobar", &columns));
+                                                   "default", "foobar", &columns));
   ASSERT_EQ(4, columns.size());
   ASSERT_TRUE(ContainsKey(columns, "col1"));
   ASSERT_TRUE(ContainsKey(columns, "col2"));
@@ -289,10 +292,9 @@ TEST_F(RangerClientTest, TestAuthorizeScanNoColumnsAuthorized) {
   for (int i = 0; i < 4; ++i) {
     columns.emplace(Substitute("col$0", i));
   }
-  auto s = client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                  "default.foobar", &columns);
-  ASSERT_TRUE(s.IsNotAuthorized());
-  ASSERT_EQ(4, columns.size());
+  ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
+                                                   "default", "foobar", &columns));
+  ASSERT_EQ(0, columns.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeActionsNoneAuthorized) {
@@ -300,9 +302,8 @@ TEST_F(RangerClientTest, TestAuthorizeActionsNoneAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  auto s = client_.AuthorizeActions("jdoe", "default.foobar", &actions);
-  ASSERT_TRUE(s.IsNotAuthorized());
-  ASSERT_EQ(3, actions.size());
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
+  ASSERT_EQ(0, actions.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeActionsSomeAuthorized) {
@@ -311,7 +312,7 @@ TEST_F(RangerClientTest, TestAuthorizeActionsSomeAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  ASSERT_OK(client_.AuthorizeActions("jdoe", "default.foobar", &actions));
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
   ASSERT_EQ(1, actions.size());
   ASSERT_TRUE(ContainsKey(actions, ActionPB::SELECT));
 }
@@ -324,7 +325,7 @@ TEST_F(RangerClientTest, TestAuthorizeActionsAllAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  ASSERT_OK(client_.AuthorizeActions("jdoe", "default.foobar", &actions));
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
   ASSERT_EQ(3, actions.size());
 }
 
@@ -393,8 +394,9 @@ TEST_F(RangerClientTestBase, TestLogging) {
   }
   // Make a request. It doesn't matter whether it succeeds or not -- debug logs
   // should include info about each request.
-  Status s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
-  ASSERT_TRUE(s.IsNotAuthorized());
+  bool authorized;
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_FALSE(authorized);
   {
     // Check that the Ranger client logs some DEBUG messages.
     vector<string> lines;
@@ -412,8 +414,8 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = false;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_FALSE(authorized);
   {
     // Our logs should still contain DEBUG messages since we didn't update the
     // logging configuration.
@@ -428,8 +430,8 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = true;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  s = client_->AuthorizeAction("user", ActionPB::ALL, "table");
-  ASSERT_TRUE(s.IsNotAuthorized());
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_FALSE(authorized);
   {
     // We shouldn't see any DEBUG messages since the client is configured to
     // use INFO-level logging.
