@@ -28,7 +28,6 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -369,7 +368,7 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   return Status::OK();
 }
 
-Status Master::GetMasterHostPorts(vector<HostPortPB>* hostports) const {
+Status Master::GetMasterHostPorts(vector<HostPort>* hostports) const {
   auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
@@ -377,7 +376,7 @@ Status Master::GetMasterHostPorts(vector<HostPortPB>* hostports) const {
 
   hostports->clear();
   consensus::RaftConfigPB config = consensus->CommittedConfig();
-  for (auto& peer : *config.mutable_peers()) {
+  for (const auto& peer : *config.mutable_peers()) {
     if (peer.member_type() == consensus::RaftPeerPB::VOTER) {
       // In non-distributed master configurations, we don't store our own
       // last known address in the Raft config. So, we'll fill it in from
@@ -385,9 +384,10 @@ Status Master::GetMasterHostPorts(vector<HostPortPB>* hostports) const {
       if (!peer.has_last_known_addr()) {
         DCHECK_EQ(config.peers_size(), 1);
         DCHECK(registration_initialized_.load());
-        hostports->emplace_back(registration_.rpc_addresses(0));
+        DCHECK_GT(registration_.rpc_addresses_size(), 0);
+        hostports->emplace_back(HostPortFromPB(registration_.rpc_addresses(0)));
       } else {
-        hostports->emplace_back(std::move(*peer.mutable_last_known_addr()));
+        hostports->emplace_back(HostPortFromPB(peer.last_known_addr()));
       }
     }
   }
