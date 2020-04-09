@@ -659,6 +659,19 @@ TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   ASSERT_STR_NOT_CONTAINS(s, mini_server_->bound_rpc_addr().ToString());
 }
 
+// When tablet server merge metrics by the same attributes, the metric
+// 'merged_entities_count_of_tablet' should be visible
+TEST_F(TabletServerTest, TestMergedEntitiesCount) {
+  EasyCurl c;
+  faststring buf;
+  const string addr = mini_server_->bound_http_addr().ToString();
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics", addr), &buf));
+  ASSERT_STR_NOT_CONTAINS(buf.ToString(), "merged_entities_count_of_tablet");
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/metrics?merge_rules=tablet|table|table_name", addr),
+                       &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "merged_entities_count_of_tablet");
+}
+
 class TabletServerDiskSpaceTest : public TabletServerTestBase,
                                   public testing::WithParamInterface<string> {
  public:

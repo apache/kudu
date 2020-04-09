@@ -426,6 +426,9 @@ Status MetricEntity::CollectTo(MergedEntityMetrics* collections,
     scoped_refptr<Metric> entry = FindPtrOrNull(entity_collection, prototype);
     if (!entry) {
       scoped_refptr<Metric> new_metric = metric->snapshot();
+      if (!new_metric->invalid_for_merge_) {
+        new_metric->UpdateModificationEpoch();
+      }
       InsertOrDie(&entity_collection, new_metric->prototype(), new_metric);
     } else {
       entry->MergeFrom(metric);
