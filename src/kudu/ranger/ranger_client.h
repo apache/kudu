@@ -57,6 +57,11 @@ typedef subprocess::SubprocessProxy<RangerRequestListPB, RangerResponseListPB,
 // coming from this class are environmental, like Java binary location, location
 // of config files, and krb5.conf file (setting it doesn't enable Kerberos, that
 // depends on core-site.xml).
+//
+// These methods return non-OK status only if something goes wrong between the
+// client and the subprocess (e.g. IOError, EndOfFile, Corruption), but they
+// never return NotAuthorized. The authz provider is responsible to return
+// NotAuthorized based on RangerClient's out parameters and return Status.
 class RangerClient {
  public:
   // Similar to SentryAuthorizableScope scope which indicates the
@@ -77,35 +82,30 @@ class RangerClient {
   // Starts the RangerClient, initializes the subprocess server.
   Status Start() WARN_UNUSED_RESULT;
 
-  // Authorizes an action on the table. Returns OK if 'user_name' is authorized
-  // to perform 'action' on 'table_name', NotAuthorized otherwise.
+  // Authorizes an action on the table. Sets 'authorized' to true if it's
+  // authorized, false otherwise.
   Status AuthorizeAction(const std::string& user_name, const ActionPB& action,
-                         const std::string& table_name, Scope scope = Scope::TABLE)
-      WARN_UNUSED_RESULT;
+                         const std::string& database, const std::string& table, bool* authorized,
+                         Scope scope = Scope::TABLE) WARN_UNUSED_RESULT;
 
   // Authorizes action on multiple tables. It sets 'table_names' to the
-  // tables the user is authorized to access and returns OK.
+  // tables the user is authorized to access.
   Status AuthorizeActionMultipleTables(const std::string& user_name, const ActionPB& action,
-                                       std::unordered_set<std::string>* table_names)
-      WARN_UNUSED_RESULT;
+                                       std::unordered_set<std::string>* tables)
+    WARN_UNUSED_RESULT;
 
-  // Authorizes action on multiple columns. If there is at least one column that
-  // user is authorized to perform the action on, it sets 'column_names' to the
-  // columns the user is authorized to access and returns OK, NotAuthorized
-  // otherwise.
+  // Authorizes action on multiple columns. It sets 'column_names' to the
+  // columns the user is authorized to access.
   Status AuthorizeActionMultipleColumns(const std::string& user_name, const ActionPB& action,
-                                        const std::string& table_name,
+                                        const std::string& database, const std::string& table,
                                         std::unordered_set<std::string>* column_names)
       WARN_UNUSED_RESULT;
 
-  // Authorizes multiple table-level actions on a single table. If there is at
-  // least one action that user is authorized to perform on the table, it sets
-  // 'actions' to the actions the user is authorized to perform and returns OK,
-  // NotAuthorized otherwise.
-  Status AuthorizeActions(const std::string& user_name,
-                          const std::string& table_name,
-                          std::unordered_set<ActionPB, ActionHash>* actions)
-      WARN_UNUSED_RESULT;
+  // Authorizes multiple table-level actions on a single table. It sets
+  // 'actions' to the actions the user is authorized to perform.
+  Status AuthorizeActions(const std::string& user_name, const std::string& database,
+                          const std::string& table,
+                          std::unordered_set<ActionPB, ActionHash>* actions) WARN_UNUSED_RESULT;
 
   // Replaces the subprocess server in the subprocess proxy.
   void ReplaceServerForTests(std::unique_ptr<subprocess::SubprocessServer> server) {

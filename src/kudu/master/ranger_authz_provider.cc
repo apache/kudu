@@ -23,19 +23,15 @@
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/table_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/security/token.pb.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 DECLARE_string(ranger_config_path);
-
-namespace kudu {
-
-class Env;
-class MetricEntity;
-
-namespace master {
 
 using kudu::security::ColumnPrivilegePB;
 using kudu::security::TablePrivilegePB;
@@ -44,6 +40,34 @@ using kudu::ranger::ActionHash;
 using kudu::ranger::RangerClient;
 using std::string;
 using std::unordered_set;
+using strings::Substitute;
+
+namespace kudu {
+
+class Env;
+class MetricEntity;
+
+namespace master {
+
+namespace {
+
+const char* kUnauthorizedAction = "Unauthorized action";
+const char* kDenyNonRangerTableTemplate = "Denying action on table with invalid name $0. "
+                                          "Use 'kudu table rename_table' to rename it to "
+                                          "a Ranger-compatible name.";
+
+Status ParseTableIdentifier(const string& table_name, string* db, string* table) {
+  Slice tbl;
+  auto s = ParseRangerTableIdentifier(table_name, db, &tbl);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+  *table = tbl.ToString();
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 RangerAuthzProvider::RangerAuthzProvider(Env* env,
                                          const scoped_refptr<MetricEntity>& metric_entity) :
@@ -61,9 +85,23 @@ Status RangerAuthzProvider::AuthorizeCreateTable(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+
+  string db;
+  string tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+
+  bool authorized;
   // Table creation requires 'CREATE ON DATABASE' privilege.
-  return client_.AuthorizeAction(user, ActionPB::CREATE, table_name,
-                                 RangerClient::Scope::DATABASE);
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::CREATE, db, tbl, &authorized,
+                                        RangerClient::Scope::DATABASE));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to CREATE $1", user, table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
 }
 
 Status RangerAuthzProvider::AuthorizeDropTable(const string& table_name,
@@ -71,8 +109,20 @@ Status RangerAuthzProvider::AuthorizeDropTable(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
-  // Table deletion requires 'DROP ON TABLE' privilege.
-  return client_.AuthorizeAction(user, ActionPB::DROP, table_name);
+
+  string db;
+  string tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+  bool authorized;
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::DROP, db, tbl, &authorized));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to DROP $1", user, table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
 }
 
 Status RangerAuthzProvider::AuthorizeAlterTable(const string& old_table,
@@ -81,16 +131,45 @@ Status RangerAuthzProvider::AuthorizeAlterTable(const string& old_table,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+
+  string old_db;
+  string old_tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(old_table, &old_db, &old_tbl));
   // Table alteration (without table rename) requires ALTER ON TABLE.
+  bool authorized;
   if (old_table == new_table) {
-    return client_.AuthorizeAction(user, ActionPB::ALTER, old_table);
+    RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALTER, old_db, old_tbl, &authorized));
+
+    if (PREDICT_FALSE(!authorized)) {
+      LOG(WARNING) << Substitute("User $0 is not authorized to ALTER $1", user, old_table);
+      return Status::NotAuthorized(kUnauthorizedAction);
+    }
+
+    return Status::OK();
   }
 
   // To prevent privilege escalation we require ALL on the old TABLE
   // and CREATE on the new DATABASE for table rename.
-  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALL, old_table));
-  return client_.AuthorizeAction(user, ActionPB::CREATE, new_table,
-                                 RangerClient::Scope::DATABASE);
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALL, old_db, old_tbl, &authorized));
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to perform ALL on $1", user, old_table);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  string new_db;
+  string new_tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(new_table, &new_db, &new_tbl));
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::CREATE, new_db, new_tbl, &authorized,
+                                        RangerClient::Scope::DATABASE));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to CREATE $1", user, new_table);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
 }
 
 Status RangerAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
@@ -98,8 +177,22 @@ Status RangerAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+
+  string db;
+  string tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+  bool authorized;
   // Get table metadata requires 'METADATA ON TABLE' privilege.
-  return client_.AuthorizeAction(user, ActionPB::METADATA, table_name);
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::METADATA, db, tbl, &authorized));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to access METADATA on $1", user,
+        table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
 }
 
 Status RangerAuthzProvider::AuthorizeListTables(const string& user,
@@ -126,9 +219,21 @@ Status RangerAuthzProvider::AuthorizeGetTableStatistics(const string& table_name
   if (IsTrustedUser(user)) {
     return Status::OK();
   }
+  string db;
+  string tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+  bool authorized;
   // Statistics contain data (e.g. number of rows) that requires the 'SELECT ON TABLE'
   // privilege.
-  return client_.AuthorizeAction(user, ActionPB::SELECT, table_name);
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::SELECT, db, tbl, &authorized));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to SELECT on $1", user, table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
 }
 
 Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
@@ -137,7 +242,18 @@ Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
                                                  TablePrivilegePB* pb) {
   DCHECK(pb);
   DCHECK(pb->has_table_id());
-  if (IsTrustedUser(user) || client_.AuthorizeAction(user, ActionPB::ALL, table_name).ok()) {
+
+  string db;
+  string tbl;
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+
+  bool authorized;
+  if (IsTrustedUser(user)) {
+    authorized = true;
+  } else {
+    RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALL, db, tbl, &authorized));
+  }
+  if (authorized) {
     pb->set_delete_privilege(true);
     pb->set_insert_privilege(true);
     pb->set_scan_privilege(true);
@@ -154,29 +270,27 @@ Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
 
   // Check if the user has any table-level privileges. If yes, we set them. If
   // select is included, we can also return.
-  auto s = client_.AuthorizeActions(user, table_name, &actions);
-  if (s.ok()) {
-    for (const ActionPB& action : actions) {
-      switch (action) {
-        case ActionPB::DELETE:
-          pb->set_delete_privilege(true);
-          break;
-        case ActionPB::UPDATE:
-          pb->set_update_privilege(true);
-          break;
-        case ActionPB::INSERT:
-          pb->set_insert_privilege(true);
-          break;
-        case ActionPB::SELECT:
-          pb->set_scan_privilege(true);
-          break;
-        default:
-          LOG(WARNING) << "Unexpected action returned by Ranger: " << ActionPB_Name(action);
-          break;
-      }
-      if (pb->scan_privilege()) {
-        return Status::OK();
-      }
+  RETURN_NOT_OK(client_.AuthorizeActions(user, db, tbl, &actions));
+  for (const ActionPB& action : actions) {
+    switch (action) {
+      case ActionPB::DELETE:
+        pb->set_delete_privilege(true);
+        break;
+      case ActionPB::UPDATE:
+        pb->set_update_privilege(true);
+        break;
+      case ActionPB::INSERT:
+        pb->set_insert_privilege(true);
+        break;
+      case ActionPB::SELECT:
+        pb->set_scan_privilege(true);
+        break;
+      default:
+        LOG(WARNING) << "Unexpected action returned by Ranger: " << ActionPB_Name(action);
+        break;
+    }
+    if (pb->scan_privilege()) {
+      return Status::OK();
     }
   }
 
@@ -190,15 +304,10 @@ Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
     column_names.emplace(col.name());
   }
 
-  // If AuthorizeAction returns NotAuthorized, that means no column-level select
-  // is allowed to the user. In this case we return the previous status.
-  // Otherwise we populate schema_pb and return OK.
-  //
-  // TODO(abukor): revisit if it's worth merge this into the previous request
-  if (!client_.AuthorizeActionMultipleColumns(user, ActionPB::SELECT, table_name,
-                                              &column_names).ok()) {
-    return s;
-  }
+
+  // TODO(abukor): revisit if it's worth merging this into the previous request
+  RETURN_NOT_OK(client_.AuthorizeActionMultipleColumns(user, ActionPB::SELECT, db, tbl,
+                                                       &column_names));
 
   for (const auto& col : schema_pb.columns()) {
     if (ContainsKey(column_names, col.name())) {
