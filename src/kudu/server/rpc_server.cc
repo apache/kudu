@@ -121,7 +121,10 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
   RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses,
                                  options_.default_port,
                                  &rpc_bind_addresses_));
+
   for (const Sockaddr& addr : rpc_bind_addresses_) {
+    if (!addr.is_ip()) continue;
+
     if (IsPrivilegedPort(addr.port())) {
       LOG(WARNING) << "May be unable to bind to privileged port for address "
                    << addr.ToString();
@@ -171,6 +174,12 @@ Status RpcServer::RegisterService(unique_ptr<rpc::ServiceIf> service) {
   return Status::OK();
 }
 
+Status RpcServer::AddBindAddress(const Sockaddr& addr) {
+  CHECK_EQ(server_state_, INITIALIZED) << "must add bind addresses between Init() and Bind()";
+  rpc_bind_addresses_.emplace_back(addr);
+  return Status::OK();
+}
+
 Status RpcServer::Bind() {
   CHECK_EQ(server_state_, INITIALIZED);
 
@@ -182,8 +191,9 @@ Status RpcServer::Bind() {
     RETURN_NOT_OK(messenger_->AddAcceptorPool(
                     bind_addr,
                     &pool));
-    new_acceptor_pools.push_back(pool);
+    new_acceptor_pools.emplace_back(std::move(pool));
   }
+
   acceptor_pools_.swap(new_acceptor_pools);
 
   server_state_ = BOUND;

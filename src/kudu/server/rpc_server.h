@@ -70,6 +70,10 @@ class RpcServer {
   }
 
   Status Init(const std::shared_ptr<rpc::Messenger>& messenger) WARN_UNUSED_RESULT;
+
+  // Add an additional address to bind and accept connections on.
+  Status AddBindAddress(const Sockaddr& addr) WARN_UNUSED_RESULT;
+
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
   Status RegisterService(std::unique_ptr<rpc::ServiceIf> service) WARN_UNUSED_RESULT;

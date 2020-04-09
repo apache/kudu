@@ -431,6 +431,11 @@ message TSInfoPB {
   repeated HostPortPB rpc_addresses = 2;
 
   optional string location = 3;
+
+  // The path of a UNIX domain socket where the server is listening.
+  // An '@' prefix indicates the abstract namespace. May be missing
+  // if this feature is not enabled.
+  optional string unix_domain_socket_path = 4;
 }
 
 // Selector to specify policy for listing tablet replicas in

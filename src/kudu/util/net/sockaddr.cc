@@ -89,7 +89,10 @@ Sockaddr::Sockaddr(const struct sockaddr_in& addr) :
 Status Sockaddr::ParseString(const string& s, uint16_t default_port) {
   HostPort hp;
   RETURN_NOT_OK(hp.ParseString(s, default_port));
+  return ParseFromNumericHostPort(hp);
+}
 
+Status Sockaddr::ParseFromNumericHostPort(const HostPort& hp) {
   struct in_addr addr;
   if (inet_pton(AF_INET, hp.host().c_str(), &addr) != 1) {
     return Status::InvalidArgument("Invalid IP address", hp.host());

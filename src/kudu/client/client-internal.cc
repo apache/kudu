@@ -443,7 +443,14 @@ Status KuduClient::Data::InitLocalHostNames() {
 }
 
 bool KuduClient::Data::IsLocalHostPort(const HostPort& hp) const {
-  return ContainsKey(local_host_names_, hp.host());
+  if (ContainsKey(local_host_names_, hp.host())) {
+    return true;
+  }
+
+  // It may be that HostPort is a numeric form (non-reversable) address like
+  // 127.0.1.1, etc. In that case we can still consider it local.
+  Sockaddr addr;
+  return addr.ParseFromNumericHostPort(hp).ok() && addr.IsAnyLocalAddress();
 }
 
 bool KuduClient::Data::IsTabletServerLocal(const RemoteTabletServer& rts) const {

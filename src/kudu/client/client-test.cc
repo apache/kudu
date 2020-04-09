@@ -125,11 +125,13 @@
 DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(catalog_manager_support_live_row_count);
 DECLARE_bool(catalog_manager_support_on_disk_size);
+DECLARE_bool(client_use_unix_domain_sockets);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(mock_table_metrics_for_testing);
+DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
 DECLARE_int32(flush_threshold_mb);
@@ -156,13 +158,14 @@ DECLARE_string(user_acl);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
-METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_counter(location_mapping_cache_hits);
 METRIC_DECLARE_counter(location_mapping_cache_queries);
+METRIC_DECLARE_counter(rpc_connections_accepted_unix_domain_socket);
+METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
-METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerService_Scan);
 
 using base::subtle::Atomic32;
@@ -6644,6 +6647,29 @@ TEST_F(ClientTest, TestProjectionPredicatesFuzz) {
   ASSERT_OK(ScanToStrings(scanner.get(), &rows));
   ASSERT_EQ(unordered_set<string>(expected_rows.begin(), expected_rows.end()),
             unordered_set<string>(rows.begin(), rows.end())) << rows;
+}
+
+class ClientTestUnixSocket : public ClientTest {
+ public:
+  void SetUp() override {
+    FLAGS_rpc_listen_on_unix_domain_socket = true;
+    FLAGS_client_use_unix_domain_sockets = true;
+    ClientTest::SetUp();
+  }
+};
+
+TEST_F(ClientTestUnixSocket, TestConnectViaUnixSocket) {
+  static constexpr int kNumRows = 100;
+  NO_FATALS(InsertTestRows(client_table_.get(), kNumRows));
+  ASSERT_EQ(kNumRows, CountRowsFromClient(client_table_.get()));
+
+  int total_unix_conns = 0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto counter = METRIC_rpc_connections_accepted_unix_domain_socket.Instantiate(
+        cluster_->mini_tablet_server(0)->server()->metric_entity());
+    total_unix_conns += counter->value();
+  }
+  ASSERT_EQ(1, total_unix_conns);
 }
 
 } // namespace client

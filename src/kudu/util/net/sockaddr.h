@@ -32,6 +32,8 @@
 
 namespace kudu {
 
+class HostPort;
+
 /// Represents a sockaddr.
 ///
 /// Typically this wraps a sockaddr_in, but in the future will be extended to support
@@ -85,6 +87,12 @@ class Sockaddr {
   //
   // Returns a bad Status if the input is malformed.
   Status ParseString(const std::string& s, uint16_t default_port);
+
+  // Parse a HostPort instance which must contain a hostname in numeric notation
+  // as described above.
+  //
+  // Note that this function will not handle resolving hostnames.
+  Status ParseFromNumericHostPort(const HostPort& hp);
 
   // Parse a UNIX domain path, storing the result in this Sockaddr object.
   // A leading '@' indicates the address should be in the UNIX domain "abstract
@@ -141,6 +149,10 @@ class Sockaddr {
 
   bool is_ip() const {
     return family() == AF_INET;
+  }
+
+  bool is_unix() const {
+    return family() == AF_UNIX;
   }
 
   // Returns the stringified address in '1.2.3.4:<port>' format.

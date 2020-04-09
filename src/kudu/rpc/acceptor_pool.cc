@@ -54,6 +54,12 @@ METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       "Number of incoming TCP connections made to the RPC server",
                       kudu::MetricLevel::kInfo);
 
+METRIC_DEFINE_counter(server, rpc_connections_accepted_unix_domain_socket,
+                      "RPC Connections Accepted via UNIX Domain Socket",
+                      kudu::MetricUnit::kConnections,
+                      "Number of incoming UNIX Domain Socket connections made to the RPC server",
+                      kudu::MetricLevel::kInfo);
+
 DEFINE_int32(rpc_acceptor_listen_backlog, 128,
              "Socket backlog parameter used when listening for RPC connections. "
              "This defines the maximum length to which the queue of pending "
@@ -71,9 +77,12 @@ AcceptorPool::AcceptorPool(Messenger* messenger, Socket* socket,
     : messenger_(messenger),
       socket_(socket->Release()),
       bind_address_(bind_address),
-      rpc_connections_accepted_(METRIC_rpc_connections_accepted.Instantiate(
-          messenger->metric_entity())),
-      closing_(false) {}
+      closing_(false) {
+  auto& accept_metric = bind_address.is_ip() ?
+      METRIC_rpc_connections_accepted :
+      METRIC_rpc_connections_accepted_unix_domain_socket;
+  rpc_connections_accepted_ = accept_metric.Instantiate(messenger->metric_entity());
+}
 
 AcceptorPool::~AcceptorPool() {
   Shutdown();

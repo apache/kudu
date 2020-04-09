@@ -96,6 +96,11 @@ message ServerRegistrationPB {
 
   // Seconds since the epoch.
   optional int64 start_time = 5;
+
+  // The path of a UNIX domain socket where the server is listening.
+  // An '@' prefix indicates the abstract namespace. May be missing
+  // if this feature is not enabled.
+  optional string unix_domain_socket_path = 6;
 }
 
 message ServerEntryPB {

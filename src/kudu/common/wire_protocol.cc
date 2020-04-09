@@ -199,6 +199,8 @@ HostPort HostPortFromPB(const HostPortPB& host_port_pb) {
 Status AddHostPortPBs(const vector<Sockaddr>& addrs,
                       RepeatedPtrField<HostPortPB>* pbs) {
   for (const Sockaddr& addr : addrs) {
+    // Don't add unix domain sockets to the list of HostPorts.
+    if (!addr.is_ip()) continue;
     HostPortPB* pb = pbs->Add();
     if (addr.IsWildcard()) {
       RETURN_NOT_OK(GetFQDN(pb->mutable_host()));

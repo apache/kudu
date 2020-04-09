@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/heartbeater.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -337,6 +338,13 @@ Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
   RETURN_NOT_OK(CHECK_NOTNULL(server_->rpc_server())->GetAdvertisedAddresses(&addrs));
   RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_rpc_addresses()),
                         "Failed to add RPC addresses to registration");
+  auto unix_socket_it = std::find_if(addrs.begin(), addrs.end(),
+                                     [](const Sockaddr& addr) {
+                                       return addr.is_unix();
+                                     });
+  if (unix_socket_it != addrs.end()) {
+    reg->set_unix_domain_socket_path(unix_socket_it->UnixDomainPath());
+  }
 
   addrs.clear();
   if (server_->web_server()) {

@@ -151,6 +151,12 @@ DEFINE_string(rpc_encryption, "optional",
 TAG_FLAG(rpc_authentication, evolving);
 TAG_FLAG(rpc_encryption, evolving);
 
+DEFINE_bool(rpc_listen_on_unix_domain_socket, false,
+            "Whether the RPC server should listen on a Unix domain socket. If enabled, "
+            "the RPC server will bind to a socket in the \"abstract namespace\" using "
+            "a name which uniquely identifies the server instance.");
+TAG_FLAG(rpc_listen_on_unix_domain_socket, experimental);
+
 DEFINE_string(rpc_tls_ciphers,
               kudu::security::SecurityDefaults::kDefaultTlsCiphers,
               "The cipher suite preferences to use for TLS-secured RPC connections. "
@@ -526,6 +532,17 @@ Status ServerBase::Init() {
   });
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
+
+  if (FLAGS_rpc_listen_on_unix_domain_socket) {
+    VLOG(1) << "Enabling listening on unix domain socket.";
+    Sockaddr addr;
+    RETURN_NOT_OK_PREPEND(addr.ParseUnixDomainPath(Substitute("@kudu-$0", fs_manager_->uuid())),
+                          "unable to parse provided UNIX socket path");
+    RETURN_NOT_OK_PREPEND(rpc_server_->AddBindAddress(addr),
+                          "unable to add configured UNIX socket path to list of bind addresses "
+                          "for RPC server");
+  }
+
   RETURN_NOT_OK(rpc_server_->Bind());
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");

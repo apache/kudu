@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/repeated_field.h> // IWYU pragma: keep
 
@@ -48,11 +49,13 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 
 using kudu::consensus::RaftPeerPB;
 using kudu::master::ANY_REPLICA;
@@ -71,6 +74,16 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+// TODO(todd) before enabling by default, need to think about how this works with
+// docker/k8s -- I think the abstract namespace is scoped to a given k8s pod. We
+// probably need to have the client blacklist the socket if it attempts to use it
+// and can't connect.
+DEFINE_bool(client_use_unix_domain_sockets, false,
+            "Whether to try to connect to tablet servers using unix domain sockets. "
+            "This will only be attempted if the server has indicated that it is listening "
+            "on such a socket and the client is running on the same host.");
+TAG_FLAG(client_use_unix_domain_sockets, experimental);
+
 namespace kudu {
 namespace client {
 namespace internal {
@@ -85,8 +98,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
                                                KuduClient* client,
                                                const StatusCallback& user_callback,
                                                const Status &result_status) {
-  unique_ptr<vector<Sockaddr>> scoped_addrs(addrs);
-
+  SCOPED_CLEANUP({ delete addrs; });
   Status s = result_status;
 
   if (s.ok() && addrs->empty()) {
@@ -129,6 +141,25 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
   }
 
   auto addrs = new vector<Sockaddr>();
+
+  if (FLAGS_client_use_unix_domain_sockets && unix_domain_socket_path_ &&
+      client->data_->IsLocalHostPort(hp)) {
+    Sockaddr unix_socket;
+    Status parse_status = unix_socket.ParseUnixDomainPath(*unix_domain_socket_path_);
+    if (!parse_status.ok()) {
+      KLOG_EVERY_N_SECS(WARNING, 60)
+          << Substitute("Tablet server $0 ($1) reported an invalid UNIX domain socket path '$2'",
+                        hp.ToString(), uuid_, *unix_domain_socket_path_);
+      // Fall through to normal TCP path.
+    } else {
+      VLOG(1) << Substitute("Will try to connect to UNIX socket $0 for local tablet server $1 ($2)",
+                            unix_socket.ToString(), hp.ToString(), uuid_);
+      addrs->emplace_back(unix_socket);
+      this->DnsResolutionFinished(hp, addrs, client, cb, Status::OK());
+      return;
+    }
+  }
+
   client->data_->dns_resolver_->ResolveAddressesAsync(
       hp, addrs, [=](const Status& s) {
         this->DnsResolutionFinished(hp, addrs, client, cb, s);
@@ -145,6 +176,11 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
     rpc_hostports_.emplace_back(hostport_pb.host(), hostport_pb.port());
   }
   location_ = pb.location();
+  if (pb.has_unix_domain_socket_path()) {
+    unix_domain_socket_path_ = pb.unix_domain_socket_path();
+  } else {
+    unix_domain_socket_path_ = boost::none;
+  }
 }
 
 const string& RemoteTabletServer::permanent_uuid() const {
