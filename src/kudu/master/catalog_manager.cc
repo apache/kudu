@@ -5314,12 +5314,16 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
       initial_term_(-1) {
 
   // Check if the catalog manager is running.
-  std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
-  if (PREDICT_FALSE(catalog_->state_ != kRunning)) {
-    catalog_status_ = Status::ServiceUnavailable(
-        Substitute("Catalog manager is not initialized. State: $0",
-                   StateToString(catalog_->state_)));
-    return;
+  int64_t leader_ready_term;
+  {
+    std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
+    if (PREDICT_FALSE(catalog_->state_ != kRunning)) {
+      catalog_status_ = Status::ServiceUnavailable(
+          Substitute("Catalog manager is not initialized. State: $0",
+                     StateToString(catalog_->state_)));
+      return;
+    }
+    leader_ready_term = catalog_->leader_ready_term_;
   }
 
   ConsensusStatePB cstate;
@@ -5341,7 +5345,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
                    uuid, SecureShortDebugString(cstate)));
     return;
   }
-  if (PREDICT_FALSE(catalog_->leader_ready_term_ != cstate.current_term() ||
+  if (PREDICT_FALSE(leader_ready_term != initial_term_ ||
                     !leader_shared_lock_.owns_lock())) {
     leader_status_ = Status::ServiceUnavailable(
         "Leader not yet ready to serve requests");
