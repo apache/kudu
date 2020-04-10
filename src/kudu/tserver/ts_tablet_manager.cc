@@ -626,8 +626,7 @@ void TSTabletManager::RunTabletCopy(
   // Copy these strings so they stay valid even after responding to the request.
   string tablet_id = req->tablet_id(); // NOLINT(*)
   string copy_source_uuid = req->copy_peer_uuid(); // NOLINT(*)
-  HostPort copy_source_addr;
-  CALLBACK_RETURN_NOT_OK(HostPortFromPB(req->copy_peer_addr(), &copy_source_addr));
+  HostPort copy_source_addr = HostPortFromPB(req->copy_peer_addr());
   int64_t leader_term = req->caller_term();
 
   scoped_refptr<TabletReplica> old_replica;
@@ -1336,7 +1335,7 @@ void TSTabletManager::InitLocalRaftPeerPB() {
   Sockaddr addr = server_->first_rpc_address();
   HostPort hp;
   CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
+  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hp);
 }
 
 void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>& replica,

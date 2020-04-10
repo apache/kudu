@@ -28,6 +28,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -591,8 +592,7 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
     change->mutable_peer()->mutable_attrs()->set_promote(true);
     HostPort hp;
     RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
-    RETURN_NOT_OK(
-        HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
+    *change->mutable_peer()->mutable_last_known_addr() = HostPortToPB(hp);
   }
   req.set_cas_config_opid_index(cas_opid_idx);
 
@@ -682,7 +682,7 @@ Status DoChangeConfig(const vector<string>& master_addresses,
   if (cc_type == consensus::ADD_PEER) {
     HostPort hp;
     RETURN_NOT_OK(GetRpcAddressForTS(client, replica_uuid, &hp));
-    RETURN_NOT_OK(HostPortToPB(hp, peer_pb.mutable_last_known_addr()));
+    *peer_pb.mutable_last_known_addr() = HostPortToPB(hp);
   }
 
   // Find this tablet's leader replica. We need its UUID and RPC address.

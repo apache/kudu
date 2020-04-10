@@ -137,8 +137,7 @@ class TabletCopyClientTest : public TabletCopyTest {
 
   // Starts the tablet copy.
   Status StartCopy() {
-    HostPort host_port;
-    RETURN_NOT_OK(HostPortFromPB(leader_.last_known_addr(), &host_port));
+    HostPort host_port = HostPortFromPB(leader_.last_known_addr());
     return client_->Start(host_port, &meta_);
   }
 

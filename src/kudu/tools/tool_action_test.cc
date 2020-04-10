@@ -241,8 +241,7 @@ Status ProcessRequest(const ControlShellRequestPB& req,
     {
       RETURN_NOT_OK(CheckClusterExists(*cluster));
       for (int i = 0; i < (*cluster)->num_masters(); i++) {
-        HostPortPB pb;
-        RETURN_NOT_OK(HostPortToPB((*cluster)->master(i)->bound_rpc_hostport(), &pb));
+        HostPortPB pb = HostPortToPB((*cluster)->master(i)->bound_rpc_hostport());
         DaemonInfoPB* info = resp->mutable_get_masters()->mutable_masters()->Add();
         info->mutable_id()->set_type(MASTER);
         info->mutable_id()->set_index(i);
@@ -254,8 +253,7 @@ Status ProcessRequest(const ControlShellRequestPB& req,
     {
       RETURN_NOT_OK(CheckClusterExists(*cluster));
       for (int i = 0; i < (*cluster)->num_tablet_servers(); i++) {
-        HostPortPB pb;
-        RETURN_NOT_OK(HostPortToPB((*cluster)->tablet_server(i)->bound_rpc_hostport(), &pb));
+        HostPortPB pb = HostPortToPB((*cluster)->tablet_server(i)->bound_rpc_hostport());
         DaemonInfoPB* info = resp->mutable_get_tservers()->mutable_tservers()->Add();
         info->mutable_id()->set_type(TSERVER);
         info->mutable_id()->set_index(i);
