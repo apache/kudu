@@ -24,25 +24,36 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/hms/mini_hms.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class MonoDelta;
+namespace thrift {
+struct ClientOptions;
+} // namespace thrift
 
-class HmsITestBase : public ExternalMiniClusterITestBase {
+namespace client {
+class KuduClient;
+} // namespace client
+
+class HmsITestHarness {
  public:
-  Status StartHms() WARN_UNUSED_RESULT;
-  Status StopHms() WARN_UNUSED_RESULT;
+  Status StartHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster)
+    WARN_UNUSED_RESULT;
+  Status StopHms(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster)
+    WARN_UNUSED_RESULT;
 
   // Creates a database in the HMS catalog.
   Status CreateDatabase(const std::string& database_name) WARN_UNUSED_RESULT;
 
   // Creates a table in Kudu.
-  Status CreateKuduTable(const std::string& database_name,
-                         const std::string& table_name,
-                         MonoDelta timeout = {}) WARN_UNUSED_RESULT;
+  static Status CreateKuduTable(const std::string& database_name,
+                                const std::string& table_name,
+                                const client::sp::shared_ptr<client::KuduClient>& client,
+                                MonoDelta timeout = {}) WARN_UNUSED_RESULT;
 
   // Creates a table in the HMS catalog.
   // If supplied, 'kudu_table_name' will be used for the 'kudu.table_name'
@@ -50,7 +61,7 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
   Status CreateHmsTable(const std::string& database_name,
                         const std::string& table_name,
                         const std::string& table_type = hms::HmsClient::kManagedTable,
-                        boost::optional<const std::string&> kudu_table_name = boost::none);
+                        const boost::optional<const std::string&>& kudu_table_name = boost::none);
 
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
@@ -71,12 +82,25 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
   // checks against the logged in user).
   void CheckTable(const std::string& database_name,
                   const std::string& table_name,
-                  boost::optional<const std::string&> user,
+                  const boost::optional<const std::string&>& user,
+                  const std::unique_ptr<cluster::ExternalMiniCluster>& cluster,
+                  const client::sp::shared_ptr<client::KuduClient>& client,
                   const std::string& table_type = hms::HmsClient::kManagedTable);
 
   // Checks that a table does not exist in the Kudu and HMS catalogs.
   void CheckTableDoesNotExist(const std::string& database_name,
-                              const std::string& table_name);
+                              const std::string& table_name,
+                              const client::sp::shared_ptr<client::KuduClient>& client);
+
+  hms::HmsClient* hms_client() {
+    return hms_client_.get();
+  }
+
+  Status RestartHmsClient(const std::unique_ptr<cluster::ExternalMiniCluster>& cluster,
+                          const thrift::ClientOptions& hms_opts) {
+    hms_client_.reset(new hms::HmsClient(cluster->hms()->address(), hms_opts));
+    return hms_client_->Start();
+  }
 
  protected:
   std::unique_ptr<hms::HmsClient> hms_client_;

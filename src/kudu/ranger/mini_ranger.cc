@@ -20,9 +20,12 @@
 #include <csignal>
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/postgres/mini_postgres.h"
 #include "kudu/ranger/mini_ranger_configs.h"
@@ -40,7 +43,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
-using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 static constexpr int kRangerStartTimeoutMs = 60000;
@@ -254,9 +257,23 @@ Status MiniRanger::CreateKuduService() {
 }
 
 Status MiniRanger::AddPolicy(AuthorizationPolicy policy) {
+  string policy_name = JoinStrings<vector<string>>({JoinStrings(policy.databases, ","),
+                                                    JoinStrings(policy.tables, ","),
+                                                    JoinStrings(policy.columns, ",")}, ";");
+  PolicyKey policy_key(policy.databases, policy.tables, policy.columns);
+  vector<PolicyItem>* items = FindOrNull(policies_, policy_key);
+  if (!items) {
+    policies_.emplace(policy_key, policy.items);
+    items = &policy.items;
+  } else {
+    for (const auto& item : policy.items) {
+      items->emplace_back(item);
+    }
+  }
+
   EasyJson policy_json;
   policy_json.Set("service", "kudu");
-  policy_json.Set("name", policy.name);
+  policy_json.Set("name", policy_name);
   policy_json.Set("isEnabled", true);
 
   EasyJson resources = policy_json.Set("resources", EasyJson::kObject);
@@ -286,7 +303,7 @@ Status MiniRanger::AddPolicy(AuthorizationPolicy policy) {
   }
 
   EasyJson policy_items = policy_json.Set("policyItems", EasyJson::kArray);
-  for (const auto& policy_item : policy.items) {
+  for (const auto& policy_item : *items) {
     EasyJson item = policy_items.PushBack(EasyJson::kObject);
 
     EasyJson users = item.Set("users", EasyJson::kArray);
@@ -302,8 +319,8 @@ Status MiniRanger::AddPolicy(AuthorizationPolicy policy) {
     }
   }
 
-  RETURN_NOT_OK_PREPEND(PostToRanger("service/plugins/policies", std::move(policy_json)),
-                        "Failed to add policy");
+  RETURN_NOT_OK_PREPEND(PostToRanger("service/plugins/policies?deleteIfExists=true",
+                                     policy_json), "Failed to add policy");
   return Status::OK();
 }
 

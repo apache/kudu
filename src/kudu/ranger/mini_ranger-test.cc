@@ -24,7 +24,9 @@
 #include <gtest/gtest.h>
 
 #include "kudu/ranger/ranger.pb.h"
-#include "kudu/util/status.h"
+#include "kudu/util/curl_util.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -54,12 +56,11 @@ TEST_F(MiniRangerTest, TestGrantPrivilege) {
   policy.databases.emplace_back("foo");
   policy.tables.emplace_back("bar");
   policy.items.emplace_back(std::move(item));
-  policy.name = "test1";
 
   ASSERT_OK(ranger_.AddPolicy(std::move(policy)));
 }
 
-TEST_F(MiniRangerTest, TestGrantSamePrivilegeAfterRestart) {
+TEST_F(MiniRangerTest, TestPersistence) {
   PolicyItem item;
   item.first.emplace_back("testuser");
   item.second.emplace_back(ActionPB::ALTER);
@@ -68,18 +69,18 @@ TEST_F(MiniRangerTest, TestGrantSamePrivilegeAfterRestart) {
   policy.databases.emplace_back("foo");
   policy.tables.emplace_back("bar");
   policy.items.emplace_back(std::move(item));
-  policy.name = "test1";
 
   ASSERT_OK(ranger_.AddPolicy(policy));
 
   ASSERT_OK(ranger_.Stop());
   ASSERT_OK(ranger_.Start());
 
-  const string kExpectedError = "Another policy already exists for matching resource";
-
-  Status s = ranger_.AddPolicy(std::move(policy));
-  ASSERT_TRUE(s.IsRemoteError());
-  ASSERT_STR_CONTAINS(s.ToString(), kExpectedError);
+  EasyCurl curl;
+  curl.set_auth(CurlAuthType::BASIC, "admin", "admin");
+  faststring result;
+  ASSERT_OK(curl.FetchURL(JoinPathSegments(ranger_.admin_url(), "service/plugins/policies/count"),
+                          &result));
+  ASSERT_EQ("1", result.ToString());
 }
 
 } // namespace ranger

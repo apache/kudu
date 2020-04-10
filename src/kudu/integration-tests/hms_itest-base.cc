@@ -41,12 +41,14 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/user.h"
 
+using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalMiniCluster;
 using kudu::hms::HmsClient;
 using std::string;
 using std::unique_ptr;
@@ -54,17 +56,17 @@ using strings::Substitute;
 
 namespace kudu {
 
-Status HmsITestBase::StopHms() {
+Status HmsITestHarness::StopHms(const unique_ptr<cluster::ExternalMiniCluster>& cluster) {
   RETURN_NOT_OK(hms_client_->Stop());
-  return cluster_->hms()->Stop();
+  return cluster->hms()->Stop();
 }
 
-Status HmsITestBase::StartHms() {
-  RETURN_NOT_OK(cluster_->hms()->Start());
+Status HmsITestHarness::StartHms(const unique_ptr<cluster::ExternalMiniCluster>& cluster) {
+  RETURN_NOT_OK(cluster->hms()->Start());
   return hms_client_->Start();
 }
 
-Status HmsITestBase::CreateDatabase(const string& database_name) {
+Status HmsITestHarness::CreateDatabase(const string& database_name) {
   hive::Database db;
   db.name = database_name;
   RETURN_NOT_OK(hms_client_->CreateDatabase(db));
@@ -73,9 +75,10 @@ Status HmsITestBase::CreateDatabase(const string& database_name) {
   return Status::OK();
 }
 
-Status HmsITestBase::CreateKuduTable(const string& database_name,
-                                     const string& table_name,
-                                     MonoDelta timeout) {
+Status HmsITestHarness::CreateKuduTable(const string& database_name,
+                                        const string& table_name,
+                                        const shared_ptr<client::KuduClient>& client,
+                                        MonoDelta timeout) {
   // Get coverage of all column types.
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
@@ -99,7 +102,7 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
                                ->Precision(kMaxDecimal128Precision);
   KuduSchema schema;
   RETURN_NOT_OK(b.Build(&schema));
-  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   if (timeout.Initialized()) {
     // If specified, set the timeout for the operation.
     table_creator->timeout(timeout);
@@ -112,10 +115,10 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
       .Create();
 }
 
-Status HmsITestBase::CreateHmsTable(const string& database_name,
-                                    const string& table_name,
-                                    const string& table_type,
-                                    boost::optional<const string&> kudu_table_name) {
+Status HmsITestHarness::CreateHmsTable(const string& database_name,
+                                       const string& table_name,
+                                       const string& table_type,
+                                       const boost::optional<const string&>& kudu_table_name) {
   hive::Table hms_table;
   hms_table.dbName = database_name;
   hms_table.tableName = table_name;
@@ -133,9 +136,9 @@ Status HmsITestBase::CreateHmsTable(const string& database_name,
   return hms_client_->CreateTable(hms_table);
 }
 
-Status HmsITestBase::RenameHmsTable(const string& database_name,
-                                    const string& old_table_name,
-                                    const string& new_table_name) {
+Status HmsITestHarness::RenameHmsTable(const string& database_name,
+                                       const string& old_table_name,
+                                       const string& new_table_name) {
   // The HMS doesn't have a rename table API. Instead it offers the more
   // general AlterTable API, which requires the entire set of table fields to be
   // set. Since we don't know these fields during a simple rename operation, we
@@ -148,8 +151,8 @@ Status HmsITestBase::RenameHmsTable(const string& database_name,
   return hms_client_->AlterTable(database_name, old_table_name, table);
 }
 
-Status HmsITestBase::AlterHmsTableDropColumns(const string& database_name,
-                                              const string& table_name) {
+Status HmsITestHarness::AlterHmsTableDropColumns(const string& database_name,
+                                                 const string& table_name) {
     hive::Table table;
     RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
     table.sd.cols.clear();
@@ -162,8 +165,8 @@ Status HmsITestBase::AlterHmsTableDropColumns(const string& database_name,
     return Status::OK();
 }
 
-Status HmsITestBase::AlterHmsTableExternalPurge(const string& database_name,
-                                                const string& table_name) {
+Status HmsITestHarness::AlterHmsTableExternalPurge(const string& database_name,
+                                                   const string& table_name) {
   hive::Table table;
   RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
   table.tableType = HmsClient::kExternalTable;
@@ -178,13 +181,15 @@ Status HmsITestBase::AlterHmsTableExternalPurge(const string& database_name,
   return Status::OK();
 }
 
-void HmsITestBase::CheckTable(const string& database_name,
-                              const string& table_name,
-                              boost::optional<const string&> user,
-                              const string& table_type) {
+void HmsITestHarness::CheckTable(const string& database_name,
+                                 const string& table_name,
+                                 const boost::optional<const string&>& user,
+                                 const unique_ptr<ExternalMiniCluster>& cluster,
+                                 const shared_ptr<KuduClient>& client,
+                                 const string& table_type) {
   SCOPED_TRACE(Substitute("Checking table $0.$1", database_name, table_name));
   shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(Substitute("$0.$1", database_name, table_name), &table));
+  ASSERT_OK(client->OpenTable(Substitute("$0.$1", database_name, table_name), &table));
 
   hive::Table hms_table;
   ASSERT_OK(hms_client_->GetTable(database_name, table_name, &hms_table));
@@ -208,18 +213,19 @@ void HmsITestBase::CheckTable(const string& database_name,
   ASSERT_EQ(table->id(), hms_table.parameters[hms::HmsClient::kKuduTableIdKey]);
   ASSERT_TRUE(boost::iequals(table->name(),
       hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
-  ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs()),
+  ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster->master_rpc_addrs()),
             hms_table.parameters[hms::HmsClient::kKuduMasterAddrsKey]);
   ASSERT_EQ(hms::HmsClient::kKuduStorageHandler,
             hms_table.parameters[hms::HmsClient::kStorageHandlerKey]);
 }
 
-void HmsITestBase::CheckTableDoesNotExist(const string& database_name,
-                                          const string& table_name) {
+void HmsITestHarness::CheckTableDoesNotExist(const string& database_name,
+                                             const string& table_name,
+                                             const shared_ptr<KuduClient>& client) {
   SCOPED_TRACE(Substitute("Checking table $0.$1 does not exist", database_name, table_name));
 
   shared_ptr<KuduTable> table;
-  Status s = client_->OpenTable(Substitute("$0.$1", database_name, table_name), &table);
+  Status s = client->OpenTable(Substitute("$0.$1", database_name, table_name), &table);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   hive::Table hms_table;
