@@ -569,8 +569,7 @@ Status RemoteKsckCluster::RetrieveTabletServers() {
     if (!ts_pb.has_registration()) {
       continue;
     }
-    HostPort hp;
-    RETURN_NOT_OK(HostPortFromPB(ts_pb.registration().rpc_addresses(0), &hp));
+    HostPort hp = HostPortFromPB(ts_pb.registration().rpc_addresses(0));
     auto ts = std::make_shared<RemoteKsckTabletServer>(uuid, hp, messenger_, ts_pb.location());
     RETURN_NOT_OK(ts->Init());
     EmplaceOrUpdate(&tablet_servers, uuid, std::move(ts));

@@ -343,11 +343,9 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
 
   masters->clear();
   for (const auto& peer : config.peers()) {
+    HostPort hp = HostPortFromPB(peer.last_known_addr());
     ServerEntryPB peer_entry;
-    HostPort hp;
-    Status s = HostPortFromPB(peer.last_known_addr(), &hp).AndThen([&] {
-      return GetMasterEntryForHost(messenger_, hp, &peer_entry);
-    });
+    Status s = GetMasterEntryForHost(messenger_, hp, &peer_entry);
     if (!s.ok()) {
       s = s.CloneAndPrepend(
           Substitute("Unable to get registration information for peer $0 ($1)",

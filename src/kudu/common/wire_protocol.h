@@ -69,10 +69,10 @@ void StatusToPB(const Status& status, AppStatusPB* pb);
 Status StatusFromPB(const AppStatusPB& pb);
 
 // Convert the specified HostPort to protobuf.
-Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
+HostPortPB HostPortToPB(const HostPort& host_port);
 
 // Returns the HostPort created from the specified protobuf.
-Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
+HostPort HostPortFromPB(const HostPortPB& host_port_pb);
 
 // Convert the column schema delta `col_delta` to protobuf.
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);

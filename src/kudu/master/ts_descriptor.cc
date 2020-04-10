@@ -93,12 +93,8 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
   std::unordered_set<HostPort, HostPortHasher, HostPortEqualityPredicate> hostports1;
   std::unordered_set<HostPort, HostPortHasher, HostPortEqualityPredicate> hostports2;
   for (int i = 0; i < pb1.size(); i++) {
-    HostPort hp1;
-    HostPort hp2;
-    if (!HostPortFromPB(pb1.Get(i), &hp1).ok()) return false;
-    if (!HostPortFromPB(pb2.Get(i), &hp2).ok()) return false;
-    hostports1.insert(hp1);
-    hostports2.insert(hp2);
+    hostports1.emplace(HostPortFromPB(pb1.Get(i)));
+    hostports2.emplace(HostPortFromPB(pb2.Get(i)));
   }
   return hostports1 == hostports2;
 }

@@ -4704,8 +4704,7 @@ TEST_P(ControlShellToolTest, TestControlShell) {
   {
     KuduClientBuilder client_builder;
     for (const auto& e : masters) {
-      HostPort hp;
-      ASSERT_OK(HostPortFromPB(e.bound_rpc_address(), &hp));
+      HostPort hp = HostPortFromPB(e.bound_rpc_address());
       client_builder.add_master_server_addr(hp.ToString());
     }
     shared_ptr<KuduClient> client;
