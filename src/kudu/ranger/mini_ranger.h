@@ -18,8 +18,10 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -49,11 +51,16 @@ typedef std::vector<std::string> UserList;
 // cross-product is taken.
 typedef std::pair<UserList, std::vector<ActionPB>> PolicyItem;
 
+// Policy key used for searching policies_ (values are PolicyItems).
+typedef std::tuple<std::vector<std::string>,
+                   std::vector<std::string>,
+                   std::vector<std::string>> PolicyKey;
+
 // The AuthorizationPolicy contains a set of privileges on a resource to one or
 // more users. 'items' is a vector of user-list of actions pair. This struct can
-// be used to create new Ranger policies in tests.
+// be used to create new Ranger policies in tests. The policy name is based on
+// its contents (list of databases, tables and columns).
 struct AuthorizationPolicy {
-  std::string name;
   std::vector<std::string> databases;
   std::vector<std::string> tables;
   std::vector<std::string> columns;
@@ -102,6 +109,10 @@ class MiniRanger {
 
   void set_policy_poll_interval_ms(uint32_t policy_poll_interval_ms) {
     policy_poll_interval_ms_ = policy_poll_interval_ms;
+  }
+
+  std::string admin_url() const {
+    return ranger_admin_url_;
   }
 
  private:
@@ -180,6 +191,12 @@ class MiniRanger {
   // default is 200ms so that tests don't have to wait too long until freshly
   // created policies can be used.
   uint32_t policy_poll_interval_ms_ = 200;
+
+  // Stores existing policies since starting the MiniRanger instance. This is
+  // used for adding new policy items (list of users and privileges) to existing
+  // policies (resources) as Ranger doesn't support this and we need to delete
+  // it and recreate it.
+  std::map<PolicyKey, std::vector<PolicyItem>> policies_;
 };
 
 } // namespace ranger

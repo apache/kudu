@@ -42,6 +42,7 @@
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/integration-tests/data_gen_util.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/hms_itest-base.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -75,6 +76,7 @@ using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::master::AlterRoleGrantPrivilege;
 using kudu::master::CreateRoleAndAddToGroups;
@@ -241,33 +243,28 @@ Status PerformAction(const RWPrivileges& privileges,
   return Status::OK();
 }
 
+// Note: groups and users therein are statically provided to MiniSentry (see
+// mini_sentry.cc). We expect Sentry to be aware of users "user[0-2]".
+constexpr int kNumUsers = 3;
+constexpr const char* kAdminGroup = "admin";
+
+constexpr int kNumTables = 3;
+constexpr int kNumColsPerTable = 3;
+constexpr const char* kDb = "db";
+constexpr const char* kTablePrefix = "table";
+constexpr const char* kAdminRole = "kudu-admin";
+
+constexpr int kAuthzTokenTTLSecs = 1;
+constexpr int kAuthzCacheTTLMultiplier = 3;
+
 } // anonymous namespace
 
 // These tests will use the HMS and Sentry, and thus, are very slow.
 // SKIP_IF_SLOW_NOT_ALLOWED() should be the very first thing called in the body
 // of every test based on this test class.
-class TSSentryITest : public HmsITestBase {
+class TSSentryITestHarness : public HmsITestHarness {
  public:
-  // Note: groups and users therein are statically provided to MiniSentry (see
-  // mini_sentry.cc). We expect Sentry to be aware of users "user[0-2]".
-  static constexpr int kNumUsers = 3;
-  static constexpr const char* kAdminGroup = "admin";
-
-  static constexpr int kNumTables = 3;
-  static constexpr int kNumColsPerTable = 3;
-  static constexpr const char* kDb = "db";
-  static constexpr const char* kTablePrefix = "table";
-  static constexpr const char* kAdminRole = "kudu-admin";
-
-  static constexpr int kAuthzTokenTTLSecs = 1;
-  static constexpr int kAuthzCacheTTLMultiplier = 3;
-
-  void SetUp() override {
-    SKIP_IF_SLOW_NOT_ALLOWED();
-    for (int u = 0; u < kNumUsers; u++) {
-      users_.emplace_back(Substitute("user$0", u));
-    }
-
+  ExternalMiniClusterOptions GetClusterOpts() {
     ExternalMiniClusterOptions opts;
     opts.enable_kerberos = true;
     opts.enable_sentry = true;
@@ -284,41 +281,50 @@ class TSSentryITest : public HmsITestBase {
     opts.extra_tserver_flags.emplace_back(
         Substitute("--user_acl=$0", JoinStrings(users_, ",")));
     opts.extra_tserver_flags.emplace_back("--tserver_enforce_access_control=true");
-    NO_FATALS(StartClusterWithOpts(std::move(opts)));
-    ASSERT_OK(cluster_->kdc()->CreateUserPrincipal("kudu"));
-    ASSERT_OK(cluster_->kdc()->Kinit("kudu"));
 
+    return opts;
+  }
+
+  Status SetUpExternalServiceClients(const unique_ptr<ExternalMiniCluster>& cluster) {
     // Set up the HMS client so we can set up a database.
     thrift::ClientOptions hms_opts;
     hms_opts.enable_kerberos = true;
     hms_opts.service_principal = "hive";
-    hms_client_.reset(new hms::HmsClient(cluster_->hms()->address(), hms_opts));
-    ASSERT_OK(hms_client_->Start());
+    hms_client_.reset(new hms::HmsClient(cluster->hms()->address(), hms_opts));
+    RETURN_NOT_OK(hms_client_->Start());
 
     // Set up the Sentry client so we can set up privileges.
     thrift::ClientOptions sentry_opts;
     sentry_opts.enable_kerberos = true;
     sentry_opts.service_principal = "sentry";
-    sentry_client_.reset(new SentryClient(cluster_->sentry()->address(), sentry_opts));
-    ASSERT_OK(sentry_client_->Start());
-    ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kAdminRole, kAdminGroup));
-    ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kAdminRole,
+    sentry_client_.reset(new SentryClient(cluster->sentry()->address(), sentry_opts));
+    RETURN_NOT_OK(sentry_client_->Start());
+
+    return Status::OK();
+  }
+
+  Status SetUpCredentials() {
+    RETURN_NOT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kAdminRole, kAdminGroup));
+    RETURN_NOT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kAdminRole,
         GetDatabasePrivilege(kDb, "ALL", TSentryGrantOption::DISABLED)));
 
-    // Create the database in the HMS.
-    ASSERT_OK(CreateDatabase(kDb));
+    return Status::OK();
+  }
 
-    // Create a client as the "kudu" user, who now has admin privileges.
-    ASSERT_OK(cluster_->CreateClient(nullptr, &admin_client_));
+  Status SetUpTables() {
+    // Create the database in the HMS.
+    RETURN_NOT_OK(CreateDatabase(kDb));
 
     // Finally populate a set of column names to use for our tables.
     for (int i = 0; i < kNumColsPerTable; i++) {
       cols_.emplace_back(Substitute("col$0", i));
     }
+
+    return Status::OK();
   }
 
   // Creates a table named 'table_ident' with 'kNumColsPerTable' columns.
-  Status CreateTable(const string& table_ident) {
+  Status CreateTable(const string& table_ident, const shared_ptr<KuduClient>& client) {
     KuduSchema schema;
     KuduSchemaBuilder b;
     auto iter = cols_.begin();
@@ -327,7 +333,7 @@ class TSSentryITest : public HmsITestBase {
       b.AddColumn(*iter++)->Type(KuduColumnSchema::INT32);
     }
     RETURN_NOT_OK(b.Build(&schema));
-    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     return table_creator->table_name(table_ident)
         .schema(&schema)
         .set_range_partition_columns({ "col0" })
@@ -335,23 +341,56 @@ class TSSentryITest : public HmsITestBase {
         .Create();
   }
 
-  void TearDown() override {
-    SKIP_IF_SLOW_NOT_ALLOWED();
-    HmsITestBase::TearDown();
+  void AddUsers() {
+    for (int u = 0; u < kNumUsers; u++) {
+      users_.emplace_back(Substitute("user$0", u));
+    }
   }
 
- protected:
   // A Sentry client with which to grant privileges.
   unique_ptr<SentryClient> sentry_client_;
-
-  // Kudu client with which to perform admin operations.
-  shared_ptr<KuduClient> admin_client_;
 
   // A list of users that may try to do things.
   vector<string> users_;
 
   // A list of columns that each table should have.
   vector<string> cols_;
+};
+
+class TSSentryITest : public ExternalMiniClusterITestBase {
+ public:
+  void SetUp() override {
+    SKIP_IF_SLOW_NOT_ALLOWED();
+    ExternalMiniClusterITestBase::SetUp();
+    harness_.AddUsers();
+    ExternalMiniClusterOptions opts = harness_.GetClusterOpts();
+    NO_FATALS(StartClusterWithOpts(std::move(opts)));
+
+    ASSERT_OK(cluster_->kdc()->CreateUserPrincipal("kudu"));
+    ASSERT_OK(cluster_->kdc()->Kinit("kudu"));
+
+    ASSERT_OK(harness_.SetUpExternalServiceClients(cluster_));
+    ASSERT_OK(harness_.SetUpCredentials());
+    ASSERT_OK(harness_.SetUpTables());
+
+    // Create a client as the "kudu" user, who now has admin privileges.
+    ASSERT_OK(cluster_->CreateClient(nullptr, &admin_client_));
+  }
+
+  Status CreateTable(const string& table_ident) {
+    return harness_.CreateTable(table_ident, client_);
+  }
+
+  void TearDown() override {
+    SKIP_IF_SLOW_NOT_ALLOWED();
+    ExternalMiniClusterITestBase::TearDown();
+  }
+
+ protected:
+  // Kudu client with which to perform admin operations.
+  shared_ptr<KuduClient> admin_client_;
+
+  TSSentryITestHarness harness_;
 };
 
 // Tests authorizing read and write operations coming from multiple concurrent
@@ -376,16 +415,17 @@ TEST_F(TSSentryITest, TestReadsAndWrites) {
   // Set up a bunch of clients for each user.
   unordered_map<string, vector<shared_ptr<KuduClient>>> user_to_clients;
   ThreadSafeRandom prng(SeedRandom());
-  unordered_set<string> cols(cols_.begin(), cols_.end());
+  unordered_set<string> cols(harness_.cols_.begin(), harness_.cols_.end());
   static constexpr int kNumClientsPerUser = 4;
   for (int i = 0; i < kNumUsers; i++) {
-    const string& user = users_[i];
+    const string& user = harness_.users_[i];
     // Register the user with the KDC, and add a role to the user's group
     // (provided to MiniSentry in mini_sentry.cc).
     ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
     ASSERT_OK(cluster_->kdc()->Kinit(user));
     const string role = Substitute("role$0", i);
-    ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), role, Substitute("group$0", i)));
+    ASSERT_OK(CreateRoleAndAddToGroups(harness_.sentry_client_.get(),
+                                       role, Substitute("group$0", i)));
 
     // Set up multiple clients for each user.
     vector<shared_ptr<KuduClient>> clients;
@@ -402,11 +442,11 @@ TEST_F(TSSentryITest, TestReadsAndWrites) {
     for (const string& table_name : tables) {
       RWPrivileges granted_privileges = GeneratePrivileges(cols, &prng);
       for (const auto& wp : granted_privileges.table_write_privileges) {
-        ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), role,
+        ASSERT_OK(AlterRoleGrantPrivilege(harness_.sentry_client_.get(), role,
                   GetTablePrivilege(kDb, table_name, WritePrivilegeToString(wp))));
       }
       for (const auto& col : granted_privileges.column_scan_privileges) {
-        ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), role,
+        ASSERT_OK(AlterRoleGrantPrivilege(harness_.sentry_client_.get(), role,
                   GetColumnPrivilege(kDb, table_name, col, "SELECT")));
       }
       RWPrivileges not_granted_privileges = ComplementaryPrivileges(cols, granted_privileges);
@@ -428,7 +468,7 @@ TEST_F(TSSentryITest, TestReadsAndWrites) {
       t.join();
     }
   });
-  for (const string& user : users_) {
+  for (const string& user : harness_.users_) {
     // Start a thread for every user that performs a bunch of operations.
     const auto* const table_to_privileges = FindOrNull(user_to_privileges, user);
     for (const auto& client_sp : FindOrDie(user_to_clients, user)) {
@@ -478,7 +518,7 @@ TEST_F(TSSentryITest, TestAlters) {
   ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
   ASSERT_OK(cluster_->kdc()->Kinit(user));
   const string role = "role0";
-  ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), role, "group0"));
+  ASSERT_OK(CreateRoleAndAddToGroups(harness_.sentry_client_.get(), role, "group0"));
 
   shared_ptr<KuduClient> user_client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));
@@ -486,13 +526,13 @@ TEST_F(TSSentryITest, TestAlters) {
   // Note: we only need privileges on the metadata for OpenTable() calls.
   // METADATA isn't a first-class Sentry privilege and won't get carried over
   // on table rename, so we just grant INSERT privileges.
-  ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), role,
+  ASSERT_OK(AlterRoleGrantPrivilege(harness_.sentry_client_.get(), role,
             GetTablePrivilege(kDb, kTableName, "INSERT")));
 
   // First, grant privileges on a new column that doesn't yet exist. Once that
   // column is created, we should be able to scan it immediately.
   const string new_column = Substitute("col$0", kNumColsPerTable);
-  ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), role,
+  ASSERT_OK(AlterRoleGrantPrivilege(harness_.sentry_client_.get(), role,
             GetColumnPrivilege(kDb, kTableName, new_column, "SELECT")));
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_ident));
@@ -507,7 +547,7 @@ TEST_F(TSSentryITest, TestAlters) {
   // Since privileges are cached, even though we've granted privileges, clients
   // will use the cached privilege and not be authorized for a bit.
   const string another_column = Substitute("col$0", kNumColsPerTable + 1);
-  ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), role,
+  ASSERT_OK(AlterRoleGrantPrivilege(harness_.sentry_client_.get(), role,
             GetColumnPrivilege(kDb, kTableName, another_column, "SELECT")));
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_ident));

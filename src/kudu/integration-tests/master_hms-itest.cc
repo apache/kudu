@@ -36,12 +36,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/hms/mini_hms.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/hms_itest-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/thrift/client.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -60,11 +61,10 @@ using strings::Substitute;
 namespace kudu {
 
 // Test Master <-> HMS catalog synchronization.
-class MasterHmsTest : public HmsITestBase {
+class MasterHmsTest : public ExternalMiniClusterITestBase {
  public:
-
   void SetUp() override {
-    HmsITestBase::SetUp();
+    ExternalMiniClusterITestBase::SetUp();
 
     ExternalMiniClusterOptions opts;
     opts.hms_mode = GetHmsMode();
@@ -78,17 +78,73 @@ class MasterHmsTest : public HmsITestBase {
     thrift::ClientOptions hms_opts;
     hms_opts.enable_kerberos = EnableKerberos();
     hms_opts.service_principal = "hive";
-    hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
-    ASSERT_OK(hms_client_->Start());
+    ASSERT_OK(harness_.RestartHmsClient(cluster_, hms_opts));
   }
 
   void TearDown() override {
-    if (hms_client_) {
-      ASSERT_OK(hms_client_->Stop());
+    if (harness_.hms_client()) {
+      ASSERT_OK(harness_.hms_client()->Stop());
     }
-    HmsITestBase::TearDown();
+    ExternalMiniClusterITestBase::TearDown();
   }
 
+  Status StartHms() {
+    return harness_.StartHms(cluster_);
+  }
+
+  Status StopHms() {
+    return harness_.StopHms(cluster_);
+  }
+
+  Status CreateDatabase(const std::string& database_name) {
+    return harness_.CreateDatabase(database_name);
+  }
+
+  Status CreateKuduTable(const std::string& database_name,
+                         const std::string& table_name,
+                         MonoDelta timeout = {}) {
+    return HmsITestHarness::CreateKuduTable(database_name, table_name, client_, timeout);
+  }
+
+  Status CreateHmsTable(const std::string& database_name,
+                        const std::string& table_name,
+                        const std::string& table_type = hms::HmsClient::kManagedTable,
+                        const boost::optional<const std::string&>& kudu_table_name = boost::none) {
+    return harness_.CreateHmsTable(database_name, table_name, table_type, kudu_table_name);
+  }
+
+  Status RenameHmsTable(const std::string& database_name,
+                        const std::string& old_table_name,
+                        const std::string& new_table_name) {
+    return harness_.RenameHmsTable(database_name, old_table_name, new_table_name);
+  }
+
+  Status AlterHmsTableDropColumns(const std::string& database_name,
+                                  const std::string& table_name) {
+    return harness_.AlterHmsTableDropColumns(database_name, table_name);
+  }
+
+  Status AlterHmsTableExternalPurge(const std::string& database_name,
+                                    const std::string& table_name) {
+    return harness_.AlterHmsTableExternalPurge(database_name, table_name);
+  }
+
+  void CheckTable(const std::string& database_name,
+                  const std::string& table_name,
+                  const boost::optional<const std::string&>& user,
+                  const std::string& table_type = hms::HmsClient::kManagedTable) {
+    harness_.CheckTable(database_name, table_name, user, cluster_, client_, table_type);
+  }
+
+  void CheckTableDoesNotExist(const std::string& database_name,
+                              const std::string& table_name) {
+    harness_.CheckTableDoesNotExist(database_name, table_name, client_);
+  }
+
+
+ protected:
+
+  HmsITestHarness harness_;
  private:
 
   virtual HmsMode GetHmsMode() {
@@ -125,7 +181,7 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "create_db.☃");
 
   // Drop the HMS entry and create the table through Kudu.
-  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
+  ASSERT_OK(harness_.hms_client()->DropTable(hms_database_name, hms_table_name));
   ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
   NO_FATALS(CheckTable(hms_database_name, hms_table_name, /*user=*/none));
 
@@ -213,7 +269,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
 
   // Check that the two tables still exist.
   vector<string> tables;
-  ASSERT_OK(hms_client_->GetTableNames("db", &tables));
+  ASSERT_OK(harness_.hms_client()->GetTableNames("db", &tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "b", "d" })) << tables;
 
@@ -289,7 +345,7 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   ASSERT_OK(client_->TableExists("default.c", &exists));
   ASSERT_TRUE(exists);
   hive::Table hms_table;
-  ASSERT_OK(hms_client_->GetTable("default", "a", &hms_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "a", &hms_table));
 }
 
 TEST_F(MasterHmsTest, TestDeleteTable) {
@@ -297,7 +353,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   ASSERT_OK(CreateKuduTable("default", "a"));
   NO_FATALS(CheckTable("default", "a", /*user=*/ none));
   hive::Table hms_table;
-  ASSERT_OK(hms_client_->GetTable("default", "a", &hms_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "a", &hms_table));
 
   ASSERT_OK(client_->DeleteTable("default.a"));
   NO_FATALS(CheckTableDoesNotExist("default", "a"));
@@ -306,10 +362,10 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   ASSERT_OK(CreateKuduTable("default", "b"));
   NO_FATALS(CheckTable("default", "b", /*user=*/ none));
   hive::Table hms_table_b;
-  ASSERT_OK(hms_client_->GetTable("default", "b", &hms_table_b));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "b", &hms_table_b));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable("default.b", &table));
-  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "b"));
   ASSERT_EVENTUALLY([&] {
       NO_FATALS(CheckTableDoesNotExist("default", "b"));
   });
@@ -322,7 +378,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   NO_FATALS(CheckTable("default", "b", /*user=*/ none, hms::HmsClient::kExternalTable));
   shared_ptr<KuduTable> table2;
   ASSERT_OK(client_->OpenTable("default.b", &table2));
-  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "b"));
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(CheckTableDoesNotExist("default", "b"));
   });
@@ -346,15 +402,15 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   ASSERT_OK(CreateKuduTable("default", "d"));
   NO_FATALS(CheckTable("default", "d", /*user=*/ none));
   hive::Table hms_table_d;
-  ASSERT_OK(hms_client_->GetTable("default", "d", &hms_table_d));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "d", &hms_table_d));
   ASSERT_OK(client_->DeleteTableInCatalogs("default.d", false));
   s = client_->OpenTable(Substitute("$0.$1", "default", "d"), &table);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_OK(hms_client_->GetTable("default", "d", &hms_table_d));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "d", &hms_table_d));
 
   // Create and drop a non-Kudu ('external') HMS table entry and ensure Kudu allows it.
   ASSERT_OK(CreateHmsTable("default", "externalTable", HmsClient::kExternalTable));
-  ASSERT_OK(hms_client_->DropTable("default", "externalTable"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "externalTable"));
 }
 
 TEST_F(MasterHmsTest, TestNotificationLogListener) {
@@ -374,7 +430,7 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
 
   // Drop the table in the HMS, and ensure that the notification log listener
   // detects the drop and updates the Kudu catalog accordingly.
-  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "b"));
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(CheckTableDoesNotExist("default", "b"));
   });
@@ -404,7 +460,7 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
 
   // Scenario 1: drop from the HMS first.
   ASSERT_OK(CreateKuduTable("default", "a"));
-  ASSERT_OK(hms_client_->DropTable("default", "a"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "a"));
   Status s = client_->DeleteTable("default.a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckTableDoesNotExist("default", "a"));
@@ -412,7 +468,7 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   // Scenario 2: drop from Kudu first.
   ASSERT_OK(CreateKuduTable("default", "a"));
   ASSERT_OK(client_->DeleteTable("default.a"));
-  s = hms_client_->DropTable("default", "a");
+  s = harness_.hms_client()->DropTable("default", "a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckTableDoesNotExist("default", "a"));
 
@@ -434,7 +490,7 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
 
   // Drop the table in the HMS, and ensure that the notification log listener
   // detects the drop and updates the Kudu catalog accordingly.
-  ASSERT_OK(hms_client_->DropTable("default", "e"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "e"));
   ASSERT_EVENTUALLY([&] {
     NO_FATALS(CheckTableDoesNotExist("default", "e"));
   });
@@ -449,17 +505,17 @@ TEST_F(MasterHmsTest, TestIgnoreExternalTables) {
 
   // Drop a table in the HMS and check that it didn't affect the underlying
   // Kudu table.
-  ASSERT_OK(hms_client_->DropTable("default", "ext1"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "ext1"));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kManagedTableName, &table));
 
   // Do the same, but rename the HMS table.
   hive::Table ext;
-  ASSERT_OK(hms_client_->GetTable("default", "ext2", &ext));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "ext2", &ext));
   ext.tableName = "ext3";
-  ASSERT_OK(hms_client_->AlterTable("default", "ext2", ext));
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "ext2", ext));
   ASSERT_OK(client_->OpenTable(kManagedTableName, &table));
-  Status s = hms_client_->GetTable("default", "ext2", &ext);
+  Status s = harness_.hms_client()->GetTable("default", "ext2", &ext);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Alter the table in Kudu, the external tables in the HMS will not be
@@ -467,7 +523,7 @@ TEST_F(MasterHmsTest, TestIgnoreExternalTables) {
   unique_ptr<KuduTableAlterer> table_alterer(
       client_->NewTableAlterer(kManagedTableName)->RenameTo("default.other"));
   ASSERT_OK(table_alterer->Alter());
-  ASSERT_OK(hms_client_->GetTable("default", "ext3", &ext));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "ext3", &ext));
   ASSERT_EQ(kManagedTableName, ext.parameters[HmsClient::kKuduTableNameKey]);
 }
 
@@ -615,7 +671,7 @@ TEST_F(MasterHmsKerberizedTest, TestTableOwnership) {
   // Create a table as the user and ensure that the ownership is set correctly.
   ASSERT_OK(CreateKuduTable("default", "my_table"));
   hive::Table table;
-  ASSERT_OK(hms_client_->GetTable("default", "my_table", &table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "my_table", &table));
   ASSERT_EQ("test-user", table.owner);
 }
 } // namespace kudu
