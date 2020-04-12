@@ -184,6 +184,26 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // libev callback when we may write to the socket.
   void WriteHandler(ev::io &watcher, int revents);
 
+  enum ProcessOutboundTransfersResult {
+    // All of the transfers in the queue have been sent successfully.
+    // The queue is now empty.
+    kNoMoreToSend,
+    // Not all transfers were able to be sent. The caller should
+    // ensure that write_io_ is enabled in order to continue attempting
+    // to send transfers.
+    kMoreToSend,
+    // An error occurred trying to write to the connection, and the
+    // connection was destroyed. NOTE: 'this' may be deleted if this
+    // value is returned.
+    kConnectionDestroyed
+  };
+
+  // Process any pending outbound transfers in outbound_transfers_.
+  // Result indicates the state of the connection following the attempt.
+  //
+  // NOTE: This may invoke DestroyConnection() on 'this'.
+  ProcessOutboundTransfersResult ProcessOutboundTransfers();
+
   // Safe to be called from other threads.
   std::string ToString() const;
 

@@ -344,10 +344,11 @@ void Connection::QueueOutbound(unique_ptr<OutboundTransfer> transfer) {
   outbound_transfers_.push_back(*transfer.release());
 
   if (negotiation_complete_ && !write_io_.is_active()) {
-    // If we weren't currently in the middle of sending anything,
-    // then our write_io_ interest is stopped. Need to re-start it.
-    // Only do this after connection negotiation is done doing its work.
-    write_io_.start();
+    // Optimistically assume that the socket is writable if we didn't already
+    // have something queued.
+    if (ProcessOutboundTransfers() == kMoreToSend) {
+      write_io_.start();
+    }
   }
 }
 
@@ -746,19 +747,22 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
   }
   DVLOG(3) << ToString() << ": writeHandler: revents = " << revents;
 
-  OutboundTransfer *transfer;
   if (outbound_transfers_.empty()) {
     LOG(WARNING) << ToString() << " got a ready-to-write callback, but there is "
       "nothing to write.";
     write_io_.stop();
     return;
   }
+  if (ProcessOutboundTransfers() == kNoMoreToSend) {
+    write_io_.stop();
+  }
+}
 
+Connection::ProcessOutboundTransfersResult Connection::ProcessOutboundTransfers() {
   while (!outbound_transfers_.empty()) {
-    transfer = &(outbound_transfers_.front());
+    OutboundTransfer* transfer = &(outbound_transfers_.front());
 
     if (!transfer->TransferStarted()) {
-
       if (transfer->is_for_outbound_call()) {
         CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
         if (!car->call) {
@@ -801,21 +805,19 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     if (PREDICT_FALSE(!status.ok())) {
       LOG(WARNING) << ToString() << " send error: " << status.ToString();
       reactor_thread_->DestroyConnection(this, status);
-      return;
+      return kConnectionDestroyed;
     }
 
     if (!transfer->TransferFinished()) {
       DVLOG(3) << ToString() << ": writeHandler: xfer not finished.";
-      return;
+      return kMoreToSend;
     }
 
     outbound_transfers_.pop_front();
     delete transfer;
   }
 
-  // If we were able to write all of our outbound transfers,
-  // we don't have any more to write.
-  write_io_.stop();
+  return kNoMoreToSend;
 }
 
 std::string Connection::ToString() const {
