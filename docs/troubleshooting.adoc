@@ -1022,3 +1022,70 @@ sudo -u kudu kudu tablet unsafe_replace_tablet <master_addresses> <tablet_id>
 
 From versions 1.8.0 onwards, Kudu will mark the affected replicas as failed,
 leading to their automatic re-replication elsewhere.
+
+[[symbolizing_stack_traces]]
+=== Symbolizing stack traces
+Sometimes you might see the following in the logs:
+
+----
+0323 03:59:31.091198 (+607857us) spinlock_profiling.cc:243] Waited 492 ms on lock 0x4cb0960. stack: 0000000002398852 0000000000ad8c69 0000000000aa62ba 000000000221aaa8 000000000221b1a8 00000000023a8f83 00007fa8b818be24 00007fa8b646a34c
+----
+
+That's usually a sign of high contention among threads to acquire a lock, and
+in this case the reported time shows how long a thread spent on a CPU before
+acquiring the lock. The call stack addresses listed helps to restore the stack
+trace of the waiting thread and pinpoint the problem in the code.
+
+It's possible to translate the addresses into the name of functions and lines
+in the code having the binary that produced the output (in this example, it's
+`kudu-master`). If the binary is stripped of symbols and debug information,
+it's possible do so as well if separate debug information for the binary is
+available.
+
+Assuming both the stripped release binary and the debug information are
+available as RPMs, unpack them into a directory (e.g., `sysroot`):
+----
+$ mkdir sysroot && cd sysroot
+$ rpm2cpio ../kudu-1.10.0.el7.x86_64.rpm | cpio -idmv
+$ rpm2cpio ../kudu-debuginfo-1.10.0.el7.x86_64.rpm | cpio -idmv
+----
+
+Use `addr2line` to find the line in the code for the stack address (in case if
+the binary is not stripped of debug information, supply the actual binary with
+`-e` option instead of the debug info file):
+
+----
+addr2line -C -f -e usr/lib/debug/usr/lib/kudu/sbin-release/kudu-master.debug 0x0000000000aa62ba
+kudu::master::MasterServiceImpl::ConnectToMaster(kudu::master::ConnectToMasterRequestPB const*, kudu::master::ConnectToMasterResponsePB*, kudu::rpc::RpcContext*)
+/usr/src/debug/kudu-1.10.0/src/kudu/master/master_service.cc:504
+----
+
+To achieve the same with `gdb`, first find the address of the `.text` section
+in the symbol file (in the example, `0000000000a2cdb0`):
+----
+$ readelf -S usr/lib/debug/usr/lib/kudu/sbin-release/kudu-master.debug | grep .text
+  [13] .text             NOBITS           0000000000a2cdb0  000002c0
+----
+
+Then start up `gdb`, pointing it to the `kudu-master` executable (that's the
+executable that produced the output in the log file):
+----
+gdb usr/lib/kudu/sbin-release/kudu-master
+----
+
+Now load the `.debug` symbols into `gdb` using the address found above, tell
+`gdb` where to find source files, and set the sysroot:
+----
+(gdb) add-symbol-file usr/lib/debug/usr/lib/kudu/sbin-release/kudu-master.debug 0x0000000000a2cdb0
+(gdb) set substitute-path /usr/src/debug/kudu-1.10.0 usr/src/debug/kudu-1.10.0
+(gdb) set sysroot .
+----
+
+To translate the address into line number and function information, use
+`info line * <address>`:
+----
+(gdb) info line * 0x0000000000aa62ba
+Line 504 of "/usr/src/debug/kudu-1.10.0/src/kudu/master/master_service.cc"
+   starts at address 0xaa62af <kudu::master::MasterServiceImpl::ConnectToMaster(kudu::master::ConnectToMasterRequestPB const*, kudu::master::ConnectToMasterResponsePB*, kudu::rpc::RpcContext*)+47>
+   and ends at 0xaa62bb <kudu::master::MasterServiceImpl::ConnectToMaster(kudu::master::ConnectToMasterRequestPB const*, kudu::master::ConnectToMasterResponsePB*, kudu::rpc::RpcContext*)+59>.
+----
