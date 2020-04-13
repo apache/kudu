@@ -20,16 +20,15 @@
 #include <memory>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
-#include "kudu/cfile/binary_dict_block.h"
-#include "kudu/cfile/binary_plain_block.h"
-#include "kudu/cfile/binary_prefix_block.h"
+#include "kudu/cfile/binary_dict_block.h" // IWYU pragma: keep
+#include "kudu/cfile/binary_plain_block.h" // IWYU pragma: keep
+#include "kudu/cfile/binary_prefix_block.h" // IWYU pragma: keep
 #include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/bshuf_block.h"
-#include "kudu/cfile/plain_bitmap_block.h"
-#include "kudu/cfile/plain_block.h"
-#include "kudu/cfile/rle_block.h"
+#include "kudu/cfile/bshuf_block.h" // IWYU pragma: keep
+#include "kudu/cfile/plain_bitmap_block.h" // IWYU pragma: keep
+#include "kudu/cfile/plain_block.h" // IWYU pragma: keep
+#include "kudu/cfile/rle_block.h" // IWYU pragma: keep
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
@@ -44,6 +43,22 @@ using std::unordered_map;
 namespace kudu {
 namespace cfile {
 
+// Base template class to help instantiate classes with specific BlockBuilder and BlockDecoder
+// classes.
+template<class Builder, class Decoder>
+struct EncodingTraits {
+  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
+    bb->reset(new Builder(options));
+    return Status::OK();
+  }
+
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+                                   CFileIterator* /*parent_cfile_iter*/) {
+    bd->reset(new Decoder(slice));
+    return Status::OK();
+  }
+};
+
 template<DataType Type, EncodingType Encoding>
 struct DataTypeEncodingTraits {};
 
@@ -57,138 +72,54 @@ template<DataType Type, EncodingType Encoding> struct TypeEncodingTraits
 // Generic, fallback, partial specialization that should work for all
 // fixed size types.
 template<DataType Type>
-struct DataTypeEncodingTraits<Type, PLAIN_ENCODING> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new PlainBlockBuilder<Type>(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new PlainBlockDecoder<Type>(slice));
-    return Status::OK();
-  }
-};
+struct DataTypeEncodingTraits<Type, PLAIN_ENCODING>
+    : public EncodingTraits<PlainBlockBuilder<Type>, PlainBlockDecoder<Type>> {};
 
 // Generic, fallback, partial specialization that should work for all
 // fixed size types.
 template<DataType Type>
-struct DataTypeEncodingTraits<Type, BIT_SHUFFLE> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new BShufBlockBuilder<Type>(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new BShufBlockDecoder<Type>(slice));
-    return Status::OK();
-  }
-};
+struct DataTypeEncodingTraits<Type, BIT_SHUFFLE>
+    : public EncodingTraits<BShufBlockBuilder<Type>, BShufBlockDecoder<Type>> {};
 
 // Template specialization for plain encoded string as they require a
 // specific encoder/decoder.
 template<>
-struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new BinaryPlainBlockBuilder(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new BinaryPlainBlockDecoder(slice));
-    return Status::OK();
-  }
-};
+struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING>
+    : public EncodingTraits<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder> {};
 
 // Template specialization for packed bitmaps
 template<>
-struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new PlainBitMapBlockBuilder(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new PlainBitMapBlockDecoder(slice));
-    return Status::OK();
-  }
-};
-
+struct DataTypeEncodingTraits<BOOL, PLAIN_ENCODING>
+    : public EncodingTraits<PlainBitMapBlockBuilder, PlainBitMapBlockDecoder> {};
 
 // Template specialization for RLE encoded bitmaps
 template<>
-struct DataTypeEncodingTraits<BOOL, RLE> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new RleBitMapBlockBuilder(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new RleBitMapBlockDecoder(slice));
-    return Status::OK();
-  }
-};
+struct DataTypeEncodingTraits<BOOL, RLE>
+    : public EncodingTraits<RleBitMapBlockBuilder, RleBitMapBlockDecoder> {};
 
 // Template specialization for plain encoded string as they require a
 // specific encoder \/decoder.
 template<>
-struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new BinaryPrefixBlockBuilder(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new BinaryPrefixBlockDecoder(slice));
-    return Status::OK();
-  }
-};
+struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING>
+    : public EncodingTraits<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder> {};
 
 // Template for dictionary encoding
 template<>
-struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new BinaryDictBlockBuilder(options));
-    return Status::OK();
-  }
-
+struct DataTypeEncodingTraits<BINARY, DICT_ENCODING>
+    : public EncodingTraits<BinaryDictBlockBuilder, BinaryDictBlockDecoder> {
   static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* iter) {
-    bd->reset(new BinaryDictBlockDecoder(slice, iter));
+                                   CFileIterator* parent_cfile_iter) {
+    bd->reset(new BinaryDictBlockDecoder(slice, parent_cfile_iter));
     return Status::OK();
   }
 };
 
 template<DataType IntType>
-struct DataTypeEncodingTraits<IntType, RLE> {
-
-  static Status CreateBlockBuilder(unique_ptr<BlockBuilder>* bb, const WriterOptions* options) {
-    bb->reset(new RleIntBlockBuilder<IntType>(options));
-    return Status::OK();
-  }
-
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
-                                   CFileIterator* /*iter*/) {
-    bd->reset(new RleIntBlockDecoder<IntType>(slice));
-    return Status::OK();
-  }
-};
-
+struct DataTypeEncodingTraits<IntType, RLE>
+    : public EncodingTraits<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>> {};
 
 template<typename TypeEncodingTraitsClass>
-TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass t)
+TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass /*t*/)
     : encoding_type_(TypeEncodingTraitsClass::kEncodingType),
       create_builder_func_(TypeEncodingTraitsClass::CreateBlockBuilder),
       create_decoder_func_(TypeEncodingTraitsClass::CreateBlockDecoder) {
