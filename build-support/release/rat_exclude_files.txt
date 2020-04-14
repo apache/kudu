@@ -14,6 +14,7 @@ build-support/iwyu/fix_includes.py
 build-support/iwyu/iwyu_tool.py
 build-support/iwyu/mappings/boost-all-private.imp
 build-support/iwyu/mappings/boost-all.imp
+build-support/iwyu/mappings/libcxx.imp
 build-support/mini-cluster/LICENSE-BINARY-JAR-LINUX.txt
 build-support/mini-cluster/LICENSE-BINARY-JAR-OSX.txt
 build-support/mini-cluster/NOTICE-BINARY-JAR-LINUX.txt
