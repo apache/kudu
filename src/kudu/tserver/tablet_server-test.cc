@@ -101,7 +101,6 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
-#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hdr_histogram.h"
@@ -940,10 +939,6 @@ TEST_F(TabletServerMaintenanceMemoryPressureTest, TestDontStarveDMSWhileUnderMem
   thread insert_thread([&] {
     int cur_row = 2;
     while (keep_inserting) {
-      // Ignore TSAN warnings that complain about a race in gtest between this
-      // check for fatal failures and the check for fatal failures in the below
-      // AssertEventually.
-      debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
       NO_FATALS(InsertTestRowsDirect(cur_row++, 1));
     }
   });
@@ -961,9 +956,16 @@ TEST_F(TabletServerMaintenanceMemoryPressureTest, TestDontStarveDMSWhileUnderMem
   // since it anchors WALs.
   scoped_refptr<Histogram> dms_flushes =
       METRIC_flush_dms_duration.Instantiate(tablet_replica_->tablet()->GetMetricEntity());
-  ASSERT_EVENTUALLY([&] {
-    ASSERT_EQ(1, dms_flushes->histogram()->TotalCount());
-  });
+  // NOTE: we don't use ASSERT_EVENTUALLY because gtest may race with the
+  // NO_FATALS call in the inserter thread.
+  constexpr int kTimeoutSecs = 30;
+  const MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(kTimeoutSecs);
+  while (dms_flushes->histogram()->TotalCount() < 1) {
+    if (MonoTime::Now() > deadline) {
+      FAIL() << Substitute("Didn't flush DMS in $0 seconds", kTimeoutSecs);
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
 }
 
 // Regression test for KUDU-2929. Previously, when under memory pressure, we
