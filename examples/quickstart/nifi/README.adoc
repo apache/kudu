@@ -55,7 +55,7 @@ docker run -it --rm --network="docker_default" maven:latest bin/bash
 # Download the kudu-client-tools jar which has the kudu-client and all the dependencies.
 mkdir jars
 mvn dependency:copy \
-    -Dartifact=org.apache.kudu:kudu-client-tools:1.11.1 \
+    -Dartifact=org.apache.kudu:kudu-client-tools:1.12.0 \
     -DoutputDirectory=jars
 # Run the jshell with the jar on the classpath.
 jshell --class-path jars/*
@@ -163,7 +163,7 @@ example of the code to allow you to query the `random_user` table:
 
 [source,bash]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.11.1
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.12.0
 ----
 
 [source,scala]
