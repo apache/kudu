@@ -629,10 +629,14 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
 
   // Set the info about the other masters, so that the client can verify
   // it has the full set of info.
-  const auto& addresses = server_->catalog_manager()->master_addresses();
-  resp->mutable_master_addrs()->Reserve(addresses.size());
-  for (const auto& hp : addresses) {
-    *resp->add_master_addrs() = HostPortToPB(hp);
+  {
+    vector<HostPortPB> hostports;
+    WARN_NOT_OK(server_->GetMasterHostPorts(&hostports),
+                "unable to get HostPorts for masters");
+    resp->mutable_master_addrs()->Reserve(hostports.size());
+    for (auto& hp : hostports) {
+      *resp->add_master_addrs() = std::move(hp);
+    }
   }
 
   const bool is_leader = l.leader_status().ok();

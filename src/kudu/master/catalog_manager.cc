@@ -825,11 +825,13 @@ Status CatalogManager::Init(bool is_first_run) {
     auto_rebalancer_ = std::move(task);
   }
 
-  RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses_));
   if (hms::HmsCatalog::IsEnabled()) {
+    vector<HostPortPB> master_addrs_pb;
+    RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addrs_pb));
+
     string master_addresses = JoinMapped(
-      master_addresses_,
-      [] (const HostPort& hostport) {
+      master_addrs_pb,
+      [] (const HostPortPB& hostport) {
         return Substitute("$0:$1", hostport.host(), hostport.port());
       },
       ",");

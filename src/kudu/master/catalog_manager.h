@@ -48,7 +48,6 @@
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/rw_mutex.h"
@@ -784,10 +783,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // name is returned.
   static std::string NormalizeTableName(const std::string& table_name);
 
-  const std::vector<HostPort>& master_addresses() const {
-    return master_addresses_;
-  }
-
  private:
   // These tests call ElectedAsLeaderCb() directly.
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
@@ -1162,11 +1157,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   //
   // Always acquire this lock before state_lock_.
   RWMutex leader_lock_;
-
-  // Cached information on master addresses. It's populated in Init() since the
-  // membership of masters' Raft consensus is static (i.e. no new members are
-  // added or any existing removed).
-  std::vector<HostPort> master_addresses_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

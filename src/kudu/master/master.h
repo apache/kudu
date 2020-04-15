@@ -32,7 +32,7 @@
 
 namespace kudu {
 
-class HostPort;
+class HostPortPB;
 class MaintenanceManager;
 class MonoDelta;
 class ThreadPool;
@@ -105,7 +105,7 @@ class Master : public kserver::KuduServer {
   // Gets the HostPorts for all of the masters in the cluster.
   // This is not as complete as ListMasters() above, but operates just
   // based on local state.
-  Status GetMasterHostPorts(std::vector<HostPort>* hostports) const;
+  Status GetMasterHostPorts(std::vector<HostPortPB>* hostports) const;
 
   // Crash the master on disk error.
   static void CrashMasterOnDiskError(const std::string& uuid);
