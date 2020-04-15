@@ -457,7 +457,8 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   RETURN_NOT_OK(data_->ListTabletServers(this, deadline, req, &resp));
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
-    HostPort hp = HostPortFromPB(e.registration().rpc_addresses(0));
+    HostPort hp;
+    RETURN_NOT_OK(HostPortFromPB(e.registration().rpc_addresses(0), &hp));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
     ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(), hp, e.location());
     tablet_servers->push_back(ts.release());
@@ -554,7 +555,8 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
           "No RPC addresses found for tserver $0",
           ts_info.permanent_uuid()));
     }
-    HostPort hp = HostPortFromPB(ts_info.rpc_addresses(0));
+    HostPort hp;
+    RETURN_NOT_OK(HostPortFromPB(ts_info.rpc_addresses(0), &hp));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
     ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp, ts_info.location());
 

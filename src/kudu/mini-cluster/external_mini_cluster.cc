@@ -1377,7 +1377,9 @@ void ExternalDaemon::CheckForLeaks() {
 HostPort ExternalDaemon::bound_rpc_hostport() const {
   CHECK(status_);
   CHECK_GE(status_->bound_rpc_addresses_size(), 1);
-  return HostPortFromPB(status_->bound_rpc_addresses(0));
+  HostPort ret;
+  CHECK_OK(HostPortFromPB(status_->bound_rpc_addresses(0), &ret));
+  return ret;
 }
 
 Sockaddr ExternalDaemon::bound_rpc_addr() const {
@@ -1393,7 +1395,9 @@ HostPort ExternalDaemon::bound_http_hostport() const {
   if (status_->bound_http_addresses_size() == 0) {
     return HostPort();
   }
-  return HostPortFromPB(status_->bound_http_addresses(0));
+  HostPort ret;
+  CHECK_OK(HostPortFromPB(status_->bound_http_addresses(0), &ret));
+  return ret;
 }
 
 const NodeInstancePB& ExternalDaemon::instance_id() const {

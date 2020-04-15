@@ -965,7 +965,8 @@ TEST_F(TsTabletManagerITest, TestDeleteTableDuringTabletCopy) {
                                            tablet::TabletDataState::TABLET_DATA_TOMBSTONED,
                                            kTimeout));
   // Copy tablet from leader_ts to follower_ts.
-  HostPort leader_addr = HostPortFromPB(leader_ts->registration.rpc_addresses(0));
+  HostPort leader_addr;
+  ASSERT_OK(HostPortFromPB(leader_ts->registration.rpc_addresses(0), &leader_addr));
   ASSERT_OK(itest::StartTabletCopy(follower_ts, tablet_id, leader_ts->uuid(),
                                    leader_addr, std::numeric_limits<int64_t>::max(), kTimeout));
 

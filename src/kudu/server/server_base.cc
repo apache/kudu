@@ -34,7 +34,6 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/codegen/compilation_manager.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -226,6 +225,9 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class HostPortPB;
+
 namespace server {
 
 namespace {
@@ -587,7 +589,9 @@ Status ServerBase::GetStatusPB(ServerStatusPB* status) const {
       HostPort hp;
       RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
                             "could not get RPC hostport");
-      *status->add_bound_rpc_addresses() = HostPortToPB(hp);
+      HostPortPB* pb = status->add_bound_rpc_addresses();
+      RETURN_NOT_OK_PREPEND(HostPortToPB(hp, pb),
+                            "could not convert RPC hostport");
     }
   }
 
@@ -600,7 +604,9 @@ Status ServerBase::GetStatusPB(ServerStatusPB* status) const {
       HostPort hp;
       RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
                             "could not get web hostport");
-      *status->add_bound_http_addresses() = HostPortToPB(hp);
+      HostPortPB* pb = status->add_bound_http_addresses();
+      RETURN_NOT_OK_PREPEND(HostPortToPB(hp, pb),
+                            "could not convert web hostport");
     }
   }
 

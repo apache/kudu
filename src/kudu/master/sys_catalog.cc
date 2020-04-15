@@ -228,7 +228,9 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     }
     set<string> peer_addrs_from_disk;
     for (const auto& p : cstate.committed_config().peers()) {
-      peer_addrs_from_disk.insert(HostPortFromPB(p.last_known_addr()).ToString());
+      HostPort hp;
+      RETURN_NOT_OK(HostPortFromPB(p.last_known_addr(), &hp));
+      peer_addrs_from_disk.insert(hp.ToString());
     }
     vector<string> symm_diff;
     std::set_symmetric_difference(peer_addrs_from_opts.begin(),
@@ -305,7 +307,8 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
   // Build the set of followers from our server options.
   for (const HostPort& host_port : options.master_addresses) {
     RaftPeerPB peer;
-    HostPortPB peer_host_port_pb = HostPortToPB(host_port);
+    HostPortPB peer_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
     peer.set_member_type(RaftPeerPB::VOTER);
     new_config.add_peers()->CopyFrom(peer);
@@ -1004,7 +1007,7 @@ void SysCatalogTable::InitLocalRaftPeerPB() {
   Sockaddr addr = master_->first_rpc_address();
   HostPort hp;
   CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
-  *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hp);
+  CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
 }
 
 } // namespace master

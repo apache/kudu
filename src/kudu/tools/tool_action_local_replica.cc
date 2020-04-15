@@ -304,7 +304,8 @@ Status RewriteRaftConfig(const RunnerContext& context) {
     RaftPeerPB new_peer;
     new_peer.set_member_type(RaftPeerPB::VOTER);
     new_peer.set_permanent_uuid(p.first);
-    HostPortPB new_peer_host_port_pb = HostPortToPB(p.second);
+    HostPortPB new_peer_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(p.second, &new_peer_host_port_pb));
     new_peer.mutable_last_known_addr()->CopyFrom(new_peer_host_port_pb);
     new_config.add_peers()->CopyFrom(new_peer);
   }

@@ -449,7 +449,8 @@ Status AutoRebalancerTask::ExecuteMoves(
       *change->mutable_peer()->mutable_permanent_uuid() = dst_ts_uuid;
       change->mutable_peer()->set_member_type(RaftPeerPB::NON_VOTER);
       change->mutable_peer()->mutable_attrs()->set_promote(true);
-      *change->mutable_peer()->mutable_last_known_addr() = HostPortToPB(hp);
+      RETURN_NOT_OK(
+          HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
     }
 
     // Request movement or replacement of the replica.

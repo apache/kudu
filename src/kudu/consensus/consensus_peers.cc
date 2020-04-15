@@ -577,7 +577,8 @@ RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger,
 
 Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
                                      unique_ptr<PeerProxy>* proxy) {
-  HostPort hostport = HostPortFromPB(peer_pb.last_known_addr());
+  HostPort hostport;
+  RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), &hostport));
   unique_ptr<ConsensusServiceProxy> new_proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
       hostport, messenger_, dns_resolver_, &new_proxy));
@@ -590,7 +591,8 @@ Status SetPermanentUuidForRemotePeer(
     DnsResolver* resolver,
     RaftPeerPB* remote_peer) {
   DCHECK(!remote_peer->has_permanent_uuid());
-  HostPort hostport = HostPortFromPB(remote_peer->last_known_addr());
+  HostPort hostport;
+  RETURN_NOT_OK(HostPortFromPB(remote_peer->last_known_addr(), &hostport));
   unique_ptr<ConsensusServiceProxy> proxy;
   RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
       hostport, messenger, resolver, &proxy));

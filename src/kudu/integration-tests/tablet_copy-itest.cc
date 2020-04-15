@@ -425,7 +425,8 @@ TEST_F(TabletCopyITest, TestCopyAfterFailedCopy) {
   ASSERT_OK(DeleteTabletWithRetries(follower_ts, tablet_id,
                                     TabletDataState::TABLET_DATA_TOMBSTONED,
                                     kTimeout));
-  HostPort leader_addr = HostPortFromPB(leader_ts->registration.rpc_addresses(0));
+  HostPort leader_addr;
+  ASSERT_OK(HostPortFromPB(leader_ts->registration.rpc_addresses(0), &leader_addr));
 
   // Inject failures to the metadata and trigger the tablet copy. This will
   // cause the copy to fail.
@@ -1164,7 +1165,8 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   // ServiceUnavailable error.
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
 
-  HostPort ts0_hostport = HostPortFromPB(ts0->registration.rpc_addresses(0));
+  HostPort ts0_hostport;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &ts0_hostport));
 
   // Attempt to copy all of the tablets from TS0 to TS1 in parallel. Tablet
   // copies are repeated periodically until complete.

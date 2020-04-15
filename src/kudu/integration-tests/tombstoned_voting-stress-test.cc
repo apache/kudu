@@ -299,7 +299,8 @@ TEST_F(TombstonedVotingStressTest, TestTombstonedVotingUnderStress) {
 
     // 2. Copy tablet.
     LOG(INFO) << "copying tablet...";
-    HostPort source_hp = HostPortFromPB(ts0_ets->registration.rpc_addresses(0));
+    HostPort source_hp;
+    ASSERT_OK(HostPortFromPB(ts0_ets->registration.rpc_addresses(0), &source_hp));
     SetState(kCopying);
     ASSERT_OK(itest::StartTabletCopy(ts1_ets, tablet_id_, ts0_ets->uuid(), source_hp, current_term_,
                                      kTimeout));

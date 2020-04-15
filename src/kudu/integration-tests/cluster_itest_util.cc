@@ -316,7 +316,8 @@ Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
 
   ts_map->clear();
   for (const auto& entry : tservers) {
-    HostPort host_port = HostPortFromPB(entry.registration().rpc_addresses(0));
+    HostPort host_port;
+    RETURN_NOT_OK(HostPortFromPB(entry.registration().rpc_addresses(0), &host_port));
     vector<Sockaddr> addresses;
     host_port.ResolveAddresses(&addresses);
 
@@ -1226,7 +1227,7 @@ Status StartTabletCopy(const TServerDetails* ts,
   req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
   req.set_copy_peer_uuid(copy_source_uuid);
-  *req.mutable_copy_peer_addr() = HostPortToPB(copy_source_addr);
+  RETURN_NOT_OK(HostPortToPB(copy_source_addr, req.mutable_copy_peer_addr()));
   req.set_caller_term(caller_term);
 
   RETURN_NOT_OK(ts->consensus_proxy->StartTabletCopy(req, &resp, &rpc));

@@ -135,7 +135,8 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
   ASSERT_OK(WaitForNumTabletsOnTS(ts0, kDefaultNumTablets, kTimeout, &tablets));
   ASSERT_EQ(kDefaultNumTablets, tablets.size());
   const string& tablet_id = tablets[0].tablet_status().tablet_id();
-  HostPort src_addr = HostPortFromPB(ts0->registration.rpc_addresses(0));
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
 
   // Repeat the restart process several times.
   for (int i = 0; i < 3; i++) {
@@ -228,7 +229,8 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopy) {
     }
 
     // Run tablet copy.
-    HostPort src_addr = HostPortFromPB(ts0->registration.rpc_addresses(0));
+    HostPort src_addr;
+    ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
     ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
                               std::numeric_limits<int64_t>::max(), kDefaultTimeout));
     ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
@@ -252,7 +254,8 @@ TEST_F(TabletCopyClientSessionITest, TestCopyFromCrashedSource) {
                               "fault_crash_on_handle_tc_fetch_data",
                               "1.0"));
 
-  HostPort src_addr = HostPortFromPB(ts0->registration.rpc_addresses(0));
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
   ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
                             std::numeric_limits<int64_t>::max(), kDefaultTimeout));
 
@@ -309,7 +312,8 @@ TEST_F(TabletCopyClientSessionITest, TestTabletCopyWithBusySource) {
                                   &tablets, tablet::TabletStatePB::RUNNING));
   ASSERT_EQ(kNumTablets, tablets.size());
 
-  HostPort src_addr = HostPortFromPB(ts0->registration.rpc_addresses(0));
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
 
   vector<thread> threads;
   for (const auto& tablet : tablets) {
@@ -365,7 +369,8 @@ TEST_F(TabletCopyClientSessionITest, TestStopCopyOnClientDiskFailure) {
   });
 
   // Now kick off the tablet copies.
-  HostPort src_addr = HostPortFromPB(ts_src->registration.rpc_addresses(0));
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts_src->registration.rpc_addresses(0), &src_addr));
   vector<thread> threads;
   auto copy_tablet_with_index = [&] (int i) {
     LOG(INFO) << Substitute("Copying tablet $0 / $1", i + 1, kNumTablets);
