@@ -87,7 +87,7 @@ If you have Spark available, you can also look at the data in Kudu using Spark,
 
 [source,bash]
 ----
-$ spark2-shell --packages org.apache.kudu:kudu-spark2_2.11:1.11.1
+$ spark2-shell --packages org.apache.kudu:kudu-spark2_2.11:1.12.0
 ----
 
 You can then modify this example script to query the data with SparkSQL:
