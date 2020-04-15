@@ -52,7 +52,9 @@ KEY_PATH = 'path'
 PAT_SASL_LIBPLAIN = re.compile(r'libplain')
 
 # Exclude libraries that are (L)GPL-licensed and libraries that are not
-# portable across Linux kernel versions.
+# portable across Linux kernel versions. One exception is 'libpcre', which
+# is BSD-licensed. It is excluded because it is a transitive dependency
+# introduced by 'libselinux'.
 PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libc|
                                         libstdc\+\+|
@@ -66,6 +68,7 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libcom_err|
                                         libdb-[\d.]+|
                                         libselinux|
+                                        libpcre|
                                         libtinfo
                                        )\.so""", re.VERBOSE)
 
