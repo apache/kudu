@@ -24,12 +24,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
 #include <string>
 
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/cpu.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_bloom_filter.pb.h"
 #include "kudu/util/flag_tags.h"
@@ -45,9 +45,6 @@ DEFINE_bool(disable_blockbloomfilter_avx2, false,
             "that doesn't support AVX2.");
 TAG_FLAG(disable_blockbloomfilter_avx2, hidden);
 
-// Flag used to initialize the static function pointers for the BlockBloomFilter class.
-static std::once_flag g_init_func_ptrs_flag;
-
 namespace kudu {
 
 // Initialize the static member variables from BlockBloomFilter class.
@@ -57,29 +54,6 @@ const base::CPU BlockBloomFilter::kCpu = base::CPU();
 // Hence no duplicate initialization in the definition here.
 constexpr BlockBloomFilter* const BlockBloomFilter::kAlwaysTrueFilter;
 
-decltype(&BlockBloomFilter::BucketInsert) BlockBloomFilter::bucket_insert_func_ptr_ = nullptr;
-decltype(&BlockBloomFilter::BucketFind) BlockBloomFilter::bucket_find_func_ptr_ = nullptr;
-decltype(&BlockBloomFilter::OrEqualArrayNoAVX2) BlockBloomFilter::or_equal_array_func_ptr_ =
-    nullptr;
-
-void BlockBloomFilter::InitializeFunctionPtrs() {
-#ifdef USE_AVX2
-  if (has_avx2()) {
-    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
-    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFindAVX2;
-    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayAVX2;
-  } else {
-    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
-    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
-    or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayNoAVX2;
-  }
-#else
-  bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
-  bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
-  or_equal_array_func_ptr_ = &BlockBloomFilter::OrEqualArrayNoAVX2;
-#endif
-}
-
 BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_allocator) :
   always_false_(true),
   buffer_allocator_(buffer_allocator),
@@ -88,11 +62,22 @@ BlockBloomFilter::BlockBloomFilter(BlockBloomFilterBufferAllocatorIf* buffer_all
   directory_(nullptr),
   hash_algorithm_(UNKNOWN_HASH),
   hash_seed_(0) {
-  std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
+
+#ifdef USE_AVX2
+  if (has_avx2()) {
+    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsertAVX2;
+    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFindAVX2;
+  } else {
+    bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
+    bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+  }
+#else
+  bucket_insert_func_ptr_ = &BlockBloomFilter::BucketInsert;
+  bucket_find_func_ptr_ = &BlockBloomFilter::BucketFind;
+#endif
 
   DCHECK(bucket_insert_func_ptr_);
   DCHECK(bucket_find_func_ptr_);
-  DCHECK(or_equal_array_func_ptr_);
 }
 
 BlockBloomFilter::~BlockBloomFilter() {
@@ -260,6 +245,7 @@ void BlockBloomFilter::InsertNoAvx2(const uint32_t hash) noexcept {
 void BlockBloomFilter::Insert(const uint32_t hash) noexcept {
   always_false_ = false;
   const uint32_t bucket_idx = Rehash32to32(hash) & directory_mask_;
+  DCHECK(bucket_insert_func_ptr_);
   (this->*bucket_insert_func_ptr_)(bucket_idx, hash);
 }
 
@@ -268,6 +254,7 @@ bool BlockBloomFilter::Find(const uint32_t hash) const noexcept {
     return false;
   }
   const uint32_t bucket_idx = Rehash32to32(hash) & directory_mask_;
+  DCHECK(bucket_find_func_ptr_);
   return (this->*bucket_find_func_ptr_)(bucket_idx, hash);
 }
 
@@ -292,15 +279,27 @@ bool BlockBloomFilter::operator!=(const BlockBloomFilter& rhs) const {
   return !(rhs == *this);
 }
 
+void BlockBloomFilter::OrEqualArrayInternal(size_t n, const uint8_t* __restrict__ in,
+                                            uint8_t* __restrict__ out) {
+#ifdef USE_AVX2
+  if (has_avx2()) {
+    BlockBloomFilter::OrEqualArrayAVX2(n, in, out);
+  } else {
+    BlockBloomFilter::OrEqualArrayNoAVX2(n, in, out);
+  }
+#else
+  BlockBloomFilter::OrEqualArrayNoAVX2(n, in, out);
+#endif
+}
+
 Status BlockBloomFilter::OrEqualArray(size_t n, const uint8_t* __restrict__ in,
                                       uint8_t* __restrict__ out) {
   if ((n % kBucketByteSize) != 0) {
     return Status::InvalidArgument(Substitute("Input size $0 not a multiple of 32-bytes", n));
   }
 
-  std::call_once(g_init_func_ptrs_flag, InitializeFunctionPtrs);
-  DCHECK(or_equal_array_func_ptr_);
-  (*or_equal_array_func_ptr_)(n, in, out);
+  OrEqualArrayInternal(n, in, out);
+
   return Status::OK();
 }
 
@@ -347,9 +346,9 @@ Status BlockBloomFilter::Or(const BlockBloomFilter& other) {
     return Status::OK();
   }
 
-  (*or_equal_array_func_ptr_)(directory_size(),
-                              reinterpret_cast<uint8_t*>(other.directory_),
-                              reinterpret_cast<uint8_t*>(directory_));
+  OrEqualArrayInternal(directory_size(), reinterpret_cast<const uint8*>(other.directory_),
+                       reinterpret_cast<uint8*>(directory_));
+
   always_false_ = false;
   return Status::OK();
 }

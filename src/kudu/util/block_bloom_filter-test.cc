@@ -63,7 +63,6 @@ class BlockBloomFilterTest : public KuduTest {
 
   BlockBloomFilter* CreateBloomFilter(size_t log_space_bytes) {
     FLAGS_disable_blockbloomfilter_avx2 = (MakeRand() & 0x1) == 0;
-    BlockBloomFilter::InitializeFunctionPtrs();
 
     unique_ptr<BlockBloomFilter> bf(new BlockBloomFilter(allocator_));
     CHECK_OK(bf->Init(log_space_bytes, FAST_HASH, 0));

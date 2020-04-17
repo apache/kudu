@@ -241,6 +241,10 @@ class BlockBloomFilter {
   // operations.
   static void OrEqualArrayNoAVX2(size_t n, const uint8_t* __restrict__ in,
                                  uint8_t* __restrict__ out);
+  // Helper function for OrEqualArray functions that encapsulates AVX2 v/s non-AVX2 logic to
+  // invoke the right function.
+  static void OrEqualArrayInternal(size_t n, const uint8_t* __restrict__ in,
+                                   uint8_t* __restrict__ out);
 
 #ifdef USE_AVX2
   // Same as Insert(), but skips the CPU check and assumes that AVX2 is available.
@@ -260,16 +264,10 @@ class BlockBloomFilter {
                                uint8_t* __restrict__ out) __attribute__((target("avx2")));
 #endif
 
-  // Function pointers initialized just once to avoid run-time cost
-  // in hot-path of Find, Insert and Or operations.
-  static decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
-  static decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
-  static decltype(&BlockBloomFilter::OrEqualArrayNoAVX2) or_equal_array_func_ptr_;
-
-  // Helper function to initialize the function pointers above based on whether
-  // compiler and/or CPU at run-time supports AVX2.
-  // It also helps testing both AVX2 and non-AVX2 code paths.
-  static void InitializeFunctionPtrs();
+  // Function pointers initialized in the constructor to avoid run-time cost in hot-path
+  // of Find and Insert operations.
+  decltype(&BlockBloomFilter::BucketInsert) bucket_insert_func_ptr_;
+  decltype(&BlockBloomFilter::BucketFind) bucket_find_func_ptr_;
 
   // Size of the internal directory structure in bytes.
   int64_t directory_size() const {
@@ -305,10 +303,6 @@ class BlockBloomFilter {
   }
 
   DISALLOW_COPY_AND_ASSIGN(BlockBloomFilter);
-
-  // Allow BlockBloomFilterTest unit test to invoke the private InitializeFunctionPtrs()
-  // function to test both AVX2 and non-AVX2 code paths.
-  friend class BlockBloomFilterTest;
 };
 
 // Generic interface to allocate and de-allocate memory for the BlockBloomFilter.
