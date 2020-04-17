@@ -178,8 +178,10 @@ public class TestKuduMetastorePlugin {
       client.createTable(table);
       fail();
     } catch (TException e) {
-      assertTrue(e.getMessage().contains(
-          "non-Kudu table entry must not contain a table ID property"));
+      assertTrue(
+          e.getMessage(),
+          e.getMessage().contains(
+              "non-Kudu table entry must not contain a table ID property"));
     }
 
     // A Kudu table without a Kudu table ID.
@@ -189,7 +191,8 @@ public class TestKuduMetastorePlugin {
       client.createTable(table, masterContext());
       fail();
     } catch (TException e) {
-      assertTrue(e.getMessage().contains("Kudu table entry must contain a table ID property"));
+      assertTrue(e.getMessage(),
+                 e.getMessage().contains("Kudu table entry must contain a table ID property"));
     }
 
     // A Kudu table without master context.
@@ -198,7 +201,8 @@ public class TestKuduMetastorePlugin {
       client.createTable(table);
       fail();
     } catch (TException e) {
-      assertTrue(e.getMessage().contains("Kudu tables may not be created through Hive"));
+      assertTrue(e.getMessage(),
+                 e.getMessage().contains("Kudu tables may not be created through Hive"));
     }
 
     // A Kudu table without a master address.
@@ -208,8 +212,10 @@ public class TestKuduMetastorePlugin {
       client.createTable(table, masterContext());
       fail();
     } catch (TException e) {
-      assertTrue(e.getMessage().contains(
-          "Kudu table entry must contain a Master addresses property"));
+      assertTrue(
+          e.getMessage(),
+          e.getMessage().contains(
+              "Kudu table entry must contain a Master addresses property"));
     }
 
     // Check that creating a valid table is accepted.
@@ -253,7 +259,8 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), newTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table ID does not match the existing HMS entry"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table ID does not match the existing HMS entry"));
       }
 
       // Check that altering the Kudu table with a different table ID while
@@ -273,8 +280,10 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains(
-            "Kudu table entry must contain a Kudu storage handler property"));
+        assertTrue(
+            e.getMessage(),
+            e.getMessage().contains(
+                "Kudu table entry must contain a Kudu storage handler property"));
       }
 
       // Try to alter the Kudu table to a different type.
@@ -289,7 +298,8 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to a different type by setting the external property fails.
@@ -299,7 +309,8 @@ public class TestKuduMetastorePlugin {
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to the same type by setting the table property works.
@@ -327,16 +338,27 @@ public class TestKuduMetastorePlugin {
       // Alter the Kudu table to a different type by setting the purge property fails.
       try {
         Table alteredTable = table.deepCopy();
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table type may not be altered"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table type may not be altered"));
       }
 
       // Alter the Kudu table to an external type with the master context succeeds.
       {
         Table alteredTable = table.deepCopy();
+        // Also change the location to avoid MetastoreDefaultTransformer validation
+        // that exists in some Hive versions.
+        alteredTable.getSd().setLocation(String.format("%s/%s/%s",
+            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            table.getDbName(), table.getTableName()));
         alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "TRUE");
@@ -346,11 +368,17 @@ public class TestKuduMetastorePlugin {
 
       // Check that adding a column fails.
       table.getSd().addToCols(new FieldSchema("b", "int", ""));
+      // Also change the location to avoid MetastoreDefaultTransformer validation
+      // that exists in some Hive versions.
+      table.getSd().setLocation(String.format("%s/%s/%s",
+          clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+          table.getDbName(), table.getTableName()));
       try {
         client.alter_table(table.getDbName(), table.getTableName(), table);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table columns may not be altered through Hive"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table columns may not be altered through Hive"));
       }
 
       // Check that adding a column succeeds with the master event property set.
@@ -394,8 +422,9 @@ public class TestKuduMetastorePlugin {
           client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
           fail();
         } catch (TException e) {
-          assertTrue(e.getMessage().contains(
-              "non-Kudu table entry must not contain a table ID property"));
+          assertTrue(e.getMessage(),
+                     e.getMessage().contains(
+                         "non-Kudu table entry must not contain a table ID property"));
         }
 
         // Try to alter the table and set a Kudu storage handler.
@@ -406,8 +435,10 @@ public class TestKuduMetastorePlugin {
           client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
           fail();
         } catch (TException e) {
-          assertTrue(e.getMessage().contains(
-              "non-Kudu table entry must not contain the Kudu storage handler"));
+          assertTrue(
+              e.getMessage(),
+              e.getMessage().contains(
+                  "non-Kudu table entry must not contain the Kudu storage handler"));
         }
 
         // Check that altering the table succeeds.
@@ -491,7 +522,8 @@ public class TestKuduMetastorePlugin {
                          envContext);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table ID does not match the HMS entry"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table ID does not match the HMS entry"));
       }
     } finally {
       // Dropping a Kudu table without context should succeed.
@@ -519,7 +551,8 @@ public class TestKuduMetastorePlugin {
             envContext);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table ID does not match the non-Kudu HMS entry"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table ID does not match the non-Kudu HMS entry"));
       } finally {
         client.dropTable(table.getDbName(), table.getTableName());
       }
@@ -536,7 +569,8 @@ public class TestKuduMetastorePlugin {
             envContext);
         fail();
       } catch (TException e) {
-        assertTrue(e.getMessage().contains("Kudu table ID does not match the non-Kudu HMS entry"));
+        assertTrue(e.getMessage(),
+                   e.getMessage().contains("Kudu table ID does not match the non-Kudu HMS entry"));
       } finally {
         client.dropTable(table.getDbName(), table.getTableName());
       }
