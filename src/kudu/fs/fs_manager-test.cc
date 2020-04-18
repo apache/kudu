@@ -78,7 +78,7 @@ class FsManagerTestBase : public KuduTest {
      : fs_root_(GetTestPath("fs_root")) {
   }
 
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // Initialize File-System Layout

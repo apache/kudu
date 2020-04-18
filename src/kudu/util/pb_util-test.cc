@@ -60,7 +60,7 @@ static const int kUseDefaultVersion = 0; // Use the default container version (d
 
 class TestPBUtil : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     path_ = GetTestPath(kTestFileName);
   }

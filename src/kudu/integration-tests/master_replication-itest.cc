@@ -85,7 +85,7 @@ class MasterReplicationTest : public KuduTest {
     opts_.num_tablet_servers = kNumTabletServerReplicas;
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());

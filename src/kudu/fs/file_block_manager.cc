@@ -238,23 +238,23 @@ class FileWritableBlock : public WritableBlock {
 
   virtual ~FileWritableBlock();
 
-  virtual Status Close() OVERRIDE;
+  virtual Status Close() override;
 
-  virtual Status Abort() OVERRIDE;
+  virtual Status Abort() override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  virtual BlockManager* block_manager() const override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  virtual const BlockId& id() const override;
 
-  virtual Status Append(const Slice& data) OVERRIDE;
+  virtual Status Append(const Slice& data) override;
 
-  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE;
+  virtual Status AppendV(ArrayView<const Slice> data) override;
 
-  virtual Status Finalize() OVERRIDE;
+  virtual Status Finalize() override;
 
-  virtual size_t BytesAppended() const OVERRIDE;
+  virtual size_t BytesAppended() const override;
 
-  virtual State state() const OVERRIDE;
+  virtual State state() const override;
 
   void HandleError(const Status& s) const;
 
@@ -437,19 +437,19 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual ~FileReadableBlock();
 
-  virtual Status Close() OVERRIDE;
+  virtual Status Close() override;
 
-  virtual BlockManager* block_manager() const OVERRIDE;
+  virtual BlockManager* block_manager() const override;
 
-  virtual const BlockId& id() const OVERRIDE;
+  virtual const BlockId& id() const override;
 
-  virtual Status Size(uint64_t* sz) const OVERRIDE;
+  virtual Status Size(uint64_t* sz) const override;
 
-  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
+  virtual Status Read(uint64_t offset, Slice result) const override;
 
-  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const override;
 
-  virtual size_t memory_footprint() const OVERRIDE;
+  virtual size_t memory_footprint() const override;
 
   void HandleError(const Status& s) const;
 

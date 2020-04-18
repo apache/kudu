@@ -97,7 +97,7 @@ class RemoteKsckTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
 
     // Speed up testing, saves about 700ms per TEST_F.
@@ -135,7 +135,7 @@ class RemoteKsckTest : public KuduTest {
     ksck_.reset(new Ksck(cluster, &err_stream_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     if (mini_cluster_) {
       mini_cluster_->Shutdown();
       mini_cluster_.reset();

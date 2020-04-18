@@ -281,7 +281,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
                                  Connection *conn)
       : call_(std::move(call)), conn_(conn) {}
 
-  virtual void NotifyTransferFinished() OVERRIDE {
+  virtual void NotifyTransferFinished() override {
     // TODO: would be better to cancel the transfer while it is still on the queue if we
     // timed out before the transfer started, but there is still a race in the case of
     // a partial send that we have to handle here
@@ -295,7 +295,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
     delete this;
   }
 
-  virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
+  virtual void NotifyTransferAborted(const Status &status) override {
     VLOG(1) << "Transfer of RPC call " << call_->ToString() << " aborted: "
             << status.ToString();
     delete this;
@@ -411,11 +411,11 @@ struct ResponseTransferCallbacks : public TransferCallbacks {
     DCHECK_EQ(call_from_map, call_.get());
   }
 
-  virtual void NotifyTransferFinished() OVERRIDE {
+  virtual void NotifyTransferFinished() override {
     delete this;
   }
 
-  virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
+  virtual void NotifyTransferAborted(const Status &status) override {
     LOG(WARNING) << "Connection torn down before " <<
       call_->ToString() << " could send its response";
     delete this;
@@ -435,12 +435,12 @@ class QueueTransferTask : public ReactorTask {
       conn_(conn)
   {}
 
-  virtual void Run(ReactorThread *thr) OVERRIDE {
+  virtual void Run(ReactorThread *thr) override {
     conn_->QueueOutbound(std::move(transfer_));
     delete this;
   }
 
-  virtual void Abort(const Status &status) OVERRIDE {
+  virtual void Abort(const Status &status) override {
     transfer_->Abort(status);
     delete this;
   }
@@ -696,14 +696,14 @@ class NegotiationCompletedTask : public ReactorTask {
       rpc_error_(std::move(rpc_error)) {
   }
 
-  virtual void Run(ReactorThread *rthread) OVERRIDE {
+  virtual void Run(ReactorThread *rthread) override {
     rthread->CompleteConnectionNegotiation(conn_,
                                            negotiation_status_,
                                            std::move(rpc_error_));
     delete this;
   }
 
-  virtual void Abort(const Status &status) OVERRIDE {
+  virtual void Abort(const Status &status) override {
     DCHECK(conn_->reactor_thread()->reactor()->closing());
     VLOG(1) << "Failed connection negotiation due to shut down reactor thread: "
             << status.ToString();

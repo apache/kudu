@@ -100,7 +100,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
   }
 
@@ -115,7 +115,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
     ASSERT_OK(client_->OpenTable(kTableName, &table_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
     }

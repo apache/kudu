@@ -37,7 +37,7 @@ using consensus::OpId;
 
 class LogIndexTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     index_ = new LogIndex(test_dir_);
   }

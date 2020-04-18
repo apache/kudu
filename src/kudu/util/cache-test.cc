@@ -63,7 +63,7 @@ class CacheTest : public KuduTest,
 
   static const int kCacheSize = 14*1024*1024;
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
 
 #if defined(HAVE_LIB_VMEM)
     if (gflags::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {

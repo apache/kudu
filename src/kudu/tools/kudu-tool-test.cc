@@ -199,7 +199,7 @@ class ToolTest : public KuduTest {
     STLDeleteValues(&ts_map_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     if (cluster_) cluster_->Shutdown();
     if (mini_cluster_) mini_cluster_->Shutdown();
     KuduTest::TearDown();

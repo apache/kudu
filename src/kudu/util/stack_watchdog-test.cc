@@ -47,7 +47,7 @@ namespace kudu {
 
 class StackWatchdogTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     KernelStackWatchdog::GetInstance()->SaveLogsForTests(true);
     ANNOTATE_BENIGN_RACE(&FLAGS_hung_task_check_interval_ms, "");

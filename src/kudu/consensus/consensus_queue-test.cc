@@ -90,7 +90,7 @@ class ConsensusQueueTest : public KuduTest {
         registry_(new log::LogAnchorRegistry) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -126,7 +126,7 @@ class ConsensusQueueTest : public KuduTest {
         committed_opid));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     log_->WaitUntilAllFlushed();
     queue_->Close();
   }

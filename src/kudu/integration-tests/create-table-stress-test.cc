@@ -98,7 +98,7 @@ class CreateTableStressTest : public KuduTest {
     CHECK_OK(b.Build(&schema_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
 
@@ -129,7 +129,7 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_OK(CreateTabletServerMap(master_proxy_, messenger_, &ts_map_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     cluster_->Shutdown();
     STLDeleteValues(&ts_map_);
   }

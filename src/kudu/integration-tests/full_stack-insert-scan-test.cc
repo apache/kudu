@@ -137,7 +137,7 @@ class FullStackInsertScanTest : public KuduTest {
   const int kNumInsertsPerClient;
   const int kNumRows;
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
   }
 

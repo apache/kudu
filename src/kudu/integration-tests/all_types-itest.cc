@@ -526,7 +526,7 @@ class AllTypesItest : public KuduTest {
     ASSERT_OK(VerifyRows(scanner_setup, verifier));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     cluster_->AssertNoCrashes();
     cluster_->Shutdown();
   }

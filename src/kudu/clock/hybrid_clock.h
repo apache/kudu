@@ -42,32 +42,32 @@ class HybridClock : public Clock {
  public:
   HybridClock();
 
-  virtual Status Init() OVERRIDE;
+  virtual Status Init() override;
 
   // Obtains the timestamp corresponding to the current time.
-  virtual Timestamp Now() OVERRIDE;
+  virtual Timestamp Now() override;
 
   // Obtains the timestamp corresponding to latest possible current
   // time.
-  virtual Timestamp NowLatest() OVERRIDE;
+  virtual Timestamp NowLatest() override;
 
   // Obtain a timestamp which is guaranteed to be later than the current time
   // on any machine in the cluster.
   //
   // NOTE: this is not a very tight bound.
-  virtual Status GetGlobalLatest(Timestamp* t) OVERRIDE;
+  virtual Status GetGlobalLatest(Timestamp* t) override;
 
   // Updates the clock with a timestamp originating on another machine.
-  virtual Status Update(const Timestamp& to_update) OVERRIDE;
+  virtual Status Update(const Timestamp& to_update) override;
 
-  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) OVERRIDE;
+  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) override;
 
   // HybridClock supports all external consistency modes.
-  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;
+  virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) override;
 
-  virtual bool HasPhysicalComponent() const OVERRIDE;
+  virtual bool HasPhysicalComponent() const override;
 
-  MonoDelta GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const OVERRIDE;
+  MonoDelta GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const override;
 
   // Blocks the caller thread until the true time is after 'then'.
   // In other words, waits until the HybridClock::Now() on _all_ nodes
@@ -100,7 +100,7 @@ class HybridClock : public Clock {
   // we'll have to wait, in contrast to most Wait() methods which are waiting
   // on some external condition to become true.
   virtual Status WaitUntilAfter(const Timestamp& then,
-                                const MonoTime& deadline) OVERRIDE;
+                                const MonoTime& deadline) override;
 
   // Blocks the caller thread until the local time is after 'then'.
   // This is in contrast to the above method, which waits until the time
@@ -110,7 +110,7 @@ class HybridClock : public Clock {
   // timestamp. NOTE: unlike most "wait" methods, this may return _immediately_
   // with a timeout. See WaitUntilAfter() for details.
   virtual Status WaitUntilAfterLocally(const Timestamp& then,
-                                       const MonoTime& deadline) OVERRIDE;
+                                       const MonoTime& deadline) override;
 
   // Return true if the given time has passed (i.e any future call
   // to Now() would return a higher value than t).
@@ -118,7 +118,7 @@ class HybridClock : public Clock {
   // NOTE: this only refers to the _local_ clock, and is not a guarantee
   // that other nodes' clocks have definitely passed this timestamp.
   // This is in contrast to WaitUntilAfter() above.
-  virtual bool IsAfter(Timestamp t) OVERRIDE;
+  virtual bool IsAfter(Timestamp t) override;
 
   // Obtains the timestamp corresponding to the current time and the associated
   // error in micros. This may fail if the clock is unsynchronized or synchronized
@@ -126,7 +126,7 @@ class HybridClock : public Clock {
   // LOG(FATAL)'s in that case.
   void NowWithError(Timestamp* timestamp, uint64_t* max_error_usec);
 
-  virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
+  virtual std::string Stringify(Timestamp timestamp) override;
 
   // Static encoding/decoding methods for timestamps. Public mostly
   // for testing/debugging purposes.

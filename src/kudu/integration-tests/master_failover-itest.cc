@@ -100,12 +100,12 @@ class MasterFailoverTest : public KuduTest,
     opts_.extra_tserver_flags.emplace_back("--heartbeat_interval_ms=500");
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     ASSERT_NO_FATAL_FAILURE(RestartCluster());
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
     }

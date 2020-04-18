@@ -489,26 +489,26 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual Handle* Insert(PendingHandle* handle,
-                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+                         Cache::EvictionCallback* eviction_callback) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
-  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
+  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) override {
     const uint32_t hash = HashSlice(key);
     return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
   }
-  virtual void Release(Handle* handle) OVERRIDE {
+  virtual void Release(Handle* handle) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shards_[Shard(h->hash)]->Release(handle);
   }
-  virtual void Erase(const Slice& key) OVERRIDE {
+  virtual void Erase(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual Slice Value(Handle* handle) OVERRIDE {
+  virtual Slice Value(Handle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle)->value();
   }
-  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
+  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) override {
     // TODO(KUDU-2165): reuse of the Cache singleton across multiple MiniCluster servers
     // causes TSAN errors. So, we'll ensure that metrics only get attached once, from
     // whichever server starts first. This has the downside that, in test builds, we won't
@@ -524,7 +524,7 @@ class ShardedLRUCache : public Cache {
     }
   }
 
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) override {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
@@ -543,12 +543,12 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<PendingHandle*>(handle);
   }
 
-  virtual void Free(PendingHandle* h) OVERRIDE {
+  virtual void Free(PendingHandle* h) override {
     uint8_t* data = reinterpret_cast<uint8_t*>(h);
     delete [] data;
   }
 
-  virtual uint8_t* MutableValue(PendingHandle* h) OVERRIDE {
+  virtual uint8_t* MutableValue(PendingHandle* h) override {
     return reinterpret_cast<LRUHandle*>(h)->mutable_val_ptr();
   }
 

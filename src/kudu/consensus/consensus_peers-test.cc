@@ -89,7 +89,7 @@ class ConsensusPeersTest : public KuduTest {
     raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -122,7 +122,7 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(bld.Build(&messenger_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     ASSERT_OK(log_->WaitUntilAllFlushed());
     messenger_->Shutdown();
     if (raft_pool_) {

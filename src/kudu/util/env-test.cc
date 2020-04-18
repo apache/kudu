@@ -92,7 +92,7 @@ static const uint64_t kTwoMb = 2 * kOneMb;
 
 class TestEnv : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     CheckFallocateSupport();
   }

@@ -495,36 +495,36 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual Handle* Insert(PendingHandle* handle,
-                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+                         Cache::EvictionCallback* eviction_callback) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
-  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
+  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) override {
     const uint32_t hash = HashSlice(key);
     return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
   }
-  virtual void Release(Handle* handle) OVERRIDE {
+  virtual void Release(Handle* handle) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shards_[Shard(h->hash)]->Release(handle);
   }
-  virtual void Erase(const Slice& key) OVERRIDE {
+  virtual void Erase(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual Slice Value(Handle* handle) OVERRIDE {
+  virtual Slice Value(Handle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle)->value();
   }
-  virtual uint8_t* MutableValue(PendingHandle* handle) OVERRIDE {
+  virtual uint8_t* MutableValue(PendingHandle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle)->val_ptr();
   }
 
-  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
+  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) override {
     metrics_.reset(new CacheMetrics(entity));
     for (NvmLRUCache* cache : shards_) {
       cache->SetMetrics(metrics_.get());
     }
   }
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) override {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
@@ -552,7 +552,7 @@ class ShardedLRUCache : public Cache {
     return nullptr;
   }
 
-  virtual void Free(PendingHandle* ph) OVERRIDE {
+  virtual void Free(PendingHandle* ph) override {
     vmem_free(vmp_, ph);
   }
 };

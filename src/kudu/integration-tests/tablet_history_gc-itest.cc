@@ -458,7 +458,7 @@ class ReupdateHooks : public Tablet::FlushCompactCommonHooks {
         client_schema_(schema) {
   }
 
-  Status PostWriteSnapshot() OVERRIDE {
+  Status PostWriteSnapshot() override {
     tablet::LocalTabletWriter writer(tablet_, &client_schema_);
     for (const MaterializedTestRow& update : updates_) {
       KuduPartialRow row(&client_schema_);

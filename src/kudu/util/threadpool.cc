@@ -56,7 +56,7 @@ class FunctionRunnable : public Runnable {
  public:
   explicit FunctionRunnable(boost::function<void()> func) : func_(std::move(func)) {}
 
-  void Run() OVERRIDE {
+  void Run() override {
     func_();
   }
 
@@ -72,7 +72,7 @@ class ClosureRunnable : public Runnable {
  public:
   explicit ClosureRunnable(Closure cl) : cl_(std::move(cl)) {}
 
-  void Run() OVERRIDE {
+  void Run() override {
     cl_.Run();
   }
 

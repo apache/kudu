@@ -58,7 +58,7 @@ class HybridClockTest : public KuduTest {
       : clock_(new HybridClock) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(clock_->Init());
   }

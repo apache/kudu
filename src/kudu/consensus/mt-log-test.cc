@@ -119,7 +119,7 @@ class MultiThreadedLogTest : public LogTestBase {
       : random_(SeedRandom()) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     LogTestBase::SetUp();
   }
 

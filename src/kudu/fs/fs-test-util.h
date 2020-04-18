@@ -54,27 +54,27 @@ class CountingReadableBlock : public ReadableBlock {
       bytes_read_(bytes_read) {
   }
 
-  virtual const BlockId& id() const OVERRIDE {
+  virtual const BlockId& id() const override {
     return block_->id();
   }
 
-  virtual Status Close() OVERRIDE {
+  virtual Status Close() override {
     return block_->Close();
   }
 
-  virtual BlockManager* block_manager() const OVERRIDE {
+  virtual BlockManager* block_manager() const override {
     return block_->block_manager();
   }
 
-  virtual Status Size(uint64_t* sz) const OVERRIDE {
+  virtual Status Size(uint64_t* sz) const override {
     return block_->Size(sz);
   }
 
-  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
+  virtual Status Read(uint64_t offset, Slice result) const override {
     return ReadV(offset, ArrayView<Slice>(&result, 1));
   }
 
-  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE {
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const override {
     RETURN_NOT_OK(block_->ReadV(offset, results));
     // Calculate the read amount of data
     size_t length = std::accumulate(results.begin(), results.end(), static_cast<size_t>(0),
@@ -85,7 +85,7 @@ class CountingReadableBlock : public ReadableBlock {
     return Status::OK();
   }
 
-  virtual size_t memory_footprint() const OVERRIDE {
+  virtual size_t memory_footprint() const override {
     return block_->memory_footprint();
   }
 

@@ -55,7 +55,7 @@ class ConsensusMetadataTest : public KuduTest {
     : fs_manager_(env_, GetTestPath("fs_root")) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     ASSERT_OK(fs_manager_.CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_.Open());

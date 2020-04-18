@@ -53,7 +53,7 @@ class KuduTest : public ::testing::Test {
 
   virtual ~KuduTest();
 
-  virtual void SetUp() OVERRIDE;
+  virtual void SetUp() override;
 
   // Tests assume that they run with no outside-provided kerberos credentials, and if the
   // user happened to have some credentials available they might fail due to being already

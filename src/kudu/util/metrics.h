@@ -797,7 +797,7 @@ class GaugePrototype : public MetricPrototype {
     return entity->FindOrCreateFunctionGauge(this, function);
   }
 
-  virtual MetricType::Type type() const OVERRIDE {
+  virtual MetricType::Type type() const override {
     if (args_.flags_ & EXPOSE_AS_COUNTER) {
       return MetricType::kCounter;
     } else {
@@ -817,7 +817,7 @@ class Gauge : public Metric {
   }
   virtual ~Gauge() {}
   virtual Status WriteAsJson(JsonWriter* w,
-                             const MetricJsonOptions& opts) const OVERRIDE;
+                             const MetricJsonOptions& opts) const override;
 
  protected:
   virtual void WriteValue(JsonWriter* writer) const = 0;
@@ -837,7 +837,7 @@ class StringGauge : public Gauge {
   }
 
  protected:
-  virtual void WriteValue(JsonWriter* writer) const OVERRIDE;
+  virtual void WriteValue(JsonWriter* writer) const override;
  private:
   std::string value_;
   mutable simple_spinlock lock_;  // Guards value_
@@ -876,7 +876,7 @@ class AtomicGauge : public Gauge {
     return false;
   }
  protected:
-  virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
+  virtual void WriteValue(JsonWriter* writer) const override {
     writer->Value(value());
   }
   AtomicInt<int64_t> value_;
@@ -950,7 +950,7 @@ class FunctionGauge : public Gauge {
     return function_.Run();
   }
 
-  virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
+  virtual void WriteValue(JsonWriter* writer) const override {
     writer->Value(value());
   }
 
@@ -1021,7 +1021,7 @@ class CounterPrototype : public MetricPrototype {
   }
   scoped_refptr<Counter> Instantiate(const scoped_refptr<MetricEntity>& entity);
 
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
+  virtual MetricType::Type type() const override { return MetricType::kCounter; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CounterPrototype);
@@ -1039,7 +1039,7 @@ class Counter : public Metric {
   void Increment();
   void IncrementBy(int64_t amount);
   virtual Status WriteAsJson(JsonWriter* w,
-                             const MetricJsonOptions& opts) const OVERRIDE;
+                             const MetricJsonOptions& opts) const override;
 
   virtual bool IsUntouched() const override {
     return value() == 0;
@@ -1064,7 +1064,7 @@ class HistogramPrototype : public MetricPrototype {
 
   uint64_t max_trackable_value() const { return max_trackable_value_; }
   int num_sig_digits() const { return num_sig_digits_; }
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
+  virtual MetricType::Type type() const override { return MetricType::kHistogram; }
 
  private:
   const uint64_t max_trackable_value_;
@@ -1087,7 +1087,7 @@ class Histogram : public Metric {
   uint64_t TotalCount() const;
 
   virtual Status WriteAsJson(JsonWriter* w,
-                             const MetricJsonOptions& opts) const OVERRIDE;
+                             const MetricJsonOptions& opts) const override;
 
   // Returns a snapshot of this histogram including the bucketed values and counts.
   Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,

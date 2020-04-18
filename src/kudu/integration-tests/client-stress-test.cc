@@ -70,7 +70,7 @@ using cluster::ExternalMiniClusterOptions;
 
 class ClientStressTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts = default_opts();
@@ -82,7 +82,7 @@ class ClientStressTest : public KuduTest {
     ASSERT_OK(cluster_->Start());
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     alarm(0);
     cluster_->Shutdown();
     KuduTest::TearDown();
@@ -179,7 +179,7 @@ TEST_F(ClientStressTest, TestStartScans) {
 // Override the base test to run in multi-master mode.
 class ClientStressTest_MultiMaster : public ClientStressTest {
  protected:
-  virtual bool multi_master() const OVERRIDE {
+  virtual bool multi_master() const override {
     return true;
   }
 };
@@ -228,7 +228,7 @@ TEST_F(ClientStressTest_MultiMaster, TestLeaderResolutionTimeout) {
 // Override the base test to start a cluster with a low memory limit.
 class ClientStressTest_LowMemory : public ClientStressTest {
  protected:
-  virtual ExternalMiniClusterOptions default_opts() const OVERRIDE {
+  virtual ExternalMiniClusterOptions default_opts() const override {
     // There's nothing scientific about this number; it must be low enough to
     // trigger memory pressure request rejection yet high enough for the
     // servers to make forward progress.

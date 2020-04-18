@@ -78,7 +78,7 @@ class LogCacheTest : public KuduTest {
       metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "LogCacheTest")) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
@@ -96,7 +96,7 @@ class LogCacheTest : public KuduTest {
     ASSERT_OK(clock_->Init());
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     log_->WaitUntilAllFlushed();
   }
 

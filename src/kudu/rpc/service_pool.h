@@ -76,7 +76,7 @@ class ServicePool : public RpcService {
 
   RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
 
-  virtual Status QueueInboundCall(gscoped_ptr<InboundCall> call) OVERRIDE;
+  virtual Status QueueInboundCall(gscoped_ptr<InboundCall> call) override;
 
   const Counter* RpcsTimedOutInQueueMetricForTests() const {
     return rpcs_timed_out_in_queue_.get();

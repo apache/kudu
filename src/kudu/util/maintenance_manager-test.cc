@@ -110,7 +110,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   virtual ~TestMaintenanceOp() {}
 
-  virtual bool Prepare() OVERRIDE {
+  virtual bool Prepare() override {
     std::lock_guard<Mutex> guard(lock_);
     if (remaining_runs_ == 0) {
       return false;
@@ -121,7 +121,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     return true;
   }
 
-  virtual void Perform() OVERRIDE {
+  virtual void Perform() override {
     {
       std::lock_guard<Mutex> guard(lock_);
       DLOG(INFO) << "Performing op " << name();
@@ -135,7 +135,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     SleepFor(sleep_time_);
   }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+  virtual void UpdateStats(MaintenanceOpStats* stats) override {
     std::lock_guard<Mutex> guard(lock_);
     stats->set_runnable(remaining_runs_ > 0);
     stats->set_ram_anchored(ram_anchored_);
@@ -168,11 +168,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     perf_improvement_ = perf_improvement;
   }
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
+  virtual scoped_refptr<Histogram> DurationHistogram() const override {
     return maintenance_op_duration_;
   }
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override {
     return maintenance_ops_running_;
   }
 

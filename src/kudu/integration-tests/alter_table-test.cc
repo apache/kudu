@@ -295,7 +295,7 @@ class AlterTableTest : public KuduTest {
 // Subclass which creates three servers and a replicated cluster.
 class ReplicatedAlterTableTest : public AlterTableTest {
  protected:
-  virtual int num_replicas() const OVERRIDE { return 3; }
+  virtual int num_replicas() const override { return 3; }
 };
 
 const char *AlterTableTest::kTableName = "fake-table";
