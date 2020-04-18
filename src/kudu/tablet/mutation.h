@@ -101,8 +101,8 @@ class Mutation {
   friend class MSRow;
   friend class MemRowSet;
 
-  // The transaction ID which made this mutation. If this transaction is not
-  // committed in the snapshot of the reader, this mutation should be ignored.
+  // The op timestamp which made this mutation. If this op is not committed in
+  // the snapshot of the reader, this mutation should be ignored.
   Timestamp timestamp_;
 
   // Link to the next mutation on this row

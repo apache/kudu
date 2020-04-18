@@ -133,7 +133,7 @@ TAG_FLAG(scanner_allow_snapshot_scans_with_logical_timestamps, unsafe);
 
 DEFINE_int32(scanner_max_wait_ms, 1000,
              "The maximum amount of time (in milliseconds) we'll hang a scanner thread waiting for "
-             "safe time to advance or transactions to commit, even if its deadline allows waiting "
+             "safe time to advance or ops to commit, even if its deadline allows waiting "
              "longer.");
 TAG_FLAG(scanner_max_wait_ms, advanced);
 
@@ -201,18 +201,18 @@ using kudu::rpc::RpcSidecar;
 using kudu::security::TokenVerifier;
 using kudu::security::TokenPB;
 using kudu::server::ServerBase;
-using kudu::tablet::AlterSchemaTransactionState;
+using kudu::tablet::AlterSchemaOpState;
 using kudu::tablet::MvccSnapshot;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
-using kudu::tablet::TransactionCompletionCallback;
+using kudu::tablet::OpCompletionCallback;
 using kudu::tablet::WriteAuthorizationContext;
 using kudu::tablet::WritePrivileges;
 using kudu::tablet::WritePrivilegeType;
-using kudu::tablet::WriteTransactionState;
+using kudu::tablet::WriteOpState;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -647,19 +647,19 @@ void HandleErrorResponse(const ReqType* req, RespType* resp, RpcContext* context
   }
 }
 
-// A transaction completion callback that responds to the client when transactions
-// complete and sets the client error if there is one to set.
+// A op completion callback that responds to the client when ops complete and
+// sets the client error if there is one to set.
 template<class Response>
-class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
+class RpcOpCompletionCallback : public OpCompletionCallback {
  public:
-  RpcTransactionCompletionCallback(rpc::RpcContext* context,
-                                   Response* response)
+  RpcOpCompletionCallback(rpc::RpcContext* context,
+                          Response* response)
  : context_(context),
    response_(response) {}
 
-  virtual void TransactionCompleted() OVERRIDE {
+  virtual void OpCompleted() OVERRIDE {
     if (!status_.ok()) {
-      LOG(WARNING) << Substitute("failed transaction from $0: $1",
+      LOG(WARNING) << Substitute("failed op from $0: $1",
                                  context_->requestor_string(), status_.ToString());
       SetupErrorAndRespond(get_error(), status_, code_, context_);
     } else {
@@ -675,7 +675,7 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 
   rpc::RpcContext* context_;
   Response* response_;
-  tablet::TransactionState* state_;
+  tablet::OpState* state_;
 };
 
 // Generic interface to handle scan results.
@@ -1150,15 +1150,14 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     return;
   }
 
-  unique_ptr<AlterSchemaTransactionState> tx_state(
-    new AlterSchemaTransactionState(replica.get(), req, resp));
+  unique_ptr<AlterSchemaOpState> op_state(
+    new AlterSchemaOpState(replica.get(), req, resp));
 
-  tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context,
-                                                                  resp)));
+  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+      new RpcOpCompletionCallback<AlterSchemaResponsePB>(context, resp)));
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = replica->SubmitAlterSchema(std::move(tx_state));
+  Status s = replica->SubmitAlterSchema(std::move(op_state));
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -1334,7 +1333,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       // If we know there are no write-related privileges outright, we can
       // short-circuit further checking and reject the request immediately.
       // Otherwise, we'll defer the checking to the prepare phase of the
-      // transaction after decoding the operations.
+      // op after decoding the operations.
       LOG(WARNING) << Substitute("rejecting Write request from $0: no write privileges",
                                  context->requestor_string());
       context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
@@ -1388,7 +1387,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(
+  unique_ptr<WriteOpState> op_state(new WriteOpState(
       replica.get(),
       req,
       context->AreResultsTracked() ? context->request_id() : nullptr,
@@ -1408,12 +1407,11 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<WriteResponsePB>(context,
-                                                            resp)));
+  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+      new RpcOpCompletionCallback<WriteResponsePB>(context, resp)));
 
   // Submit the write. The RPC will be responded to asynchronously.
-  s = replica->SubmitWrite(std::move(tx_state));
+  s = replica->SubmitWrite(std::move(op_state));
 
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {

@@ -204,7 +204,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
 
       if (tablet_->metrics() != nullptr) {
         TRACE("Starting instrumentation");
-        txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
+        op_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
 
         METRIC_on_disk_size.InstantiateFunctionGauge(
             tablet_->GetMetricEntity(), [this]() { return this->OnDiskSize(); })
@@ -220,7 +220,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
           METRIC_live_row_count.InstantiateInvalid(tablet_->GetMetricEntity(), 0);
         }
       }
-      txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
+      op_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
       TRACE("Starting consensus");
       VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
@@ -231,7 +231,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     }
 
     // We cannot hold 'lock_' while we call RaftConsensus::Start() because it
-    // may invoke TabletReplica::StartFollowerTransaction() during startup,
+    // may invoke TabletReplica::StartFollowerOp() during startup,
     // causing a self-deadlock. We take a ref to members protected by 'lock_'
     // before unlocking.
     RETURN_NOT_OK(consensus_->Start(
@@ -290,8 +290,8 @@ void TabletReplica::Stop() {
 
   // TODO(KUDU-183): Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
-      Substitute("TabletReplica: tablet $0: Waiting for Transactions to complete", tablet_id())) {
-    txn_tracker_.WaitForAllToFinish();
+      Substitute("TabletReplica: tablet $0: Waiting for Ops to complete", tablet_id())) {
+    op_tracker_.WaitForAllToFinish();
   }
 
   if (prepare_pool_token_) {
@@ -421,25 +421,23 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
   return Status::OK();
 }
 
-Status TabletReplica::SubmitWrite(unique_ptr<WriteTransactionState> state) {
+Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> state) {
   RETURN_NOT_OK(CheckRunning());
 
   state->SetResultTracker(result_tracker_);
-  unique_ptr<WriteTransaction> transaction(new WriteTransaction(std::move(state),
-                                                                 consensus::LEADER));
-  scoped_refptr<TransactionDriver> driver;
-  RETURN_NOT_OK(NewLeaderTransactionDriver(std::move(transaction),
-                                           &driver));
+  unique_ptr<WriteOp> op(new WriteOp(std::move(state), consensus::LEADER));
+  scoped_refptr<OpDriver> driver;
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
   return driver->ExecuteAsync();
 }
 
-Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> state) {
+Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaOpState> state) {
   RETURN_NOT_OK(CheckRunning());
 
-  unique_ptr<AlterSchemaTransaction> transaction(
-      new AlterSchemaTransaction(std::move(state), consensus::LEADER));
-  scoped_refptr<TransactionDriver> driver;
-  RETURN_NOT_OK(NewLeaderTransactionDriver(std::move(transaction), &driver));
+  unique_ptr<AlterSchemaOp> op(
+      new AlterSchemaOp(std::move(state), consensus::LEADER));
+  scoped_refptr<OpDriver> driver;
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
   return driver->ExecuteAsync();
 }
 
@@ -523,27 +521,27 @@ string TabletReplica::HumanReadableState() const {
   return TabletStatePB_Name(state_);
 }
 
-void TabletReplica::GetInFlightTransactions(Transaction::TraceType trace_type,
-                                            vector<consensus::TransactionStatusPB>* out) const {
-  vector<scoped_refptr<TransactionDriver> > pending_transactions;
-  txn_tracker_.GetPendingTransactions(&pending_transactions);
-  for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
+void TabletReplica::GetInFlightOps(Op::TraceType trace_type,
+                                            vector<consensus::OpStatusPB>* out) const {
+  vector<scoped_refptr<OpDriver> > pending_ops;
+  op_tracker_.GetPendingOps(&pending_ops);
+  for (const scoped_refptr<OpDriver>& driver : pending_ops) {
     if (driver->state() != nullptr) {
-      consensus::TransactionStatusPB status_pb;
+      consensus::OpStatusPB status_pb;
       status_pb.mutable_op_id()->CopyFrom(driver->GetOpId());
-      switch (driver->tx_type()) {
-        case Transaction::WRITE_TXN:
-          status_pb.set_tx_type(consensus::WRITE_OP);
+      switch (driver->op_type()) {
+        case Op::WRITE_OP:
+          status_pb.set_op_type(consensus::WRITE_OP);
           break;
-        case Transaction::ALTER_SCHEMA_TXN:
-          status_pb.set_tx_type(consensus::ALTER_SCHEMA_OP);
+        case Op::ALTER_SCHEMA_OP:
+          status_pb.set_op_type(consensus::ALTER_SCHEMA_OP);
           break;
       }
       status_pb.set_description(driver->ToString());
       int64_t running_for_micros =
           (MonoTime::Now() - driver->start_time()).ToMicroseconds();
       status_pb.set_running_for_micros(running_for_micros);
-      if (trace_type == Transaction::TRACE_TXNS) {
+      if (trace_type == Op::TRACE_OPS) {
         status_pb.set_trace_buffer(driver->trace()->DumpToString());
       }
       out->push_back(status_pb);
@@ -576,18 +574,18 @@ log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
   VLOG_WITH_PREFIX(4) << "Log GC: With Anchor retention: "
                       << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
 
-  // Next, interrogate the TransactionTracker.
-  vector<scoped_refptr<TransactionDriver> > pending_transactions;
-  txn_tracker_.GetPendingTransactions(&pending_transactions);
-  for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
-    OpId tx_op_id = driver->GetOpId();
-    // A transaction which doesn't have an opid hasn't been submitted for replication yet and
+  // Next, interrogate the OpTracker.
+  vector<scoped_refptr<OpDriver> > pending_ops;
+  op_tracker_.GetPendingOps(&pending_ops);
+  for (const scoped_refptr<OpDriver>& driver : pending_ops) {
+    OpId op_id = driver->GetOpId();
+    // A op which doesn't have an opid hasn't been submitted for replication yet and
     // thus has no need to anchor the log.
-    if (tx_op_id.IsInitialized()) {
-      ret.for_durability = std::min(ret.for_durability, tx_op_id.index());
+    if (op_id.IsInitialized()) {
+      ret.for_durability = std::min(ret.for_durability, op_id.index());
     }
   }
-  VLOG_WITH_PREFIX(4) << "Log GC: With Transaction retention: "
+  VLOG_WITH_PREFIX(4) << "Log GC: With Op retention: "
                       << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
 
   return ret;
@@ -605,7 +603,7 @@ Status TabletReplica::GetGCableDataSize(int64_t* retention_size) const {
   return Status::OK();
 }
 
-Status TabletReplica::StartFollowerTransaction(const scoped_refptr<ConsensusRound>& round) {
+Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round) {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     if (state_ != RUNNING && state_ != BOOTSTRAPPING) {
@@ -615,31 +613,31 @@ Status TabletReplica::StartFollowerTransaction(const scoped_refptr<ConsensusRoun
 
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
   DCHECK(replicate_msg->has_timestamp());
-  unique_ptr<Transaction> transaction;
+  unique_ptr<Op> op;
   switch (replicate_msg->op_type()) {
     case WRITE_OP:
     {
       DCHECK(replicate_msg->has_write_request()) << "WRITE_OP replica"
-          " transaction must receive a WriteRequestPB";
-      unique_ptr<WriteTransactionState> tx_state(
-          new WriteTransactionState(
+          " op must receive a WriteRequestPB";
+      unique_ptr<WriteOpState> op_state(
+          new WriteOpState(
               this,
               &replicate_msg->write_request(),
               replicate_msg->has_request_id() ? &replicate_msg->request_id() : nullptr));
-      tx_state->SetResultTracker(result_tracker_);
+      op_state->SetResultTracker(result_tracker_);
 
-      transaction.reset(new WriteTransaction(std::move(tx_state), consensus::REPLICA));
+      op.reset(new WriteOp(std::move(op_state), consensus::REPLICA));
       break;
     }
     case ALTER_SCHEMA_OP:
     {
       DCHECK(replicate_msg->has_alter_schema_request()) << "ALTER_SCHEMA_OP replica"
-          " transaction must receive an AlterSchemaRequestPB";
-      unique_ptr<AlterSchemaTransactionState> tx_state(
-          new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(),
-                                          nullptr));
-      transaction.reset(
-          new AlterSchemaTransaction(std::move(tx_state), consensus::REPLICA));
+          " op must receive an AlterSchemaRequestPB";
+      unique_ptr<AlterSchemaOpState> op_state(
+          new AlterSchemaOpState(this, &replicate_msg->alter_schema_request(),
+                                 nullptr));
+      op.reset(
+          new AlterSchemaOp(std::move(op_state), consensus::REPLICA));
       break;
     }
     default:
@@ -647,11 +645,11 @@ Status TabletReplica::StartFollowerTransaction(const scoped_refptr<ConsensusRoun
   }
 
   // TODO(todd) Look at wiring the stuff below on the driver
-  TransactionState* state = transaction->state();
+  OpState* state = op->state();
   state->set_consensus_round(round);
 
-  scoped_refptr<TransactionDriver> driver;
-  RETURN_NOT_OK(NewReplicaTransactionDriver(std::move(transaction), &driver));
+  scoped_refptr<OpDriver> driver;
+  RETURN_NOT_OK(NewReplicaOpDriver(std::move(op), &driver));
 
   // A raw pointer is required to avoid a refcount cycle.
   auto* driver_raw = driver.get();
@@ -669,14 +667,14 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
   // The timestamp of a Raft no-op used to assert term leadership is guaranteed
   // to be lower than the timestamps of writes in the same terms and those
   // thereafter. As such, we are able to bump the MVCC safe time with the
-  // timestamps of such no-ops, as further transaction timestamps are
+  // timestamps of such no-ops, as further op timestamps are
   // guaranteed to be higher than them.
   //
   // It is important for MVCC safe time updates to be serialized with respect
-  // to transactions. To ensure that we only advance the safe time with the
-  // no-op of term N after all transactions of term N-1 have been prepared, we
+  // to ops. To ensure that we only advance the safe time with the
+  // no-op of term N after all ops of term N-1 have been prepared, we
   // run the adjustment function on the prepare thread, which is the same
-  // mechanism we use to serialize transactions.
+  // mechanism we use to serialize ops.
   //
   // If the 'timestamp_in_opid_order' flag is unset, the no-op is assumed to be
   // the Raft leadership no-op from a version of Kudu that only supported creating
@@ -693,38 +691,38 @@ void TabletReplica::FinishConsensusOnlyRound(ConsensusRound* round) {
     CHECK_OK(prepare_pool_token_->Submit([this, ts] {
       std::lock_guard<simple_spinlock> l(lock_);
       if (state_ == RUNNING || state_ == BOOTSTRAPPING) {
-        tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(Timestamp(ts));
+        tablet_->mvcc_manager()->AdjustNewOpLowerBound(Timestamp(ts));
       }
     }));
   }
 }
 
-Status TabletReplica::NewLeaderTransactionDriver(unique_ptr<Transaction> transaction,
-                                                 scoped_refptr<TransactionDriver>* driver) {
-  scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
-    &txn_tracker_,
+Status TabletReplica::NewLeaderOpDriver(unique_ptr<Op> op,
+                                        scoped_refptr<OpDriver>* driver) {
+  scoped_refptr<OpDriver> op_driver = new OpDriver(
+    &op_tracker_,
     consensus_.get(),
     log_.get(),
     prepare_pool_token_.get(),
     apply_pool_,
-    &txn_order_verifier_);
-  RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::LEADER));
-  *driver = std::move(tx_driver);
+    &op_order_verifier_);
+  RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::LEADER));
+  *driver = std::move(op_driver);
 
   return Status::OK();
 }
 
-Status TabletReplica::NewReplicaTransactionDriver(unique_ptr<Transaction> transaction,
-                                                  scoped_refptr<TransactionDriver>* driver) {
-  scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
-    &txn_tracker_,
+Status TabletReplica::NewReplicaOpDriver(unique_ptr<Op> op,
+                                                  scoped_refptr<OpDriver>* driver) {
+  scoped_refptr<OpDriver> op_driver = new OpDriver(
+    &op_tracker_,
     consensus_.get(),
     log_.get(),
     prepare_pool_token_.get(),
     apply_pool_,
-    &txn_order_verifier_);
-  RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::REPLICA));
-  *driver = std::move(tx_driver);
+    &op_order_verifier_);
+  RETURN_NOT_OK(op_driver->Init(std::move(op), consensus::REPLICA));
+  *driver = std::move(op_driver);
 
   return Status::OK();
 }
@@ -843,7 +841,7 @@ void TabletReplica::UpdateTabletStats(vector<string>* dirty_tablets) {
   }
 
   // We cannot hold 'lock_' while calling RaftConsensus::role() because
-  // it may invoke TabletReplica::StartFollowerTransaction() and lead to
+  // it may invoke TabletReplica::StartFollowerOp() and lead to
   // a deadlock.
   RaftPeerPB::Role role = consensus_->role();
 
@@ -918,9 +916,9 @@ Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
   // This ensures that the above-mentioned commit messages are not just enqueued
   // to the log, but also on disk.
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
-      <<  ": Waiting for in-flight transactions to commit.";
+      <<  ": Waiting for in-flight ops to commit.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
-    RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingTransactionsToCommit());
+    RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingOpsToCommit());
   }
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       << ": Waiting for the log queue to be flushed.";

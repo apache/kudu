@@ -185,10 +185,10 @@ class TestRowSet : public KuduRowSetTest {
     RowSetKeyProbe probe(rb.row());
 
     ProbeStats stats;
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
-    Status s = rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, nullptr, &stats, result);
-    tx.Commit();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    Status s = rs->MutateRow(op.timestamp(), probe, mutation, op_id_, nullptr, &stats, result);
+    op.Commit();
     return s;
   }
 

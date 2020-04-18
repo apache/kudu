@@ -54,10 +54,10 @@ message OperationResultPB {
   repeated MemStoreTargetPB mutated_stores = 3;
 }
 
-// The final result of a transaction, including the result of each individual
+// The final result of an op, including the result of each individual
 // operation.
 message TxResultPB {
-  // all the operations in this transaction
+  // all the operations in this op
   repeated OperationResultPB ops = 1;
 }
 

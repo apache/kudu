@@ -51,12 +51,12 @@ class Message;
 namespace kudu {
 namespace tablet {
 class TabletReplica;
-class TransactionCompletionCallback;
-class TransactionState;
+class OpCompletionCallback;
+class OpState;
 
-// All metrics associated with a Transaction.
-struct TransactionMetrics {
-  TransactionMetrics();
+// All metrics associated with a Op.
+struct OpMetrics {
+  OpMetrics();
   void Reset();
   int successful_inserts;
   int insert_ignore_errors;
@@ -66,46 +66,46 @@ struct TransactionMetrics {
   uint64_t commit_wait_duration_usec;
 };
 
-// Base class for transactions.
+// Base class for ops.
 // There are different implementations for different types (Write, AlterSchema, etc.).
-// TransactionDriver implementations use Transactions along with Consensus to execute
+// OpDriver implementations use Ops along with Consensus to execute
 // and replicate operations in a consensus configuration.
-class Transaction {
+class Op {
  public:
 
-  enum TransactionType {
-    WRITE_TXN,
-    ALTER_SCHEMA_TXN,
+  enum OpType {
+    WRITE_OP,
+    ALTER_SCHEMA_OP,
   };
 
   enum TraceType {
-    NO_TRACE_TXNS = 0,
-    TRACE_TXNS = 1
+    NO_TRACE_OPS = 0,
+    TRACE_OPS = 1
   };
 
-  enum TransactionResult {
+  enum OpResult {
     COMMITTED,
     ABORTED
   };
 
-  Transaction(consensus::DriverType type, TransactionType tx_type);
+  Op(consensus::DriverType type, OpType op_type);
 
-  // Returns the TransactionState for this transaction.
-  virtual TransactionState* state() = 0;
-  virtual const TransactionState* state() const = 0;
+  // Returns the OpState for this op.
+  virtual OpState* state() = 0;
+  virtual const OpState* state() const = 0;
 
-  // Returns whether this transaction is being executed on the leader or on a
+  // Returns whether this op is being executed on the leader or on a
   // replica.
   consensus::DriverType type() const { return type_; }
 
-  // Returns this transaction's type.
-  TransactionType tx_type() const { return tx_type_; }
+  // Returns this op's type.
+  OpType op_type() const { return op_type_; }
 
-  // Builds the ReplicateMsg for this transaction.
+  // Builds the ReplicateMsg for this op.
   virtual void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) = 0;
 
-  // Executes the prepare phase of this transaction, the actual actions
-  // of this phase depend on the transaction type, but usually are limited
+  // Executes the prepare phase of this op, the actual actions
+  // of this phase depend on the op type, but usually are limited
   // to what can be done without actually changing data structures and without
   // side-effects.
   virtual Status Prepare() = 0;
@@ -113,50 +113,50 @@ class Transaction {
   // Aborts the prepare phase.
   virtual void AbortPrepare() {}
 
-  // Actually starts a transaction, assigning a timestamp to the transaction.
+  // Actually starts an op, assigning a timestamp to the op.
   // LEADER replicas execute this in or right after Prepare(), while FOLLOWER/LEARNER
-  // replicas execute this right before the Apply() phase as the transaction's
+  // replicas execute this right before the Apply() phase as the op's
   // timestamp is only available on the LEADER's commit message.
   // Once Started(), state might have leaked to other replicas/local log and the
-  // transaction can't be cancelled without issuing an abort message.
+  // op can't be cancelled without issuing an abort message.
   virtual Status Start() = 0;
 
-  // Executes the Apply() phase of the transaction, the actual actions of
-  // this phase depend on the transaction type, but usually this is the
+  // Executes the Apply() phase of the op, the actual actions of
+  // this phase depend on the op type, but usually this is the
   // method where data-structures are changed.
   virtual Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) = 0;
 
-  // Executed after the transaction has been applied and the commit message has
+  // Executed after the op has been applied and the commit message has
   // been appended to the log (though it might not be durable yet), or if the
-  // transaction was aborted.
+  // op was aborted.
   // Implementations are expected to perform cleanup on this method, the driver
   // will reply to the client after this method call returns.
   // 'result' will be either COMMITTED or ABORTED, letting implementations
-  // know what was the final status of the transaction.
-  virtual void Finish(TransactionResult result) {}
+  // know what was the final status of the op.
+  virtual void Finish(OpResult result) {}
 
   // Each implementation should have its own ToString() method.
   virtual std::string ToString() const = 0;
 
-  virtual ~Transaction() {}
+  virtual ~Op() {}
 
  private:
   const consensus::DriverType type_;
-  const TransactionType tx_type_;
+  const OpType op_type_;
 };
 
-class TransactionState {
+class OpState {
  public:
 
-  // Returns the request PB associated with this transaction. May be NULL if
-  // the transaction's state has been reset.
+  // Returns the request PB associated with this op. May be NULL if
+  // the op's state has been reset.
   virtual const google::protobuf::Message* request() const { return NULL; }
 
-  // Returns the response PB associated with this transaction, or NULL.
-  // This will only return a non-null object for leader-side transactions.
+  // Returns the response PB associated with this op, or NULL.
+  // This will only return a non-null object for leader-side ops.
   virtual google::protobuf::Message* response() const { return NULL; }
 
-  // Returns whether the results of the transaction are being tracked.
+  // Returns whether the results of the op are being tracked.
   bool are_results_tracked() const {
     return result_tracker_.get() != nullptr && has_request_id();
   }
@@ -167,14 +167,14 @@ class TransactionState {
     result_tracker_ = result_tracker;
   }
 
-  // Sets the ConsensusRound for this transaction, if this transaction is
+  // Sets the ConsensusRound for this op, if this op is
   // being executed through the consensus system.
   void set_consensus_round(const scoped_refptr<consensus::ConsensusRound>& consensus_round) {
     consensus_round_ = consensus_round;
     op_id_ = consensus_round_->id();
   }
 
-  // Returns the ConsensusRound being used, if this transaction is being
+  // Returns the ConsensusRound being used, if this op is being
   // executed through the consensus system or NULL if it's not.
   consensus::ConsensusRound* consensus_round() {
     return consensus_round_.get();
@@ -185,37 +185,37 @@ class TransactionState {
   }
 
   // Return metrics related to this transaction.
-  const TransactionMetrics& metrics() const {
-    return tx_metrics_;
+  const OpMetrics& metrics() const {
+    return op_metrics_;
   }
 
-  TransactionMetrics* mutable_metrics() {
-    return &tx_metrics_;
+  OpMetrics* mutable_metrics() {
+    return &op_metrics_;
   }
 
   void set_completion_callback(
-      std::unique_ptr<TransactionCompletionCallback> completion_clbk) {
+      std::unique_ptr<OpCompletionCallback> completion_clbk) {
     completion_clbk_ = std::move(completion_clbk);
   }
 
   // Returns the completion callback.
-  TransactionCompletionCallback* completion_callback() {
+  OpCompletionCallback* completion_callback() {
     return DCHECK_NOTNULL(completion_clbk_.get());
   }
 
-  // Sets a heap object to be managed by this transaction's AutoReleasePool.
+  // Sets a heap object to be managed by this op's AutoReleasePool.
   template<class T>
   T* AddToAutoReleasePool(T* t) {
     return pool_.Add(t);
   }
 
-  // Sets an array heap object to be managed by this transaction's AutoReleasePool.
+  // Sets an array heap object to be managed by this op's AutoReleasePool.
   template<class T>
   T* AddArrayToAutoReleasePool(T* t) {
     return pool_.AddArray(t);
   }
 
-  // Return the arena associated with this transaction.
+  // Return the arena associated with this op.
   // NOTE: this is not a thread-safe arena!
   Arena* arena() {
     return &arena_;
@@ -224,22 +224,22 @@ class TransactionState {
   // Each implementation should have its own ToString() method.
   virtual std::string ToString() const = 0;
 
-  // Sets the timestamp for the transaction
+  // Sets the timestamp for the op
   virtual void set_timestamp(const Timestamp& timestamp) {
     // make sure we set the timestamp only once
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
+    std::lock_guard<simple_spinlock> l(op_state_lock_);
     DCHECK_EQ(timestamp_, Timestamp::kInvalidTimestamp);
     timestamp_ = timestamp;
   }
 
   Timestamp timestamp() const {
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
+    std::lock_guard<simple_spinlock> l(op_state_lock_);
     DCHECK(timestamp_ != Timestamp::kInvalidTimestamp);
     return timestamp_;
   }
 
   bool has_timestamp() const {
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
+    std::lock_guard<simple_spinlock> l(op_state_lock_);
     return timestamp_ != Timestamp::kInvalidTimestamp;
   }
 
@@ -255,37 +255,37 @@ class TransactionState {
     return external_consistency_mode_;
   }
 
-  // Returns where the transaction associated with this TransactionState had an
-  // associated transaction id.
+  // Returns where the op associated with this OpState had an
+  // associated op id.
   bool has_request_id() const {
     return request_id_.has_client_id();
   }
 
-  // Returns the request id for the transaction associated with this TransactionState.
-  // Not all transactions will have a request id so users of this method should call
+  // Returns the request id for the op associated with this OpState.
+  // Not all ops will have a request id so users of this method should call
   // 'has_request_id()' first to make sure it is set.
   const rpc::RequestIdPB& request_id() const {
     return request_id_;
   }
 
  protected:
-  explicit TransactionState(TabletReplica* tablet_replica);
-  virtual ~TransactionState();
+  explicit OpState(TabletReplica* tablet_replica);
+  virtual ~OpState();
 
-  TransactionMetrics tx_metrics_;
+  OpMetrics op_metrics_;
 
-  // The TabletReplica that is coordinating this transaction.
+  // The TabletReplica that is coordinating this op.
   TabletReplica* const tablet_replica_;
 
-  // The result tracker that will cache the result of this transaction.
+  // The result tracker that will cache the result of this op.
   scoped_refptr<rpc::ResultTracker> result_tracker_;
 
-  // Optional callback to be called once the transaction completes.
-  std::unique_ptr<TransactionCompletionCallback> completion_clbk_;
+  // Optional callback to be called once the op completes.
+  std::unique_ptr<OpCompletionCallback> completion_clbk_;
 
   AutoReleasePool pool_;
 
-  // This transaction's timestamp. Protected by txn_state_lock_.
+  // This op's timestamp. Protected by op_state_lock_.
   Timestamp timestamp_;
 
   // The clock error when timestamp_ was read.
@@ -293,37 +293,37 @@ class TransactionState {
 
   Arena arena_;
 
-  // This OpId stores the canonical "anchor" OpId for this transaction.
+  // This OpId stores the canonical "anchor" OpId for this op.
   consensus::OpId op_id_;
 
-  // The client's id for this transaction, if there is one.
+  // The client's id for this op, if there is one.
   rpc::RequestIdPB request_id_;
 
   scoped_refptr<consensus::ConsensusRound> consensus_round_;
 
-  // The defined consistency mode for this transaction.
+  // The defined consistency mode for this op.
   ExternalConsistencyMode external_consistency_mode_;
 
-  // Lock that protects access to transaction state.
-  mutable simple_spinlock txn_state_lock_;
+  // Lock that protects access to op state.
+  mutable simple_spinlock op_state_lock_;
 };
 
-// A parent class for the callback that gets called when transactions
+// A parent class for the callback that gets called when ops
 // complete.
 //
-// This must be set in the TransactionState if the transaction initiator is to
-// be notified of when a transaction completes. The callback belongs to the
-// transaction context and is deleted along with it.
+// This must be set in the OpState if the op initiator is to
+// be notified of when an op completes. The callback belongs to the
+// op context and is deleted along with it.
 //
 // NOTE: this is a concrete class so that we can use it as a default implementation
 // which avoids callers having to keep checking for NULL.
-class TransactionCompletionCallback {
+class OpCompletionCallback {
  public:
 
-  TransactionCompletionCallback();
+  OpCompletionCallback();
 
-  // Allows to set an error for this transaction and a mapping to a server level code.
-  // Calling this method does not mean the transaction is completed.
+  // Allows to set an error for this op and a mapping to a server level code.
+  // Calling this method does not mean the op is completed.
   void set_error(const Status& status, tserver::TabletServerErrorPB::Code code);
 
   void set_error(const Status& status);
@@ -335,30 +335,30 @@ class TransactionCompletionCallback {
   const tserver::TabletServerErrorPB::Code error_code() const;
 
   // Subclasses should override this.
-  virtual void TransactionCompleted();
+  virtual void OpCompleted();
 
-  virtual ~TransactionCompletionCallback();
+  virtual ~OpCompletionCallback();
 
  protected:
   Status status_;
   tserver::TabletServerErrorPB::Code code_;
 };
 
-// TransactionCompletionCallback implementation that can be waited on.
-// Helper to make async transactions, sync.
+// OpCompletionCallback implementation that can be waited on.
+// Helper to make async ops, sync.
 // This is templated to accept any response PB that has a TabletServerError
 // 'error' field and to set the error before performing the latch countdown.
 // The callback does *not* take ownership of either latch or response.
 template<class ResponsePB>
-class LatchTransactionCompletionCallback : public TransactionCompletionCallback {
+class LatchOpCompletionCallback : public OpCompletionCallback {
  public:
-  explicit LatchTransactionCompletionCallback(CountDownLatch* latch,
-                                              ResponsePB* response)
+  explicit LatchOpCompletionCallback(CountDownLatch* latch,
+                                     ResponsePB* response)
     : latch_(DCHECK_NOTNULL(latch)),
       response_(DCHECK_NOTNULL(response)) {
   }
 
-  virtual void TransactionCompleted() OVERRIDE {
+  virtual void OpCompleted() OVERRIDE {
     if (!status_.ok()) {
       StatusToPB(status_, response_->mutable_error()->mutable_status());
     }

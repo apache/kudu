@@ -908,7 +908,7 @@ Status DiskRowSet::DebugDump(vector<string> *lines) {
   // rows and deltas.
   unique_ptr<CompactionInput> input;
   RETURN_NOT_OK(NewCompactionInput(&rowset_metadata_->tablet_schema(),
-                                   MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
+                                   MvccSnapshot::CreateSnapshotIncludingAllOps(),
                                    nullptr, &input));
   return DebugDumpCompactionInput(input.get(), lines);
 }

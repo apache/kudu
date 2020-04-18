@@ -45,7 +45,7 @@ namespace tablet {
 
 RowIteratorOptions::RowIteratorOptions()
     : projection(nullptr),
-      snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
+      snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllOps()),
       order(OrderMode::UNORDERED),
       include_deleted_rows(false) {}
 

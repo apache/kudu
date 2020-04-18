@@ -40,17 +40,17 @@ namespace tablet {
 
 class TabletReplica;
 
-// Transaction Context for the AlterSchema operation.
-// Keeps track of the Transaction states (request, result, ...)
-class AlterSchemaTransactionState : public TransactionState {
+// Op Context for the AlterSchema operation.
+// Keeps track of the Op states (request, result, ...)
+class AlterSchemaOpState : public OpState {
  public:
-  ~AlterSchemaTransactionState() {
+  ~AlterSchemaOpState() {
   }
 
-  AlterSchemaTransactionState(TabletReplica* tablet_replica,
-                              const tserver::AlterSchemaRequestPB* request,
-                              tserver::AlterSchemaResponsePB* response)
-      : TransactionState(tablet_replica),
+  AlterSchemaOpState(TabletReplica* tablet_replica,
+                     const tserver::AlterSchemaRequestPB* request,
+                     tserver::AlterSchemaResponsePB* response)
+      : OpState(tablet_replica),
         schema_(nullptr),
         request_(request),
         response_(response) {
@@ -90,7 +90,7 @@ class AlterSchemaTransactionState : public TransactionState {
 
   // Note: request_ and response_ are set to null after this method returns.
   void Finish() {
-    // Make the request null since after this transaction commits
+    // Make the request null since after this op commits
     // the request may be deleted at any moment.
     request_ = nullptr;
     response_ = nullptr;
@@ -106,7 +106,7 @@ class AlterSchemaTransactionState : public TransactionState {
   std::string ToString() const override;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionState);
+  DISALLOW_COPY_AND_ASSIGN(AlterSchemaOpState);
 
   // The new (target) Schema.
   const Schema* schema_;
@@ -118,39 +118,39 @@ class AlterSchemaTransactionState : public TransactionState {
   // The lock held on the tablet's schema_lock_.
   std::unique_lock<rw_semaphore> schema_lock_;
 
-  // The error result of this alter schema transaction. May be empty if the
-  // transaction hasn't been applied or if the alter succeeded.
+  // The error result of this alter schema op. May be empty if the
+  // op hasn't been applied or if the alter succeeded.
   boost::optional<OperationResultPB> error_;
 };
 
-// Executes the alter schema transaction,.
-class AlterSchemaTransaction : public Transaction {
+// Executes the alter schema op.
+class AlterSchemaOp : public Op {
  public:
-  AlterSchemaTransaction(std::unique_ptr<AlterSchemaTransactionState> state,
-                         consensus::DriverType type);
+  AlterSchemaOp(std::unique_ptr<AlterSchemaOpState> state,
+                consensus::DriverType type);
 
-  AlterSchemaTransactionState* state() override { return state_.get(); }
-  const AlterSchemaTransactionState* state() const override { return state_.get(); }
+  AlterSchemaOpState* state() override { return state_.get(); }
+  const AlterSchemaOpState* state() const override { return state_.get(); }
 
   void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
-  // Executes a Prepare for the alter schema transaction.
+  // Executes a Prepare for the alter schema op.
   Status Prepare() override;
 
-  // Starts the AlterSchemaTransaction by assigning it a timestamp.
+  // Starts the AlterSchemaOp by assigning it a timestamp.
   Status Start() override;
 
-  // Executes an Apply for the alter schema transaction
+  // Executes an Apply for the alter schema op
   Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
 
-  // Actually commits the transaction.
-  void Finish(TransactionResult result) override;
+  // Actually commits the op.
+  void Finish(OpResult result) override;
 
   std::string ToString() const override;
 
  private:
-  std::unique_ptr<AlterSchemaTransactionState> state_;
-  DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransaction);
+  std::unique_ptr<AlterSchemaOpState> state_;
+  DISALLOW_COPY_AND_ASSIGN(AlterSchemaOp);
 };
 
 }  // namespace tablet

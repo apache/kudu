@@ -285,7 +285,7 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
   vector<string> ts_flags, master_flags;
 
   // Crash 2.5% of the time right after sending an RPC. This makes sure we stress the path
-  // where there are duplicate handlers for a transaction as a leader crashes right
+  // where there are duplicate handlers for an op as a leader crashes right
   // after sending requests to followers.
   ts_flags.emplace_back("--fault_crash_after_leader_request_fraction=0.025");
 

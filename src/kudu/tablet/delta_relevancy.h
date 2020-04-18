@@ -79,10 +79,10 @@ inline bool IsDeltaRelevantForApply<REDO>(const MvccSnapshot& snap,
   if (snap.IsCommitted(delta_ts)) {
     return true;
   }
-  if (!snap.MayHaveCommittedTransactionsAtOrAfter(delta_ts)) {
+  if (!snap.MayHaveCommittedOpsAtOrAfter(delta_ts)) {
     // REDO deltas are sorted first in ascending row ordinal order, then in
     // ascending timestamp order. Thus, if we know that there are no more
-    // committed transactions whose timestamps are >= 'delta_ts', we know that
+    // committed ops whose timestamps are >= 'delta_ts', we know that
     // any future deltas belonging to this row aren't relevant (as per the apply
     // criteria, REDOs are relevant if they are committed in the snapshot), and
     // we can skip to the next row.
@@ -99,10 +99,10 @@ inline bool IsDeltaRelevantForApply<UNDO>(const MvccSnapshot& snap,
   if (!snap.IsCommitted(delta_ts)) {
     return true;
   }
-  if (!snap.MayHaveUncommittedTransactionsAtOrBefore(delta_ts)) {
+  if (!snap.MayHaveUncommittedOpsAtOrBefore(delta_ts)) {
     // UNDO deltas are sorted first in ascending row ordinal order, then in
     // descending timestamp order. Thus, if we know that there are no more
-    // uncommitted transactions whose timestamps are <= 'delta_ts', we know that
+    // uncommitted ops whose timestamps are <= 'delta_ts', we know that
     // any future deltas belonging to this row aren't relevant (as per the apply
     // criteria, UNDOs are relevant if they are uncommitted in the snapshot),
     // and we can skip to the next row.
@@ -144,7 +144,7 @@ inline bool IsDeltaRelevantForSelect<REDO>(const MvccSnapshot& snap_start,
     return false;
   }
   if (!snap_end.IsCommitted(delta_ts)) {
-    if (!snap_end.MayHaveCommittedTransactionsAtOrAfter(delta_ts)) {
+    if (!snap_end.MayHaveCommittedOpsAtOrAfter(delta_ts)) {
       // But if 'delta_ts' is not committed in 'snap_end', all future REDOs may
       // also be uncommitted in 'snap_end'.
       *finished_row = true;
@@ -167,7 +167,7 @@ inline bool IsDeltaRelevantForSelect<UNDO>(const MvccSnapshot& snap_start,
     return false;
   }
   if (snap_start.IsCommitted(delta_ts)) {
-    if (!snap_start.MayHaveUncommittedTransactionsAtOrBefore(delta_ts)) {
+    if (!snap_start.MayHaveUncommittedOpsAtOrBefore(delta_ts)) {
       // But if 'delta_ts' is committed in 'snap_start', all future UNDOs may
       // also be committed in 'snap_start'.
       *finished_row = true;

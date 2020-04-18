@@ -109,7 +109,7 @@ Status WaitUntilLeaderForTests(RaftConsensus* raft) {
 }
 
 // Test suite for tests that focus on multiple peer interaction, but
-// without integrating with other components, such as transactions.
+// without integrating with other components, such as ops.
 class RaftConsensusQuorumTest : public KuduTest {
  public:
   typedef vector<unique_ptr<LogEntryPB>> LogEntries;
@@ -214,17 +214,17 @@ class RaftConsensusQuorumTest : public KuduTest {
           new LocalTestPeerProxyFactory(peers_.get()));
       unique_ptr<TimeManager> time_manager(
           new TimeManager(&clock_, Timestamp::kMin));
-      unique_ptr<TestTransactionFactory> txn_factory(
-          new TestTransactionFactory(logs_[i].get()));
-      txn_factory->SetConsensus(peer.get());
-      txn_factories_.emplace_back(std::move(txn_factory));
+      unique_ptr<TestOpFactory> op_factory(
+          new TestOpFactory(logs_[i].get()));
+      op_factory->SetConsensus(peer.get());
+      op_factories_.emplace_back(std::move(op_factory));
 
       RETURN_NOT_OK(peer->Start(
           boot_info,
           std::move(proxy_factory),
           logs_[i],
           std::move(time_manager),
-          txn_factories_.back().get(),
+          op_factories_.back().get(),
           metric_entity_,
           &DoNothing));
     }
@@ -275,7 +275,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     shared_ptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
 
-    // Use a latch in place of a Transaction callback.
+    // Use a latch in place of a op callback.
     unique_ptr<Synchronizer> sync(new Synchronizer());
     *round = peer->NewRound(std::move(msg), sync->AsStatusCallback());
     EmplaceOrDie(&syncs_, round->get(), std::move(sync));
@@ -452,9 +452,9 @@ class RaftConsensusQuorumTest : public KuduTest {
   // peers (so we're sure that no further writes occur) and closes the logs
   // so it must be the very last thing to run, in a test.
   void VerifyLogs(int leader_idx, int first_replica_idx, int last_replica_idx) {
-    // Wait for in-flight transactions to be done. We're destroying the
-    // peers next and leader transactions won't be able to commit anymore.
-    for (const auto& factory : txn_factories_) {
+    // Wait for in-flight ops to be done. We're destroying the
+    // peers next and leader ops won't be able to commit anymore.
+    for (const auto& factory : op_factories_) {
       factory->WaitDone();
     }
 
@@ -580,7 +580,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   vector<scoped_refptr<Log> > logs_;
   unique_ptr<ThreadPool> raft_pool_;
   unique_ptr<TestPeerMapManager> peers_;
-  vector<unique_ptr<TestTransactionFactory>> txn_factories_;
+  vector<unique_ptr<TestOpFactory>> op_factories_;
   clock::LogicalClock clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;

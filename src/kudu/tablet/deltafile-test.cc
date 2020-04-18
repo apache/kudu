@@ -155,8 +155,8 @@ class TestDeltaFile : public KuduTest {
                                          unique_ptr<DeltaIterator>* out) {
     RowIteratorOptions opts;
     opts.snap_to_include = type == REDO ?
-                MvccSnapshot::CreateSnapshotIncludingAllTransactions() :
-                MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+                MvccSnapshot::CreateSnapshotIncludingAllOps() :
+                MvccSnapshot::CreateSnapshotIncludingNoOps();
     opts.projection = &schema_;
     return reader->NewDeltaIterator(opts, out);
   }
@@ -344,7 +344,7 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
 
   // should skip
   opts.snap_to_include = MvccSnapshot(Timestamp(9));
-  ASSERT_FALSE(opts.snap_to_include.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
+  ASSERT_FALSE(opts.snap_to_include.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
   unique_ptr<DeltaIterator> iter;
   Status s = reader->NewDeltaIterator(opts, &iter);
   ASSERT_TRUE(s.IsNotFound());

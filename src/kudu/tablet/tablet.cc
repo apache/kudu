@@ -342,8 +342,8 @@ void Tablet::Stop() {
     set_state_unlocked(kStopped);
   }
 
-  // Close MVCC so Applying transactions will not complete and will not be
-  // waited on. This prevents further snapshotting of the tablet.
+  // Close MVCC so Applying ops will not complete and will not be waited on.
+  // This prevents further snapshotting of the tablet.
   mvcc_.Close();
 
   // Stop tablet ops from being scheduled by the maintenance manager.
@@ -438,43 +438,43 @@ Status Tablet::NewRowIterator(RowIteratorOptions opts,
 }
 
 Status Tablet::DecodeWriteOperations(const Schema* client_schema,
-                                     WriteTransactionState* tx_state) {
+                                     WriteOpState* op_state) {
   TRACE_EVENT0("tablet", "Tablet::DecodeWriteOperations");
 
-  DCHECK(tx_state->row_ops().empty());
+  DCHECK(op_state->row_ops().empty());
 
-  // Acquire the schema lock in shared mode, so that the schema doesn't
-  // change while this transaction is in-flight.
-  tx_state->AcquireSchemaLock(&schema_lock_);
+  // Acquire the schema lock in shared mode, so that the schema doesn't change
+  // while this op is in-flight.
+  op_state->AcquireSchemaLock(&schema_lock_);
 
-  // The Schema needs to be held constant while any transactions are between
-  // PREPARE and APPLY stages
+  // The Schema needs to be held constant while any ops are between PREPARE and
+  // APPLY stages
   TRACE("Decoding operations");
   vector<DecodedRowOperation> ops;
 
   // Decode the ops
-  RowOperationsPBDecoder dec(&tx_state->request()->row_operations(),
+  RowOperationsPBDecoder dec(&op_state->request()->row_operations(),
                              client_schema,
                              schema(),
-                             tx_state->arena());
+                             op_state->arena());
   RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
   TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
   // Important to set the schema before the ops -- we need the
   // schema in order to stringify the ops.
-  tx_state->set_schema_at_decode_time(schema());
-  tx_state->SetRowOps(std::move(ops));
+  op_state->set_schema_at_decode_time(schema());
+  op_state->SetRowOps(std::move(ops));
 
   return Status::OK();
 }
 
-Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
+Status Tablet::AcquireRowLocks(WriteOpState* op_state) {
   TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
-               "num_locks", tx_state->row_ops().size());
-  TRACE("Acquiring locks for $0 operations", tx_state->row_ops().size());
-  for (RowOp* op : tx_state->row_ops()) {
+               "num_locks", op_state->row_ops().size());
+  TRACE("Acquiring locks for $0 operations", op_state->row_ops().size());
+  for (RowOp* op : op_state->row_ops()) {
     if (op->has_result()) continue;
-    RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
+    RETURN_NOT_OK(AcquireLockForOp(op_state, op));
   }
   TRACE("Locks acquired");
   return Status::OK();
@@ -496,7 +496,7 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
   return Status::OK();
 }
 
-Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
+Status Tablet::AcquireLockForOp(WriteOpState* op_state, RowOp* op) {
   ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
   op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
   if (PREDICT_FALSE(!ValidateOpOrMarkFailed(op))) {
@@ -505,36 +505,36 @@ Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
   RETURN_NOT_OK(CheckRowInTablet(row_key));
 
   op->row_lock = ScopedRowLock(&lock_manager_,
-                               tx_state,
+                               op_state,
                                op->key_probe->encoded_key_slice(),
                                LockManager::LOCK_EXCLUSIVE);
   return Status::OK();
 }
 
-void Tablet::AssignTimestampAndStartTransactionForTests(WriteTransactionState* tx_state) {
-  CHECK(!tx_state->has_timestamp());
+void Tablet::AssignTimestampAndStartOpForTests(WriteOpState* op_state) {
+  CHECK(!op_state->has_timestamp());
   // Don't support COMMIT_WAIT for tests that don't boot a tablet server.
-  CHECK_NE(tx_state->external_consistency_mode(), COMMIT_WAIT);
+  CHECK_NE(op_state->external_consistency_mode(), COMMIT_WAIT);
 
-  // Make sure timestamp assignment and transaction start are atomic, for tests.
+  // Make sure timestamp assignment and op start are atomic, for tests.
   //
-  // This is to make sure that when test txns advance safe time later, we don't have
-  // any txn in-flight between getting a timestamp and being started. Otherwise we
-  // might run the risk of assigning a timestamp to txn1, and have another txn
-  // get a timestamp/start/advance safe time before txn1 starts making txn1's timestamp
+  // This is to make sure that when test ops advance safe time later, we don't have
+  // any op in-flight between getting a timestamp and being started. Otherwise we
+  // might run the risk of assigning a timestamp to op1, and have another op
+  // get a timestamp/start/advance safe time before op1 starts making op1's timestamp
   // invalid on start.
   {
-    std::lock_guard<simple_spinlock> l(test_start_txn_lock_);
-    tx_state->set_timestamp(clock_->Now());
-    StartTransaction(tx_state);
+    std::lock_guard<simple_spinlock> l(test_start_op_lock_);
+    op_state->set_timestamp(clock_->Now());
+    StartOp(op_state);
   }
 }
 
-void Tablet::StartTransaction(WriteTransactionState* tx_state) {
-  unique_ptr<ScopedTransaction> mvcc_tx;
-  DCHECK(tx_state->has_timestamp());
-  mvcc_tx.reset(new ScopedTransaction(&mvcc_, tx_state->timestamp()));
-  tx_state->SetMvccTx(std::move(mvcc_tx));
+void Tablet::StartOp(WriteOpState* op_state) {
+  unique_ptr<ScopedOp> mvcc_op;
+  DCHECK(op_state->has_timestamp());
+  mvcc_op.reset(new ScopedOp(&mvcc_, op_state->timestamp()));
+  op_state->SetMvccTx(std::move(mvcc_op));
 }
 
 bool Tablet::ValidateOpOrMarkFailed(RowOp* op) {
@@ -603,19 +603,19 @@ Status Tablet::ValidateMutateUnlocked(const RowOp& op) {
 }
 
 Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
-                                      WriteTransactionState *tx_state,
+                                      WriteOpState *op_state,
                                       RowOp* op,
                                       ProbeStats* stats) {
   DCHECK(op->checked_present);
   DCHECK(op->valid);
 
   RowOperationsPB_Type op_type = op->decoded_op.type;
-  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
+  const TabletComponents* comps = DCHECK_NOTNULL(op_state->tablet_components());
 
   if (op->present_in_rowset) {
     switch (op_type) {
       case RowOperationsPB::UPSERT:
-        return ApplyUpsertAsUpdate(io_context, tx_state, op, op->present_in_rowset, stats);
+        return ApplyUpsertAsUpdate(io_context, op_state, op, op->present_in_rowset, stats);
       case RowOperationsPB::INSERT_IGNORE:
         op->SetErrorIgnored();
         return Status::OK();
@@ -632,7 +632,7 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
     }
   }
 
-  Timestamp ts = tx_state->timestamp();
+  Timestamp ts = op_state->timestamp();
   ConstContiguousRow row(schema(), op->decoded_op.row_data);
 
   // TODO: the Insert() call below will re-encode the key, which is a
@@ -640,14 +640,14 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
 
   // Now try to op into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been oped there.
-  Status s = comps->memrowset->Insert(ts, row, tx_state->op_id());
+  Status s = comps->memrowset->Insert(ts, row, op_state->op_id());
   if (s.ok()) {
     op->SetInsertSucceeded(comps->memrowset->mrs_id());
   } else {
     if (s.IsAlreadyPresent()) {
       switch (op_type) {
         case RowOperationsPB::UPSERT:
-          return ApplyUpsertAsUpdate(io_context, tx_state, op, comps->memrowset.get(), stats);
+          return ApplyUpsertAsUpdate(io_context, op_state, op, comps->memrowset.get(), stats);
         case RowOperationsPB::INSERT_IGNORE:
           op->SetErrorIgnored();
           return Status::OK();
@@ -666,7 +666,7 @@ Status Tablet::InsertOrUpsertUnlocked(const IOContext* io_context,
 }
 
 Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
-                                   WriteTransactionState* tx_state,
+                                   WriteOpState* op_state,
                                    RowOp* upsert,
                                    RowSet* rowset,
                                    ProbeStats* stats) {
@@ -698,10 +698,10 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
 
   RowChangeList rcl = enc.as_changelist();
 
-  Status s = rowset->MutateRow(tx_state->timestamp(),
+  Status s = rowset->MutateRow(op_state->timestamp(),
                                *upsert->key_probe,
                                rcl,
-                               tx_state->op_id(),
+                               op_state->op_id(),
                                io_context,
                                stats,
                                result.get());
@@ -758,15 +758,15 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
 }
 
 Status Tablet::MutateRowUnlocked(const IOContext* io_context,
-                                 WriteTransactionState *tx_state,
+                                 WriteOpState *op_state,
                                  RowOp* mutate,
                                  ProbeStats* stats) {
   DCHECK(mutate->checked_present);
   DCHECK(mutate->valid);
 
   unique_ptr<OperationResultPB> result(new OperationResultPB());
-  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
-  Timestamp ts = tx_state->timestamp();
+  const TabletComponents* comps = DCHECK_NOTNULL(op_state->tablet_components());
+  Timestamp ts = op_state->timestamp();
 
   // If we found the row in any existing RowSet, mutate it there. Otherwise
   // attempt to mutate in the MRS.
@@ -775,7 +775,7 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
   Status s = rs_to_attempt->MutateRow(ts,
                                       *mutate->key_probe,
                                       mutate->decoded_op.changelist,
-                                      tx_state->op_id(),
+                                      op_state->op_id(),
                                       io_context,
                                       stats,
                                       result.get());
@@ -791,21 +791,21 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
   return s;
 }
 
-void Tablet::StartApplying(WriteTransactionState* tx_state) {
+void Tablet::StartApplying(WriteOpState* op_state) {
   shared_lock<rw_spinlock> l(component_lock_);
-  tx_state->StartApplying();
-  tx_state->set_tablet_components(components_);
+  op_state->StartApplying();
+  op_state->set_tablet_components(components_);
 }
 
-Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteTransactionState* tx_state) {
-  int num_ops = tx_state->row_ops().size();
+Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_state) {
+  int num_ops = op_state->row_ops().size();
 
   // TODO(todd) determine why we sometimes get empty writes!
   if (PREDICT_FALSE(num_ops == 0)) return Status::OK();
 
   // The compiler seems to be bad at hoisting this load out of the loops,
   // so load it up top.
-  RowOp* const * row_ops_base = tx_state->row_ops().data();
+  RowOp* const * row_ops_base = op_state->row_ops().data();
 
   // Run all of the ops through the RowSetTree.
   vector<pair<Slice, int>> keys_and_indexes;
@@ -888,7 +888,7 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteTransactionSt
 
       bool present = false;
       s = rs->CheckRowPresent(*op->key_probe, io_context,
-                              &present, tx_state->mutable_op_stats(op_idx));
+                              &present, op_state->mutable_op_stats(op_idx));
       if (PREDICT_FALSE(!s.ok())) {
         LOG(WARNING) << Substitute("Tablet $0 failed to check row presence for op $1: $2",
             tablet_id(), op->ToString(key_schema_), s.ToString());
@@ -901,7 +901,7 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteTransactionSt
     pending_group.clear();
   };
 
-  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
+  const TabletComponents* comps = DCHECK_NOTNULL(op_state->tablet_components());
   comps->rowsets->ForEachRowSetContainingKeys(
       keys,
       [&](RowSet* rs, int i) {
@@ -936,20 +936,20 @@ Status Tablet::CheckHasNotBeenStoppedUnlocked() const {
   return Status::OK();
 }
 
-Status Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
-  int num_ops = tx_state->row_ops().size();
+Status Tablet::ApplyRowOperations(WriteOpState* op_state) {
+  int num_ops = op_state->row_ops().size();
 
-  StartApplying(tx_state);
+  StartApplying(op_state);
 
   IOContext io_context({ tablet_id() });
-  RETURN_NOT_OK(BulkCheckPresence(&io_context, tx_state));
+  RETURN_NOT_OK(BulkCheckPresence(&io_context, op_state));
 
   // Actually apply the ops.
   for (int op_idx = 0; op_idx < num_ops; op_idx++) {
-    RowOp* row_op = tx_state->row_ops()[op_idx];
+    RowOp* row_op = op_state->row_ops()[op_idx];
     if (row_op->has_result()) continue;
-    RETURN_NOT_OK(ApplyRowOperation(&io_context, tx_state, row_op,
-                                    tx_state->mutable_op_stats(op_idx)));
+    RETURN_NOT_OK(ApplyRowOperation(&io_context, op_state, row_op,
+                                    op_state->mutable_op_stats(op_idx)));
     DCHECK(row_op->has_result());
   }
 
@@ -959,13 +959,13 @@ Status Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
   }
 
   if (metrics_ && num_ops > 0) {
-    metrics_->AddProbeStats(tx_state->mutable_op_stats(0), num_ops, tx_state->arena());
+    metrics_->AddProbeStats(op_state->mutable_op_stats(0), num_ops, op_state->arena());
   }
   return Status::OK();
 }
 
 Status Tablet::ApplyRowOperation(const IOContext* io_context,
-                                 WriteTransactionState* tx_state,
+                                 WriteOpState* op_state,
                                  RowOp* row_op,
                                  ProbeStats* stats) {
   if (!ValidateOpOrMarkFailed(row_op)) {
@@ -975,18 +975,18 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     RETURN_NOT_OK_PREPEND(CheckHasNotBeenStoppedUnlocked(),
-        Substitute("Apply of $0 exited early", tx_state->ToString()));
+        Substitute("Apply of $0 exited early", op_state->ToString()));
     CHECK(state_ == kOpen || state_ == kBootstrapping);
   }
   DCHECK(row_op->has_row_lock()) << "RowOp must hold the row lock.";
-  DCHECK(tx_state != nullptr) << "must have a WriteTransactionState";
-  DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
-  DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
+  DCHECK(op_state != nullptr) << "must have a WriteOpState";
+  DCHECK(op_state->op_id().IsInitialized()) << "OpState OpId needed for anchoring";
+  DCHECK_EQ(op_state->schema_at_decode_time(), schema());
 
   // If we were unable to check rowset presence in batch (e.g. because we are processing
   // a batch which contains some duplicate keys) we need to do so now.
   if (PREDICT_FALSE(!row_op->checked_present)) {
-    vector<RowSet *> to_check = FindRowSetsToCheck(row_op, tx_state->tablet_components());
+    vector<RowSet *> to_check = FindRowSetsToCheck(row_op, op_state->tablet_components());
     for (RowSet *rowset : to_check) {
       bool present = false;
       RETURN_NOT_OK_PREPEND(rowset->CheckRowPresent(*row_op->key_probe, io_context,
@@ -1005,7 +1005,7 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
     case RowOperationsPB::INSERT:
     case RowOperationsPB::INSERT_IGNORE:
     case RowOperationsPB::UPSERT:
-      s = InsertOrUpsertUnlocked(io_context, tx_state, row_op, stats);
+      s = InsertOrUpsertUnlocked(io_context, op_state, row_op, stats);
       if (s.IsAlreadyPresent()) {
         return Status::OK();
       }
@@ -1013,7 +1013,7 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
 
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
-      s = MutateRowUnlocked(io_context, tx_state, row_op, stats);
+      s = MutateRowUnlocked(io_context, op_state, row_op, stats);
       if (s.IsNotFound()) {
         return Status::OK();
       }
@@ -1139,11 +1139,11 @@ Status Tablet::FlushUnlocked() {
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(&input, &old_mrs));
   }
 
-  // Wait for any in-flight transactions to finish against the old MRS
-  // before we flush it.
+  // Wait for any in-flight ops to finish against the old MRS before we flush
+  // it.
   //
   // This may fail if the tablet has been stopped.
-  RETURN_NOT_OK(mvcc_.WaitForApplyingTransactionsToCommit());
+  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToCommit());
 
   // Note: "input" should only contain old_mrs.
   return FlushInternal(input, old_mrs);
@@ -1229,7 +1229,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   return Status::OK();
 }
 
-Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
+Status Tablet::CreatePreparedAlterSchema(AlterSchemaOpState* op_state,
                                          const Schema* schema) {
 
   if (!schema->has_column_ids()) {
@@ -1240,14 +1240,14 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
   // Alter schema must run when no reads/writes are in progress.
   // However, compactions and flushes can continue to run in parallel
   // with the schema change,
-  tx_state->AcquireSchemaLock(&schema_lock_);
+  op_state->AcquireSchemaLock(&schema_lock_);
 
-  tx_state->set_schema(schema);
+  op_state->set_schema(schema);
   return Status::OK();
 }
 
-Status Tablet::AlterSchema(AlterSchemaTransactionState* tx_state) {
-  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(tx_state->schema())))
+Status Tablet::AlterSchema(AlterSchemaOpState* op_state) {
+  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(op_state->schema())))
       << "Schema keys cannot be altered(except name)";
 
   // Prevent any concurrent flushes. Otherwise, we run into issues where
@@ -1256,30 +1256,30 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState* tx_state) {
   std::lock_guard<Semaphore> lock(rowsets_flush_sem_);
 
   // If the current version >= new version, there is nothing to do.
-  bool same_schema = schema()->Equals(*tx_state->schema());
-  if (metadata_->schema_version() >= tx_state->schema_version()) {
+  bool same_schema = schema()->Equals(*op_state->schema());
+  if (metadata_->schema_version() >= op_state->schema_version()) {
     const string msg =
         Substitute("Skipping requested alter to schema version $0, tablet already "
-                   "version $1", tx_state->schema_version(), metadata_->schema_version());
+                   "version $1", op_state->schema_version(), metadata_->schema_version());
     LOG_WITH_PREFIX(INFO) << msg;
-    tx_state->SetError(Status::InvalidArgument(msg));
+    op_state->SetError(Status::InvalidArgument(msg));
     return Status::OK();
   }
 
   LOG_WITH_PREFIX(INFO) << "Alter schema from " << schema()->ToString()
                         << " version " << metadata_->schema_version()
-                        << " to " << tx_state->schema()->ToString()
-                        << " version " << tx_state->schema_version();
+                        << " to " << op_state->schema()->ToString()
+                        << " version " << op_state->schema_version();
   DCHECK(schema_lock_.is_locked());
-  metadata_->SetSchema(*tx_state->schema(), tx_state->schema_version());
-  if (tx_state->has_new_table_name()) {
-    metadata_->SetTableName(tx_state->new_table_name());
+  metadata_->SetSchema(*op_state->schema(), op_state->schema_version());
+  if (op_state->has_new_table_name()) {
+    metadata_->SetTableName(op_state->new_table_name());
     if (metric_entity_) {
-      metric_entity_->SetAttribute("table_name", tx_state->new_table_name());
+      metric_entity_->SetAttribute("table_name", op_state->new_table_name());
     }
   }
-  if (tx_state->has_new_extra_config()) {
-    metadata_->SetExtraConfig(tx_state->new_extra_config());
+  if (op_state->has_new_extra_config()) {
+    metadata_->SetExtraConfig(op_state->new_extra_config());
   }
 
   // If the current schema and the new one are equal, there is nothing to do.
@@ -1623,8 +1623,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   //   input and output, because of the DuplicatingRowSet.
   // - now suppose the output rowset were allowed to flush deltas. This would create the
   //   first DeltaFile for the output rowset, with only timestamp 2.
-  // - Now we run the "ReupdateMissedDeltas", and copy over the first transaction to the output
-  //   DMS, which later flushes.
+  // - Now we run the "ReupdateMissedDeltas", and copy over the first op to the
+  //   output DMS, which later flushes.
   // The end result would be that redos[0] has timestamp 2, and redos[1] has timestamp 1.
   // This breaks an invariant that the redo files are time-ordered, and we would probably
   // reapply the deltas in the wrong order on the read path.
@@ -1637,48 +1637,48 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
 
-  // The next step is to swap in the DuplicatingRowSet, and at the same time, determine an
-  // MVCC snapshot which includes all of the transactions that saw a pre-DuplicatingRowSet
-  // version of components_.
-  MvccSnapshot non_duplicated_txns_snap;
+  // The next step is to swap in the DuplicatingRowSet, and at the same time,
+  // determine an MVCC snapshot which includes all of the ops that saw a
+  // pre-DuplicatingRowSet version of components_.
+  MvccSnapshot non_duplicated_ops_snap;
   vector<Timestamp> applying_during_swap;
   {
     TRACE_EVENT0("tablet", "Swapping DuplicatingRowSet");
-    // Taking component_lock_ in write mode ensures that no new transactions
-    // can StartApplying() (or snapshot components_) during this block.
+    // Taking component_lock_ in write mode ensures that no new ops can
+    // StartApplying() (or snapshot components_) during this block.
     std::lock_guard<rw_spinlock> lock(component_lock_);
     AtomicSwapRowSetsUnlocked(input.rowsets(), { inprogress_rowset });
 
-    // NOTE: transactions may *commit* in between these two lines.
-    // We need to make sure all such transactions end up in the
-    // 'applying_during_swap' list, the 'non_duplicated_txns_snap' snapshot,
-    // or both. Thus it's crucial that these next two lines are in this order!
-    mvcc_.GetApplyingTransactionsTimestamps(&applying_during_swap);
-    non_duplicated_txns_snap = MvccSnapshot(mvcc_);
+    // NOTE: ops may *commit* in between these two lines.
+    // We need to make sure all such ops end up in the 'applying_during_swap'
+    // list, the 'non_duplicated_ops_snap' snapshot, or both. Thus it's crucial
+    // that these next two lines are in this order!
+    mvcc_.GetApplyingOpsTimestamps(&applying_during_swap);
+    non_duplicated_ops_snap = MvccSnapshot(mvcc_);
   }
 
-  // All transactions committed in 'non_duplicated_txns_snap' saw the pre-swap components_.
-  // Additionally, any transactions that were APPLYING during the above block by definition
-  // _started_ doing so before the swap. Hence those transactions also need to get included in
-  // non_duplicated_txns_snap. To do so, we wait for them to commit, and then
-  // manually include them into our snapshot.
+  // All ops committed in 'non_duplicated_ops_snap' saw the pre-swap
+  // components_. Additionally, any ops that were APPLYING during the above
+  // block by definition _started_ doing so before the swap. Hence those ops
+  // also need to get included in non_duplicated_ops_snap. To do so, we wait
+  // for them to commit, and then manually include them into our snapshot.
   if (VLOG_IS_ON(1) && !applying_during_swap.empty()) {
     VLOG_WITH_PREFIX(1) << "Waiting for " << applying_during_swap.size()
-                        << " mid-APPLY txns to commit before finishing compaction...";
+                        << " mid-APPLY ops to commit before finishing compaction...";
     for (const Timestamp& ts : applying_during_swap) {
       VLOG_WITH_PREFIX(1) << "  " << ts.value();
     }
   }
 
-  // This wait is a little bit conservative - technically we only need to wait for
-  // those transactions in 'applying_during_swap', but MVCC doesn't implement the
-  // ability to wait for a specific set. So instead we wait for all currently applying --
-  // a bit more than we need, but still correct.
-  RETURN_NOT_OK(mvcc_.WaitForApplyingTransactionsToCommit());
+  // This wait is a little bit conservative - technically we only need to wait
+  // for those ops in 'applying_during_swap', but MVCC doesn't implement the
+  // ability to wait for a specific set. So instead we wait for all currently
+  // applying -- a bit more than we need, but still correct.
+  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToCommit());
 
-  // Then we want to consider all those transactions that were in-flight when we did the
-  // swap as committed in 'non_duplicated_txns_snap'.
-  non_duplicated_txns_snap.AddCommittedTimestamps(applying_during_swap);
+  // Then we want to consider all those ops that were in-flight when we did the
+  // swap as committed in 'non_duplicated_ops_snap'.
+  non_duplicated_ops_snap.AddCommittedTimestamps(applying_during_swap);
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),
@@ -1689,9 +1689,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // new rowset's DeltaTracker.
   VLOG_WITH_PREFIX(1) << Substitute("$0: Phase 2: carrying over any updates "
                                     "which arrived during Phase 1. Snapshot: $1",
-                                    op_name, non_duplicated_txns_snap.ToString());
+                                    op_name, non_duplicated_ops_snap.ToString());
   RETURN_NOT_OK_PREPEND(
-      input.CreateCompactionInput(non_duplicated_txns_snap, schema(), &io_context, &merge),
+      input.CreateCompactionInput(non_duplicated_ops_snap, schema(), &io_context, &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
@@ -1702,7 +1702,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                              merge.get(),
                                              history_gc_opts,
                                              flush_snap,
-                                             non_duplicated_txns_snap,
+                                             non_duplicated_ops_snap,
                                              new_disk_rowsets),
         Substitute("Failed to re-update deltas missed during $0 phase 1",
                      op_name).c_str());

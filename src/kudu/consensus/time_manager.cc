@@ -64,7 +64,7 @@ typedef std::lock_guard<simple_spinlock> Lock;
 
 ExternalConsistencyMode TimeManager::GetMessageConsistencyMode(const ReplicateMsg& message) {
   // TODO(dralves): We should have no-ops (?) and config changes be COMMIT_WAIT
-  // transactions. See KUDU-798.
+  // ops. See KUDU-798.
   // TODO(dralves) Move external consistency mode to ReplicateMsg. This will be useful
   // for consistent alter table ops.
   if (PREDICT_TRUE(message.has_write_request())) {
@@ -95,7 +95,7 @@ Status TimeManager::AssignTimestamp(ReplicateMsg* message) {
   Lock l(lock_);
   if (PREDICT_FALSE(mode_ == NON_LEADER)) {
     return Status::IllegalState(Substitute(
-        "Cannot assign timestamp to transaction. Tablet is not "
+        "Cannot assign timestamp to op. Tablet is not "
         "in leader mode. Last heard from a leader: $0 ago.",
         (MonoTime::Now() - last_advanced_safe_time_).ToString()));
   }
@@ -319,11 +319,12 @@ Timestamp TimeManager::GetSafeTimeUnlocked() {
         last_advanced_safe_time_ = MonoTime::Now();
         return last_safe_ts_;
       }
-      // If the current state is b), then there might be transaction with a timestamp that is lower
-      // than 'N' in between assignment and being appended to the queue. We can't consider 'N'
-      // safe and thus have to return the last known safe timestamp.
-      // Note that there can be at most one single transaction in this state, because prepare
-      // is single threaded.
+      // If the current state is b), then there might be an op with a timestamp
+      // that is lower than 'N' in between assignment and being appended to the
+      // queue. We can't consider 'N' safe and thus have to return the last
+      // known safe timestamp.
+      // Note that there can be at most one single op in this state, because
+      // prepare is single threaded.
       return last_safe_ts_;
     }
     case NON_LEADER:

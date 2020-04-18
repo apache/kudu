@@ -2027,7 +2027,7 @@ class KUDU_EXPORT KuduScanner {
     /// the server will take the current time as the snapshot timestamp.
     /// In this mode reads are repeatable, i.e. all future reads at the same
     /// timestamp will yield the same data. This is performed at the expense
-    /// of waiting for in-flight transactions whose timestamp is lower than
+    /// of waiting for in-flight ops whose timestamp is lower than
     /// the snapshot's timestamp to complete, so it might incur
     /// a latency penalty. See KuduScanner::SetSnapshotMicros() and
     /// KuduScanner::SetSnapshotRaw() for details.
@@ -2048,7 +2048,7 @@ class KUDU_EXPORT KuduScanner {
     /// Specifically this mode:
     ///  (1) ensures read-your-writes and read-your-reads session guarantees,
     ///  (2) minimizes latency caused by waiting for outstanding write
-    ///      transactions to complete.
+    ///      ops to complete.
     ///
     /// Reads in this mode are not repeatable: two READ_YOUR_WRITES reads, even if
     /// they provide the same propagated timestamp bound, can execute at different

@@ -69,7 +69,7 @@ message ConsensusErrorPB {
     // or an update from a valid leader.
     CONSENSUS_BUSY = 8;
 
-    // The local replica was unable to prepare a single transaction.
+    // The local replica was unable to prepare a single op.
     CANNOT_PREPARE = 9;
   }
 
@@ -96,8 +96,8 @@ enum OperationType {
   CHANGE_CONFIG_OP = 5;
 }
 
-// The transaction driver type: indicates whether a transaction is
-// being executed on a leader or a replica.
+// The op driver type: indicates whether an op is being executed on a leader or
+// a replica.
 enum DriverType {
   UNKNOWN_DRIVER = 0;
   LEADER = 1;
@@ -217,7 +217,7 @@ message CommitMsg {
   required OperationType op_type = 1;
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 2;
-  // The operations that were applied and/or failed in this transaction.
+  // The operations that were applied and/or failed in this op.
   optional tablet.TxResultPB result = 3;
 }
 
@@ -414,17 +414,17 @@ message ConsensusResponsePB {
   optional tserver.TabletServerErrorPB error = 999;
 }
 
-// A message reflecting the status of an in-flight transaction.
-message TransactionStatusPB {
+// A message reflecting the status of an in-flight op.
+message OpStatusPB {
   required OpId op_id = 1;
-  required OperationType tx_type = 2;
-  // Time the transaction has been in flight.
+  required OperationType op_type = 2;
+  // Time the op has been in flight.
   required int64 running_for_micros = 3;
   // Quick human-readable description (e.g., ToString() output).
   required string description = 4;
 
-  // If tracing is enabled when viewing the transaction, the trace
-  // buffer is copied here.
+  // If tracing is enabled when viewing the op, the trace buffer is copied
+  // here.
   optional string trace_buffer = 6;
 }
 

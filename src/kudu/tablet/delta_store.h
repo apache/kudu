@@ -96,8 +96,8 @@ class SelectedDeltas {
     // field reflects the logical ordering of such deltas.
     //
     // For example, consider the sequence of REDOs:
-    // D1: @tx10 UPDATE key=1
-    // D2: @tx10 DELETE key=1
+    // D1: @ts10 UPDATE key=1
+    // D2: @ts10 DELETE key=1
     //
     // D1 and D2 are identical as far as 'ts' and 'dtype' are concerned, so D1's
     // disambiguator must be less than that of D2.
@@ -185,8 +185,8 @@ class DeltaStore {
   // The projection in 'opts' corresponds to whatever scan is currently ongoing.
   // All RowBlocks passed to this DeltaIterator must have this same schema.
   //
-  // The snapshot in 'opts' is the MVCC state which determines which transactions
-  // should be considered committed (and thus applied by the iterator).
+  // The snapshot in 'opts' is the MVCC state which determines which ops should
+  // be considered committed (and thus applied by the iterator).
   //
   // Returns Status::OK and sets 'iterator' to the new DeltaIterator, or
   // returns Status::NotFound if the mutations within this delta store

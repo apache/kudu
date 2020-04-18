@@ -108,7 +108,7 @@ DEFINE_bool(follower_reject_update_consensus_requests, false,
 TAG_FLAG(follower_reject_update_consensus_requests, unsafe);
 
 DEFINE_bool(follower_fail_all_prepare, false,
-            "Whether a follower will fail preparing all transactions. "
+            "Whether a follower will fail preparing all ops. "
             "Warning! This is only intended for testing.");
 TAG_FLAG(follower_fail_all_prepare, unsafe);
 
@@ -341,11 +341,11 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
     // Append any uncommitted replicate messages found during log replay to the queue.
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Replica starting. Triggering "
                                    << info.orphaned_replicates.size()
-                                   << " pending transactions. Active config: "
+                                   << " pending ops. Active config: "
                                    << SecureShortDebugString(cmeta_->ActiveConfig());
     for (ReplicateMsg* replicate : info.orphaned_replicates) {
       ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
-      RETURN_NOT_OK(StartFollowerTransactionUnlocked(replicate_ptr));
+      RETURN_NOT_OK(StartFollowerOpUnlocked(replicate_ptr));
     }
 
     // Set the initial committed opid for the PendingRounds only after
@@ -696,7 +696,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
   if (!was_leader && server_ctx_.num_leaders) server_ctx_.num_leaders->Increment();
 
-  // Initiate a NO_OP transaction that is sent at the beginning of every term
+  // Initiate a NO_OP op that is sent at the beginning of every term
   // change in raft.
   auto replicate = new ReplicateMsg;
   replicate->set_op_type(NO_OP);
@@ -1042,12 +1042,12 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   return s;
 }
 
-// Helper function to check if the op is a non-Transaction op.
+// Helper function to check if the op is a no-op op.
 static bool IsConsensusOnlyOperation(OperationType op_type) {
   return op_type == NO_OP || op_type == CHANGE_CONFIG_OP;
 }
 
-Status RaftConsensus::StartFollowerTransactionUnlocked(const ReplicateRefPtr& msg) {
+Status RaftConsensus::StartFollowerOpUnlocked(const ReplicateRefPtr& msg) {
   DCHECK(lock_.is_locked());
 
   if (IsConsensusOnlyOperation(msg->get()->op_type())) {
@@ -1059,11 +1059,11 @@ Status RaftConsensus::StartFollowerTransactionUnlocked(const ReplicateRefPtr& ms
                                 "is set to true.");
   }
 
-  VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: "
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting op: "
                                << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
-  RETURN_NOT_OK(round_handler_->StartFollowerTransaction(round));
+  RETURN_NOT_OK(round_handler_->StartFollowerOp(round));
   return AddPendingOperationUnlocked(round_ptr);
 }
 
@@ -1348,16 +1348,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // don't do anything on operations we've already received in a previous call.
   // This essentially makes this method idempotent.
   //
-  // 1 - We mark as many pending transactions as committed as we can.
+  // 1 - We mark as many pending ops as committed as we can.
   //
-  // We may have some pending transactions that, according to the leader, are now
+  // We may have some pending ops that, according to the leader, are now
   // committed. We Apply them early, because:
   // - Soon (step 2) we may reject the call due to excessive memory pressure. One
   //   way to relieve the pressure is by flushing the MRS, and applying these
-  //   transactions may unblock an in-flight Flush().
+  //   ops may unblock an in-flight Flush().
   // - The Apply and subsequent Prepares (step 2) can take place concurrently.
   //
-  // 2 - We enqueue the Prepare of the transactions.
+  // 2 - We enqueue the Prepare of the ops.
   //
   // The actual prepares are enqueued in order but happen asynchronously so we don't
   // have decoding/acquiring locks on the critical path.
@@ -1366,18 +1366,18 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // - Prepares, by themselves, are inconsequential, i.e. they do not mutate the
   //   state machine so, were we to crash afterwards, having the prepares in-flight
   //   won't hurt.
-  // - Prepares depend on factors external to consensus (the transaction drivers and
+  // - Prepares depend on factors external to consensus (the op drivers and
   //   the TabletReplica) so if for some reason they cannot be enqueued we must know
   //   before we try write them to the WAL. Once enqueued, we assume that prepare will
-  //   always succeed on a replica transaction (because the leader already prepared them
+  //   always succeed on a replica op (because the leader already prepared them
   //   successfully, and thus we know they are valid).
   // - The prepares corresponding to every operation that was logged must be in-flight
-  //   first. This because should we need to abort certain transactions (say a new leader
+  //   first. This because should we need to abort certain ops (say a new leader
   //   says they are not committed) we need to have those prepares in-flight so that
-  //   the transactions can be continued (in the abort path).
+  //   the ops can be continued (in the abort path).
   // - Failure to enqueue prepares is OK, we can continue and let the leader know that
   //   we only went so far. The leader will re-send the remaining messages.
-  // - Prepares represent new transactions, and transactions consume memory. Thus, if the
+  // - Prepares represent new ops, and ops consume memory. Thus, if the
   //   overall memory pressure on the server is too high, we will reject the prepares.
   //
   // 3 - We enqueue the writes to the WAL.
@@ -1387,14 +1387,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // if a prepare fails to enqueue, if any of the previous prepares were successfully
   // submitted they must be written to the WAL.
   // If writing to the WAL fails, we're in an inconsistent state and we crash. In this
-  // case, no one will ever know of the transactions we previously prepared so those are
+  // case, no one will ever know of the ops we previously prepared so those are
   // inconsequential.
   //
-  // 4 - We mark the transactions as committed.
+  // 4 - We mark the ops as committed.
   //
-  // For each transaction which has been committed by the leader, we update the
-  // transaction state to reflect that. If the logging has already succeeded for that
-  // transaction, this will trigger the Apply phase. Otherwise, Apply will be triggered
+  // For each op which has been committed by the leader, we update the
+  // op state to reflect that. If the logging has already succeeded for that
+  // op, this will trigger the Apply phase. Otherwise, Apply will be triggered
   // when the logging completes. In both cases the Apply phase executes asynchronously.
   // This must, of course, happen after the prepares have been triggered as the same batch
   // can both replicate/prepare and commit/apply an operation.
@@ -1460,20 +1460,20 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // metrics get updated even when the operation is rejected.
     queue_->UpdateLastIndexAppendedToLeader(request->last_idx_appended_to_leader());
 
-    // 1 - Early commit pending (and committed) transactions
+    // 1 - Early commit pending (and committed) ops
 
     // What should we commit?
-    // 1. As many pending transactions as we can, except...
+    // 1. As many pending ops as we can, except...
     // 2. ...if we commit beyond the preceding index, we'd regress KUDU-639, and...
     // 3. ...the leader's committed index is always our upper bound.
     const int64_t early_apply_up_to = std::min({
-        pending_->GetLastPendingTransactionOpId().index(),
+        pending_->GetLastPendingOpOpId().index(),
         deduped_req.preceding_opid->index(),
         request->committed_index()});
 
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Early marking committed up to " << early_apply_up_to
                                  << ", Last pending opid index: "
-                                 << pending_->GetLastPendingTransactionOpId().index()
+                                 << pending_->GetLastPendingOpOpId().index()
                                  << ", preceding opid index: "
                                  << deduped_req.preceding_opid->index()
                                  << ", requested index: " << request->committed_index();
@@ -1507,7 +1507,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status prepare_status;
     auto iter = messages.begin();
     while (iter != messages.end()) {
-      prepare_status = StartFollowerTransactionUnlocked(*iter);
+      prepare_status = StartFollowerOpUnlocked(*iter);
       if (PREDICT_FALSE(!prepare_status.ok())) {
         break;
       }
@@ -1523,7 +1523,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // when we first deduped.
     if (iter != messages.end()) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << Substitute(
-          "Could not prepare transaction for op '$0' and following $1 ops. "
+          "Could not prepare op '$0' and following $1 ops. "
           "Status for this op: $2",
           (*iter)->get()->id().ShortDebugString(),
           std::distance(iter, messages.end()) - 1,
@@ -1534,7 +1534,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // else we can do. The leader will detect this and retry later.
       if (messages.empty()) {
         string msg = Substitute("Rejecting Update request from peer $0 for term $1. "
-                                "Could not prepare a single transaction due to: $2",
+                                "Could not prepare a single op due to: $2",
                                 request->caller_uuid(),
                                 request->caller_term(),
                                 prepare_status.ToString());
@@ -1546,7 +1546,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       }
     }
 
-    // All transactions that are going to be prepared were started, advance the safe timestamp.
+    // All ops that are going to be prepared were started, advance the safe timestamp.
     // TODO(dralves) This is only correct because the queue only sets safe time when the request is
     // an empty heartbeat. If we actually start setting this on a consensus request along with
     // actual messages we need to be careful to ignore it if any of the messages fails to prepare.
@@ -1570,7 +1570,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       last_from_leader = *deduped_req.preceding_opid;
     }
 
-    // 4 - Mark transactions as committed
+    // 4 - Mark ops as committed
 
     // Choose the last operation to be applied. This will either be 'committed_index', if
     // no prepare enqueuing failed, or the minimum between 'committed_index' and the id of
@@ -2201,7 +2201,7 @@ void RaftConsensus::Stop() {
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
-    if (pending_) CHECK_OK(pending_->CancelPendingTransactions());
+    if (pending_) CHECK_OK(pending_->CancelPendingOps());
     SetStateUnlocked(kStopped);
 
     // Clear leader status on Stop(), in case this replica was the leader. If
@@ -3240,7 +3240,7 @@ Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
                     bound_term_ != current_term)) {
     return Status::Aborted(
       strings::Substitute(
-        "Transaction submitted in term $0 cannot be replicated in term $1",
+        "Op submitted in term $0 cannot be replicated in term $1",
         bound_term_, current_term));
   }
   return Status::OK();

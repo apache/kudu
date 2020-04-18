@@ -63,29 +63,29 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
-class TransactionTrackerTest : public KuduTest,
+class OpTrackerTest : public KuduTest,
                                public ::testing::WithParamInterface<pair<int, int>> {
  public:
-  class NoOpTransactionState : public TransactionState {
+  class NoOpOpState : public OpState {
    public:
-    NoOpTransactionState() : TransactionState(nullptr) {}
+    NoOpOpState() : OpState(nullptr) {}
     const google::protobuf::Message* request() const override { return &req_; }
-    std::string ToString() const override { return "NoOpTransactionState"; }
+    std::string ToString() const override { return "NoOpOpState"; }
    private:
     consensus::ReplicateMsg req_;
   };
-  class NoOpTransaction : public Transaction {
+  class NoOpOp : public Op {
    public:
-    explicit NoOpTransaction(NoOpTransactionState* state)
-      : Transaction(consensus::LEADER, Transaction::WRITE_TXN),
+    explicit NoOpOp(NoOpOpState* state)
+      : Op(consensus::LEADER, Op::WRITE_OP),
         state_(state) {
     }
 
     void NewReplicateMsg(unique_ptr<consensus::ReplicateMsg>* replicate_msg) override {
       replicate_msg->reset(new consensus::ReplicateMsg());
     }
-    TransactionState* state() override { return state_.get();  }
-    const TransactionState* state() const override { return state_.get();  }
+    OpState* state() override { return state_.get();  }
+    const OpState* state() const override { return state_.get();  }
 
     Status Prepare() override { return Status::OK(); }
     Status Start() override { return Status::OK(); }
@@ -96,33 +96,33 @@ class TransactionTrackerTest : public KuduTest,
       return "NoOp";
     }
    private:
-    unique_ptr<NoOpTransactionState> state_;
+    unique_ptr<NoOpOpState> state_;
   };
 
-  TransactionTrackerTest()
+  OpTrackerTest()
       : entity_(METRIC_ENTITY_tablet.Instantiate(&registry_, "test")) {
     tracker_.StartInstrumentation(entity_);
   }
 
-  void RunTransactionsThread(CountDownLatch* finish_latch);
+  void RunOpsThread(CountDownLatch* finish_latch);
 
   Status AddDrivers(int num_drivers,
-                    vector<scoped_refptr<TransactionDriver> >* drivers) {
-    vector<scoped_refptr<TransactionDriver> > local_drivers;
+                    vector<scoped_refptr<OpDriver> >* drivers) {
+    vector<scoped_refptr<OpDriver> > local_drivers;
     for (int i = 0; i < num_drivers; i++) {
-      scoped_refptr<TransactionDriver> driver(
-          new TransactionDriver(&tracker_,
-                                nullptr,
-                                nullptr,
-                                nullptr,
-                                nullptr,
-                                nullptr));
-      unique_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
-      RETURN_NOT_OK(driver->Init(std::move(tx), consensus::LEADER));
+      scoped_refptr<OpDriver> driver(
+          new OpDriver(&tracker_,
+                       nullptr,
+                       nullptr,
+                       nullptr,
+                       nullptr,
+                       nullptr));
+      unique_ptr<NoOpOp> op(new NoOpOp(new NoOpOpState));
+      RETURN_NOT_OK(driver->Init(std::move(op), consensus::LEADER));
       local_drivers.push_back(driver);
     }
 
-    for (const scoped_refptr<TransactionDriver>& d : local_drivers) {
+    for (const scoped_refptr<OpDriver>& d : local_drivers) {
       drivers->push_back(d);
     }
     return Status::OK();
@@ -130,33 +130,33 @@ class TransactionTrackerTest : public KuduTest,
 
   MetricRegistry registry_;
   scoped_refptr<MetricEntity> entity_;
-  TransactionTracker tracker_;
+  OpTracker tracker_;
 };
 
-TEST_F(TransactionTrackerTest, TestGetPending) {
+TEST_F(OpTrackerTest, TestGetPending) {
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
-  vector<scoped_refptr<TransactionDriver> > drivers;
+  vector<scoped_refptr<OpDriver> > drivers;
   ASSERT_OK(AddDrivers(1, &drivers));
-  scoped_refptr<TransactionDriver> driver = drivers[0];
+  scoped_refptr<OpDriver> driver = drivers[0];
   ASSERT_EQ(1, tracker_.GetNumPendingForTests());
 
-  vector<scoped_refptr<TransactionDriver> > pending_transactions;
-  tracker_.GetPendingTransactions(&pending_transactions);
-  ASSERT_EQ(1, pending_transactions.size());
-  ASSERT_EQ(driver.get(), pending_transactions.front().get());
+  vector<scoped_refptr<OpDriver> > pending_ops;
+  tracker_.GetPendingOps(&pending_ops);
+  ASSERT_EQ(1, pending_ops.size());
+  ASSERT_EQ(driver.get(), pending_ops.front().get());
 
-  // And mark the transaction as failed, which will cause it to unregister itself.
+  // And mark the op as failed, which will cause it to unregister itself.
   driver->Abort(Status::Aborted(""));
 
   ASSERT_EQ(0, tracker_.GetNumPendingForTests());
 }
 
-// Thread which starts a bunch of transactions and later stops them all.
-void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch) {
-  const int kNumTransactions = 100;
-  // Start a bunch of transactions.
-  vector<scoped_refptr<TransactionDriver> > drivers;
-  ASSERT_OK(AddDrivers(kNumTransactions, &drivers));
+// Thread which starts a bunch of ops and later stops them all.
+void OpTrackerTest::RunOpsThread(CountDownLatch* finish_latch) {
+  const int kNumOps = 100;
+  // Start a bunch of ops.
+  vector<scoped_refptr<OpDriver> > drivers;
+  ASSERT_OK(AddDrivers(kNumOps, &drivers));
 
   // Wait for the main thread to tell us to proceed.
   finish_latch->Wait();
@@ -165,25 +165,24 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   // WaitForAllToFinish() call.
   SleepFor(MonoDelta::FromMilliseconds(1));
 
-  // Finish all the transactions
-  for (const scoped_refptr<TransactionDriver>& driver : drivers) {
-    // And mark the transaction as failed, which will cause it to unregister itself.
+  // Finish all the ops
+  for (const scoped_refptr<OpDriver>& driver : drivers) {
+    // And mark the op as failed, which will cause it to unregister itself.
     driver->Abort(Status::Aborted(""));
   }
 }
 
 // Regression test for KUDU-384 (thread safety issue with TestWaitForAllToFinish)
-TEST_F(TransactionTrackerTest, TestWaitForAllToFinish) {
+TEST_F(OpTrackerTest, TestWaitForAllToFinish) {
   CountDownLatch finish_latch(1);
-  thread thr([this, &finish_latch]() { this->RunTransactionsThread(&finish_latch); });
+  thread thr([this, &finish_latch]() { this->RunOpsThread(&finish_latch); });
 
-  // Wait for the txns to start.
+  // Wait for the ops to start.
   while (tracker_.GetNumPendingForTests() == 0) {
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
-  // Allow the thread to proceed, and then wait for it to abort all the
-  // transactions.
+  // Allow the thread to proceed, and then wait for it to abort all the ops.
   finish_latch.CountDown();
   tracker_.WaitForAllToFinish();
 
@@ -208,12 +207,12 @@ static void CheckMetrics(const scoped_refptr<MetricEntity>& entity,
       entity->FindOrNull(METRIC_transaction_memory_limit_rejections).get())->value());
 }
 
-// Basic testing for metrics. Note that the NoOpTransactions we use in this
-// test are all write transactions.
-TEST_F(TransactionTrackerTest, TestMetrics) {
+// Basic testing for metrics. Note that the NoOpOps we use in this
+// test are all write ops.
+TEST_F(OpTrackerTest, TestMetrics) {
   NO_FATALS(CheckMetrics(entity_, 0, 0, 0, 0));
 
-  vector<scoped_refptr<TransactionDriver> > drivers;
+  vector<scoped_refptr<OpDriver> > drivers;
   ASSERT_OK(AddDrivers(3, &drivers));
   NO_FATALS(CheckMetrics(entity_, 3, 0, 0, 0));
 
@@ -226,7 +225,7 @@ TEST_F(TransactionTrackerTest, TestMetrics) {
 }
 
 // Check that the tracker's consumption is very close (but not quite equal to)
-// the passed transaction memory limit.
+// the passed op memory limit.
 static void CheckMemTracker(const shared_ptr<MemTracker>& t, uint64_t limit_mb
      = FLAGS_tablet_transaction_memory_limit_mb) {
   int64_t val = t->consumption();
@@ -235,9 +234,9 @@ static void CheckMemTracker(const shared_ptr<MemTracker>& t, uint64_t limit_mb
   ASSERT_LE(val, defined_limit);
 }
 
-// Test that if too many transactions are added, eventually the tracker starts
-// rejecting new ones.
-TEST_P(TransactionTrackerTest, TestTooManyTransactions) {
+// Test that if too many ops are added, eventually the tracker starts rejecting
+// new ones.
+TEST_P(OpTrackerTest, TestTooManyOps) {
   // First is the root tracker memory limit and the second is current tracker memory limit.
   const pair<int, int>& limit = GetParam();
   shared_ptr<MemTracker> t = MemTracker::CreateTracker(limit.first * 1024 * 1024, "test");
@@ -251,7 +250,7 @@ TEST_P(TransactionTrackerTest, TestTooManyTransactions) {
   // carries an empty ReplicateMsg), so we'll just add as many as possible
   // and check that when we fail, it's because we've hit the limit.
   Status s;
-  vector<scoped_refptr<TransactionDriver>> drivers;
+  vector<scoped_refptr<OpDriver>> drivers;
   SCOPED_CLEANUP({
                    for (const auto &d : drivers) {
                      d->Abort(Status::Aborted(""));
@@ -265,7 +264,7 @@ TEST_P(TransactionTrackerTest, TestTooManyTransactions) {
   int current_memory_limit_rejections_count = (limit.second <= limit.first) ? 1 : 0;
   int min_memory_limit = limit.first < limit.second ? limit.first : limit.second;
   ASSERT_TRUE(s.IsServiceUnavailable());
-  ASSERT_STR_CONTAINS(s.ToString(), "exceeds the transaction memory limit");
+  ASSERT_STR_CONTAINS(s.ToString(), "exceeds the op memory limit");
   NO_FATALS(CheckMetrics(entity_, drivers.size(), 0, 1, current_memory_limit_rejections_count));
   NO_FATALS(CheckMemTracker(t, min_memory_limit));
 
@@ -274,7 +273,7 @@ TEST_P(TransactionTrackerTest, TestTooManyTransactions) {
   NO_FATALS(CheckMetrics(entity_, drivers.size(), 0, 2, current_memory_limit_rejections_count));
   NO_FATALS(CheckMemTracker(t, min_memory_limit));
 
-  // If we abort one transaction, we should be able to add one more.
+  // If we abort one op, we should be able to add one more.
   drivers.back()->Abort(Status::Aborted(""));
   drivers.pop_back();
   NO_FATALS(CheckMemTracker(t, min_memory_limit));
@@ -282,9 +281,9 @@ TEST_P(TransactionTrackerTest, TestTooManyTransactions) {
   NO_FATALS(CheckMemTracker(t, min_memory_limit));
 }
 
-// Tests too many transactions with two memory tracker limits. First is the root tracker
+// Tests too many ops with two memory tracker limits. First is the root tracker
 // memory limit and the second is current tracker memory limit.
-INSTANTIATE_TEST_CASE_P(MemoryLimitsMb, TransactionTrackerTest, ::testing::ValuesIn(
+INSTANTIATE_TEST_CASE_P(MemoryLimitsMb, OpTrackerTest, ::testing::ValuesIn(
     vector<pair<int, int>> { {2, 1}, {1, 2}, {2, 2} }));
 
 } // namespace tablet

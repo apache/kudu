@@ -292,7 +292,7 @@ message NewScanRequestPB {
   optional fixed64 snap_timestamp = 6;
 
   // Sent by clients which previously executed CLIENT_PROPAGATED writes.
-  // This updates the server's time so that no transaction will be assigned
+  // This updates the server's time so that no op will be assigned
   // a timestamp lower than or equal to 'previous_known_timestamp'
   optional fixed64 propagated_timestamp = 7;
 

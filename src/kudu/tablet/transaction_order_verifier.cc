@@ -24,16 +24,16 @@
 namespace kudu {
 namespace tablet {
 
-TransactionOrderVerifier::TransactionOrderVerifier()
+OpOrderVerifier::OpOrderVerifier()
   : prev_idx_(0),
     prev_prepare_phys_timestamp_(0) {
 }
 
-TransactionOrderVerifier::~TransactionOrderVerifier() {
+OpOrderVerifier::~OpOrderVerifier() {
 }
 
-void TransactionOrderVerifier::CheckApply(int64_t op_idx,
-                                          MicrosecondsInt64 prepare_phys_timestamp) {
+void OpOrderVerifier::CheckApply(int64_t op_idx,
+                                 MicrosecondsInt64 prepare_phys_timestamp) {
   DFAKE_SCOPED_LOCK(fake_lock_);
 
   if (prev_idx_ != 0) {

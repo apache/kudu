@@ -36,12 +36,12 @@ namespace tablet {
 enum DeltaType {
   // REDO delta files contain the mutations that were applied
   // since the base data was last flushed/compacted. REDO deltas
-  // are sorted by increasing transaction timestamp.
+  // are sorted by increasing op timestamp.
   REDO,
   // UNDO delta files contain the mutations that were applied
   // prior to the time the base data was last flushed/compacted
   // and allow to execute point-in-time snapshot scans. UNDO
-  // deltas are sorted by decreasing transaction timestamp.
+  // deltas are sorted by decreasing op timestamp.
   UNDO
 };
 
@@ -108,13 +108,13 @@ class DeltaKey {
   }
 
   std::string ToString() const {
-    return strings::Substitute("(row $0@tx$1)", row_idx_, timestamp_.ToString());
+    return strings::Substitute("(row $0@ts$1)", row_idx_, timestamp_.ToString());
   }
 
   // Compare this key to another key. Delta keys are sorted by ascending rowid,
   // then ascending timestamp, except if this is an undo delta key, in which case the
   // the keys are sorted by ascending rowid and then by _descending_ timestamp so that
-  // the transaction closer to the base data comes first.
+  // the op closer to the base data comes first.
   template<DeltaType Type>
   int CompareTo(const DeltaKey &other) const;
 
@@ -129,7 +129,7 @@ class DeltaKey {
   // The row which has been updated.
   rowid_t row_idx_;
 
-  // The timestamp of the transaction which applied the update.
+  // The timestamp of the op which applied the update.
   Timestamp timestamp_;
 };
 

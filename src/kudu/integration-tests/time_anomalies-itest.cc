@@ -94,7 +94,7 @@ TEST_F(TimeAnomaliesITest, CrashOnBootstrapIfClockFarAhead) {
                             ClusterVerifier::EXACTLY,
                             workload.rows_inserted() - workload.rows_deleted()));
 
-  // Return the time back to 'normal': the timestamps of transactions in WAL
+  // Return the time back to 'normal': the timestamps of ops in WAL
   // will become far ahead of timestamps output by the built-in NTP client.
   cluster_->ShutdownNodes(ClusterNodes::TS_ONLY);
   {

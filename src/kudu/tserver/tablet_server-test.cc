@@ -3991,7 +3991,7 @@ void CompactAsync(Tablet* tablet, CountDownLatch* flush_done_latch) {
 
 } // namespace
 
-// Tests that in flight transactions are committed and that commit messages
+// Tests that in flight ops are committed and that commit messages
 // are durable before a compaction is allowed to flush the tablet metadata.
 //
 // This test is in preparation for KUDU-120 and should pass before and after
@@ -4015,12 +4015,12 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   shared_ptr<DelayFsyncLogHook> log_hook(new DelayFsyncLogHook);
   log->SetLogFaultHooksForTests(log_hook);
 
-  // Now start a transaction (delete) and stop just before commit.
+  // Now start an op (delete) and stop just before commit.
   thread delete_thread([this]() { this->DeleteTestRowsRemote(10, 1); });
 
   // Wait for the replicate message to arrive and continue.
   log_hook->Continue();
-  // Wait a few msecs to make sure that the transaction is
+  // Wait a few msecs to make sure that the op is
   // trying to commit.
   usleep(100* 1000); // 100 msecs
 
@@ -4031,20 +4031,20 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
     CompactAsync(tablet, &flush_done_latch);
   });
 
-  // At this point we have both a compaction and a transaction going on.
-  // If we allow the transaction to return before the commit message is
-  // durable (KUDU-120) that means that the mvcc transaction will no longer
+  // At this point we have both a compaction and an op going on.
+  // If we allow the op to return before the commit message is
+  // durable (KUDU-120) that means that the mvcc op will no longer
   // be in flight at this moment, nonetheless since we're blocking the WAL
   // and not allowing the commit message to go through, the compaction should
   // be forced to wait.
   //
   // We are thus testing two conditions:
-  // - That in-flight transactions are committed.
-  // - That commit messages for transactions that were in flight are durable.
+  // - That in-flight ops are committed.
+  // - That commit messages for ops that were in flight are durable.
   //
   // If these pre-conditions are not met, i.e. if the compaction is not forced
   // to wait here for the conditions to be true, then the below assertion
-  // will fail, since the transaction's commit write callback will only
+  // will fail, since the op's commit write callback will only
   // return when we allow it (in log_hook->Continue());
   CHECK(!flush_done_latch.WaitFor(MonoDelta::FromMilliseconds(300)));
 

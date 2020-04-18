@@ -163,8 +163,8 @@ class ServerBase {
   // issues. Here are a few that I observed:
   // - tserver heartbeater threads access acceptor pool socket state.
   // - Shutting down TabletReplicas invokes RPC callbacks for aborted
-  //   transactions, but Messenger::Shutdown has already destroyed too much
-  //   necessary RPC state.
+  //   ops, but Messenger::Shutdown has already destroyed too much necessary
+  //   RPC state.
   //
   // TODO(adar): this should also shutdown the webserver, but it isn't safe to
   // do that before before shutting down the tserver heartbeater.

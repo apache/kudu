@@ -51,26 +51,26 @@ using std::unique_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
-void AlterSchemaTransactionState::AcquireSchemaLock(rw_semaphore* l) {
+void AlterSchemaOpState::AcquireSchemaLock(rw_semaphore* l) {
   TRACE("Acquiring schema lock in exclusive mode");
   schema_lock_ = std::unique_lock<rw_semaphore>(*l);
   TRACE("Acquired schema lock");
 }
 
-void AlterSchemaTransactionState::ReleaseSchemaLock() {
+void AlterSchemaOpState::ReleaseSchemaLock() {
   CHECK(schema_lock_.owns_lock());
   schema_lock_ = std::unique_lock<rw_semaphore>();
   TRACE("Released schema lock");
 }
 
-void AlterSchemaTransactionState::SetError(const Status& s) {
+void AlterSchemaOpState::SetError(const Status& s) {
   CHECK(!s.ok()) << "Expected an error status";
   error_ = OperationResultPB();
   StatusToPB(s, error_->mutable_failed_status());
 }
 
-string AlterSchemaTransactionState::ToString() const {
-  return Substitute("AlterSchemaTransactionState "
+string AlterSchemaOpState::ToString() const {
+  return Substitute("AlterSchemaOpState "
                     "[timestamp=$0, schema=$1, request=$2, error=$3]",
                     has_timestamp() ? timestamp().ToString() : "<unassigned>",
                     schema_ == nullptr ? "(none)" : schema_->ToString(),
@@ -78,19 +78,19 @@ string AlterSchemaTransactionState::ToString() const {
                     error_ ? SecureShortDebugString(error_->failed_status()) : "(none)");
 }
 
-AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
-                                               DriverType type)
-    : Transaction(type, Transaction::ALTER_SCHEMA_TXN),
+AlterSchemaOp::AlterSchemaOp(unique_ptr<AlterSchemaOpState> state,
+                             DriverType type)
+    : Op(type, Op::ALTER_SCHEMA_OP),
       state_(std::move(state)) {
 }
 
-void AlterSchemaTransaction::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
+void AlterSchemaOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
   replicate_msg->reset(new ReplicateMsg);
-  (*replicate_msg)->set_op_type(ALTER_SCHEMA_OP);
+  (*replicate_msg)->set_op_type(consensus::OperationType::ALTER_SCHEMA_OP);
   (*replicate_msg)->mutable_alter_schema_request()->CopyFrom(*state()->request());
 }
 
-Status AlterSchemaTransaction::Prepare() {
+Status AlterSchemaOp::Prepare() {
   TRACE("PREPARE ALTER-SCHEMA: Starting");
 
   // Decode schema
@@ -110,7 +110,7 @@ Status AlterSchemaTransaction::Prepare() {
   return s;
 }
 
-Status AlterSchemaTransaction::Start() {
+Status AlterSchemaOp::Start() {
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
@@ -118,14 +118,14 @@ Status AlterSchemaTransaction::Start() {
   return Status::OK();
 }
 
-Status AlterSchemaTransaction::Apply(unique_ptr<CommitMsg>* commit_msg) {
+Status AlterSchemaOp::Apply(unique_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
   Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
 
   commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
+  (*commit_msg)->set_op_type(consensus::OperationType::ALTER_SCHEMA_OP);
 
   // If there was a logical error (e.g. bad schema version) with the alter,
   // record the error and exit.
@@ -137,7 +137,7 @@ Status AlterSchemaTransaction::Apply(unique_ptr<CommitMsg>* commit_msg) {
 
   state_->tablet_replica()->log()
     ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
-                                                 state_->schema_version());
+                                 state_->schema_version());
 
   // Altered tablets should be included in the next tserver heartbeat so that
   // clients waiting on IsAlterTableDone() are unblocked promptly.
@@ -145,9 +145,9 @@ Status AlterSchemaTransaction::Apply(unique_ptr<CommitMsg>* commit_msg) {
   return Status::OK();
 }
 
-void AlterSchemaTransaction::Finish(TransactionResult result) {
-  if (PREDICT_FALSE(result == Transaction::ABORTED)) {
-    TRACE("AlterSchemaCommitCallback: transaction aborted");
+void AlterSchemaOp::Finish(OpResult result) {
+  if (PREDICT_FALSE(result == Op::ABORTED)) {
+    TRACE("AlterSchemaCommitCallback: op aborted");
     state()->Finish();
     return;
   }
@@ -159,15 +159,15 @@ void AlterSchemaTransaction::Finish(TransactionResult result) {
   // Tablet::AlterSchema().
   state()->ReleaseSchemaLock();
 
-  DCHECK_EQ(result, Transaction::COMMITTED);
+  DCHECK_EQ(result, Op::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making alter schema visible");
   state()->Finish();
 }
 
-string AlterSchemaTransaction::ToString() const {
-  return Substitute("AlterSchemaTransaction [state=$0]", state_->ToString());
+string AlterSchemaOp::ToString() const {
+  return Substitute("AlterSchemaOp [state=$0]", state_->ToString());
 }
 
 }  // namespace tablet

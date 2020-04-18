@@ -255,7 +255,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // and thus is allowed to submit operations to be prepared before they are
   // replicated. To avoid a time-of-check-to-time-of-use (TOCTOU) race, the
   // implementation also stores the current term inside the round's "bound_term"
-  // member. When we eventually are about to replicate the transaction, we verify
+  // member. When we eventually are about to replicate the op, we verify
   // that the term has not changed in the meantime.
   Status CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round);
 
@@ -276,7 +276,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // The leader also provides information on the index of the latest
   // operation considered committed by consensus. The replica uses this
   // information to update the state of any pending (previously replicated/prepared)
-  // transactions.
+  // ops.
   //
   // Returns Status::OK if the response has been filled (regardless of accepting
   // or rejecting the specific request). Returns non-OK Status if a specific
@@ -367,7 +367,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   //------------------------------------------------------------
 
   // Updates the committed_index and triggers the Apply()s for whatever
-  // transactions were pending.
+  // ops were pending.
   // This is idempotent.
   void NotifyCommitIndex(int64_t commit_index) override;
 
@@ -500,8 +500,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status RefreshConsensusQueueAndPeersUnlocked();
 
   // Makes the peer become leader.
-  // Returns OK once the change config transaction that has this peer as leader
-  // has been enqueued, the transaction will complete asynchronously.
+  // Returns OK once the change config op that has this peer as leader
+  // has been enqueued, the op will complete asynchronously.
   //
   // 'lock_' must be held for configuration change before calling.
   Status BecomeLeaderUnlocked();
@@ -513,7 +513,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta = boost::none);
 
   // Updates the state in a replica by storing the received operations in the log
-  // and triggering the required transactions. This method won't return until all
+  // and triggering the required ops. This method won't return until all
   // operations have been stored in the log and all Prepares() have been completed,
   // and a replica cannot accept any more Update() requests until this is done.
   Status UpdateReplica(const ConsensusRequestPB* request,
@@ -544,8 +544,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // - The request is in the right term
   // - The log matching property holds
   // - Messages are de-duplicated so that we only process previously unprocessed requests.
-  // - We abort transactions if the leader sends transactions that have the same index as
-  //   transactions currently on the pendings set, but different terms.
+  // - We abort ops if the leader sends ops that have the same index as ops
+  //   currently on the pendings set, but different terms.
   // If this returns ok and the response has no errors, 'deduped_req' is set with only
   // the messages to add to our state machine.
   Status CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
@@ -556,9 +556,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // and also truncate the LogCache accordingly.
   void TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index);
 
-  // Begin a replica transaction. If the type of message in 'msg' is not a type
-  // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
-  Status StartFollowerTransactionUnlocked(const ReplicateRefPtr& msg);
+  // Begin a replica op. If the type of message in 'msg' is not a type
+  // that uses ops, delegates to StartConsensusOnlyRoundUnlocked().
+  Status StartFollowerOpUnlocked(const ReplicateRefPtr& msg);
 
   // Returns true if this node is the only voter in the Raft configuration.
   bool IsSingleVoterConfig() const;
@@ -742,7 +742,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void CompleteConfigChangeRoundUnlocked(ConsensusRound* round,
                                          const Status& status);
 
-  // Trigger that a non-Transaction ConsensusRound has finished replication.
+  // Trigger that a no-op ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it
   // may be Aborted or some other error status.
   // If 'status' is OK, write a Commit message to the local WAL based on the
@@ -757,7 +757,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // As a leader, append a new ConsensusRound to the queue.
   Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
 
-  // As a follower, start a consensus round not associated with a Transaction.
+  // As a follower, start a consensus round not associated with an op.
   Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
 
   // Add a new pending operation to PendingRounds, including the special handling
@@ -869,9 +869,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<PeerProxyFactory> peer_proxy_factory_;
 
-  // When we receive a message from a remote peer telling us to start a
-  // transaction, or finish a round, we use this handler to handle it.
-  // This may update replica state (e.g. the tablet replica).
+  // When we receive a message from a remote peer telling us to start an op, or
+  // finish a round, we use this handler to handle it. This may update replica
+  // state (e.g. the tablet replica).
   ConsensusRoundHandler* round_handler_;
 
   std::unique_ptr<PeerManager> peer_manager_;
@@ -958,14 +958,14 @@ struct ConsensusBootstrapInfo {
 // Handler for consensus rounds.
 // An implementation of this handler must be registered prior to consensus
 // start, and is used to:
-// - Create transactions when the consensus implementation receives messages
-//   from the leader.
-// - Handle when the consensus implementation finishes a non-transaction round
+// - Create ops when the consensus implementation receives messages from the
+//   leader.
+// - Handle when the consensus implementation finishes a no-op round
 //
-// Follower transactions execute the following way:
+// Follower ops execute the following way:
 //
 // - When a ReplicateMsg is first received from the leader, the RaftConsensus
-//   instance creates the ConsensusRound and calls StartFollowerTransaction().
+//   instance creates the ConsensusRound and calls StartFollowerOp().
 //   This will trigger the Prepare(). At the same time, the follower's consensus
 //   instance immediately stores the ReplicateMsg in the Log. Once the
 //   message is stored in stable storage an ACK is sent to the leader (i.e. the
@@ -982,31 +982,30 @@ class ConsensusRoundHandler {
  public:
   virtual ~ConsensusRoundHandler() {}
 
-  virtual Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& context) = 0;
+  virtual Status StartFollowerOp(const scoped_refptr<ConsensusRound>& context) = 0;
 
-  // Consensus-only rounds complete when non-transaction ops finish
-  // replication. This can be used to trigger callbacks, akin to an Apply() for
-  // transaction ops.
+  // Consensus-only rounds complete when the no-op finishes replication. This
+  // can be used to trigger callbacks, akin to an Apply() for regular ops.
   virtual void FinishConsensusOnlyRound(ConsensusRound* round) = 0;
 };
 
 // Context for a consensus round on the LEADER side, typically created as an
 // out-parameter of RaftConsensus::Append().
 // This class is ref-counted because we want to ensure it stays alive for the
-// duration of the Transaction when it is associated with a Transaction, while
+// duration of the Op when it is associated with a Op, while
 // we also want to ensure it has a proper lifecycle when a ConsensusRound is
-// pushed that is not associated with a Tablet transaction.
+// pushed that is not associated with a Tablet op.
 class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
 
  public:
-  // Ctor used for leader transactions. Leader transactions can and must specify the
+  // Ctor used for leader ops. Leader ops can and must specify the
   // callbacks prior to initiating the consensus round.
   ConsensusRound(RaftConsensus* consensus,
                  std::unique_ptr<ReplicateMsg> replicate_msg,
                  ConsensusReplicatedCallback replicated_cb);
 
-  // Ctor used for follower/learner transactions. These transactions do not use the
-  // replicate callback and the commit callback is set later, after the transaction
+  // Ctor used for follower/learner ops. These ops do not use the
+  // replicate callback and the commit callback is set later, after the op
   // is actually started.
   ConsensusRound(RaftConsensus* consensus,
                  ReplicateRefPtr replicate_msg);
@@ -1065,8 +1064,8 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   // This round's replicate message.
   ReplicateRefPtr replicate_msg_;
 
-  // The continuation that will be called once the transaction is
-  // deemed committed/aborted by consensus.
+  // The continuation that will be called once the op is deemed
+  // committed/aborted by consensus.
   ConsensusReplicatedCallback replicated_cb_;
 
   // The leader term that this round was submitted in. CheckBoundTerm()

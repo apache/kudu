@@ -101,9 +101,9 @@ enum class PeerStatus {
 
 const char* PeerStatusToString(PeerStatus p);
 
-// Tracks the state of the peers and which transactions they have replicated.
-// Owns the LogCache which actually holds the replicate messages which are
-// en route to the various peers.
+// Tracks the state of the peers and which ops they have replicated. Owns the
+// LogCache which actually holds the replicate messages which are en route to
+// the various peers.
 //
 // This also takes care of pushing requests to peers as new operations are
 // added, and notifying RaftConsensus when the commit index advances.

@@ -665,8 +665,8 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
 }
 
 // A test scenario to verify that a disruptive server doesn't start needless
-// elections in case if it takes a long time to replicate Raft transactions
-// from leader to follower replicas (e.g., due to slowness in WAL IO ops).
+// elections in case if it takes a long time to replicate Raft ops from leader
+// to follower replicas (e.g., due to slowness in WAL IO ops).
 TEST_F(RaftConsensusElectionITest, DisruptiveServerAndSlowWAL) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
@@ -800,9 +800,9 @@ TEST_F(RaftConsensusElectionITest, DisruptiveServerAndSlowWAL) {
                            /*ignore_live_leader=*/ false,
                            /*is_pre_election=*/ false,
                            kTimeout);
-      // Neither leader nor follower replica should grant 'yes' vote
-      // since the healthy leader is there and doing well, sending Raft
-      // transactions to be replicated.
+      // Neither leader nor follower replica should grant 'yes' vote since the
+      // healthy leader is there and doing well, sending Raft ops to be
+      // replicated.
       ASSERT_TRUE(s.IsInvalidArgument() || s.IsServiceUnavailable())
           << s.ToString();
       ASSERT_STR_MATCHES(s.ToString(),

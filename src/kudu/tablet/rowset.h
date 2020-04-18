@@ -74,12 +74,12 @@ struct RowIteratorOptions {
   // Defaults to nullptr.
   const Schema* projection;
 
-  // Transactions not committed in this snapshot will be ignored in the iteration.
+  // Ops not committed in this snapshot will be ignored in the iteration.
   //
-  // Defaults to a snapshot that includes all transactions.
+  // Defaults to a snapshot that includes all op.
   MvccSnapshot snap_to_include;
 
-  // Transactions committed in this snapshot will be ignored in the iteration.
+  // Ops committed in this snapshot will be ignored in the iteration.
   // This is stored in a boost::optional so that iterators can ignore it
   // entirely if it is unset (the common case).
   //

@@ -762,7 +762,7 @@ Status MergeDuplicatedRowHistory(CompactionInputRow* old_row,
   // Use an all inclusive snapshot as all of the previous version's undos and redos
   // are guaranteed to be committed, otherwise the compaction wouldn't be able to
   // see the new row.
-  MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllOps();
 
   faststring dst;
 
@@ -868,7 +868,7 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
   // "empty" snapshot ensures that all deltas are included.
   RowIteratorOptions undo_opts;
   undo_opts.projection = projection;
-  undo_opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+  undo_opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingNoOps();
   undo_opts.io_context = io_context;
   unique_ptr<DeltaIterator> undo_deltas;
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(

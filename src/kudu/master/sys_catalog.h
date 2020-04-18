@@ -172,7 +172,7 @@ class SysCatalogTable {
   // Create the new Metadata and initialize the TabletReplica for the sys-table.
   Status CreateNew(FsManager *fs_manager);
 
-  // Perform a series of table/tablet actions in one WriteTransaction.
+  // Perform a series of table/tablet actions in one WriteOp.
   struct Actions {
     Actions() = default;
 
@@ -261,7 +261,7 @@ class SysCatalogTable {
   // NOTE: This is the "server-side" schema, so it must have the column IDs.
   Schema BuildTableSchema();
 
-  // Returns 'Status::OK()' if the WriteTransaction completed
+  // Returns 'Status::OK()' if the WriteOp completed
   Status SyncWrite(const tserver::WriteRequestPB& req);
 
   void SysCatalogStateChanged(const std::string& tablet_id, const std::string& reason);

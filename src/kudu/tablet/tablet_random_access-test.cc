@@ -114,7 +114,7 @@ class TestRandomAccess : public KuduTabletTest {
     optional<ExpectedKeyValueRow> val_in_table = GetRow(key);
     ASSERT_EQ(cur_val, val_in_table);
 
-    vector<LocalTabletWriter::Op> pending;
+    vector<LocalTabletWriter::RowOp> pending;
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
       int r = rand() % 3;
@@ -156,7 +156,7 @@ class TestRandomAccess : public KuduTabletTest {
     }
 
     CHECK_OK(writer_->WriteBatch(pending));
-    for (LocalTabletWriter::Op op : pending) {
+    for (LocalTabletWriter::RowOp op : pending) {
       delete op.row;
     }
   }
@@ -196,19 +196,19 @@ class TestRandomAccess : public KuduTabletTest {
   }
 
   // Adds an insert for the given key/value pair to 'ops', returning the expected value
-  optional<ExpectedKeyValueRow> InsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
+  optional<ExpectedKeyValueRow> InsertRow(int key, int val, vector<LocalTabletWriter::RowOp>* ops) {
     return DoRowOp(RowOperationsPB::INSERT, key, val, boost::none, ops);
   }
 
   optional<ExpectedKeyValueRow> InsertIgnoreRow(int key, int val,
-                                                vector<LocalTabletWriter::Op>* ops) {
+                                                vector<LocalTabletWriter::RowOp>* ops) {
     return DoRowOp(RowOperationsPB::INSERT_IGNORE, key, val, boost::none, ops);
   }
 
   optional<ExpectedKeyValueRow> UpsertRow(int key,
                                           int val,
                                           const optional<ExpectedKeyValueRow>& old_row,
-                                          vector<LocalTabletWriter::Op>* ops) {
+                                          vector<LocalTabletWriter::RowOp>* ops) {
     return DoRowOp(RowOperationsPB::UPSERT, key, val, old_row, ops);
   }
 
@@ -216,7 +216,7 @@ class TestRandomAccess : public KuduTabletTest {
   optional<ExpectedKeyValueRow> MutateRow(int key,
                                           uint32_t new_val,
                                           const optional<ExpectedKeyValueRow>& old_row,
-                                          vector<LocalTabletWriter::Op>* ops) {
+                                          vector<LocalTabletWriter::RowOp>* ops) {
     return DoRowOp(RowOperationsPB::UPDATE, key, new_val, old_row, ops);
   }
 
@@ -224,7 +224,7 @@ class TestRandomAccess : public KuduTabletTest {
                                         int key,
                                         int val,
                                         const optional<ExpectedKeyValueRow>& old_row,
-                                        vector<LocalTabletWriter::Op>* ops) {
+                                        vector<LocalTabletWriter::RowOp>* ops) {
 
     unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
@@ -266,17 +266,17 @@ class TestRandomAccess : public KuduTabletTest {
       default:
         LOG(FATAL) << "Unknown type: " << type;
     }
-    ops->push_back(LocalTabletWriter::Op(type, row.release()));
+    ops->push_back(LocalTabletWriter::RowOp(type, row.release()));
     return ret;
   }
 
 
   // Adds a delete of the given row to 'ops', returning an empty string (indicating that
   // the row no longer exists).
-  optional<ExpectedKeyValueRow> DeleteRow(int key, vector<LocalTabletWriter::Op>* ops) {
+  optional<ExpectedKeyValueRow> DeleteRow(int key, vector<LocalTabletWriter::RowOp>* ops) {
     unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
-    ops->push_back(LocalTabletWriter::Op(RowOperationsPB::DELETE, row.release()));
+    ops->push_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE, row.release()));
     return boost::none;
   }
 

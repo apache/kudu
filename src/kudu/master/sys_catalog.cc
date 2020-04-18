@@ -105,7 +105,7 @@ using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
 using kudu::pb_util::SecureShortDebugString;
-using kudu::tablet::LatchTransactionCompletionCallback;
+using kudu::tablet::LatchOpCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::WriteRequestPB;
@@ -483,16 +483,16 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB& req) {
   }
   CountDownLatch latch(1);
   WriteResponsePB resp;
-  unique_ptr<tablet::TransactionCompletionCallback> txn_callback(
-      new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp));
-  unique_ptr<tablet::WriteTransactionState> tx_state(
-      new tablet::WriteTransactionState(tablet_replica_.get(),
-                                        &req,
-                                        nullptr, // No RequestIdPB
-                                        &resp));
-  tx_state->set_completion_callback(std::move(txn_callback));
+  unique_ptr<tablet::OpCompletionCallback> op_callback(
+      new LatchOpCompletionCallback<WriteResponsePB>(&latch, &resp));
+  unique_ptr<tablet::WriteOpState> op_state(
+      new tablet::WriteOpState(tablet_replica_.get(),
+                               &req,
+                               nullptr, // No RequestIdPB
+                               &resp));
+  op_state->set_completion_callback(std::move(op_callback));
 
-  RETURN_NOT_OK(tablet_replica_->SubmitWrite(std::move(tx_state)));
+  RETURN_NOT_OK(tablet_replica_->SubmitWrite(std::move(op_state)));
   latch.Wait();
 
   if (resp.has_error()) {

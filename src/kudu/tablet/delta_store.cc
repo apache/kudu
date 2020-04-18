@@ -58,9 +58,9 @@ string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool p
   return StrCat(Substitute("($0 delta key=$2, change_list=$1)",
                            DeltaType_Name(type),
                            RowChangeList(cell).ToString(schema),
-                           (pad_key ? StringPrintf("%06u@tx%06u", key.row_idx(),
+                           (pad_key ? StringPrintf("%06u@ts%06u", key.row_idx(),
                                                    atoi(key.timestamp().ToString().c_str()))
-                                    : Substitute("$0@tx$1", key.row_idx(),
+                                    : Substitute("$0@ts$1", key.row_idx(),
                                                  key.timestamp().ToString()))));
 }
 
@@ -153,7 +153,7 @@ string SelectedDeltas::ToString() const {
       if (!dp) {
         return Substitute("$0: UNSELECTED", idx++);
       }
-      return Substitute("$0: @tx$1 $2 dis=$3 ($4) @tx$5 $6 dis=$7 ($8)$9", idx++,
+      return Substitute("$0: @ts$1 $2 dis=$3 ($4) @ts$5 $6 dis=$7 ($8)$9", idx++,
                         dp->oldest.ts.ToString(),
                         DeltaType_Name(dp->oldest.dtype),
                         dp->oldest.disambiguator,
@@ -465,8 +465,8 @@ Status DeltaPreparer<Traits>::FilterColumnIdsAndCollectDeltas(
 
   // May only be used on a fully inclusive snapshot.
   DCHECK(opts_.snap_to_include.Equals(Traits::kType == REDO ?
-                                      MvccSnapshot::CreateSnapshotIncludingAllTransactions() :
-                                      MvccSnapshot::CreateSnapshotIncludingNoTransactions()));
+                                      MvccSnapshot::CreateSnapshotIncludingAllOps() :
+                                      MvccSnapshot::CreateSnapshotIncludingNoOps()));
 
   faststring buf;
   RowChangeListEncoder encoder(&buf);

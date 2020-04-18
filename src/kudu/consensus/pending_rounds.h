@@ -37,16 +37,17 @@ class TimeManager;
 //
 // This class is not thread-safe.
 //
-// TODO(todd): this class inconsistently uses the term "round", "op", and "transaction".
-// We should consolidate to "round".
+// NOTE: each round is associated with a single round, though "round" refers to
+// the logical Raft replication and "op" refers to the replicated batch of
+// operations.
 class PendingRounds {
  public:
   PendingRounds(std::string log_prefix, TimeManager* time_manager);
   ~PendingRounds();
 
-  // Set the committed op during startup. This should be done after
-  // appending any of the pending transactions, and will take care
-  // of triggering any that are now considered committed.
+  // Set the committed op during startup. This should be done after appending
+  // any of the pending ops, and will take care of triggering any that are now
+  // considered committed.
   Status SetInitialCommittedOpId(const OpId& committed_op);
 
   // Returns the the ConsensusRound with the provided index, if there is any, or NULL
@@ -72,18 +73,18 @@ class PendingRounds {
   // are different 'term_mismatch' is set to true, it is false otherwise.
   bool IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch);
 
-  // Returns the id of the latest pending transaction (i.e. the one with the
-  // latest index). This must be called under the lock.
-  OpId GetLastPendingTransactionOpId() const;
+  // Returns the id of the latest pending op (i.e. the one with the latest
+  // index). This must be called under the lock.
+  OpId GetLastPendingOpOpId() const;
 
-  // Used by replicas to cancel pending transactions. Pending transaction are those
-  // that have completed prepare/replicate but are waiting on the LEADER's commit
-  // to complete. This does not cancel transactions being applied.
-  Status CancelPendingTransactions();
+  // Used by replicas to cancel pending ops. Pending ops are those that have
+  // completed prepare/replicate but are waiting on the LEADER's commit to
+  // complete. This does not cancel ops being applied.
+  Status CancelPendingOps();
 
-  // Returns the number of transactions that are currently in the pending state
-  // i.e. transactions for which Prepare() is done or under way.
-  int GetNumPendingTxns() const;
+  // Returns the number of ops that are currently in the pending state
+  // i.e. ops for which Prepare() is done or under way.
+  int GetNumPendingOps() const;
 
   // Returns the watermark below which all operations are known to
   // be committed according to consensus.
@@ -104,7 +105,7 @@ class PendingRounds {
   // received a replicate message from the leader but have yet to be committed.
   // The key is the index of the replicate operation.
   typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
-  IndexToRoundMap pending_txns_;
+  IndexToRoundMap pending_ops_;
 
   // The OpId of the round that was last committed. Initialized to MinimumOpId().
   OpId last_committed_op_id_;

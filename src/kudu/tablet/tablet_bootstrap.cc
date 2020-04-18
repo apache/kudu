@@ -278,7 +278,7 @@ class TabletBootstrap {
   // See ApplyRowOperations() for more details on how the decision of whether an operation
   // is applied or skipped is made.
   Status PlayRowOperations(const IOContext* io_context,
-                           WriteTransactionState* tx_state,
+                           WriteOpState* op_state,
                            const TxResultPB& orig_result,
                            TxResultPB* new_result);
 
@@ -293,12 +293,12 @@ class TabletBootstrap {
                                              WriteResponsePB* response,
                                              bool* all_skipped);
 
-  // Pass through all of the decoded operations in tx_state. For each op:
+  // Pass through all of the decoded operations in op_state. For each op:
   // - if it was previously failed, mark as failed
   // - if it previously succeeded but was flushed, skip it.
   // - otherwise, re-apply to the tablet being bootstrapped.
   Status ApplyOperations(const IOContext* io_context,
-                         WriteTransactionState* tx_state,
+                         WriteOpState* op_state,
                          const TxResultPB& orig_result,
                          TxResultPB* new_result);
 
@@ -1118,18 +1118,17 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
 
   // Handle advancement of our new timestamp lower bound watermark.
   //
-  // If this message is a Raft election no-op, or is a transaction op that has
-  // an external consistency mode other than COMMIT_WAIT, we know that no
-  // future transaction will have a timestamp that is lower than it, so we can
-  // just advance the safe timestamp to the message's timestamp.
+  // If this message is a Raft election no-op, or is an op that has an external
+  // consistency mode other than COMMIT_WAIT, we know that no future op will
+  // have a timestamp that is lower than it, so we can just advance the safe
+  // timestamp to the message's timestamp.
   //
-  // If the hybrid clock is disabled, all transactions will fall into this
-  // category.
+  // If the hybrid clock is disabled, all ops will fall into this category.
   Timestamp new_lower_bound;
   if (replicate->op_type() != consensus::WRITE_OP ||
       replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
     new_lower_bound = Timestamp(replicate->timestamp());
-  // ... else we set the new timestamp lower bound to be the transaction's
+  // ... else we set the new timestamp lower bound to be the op's
   // timestamp minus the maximum clock error. This opens the door for problems
   // if the flags changed across reboots, but this is unlikely and the problem
   // would manifest itself immediately and clearly (mvcc would complain the
@@ -1141,7 +1140,7 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
         Timestamp(replicate->timestamp()),
         MonoDelta::FromMicroseconds(-FLAGS_max_clock_sync_error_usec));
   }
-  tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(new_lower_bound);
+  tablet_->mvcc_manager()->AdjustNewOpLowerBound(new_lower_bound);
 
   return Status::OK();
 }
@@ -1286,7 +1285,7 @@ Status TabletBootstrap::PlaySegments(const IOContext* io_context,
   // pre-condition is:
   // - No flush will become visible on reboot (meaning we won't durably update the tablet
   //   metadata), unless the snapshot under which the flush/compact was performed has no
-  //   in-flight transactions and all the messages that are in-flight to the log are durable.
+  //   in-flight ops and all the messages that are in-flight to the log are durable.
   //
   // In our example this means that if we had flushed/compacted after 10.10 was applied
   // (meaning losing the commit message would lead to corruption as we might re-apply it)
@@ -1366,18 +1365,18 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
   CommitMsg* new_commit = commit_entry.mutable_commit();
   new_commit->CopyFrom(commit_msg);
 
-  // Set up the new transaction.
-  // Even if we're going to ignore the transaction, it's important to
-  // do this so that MVCC advances.
+  // Set up the new op.
+  // Even if we're going to ignore the op, it's important to do this so that
+  // MVCC advances.
   DCHECK(replicate_msg->has_timestamp());
   WriteRequestPB* write = replicate_msg->mutable_write_request();
 
-  WriteTransactionState tx_state(nullptr, write, nullptr);
-  tx_state.mutable_op_id()->CopyFrom(replicate_msg->id());
-  tx_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
+  WriteOpState op_state(nullptr, write, nullptr);
+  op_state.mutable_op_id()->CopyFrom(replicate_msg->id());
+  op_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
 
-  tablet_->StartTransaction(&tx_state);
-  tablet_->StartApplying(&tx_state);
+  tablet_->StartOp(&op_state);
+  tablet_->StartApplying(&op_state);
 
   unique_ptr<WriteResponsePB> response;
 
@@ -1424,19 +1423,19 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
   if (!all_flushed && write->has_row_operations()) {
     // Rather than RETURN_NOT_OK() here, we need to just save the status and do the
     // RETURN_NOT_OK() down below the Commit() call below. Even though it seems wrong
-    // to commit the transaction when in fact it failed to apply, we would throw a CHECK
+    // to commit the op when in fact it failed to apply, we would throw a CHECK
     // failure if we attempted to 'Abort()' after entering the applying stage. Allowing it to
     // Commit isn't problematic because we don't expose the results anyway, and the bad
     // Status returned below will cause us to fail the entire tablet bootstrap anyway.
-    play_status = PlayRowOperations(io_context, &tx_state, commit_msg.result(), new_result);
+    play_status = PlayRowOperations(io_context, &op_state, commit_msg.result(), new_result);
 
     if (play_status.ok()) {
       // Replace the original commit message's result with the new one from the replayed operation.
-      tx_state.ReleaseTxResultPB(new_commit->mutable_result());
+      op_state.ReleaseTxResultPB(new_commit->mutable_result());
     }
   }
 
-  tx_state.CommitOrAbort(Transaction::COMMITTED);
+  op_state.CommitOrAbort(Op::COMMITTED);
 
   // If we failed to apply the operations, fail bootstrap before we write anything incorrect
   // to the recovery log.
@@ -1479,16 +1478,16 @@ Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
 
-  AlterSchemaTransactionState tx_state(nullptr, alter_schema, nullptr);
-  RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
+  AlterSchemaOpState op_state(nullptr, alter_schema, nullptr);
+  RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&op_state, &schema));
 
   // Apply the alter schema to the tablet
-  RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_state), "Failed to AlterSchema:");
+  RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&op_state), "Failed to AlterSchema:");
 
-  if (!tx_state.error()) {
+  if (!op_state.error()) {
     // If the alter completed successfully, update the log segment header. Note
     // that our new log isn't hooked up to the tablet yet.
-    log_->SetSchemaForNextLogSegment(std::move(schema), tx_state.schema_version());
+    log_->SetSchemaForNextLogSegment(std::move(schema), op_state.schema_version());
   }
 
   return AppendCommitMsg(commit_msg);
@@ -1521,35 +1520,35 @@ Status TabletBootstrap::PlayNoOpRequest(const IOContext* /*io_context*/,
 }
 
 Status TabletBootstrap::PlayRowOperations(const IOContext* io_context,
-                                          WriteTransactionState* tx_state,
+                                          WriteOpState* op_state,
                                           const TxResultPB& orig_result,
                                           TxResultPB* new_result) {
   Schema inserts_schema;
-  RETURN_NOT_OK_PREPEND(SchemaFromPB(tx_state->request()->schema(), &inserts_schema),
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(op_state->request()->schema(), &inserts_schema),
                         "Couldn't decode client schema");
 
-  RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, tx_state),
+  RETURN_NOT_OK_PREPEND(tablet_->DecodeWriteOperations(&inserts_schema, op_state),
                         Substitute("Could not decode row operations: $0",
-                                   SecureDebugString(tx_state->request()->row_operations())));
+                                   SecureDebugString(op_state->request()->row_operations())));
 
   // Run AcquireRowLocks, Apply, etc!
-  RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(tx_state),
+  RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(op_state),
                         "Failed to acquire row locks");
 
-  RETURN_NOT_OK(ApplyOperations(io_context, tx_state, orig_result, new_result));
+  RETURN_NOT_OK(ApplyOperations(io_context, op_state, orig_result, new_result));
 
   return Status::OK();
 }
 
 Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
-                                        WriteTransactionState* tx_state,
+                                        WriteOpState* op_state,
                                         const TxResultPB& orig_result,
                                         TxResultPB* new_result) {
-  DCHECK_EQ(tx_state->row_ops().size(), orig_result.ops_size());
-  DCHECK_EQ(tx_state->row_ops().size(), new_result->ops_size());
+  DCHECK_EQ(op_state->row_ops().size(), orig_result.ops_size());
+  DCHECK_EQ(op_state->row_ops().size(), new_result->ops_size());
   int32_t op_idx = 0;
 
-  for (RowOp* op : tx_state->row_ops()) {
+  for (RowOp* op : op_state->row_ops()) {
     int32_t curr_op_idx = op_idx++;
     // Increment the seen/ignored stats.
     switch (op->decoded_op.type) {
@@ -1592,7 +1591,7 @@ Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
 
     // Actually apply it.
     ProbeStats stats; // we don't use this, but tablet internals require non-NULL.
-    RETURN_NOT_OK(tablet_->ApplyRowOperation(io_context, tx_state, op, &stats));
+    RETURN_NOT_OK(tablet_->ApplyRowOperation(io_context, op_state, op, &stats));
     DCHECK(op->has_result());
 
     // We expect that the above Apply() will always succeed, because we're

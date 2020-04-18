@@ -44,7 +44,7 @@ using std::unique_ptr;
 namespace kudu {
 namespace tablet {
 
-class TransactionState;
+class OpState;
 
 // ============================================================================
 //  LockTable
@@ -98,8 +98,8 @@ class LockEntry {
   // buffer of the key, allocated on insertion by CopyKey()
   faststring key_buf_;
 
-  // The transaction currently holding the lock
-  const TransactionState* holder_;
+  // The op currently holding the lock
+  const OpState* holder_;
 };
 
 class LockTable {
@@ -275,17 +275,17 @@ void LockTable::Resize() {
 // ============================================================================
 
 ScopedRowLock::ScopedRowLock(LockManager *manager,
-                             const TransactionState* tx,
+                             const OpState* op,
                              const Slice &key,
                              LockManager::LockMode mode)
   : manager_(DCHECK_NOTNULL(manager)),
     acquired_(false) {
-  ls_ = manager_->Lock(key, tx, mode, &entry_);
+  ls_ = manager_->Lock(key, op, mode, &entry_);
 
   if (ls_ == LockManager::LOCK_ACQUIRED) {
     acquired_ = true;
   } else {
-    // the lock might already have been acquired by this transaction so
+    // the lock might already have been acquired by this op so
     // simply check that we didn't get a LOCK_BUSY status (we should have waited)
     CHECK_NE(ls_, LockManager::LOCK_BUSY);
   }
@@ -335,7 +335,7 @@ LockManager::~LockManager() {
 }
 
 LockManager::LockStatus LockManager::Lock(const Slice& key,
-                                          const TransactionState* tx,
+                                          const OpState* op,
                                           LockManager::LockMode mode,
                                           LockEntry** entry) {
   *entry = locks_->GetLockEntry(key);
@@ -344,16 +344,16 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
   // than a timed_lock, since we don't have to do a syscall to get the current
   // time.
   if (!(*entry)->sem.TryAcquire()) {
-    // If the current holder of this lock is the same transaction just return
+    // If the current holder of this lock is the same op just return
     // a LOCK_ALREADY_ACQUIRED status without actually acquiring the mutex.
     //
     //
     // NOTE: This is not a problem for the current way locks are managed since
-    // they are obtained and released in bulk (all locks for a transaction are
+    // they are obtained and released in bulk (all locks for an op are
     // obtained and released at the same time). If at any time in the future
-    // we opt to perform more fine grained locking, possibly letting transactions
+    // we opt to perform more fine grained locking, possibly letting ops
     // release a portion of the locks they no longer need, this no longer is OK.
-    if (ANNOTATE_UNPROTECTED_READ((*entry)->holder_) == tx) {
+    if (ANNOTATE_UNPROTECTED_READ((*entry)->holder_) == op) {
       (*entry)->recursion_++;
       return LOCK_ACQUIRED;
     }
@@ -366,11 +366,11 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     MicrosecondsInt64 start_wait_us = GetMonoTimeMicros();
     int waited_seconds = 0;
     while (!(*entry)->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
-      const TransactionState* cur_holder = ANNOTATE_UNPROTECTED_READ((*entry)->holder_);
+      const OpState* cur_holder = ANNOTATE_UNPROTECTED_READ((*entry)->holder_);
       LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
                    << KUDU_REDACT(key.ToDebugString()) << " cur holder: " << cur_holder;
-      // TODO(unknown): would be nice to also include some info about the blocking transaction,
-      // but it's a bit tricky to do in a non-racy fashion (the other transaction may
+      // TODO(unknown): would be nice to also include some info about the blocking op,
+      // but it's a bit tricky to do in a non-racy fashion (the other op may
       // complete at any point)
     }
     MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
@@ -380,12 +380,12 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     }
   }
 
-  (*entry)->holder_ = tx;
+  (*entry)->holder_ = op;
   return LOCK_ACQUIRED;
 }
 
 LockManager::LockStatus LockManager::TryLock(const Slice& key,
-                                             const TransactionState* tx,
+                                             const OpState* op,
                                              LockManager::LockMode mode,
                                              LockEntry **entry) {
   *entry = locks_->GetLockEntry(key);
@@ -394,7 +394,7 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
     locks_->ReleaseLockEntry(*entry);
     return LOCK_BUSY;
   }
-  (*entry)->holder_ = tx;
+  (*entry)->holder_ = op;
   return LOCK_ACQUIRED;
 }
 

@@ -88,7 +88,7 @@ TEST_P(DiffScanTest, TestDiffScan) {
   ASSERT_EQ("(int64 key=1, int32 key_idx=1, int32 val=2)", rows[0]);
 
   // 4. Do a diff scan from time snap1.
-  ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingTransactionsToCommit());
+  ASSERT_OK(tablet->mvcc_manager()->WaitForApplyingOpsToCommit());
   MvccSnapshot snap2(*tablet->mvcc_manager());
 
   RowIteratorOptions opts;

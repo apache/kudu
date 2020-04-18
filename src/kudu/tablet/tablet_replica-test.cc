@@ -286,16 +286,16 @@ class TabletReplicaTest : public KuduTabletTest {
 
   Status ExecuteWrite(TabletReplica* replica, const WriteRequestPB& req) {
     unique_ptr<WriteResponsePB> resp(new WriteResponsePB());
-    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(replica,
-                                                                         &req,
-                                                                         nullptr, // No RequestIdPB
-                                                                         resp.get()));
+    unique_ptr<WriteOpState> op_state(new WriteOpState(replica,
+                                                       &req,
+                                                       nullptr, // No RequestIdPB
+                                                       resp.get()));
 
     CountDownLatch rpc_latch(1);
-    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
-        new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
+    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+        new LatchOpCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
-    RETURN_NOT_OK(replica->SubmitWrite(std::move(tx_state)));
+    RETURN_NOT_OK(replica->SubmitWrite(std::move(op_state)));
     rpc_latch.Wait();
     CHECK(!resp->has_error())
         << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
@@ -313,12 +313,12 @@ class TabletReplicaTest : public KuduTabletTest {
 
   Status ExecuteAlter(TabletReplica* replica, const AlterSchemaRequestPB& req) {
     unique_ptr<AlterSchemaResponsePB> resp(new AlterSchemaResponsePB());
-    unique_ptr<AlterSchemaTransactionState> tx_state(
-        new AlterSchemaTransactionState(replica, &req, resp.get()));
+    unique_ptr<AlterSchemaOpState> op_state(
+        new AlterSchemaOpState(replica, &req, resp.get()));
     CountDownLatch rpc_latch(1);
-    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
-          new LatchTransactionCompletionCallback<AlterSchemaResponsePB>(&rpc_latch, resp.get())));
-    RETURN_NOT_OK(replica->SubmitAlterSchema(std::move(tx_state)));
+    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+          new LatchOpCompletionCallback<AlterSchemaResponsePB>(&rpc_latch, resp.get())));
+    RETURN_NOT_OK(replica->SubmitAlterSchema(std::move(op_state)));
     rpc_latch.Wait();
     CHECK(!resp->has_error())
         << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
@@ -364,8 +364,8 @@ class TabletReplicaTest : public KuduTabletTest {
 
   // Assert that there are no log anchors held on the tablet replica.
   //
-  // NOTE: when a transaction finishes and notifies the completion callback, it still is
-  // registered with the transaction tracker for a very short time before being
+  // NOTE: when an op finishes and notifies the completion callback, it still is
+  // registered with the op tracker for a very short time before being
   // destructed. So, this should always be called with an ASSERT_EVENTUALLY wrapper.
   void AssertNoLogAnchors() {
     // Make sure that there are no registered anchors in the registry
@@ -402,13 +402,13 @@ class TabletReplicaTest : public KuduTabletTest {
   scoped_refptr<TabletReplica> tablet_replica_;
 };
 
-// A Transaction that waits on the apply_continue latch inside of Apply().
-class DelayedApplyTransaction : public WriteTransaction {
+// A Op that waits on the apply_continue latch inside of Apply().
+class DelayedApplyOp : public WriteOp {
  public:
-  DelayedApplyTransaction(CountDownLatch* apply_started,
-                          CountDownLatch* apply_continue,
-                          unique_ptr<WriteTransactionState> state)
-      : WriteTransaction(std::move(state), consensus::LEADER),
+  DelayedApplyOp(CountDownLatch* apply_started,
+                 CountDownLatch* apply_continue,
+                 unique_ptr<WriteOpState> state)
+      : WriteOp(std::move(state), consensus::LEADER),
         apply_started_(DCHECK_NOTNULL(apply_started)),
         apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
@@ -418,13 +418,13 @@ class DelayedApplyTransaction : public WriteTransaction {
     LOG(INFO) << "Delaying apply...";
     apply_continue_->Wait();
     LOG(INFO) << "Apply proceeding";
-    return WriteTransaction::Apply(commit_msg);
+    return WriteOp::Apply(commit_msg);
   }
 
  private:
   CountDownLatch* apply_started_;
   CountDownLatch* apply_continue_;
-  DISALLOW_COPY_AND_ASSIGN(DelayedApplyTransaction);
+  DISALLOW_COPY_AND_ASSIGN(DelayedApplyOp);
 };
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
@@ -547,8 +547,8 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(2, segments.size());
 }
 
-// Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
-TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
+// Ensure that Log::GC() doesn't compact logs with OpIds of active ops.
+TEST_F(TabletReplicaTest, TestActiveOpPreventsLogGC) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
@@ -572,9 +572,9 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   // Verify no anchors after Flush().
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
-  // Now create a long-lived Transaction that hangs during Apply().
-  // Allow other transactions to go through. Logs should be populated, but the
-  // long-lived Transaction should prevent the log from being deleted since it
+  // Now create a long-lived op that hangs during Apply().
+  // Allow other ops to go through. Logs should be populated, but the
+  // long-lived op should prevent the log from being deleted since it
   // is in-flight.
   CountDownLatch rpc_latch(1);
   CountDownLatch apply_started(1);
@@ -584,33 +584,33 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   {
     // Long-running mutation.
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
-    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_replica_.get(),
-                                                                         req.get(),
-                                                                         nullptr, // No RequestIdPB
-                                                                         resp.get()));
+    unique_ptr<WriteOpState> op_state(new WriteOpState(tablet_replica_.get(),
+                                                       req.get(),
+                                                       nullptr, // No RequestIdPB
+                                                       resp.get()));
 
-    tx_state->set_completion_callback(unique_ptr<TransactionCompletionCallback>(
-        new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
+    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+        new LatchOpCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
-    unique_ptr<DelayedApplyTransaction> transaction(
-        new DelayedApplyTransaction(&apply_started,
-                                    &apply_continue,
-                                    std::move(tx_state)));
+    unique_ptr<DelayedApplyOp> op(
+        new DelayedApplyOp(&apply_started,
+                           &apply_continue,
+                           std::move(op_state)));
 
-    scoped_refptr<TransactionDriver> driver;
-    ASSERT_OK(tablet_replica_->NewLeaderTransactionDriver(std::move(transaction),
-                                                          &driver));
+    scoped_refptr<OpDriver> driver;
+    ASSERT_OK(tablet_replica_->NewLeaderOpDriver(std::move(op),
+                                                 &driver));
 
     ASSERT_OK(driver->ExecuteAsync());
     apply_started.Wait();
     ASSERT_TRUE(driver->GetOpId().IsInitialized())
-      << "By the time a transaction is applied, it should have an Opid";
+      << "By the time an op is applied, it should have an Opid";
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.
     ASSERT_OK(log->AllocateSegmentAndRollOverForTests());
   }
 
-  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+  ASSERT_EQ(1, tablet_replica_->op_tracker_.GetNumPendingForTests());
   // The log anchor is currently equal to the latest OpId written to the Log
   // because we are delaying the Commit message with the CountDownLatch.
 
@@ -622,7 +622,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(2, segments.size());
 
   // We use mutations here, since an MRS Flush() quiesces the tablet, and we
-  // want to ensure the only thing "anchoring" is the TransactionTracker.
+  // want to ensure the only thing "anchoring" is the OpTracker.
   ASSERT_OK(ExecuteDeletesAndRollLogs(3));
   log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
@@ -631,25 +631,25 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
 
   ASSERT_EVENTUALLY([&]{
       AssertNoLogAnchors();
-      ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+      ASSERT_EQ(1, tablet_replica_->op_tracker_.GetNumPendingForTests());
     });
 
   NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
 
-  // Try to GC(), nothing should be deleted due to the in-flight transaction.
+  // Try to GC(), nothing should be deleted due to the in-flight op.
   retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(0, num_gced);
   log->reader()->GetSegmentsSnapshot(&segments);
   ASSERT_EQ(5, segments.size());
 
-  // Now we release the transaction and wait for everything to complete.
+  // Now we release the op and wait for everything to complete.
   // We fully quiesce and flush, which should release all anchors.
-  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+  ASSERT_EQ(1, tablet_replica_->op_tracker_.GetNumPendingForTests());
   apply_continue.CountDown();
   rpc_latch.Wait();
-  tablet_replica_->txn_tracker_.WaitForAllToFinish();
-  ASSERT_EQ(0, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+  tablet_replica_->op_tracker_.WaitForAllToFinish();
+  ASSERT_EQ(0, tablet_replica_->op_tracker_.GetNumPendingForTests());
   tablet_replica_->tablet()->FlushBiggestDMS();
   ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 

@@ -379,7 +379,7 @@ class TabletTestBase : public KuduTabletTest {
     }
   }
 
-  // Inserts a single test row within a transaction.
+  // Inserts a single test row.
   Status InsertTestRow(LocalTabletWriter* writer,
                        int64_t key_idx,
                        int32_t val) {

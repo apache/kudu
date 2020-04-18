@@ -635,10 +635,9 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   std::vector<LocalTestPeerProxy*> proxies_;
 };
 
-// A simple implementation of the transaction driver.
-// This is usually implemented by TransactionDriver but here we
-// keep the implementation to the minimally required to have consensus
-// work.
+// A simple implementation of the op driver.
+// This is usually implemented by OpDriver but here we keep the implementation
+// to the minimally required to have consensus work.
 class TestDriver {
  public:
   TestDriver(ThreadPool* pool, log::Log* log, const scoped_refptr<ConsensusRound>& round)
@@ -661,7 +660,7 @@ class TestDriver {
     CHECK_OK(pool_->Submit([this]() { this->Apply(); }));
   }
 
-  // Called in all modes to delete the transaction and, transitively, the consensus
+  // Called in all modes to delete the op and, transitively, the consensus
   // round.
   void Cleanup() {
     delete this;
@@ -689,10 +688,10 @@ class TestDriver {
   log::Log* log_;
 };
 
-// A transaction factory for tests, usually this is implemented by TabletReplica.
-class TestTransactionFactory : public ConsensusRoundHandler {
+// A op factory for tests, usually this is implemented by TabletReplica.
+class TestOpFactory : public ConsensusRoundHandler {
  public:
-  explicit TestTransactionFactory(log::Log* log)
+  explicit TestOpFactory(log::Log* log)
       : consensus_(nullptr),
         log_(log) {
 
@@ -703,7 +702,7 @@ class TestTransactionFactory : public ConsensusRoundHandler {
     consensus_ = consensus;
   }
 
-  Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& round) override {
+  Status StartFollowerOp(const scoped_refptr<ConsensusRound>& round) override {
     // 'txn' is deleted when it completes.
     auto* txn = new TestDriver(pool_.get(), log_, round);
     txn->round_->SetConsensusReplicatedCallback(
@@ -726,7 +725,7 @@ class TestTransactionFactory : public ConsensusRoundHandler {
     pool_->Shutdown();
   }
 
-  ~TestTransactionFactory() {
+  ~TestOpFactory() {
     ShutDown();
   }
 

@@ -378,9 +378,9 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
     Status s = log_->WriteBatch(entry_batch);
     if (PREDICT_FALSE(!s.ok())) {
       LOG_WITH_PREFIX(ERROR) << "Error appending to the log: " << s.ToString();
-      // TODO(af): If a single transaction fails to append, should we
-      // abort all subsequent transactions in this batch or allow
-      // them to be appended? What about transactions in future
+      // TODO(af): If a single op fails to append, should we
+      // abort all subsequent ops in this batch or allow
+      // them to be appended? What about ops in future
       // batches?
       entry_batch->SetAppendError(s);
     }

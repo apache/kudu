@@ -1114,7 +1114,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
   consensus::ConsensusBootstrapInfo bootstrap_info;
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
     // Disable tracing for the bootstrap, since this would result in
-    // potentially millions of transaction traces being attached to the
+    // potentially millions of op traces being attached to the
     // TabletCopy trace.
     ADOPT_TRACE(nullptr);
 

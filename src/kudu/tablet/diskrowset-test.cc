@@ -409,8 +409,8 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   RowChangeListEncoder update(&update_buf);
   for (uint32_t i = 2; i <= 5; i++) {
     {
-      ScopedTransaction tx(&mvcc_, clock_.Now());
-      tx.StartApplying();
+      ScopedOp op(&mvcc_, clock_.Now());
+      op.StartApplying();
       update.Reset();
       update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &i);
       Schema proj_key = schema_.CreateKeyProjection();
@@ -419,17 +419,17 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       RowSetKeyProbe probe(rb.row());
       OperationResultPB result;
       ProbeStats stats;
-      ASSERT_OK_FAST(rs->MutateRow(tx.timestamp(),
-                                          probe,
-                                          RowChangeList(update_buf),
-                                          op_id_,
-                                          nullptr,
-                                          &stats,
-                                          &result));
+      ASSERT_OK_FAST(rs->MutateRow(op.timestamp(),
+                                   probe,
+                                   RowChangeList(update_buf),
+                                   op_id_,
+                                   nullptr,
+                                   &stats,
+                                   &result));
       ASSERT_EQ(1, result.mutated_stores_size());
       ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
       ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
-      tx.Commit();
+      op.Commit();
     }
     snaps.emplace_back(mvcc_);
   }
@@ -847,13 +847,13 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     RowSetKeyProbe probe(rb.row());
 
     // Apply the mutation.
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     ProbeStats stats;
     OperationResultPB result;
-    ASSERT_OK(rs->MutateRow(tx.timestamp(), probe, enc.as_changelist(), op_id_,
+    ASSERT_OK(rs->MutateRow(op.timestamp(), probe, enc.as_changelist(), op_id_,
                             &test_context, &stats, &result));
-    tx.Commit();
+    op.Commit();
   };
 
   Random prng(SeedRandom());

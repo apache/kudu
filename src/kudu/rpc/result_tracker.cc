@@ -375,7 +375,7 @@ void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
 
     // It is possible for this method to be called for an RPC that was never actually
     // tracked (though RecordCompletionAndRespond() can't). One such case is when a
-    // follower transaction fails on the TransactionManager, for some reason, before it
+    // follower op fails on the OpDriver, for some reason, before it
     // was tracked. The CompletionCallback still calls this method. In this case, do
     // nothing.
     if (completion_record == nullptr) {

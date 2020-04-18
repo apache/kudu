@@ -46,28 +46,28 @@ class RaftConsensus;
 }
 
 namespace tablet {
-class TransactionOrderVerifier;
-class TransactionTracker;
+class OpOrderVerifier;
+class OpTracker;
 
-// Base class for transaction drivers.
+// Base class for op drivers.
 //
-// TransactionDriver classes encapsulate the logic of coordinating the execution of
+// OpDriver classes encapsulate the logic of coordinating the execution of
 // an operation. The exact triggering of the methods differs based on whether the
 // operation is being executed on a leader or replica, but the general flow is:
 //
 //  1 - Init() is called on a newly created driver object.
 //      If the driver is instantiated from a REPLICA, then we know that
 //      the operation is already "REPLICATING" (and thus we don't need to
-//      trigger replication ourself later on). In this case the transaction has already
-//      been serialized by the leader, so we also call transaction_->Start().
+//      trigger replication ourself later on). In this case the op has already
+//      been serialized by the leader, so we also call op_->Start().
 //
 //  2 - ExecuteAsync() is called. This submits PrepareTask() to prepare_pool_
 //      and returns immediately.
 //
-//  3 - PrepareTask() calls Prepare() on the transaction.
+//  3 - PrepareTask() calls Prepare() on the op.
 //
 //      Once successfully prepared, if we have not yet replicated (i.e we are leader),
-//      assign a timestamp and call transaction_->Start(). Finally call consensus->Replicate()
+//      assign a timestamp and call op_->Start(). Finally call consensus->Replicate()
 //      and change the replication state to REPLICATING.
 //
 //      On the other hand, if we have already successfully replicated (eg we are the
@@ -85,7 +85,7 @@ class TransactionTracker;
 //      If Prepare() has already completed, then we trigger ApplyAsync().
 //
 //  5 - ApplyAsync() submits ApplyTask() to the apply_pool_.
-//      ApplyTask() calls transaction_->Apply().
+//      ApplyTask() calls op_->Apply().
 //
 //      When Apply() is called, changes are made to the in-memory data structures. These
 //      changes are not visible to clients yet. After Apply() completes, a CommitMsg
@@ -93,62 +93,62 @@ class TransactionTracker;
 //      and provide correct recovery.
 //
 //      After the commit message has been enqueued in the Log, the driver executes Finalize()
-//      which, in turn, makes transactions make their changes visible to other transactions.
-//      After this step the driver replies to the client if needed and the transaction
+//      which, in turn, makes ops make their changes visible to other ops.
+//      After this step the driver replies to the client if needed and the op
 //      is completed.
-//      In-mem data structures that contain the changes made by the transaction can now
+//      In-mem data structures that contain the changes made by the op can now
 //      be made durable.
 //
 // [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
 //
 // ===========================================================================================
 //
-// Ordering requirements for lock acquisition and write (mvcc) transaction start
+// Ordering requirements for lock acquisition and write (mvcc) op start
 //
-// On the leader side, starting the mvcc transaction for writes
-// (calling tablet_->StartTransaction()) must always be done _after_ any relevant row locks are
+// On the leader side, starting the mvcc op for writes
+// (calling tablet_->StartOp()) must always be done _after_ any relevant row locks are
 // acquired (using AcquireLockForOp). This ensures that, within each row, timestamps only move
 // forward. If we took a timestamp before getting the row lock, we could have the following
 // situation:
 //
 //   Thread 1         |  Thread 2
 //   ----------------------
-//   Start tx 1       |
-//                    |  Start tx 2
+//   Start op 1       |
+//                    |  Start op 2
 //                    |  Obtain row lock
 //                    |  Update row
-//                    |  Commit tx 2
+//                    |  Commit op 2
 //   Obtain row lock  |
 //   Delete row       |
-//   Commit tx 1
+//   Commit op 1
 //
 // This would cause the mutation list to look like: @t1: DELETE, @t2: UPDATE which is invalid,
 // since we expect to be able to be able to replay mutations in increasing timestamp order on a
 // given row.
 //
 // This requirement is basically two-phase-locking: the order in which row locks are acquired for
-// transactions determines their serialization order. If/when we support multi-node serializable
-// transactions, we'll have to acquire _all_ row locks (across all nodes) before obtaining a
+// ops determines their serialization order. If/when we support multi-node serializable
+// ops, we'll have to acquire _all_ row locks (across all nodes) before obtaining a
 // timestamp.
 //
 // Note that on non-leader replicas this requirement is no longer relevant. The leader assigned
-// the timestamps and serialized the transactions properly, so calling tablet_->StartTransaction()
+// the timestamps and serialized the ops properly, so calling tablet_->StartOp()
 // before lock acquisition on non-leader replicas is inconsequential.
 //
 // ===========================================================================================
 //
-// Tracking transaction results for exactly once semantics
+// Tracking op results for exactly once semantics
 //
-// Exactly once semantics for transactions require that the results of previous executions
-// of a transaction be cached and replayed to the client, when a duplicate request is received.
+// Exactly once semantics for ops require that the results of previous executions
+// of an op be cached and replayed to the client, when a duplicate request is received.
 // For single server operations, this can be encapsulated on the rpc layer, but for replicated
-// ones, like transactions, it needs additional care, as multiple copies of an RPC can arrive
+// ones, like ops, it needs additional care, as multiple copies of an RPC can arrive
 // from different sources. For instance a client might be retrying an operation on a different
 // tablet server, while that tablet server actually received the same operation from a previous
 // leader.
 //
-// The prepare phase of transactions is single threaded, so it's an ideal place to register
-// follower transactions with the result tracker and deduplicate possible multiple attempts.
+// The prepare phase of ops is single threaded, so it's an ideal place to register
+// follower ops with the result tracker and deduplicate possible multiple attempts.
 // However rpc's from clients are first registered as they first arrive, outside of the prepare
 // phase, and requests from another replica might arrive just as we're becoming leader, so we
 // need to account for all the possible interleavings.
@@ -160,11 +160,11 @@ class TransactionTracker;
 //
 // 2 - If a replica is not leader it rejects client requests on the prepare phase.
 //
-// 3 - Replicated transaction, i.e. ones received as a follower of another (leader) replica, are
+// 3 - Replicated ops, i.e. ones received as a follower of another (leader) replica, are
 //     registered with the result tracker on the prepare phase itself. This constrains the possible
 //     interleavings because when a client-originated request prepares, it will either observe a
 //     previous request and abort, or it won't observe it and know it is the first attempt at
-//     executing that transaction.
+//     executing that op.
 //
 // Given these constraints the following interleavings might happen, on a newly elected leader:
 //
@@ -203,7 +203,7 @@ class TransactionTracker;
 //   registered as the handler driver and that it is the only one whose response will be stored.
 //
 // - Later on, when the handler for the client request finally tries to prepare (3), it will observe
-//   that it is no longer the driver of the transaction (his attempt_no has been replaced by
+//   that it is no longer the driver of the op (his attempt_no has been replaced by
 //   the replica request's attempt_no) and will later call ResultTracker::FailAndRespond()
 //   causing the client to retry later (4,5).
 //
@@ -219,36 +219,36 @@ class TransactionTracker;
 // still be ok, as it would get aborted because the replica wasn't a leader yet (constraints 1/2).
 //
 // This class is thread safe.
-class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
+class OpDriver : public RefCountedThreadSafe<OpDriver> {
 
  public:
-  // Construct TransactionDriver. TransactionDriver does not take ownership
+  // Construct OpDriver. OpDriver does not take ownership
   // of any of the objects pointed to in the constructor's arguments.
-  TransactionDriver(TransactionTracker* txn_tracker,
-                    consensus::RaftConsensus* consensus,
-                    log::Log* log,
-                    ThreadPoolToken* prepare_pool_token,
-                    ThreadPool* apply_pool,
-                    TransactionOrderVerifier* order_verifier);
+  OpDriver(OpTracker* op_tracker,
+           consensus::RaftConsensus* consensus,
+           log::Log* log,
+           ThreadPoolToken* prepare_pool_token,
+           ThreadPool* apply_pool,
+           OpOrderVerifier* order_verifier);
 
-  // Perform any non-constructor initialization. Sets the transaction
-  // that will be executed.
-  Status Init(std::unique_ptr<Transaction> transaction,
+  // Perform any non-constructor initialization. Sets the op that will be
+  // executed.
+  Status Init(std::unique_ptr<Op> op,
               consensus::DriverType type);
 
-  // Returns the OpId of the transaction being executed or an uninitialized
+  // Returns the OpId of the op being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
   // be used in tight loops.
   consensus::OpId GetOpId();
 
-  // Submits the transaction for execution.
+  // Submits the op for execution.
   // The returned status acknowledges any error on the submission process.
-  // The transaction will be replied to asynchronously.
+  // The op will be replied to asynchronously.
   Status ExecuteAsync();
 
-  // Aborts the transaction, if possible. Since transactions are executed in
+  // Aborts the op, if possible. Since ops are executed in
   // multiple stages by multiple executors it might not be possible to stop
-  // the transaction immediately, but this will make sure it is aborted
+  // the op immediately, but this will make sure it is aborted
   // at the next synchronization point.
   void Abort(const Status& status);
 
@@ -266,11 +266,11 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   std::string LogPrefix() const;
 
-  // Returns the type of the transaction being executed by this driver.
-  Transaction::TransactionType tx_type() const;
+  // Returns the type of the op being executed by this driver.
+  Op::OpType op_type() const;
 
-  // Returns the state of the transaction being executed by this driver.
-  const TransactionState* state() const;
+  // Returns the state of the op being executed by this driver.
+  const OpState* state() const;
 
   const MonoTime& start_time() const { return start_time_; }
 
@@ -278,7 +278,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
  private:
   FRIEND_TEST(TabletReplicaTest, TestShuttingDownMVCC);
-  friend class RefCountedThreadSafe<TransactionDriver>;
+  friend class RefCountedThreadSafe<OpDriver>;
   enum ReplicationState {
     // The operation has not yet been sent to consensus for replication
     NOT_REPLICATING,
@@ -301,9 +301,9 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
     PREPARED
   };
 
-  ~TransactionDriver() {}
+  ~OpDriver() {}
 
-  // The task submitted to the prepare threadpool to prepare the transaction. If Prepare() fails,
+  // The task submitted to the prepare threadpool to prepare the op. If Prepare() fails,
   // calls HandleFailure.
   void PrepareTask();
 
@@ -313,70 +313,70 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // Submits ApplyTask to the apply pool.
   Status ApplyAsync();
 
-  // Calls Transaction::Apply() followed by RaftConsensus::Commit() with the
+  // Calls Op::Apply() followed by RaftConsensus::Commit() with the
   // results from the Apply().
   void ApplyTask();
 
-  // Sleeps until the transaction is allowed to commit based on the
+  // Sleeps until the op is allowed to commit based on the
   // requested consistency mode.
   Status CommitWait();
 
   // Handle a failure in any of the stages of the operation.
-  // In cases where we can recover or where the transaction's Tablet has been
+  // In cases where we can recover or where the op's Tablet has been
   // stopped, this will end the operation and call its callback.
   // In others, where we can't recover, this will FATAL.
   void HandleFailure(const Status& s);
 
-  // Called on Transaction::Apply() after the CommitMsg has been successfully
+  // Called on Op::Apply() after the CommitMsg has been successfully
   // appended to the WAL.
   void Finalize();
 
-  // Returns the mutable state of the transaction being executed by
+  // Returns the mutable state of the op being executed by
   // this driver.
-  TransactionState* mutable_state();
+  OpState* mutable_state();
 
-  // Return a short string indicating where the transaction currently is in the
+  // Return a short string indicating where the op currently is in the
   // state machine.
   static std::string StateString(ReplicationState repl_state,
                                  PrepareState prep_state);
 
   // Sets the timestamp on the response PB, if there is one.
-  void SetResponseTimestamp(TransactionState* transaction_state,
+  void SetResponseTimestamp(OpState* op_state,
                             const Timestamp& timestamp);
 
-  // If this driver is executing a follower transaction then it is possible
+  // If this driver is executing a follower op then it is possible
   // it never went through the rpc system so we have to register it with the
   // ResultTracker.
-  void RegisterFollowerTransactionOnResultTracker();
+  void RegisterFollowerOpOnResultTracker();
 
-  TransactionTracker* const txn_tracker_;
+  OpTracker* const op_tracker_;
   consensus::RaftConsensus* const consensus_;
   log::Log* const log_;
   ThreadPoolToken* const prepare_pool_token_;
   ThreadPool* const apply_pool_;
-  TransactionOrderVerifier* const order_verifier_;
+  OpOrderVerifier* const order_verifier_;
 
-  Status transaction_status_;
+  Status op_status_;
 
-  // Lock that synchronizes access to the transaction's state.
+  // Lock that synchronizes access to the op's state.
   mutable simple_spinlock lock_;
 
-  // A copy of the transaction's OpId, set when the transaction first
+  // A copy of the op's OpId, set when the op first
   // receives one from RaftConsensus and uninitialized until then.
-  // TODO(todd): we have three separate copies of this now -- in TransactionState,
+  // TODO(todd): we have three separate copies of this now -- in OpState,
   // CommitMsg, and here... we should be able to consolidate!
   consensus::OpId op_id_copy_;
 
   // Lock that protects access to the driver's copy of the op_id, specifically.
   // GetOpId() is the only method expected to be called by threads outside
   // of the control of the driver, so we use a special lock to control access
-  // otherwise callers would block for a long time for long running transactions.
+  // otherwise callers would block for a long time for long running ops.
   mutable simple_spinlock opid_lock_;
 
-  // The transaction to be executed by this driver.
-  std::unique_ptr<Transaction> transaction_;
+  // The op to be executed by this driver.
+  std::unique_ptr<Op> op_;
 
-  // Trace object for tracing any transactions started by this driver.
+  // Trace object for tracing any ops started by this driver.
   scoped_refptr<Trace> trace_;
 
   const MonoTime start_time_;
@@ -389,7 +389,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // This is used for debugging only, not any actual operation ordering.
   MicrosecondsInt64 prepare_physical_timestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(TransactionDriver);
+  DISALLOW_COPY_AND_ASSIGN(OpDriver);
 };
 
 }  // namespace tablet

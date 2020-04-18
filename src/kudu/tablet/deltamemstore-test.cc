@@ -113,15 +113,15 @@ class TestDeltaMemStore : public KuduTest {
     RowChangeListEncoder update(&buf);
 
     for (uint32_t idx_to_update : indexes_to_update) {
-      ScopedTransaction tx(&mvcc_, clock_.Now());
-      tx.StartApplying();
+      ScopedOp op(&mvcc_, clock_.Now());
+      op.StartApplying();
       update.Reset();
       uint32_t new_val = idx_to_update * 10;
       update.AddColumnUpdate(schema_.column(kIntColumn),
                              schema_.column_id(kIntColumn), &new_val);
 
-      CHECK_OK(dms_->Update(tx.timestamp(), idx_to_update, RowChangeList(buf), op_id_));
-      tx.Commit();
+      CHECK_OK(dms_->Update(op.timestamp(), idx_to_update, RowChangeList(buf), op_id_));
+      op.Commit();
     }
   }
 
@@ -191,13 +191,13 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
                              schema_.column_id(kStringColumn), &s);
     }
     if (idx % 2 == 0) {
-      ScopedTransaction tx(&mvcc_, clock_.Now());
-      tx.StartApplying();
+      ScopedOp op(&mvcc_, clock_.Now());
+      op.StartApplying();
       uint32_t new_val = idx * 10;
       update.AddColumnUpdate(schema_.column(kIntColumn),
                              schema_.column_id(kIntColumn), &new_val);
-      ASSERT_OK_FAST(dms_->Update(tx.timestamp(), idx, RowChangeList(update_buf), op_id_));
-      tx.Commit();
+      ASSERT_OK_FAST(dms_->Update(op.timestamp(), idx, RowChangeList(update_buf), op_id_));
+      op.Commit();
     }
   }
 
@@ -265,16 +265,16 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
     faststring buf;
     RowChangeListEncoder update(&buf);
 
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     string str(kStringDataSize, 'x');
     Slice s(str);
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
-    CHECK_OK(dms_->Update(tx.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
-    tx.Commit();
+    CHECK_OK(dms_->Update(op.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
+    op.Commit();
   }
-  mvcc_.AdjustNewTransactionLowerBound(clock_.Now());
+  mvcc_.AdjustNewOpLowerBound(clock_.Now());
 
   MvccSnapshot snap(mvcc_);
   LOG_TIMING(INFO, "Applying updates") {
@@ -368,7 +368,7 @@ TEST_P(TestDeltaMemStoreNumDeletes, BenchmarkScansWithVaryingNumberOfDeletes) {
   // Now scan the DMS. The scans are repeated in a number of passes to stabilize
   // the results.
   ScopedColumnBlock<UINT32> ints(kNumUpdates);
-  MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllOps());
   LOG_TIMING(INFO, Substitute("running $0 scans with $1 deletes",
                               FLAGS_benchmark_num_passes, GetParam())) {
     for (int pass = 0; pass < FLAGS_benchmark_num_passes; pass++) {
@@ -388,30 +388,30 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   // the update gets cleared after usage. This ensures that the
   // underlying data is properly copied into the DMS arena.
   {
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     char buf[256] = "update 1";
     Slice s(buf);
     update.AddColumnUpdate(schema_.column(0),
                            schema_.column_id(0), &s);
-    ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    ASSERT_OK_FAST(dms_->Update(op.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
-    tx.Commit();
+    op.Commit();
   }
   MvccSnapshot snapshot_after_first_update(mvcc_);
 
   // Update the same cell again with a different value
   {
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     char buf[256] = "update 2";
     Slice s(buf);
     update.Reset();
     update.AddColumnUpdate(schema_.column(0),
                            schema_.column_id(0), &s);
-    ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    ASSERT_OK_FAST(dms_->Update(op.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
-    tx.Commit();
+    op.Commit();
   }
   MvccSnapshot snapshot_after_second_update(mvcc_);
 
@@ -429,34 +429,34 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   ASSERT_EQ("update 2", read_back[0].ToString());
 }
 
-// Test that if two updates come in with out-of-order transaction IDs,
-// the one with the higher transaction ID ends up winning.
+// Test that if two updates come in with out-of-order op timestamps,
+// the one with the higher op timestamp ends up winning.
 //
 // This is important during flushing when updates against the old rowset
-// are carried forward, but may fall behind newer transactions.
-TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
+// are carried forward, but may fall behind newer ops.
+TEST_F(TestDeltaMemStore, TestOutOfOrderOps) {
   faststring update_buf;
   RowChangeListEncoder update(&update_buf);
 
   {
-    ScopedTransaction tx1(&mvcc_, clock_.Now());
-    ScopedTransaction tx2(&mvcc_, clock_.Now());
+    ScopedOp op1(&mvcc_, clock_.Now());
+    ScopedOp op2(&mvcc_, clock_.Now());
 
-    tx2.StartApplying();
+    op2.StartApplying();
     Slice s("update 2");
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
-    ASSERT_OK(dms_->Update(tx2.timestamp(), 123, RowChangeList(update_buf), op_id_));
-    tx2.Commit();
+    ASSERT_OK(dms_->Update(op2.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    op2.Commit();
 
 
-    tx1.StartApplying();
+    op1.StartApplying();
     update.Reset();
     s = Slice("update 1");
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
-    ASSERT_OK(dms_->Update(tx1.timestamp(), 123, RowChangeList(update_buf), op_id_));
-    tx1.Commit();
+    ASSERT_OK(dms_->Update(op1.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    op1.Commit();
   }
 
   // Ensure we end up two entries for the cell.
@@ -474,8 +474,8 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
 
   char buf[256];
   for (uint32_t i = 0; i < 1000; i++) {
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     update.Reset();
 
     uint32_t val = i * 10;
@@ -487,8 +487,8 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
 
-    ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
-    tx.Commit();
+    ASSERT_OK_FAST(dms_->Update(op.timestamp(), i, RowChangeList(update_buf), op_id_));
+    op.Commit();
   }
 
   ASSERT_EQ(1000, dms_->Count());
@@ -513,20 +513,20 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
   }
 
 
-  // Update the same rows again, with new transactions. Even though
+  // Update the same rows again, with new ops. Even though
   // the same rows are updated, new entries should be added because
-  // these are separate transactions and we need to maintain the
+  // these are separate ops and we need to maintain the
   // old ones for snapshot consistency purposes.
   for (uint32_t i = 0; i < 1000; i++) {
-    ScopedTransaction tx(&mvcc_, clock_.Now());
-    tx.StartApplying();
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
     update.Reset();
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(schema_.column(kIntColumn),
                            schema_.column_id(kIntColumn), &val);
-    ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
-    tx.Commit();
+    ASSERT_OK_FAST(dms_->Update(op.timestamp(), i, RowChangeList(update_buf), op_id_));
+    op.Commit();
   }
 
   ASSERT_EQ(2000, dms_->Count());

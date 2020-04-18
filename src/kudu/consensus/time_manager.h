@@ -39,19 +39,19 @@ class ReplicateMsg;
 
 // Manages timestamp assignment to consensus rounds and safe time advancement.
 //
-// Safe time corresponds to a timestamp before which all transactions have been applied to the
+// Safe time corresponds to a timestamp before which all ops have been applied to the
 // tablet or are in-flight and is a monotonically increasing timestamp (see note at the end
 // of this class comment).
 //
 // Snapshot scans can use WaitUntilSafe() to wait for a timestamp to be safe. After this method
-// returns an OK status, all the transactions whose timestamps fall before the scan's timestamp
+// returns an OK status, all the ops whose timestamps fall before the scan's timestamp
 // will be either committed or in-flight. If the scanner additionally uses the MvccManager to wait
 // until the given timestamp is clean, then the read will be repeatable.
 //
-// In leader mode the TimeManager is responsible for assigning timestamps to transactions
+// In leader mode the TimeManager is responsible for assigning timestamps to ops
 // and for moving the leader's safe time, which in turn may be sent to replicas on heartbeats
 // moving their safe time. The leader's safe time moves with the clock unless there has been a
-// transaction that was assigned a timestamp that is not yet known by the queue
+// op that was assigned a timestamp that is not yet known by the queue
 // (i.e. AdvanceSafeTimeWithMessage() hasn't been called on the corresponding message).
 // In this case the TimeManager returns the last known safe time.
 //

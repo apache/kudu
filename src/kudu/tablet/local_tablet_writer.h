@@ -40,8 +40,8 @@ namespace tablet {
 // implementation or thread pools.
 class LocalTabletWriter {
  public:
-  struct Op {
-    Op(RowOperationsPB::Type type,
+  struct RowOp {
+    RowOp(RowOperationsPB::Type type,
        const KuduPartialRow* row)
       : type(type),
         row(row) {
@@ -85,32 +85,32 @@ class LocalTabletWriter {
   // Returns a bad Status if the applied operation had a per-row error.
   Status Write(RowOperationsPB::Type type,
                const KuduPartialRow& row) {
-    std::vector<Op> ops;
+    std::vector<RowOp> ops;
     ops.emplace_back(type, &row);
     return WriteBatch(ops);
   }
 
-  Status WriteBatch(const std::vector<Op>& ops) {
+  Status WriteBatch(const std::vector<RowOp>& ops) {
     req_.mutable_row_operations()->Clear();
     RowOperationsPBEncoder encoder(req_.mutable_row_operations());
 
-    for (const Op& op : ops) {
+    for (const RowOp& op : ops) {
       encoder.Add(op.type, *op.row);
     }
 
-    tx_state_.reset(new WriteTransactionState(NULL, &req_, NULL));
+    op_state_.reset(new WriteOpState(NULL, &req_, NULL));
 
-    RETURN_NOT_OK(tablet_->DecodeWriteOperations(client_schema_, tx_state_.get()));
-    RETURN_NOT_OK(tablet_->AcquireRowLocks(tx_state_.get()));
-    tablet_->AssignTimestampAndStartTransactionForTests(tx_state_.get());
+    RETURN_NOT_OK(tablet_->DecodeWriteOperations(client_schema_, op_state_.get()));
+    RETURN_NOT_OK(tablet_->AcquireRowLocks(op_state_.get()));
+    tablet_->AssignTimestampAndStartOpForTests(op_state_.get());
 
-    // Create a "fake" OpId and set it in the TransactionState for anchoring.
-    tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
-    RETURN_NOT_OK(tablet_->ApplyRowOperations(tx_state_.get()));
+    // Create a "fake" OpId and set it in the OpState for anchoring.
+    op_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
+    RETURN_NOT_OK(tablet_->ApplyRowOperations(op_state_.get()));
 
-    tx_state_->ReleaseTxResultPB(&result_);
-    tablet_->mvcc_manager()->AdjustNewTransactionLowerBound(tx_state_->timestamp());
-    tx_state_->CommitOrAbort(Transaction::COMMITTED);
+    op_state_->ReleaseTxResultPB(&result_);
+    tablet_->mvcc_manager()->AdjustNewOpLowerBound(op_state_->timestamp());
+    op_state_->CommitOrAbort(Op::COMMITTED);
 
     // Return the status of first failed op.
     int op_idx = 0;
@@ -144,7 +144,7 @@ class LocalTabletWriter {
 
   TxResultPB result_;
   tserver::WriteRequestPB req_;
-  std::unique_ptr<WriteTransactionState> tx_state_;
+  std::unique_ptr<WriteOpState> op_state_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalTabletWriter);
 };

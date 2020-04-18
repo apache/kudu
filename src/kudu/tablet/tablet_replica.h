@@ -54,7 +54,7 @@ class ThreadPoolToken;
 namespace consensus {
 class ConsensusMetadataManager;
 class TimeManager;
-class TransactionStatusPB;
+class OpStatusPB;
 }
 
 namespace clock {
@@ -71,10 +71,10 @@ class ResultTracker;
 } // namespace rpc
 
 namespace tablet {
-class AlterSchemaTransactionState;
+class AlterSchemaOpState;
 class TabletStatusPB;
-class TransactionDriver;
-class WriteTransactionState;
+class OpDriver;
+class WriteOpState;
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -129,14 +129,14 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   Status WaitUntilConsensusRunning(const MonoDelta& timeout);
 
   // Submits a write to a tablet and executes it asynchronously.
-  // The caller is expected to build and pass a TransactionContext that points
+  // The caller is expected to build and pass a OpContext that points
   // to the RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
   // MvccManager.
-  Status SubmitWrite(std::unique_ptr<WriteTransactionState> tx_state);
+  Status SubmitWrite(std::unique_ptr<WriteOpState> op_state);
 
-  // Called by the tablet service to start an alter schema transaction.
+  // Called by the tablet service to start an alter schema op.
   //
-  // The transaction contains all the information required to execute the
+  // The op contains all the information required to execute the
   // AlterSchema operation and send the response back.
   //
   // If the returned Status is OK, the response to the client will be sent
@@ -145,12 +145,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // The AlterSchema operation is taking the tablet component lock in exclusive mode
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
-  Status SubmitAlterSchema(std::unique_ptr<AlterSchemaTransactionState> tx_state);
+  Status SubmitAlterSchema(std::unique_ptr<AlterSchemaOpState> op_state);
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
-  // Used by consensus to create and start a new ReplicaTransaction.
-  virtual Status StartFollowerTransaction(
+  // Used by consensus to create and start a new ReplicaOp.
+  virtual Status StartFollowerOp(
       const scoped_refptr<consensus::ConsensusRound>& round) override;
 
   // Used by consensus to notify the tablet replica that a consensus-only round
@@ -220,9 +220,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // etc. For use in places like the Web UI.
   std::string HumanReadableState() const;
 
-  // Adds list of transactions in-flight at the time of the call to 'out'.
-  void GetInFlightTransactions(Transaction::TraceType trace_type,
-                               std::vector<consensus::TransactionStatusPB>* out) const;
+  // Adds list of ops in-flight at the time of the call to 'out'.
+  void GetInFlightOps(Op::TraceType trace_type,
+                      std::vector<consensus::OpStatusPB>* out) const;
 
   // Returns the log indexes to be retained for durability and to catch up peers.
   // Used for selection of log segments to delete during Log GC.
@@ -255,11 +255,11 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Convenience method to return the permanent_uuid of this peer.
   std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }
 
-  Status NewLeaderTransactionDriver(std::unique_ptr<Transaction> transaction,
-                                    scoped_refptr<TransactionDriver>* driver);
+  Status NewLeaderOpDriver(std::unique_ptr<Op> op,
+                           scoped_refptr<OpDriver>* driver);
 
-  Status NewReplicaTransactionDriver(std::unique_ptr<Transaction> transaction,
-                                     scoped_refptr<TransactionDriver>* driver);
+  Status NewReplicaOpDriver(std::unique_ptr<Op> op,
+                            scoped_refptr<OpDriver>* driver);
 
   // Tells the tablet's log to garbage collect.
   Status RunLogGC();
@@ -278,8 +278,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Stops further I/O on the replica.
   void MakeUnavailable(const Status& error);
 
-  // Return pointer to the transaction tracker for this peer.
-  const TransactionTracker* transaction_tracker() const { return &txn_tracker_; }
+  // Return pointer to the op tracker for this peer.
+  const OpTracker* op_tracker() const { return &op_tracker_; }
 
   const scoped_refptr<TabletMetadata>& tablet_metadata() const {
     return meta_;
@@ -315,7 +315,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   friend class TabletReplicaTest;
   FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
-  FRIEND_TEST(TabletReplicaTest, TestActiveTransactionPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestActiveOpPreventsLogGC);
 
   ~TabletReplica();
 
@@ -335,9 +335,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   const consensus::RaftPeerPB local_peer_pb_;
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_; // Assigned in tablet_replica-test
 
-  // Pool that executes apply tasks for transactions. This is a multi-threaded
-  // pool, constructor-injected by either the Master (for system tables) or
-  // the Tablet server.
+  // Pool that executes apply tasks for ops. This is a multi-threaded pool,
+  // constructor-injected by either the Master (for system tables) or the
+  // Tablet server.
   ThreadPool* const apply_pool_;
 
   // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
@@ -348,8 +348,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   TabletStatePB state_;
   Status error_;
-  TransactionTracker txn_tracker_;
-  TransactionOrderVerifier txn_order_verifier_;
+  OpTracker op_tracker_;
+  OpOrderVerifier op_order_verifier_;
   scoped_refptr<log::Log> log_;
   std::shared_ptr<Tablet> tablet_;
   std::shared_ptr<rpc::Messenger> messenger_;
@@ -372,7 +372,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // during them in order to reject RPCs, etc.
   mutable simple_spinlock state_change_lock_;
 
-  // Token for serial task submission to the server-wide transaction prepare pool.
+  // Token for serial task submission to the server-wide op prepare pool.
   std::unique_ptr<ThreadPoolToken> prepare_pool_token_;
 
   clock::Clock* clock_;
@@ -394,7 +394,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   DISALLOW_COPY_AND_ASSIGN(TabletReplica);
 };
 
-// A callback to wait for the in-flight transactions to complete and to flush
+// A callback to wait for the in-flight ops to complete and to flush
 // the Log when they do.
 // Tablet is passed as a raw pointer as this callback is set in TabletMetadata and
 // were we to keep the tablet as a shared_ptr a circular dependency would occur:

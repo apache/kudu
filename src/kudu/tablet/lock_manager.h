@@ -26,7 +26,7 @@ namespace kudu { namespace tablet {
 
 class LockTable;
 class LockEntry;
-class TransactionState;
+class OpState;
 
 // Super-simple lock manager implementation. This only supports exclusive
 // locks, and makes no attempt to prevent deadlocks if a single thread
@@ -53,9 +53,9 @@ class LockManager {
   friend class ScopedRowLock;
   friend class LockManagerTest;
 
-  LockStatus Lock(const Slice& key, const TransactionState* tx,
+  LockStatus Lock(const Slice& key, const OpState* op,
                   LockMode mode, LockEntry **entry);
-  LockStatus TryLock(const Slice& key, const TransactionState* tx,
+  LockStatus TryLock(const Slice& key, const OpState* op,
                      LockMode mode, LockEntry **entry);
   void Release(LockEntry *lock, LockStatus ls);
 
@@ -100,7 +100,7 @@ class ScopedRowLock {
 
   // Lock row in the given LockManager. The 'key' slice must remain
   // valid and un-changed for the duration of this object's lifetime.
-  ScopedRowLock(LockManager *manager, const TransactionState* ctx,
+  ScopedRowLock(LockManager *manager, const OpState* ctx,
                 const Slice &key, LockManager::LockMode mode);
 
   // Move constructor and assignment.

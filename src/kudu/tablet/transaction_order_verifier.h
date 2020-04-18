@@ -62,10 +62,10 @@ namespace tablet {
 // Because the above reasoning is somewhat complex, and the assumptions may change in the
 // future, this class uses a DFAKE_MUTEX. This way, if we break any assumptions, we'll
 // hopefully see the bug with an assertion error if not from a TSAN failure.
-class TransactionOrderVerifier {
+class OpOrderVerifier {
  public:
-  TransactionOrderVerifier();
-  ~TransactionOrderVerifier();
+  OpOrderVerifier();
+  ~OpOrderVerifier();
 
   // Verify that it would be correct to apply an operation with the given
   // index and prepare timestamp. This ensures that the indexes are increasing
@@ -85,7 +85,7 @@ class TransactionOrderVerifier {
   int64_t prev_idx_;
   MicrosecondsInt64 prev_prepare_phys_timestamp_;
 
-  DISALLOW_COPY_AND_ASSIGN(TransactionOrderVerifier);
+  DISALLOW_COPY_AND_ASSIGN(OpOrderVerifier);
 };
 
 } // namespace tablet

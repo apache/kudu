@@ -682,7 +682,7 @@ TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
   NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters));
 }
 
-TEST_F(RaftConsensusITest, TestFailedTransaction) {
+TEST_F(RaftConsensusITest, TestFailedOp) {
   NO_FATALS(BuildAndStart());
 
   // Wait until we have a stable leader.
@@ -707,9 +707,9 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   ASSERT_TRUE(resp.has_error());
 
   // Add a proper row so that we can verify that all of the replicas continue
-  // to process transactions after a failure. Additionally, this allows us to wait
-  // for all of the replicas to finish processing transactions before shutting down,
-  // avoiding a potential stall as we currently can't abort transactions (see KUDU-341).
+  // to process ops after a failure. Additionally, this allows us to wait for
+  // all of the replicas to finish processing ops before shutting down,
+  // avoiding a potential stall as we currently can't abort ops (see KUDU-341).
   data->Clear();
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 0, 0, "original0", data);
 
@@ -1046,7 +1046,7 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 // index is higher.
 //
 // The test works by setting up three replicas and manually hammering them with write
-// requests targeting a single row. If the bug exists, then TransactionOrderVerifier
+// requests targeting a single row. If the bug exists, then OpOrderVerifier
 // will trigger an assertion because the prepare order and the op indexes will become
 // misaligned.
 TEST_F(RaftConsensusITest, TestKUDU_597) {
@@ -1213,7 +1213,7 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
 
 // Regression test for KUDU-644:
 // Triggers some complicated scenarios on the replica involving aborting and
-// replacing transactions.
+// replacing ops.
 TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   TServerDetails* replica_ts;
   NO_FATALS(SetupSingleReplicaTest(&replica_ts));
@@ -1847,7 +1847,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
     "--memory_limit_hard_bytes=4194304",
 #endif
     "--enable_leader_failure_detection=false",
-    // Don't let transaction memory tracking get in the way.
+    // Don't let op memory tracking get in the way.
     "--tablet_transaction_memory_limit_mb=-1",
   };
 
@@ -2022,10 +2022,10 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
 
   NO_FATALS(BuildAndStart({
-      // Start the cluster with a low per-tablet transaction memory limit,
-      // so that the test can complete faster.
+      // Start the cluster with a low per-tablet op memory limit, so that the
+      // test can complete faster.
       "--tablet_transaction_memory_limit_mb=2",
-      // Make the validator of 'RPC vs transactional memory size' happy.
+      // Make the validator of 'RPC vs op memory size' happy.
       "--rpc_max_message_size=2097152",
   }));
 
@@ -2047,9 +2047,9 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   ASSERT_NE(-1, leader_ts_idx);
 
   // Because the majority of the cluster is dead and because of this workload's
-  // timeout behavior, more and more wedged transactions will accumulate in the
-  // leader. To prevent memory usage from skyrocketing, the leader will
-  // eventually reject new transactions. That's what we're testing for here.
+  // timeout behavior, more and more wedged ops will accumulate in the leader.
+  // To prevent memory usage from skyrocketing, the leader will eventually
+  // reject new ops. That's what we're testing for here.
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
   workload.set_timeout_allowed(true);
@@ -2058,7 +2058,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   workload.Setup();
   workload.Start();
 
-  // Run until the leader has rejected several transactions.
+  // Run until the leader has rejected several ops.
   MonoTime deadline = MonoTime::Now() + kMaxWaitTime;
   while (true) {
     int64_t num_rejections = 0;
@@ -2531,9 +2531,9 @@ TEST_P(RaftConsensusParamReplicationModesITest, Test_KUDU_1735) {
     // the 3-4-3 scheme.
     //
     // In case of the 3-2-3 scheme, the gone-and-back server will crash while
-    // trying to add the COMMIT entry into the WAL. That change corresponds
-    // to the transaction which adds the server as a voting member of the
-    // resulting Raft configuration.
+    // trying to add the COMMIT entry into the WAL. That change corresponds to
+    // the op which adds the server as a voting member of the resulting Raft
+    // configuration.
     //
     // In the 3-4-3 case, the catalog manager sends DeleteTablet() and ADD_PEER
     // Raft configuration change requests upon detecting a change in the
@@ -2607,8 +2607,8 @@ TEST_P(RaftConsensusParamReplicationModesITest, Test_KUDU_1735) {
   }
 }
 
-// Test that if for some reason none of the transactions can be prepared, that it will come
-// back as an error in UpdateConsensus().
+// Test that if for some reason none of the ops can be prepared, that it will
+// come back as an error in UpdateConsensus().
 TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   const int kNumOps = 10;
   vector<string> kTsFlags = {
@@ -2653,7 +2653,7 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   LOG(INFO) << SecureShortDebugString(resp);
   ASSERT_TRUE(resp.status().has_error());
   ASSERT_EQ(consensus::ConsensusErrorPB::CANNOT_PREPARE, resp.status().error().code());
-  ASSERT_STR_CONTAINS(SecureShortDebugString(resp), "Could not prepare a single transaction");
+  ASSERT_STR_CONTAINS(SecureShortDebugString(resp), "Could not prepare a single op");
 }
 
 // Test that, if the raft metadata on a replica is corrupt, then the server

@@ -74,7 +74,7 @@ TEST_F(MvccTest, TestMvccBasic) {
   MvccManager mgr;
   MvccSnapshot snap;
 
-  // Initial state should not have any committed transactions.
+  // Initial state should not have any committed ops.
   snap = MvccSnapshot(mgr);
   ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
@@ -83,22 +83,22 @@ TEST_F(MvccTest, TestMvccBasic) {
   // Start timestamp 1
   Timestamp t = clock_.Now();
   ASSERT_EQ(1, t.value());
-  ScopedTransaction txn(&mgr, t);
+  ScopedOp op(&mgr, t);
 
-  // State should still have no committed transactions, since 1 is in-flight.
+  // State should still have no committed ops, since 1 is in-flight.
   snap = MvccSnapshot(mgr);
   ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
   ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 
   // Mark timestamp 1 as "applying"
-  txn.StartApplying();
+  op.StartApplying();
 
-  // This should not change the set of committed transactions.
+  // This should not change the set of committed ops.
   ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
 
   // Commit timestamp 1
-  txn.Commit();
+  op.Commit();
 
   // State should show 0 as committed, 1 as uncommitted.
   snap = MvccSnapshot(mgr);
@@ -113,12 +113,12 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
 
   Timestamp t1 = clock_.Now();
   ASSERT_EQ(1, t1.value());
-  ScopedTransaction txn1(&mgr, t1);
+  ScopedOp op1(&mgr, t1);
   Timestamp t2 = clock_.Now();
   ASSERT_EQ(2, t2.value());
-  ScopedTransaction txn2(&mgr, t2);
+  ScopedOp op2(&mgr, t2);
 
-  // State should still have no committed transactions, since both are in-flight.
+  // State should still have no committed ops, since both are in-flight.
 
   snap = MvccSnapshot(mgr);
   ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
@@ -126,8 +126,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_FALSE(snap.IsCommitted(t2));
 
   // Commit timestamp 2
-  txn2.StartApplying();
-  txn2.Commit();
+  op2.StartApplying();
+  op2.Commit();
 
   // State should show 2 as committed, 1 as uncommitted.
   snap = MvccSnapshot(mgr);
@@ -137,10 +137,10 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_FALSE(snap.IsCommitted(t1));
   ASSERT_TRUE(snap.IsCommitted(t2));
 
-  // Start another transaction. This gets timestamp 3
+  // Start another ops. This gets timestamp 3
   Timestamp t3 = clock_.Now();
   ASSERT_EQ(3, t3.value());
-  ScopedTransaction txn3(&mgr, t3);
+  ScopedOp op3(&mgr, t3);
 
   // State should show 2 as committed, 1 and 4 as uncommitted.
   snap = MvccSnapshot(mgr);
@@ -152,8 +152,8 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_FALSE(snap.IsCommitted(t3));
 
   // Commit 3
-  txn3.StartApplying();
-  txn3.Commit();
+  op3.StartApplying();
+  op3.Commit();
 
   // 2 and 3 committed
   snap = MvccSnapshot(mgr);
@@ -165,11 +165,11 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_TRUE(snap.IsCommitted(t3));
 
   // Commit 1
-  txn1.StartApplying();
-  txn1.Commit();
+  op1.StartApplying();
+  op1.Commit();
 
-  // All transactions are committed, adjust the new transaction lower bound.
-  mgr.AdjustNewTransactionLowerBound(t3);
+  // All ops are committed, adjust the new op lower bound.
+  mgr.AdjustNewOpLowerBound(t3);
 
   // all committed
   snap = MvccSnapshot(mgr);
@@ -186,74 +186,74 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   ASSERT_OK(hybrid_clock.Init());
   MvccManager mgr;
 
-  // Start a normal non-commit-wait txn.
+  // Start a normal non-commit-wait op.
   Timestamp first_ts = hybrid_clock.Now();
-  ScopedTransaction first_txn(&mgr, first_ts);
+  ScopedOp first_op(&mgr, first_ts);
 
   // Take a snapshot that con
   MvccSnapshot snap_with_nothing_committed(mgr);
 
-  // Start a transaction as if it were using commit-wait (i.e. started in future)
+  // Start an op as if it were using commit-wait (i.e. started in future)
   Timestamp cw_ts = hybrid_clock.NowLatest();
-  ScopedTransaction cw_txn(&mgr, cw_ts);
+  ScopedOp cw_op(&mgr, cw_ts);
 
-  // Commit the original txn
-  first_txn.StartApplying();
-  first_txn.Commit();
+  // Commit the original op
+  first_op.StartApplying();
+  first_op.Commit();
 
-  // Start a new txn
+  // Start a new op
   Timestamp second_ts = hybrid_clock.Now();
-  ScopedTransaction second_txn(&mgr, second_ts);
+  ScopedOp second_op(&mgr, second_ts);
 
-  // The old snapshot should not have either txn
+  // The old snapshot should not have either op
   EXPECT_FALSE(snap_with_nothing_committed.IsCommitted(first_ts));
   EXPECT_FALSE(snap_with_nothing_committed.IsCommitted(second_ts));
 
-  // A new snapshot should have only the first transaction
+  // A new snapshot should have only the first op
   MvccSnapshot snap_with_first_committed(mgr);
   EXPECT_TRUE(snap_with_first_committed.IsCommitted(first_ts));
   EXPECT_FALSE(snap_with_first_committed.IsCommitted(second_ts));
 
   // Commit the commit-wait one once it is time.
   ASSERT_OK(hybrid_clock.WaitUntilAfter(cw_ts, MonoTime::Max()));
-  cw_txn.StartApplying();
-  cw_txn.Commit();
+  cw_op.StartApplying();
+  cw_op.Commit();
 
-  // A new snapshot at this point should still think that normal_txn_2 is uncommitted
+  // A new snapshot at this point should still think that normal_op_2 is uncommitted
   MvccSnapshot snap_with_all_committed(mgr);
   EXPECT_FALSE(snap_with_all_committed.IsCommitted(second_ts));
 }
 
-// Tests starting transaction at a point-in-time in the past and committing them while
-// adjusting the new transaction timestamp lower bound.
+// Tests starting ops at a point-in-time in the past and committing them while
+// adjusting the new op timestamp lower bound.
 TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
   MvccManager mgr;
 
   // Set the clock to some time in the "future".
   ASSERT_OK(clock_.Update(Timestamp(100)));
 
-  // Start a transaction in the "past"
+  // Start an op in the "past"
   Timestamp ts_in_the_past(50);
-  ScopedTransaction txn_in_the_past(&mgr, ts_in_the_past);
-  txn_in_the_past.StartApplying();
+  ScopedOp op_in_the_past(&mgr, ts_in_the_past);
+  op_in_the_past.StartApplying();
 
   ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
 
-  // Committing 'txn_in_the_past' should not advance the new transaction lower
+  // Committing 'op_in_the_past' should not advance the new op lower
   // bound or the clean time.
-  txn_in_the_past.Commit();
+  op_in_the_past.Commit();
 
   // Now take a snapshot.
-  MvccSnapshot snap_with_first_txn(mgr);
+  MvccSnapshot snap_with_first_op(mgr);
 
-  // Because we did not advance the the new transaction lower bound or clean
-  // time, even though the only in-flight transaction was committed at time 50,
-  // a transaction at time 40 should still be considered uncommitted.
-  ASSERT_FALSE(snap_with_first_txn.IsCommitted(Timestamp(40)));
+  // Because we did not advance the the new op lower bound or clean time, even
+  // though the only in-flight op was committed at time 50, an op at time 40
+  // should still be considered uncommitted.
+  ASSERT_FALSE(snap_with_first_op.IsCommitted(Timestamp(40)));
 
-  // Now advance the both clean and new transaction lower bound watermarks to
-  // the last committed transaction.
-  mgr.AdjustNewTransactionLowerBound(Timestamp(50));
+  // Now advance the both clean and new op lower bound watermarks to the last
+  // committed op.
+  mgr.AdjustNewOpLowerBound(Timestamp(50));
 
   ASSERT_EQ(ts_in_the_past, mgr.GetCleanTimestamp());
 
@@ -262,13 +262,13 @@ TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
   ASSERT_TRUE(snap_with_adjusted_clean_time.IsCommitted(Timestamp(40)));
 }
 
-TEST_F(MvccTest, TestScopedTransaction) {
+TEST_F(MvccTest, TestScopedOp) {
   MvccManager mgr;
   MvccSnapshot snap;
 
   {
-    ScopedTransaction t1(&mgr, clock_.Now());
-    ScopedTransaction t2(&mgr, clock_.Now());
+    ScopedOp t1(&mgr, clock_.Now());
+    ScopedOp t2(&mgr, clock_.Now());
 
     ASSERT_EQ(1, t1.timestamp().value());
     ASSERT_EQ(2, t2.timestamp().value());
@@ -286,11 +286,11 @@ TEST_F(MvccTest, TestScopedTransaction) {
   ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 
-  // Test that an applying scoped transaction does not crash if it goes out of
+  // Test that an applying scoped op does not crash if it goes out of
   // scope while the MvccManager is closed.
   mgr.Close();
   {
-    ScopedTransaction t(&mgr, clock_.Now());
+    ScopedOp t(&mgr, clock_.Now());
     NO_FATALS(t.StartApplying());
   }
 }
@@ -304,134 +304,133 @@ TEST_F(MvccTest, TestPointInTimeSnapshot) {
   ASSERT_FALSE(snap.IsCommitted(Timestamp(11)));
 }
 
-TEST_F(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter) {
+TEST_F(MvccTest, TestMayHaveCommittedOpsAtOrAfter) {
   MvccSnapshot snap;
   snap.all_committed_before_ = Timestamp(10);
   snap.committed_timestamps_.push_back(11);
   snap.committed_timestamps_.push_back(13);
   snap.none_committed_at_or_after_ = Timestamp(14);
 
-  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(9)));
-  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
-  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12)));
-  ASSERT_TRUE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(13)));
-  ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(14)));
-  ASSERT_FALSE(snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(15)));
+  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(9)));
+  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
+  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(12)));
+  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(13)));
+  ASSERT_FALSE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(14)));
+  ASSERT_FALSE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(15)));
 
   // Test for "all committed" snapshot
   MvccSnapshot all_committed =
-      MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+      MvccSnapshot::CreateSnapshotIncludingAllOps();
   ASSERT_TRUE(
-      all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+      all_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(1)));
   ASSERT_TRUE(
-      all_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+      all_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(12345)));
 
   // And "none committed" snapshot
   MvccSnapshot none_committed =
-      MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+      MvccSnapshot::CreateSnapshotIncludingNoOps();
   ASSERT_FALSE(
-      none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(1)));
+      none_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(1)));
   ASSERT_FALSE(
-      none_committed.MayHaveCommittedTransactionsAtOrAfter(Timestamp(12345)));
+      none_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_TRUE(clean_snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(9)));
-  ASSERT_FALSE(clean_snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
+  ASSERT_TRUE(clean_snap.MayHaveCommittedOpsAtOrAfter(Timestamp(9)));
+  ASSERT_FALSE(clean_snap.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
 }
 
-TEST_F(MvccTest, TestMayHaveUncommittedTransactionsBefore) {
+TEST_F(MvccTest, TestMayHaveUncommittedOpsBefore) {
   MvccSnapshot snap;
   snap.all_committed_before_ = Timestamp(10);
   snap.committed_timestamps_.push_back(11);
   snap.committed_timestamps_.push_back(13);
   snap.none_committed_at_or_after_ = Timestamp(14);
 
-  ASSERT_FALSE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
-  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(11)));
-  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(13)));
-  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(14)));
-  ASSERT_TRUE(snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(15)));
+  ASSERT_FALSE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
+  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(11)));
+  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(13)));
+  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(14)));
+  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(15)));
 
   // Test for "all committed" snapshot
   MvccSnapshot all_committed =
-      MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+      MvccSnapshot::CreateSnapshotIncludingAllOps();
   ASSERT_FALSE(
-      all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+      all_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(1)));
   ASSERT_FALSE(
-      all_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(12345)));
+      all_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(12345)));
 
   // And "none committed" snapshot
   MvccSnapshot none_committed =
-      MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+      MvccSnapshot::CreateSnapshotIncludingNoOps();
   ASSERT_TRUE(
-      none_committed.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(1)));
+      none_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(1)));
   ASSERT_TRUE(
-      none_committed.MayHaveUncommittedTransactionsAtOrBefore(
+      none_committed.MayHaveUncommittedOpsAtOrBefore(
           Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_FALSE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(clean_snap.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(clean_snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(clean_snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
 
-  // Test for the case where we have a single transaction in flight. Since this is
-  // also the earliest transaction, all_committed_before_ is equal to the txn's
-  // ts, but when it gets committed we can't advance all_committed_before_ past it
-  // because there is no other transaction to advance it to. In this case we should
-  // still report that there can't be any uncommitted transactions before.
+  // Test for the case where we have a single op in flight. Since this is also
+  // the earliest op, all_committed_before_ is equal to the op's ts, but when
+  // it gets committed we can't advance all_committed_before_ past it because
+  // there is no other op to advance it to. In this case we should still report
+  // that there can't be any uncommitted ops before.
   MvccSnapshot snap2;
   snap2.all_committed_before_ = Timestamp(10);
   snap2.committed_timestamps_.push_back(10);
 
-  ASSERT_FALSE(snap2.MayHaveUncommittedTransactionsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(snap2.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
 }
 
-TEST_F(MvccTest, TestAreAllTransactionsCommittedForTests) {
+TEST_F(MvccTest, TestAreAllOpsCommittedForTests) {
   MvccManager mgr;
 
-  // start several transactions and take snapshots along the way
+  // start several ops and take snapshots along the way
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction txn2(&mgr, ts2);
+  ScopedOp op2(&mgr, ts2);
   Timestamp ts3 = clock_.Now();
-  ScopedTransaction txn3(&mgr, ts3);
-  mgr.AdjustNewTransactionLowerBound(clock_.Now());
+  ScopedOp op3(&mgr, ts3);
+  mgr.AdjustNewOpLowerBound(clock_.Now());
 
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(3)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
 
-  // commit tx3, should all still report as having as having uncommitted
-  // transactions.
-  txn3.StartApplying();
-  txn3.Commit();
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(3)));
+  // commit op3, should all still report as having as having uncommitted ops.
+  op3.StartApplying();
+  op3.Commit();
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
 
-  // commit tx1, first snap with in-flights should now report as all committed
-  // and remaining snaps as still having uncommitted transactions
-  txn1.StartApplying();
-  txn1.Commit();
-  ASSERT_TRUE(mgr.AreAllTransactionsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllTransactionsCommittedForTests(Timestamp(3)));
+  // commit op1, first snap with in-flights should now report as all committed
+  // and remaining snaps as still having uncommitted ops
+  op1.StartApplying();
+  op1.Commit();
+  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
 
   // Now they should all report as all committed.
-  txn2.StartApplying();
-  txn2.Commit();
-  ASSERT_TRUE(mgr.AreAllTransactionsCommittedForTests(Timestamp(1)));
-  ASSERT_TRUE(mgr.AreAllTransactionsCommittedForTests(Timestamp(2)));
-  ASSERT_TRUE(mgr.AreAllTransactionsCommittedForTests(Timestamp(3)));
+  op2.StartApplying();
+  op2.Commit();
+  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
+  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
+  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
 }
 
 TEST_F(MvccTest, WaitForCleanSnapshotSnapWithNoInflights) {
   MvccManager mgr;
   Timestamp to_wait_for = clock_.Now();
-  mgr.AdjustNewTransactionLowerBound(clock_.Now());
+  mgr.AdjustNewOpLowerBound(clock_.Now());
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
   // join immediately.
@@ -443,26 +442,26 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapBeforeSafeTimeWithInFlights) {
   MvccManager mgr;
 
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustNewTransactionLowerBound(ts2);
+  ScopedOp op2(&mgr, ts2);
+  mgr.AdjustNewOpLowerBound(ts2);
   Timestamp to_wait_for = clock_.Now();
 
-  // Select a new transaction timestamp lower bound that is after all
-  // transactions and after the the timestamp we'll wait for.
-  // This will cause "clean time" to move when tx1 and tx2 commit.
+  // Select a new op timestamp lower bound that is after all ops and after the
+  // the timestamp we'll wait for.  This will cause "clean time" to move when
+  // op1 and op2 commit.
   Timestamp future_ts = clock_.Now();
-  mgr.AdjustNewTransactionLowerBound(future_ts);
+  mgr.AdjustNewOpLowerBound(future_ts);
 
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, to_wait_for);
 
   ASSERT_FALSE(HasResultSnapshot());
-  txn1.StartApplying();
-  txn1.Commit();
+  op1.StartApplying();
+  op1.Commit();
   ASSERT_FALSE(HasResultSnapshot());
-  txn2.StartApplying();
-  txn2.Commit();
+  op2.StartApplying();
+  op2.Commit();
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
@@ -470,32 +469,31 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapBeforeSafeTimeWithInFlights) {
 TEST_F(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights) {
   MvccManager mgr;
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustNewTransactionLowerBound(ts2);
+  ScopedOp op2(&mgr, ts2);
+  mgr.AdjustNewOpLowerBound(ts2);
 
-  // Wait should return immediately, since we have no transactions "applying"
-  // yet.
-  ASSERT_OK(mgr.WaitForApplyingTransactionsToCommit());
+  // Wait should return immediately, since we have no ops "applying" yet.
+  ASSERT_OK(mgr.WaitForApplyingOpsToCommit());
 
-  txn1.StartApplying();
+  op1.StartApplying();
 
   Status s;
   thread waiting_thread = thread([&] {
-    s = mgr.WaitForApplyingTransactionsToCommit();
+    s = mgr.WaitForApplyingOpsToCommit();
   });
   while (mgr.GetNumWaitersForTests() == 0) {
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Aborting the other transaction shouldn't affect our waiter.
-  txn2.Abort();
+  // Aborting the other op shouldn't affect our waiter.
+  op2.Abort();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Committing our transaction should wake the waiter.
-  txn1.Commit();
+  // Committing our op should wake the waiter.
+  op1.Commit();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
   waiting_thread.join();
   ASSERT_OK(s);
@@ -504,69 +502,67 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights) {
 TEST_F(MvccTest, WaitForCleanSnapshotSnapAtTimestampWithInFlights) {
   MvccManager mgr;
 
-  // Transactions with timestamp 1 through 3
+  // Ops with timestamp 1 through 3
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction tx1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction tx2(&mgr, ts2);
+  ScopedOp op2(&mgr, ts2);
   Timestamp ts3 = clock_.Now();
-  ScopedTransaction tx3(&mgr, ts3);
+  ScopedOp op3(&mgr, ts3);
 
-  // Start a thread waiting for transactions with ts <= 2 to commit
+  // Start a thread waiting for ops with ts <= 2 to commit
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, ts2);
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit tx 1 - thread should still wait.
-  tx1.StartApplying();
-  tx1.Commit();
+  // Commit op 1 - thread should still wait.
+  op1.StartApplying();
+  op1.Commit();
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit tx 3 - thread should still wait.
-  tx3.StartApplying();
-  tx3.Commit();
+  // Commit op 3 - thread should still wait.
+  op3.StartApplying();
+  op3.Commit();
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit tx 2 - thread should still wait.
-  tx2.StartApplying();
-  tx2.Commit();
+  // Commit op 2 - thread should still wait.
+  op2.StartApplying();
+  op2.Commit();
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Advance new transaction lower bound and the clean time, thread should
-  // continue.
-  mgr.AdjustNewTransactionLowerBound(ts3);
+  // Advance new op lower bound and the clean time, thread should continue.
+  mgr.AdjustNewOpLowerBound(ts3);
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
+TEST_F(MvccTest, TestWaitForApplyingOpsToCommit) {
   MvccManager mgr;
 
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction txn2(&mgr, ts2);
-  mgr.AdjustNewTransactionLowerBound(ts2);
+  ScopedOp op2(&mgr, ts2);
+  mgr.AdjustNewOpLowerBound(ts2);
 
-  // Wait should return immediately, since we have no transactions "applying"
-  // yet.
-  ASSERT_OK(mgr.WaitForApplyingTransactionsToCommit());
+  // Wait should return immediately, since we have no ops "applying" yet.
+  ASSERT_OK(mgr.WaitForApplyingOpsToCommit());
 
-  txn1.StartApplying();
+  op1.StartApplying();
 
-  thread waiting_thread = thread(&MvccManager::WaitForApplyingTransactionsToCommit, &mgr);
+  thread waiting_thread = thread(&MvccManager::WaitForApplyingOpsToCommit, &mgr);
   while (mgr.GetNumWaitersForTests() == 0) {
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Aborting the other transaction shouldn't affect our waiter.
-  txn2.Abort();
+  // Aborting the other op shouldn't affect our waiter.
+  op2.Abort();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Committing our transaction should wake the waiter.
-  txn1.Commit();
+  // Committing our op should wake the waiter.
+  op1.Commit();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
   waiting_thread.join();
 }
@@ -576,11 +572,11 @@ TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
 TEST_F(MvccTest, TestDontWaitAfterClose) {
   MvccManager mgr;
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
-  mgr.AdjustNewTransactionLowerBound(ts1);
-  txn1.StartApplying();
+  ScopedOp op1(&mgr, ts1);
+  mgr.AdjustNewOpLowerBound(ts1);
+  op1.StartApplying();
 
-  // Spin up a thread to wait on the applying transaction.
+  // Spin up a thread to wait on the applying op.
   // Lock the changing status. This is only necessary in this test to read the
   // status from the main thread, showing that, regardless of where, closing
   // MVCC will cause waiters to abort mid-wait.
@@ -588,7 +584,7 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   simple_spinlock status_lock;
   thread waiting_thread = thread([&] {
     std::lock_guard<simple_spinlock> l(status_lock);
-    s = mgr.WaitForApplyingTransactionsToCommit();
+    s = mgr.WaitForApplyingOpsToCommit();
   });
 
   // Wait until the waiter actually gets registered.
@@ -603,42 +599,42 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   ASSERT_TRUE(s.IsAborted());
 
   // New waiters should abort immediately.
-  s = mgr.WaitForApplyingTransactionsToCommit();
+  s = mgr.WaitForApplyingOpsToCommit();
   ASSERT_STR_CONTAINS(s.ToString(), "closed");
   ASSERT_TRUE(s.IsAborted());
 }
 
-// Test that if we abort a transaction we don't advance the new transaction
-// lower bound and don't add the transaction to the committed set.
+// Test that if we abort an op we don't advance the new op lower bound and
+// don't add the op to the committed set.
 TEST_F(MvccTest, TestTxnAbort) {
 
   MvccManager mgr;
 
-  // Transactions with timestamps 1 through 3
+  // Ops with timestamps 1 through 3
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction txn1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
   Timestamp ts2 = clock_.Now();
-  ScopedTransaction txn2(&mgr, ts2);
+  ScopedOp op2(&mgr, ts2);
   Timestamp ts3 = clock_.Now();
-  ScopedTransaction txn3(&mgr, ts3);
-  mgr.AdjustNewTransactionLowerBound(ts3);
+  ScopedOp op3(&mgr, ts3);
+  mgr.AdjustNewOpLowerBound(ts3);
 
-  // Now abort tx1, this shouldn't move the clean time and the transaction
-  // shouldn't be reported as committed.
-  txn1.Abort();
+  // Now abort op1, this shouldn't move the clean time and the op shouldn't be
+  // reported as committed.
+  op1.Abort();
   ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
   ASSERT_FALSE(mgr.cur_snap_.IsCommitted(ts1));
 
-  // Committing tx3 shouldn't advance the clean time since it is not the earliest
-  // in-flight, but it should advance 'new_txn_timestamp_exc_lower_bound_' to 3.
-  txn3.StartApplying();
-  txn3.Commit();
+  // Committing op3 shouldn't advance the clean time since it is not the earliest
+  // in-flight, but it should advance 'new_op_timestamp_exc_lower_bound_' to 3.
+  op3.StartApplying();
+  op3.Commit();
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(ts3));
-  ASSERT_EQ(ts3, mgr.new_txn_timestamp_exc_lower_bound_);
+  ASSERT_EQ(ts3, mgr.new_op_timestamp_exc_lower_bound_);
 
-  // Committing tx2 should advance the clean time to 3.
-  txn2.StartApplying();
-  txn2.Commit();
+  // Committing op2 should advance the clean time to 3.
+  op2.StartApplying();
+  op2.Commit();
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(ts2));
   ASSERT_EQ(ts3, mgr.GetCleanTimestamp());
 }
@@ -649,15 +645,15 @@ TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
   MvccManager mgr;
   clock_.Update(Timestamp(20));
 
-  ScopedTransaction tx1(&mgr, Timestamp(10));
-  ScopedTransaction tx2(&mgr, Timestamp(15));
-  mgr.AdjustNewTransactionLowerBound(Timestamp(15));
+  ScopedOp op1(&mgr, Timestamp(10));
+  ScopedOp op2(&mgr, Timestamp(15));
+  mgr.AdjustNewOpLowerBound(Timestamp(15));
 
-  tx2.StartApplying();
-  tx2.Commit();
+  op2.StartApplying();
+  op2.Commit();
 
-  tx1.StartApplying();
-  tx1.Commit();
+  op1.StartApplying();
+  op1.Commit();
   ASSERT_EQ(mgr.cur_snap_.ToString(), "MvccSnapshot[committed={T|T < 15 or (T in {15})}]");
 }
 
@@ -673,69 +669,69 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
   MvccSnapshot snap;
 
   EXPECT_DEATH({
-      mgr.StartApplyingTransaction(Timestamp(1));
+      mgr.StartApplyingOp(Timestamp(1));
     }, "Cannot mark timestamp 1 as APPLYING: not in the in-flight map");
 
   // Depending whether this is a DEBUG or RELEASE build, the error message
   // could be different for this case -- the "future timestamp" check is only
   // run in DEBUG builds.
   EXPECT_DEATH({
-      mgr.CommitTransaction(Timestamp(1));
+      mgr.CommitOp(Timestamp(1));
     },
-    "Trying to commit a transaction with a future timestamp|"
+    "Trying to commit an op with a future timestamp|"
     "Trying to remove timestamp which isn't in the in-flight set: 1");
 
   clock_.Update(Timestamp(20));
 
   EXPECT_DEATH({
-      mgr.CommitTransaction(Timestamp(1));
+      mgr.CommitOp(Timestamp(1));
     }, "Trying to remove timestamp which isn't in the in-flight set: 1");
 
-  // Start a transaction, and try committing it without having moved to "Applying"
+  // Start an op, and try committing it without having moved to "Applying"
   // state.
   Timestamp t = clock_.Now();
-  mgr.StartTransaction(t);
+  mgr.StartOp(t);
   EXPECT_DEATH({
-      mgr.CommitTransaction(t);
-    }, "Trying to commit a transaction which never entered APPLYING state");
+      mgr.CommitOp(t);
+    }, "Trying to commit an op which never entered APPLYING state");
 
   // Aborting should succeed, since we never moved to Applying.
-  mgr.AbortTransaction(t);
+  mgr.AbortOp(t);
 
   // Aborting a second time should fail
   EXPECT_DEATH({
-      mgr.AbortTransaction(t);
+      mgr.AbortOp(t);
     }, "Trying to remove timestamp which isn't in the in-flight set: 21");
 
-  // Start a new transaction. This time, mark it as Applying.
+  // Start a new op. This time, mark it as Applying.
   t = clock_.Now();
-  mgr.StartTransaction(t);
-  mgr.AdjustNewTransactionLowerBound(t);
-  mgr.StartApplyingTransaction(t);
+  mgr.StartOp(t);
+  mgr.AdjustNewOpLowerBound(t);
+  mgr.StartApplyingOp(t);
 
   // Can only call StartApplying once.
   EXPECT_DEATH({
-      mgr.StartApplyingTransaction(t);
+      mgr.StartApplyingOp(t);
     }, "Cannot mark timestamp 22 as APPLYING: wrong state: 1");
 
-  // Cannot Abort() a transaction once we start applying it.
+  // Cannot Abort() an op once we start applying it.
   EXPECT_DEATH({
-      mgr.AbortTransaction(t);
-    }, "transaction with timestamp 22 cannot be aborted in state 1");
+      mgr.AbortOp(t);
+    }, "op with timestamp 22 cannot be aborted in state 1");
 
   // We can commit it successfully.
-  mgr.CommitTransaction(t);
+  mgr.CommitOp(t);
 }
 
 TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
   MvccManager mgr;
 
-  // Transactions with timestamp 1
+  // Ops with timestamp 1
   Timestamp ts1 = clock_.Now();
-  ScopedTransaction tx1(&mgr, ts1);
+  ScopedOp op1(&mgr, ts1);
 
-  // Wait until the 'tx1' timestamp is clean -- this won't happen because the
-  // transaction isn't committed yet.
+  // Wait until the 'op1' timestamp is clean -- this won't happen because the
+  // op isn't committed yet.
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(10);
   MvccSnapshot snap;
   Status s = mgr.WaitForSnapshotWithAllCommitted(ts1, &snap, deadline);
@@ -743,8 +739,8 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
 }
 
 // Test for a bug related to the initialization of the MvccManager without any
-// pending transactions, i.e. when there are only calls to
-// AdjustNewTransactionLowerBound().
+// pending ops, i.e. when there are only calls to
+// AdjustNewOpLowerBound().
 //
 // Prior to the fix we would advance clean time but not the
 // 'none_committed_at_or_after_' watermark, meaning the latter would become lower
@@ -765,20 +761,20 @@ TEST_F(MvccTest, TestCorrectInitWithNoTxns) {
     clock_.Now();
   }
 
-  // Advance the new transaction lower bound.
+  // Advance the new op lower bound.
   Timestamp new_ts_lower_bound = clock_.Now();
-  mgr.AdjustNewTransactionLowerBound(new_ts_lower_bound);
+  mgr.AdjustNewOpLowerBound(new_ts_lower_bound);
 
-  // Test that the snapshot reports that a timestamp lower than the new
-  // transaction lower bound may have committed transactions after that
-  // timestamp. Conversely, test that the snapshot reports that there are no
-  // committed transactions at or after the new lower bound.
+  // Test that the snapshot reports that a timestamp lower than the new op
+  // lower bound may have committed ops after that timestamp. Conversely, test
+  // that the snapshot reports that there are no committed ops at or after the
+  // new lower bound.
   MvccSnapshot snap2;
   snap2 = MvccSnapshot(mgr);
   Timestamp before_lb(new_ts_lower_bound.value() - 1);
   Timestamp after_lb(new_ts_lower_bound.value() + 1);
-  EXPECT_TRUE(snap2.MayHaveCommittedTransactionsAtOrAfter(before_lb));
-  EXPECT_FALSE(snap2.MayHaveCommittedTransactionsAtOrAfter(after_lb));
+  EXPECT_TRUE(snap2.MayHaveCommittedOpsAtOrAfter(before_lb));
+  EXPECT_FALSE(snap2.MayHaveCommittedOpsAtOrAfter(after_lb));
 
   EXPECT_EQ(snap2.all_committed_before_, new_ts_lower_bound);
   EXPECT_EQ(snap2.none_committed_at_or_after_, new_ts_lower_bound);

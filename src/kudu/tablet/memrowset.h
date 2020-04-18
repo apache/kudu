@@ -161,7 +161,7 @@ class MRSRow {
   }
 
   struct Header {
-      // Timestamp for the transaction which inserted this row. If a scanner with an
+      // Timestamp for the op which inserted this row. If a scanner with an
       // older snapshot sees this row, it will be ignored.
       Timestamp insertion_timestamp;
 

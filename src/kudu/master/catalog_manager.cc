@@ -865,8 +865,8 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
                     uuid, SecureShortDebugString(cstate)));
   }
 
-  // Wait for all transactions to be committed.
-  RETURN_NOT_OK(sys_catalog_->tablet_replica()->transaction_tracker()->WaitForAllToFinish(timeout));
+  // Wait for all ops to be committed.
+  RETURN_NOT_OK(sys_catalog_->tablet_replica()->op_tracker()->WaitForAllToFinish(timeout));
   return Status::OK();
 }
 

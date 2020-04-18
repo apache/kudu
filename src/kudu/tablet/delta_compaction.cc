@@ -136,7 +136,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   unique_ptr<DeltaStats> undo_stats(new DeltaStats);
   size_t nrows = 0;
   // We know that we're reading everything from disk so we're including all transactions.
-  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllOps();
   while (old_base_data_rwise->HasNext()) {
 
     // 1) Get the next batch of base data for the columns we're compacting.

@@ -47,11 +47,11 @@ class Clock {
   // Initializes the clock.
   virtual Status Init() = 0;
 
-  // Obtains a new transaction timestamp corresponding to the current instant.
+  // Obtains a new op timestamp corresponding to the current instant.
   virtual Timestamp Now() = 0;
 
-  // Obtains a new transaction timestamp corresponding to the current instant
-  // plus the max_error.
+  // Obtains a new op timestamp corresponding to the current instant plus the
+  // max_error.
   virtual Timestamp NowLatest() = 0;
 
   // Obtain a timestamp which is guaranteed to be later than the current time
@@ -81,11 +81,10 @@ class Clock {
     __builtin_unreachable();
   }
 
-  // Update the clock with a transaction timestamp originating from
-  // another server. For instance replicas can call this so that,
-  // if elected leader, they are guaranteed to generate timestamps
-  // higher than the timestamp of the last transaction accepted from the
-  // leader.
+  // Update the clock with an op timestamp originating from another server. For
+  // instance replicas can call this so that, if elected leader, they are
+  // guaranteed to generate timestamps higher than the timestamp of the last
+  // op accepted from the leader.
   virtual Status Update(const Timestamp& to_update) = 0;
 
   // Waits until the clock on all machines has advanced past 'then'.

@@ -24,53 +24,53 @@ namespace tablet {
 
 using consensus::DriverType;
 
-Transaction::Transaction(DriverType type, TransactionType tx_type)
+Op::Op(DriverType type, OpType op_type)
     : type_(type),
-      tx_type_(tx_type) {
+      op_type_(op_type) {
 }
 
-TransactionState::TransactionState(TabletReplica* tablet_replica)
+OpState::OpState(TabletReplica* tablet_replica)
     : tablet_replica_(tablet_replica),
-      completion_clbk_(new TransactionCompletionCallback()),
+      completion_clbk_(new OpCompletionCallback()),
       timestamp_error_(0),
       arena_(1024),
       external_consistency_mode_(CLIENT_PROPAGATED) {
 }
 
-TransactionState::~TransactionState() {
+OpState::~OpState() {
 }
 
-TransactionCompletionCallback::TransactionCompletionCallback()
+OpCompletionCallback::OpCompletionCallback()
     : code_(tserver::TabletServerErrorPB::UNKNOWN_ERROR) {
 }
 
-void TransactionCompletionCallback::set_error(const Status& status,
-                                              tserver::TabletServerErrorPB::Code code) {
+void OpCompletionCallback::set_error(const Status& status,
+                                     tserver::TabletServerErrorPB::Code code) {
   status_ = status;
   code_ = code;
 }
 
-void TransactionCompletionCallback::set_error(const Status& status) {
+void OpCompletionCallback::set_error(const Status& status) {
   status_ = status;
 }
 
-bool TransactionCompletionCallback::has_error() const {
+bool OpCompletionCallback::has_error() const {
   return !status_.ok();
 }
 
-const Status& TransactionCompletionCallback::status() const {
+const Status& OpCompletionCallback::status() const {
   return status_;
 }
 
-const tserver::TabletServerErrorPB::Code TransactionCompletionCallback::error_code() const {
+const tserver::TabletServerErrorPB::Code OpCompletionCallback::error_code() const {
   return code_;
 }
 
-void TransactionCompletionCallback::TransactionCompleted() {}
+void OpCompletionCallback::OpCompleted() {}
 
-TransactionCompletionCallback::~TransactionCompletionCallback() {}
+OpCompletionCallback::~OpCompletionCallback() {}
 
-TransactionMetrics::TransactionMetrics()
+OpMetrics::OpMetrics()
   : successful_inserts(0),
     insert_ignore_errors(0),
     successful_upserts(0),
@@ -79,7 +79,7 @@ TransactionMetrics::TransactionMetrics()
     commit_wait_duration_usec(0) {
 }
 
-void TransactionMetrics::Reset() {
+void OpMetrics::Reset() {
   successful_inserts = 0;
   insert_ignore_errors = 0;
   successful_upserts = 0;

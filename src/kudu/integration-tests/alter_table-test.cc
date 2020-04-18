@@ -1804,7 +1804,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
                         ->Alter();
   };
 
-  // Attempts to add two range partitions to the table in a single transaction.
+  // Attempts to add two range partitions to the table in a single op.
   auto add_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
                                    boost::optional<int32_t> a_upper_bound,
                                    boost::optional<int32_t> b_lower_bound,
@@ -1818,7 +1818,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
                         ->Alter();
   };
 
-  // Attempts to add and drop two range partitions in a single transaction.
+  // Attempts to add and drop two range partitions in a single op.
   auto add_drop_range_partitions = [&] (boost::optional<int32_t> a_lower_bound,
                                         boost::optional<int32_t> a_upper_bound,
                                         boost::optional<int32_t> b_lower_bound,
@@ -1863,7 +1863,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
     // Clean up by removing a.
     ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
 
-    // Add a and b in the same transaction.
+    // Add a and b in the same op.
     s = add_range_partitions(a_lower_bound, a_upper_bound,
                              b_lower_bound, b_upper_bound);
     ASSERT_FALSE(s.ok());
@@ -1883,7 +1883,7 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
       // Clean up by removing a.
       ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
 
-      // Add a and drop b in a single transaction.
+      // Add a and drop b in a single op.
       s = add_drop_range_partitions(a_lower_bound, a_upper_bound,
                                     b_lower_bound, b_upper_bound);
       ASSERT_FALSE(s.ok());

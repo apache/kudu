@@ -50,7 +50,7 @@ class RequestIdPB;
 
 namespace tablet {
 
-class ScopedTransaction;
+class ScopedOp;
 class TabletReplica;
 class TxResultPB;
 struct RowOp;
@@ -84,8 +84,8 @@ struct WriteAuthorizationContext {
   RowOpTypes requested_op_types;
 };
 
-// A TransactionState for a batch of inserts/mutates. This class holds and
-// owns most everything related to a transaction, including:
+// A OpState for a batch of inserts/mutates. This class holds and
+// owns most everything related to an op, including:
 // - A RowOp structure for each of the rows being inserted or mutated, which itself
 //   contains:
 //   - decoded/projected data
@@ -93,10 +93,10 @@ struct WriteAuthorizationContext {
 //   - result of this particular insert/mutate operation, once executed
 // - the Replicate and Commit PB messages
 //
-// All the transaction related pointers are owned by this class
+// All the op related pointers are owned by this class
 // and destroyed on Reset() or by the destructor.
 //
-// IMPORTANT: All the acquired locks will not be released unless the TransactionState
+// IMPORTANT: All the acquired locks will not be released unless the OpState
 // is either destroyed or Reset() or release_locks() is called. Beware of this
 // or else there will be lock leaks.
 //
@@ -105,53 +105,52 @@ struct WriteAuthorizationContext {
 // on the WAL.
 //
 // NOTE: this class isn't thread safe.
-class WriteTransactionState : public TransactionState {
+class WriteOpState : public OpState {
  public:
-  // A write transaction for a given replica and the given request. Optionally
-  // takes 'response' if this write is meant to populate a response (e.g. this
-  // is a leader transaction), and a set of write privileges to check before
-  // performing the ops in a request.
-  WriteTransactionState(TabletReplica* tablet_replica,
-                        const tserver::WriteRequestPB* request,
-                        const rpc::RequestIdPB* request_id,
-                        tserver::WriteResponsePB* response = nullptr,
-                        boost::optional<WriteAuthorizationContext> authz_ctx = boost::none);
-  ~WriteTransactionState();
+  // A write op for a given replica and the given request. Optionally takes
+  // 'response' if this write is meant to populate a response (e.g. this is a
+  // leader op), and a set of write privileges to check before performing the
+  // ops in a request.
+  WriteOpState(TabletReplica* tablet_replica,
+               const tserver::WriteRequestPB* request,
+               const rpc::RequestIdPB* request_id,
+               tserver::WriteResponsePB* response = nullptr,
+               boost::optional<WriteAuthorizationContext> authz_ctx = boost::none);
+  ~WriteOpState();
 
-  // Returns the result of this transaction in its protocol buffers form.
-  // The transaction result holds information on exactly which memory stores
-  // were mutated in the context of this transaction and can be used to
-  // perform recovery.
+  // Returns the result of this op in its protocol buffers form. The op result
+  // holds information on exactly which memory stores were mutated in the
+  // context of this op and can be used to perform recovery.
   //
-  // This releases part of the state of the transaction, and will crash
+  // This releases part of the state of the op, and will crash
   // if called more than once.
   void ReleaseTxResultPB(TxResultPB* result) const;
 
-  // Returns the original client request for this transaction, if there was
+  // Returns the original client request for this op, if there was
   // one.
   const tserver::WriteRequestPB* request() const override {
     return request_;
   }
 
-  // Returns the prepared response to the client that will be sent when this
-  // transaction is completed, if this transaction was started by a client.
+  // Returns the prepared response to the client that will be sent when this op
+  // is completed, if this op was started by a client.
   tserver::WriteResponsePB* response() const override {
     return response_;
   }
 
-  // Returns the state associated with authorizing this transaction, or 'none'
-  // if no authorization is necessary.
+  // Returns the state associated with authorizing this op, or 'none' if no
+  // authorization is necessary.
   const boost::optional<WriteAuthorizationContext>& authz_context() const {
     return authz_context_;
   }
 
-  // Set the MVCC transaction associated with this Write operation.
+  // Set the MVCC op associated with this Write operation.
   // This must be called exactly once, after the timestamp was acquired.
-  // This also copies the timestamp from the MVCC transaction into the
-  // WriteTransactionState object.
-  void SetMvccTx(std::unique_ptr<ScopedTransaction> mvcc_tx);
+  // This also copies the timestamp from the MVCC op into the
+  // WriteOpState object.
+  void SetMvccTx(std::unique_ptr<ScopedOp> mvcc_op);
 
-  // Set the Tablet components that this transaction will write into.
+  // Set the Tablet components that this op will write into.
   // Called exactly once at the beginning of Apply, before applying its
   // in-memory edits.
   void set_tablet_components(const scoped_refptr<const TabletComponents>& components);
@@ -165,15 +164,15 @@ class WriteTransactionState : public TransactionState {
   // Release the already-acquired schema lock.
   void ReleaseSchemaLock();
 
-  void ReleaseMvccTxn(Transaction::TransactionResult result);
+  void ReleaseMvccTxn(Op::OpResult result);
 
   void set_schema_at_decode_time(const Schema* schema) {
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
+    std::lock_guard<simple_spinlock> l(op_state_lock_);
     schema_at_decode_time_ = schema;
   }
 
   const Schema* schema_at_decode_time() const {
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
+    std::lock_guard<simple_spinlock> l(op_state_lock_);
     return schema_at_decode_time_;
   }
 
@@ -182,24 +181,24 @@ class WriteTransactionState : public TransactionState {
   }
 
   // Notifies the MVCC manager that this operation is about to start applying
-  // its in-memory edits. After this method is called, the transaction _must_
-  // Commit() within a bounded amount of time (there may be other threads
-  // blocked on it).
+  // its in-memory edits. After this method is called, the op _must_ Commit()
+  // within a bounded amount of time (there may be other threads blocked on
+  // it).
   void StartApplying();
 
-  // Commits or aborts the MVCC transaction and releases all locks held.
+  // Commits or aborts the MVCC op and releases all locks held.
   //
-  // In the case of COMMITTED, this method makes the inserts and mutations performed
-  // by this transaction visible to other transactions.
+  // In the case of COMMITTED, this method makes the inserts and mutations
+  // performed by this op visible to other op.
   //
   // Must be called exactly once.
   // REQUIRES: StartApplying() was called.
   //
   // Note: request_ and response_ are set to NULL after this method returns.
-  void CommitOrAbort(Transaction::TransactionResult result);
+  void CommitOrAbort(Op::OpResult result);
 
-  // Returns all the prepared row writes for this transaction. Usually called
-  // on the apply phase to actually make changes to the tablet.
+  // Returns all the prepared row writes for this op. Usually called on the
+  // apply phase to actually make changes to the tablet.
   const std::vector<RowOp*>& row_ops() const {
     return row_ops_;
   }
@@ -216,22 +215,21 @@ class WriteTransactionState : public TransactionState {
 
   void UpdateMetricsForOp(const RowOp& op);
 
-  // Resets this TransactionState, releasing all locks, destroying all prepared
-  // writes, clearing the transaction result _and_ committing the current Mvcc
-  // transaction.
+  // Resets this OpState, releasing all locks, destroying all prepared writes,
+  // clearing the op result _and_ committing the current Mvcc op.
   void Reset();
 
   std::string ToString() const override;
 
  private:
-  // Releases all the row locks acquired by this transaction.
+  // Releases all the row locks acquired by this op.
   void ReleaseRowLocks();
 
   // Reset the RPC request, response, and row_ops_ (which refers to data
   // from the request).
   void ResetRpcFields();
 
-  // An owned version of the response, for follower transactions.
+  // An owned version of the response, for follower ops.
   tserver::WriteResponsePB owned_response_;
 
   // The lifecycle of these pointers request and response, is not managed by this class.
@@ -246,47 +244,46 @@ class WriteTransactionState : public TransactionState {
   boost::optional<WriteAuthorizationContext> authz_context_;
 
   // The row operations which are decoded from the request during Prepare().
-  // Protected by superclass's txn_state_lock_.
+  // Protected by superclass's op_state_lock_.
   std::vector<RowOp*> row_ops_;
 
   // Array of ProbeStats for each of the operations in 'row_ops_'.
-  // Allocated from this transaction's arena during SetRowOps().
+  // Allocated from this op's arena during SetRowOps().
   ProbeStats* stats_array_ = nullptr;
 
-  // The MVCC transaction, set up during PREPARE phase
-  std::unique_ptr<ScopedTransaction> mvcc_tx_;
+  // The MVCC op, set up during PREPARE phase
+  std::unique_ptr<ScopedOp> mvcc_op_;
 
-  // The tablet components, acquired at the same time as mvcc_tx_ is set.
+  // The tablet components, acquired at the same time as mvcc_op_ is set.
   scoped_refptr<const TabletComponents> tablet_components_;
 
   // A lock held on the tablet's schema. Prevents concurrent schema change
   // from racing with a write.
   shared_lock<rw_semaphore> schema_lock_;
 
-  // The Schema of the tablet when the transaction was first decoded.
-  // This is verified at APPLY time to ensure we don't have races against
-  // schema change.
-  // Protected by superclass's txn_state_lock_.
+  // The Schema of the tablet when the op was first decoded. This is verified
+  // at APPLY time to ensure we don't have races against schema change.
+  // Protected by superclass's op_state_lock_.
   const Schema* schema_at_decode_time_;
 
-  DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
+  DISALLOW_COPY_AND_ASSIGN(WriteOpState);
 };
 
-// Executes a write transaction.
-class WriteTransaction : public Transaction {
+// Executes a write op.
+class WriteOp : public Op {
  public:
-  WriteTransaction(std::unique_ptr<WriteTransactionState> state, consensus::DriverType type);
+  WriteOp(std::unique_ptr<WriteOpState> state, consensus::DriverType type);
 
-  WriteTransactionState* state() override { return state_.get(); }
-  const WriteTransactionState* state() const override { return state_.get(); }
+  WriteOpState* state() override { return state_.get(); }
+  const WriteOpState* state() const override { return state_.get(); }
 
   void NewReplicateMsg(std::unique_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
-  // Executes a Prepare for a write transaction.
+  // Executes a Prepare for a write op.
   //
   // Decodes the operations in the request and acquires row locks for each of
   // the affected rows. This results in adding 'RowOp' objects for each of the
-  // operations into the WriteTransactionState.
+  // operations into the WriteOpState.
   //
   // Returns an error if the request contains an operation that is malformed
   // or isn't authorized.
@@ -294,45 +291,45 @@ class WriteTransaction : public Transaction {
 
   void AbortPrepare() override;
 
-  // Actually starts the Mvcc transaction and assigns a timestamp to this transaction.
+  // Actually starts the Mvcc op and assigns a timestamp to this op.
   Status Start() override;
 
-  // Executes an Apply for a write transaction.
+  // Executes an Apply for a write op.
   //
   // Actually applies inserts/mutates into the tablet. After these start being
-  // applied, the transaction must run to completion as there is currently no
-  // means of undoing an update.
+  // applied, the op must run to completion as there is currently no means of
+  // undoing an update.
   //
-  // After completing the inserts/mutates, the row locks and the mvcc transaction
-  // can be released, allowing other transactions to update the same rows.
-  // However the component lock must not be released until the commit msg, which
-  // indicates where each of the inserts/mutates were applied, is persisted to
-  // stable storage. Because of this ApplyTask must enqueue a CommitTask before
-  // releasing both the row locks and deleting the MvccTransaction as we need to
-  // make sure that Commits that touch the same set of rows are persisted in
-  // order, for recovery.
+  // After completing the inserts/mutates, the row locks and the mvcc op can be
+  // released, allowing other op to update the same rows. However the
+  // component lock must not be released until the commit msg, which indicates
+  // where each of the inserts/mutates were applied, is persisted to stable
+  // storage. Because of this ApplyTask must enqueue a CommitTask before
+  // releasing both the row locks and deleting the MvccOp as we need to make
+  // sure that Commits that touch the same set of rows are persisted in order,
+  // for recovery.
   // This, of course, assumes that commits are executed in the same order they
   // are placed in the queue (but not necessarily in the same order of the
   // original requests) which is already a requirement of the consensus
   // algorithm.
   Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
 
-  // If result == COMMITTED, commits the mvcc transaction and updates
-  // the metrics, if result == ABORTED aborts the mvcc transaction.
-  void Finish(TransactionResult result) override;
+  // If result == COMMITTED, commits the mvcc op and updates the metrics, if
+  // result == ABORTED aborts the mvcc op.
+  void Finish(OpResult result) override;
 
   std::string ToString() const override;
 
  private:
   void UpdatePerRowErrors();
 
-  // this transaction's start time
+  // this op's start time
   MonoTime start_time_;
 
-  std::unique_ptr<WriteTransactionState> state_;
+  std::unique_ptr<WriteOpState> state_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(WriteTransaction);
+  DISALLOW_COPY_AND_ASSIGN(WriteOp);
 };
 
 }  // namespace tablet

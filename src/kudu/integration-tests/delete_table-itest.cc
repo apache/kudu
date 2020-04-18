@@ -854,10 +854,10 @@ TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
   ASSERT_TRUE(!cmeta_pb.has_voted_for()) << SecureShortDebugString(cmeta_pb);
 }
 
-// Regression test for KUDU-987, a bug where followers with transactions in
-// REPLICATING state, which means they have not yet been committed to a
-// majority, cannot shut down during a DeleteTablet() call.
-TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingTransaction) {
+// Regression test for KUDU-987, a bug where followers with ops in REPLICATING
+// state, which means they have not yet been committed to a majority, cannot
+// shut down during a DeleteTablet() call.
+TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingOps) {
   if (!AllowSlowTests()) {
     // We will typically wait at least 5 seconds for timeouts to occur.
     LOG(INFO) << "Skipping test in fast-test mode.";

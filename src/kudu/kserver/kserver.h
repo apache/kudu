@@ -66,10 +66,10 @@ class KuduServer : public server::ServerBase {
 
  private:
 
-  // Thread pool for preparing transactions, shared between all tablets.
+  // Thread pool for preparing ops, shared between all tablets.
   std::unique_ptr<ThreadPool> tablet_prepare_pool_;
 
-  // Thread pool for applying transactions, shared between all tablets.
+  // Thread pool for applying ops, shared between all tablets.
   std::unique_ptr<ThreadPool> tablet_apply_pool_;
 
   // Thread pool for Raft-related operations, shared between all tablets.

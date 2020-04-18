@@ -1202,7 +1202,7 @@ TEST_F(FuzzTest, TestFuzzWithRestarts1) {
 // Previously caused KUDU-1341:
 // deltafile.cc:134] Check failed: last_key_.CompareTo<UNDO>(key) <= 0 must
 // insert undo deltas in sorted order (ascending key, then descending ts):
-// got key (row 1@tx5965182714017464320) after (row 1@tx5965182713875046400)
+// got key (row 1@ts5965182714017464320) after (row 1@ts5965182713875046400)
 TEST_F(FuzzTest, TestFuzzWithRestarts2) {
   CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
   RunFuzzCase({

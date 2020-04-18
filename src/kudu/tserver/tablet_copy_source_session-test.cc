@@ -103,7 +103,7 @@ using tablet::KuduTabletTest;
 using tablet::RowSetDataPB;
 using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
-using tablet::WriteTransactionState;
+using tablet::WriteOpState;
 
 class TabletCopyTest : public KuduTabletTest {
  public:
@@ -210,13 +210,13 @@ class TabletCopyTest : public KuduTabletTest {
       WriteResponsePB resp;
       CountDownLatch latch(1);
 
-      unique_ptr<tablet::WriteTransactionState> state(
-          new tablet::WriteTransactionState(tablet_replica_.get(),
-                                            &req,
-                                            nullptr, // No RequestIdPB
-                                            &resp));
-      state->set_completion_callback(unique_ptr<tablet::TransactionCompletionCallback>(
-          new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
+      unique_ptr<tablet::WriteOpState> state(
+          new tablet::WriteOpState(tablet_replica_.get(),
+                                   &req,
+                                   nullptr, // No RequestIdPB
+                                   &resp));
+      state->set_completion_callback(unique_ptr<tablet::OpCompletionCallback>(
+          new tablet::LatchOpCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_replica_->SubmitWrite(std::move(state)));
       latch.Wait();
       ASSERT_FALSE(resp.has_error())

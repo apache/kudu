@@ -162,7 +162,7 @@ message HostPortPB {
 }
 
 // The external consistency mode for client requests.
-// This defines how transactions and/or sequences of operations that touch
+// This defines how ops and/or sequences of operations that touch
 // several TabletServers, in different machines, can be observed by external
 // clients.
 //
@@ -195,11 +195,10 @@ enum ExternalConsistencyMode {
   // This is the default mode.
   CLIENT_PROPAGATED = 1;
 
-  // The server will guarantee that each transaction is externally
-  // consistent by making sure that none of its results are visible
-  // until every Kudu server agrees that the transaction is in the past.
-  // The client is not obligated to forward timestamp information
-  // through back-channels.
+  // The server will guarantee that each op is externally consistent by making
+  // sure that none of its results are visible until every Kudu server agrees
+  // that the op is in the past.  The client is not obligated to forward
+  // timestamp information through back-channels.
   //
   // WARNING: Depending on the clock synchronization state of TabletServers
   // this may imply considerable latency. Moreover operations with
@@ -223,10 +222,10 @@ enum ExternalConsistencyMode {
 // - The earliest snapshot: this corresponds to the earliest kept undo records
 //   in the tablet, meaning the current state (Base) can be undone up to
 //   this snapshot.
-// - The latest snapshot: This corresponds to the instant beyond which
-//   no transaction will have an earlier timestamp. Usually this corresponds
-//   to whatever clock->Now() returns, but can be higher if the client propagates
-//   a timestamp (see below).
+// - The latest snapshot: This corresponds to the instant beyond which no op
+//   will have an earlier timestamp. Usually this corresponds to whatever
+//   clock->Now() returns, but can be higher if the client propagates a
+//   timestamp (see below).
 enum ReadMode {
   UNKNOWN_READ_MODE = 0;
 
@@ -234,7 +233,7 @@ enum ReadMode {
   // of the clock and will always return all visible writes at the time the request
   // was received. This type of read does not return a snapshot timestamp since
   // it might not be repeatable, i.e. a later read executed at the same snapshot
-  // timestamp might yield rows that were committed by in-flight transactions.
+  // timestamp might yield rows that were committed by in-flight ops.
   //
   // This is the default mode.
   READ_LATEST = 1;
@@ -243,7 +242,7 @@ enum ReadMode {
   // at the required snapshot. If no snapshot is defined the server will take the
   // current time as the snapshot timestamp. Snapshot reads are repeatable, i.e.
   // all future reads at the same timestamp will yield the same rows. This is
-  // performed at the expense of waiting for in-flight transactions whose timestamp
+  // performed at the expense of waiting for in-flight ops whose timestamp
   // is lower than the snapshot's timestamp to complete.
   //
   // When mixing reads and writes clients that specify COMMIT_WAIT as their
@@ -252,7 +251,7 @@ enum ReadMode {
   // considered in the past by all servers and no additional action is
   // necessary. Clients using CLIENT_PROPAGATED however must forcibly propagate
   // the timestamps even at read time, so that the server will not generate
-  // any more transactions before the snapshot requested by the client.
+  // any more ops before the snapshot requested by the client.
   // The latter option is implemented by allowing the client to specify one or
   // two timestamps, the first one obtained from the previous CLIENT_PROPAGATED
   // write, directly or through back-channels, must be signed and will be
@@ -266,13 +265,13 @@ enum ReadMode {
   // for a server-local snapshot scan subject to the following criteria:
   // (1) It will be higher than the propagated timestamp,
   // (2) It will attempt to minimize latency caused by waiting for outstanding
-  //     write transactions to complete.
+  //     write ops to complete.
   // More specifically, the server will choose the latest timestamp higher than
   // the provided propagated timestamp bound that allows execution of the
-  // reads without being blocked by the in-flight transactions (however the
+  // reads without being blocked by the in-flight ops (however the
   // read can be blocked if the propagated timestamp is higher than some in-flight
-  // transactions). If no propagated timestamp is provided the server will choose
-  // a timestamp such that all transactions before it are committed. The chosen
+  // ops). If no propagated timestamp is provided the server will choose
+  // a timestamp such that all ops before it are committed. The chosen
   // timestamp will be returned back to the client as 'snapshot timestamp'. The Kudu
   // client library will use it as the propagated timestamp for subsequent reads
   // to avoid unnecessarily waiting.

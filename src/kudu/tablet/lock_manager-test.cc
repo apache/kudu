@@ -49,10 +49,10 @@ namespace kudu {
 namespace tablet {
 
 class LockEntry;
-class TransactionState;
+class OpState;
 
-static const TransactionState* kFakeTransaction =
-  reinterpret_cast<TransactionState*>(0xdeadbeef);
+static const OpState* kFakeTransaction =
+  reinterpret_cast<OpState*>(0xdeadbeef);
 
 class LockManagerTest : public KuduTest {
  public:
@@ -166,7 +166,7 @@ class LmTestThread {
 
   void Run() {
     tid_ = Env::Default()->gettid();
-    const TransactionState* my_txn = reinterpret_cast<TransactionState*>(tid_);
+    const OpState* my_txn = reinterpret_cast<OpState*>(tid_);
 
     std::sort(keys_.begin(), keys_.end());
     for (int i = 0; i < FLAGS_num_iterations; i++) {

@@ -755,9 +755,9 @@ TYPED_TEST(TestTablet, TestInsertIgnore) {
 
   // Single batch, insert then insert ingore of same row, operation should succeed
   this->setup_.BuildRow(&row, 0, 1000);
-  vector<LocalTabletWriter::Op> ops;
-  ops.emplace_back(LocalTabletWriter::Op(RowOperationsPB::INSERT, &row));
-  ops.emplace_back(LocalTabletWriter::Op(RowOperationsPB::INSERT_IGNORE, &row));
+  vector<LocalTabletWriter::RowOp> ops;
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT, &row));
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT_IGNORE, &row));
   ASSERT_OK(writer.WriteBatch(ops));
   ASSERT_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
@@ -767,8 +767,8 @@ TYPED_TEST(TestTablet, TestInsertIgnore) {
 
   ops.clear();
   this->setup_.BuildRow(&row, 0, 1001);
-  ops.emplace_back(LocalTabletWriter::Op(RowOperationsPB::INSERT_IGNORE, &row));
-  ops.emplace_back(LocalTabletWriter::Op(RowOperationsPB::INSERT, &row));
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT_IGNORE, &row));
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT, &row));
   Status s = writer.WriteBatch(ops);
   ASSERT_STR_CONTAINS(s.ToString(), "key already present");
   ASSERT_OK(this->IterateToStringList(&rows));
@@ -1496,7 +1496,7 @@ TEST_F(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet) {
 
 TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
   LocalTabletWriter writer(this->tablet().get(), &this->client_schema());
-  vector<LocalTabletWriter::Op> ops;
+  vector<LocalTabletWriter::RowOp> ops;
 
   // Row 0: INSERT -> DELETE.
 

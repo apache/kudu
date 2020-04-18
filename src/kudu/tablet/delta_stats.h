@@ -65,22 +65,22 @@ class DeltaStats {
     return FindWithDefault(update_counts_by_col_id_, col_id, 0);
   }
 
-  // Returns the maximum transaction id of any mutation in a delta file.
+  // Returns the maximum op timestamp of any mutation in a delta file.
   Timestamp max_timestamp() const {
     return max_timestamp_;
   }
 
-  // Returns the minimum transaction id of any mutation in a delta file.
+  // Returns the minimum op timestamp of any mutation in a delta file.
   Timestamp min_timestamp() const {
     return min_timestamp_;
   }
 
-  // Set the maximum transaction id of any mutation in a delta file.
+  // Set the maximum op timestamp of any mutation in a delta file.
   void set_max_timestamp(const Timestamp& timestamp) {
     max_timestamp_ = timestamp;
   }
 
-  // Set the minimum transaction id in of any mutation in a delta file.
+  // Set the minimum op timestamp in of any mutation in a delta file.
   void set_min_timestamp(const Timestamp& timestamp) {
     min_timestamp_ = timestamp;
   }
