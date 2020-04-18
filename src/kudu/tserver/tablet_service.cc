@@ -2567,7 +2567,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
   s = result_collector->InitSerializer(scan_pb.row_format_flags(),
                                        projection,
-                                       *scanner->client_projection_schema());
+                                       *client_projection);
   if (!s.ok()) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
     return s;
