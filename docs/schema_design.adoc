@@ -72,13 +72,14 @@ column types include:
 * 16-bit signed integer
 * 32-bit signed integer
 * 64-bit signed integer
+* date (32-bit days since the Unix epoch)
 * unixtime_micros (64-bit microseconds since the Unix epoch)
 * single-precision (32-bit) IEEE-754 floating-point number
 * double-precision (64-bit) IEEE-754 floating-point number
 * decimal (see <<decimal>> for details)
+* varchar (see <<varchar>> for details)
 * UTF-8 encoded string (up to 64KB uncompressed)
 * binary (up to 64KB uncompressed)
-* VARCHAR type with configurable maximum length (up to 64KB uncompressed)
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
 format to provide efficient encoding and serialization. To make the most of
@@ -90,9 +91,9 @@ be specified on a per-column basis.
 [[no_version_column]]
 [IMPORTANT]
 .No Version or Timestamp Column
-Unlike HBase, Kudu does not provide a version or timestamp column to track changes
-to a row. If version or timestamp information is needed, the schema should include
-an explicit version or timestamp column.
+Kudu does not provide a version or timestamp column to track changes to a row.
+If version or timestamp information is needed, the schema should include an
+explicit version or timestamp column.
 
 [[decimal]]
 === Decimal Type
@@ -136,6 +137,24 @@ Before encoding and compression:
 NOTE: The precision and scale of `decimal` columns cannot be changed by altering
 the table.
 
+[[varchar]]
+=== Varchar Type
+
+The `varchar` type is a UTF-8 encoded string (up to 64KB uncompressed) with a
+fixed maximum character length. This type is especially useful when migrating
+from or integrating with legacy systems that support the `varchar` type.
+If a maximum character length is not required the `string` type should be
+used instead.
+
+The `varchar` type is a parameterized type that takes a length attribute.
+
+*Length* represents the maximum number of UTF-8 characters allowed. Values
+with characters greater than the limit will be truncated. This value must
+be between 1 and 65535 and has no default. Note that some other systems
+may represent the length limit in bytes instead of characters. That means
+that Kudu may be able to represent longer values in the case of multi-byte
+UTF-8 characters.
+
 [[encoding]]
 === Column Encoding
 
@@ -145,12 +164,12 @@ of the column.
 .Encoding Types
 [options="header"]
 |===
-| Column Type             | Encoding                       | Default
-| int8, int16, int32      | plain, bitshuffle, run length  | bitshuffle
-| int64, unixtime_micros  | plain, bitshuffle, run length  | bitshuffle
-| float, double, decimal  | plain, bitshuffle              | bitshuffle
-| bool                    | plain, run length              | run length
-| string, binary, varchar | plain, prefix, dictionary      | dictionary
+| Column Type               | Encoding                       | Default
+| int8, int16, int32, int64 | plain, bitshuffle, run length  | bitshuffle
+| date, unixtime_micros     | plain, bitshuffle, run length  | bitshuffle
+| float, double, decimal    | plain, bitshuffle              | bitshuffle
+| bool                      | plain, run length              | run length
+| string, varchar, binary   | plain, prefix, dictionary      | dictionary
 |===
 
 [[plain]]
