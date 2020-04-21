@@ -54,7 +54,12 @@ class TestTypes : public KuduTest {
 };
 
 TEST_F(TestTypes, TestDatePrinting) {
+#if defined(__APPLE__)
+  // On MacOS the `%F` date format pads the year with zeros.
+  TestDateToString("0001-01-01", *DataTypeTraits<DATE>::min_value());
+#else
   TestDateToString("1-01-01", *DataTypeTraits<DATE>::min_value());
+#endif
   TestDateToString("9999-12-31", *DataTypeTraits<DATE>::max_value());
   TestDateToString("1970-01-01", 0);
   TestDateToString("1942-08-16", -10000);
