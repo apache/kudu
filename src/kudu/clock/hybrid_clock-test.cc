@@ -511,8 +511,16 @@ TEST_F(HybridClockTest, TestNtpDiagnostics) {
   clock.time_service()->DumpDiagnostics(&log);
   string s = JoinStrings(log, "\n");
   SCOPED_TRACE(s);
-  ASSERT_STR_MATCHES(s, "(ntp_gettime\\(\\) returns code |chronyc -n tracking)");
-  ASSERT_STR_MATCHES(s, "(ntpq -n |chronyc -n sources)");
+  // This is to verify that appropriate diagnostic tools are run or at least
+  // attempted to run. The tools might not be available, and that's expected
+  // pre-condition as well. The output either contains report from the tools or
+  // error messages that corresponding binaries cannot be found. In either case
+  // it proves the tools were attempted to run to collect NTP-related diagnostic
+  // information.
+  ASSERT_STR_CONTAINS(s, "ntptime");
+  ASSERT_STR_CONTAINS(s, "ntpq");
+  ASSERT_STR_CONTAINS(s, "ntpdc");
+  ASSERT_STR_CONTAINS(s, "chronyc");
 }
 #endif // #if defined(KUDU_HAS_SYSTEM_TIME_SOURCE) ...
 
