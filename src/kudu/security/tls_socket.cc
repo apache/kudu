@@ -45,6 +45,10 @@ TlsSocket::TlsSocket(int fd, c_unique_ptr<SSL> ssl)
     : Socket(fd),
       ssl_(std::move(ssl)) {
   use_cork_ = true;
+
+#ifndef __APPLE__
+// `SO_DOMAIN` is not available on macOS. This code can be safely
+// skipped because SetTcpCork() is a no-op on macOS.
   if (fd >= 0) {
     int dom;
     socklen_t len = sizeof(dom);
@@ -53,6 +57,7 @@ TlsSocket::TlsSocket(int fd, c_unique_ptr<SSL> ssl)
       use_cork_ = false;
     }
   }
+#endif
 }
 
 TlsSocket::~TlsSocket() {
