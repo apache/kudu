@@ -39,7 +39,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
-using boost::make_optional;
 using boost::none;
 using boost::optional;
 using std::initializer_list;
@@ -1011,7 +1010,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithNewTabletServers) {
       map<string, int> placement_stats;
       for (auto i = 0; i < 1000; ++i) {
         TSDescriptorVector result;
-        ASSERT_OK(policy.PlaceTabletReplicas(3, make_optional(string(label)), &result));
+        ASSERT_OK(policy.PlaceTabletReplicas(3, boost::make_optional(string(label)), &result));
         ASSERT_EQ(3, result.size());
         for (const auto& ts : result) {
           const auto& ts_uuid = ts->permanent_uuid();
