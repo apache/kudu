@@ -238,7 +238,11 @@ TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
   EXPECT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: Negotiate aaa" }).ToString(),
             "Remote error: HTTP 401");
-  EXPECT_STR_CONTAINS(buf_.ToString(), "Invalid token was supplied");
+  EXPECT_STR_CONTAINS(buf_.ToString(), "Not authorized");
+  // Error messages about an invalid token come from the Kerberos library, and
+  // different versions of the library have different messages.
+  ASSERT_STR_MATCHES(buf_.ToString(),
+                     "(Invalid token was supplied|A token was invalid)");
 }
 
 // Test that if no authorization header at all is provided, the response
