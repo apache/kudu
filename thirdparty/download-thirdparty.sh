@@ -368,12 +368,13 @@ if needs_openssl_workaround && [ ! -d "$OPENSSL_WORKAROUND_DIR" ] ; then
   $TP_DIR/install-openssl-el6-workaround.sh
 fi
 
-BREAKPAD_PATCHLEVEL=1
+BREAKPAD_PATCHLEVEL=2
 fetch_and_patch \
  breakpad-${BREAKPAD_VERSION}.tar.gz \
  $BREAKPAD_SOURCE \
  $BREAKPAD_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch"
+ "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch"
 
 SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \
