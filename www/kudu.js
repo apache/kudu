@@ -45,6 +45,36 @@ function toNumBytes(humanReadableBytes) {
   return val;
 }
 
+// Converts a human-readable numeric strings like '1.23k' or '985.32M' to int.
+// Returns -1 if there's some failure.
+function toInt(humanReadableNum) {
+  len = humanReadableNum.length;
+  if (len < 1) {
+    return -1;
+  }
+  end = humanReadableNum[len - 1];
+  val = parseFloat(humanReadableNum);
+  if (isNaN(val)) {
+    return -1;
+  }
+  if (end == 'k') {
+    val *= 1e3;
+  } else if (end == 'M') {
+    val *= 1e6;
+  } else if (end == 'B') {
+    val *= 1e9;
+  } else if (end == 'T') {
+    val *= 1e12; // Number bigger than 1E15 use scientific notation.
+  } else if (isNaN(end)) {
+    // Not a number.
+    return -1;
+  }
+  if (val < 0) {
+    return parseInt(val - 0.5);
+  }
+  return parseInt(val + 0.5);
+}
+
 // A comparison function for human-readable byte strings.
 function bytesSorter(left, right) {
   if (right.length == 0 && left.length == 0) {
@@ -80,10 +110,10 @@ function floatsSorter(left, right) {
   return 0;
 }
 
-// Converts numeric strings to numbers and then compares them.
+// Converts human-readable numeric strings to numbers and then compares them.
 function numericStringsSorter(left, right) {
-  left_num = parseInt(left, 10);
-  right_num = parseInt(right, 10);
+  left_num = toInt(left);
+  right_num = toInt(right);
   if (left_num < right_num) {
     return -1;
   }
