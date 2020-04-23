@@ -82,7 +82,7 @@ class ConsensusPeersTest : public KuduTest {
   ConsensusPeersTest()
     : metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "peer-test"))
 #ifdef FB_DO_NOT_REMOVE
-      , schema_(GetSimpleTestSchema()) 
+      , schema_(GetSimpleTestSchema())
 #endif
      {
     CHECK_OK(ThreadPoolBuilder("test-raft-pool").Build(&raft_pool_));
@@ -371,4 +371,3 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
 
 }  // namespace consensus
 }  // namespace kudu
-
