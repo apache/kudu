@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -540,14 +541,8 @@ class Tablet {
   }
 
   // Returns an error if the tablet is in the 'kStopped' or 'kShutdown' state.
-  // Must be called while 'state_lock_' is held.
-  Status CheckHasNotBeenStoppedUnlocked() const;
-
-  // Returns an error if the tablet is in the 'kStopped' or 'kShutdown' state.
-  Status CheckHasNotBeenStopped() const {
-    std::lock_guard<simple_spinlock> l(state_lock_);
-    return CheckHasNotBeenStoppedUnlocked();
-  }
+  // Sets *cur_state to the current state, which may be useful for later assertions.
+  Status CheckHasNotBeenStopped(State* cur_state = nullptr) const;
 
   Status FlushUnlocked();
 
@@ -765,12 +760,13 @@ class Tablet {
   // started earlier completes after the one started later.
   mutable Semaphore rowsets_flush_sem_;
 
-  // Lock protecting access to 'state_' and 'maintenance_ops_'.
+  // Lock protecting access to mutate 'state_' and all access to 'maintenance_ops_'.
   // If taken with any other locks, this must be taken last, i.e. no locks can
-  // be acquired while holding this this.
+  // be acquired while holding this lock.
   mutable simple_spinlock state_lock_;
 
-  State state_;
+  // Protected by state_lock_ for transitions, but may be read without holding a lock.
+  std::atomic<State> state_;
 
   // Fake lock used to ensure calls to RegisterMaintenanceOps and
   // UnregisterMaintenanceOps don't overlap. This serves to ensure that only

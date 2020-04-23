@@ -273,9 +273,9 @@ Tablet::~Tablet() {
 // Returns an error if the Tablet has been stopped, i.e. is 'kStopped' or
 // 'kShutdown', and otherwise checks that 'expected_state' matches 'state_'.
 #define RETURN_IF_STOPPED_OR_CHECK_STATE(expected_state) do { \
-  std::lock_guard<simple_spinlock> l(state_lock_); \
-  RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked()); \
-  CHECK_EQ(expected_state, state_); \
+  State _local_state; \
+  RETURN_NOT_OK(CheckHasNotBeenStopped(&_local_state)); \
+  CHECK_EQ(expected_state, _local_state); \
 } while (0)
 
 Status Tablet::Open() {
@@ -926,14 +926,17 @@ Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_s
 }
 
 bool Tablet::HasBeenStopped() const {
-  std::lock_guard<simple_spinlock> l(state_lock_);
-  return state_ == kStopped || state_ == kShutdown;
+  State s = state_.load();
+  return s == kStopped || s == kShutdown;
 }
 
-Status Tablet::CheckHasNotBeenStoppedUnlocked() const {
-  DCHECK(state_lock_.is_locked());
-  if (PREDICT_FALSE(state_ == kStopped || state_ == kShutdown)) {
+Status Tablet::CheckHasNotBeenStopped(State* cur_state) const {
+  State s = state_.load();
+  if (PREDICT_FALSE(s == kStopped || s == kShutdown)) {
     return Status::IllegalState("Tablet has been stopped");
+  }
+  if (cur_state) {
+    *cur_state = s;
   }
   return Status::OK();
 }
@@ -975,10 +978,10 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
   }
 
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
-    RETURN_NOT_OK_PREPEND(CheckHasNotBeenStoppedUnlocked(),
+    State s;
+    RETURN_NOT_OK_PREPEND(CheckHasNotBeenStopped(&s),
         Substitute("Apply of $0 exited early", op_state->ToString()));
-    CHECK(state_ == kOpen || state_ == kBootstrapping);
+    CHECK(s == kOpen || s == kBootstrapping);
   }
   DCHECK(row_op->has_row_lock()) << "RowOp must hold the row lock.";
   DCHECK(op_state != nullptr) << "must have a WriteOpState";
@@ -1179,9 +1182,9 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
 Status Tablet::FlushInternal(const RowSetsInCompaction& input,
                              const shared_ptr<MemRowSet>& old_ms) {
   {
-    std::lock_guard<simple_spinlock> l(state_lock_);
-    RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked());
-    CHECK(state_ == kOpen || state_ == kBootstrapping);
+    State s;
+    RETURN_NOT_OK(CheckHasNotBeenStopped(&s));
+    CHECK(s == kOpen || s == kBootstrapping);
   }
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
