@@ -16,10 +16,10 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <utility>
 
@@ -50,9 +50,9 @@ class Message;
 
 namespace kudu {
 namespace tablet {
-class TabletReplica;
 class OpCompletionCallback;
 class OpState;
+class TabletReplica;
 
 // All metrics associated with a Op.
 struct OpMetrics {
@@ -227,20 +227,18 @@ class OpState {
   // Sets the timestamp for the op
   virtual void set_timestamp(const Timestamp& timestamp) {
     // make sure we set the timestamp only once
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
     DCHECK_EQ(timestamp_, Timestamp::kInvalidTimestamp);
     timestamp_ = timestamp;
   }
 
   Timestamp timestamp() const {
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
-    DCHECK(timestamp_ != Timestamp::kInvalidTimestamp);
-    return timestamp_;
+    Timestamp t = timestamp_.load();
+    DCHECK(t != Timestamp::kInvalidTimestamp);
+    return t;
   }
 
   bool has_timestamp() const {
-    std::lock_guard<simple_spinlock> l(op_state_lock_);
-    return timestamp_ != Timestamp::kInvalidTimestamp;
+    return timestamp_.load() != Timestamp::kInvalidTimestamp;
   }
 
   consensus::OpId* mutable_op_id() {
@@ -285,8 +283,10 @@ class OpState {
 
   AutoReleasePool pool_;
 
-  // This op's timestamp. Protected by op_state_lock_.
-  Timestamp timestamp_;
+  // This operation's timestamp.
+  // This is only set once during the operation lifecycle, using external synchronization.
+  // However, it may be concurrently read by ToString(), etc, so it's atomic.
+  std::atomic<Timestamp> timestamp_;
 
   // The clock error when timestamp_ was read.
   uint64_t timestamp_error_;

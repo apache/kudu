@@ -33,9 +33,9 @@ class Timestamp {
  public:
   typedef uint64_t val_type;
 
-  Timestamp() : v(kInvalidTimestamp.v) {}
+  Timestamp() noexcept : v(kInvalidTimestamp.v) {}
 
-  explicit Timestamp(uint64_t val) : v(val) {}
+  explicit Timestamp(uint64_t val) noexcept : v(val) {}
 
   // Decode a timestamp from the given input slice.
   // Mutates the slice to point after the decoded timestamp.
