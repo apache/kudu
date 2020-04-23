@@ -17,10 +17,10 @@
 
 #include <sys/stat.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
-#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -64,6 +64,8 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -410,11 +412,12 @@ TEST_F(SecurityITest, TestCorruptKerberosCC) {
   security::KinitContext kinit_ctx;
   ASSERT_OK(kinit_ctx.Kinit(admin_keytab, "test-admin"));
 
-  // Truncate at different lengths to exercise different failure modes, e.g. failed to
-  // read header, some credentials missing.
-  for (int trunc_len : {10, 75, 500}) {
-    // Truncate the credential cache so that it no longer contains a valid ticket for
-    // "test-admin".
+  // Truncate at different lengths to exercise different failure modes.
+  Random rng(GetRandomSeed32());
+  for (auto i = 0; i < 3; ++i) {
+    const int32_t trunc_len = 10 + rng.Uniform(256);
+    // Truncate the credential cache so that it no longer contains a valid
+    // ticket for "test-admin".
     const char* cc_path = getenv("KRB5CCNAME");
     SCOPED_TRACE(Substitute("Truncating ccache at '$0' to $1", cc_path, trunc_len));
     {
@@ -427,7 +430,7 @@ TEST_F(SecurityITest, TestCorruptKerberosCC) {
 
     // With corrupt cache, we shouldn't be able to open connection.
     Status s = TrySetFlagOnTS();
-    EXPECT_FALSE(s.ok());
+    ASSERT_FALSE(s.ok());
     ASSERT_STR_CONTAINS(s.ToString(), "server requires authentication, but client does "
         "not have Kerberos credentials available");
 
