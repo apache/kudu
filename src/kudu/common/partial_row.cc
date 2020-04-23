@@ -415,7 +415,7 @@ Status KuduPartialRow::SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice
 }
 
 Status KuduPartialRow::SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) {
-  auto col = schema_->column(col_idx);
+  const auto& col = schema_->column(col_idx);
   if (val.size() > col.type_attributes().length * 4) {
     return Status::InvalidArgument(
         Substitute("Value too long, limit is $0 characters",
@@ -433,7 +433,7 @@ Status KuduPartialRow::SetSliceCopy(const Slice& col_name, const Slice& val) {
 
 template<typename T>
 Status KuduPartialRow::SetSliceCopy(int col_idx, const Slice& val) {
-  auto col = schema_->column(col_idx);
+  const auto& col = schema_->column(col_idx);
   Slice relocated_val;
   switch (T::type) {
     case VARCHAR:
