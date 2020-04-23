@@ -35,6 +35,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -261,8 +262,8 @@ TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
 
 // Create a block of rows and ensure that it can be converted to and from protobuf.
 TEST_F(WireProtocolTest, TestRowBlockToRowwisePB) {
-  Arena arena(1024);
-  RowBlock block(&schema_, 30, &arena);
+  RowBlockMemory mem(1024);
+  RowBlock block(&schema_, 30, &mem);
   FillRowBlockWithTestRows(&block);
 
   // Convert to PB.
@@ -299,10 +300,10 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
   // Generate several blocks of random data.
   static constexpr int kNumBlocks = 3;
   static constexpr int kBatchSizeBytes = 8192 * 1024;
-  Arena arena(1024);
+  RowBlockMemory mem(1024);
   std::list<RowBlock> blocks;
   for (int i = 0; i < kNumBlocks; i++) {
-    blocks.emplace_back(&schema_, 30, &arena);
+    blocks.emplace_back(&schema_, 30, &mem);
     FillRowBlockWithTestRows(&blocks.back());
   }
 
@@ -363,7 +364,7 @@ TEST_F(WireProtocolTest, TestRowBlockToColumnarPB) {
 // converted to and from protobuf.
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   int kNumRows = 10;
-  Arena arena(1024);
+  RowBlockMemory mem(1024);
   // Create a schema with multiple UNIXTIME_MICROS columns in different
   // positions.
   Schema tablet_schema({ ColumnSchema("key", UNIXTIME_MICROS),
@@ -371,7 +372,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
                          ColumnSchema("col2", UNIXTIME_MICROS),
                          ColumnSchema("col3", INT32, true /* nullable */),
                          ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */)}, 1);
-  RowBlock block(&tablet_schema, kNumRows, &arena);
+  RowBlock block(&tablet_schema, kNumRows, &mem);
   block.selection_vector()->SetAllTrue();
 
   for (int i = 0; i < block.nrows(); i++) {
@@ -573,8 +574,8 @@ class WireProtocolBenchmark :
   double RunBenchmark(const BenchmarkColumnsSpec& spec,
                     double select_rate) {
     ResetBenchmarkSchema(spec);
-    Arena arena(1024);
-    RowBlock block(&benchmark_schema_, 1000, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&benchmark_schema_, 1000, &mem);
     // Regardless of the config, use a constant number of selected cells for the test by
     // looping the conversion an appropriate number of times.
     const int64_t kNumCellsToConvert = AllowSlowTests() ? 100000000 : 1000000;
@@ -687,8 +688,8 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
 // projection (a COUNT(*) query).
 TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
   Schema empty(std::vector<ColumnSchema>(), 0);
-  Arena arena(1024);
-  RowBlock block(&empty, 1000, &arena);
+  RowBlockMemory mem(1024);
+  RowBlock block(&empty, 1000, &mem);
   block.selection_vector()->SetAllTrue();
   // Unselect 100 rows
   for (int i = 0; i < 100; i++) {
@@ -792,7 +793,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
   ColumnSchema col1("col1", INT32);
   vector<ColumnSchema> cols = { col1 };
   Schema schema(cols, 1);
-  Arena arena(1024);
+  RowBlockMemory mem(1024);
   boost::optional<ColumnPredicate> predicate;
 
   { // col1 IN (5, 6, 10)
@@ -805,7 +806,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     ColumnPredicatePB pb;
     NO_FATALS(ColumnPredicateToPB(cp, &pb));
 
-    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_OK(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate));
     ASSERT_EQ(predicate->predicate_type(), PredicateType::InList);
     ASSERT_EQ(3, predicate->raw_values().size());
   }
@@ -819,7 +820,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     *pb.mutable_in_list()->mutable_values()->Add() = string("\0\0\0\0", 4);
     *pb.mutable_in_list()->mutable_values()->Add() = string("\0\0\0\0", 4);
 
-    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_OK(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate));
     ASSERT_EQ(PredicateType::Equality, predicate->predicate_type());
   }
 
@@ -828,9 +829,9 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     pb.set_column("col1");
     pb.mutable_in_list();
 
-    Arena arena(1024);
+    RowBlockMemory mem(1024);
     boost::optional<ColumnPredicate> predicate;
-    ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
+    ASSERT_OK(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate));
     ASSERT_EQ(PredicateType::None, predicate->predicate_type());
   }
 
@@ -840,9 +841,9 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     pb.mutable_in_list();
     *pb.mutable_in_list()->mutable_values()->Add() = string("\0", 1);
 
-    Arena arena(1024);
+    RowBlockMemory mem(1024);
     boost::optional<ColumnPredicate> predicate;
-    ASSERT_TRUE(ColumnPredicateFromPB(schema, &arena, pb, &predicate).IsInvalidArgument());
+    ASSERT_TRUE(ColumnPredicateFromPB(schema, &mem.arena, pb, &predicate).IsInvalidArgument());
   }
 }
 

@@ -19,8 +19,10 @@
 
 #include <cstring>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 
@@ -51,8 +53,8 @@ Status ColumnBlock::CopyTo(const SelectionVector& sel_vec,
       BitmapCopy(dst->non_null_bitmap_, dst_cell_off,
                  non_null_bitmap_, src_cell_off,
                  num_cells);
+    }
   }
-}
 
   return Status::OK();
 }

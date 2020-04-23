@@ -311,8 +311,7 @@ class TabletTestBase : public KuduTabletTest {
                  TabletHarness::Options::ClockType::LOGICAL_CLOCK) :
     KuduTabletTest(TESTSETUP::CreateSchema(), clock_type),
     setup_(),
-    max_rows_(setup_.GetMaxRows()),
-    arena_(1024)
+    max_rows_(setup_.GetMaxRows())
   {}
 
   // Inserts "count" rows.
@@ -452,8 +451,8 @@ class TabletTestBase : public KuduTabletTest {
     ASSERT_OK(iter->Init(nullptr));
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));
-    Arena arena(32*1024);
-    RowBlock block(&schema_, batch_size, &arena);
+    RowBlockMemory mem(32 * 1024);
+    RowBlock block(&schema_, batch_size, &mem);
 
     bool check_for_dups = true;
     if (expected_row_count > INT_MAX) {
@@ -469,6 +468,7 @@ class TabletTestBase : public KuduTabletTest {
 
     uint64_t actual_row_count = 0;
     while (iter->HasNext()) {
+      mem.Reset();
       ASSERT_OK_FAST(iter->NextBlock(&block));
 
       RowBlockRow rb_row = block.row(0);
@@ -537,8 +537,6 @@ class TabletTestBase : public KuduTabletTest {
   TESTSETUP setup_;
 
   const uint64_t max_rows_;
-
-  Arena arena_;
 };
 
 

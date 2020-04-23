@@ -40,8 +40,10 @@
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
@@ -73,20 +75,20 @@ namespace cfile {
 class TestEncoding : public KuduTest {
  public:
   TestEncoding()
-    : arena_(1024) {
+    : memory_(1024) {
   }
 
  protected:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    arena_.Reset();
+    memory_.Reset();
     default_write_options_.storage_attributes.cfile_block_size = 256 * 1024;
   }
 
   template<DataType type>
   void CopyOne(BlockDecoder *decoder,
                typename TypeTraits<type>::cpp_type *ret) {
-    ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, &arena_);
+    ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, &memory_);
     ColumnDataView cdv(&cb);
     size_t n = 1;
     ASSERT_OK(decoder->CopyNextValues(&n, &cdv));
@@ -461,7 +463,7 @@ class TestEncoding : public KuduTest {
     vector<CppType> decoded;
     decoded.resize(size);
 
-    ColumnBlock dst_block(GetTypeInfo(Type), nullptr, &decoded[0], size, &arena_);
+    ColumnBlock dst_block(GetTypeInfo(Type), nullptr, &decoded[0], size, &memory_);
     ColumnDataView view(&dst_block);
     int dec_count = 0;
     while (bd->HasNext()) {
@@ -582,7 +584,7 @@ class TestEncoding : public KuduTest {
     ColumnBlock dst_block(GetTypeInfo(IntType), nullptr,
                           &decoded[0],
                           to_insert.size(),
-                          &arena_);
+                          &memory_);
     int dec_count = 0;
     while (ibd->HasNext()) {
       ASSERT_EQ((uint32_t)(dec_count), ibd->GetCurrentIndex());
@@ -666,7 +668,7 @@ class TestEncoding : public KuduTest {
     ColumnBlock dst_block(GetTypeInfo(BOOL), nullptr,
                           &decoded[0],
                           to_insert.size(),
-                          &arena_);
+                          &memory_);
 
     int dec_count = 0;
     while (bd->HasNext()) {
@@ -704,8 +706,7 @@ class TestEncoding : public KuduTest {
     }
   }
 
-  Arena arena_;
-  faststring contiguous_buf_;
+  RowBlockMemory memory_;
   WriterOptions default_write_options_;
 };
 

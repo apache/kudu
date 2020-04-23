@@ -36,6 +36,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -212,10 +213,11 @@ class TestMemRowSet : public KuduTest {
     unique_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(opts));
     CHECK_OK(iter->Init(nullptr));
 
-    Arena arena(1024);
-    RowBlock block(&schema_, 100, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema_, 100, &mem);
     int fetched = 0;
     while (iter->HasNext()) {
+      mem.Reset();
       CHECK_OK(iter->NextBlock(&block));
       fetched += block.selection_vector()->CountSelected();
     }

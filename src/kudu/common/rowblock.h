@@ -26,6 +26,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/columnblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
@@ -294,7 +295,6 @@ class SelectedRows {
   std::vector<uint16_t> indexes_;
 };
 
-
 // A block of decoded rows.
 // Wrapper around a buffer, which keeps the buffer's size, associated arena,
 // and schema. Provides convenience accessors for indexing by row, column, etc.
@@ -313,9 +313,7 @@ class RowBlock {
   // Constructs a new RowBlock.
   //
   // The 'schema' and 'arena' objects must outlive this RowBlock.
-  RowBlock(const Schema* schema,
-           size_t nrows,
-           Arena* arena);
+  RowBlock(const Schema* schema, size_t nrows, RowBlockMemory* memory);
   ~RowBlock();
 
   // Resize the block to the given number of rows.
@@ -331,7 +329,7 @@ class RowBlock {
   RowBlockRow row(size_t idx) const;
 
   const Schema* schema() const { return schema_; }
-  Arena* arena() const { return arena_; }
+  Arena* arena() const { return &memory_->arena; }
 
   ColumnBlock column_block(size_t col_idx) const {
     return column_block(col_idx, nrows_);
@@ -344,7 +342,7 @@ class RowBlock {
     uint8_t* col_data = columns_data_[col_idx];
     uint8_t* nulls_bitmap = column_non_null_bitmaps_[col_idx];
 
-    return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, arena_);
+    return ColumnBlock(col_schema.type_info(), nulls_bitmap, col_data, nrows, memory_);
   }
 
   // Return the base pointer for the given column's data.
@@ -447,7 +445,7 @@ class RowBlock {
   // nrows_ <= row_capacity_
   size_t nrows_;
 
-  Arena* arena_;
+  RowBlockMemory* memory_;
 
   // The bitmap indicating which rows are valid in this block.
   // Deleted rows or rows which have failed to pass predicates will be zeroed

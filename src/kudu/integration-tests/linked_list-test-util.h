@@ -572,9 +572,10 @@ inline Status LinkedListTester::VerifyLinkedListLocal(
                         "Cannot create new row iterator");
   RETURN_NOT_OK_PREPEND(iter->Init(nullptr), "Cannot initialize row iterator");
 
-  Arena arena(1024);
-  RowBlock block(&projection, 100, &arena);
+  RowBlockMemory mem(1024);
+  RowBlock block(&projection, 100, &mem);
   while (iter->HasNext()) {
+    mem.Reset();
     RETURN_NOT_OK(iter->NextBlock(&block));
     for (int i = 0; i < block.nrows(); i++) {
       int64_t key;

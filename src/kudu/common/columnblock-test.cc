@@ -15,12 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/common/columnblock.h"
-
 #include <string>
 
 #include <gtest/gtest.h>
 
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/types.h"

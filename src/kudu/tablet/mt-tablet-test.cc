@@ -34,6 +34,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/basictypes.h"
@@ -46,7 +47,6 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -148,8 +148,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
-    Arena tmp_arena(1024);
-    RowBlock block(&schema_, 1, &tmp_arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema_, 1, &mem);
     faststring update_buf;
 
     uint64_t updates_since_last_report = 0;
@@ -164,7 +164,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       CHECK_OK(iter->Init(nullptr));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
-        tmp_arena.Reset();
+        mem.Reset();
         CHECK_OK(iter->NextBlock(&block));
         CHECK_EQ(block.nrows(), 1);
 
@@ -218,8 +218,8 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memrowset memory.
   void SlowReaderThread(int /*tid*/) {
-    Arena arena(32*1024);
-    RowBlock block(&schema_, 1, &arena);
+    RowBlockMemory mem(32 * 1024);
+    RowBlock block(&schema_, 1, &mem);
 
     uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
             / FLAGS_num_insert_threads;
@@ -232,6 +232,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       CHECK_OK(iter->Init(nullptr));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
+        mem.Reset();
         CHECK_OK(iter->NextBlock(&block));
 
         if (running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(1))) {
@@ -251,10 +252,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   }
 
   uint64_t CountSum(const shared_ptr<TimeSeries> &scanned_ts) {
-    Arena arena(1024); // unused, just scanning ints
+    RowBlockMemory mem(1024);  // unused, just scanning ints
 
     static const int kBufInts = 1024*1024 / 8;
-    RowBlock block(&valcol_projection_, kBufInts, &arena);
+    RowBlock block(&valcol_projection_, kBufInts, &mem);
     ColumnBlock column = block.column_block(0);
 
     uint64_t count_since_report = 0;
@@ -266,7 +267,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     CHECK_OK(iter->Init(nullptr));
 
     while (iter->HasNext()) {
-      arena.Reset();
+      mem.Reset();
       CHECK_OK(iter->NextBlock(&block));
 
       for (size_t j = 0; j < block.nrows(); j++) {

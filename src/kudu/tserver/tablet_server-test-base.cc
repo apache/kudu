@@ -33,6 +33,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -51,7 +52,6 @@
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -413,11 +413,12 @@ void TabletServerTestBase::VerifyRows(const Schema& schema,
      std::min<int>(expected.size() / 10,
                    4*1024*1024 / schema.byte_size()));
 
-  Arena arena(32*1024);
-  RowBlock block(&schema, batch_size, &arena);
+  RowBlockMemory mem(32 * 1024);
+  RowBlock block(&schema, batch_size, &mem);
 
   int count = 0;
   while (iter->HasNext()) {
+    mem.Reset();
     ASSERT_OK_FAST(iter->NextBlock(&block));
     RowBlockRow rb_row = block.row(0);
     for (int i = 0; i < block.nrows(); i++) {

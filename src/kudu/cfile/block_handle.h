@@ -25,6 +25,7 @@
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/common/rowblock_memory.h"
 
 namespace kudu {
 namespace cfile {

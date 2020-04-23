@@ -32,6 +32,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -47,7 +48,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/once.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
@@ -234,8 +234,8 @@ Status TxnStatusTablet::VisitTransactions(TransactionsVisitor* visitor) {
   boost::optional<int64_t> prev_txn_id = boost::none;
   TxnStatusEntryPB prev_status_entry_pb;
   vector<ParticipantIdAndPB> prev_participants;
-  Arena arena(32 * 1024);
-  RowBlock block(&iter->schema(), 512, &arena);
+  RowBlockMemory mem;
+  RowBlock block(&iter->schema(), 512, &mem);
   // Iterate over the transaction and participant entries, notifying the
   // visitor once a transaction and all its participants have been found.
   while (iter->HasNext()) {

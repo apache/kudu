@@ -33,6 +33,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -202,8 +203,8 @@ class DiskRowSetCompactionInput : public CompactionInput {
       : base_iter_(std::move(base_iter)),
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
-        arena_(32 * 1024),
-        block_(&base_iter_->schema(), kRowsPerBlock, &arena_),
+        mem_(32 * 1024),
+        block_(&base_iter_->schema(), kRowsPerBlock, &mem_),
         redo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
         undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)) {}
 
@@ -248,7 +249,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  Arena* PreparedBlockArena() override { return &arena_; }
+  Arena* PreparedBlockArena() override { return &mem_.arena; }
 
   Status FinishBlock() override {
     return Status::OK();
@@ -264,7 +265,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
   unique_ptr<DeltaIterator> redo_delta_iter_;
   unique_ptr<DeltaIterator> undo_delta_iter_;
 
-  Arena arena_;
+  RowBlockMemory mem_;
 
   // The current block of data which has come from the input iterator
   RowBlock block_;
@@ -690,7 +691,7 @@ class MergeCompactionInput : public CompactionInput {
     num_dup_rows_++;
     if (row_idx == 0) {
       duplicated_rows_.push_back(std::unique_ptr<RowBlock>(
-          new RowBlock(schema_, kDuplicatedRowsPerBlock, static_cast<Arena*>(nullptr))));
+          new RowBlock(schema_, kDuplicatedRowsPerBlock, static_cast<RowBlockMemory*>(nullptr))));
     }
     return duplicated_rows_.back()->row(row_idx);
   }

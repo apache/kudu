@@ -18,23 +18,22 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <ostream>
 #include <string>
 
 #include <glog/logging.h>
 
-#include "kudu/common/common.pb.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class Arena;
 class ColumnBlockCell;
 class SelectionVector;
 
@@ -47,15 +46,15 @@ class ColumnBlock {
   typedef ColumnBlockCell Cell;
 
   ColumnBlock(const TypeInfo* type,
-              uint8_t *non_null_bitmap,
-              void *data,
+              uint8_t* non_null_bitmap,
+              void* data,
               size_t nrows,
-              Arena *arena)
-    : type_(type),
-      non_null_bitmap_(non_null_bitmap),
-      data_(reinterpret_cast<uint8_t *>(data)),
-      nrows_(nrows),
-      arena_(arena) {
+              RowBlockMemory* memory)
+      : type_(type),
+        non_null_bitmap_(non_null_bitmap),
+        data_(reinterpret_cast<uint8_t*>(data)),
+        nrows_(nrows),
+        memory_(memory) {
     DCHECK(data_) << "null data";
   }
 
@@ -106,12 +105,13 @@ class ColumnBlock {
     return !BitmapTest(non_null_bitmap_, idx);
   }
 
-  const size_t stride() const { return type_->size(); }
-  const uint8_t * data() const { return data_; }
-  uint8_t *data() { return data_; }
-  const size_t nrows() const { return nrows_; }
+  size_t stride() const { return type_->size(); }
+  const uint8_t* data() const { return data_; }
+  uint8_t* data() { return data_; }
+  size_t nrows() const { return nrows_; }
 
-  Arena *arena() { return arena_; }
+  RowBlockMemory* memory() { return memory_; }
+  Arena* arena() { return &memory_->arena; }
 
   const TypeInfo* type_info() const {
     return type_;
@@ -164,7 +164,7 @@ class ColumnBlock {
   uint8_t *data_;
   size_t nrows_;
 
-  Arena *arena_;
+  RowBlockMemory* memory_;
 };
 
 inline bool operator==(const ColumnBlock& a, const ColumnBlock& b) {
@@ -261,7 +261,9 @@ class ColumnDataView {
     return column_block_->cell_ptr(row_offset_);
   }
 
-  Arena *arena() { return column_block_->arena(); }
+  RowBlockMemory* memory() { return column_block_->memory(); }
+
+  Arena* arena() { return &memory()->arena; }
 
   size_t nrows() const {
     return column_block_->nrows() - row_offset_;
@@ -278,47 +280,6 @@ class ColumnDataView {
  private:
   ColumnBlock *column_block_;
   size_t row_offset_;
-};
-
-// Utility class which allocates temporary storage for a
-// dense block of column data, freeing it when it goes
-// out of scope.
-//
-// This is more useful in test code than production code,
-// since it doesn't allocate from an arena, etc.
-template<DataType type>
-class ScopedColumnBlock : public ColumnBlock {
- public:
-  typedef typename TypeTraits<type>::cpp_type cpp_type;
-
-  explicit ScopedColumnBlock(size_t n_rows, bool allow_nulls = true)
-    : ColumnBlock(GetTypeInfo(type),
-                  allow_nulls ? new uint8_t[BitmapSize(n_rows)] : nullptr,
-                  new cpp_type[n_rows],
-                  n_rows,
-                  new Arena(1024)),
-      non_null_bitmap_(non_null_bitmap()),
-      data_(reinterpret_cast<cpp_type *>(data())),
-      arena_(arena()) {
-    if (allow_nulls) {
-      // All rows begin null.
-      BitmapChangeBits(non_null_bitmap(), /*offset=*/ 0, n_rows, /*value=*/ false);
-    }
-  }
-
-  const cpp_type &operator[](size_t idx) const {
-    return data_[idx];
-  }
-
-  cpp_type &operator[](size_t idx) {
-    return data_[idx];
-  }
-
- private:
-  std::unique_ptr<uint8_t[]> non_null_bitmap_;
-  std::unique_ptr<cpp_type[]> data_;
-  std::unique_ptr<Arena> arena_;
-
 };
 
 } // namespace kudu

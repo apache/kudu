@@ -34,6 +34,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/stringprintf.h"
@@ -255,12 +256,13 @@ public:
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
-    Arena ret_arena(1024);
+    RowBlockMemory mem(1024);
     size_t expected_count = ExpectedCount(nrows, cardinality, lower, upper);
     Schema schema = iter->schema();
-    RowBlock block(&schema, 100, &ret_arena);
+    RowBlock block(&schema, 100, &mem);
     int fetched = 0;
-    string column_str_a, column_str_b;
+    string column_str_a;
+    string column_str_b;
     while (iter->HasNext()) {
       ASSERT_OK(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {

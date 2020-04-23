@@ -221,13 +221,13 @@ class TestRowSet : public KuduRowSetTest {
     std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(nullptr));
-    Arena arena(1024);
+    RowBlockMemory mem(1024);
     int batch_size = 10000;
-    RowBlock dst(&proj_val, batch_size, &arena);
+    RowBlock dst(&proj_val, batch_size, &mem);
 
     int i = 0;
     while (row_iter->HasNext()) {
-      arena.Reset();
+      mem.Reset();
       CHECK_OK(row_iter->NextBlock(&dst));
       VerifyUpdatedBlock(proj_val.ExtractColumnFromRow<UINT32>(dst.row(0), 0),
                          i, dst.nrows(), updated);
@@ -285,13 +285,13 @@ class TestRowSet : public KuduRowSetTest {
     CHECK_OK(row_iter->Init(nullptr));
 
     int batch_size = 1000;
-    Arena arena(1024);
-    RowBlock dst(&schema, batch_size, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock dst(&schema, batch_size, &mem);
 
     int i = 0;
     int log_interval = expected_rows/20 / batch_size;
     while (row_iter->HasNext()) {
-      arena.Reset();
+      mem.Reset();
       CHECK_OK(row_iter->NextBlock(&dst));
       i += dst.nrows();
 

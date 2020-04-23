@@ -28,11 +28,11 @@
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/mem_tracker.h"
-#include "kudu/util/memory/arena.h"
 
 namespace kudu {
 namespace cfile {
@@ -55,13 +55,12 @@ Status DumpIterator(const CFileReader& reader,
                     std::ostream* out,
                     int num_rows,
                     int indent) {
-
-  Arena arena(8192);
+  RowBlockMemory mem(8192);
   uint8_t buf[kBufSize];
   const TypeInfo *type = reader.type_info();
   size_t max_rows = kBufSize/type->size();
   uint8_t nulls[BitmapSize(max_rows)];
-  ColumnBlock cb(type, reader.is_nullable() ? nulls : nullptr, buf, max_rows, &arena);
+  ColumnBlock cb(type, reader.is_nullable() ? nulls : nullptr, buf, max_rows, &mem);
   SelectionVector sel(max_rows);
   ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
   string strbuf;
@@ -93,7 +92,7 @@ Status DumpIterator(const CFileReader& reader,
 
     *out << strbuf;
     strbuf.clear();
-    arena.Reset();
+    mem.Reset();
     count += n;
   }
 

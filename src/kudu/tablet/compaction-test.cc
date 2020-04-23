@@ -38,6 +38,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -781,7 +782,8 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   }
 
-  RowBlock block(&schema_, kBaseNumRowSets * kNumRowsPerRowSet, &arena_);
+  RowBlockMemory mem;
+  RowBlock block(&schema_, kBaseNumRowSets * kNumRowsPerRowSet, &mem);
   // Go through the expected compaction input rows, flip the last undo into a redo and
   // build the base. This will give us the final version that we'll expect the result
   // of the real compaction to match.
@@ -791,13 +793,13 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
     row->undo_head = reinsert->next();
     row->row = block.row(i);
     BuildRow(i, i);
-    CopyRow(row_builder_.row(), &row->row, &arena_);
+    CopyRow(row_builder_.row(), &row->row, &mem.arena);
     RowChangeListDecoder redo_decoder(reinsert->changelist());
     CHECK_OK(redo_decoder.Init());
     faststring buf;
     RowChangeListEncoder dummy(&buf);
     dummy.SetToUpdate();
-    redo_decoder.MutateRowAndCaptureChanges(&row->row, &arena_, &dummy);
+    redo_decoder.MutateRowAndCaptureChanges(&row->row, &mem.arena, &dummy);
     AddExpectedDelete(&row->redo_head, reinsert->timestamp());
   }
 

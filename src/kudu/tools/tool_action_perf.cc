@@ -191,6 +191,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/types.h"
@@ -219,7 +220,6 @@
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -884,11 +884,11 @@ Status TabletScan(const RunnerContext& context) {
       unique_ptr<RowwiseIterator> iter;
       RETURN_NOT_OK(tablet->NewRowIterator(std::move(opts), &iter));
       RETURN_NOT_OK(iter->Init(nullptr));
-      Arena arena(1024);
-      RowBlock block(&projection, 100, &arena);
+      RowBlockMemory mem(1024);
+      RowBlock block(&projection, 100, &mem);
       int64_t rows_scanned = 0;
       while (iter->HasNext()) {
-        arena.Reset();
+        mem.Reset();
         RETURN_NOT_OK(iter->NextBlock(&block));
         rows_scanned += block.nrows();
         KLOG_EVERY_N_SECS(INFO, 10) << "scanned " << rows_scanned << " rows";

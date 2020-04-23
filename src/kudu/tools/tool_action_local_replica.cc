@@ -37,6 +37,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -81,7 +82,6 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
@@ -715,10 +715,11 @@ Status DumpRowSetInternal(const IOContext& ctx,
     RETURN_NOT_OK(rs->NewRowIterator(opts, &it));
     RETURN_NOT_OK(it->Init(nullptr));
 
-    Arena arena(1024);
-    RowBlock block(&key_proj, 100, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&key_proj, 100, &mem);
     faststring key;
     while (it->HasNext()) {
+      mem.Reset();
       RETURN_NOT_OK(it->NextBlock(&block));
       for (int i = 0; i < block.nrows(); i++) {
         key_proj.EncodeComparableKey(block.row(i), &key);

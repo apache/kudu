@@ -31,10 +31,12 @@
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -83,8 +85,7 @@ using fs::WritableBlock;
 class TestDeltaFile : public KuduTest {
  public:
   TestDeltaFile() :
-    schema_(CreateSchema()),
-    arena_(1024) {
+      schema_(CreateSchema()) {
   }
 
  public:
@@ -175,7 +176,8 @@ class TestDeltaFile : public KuduTest {
     ASSERT_OK(s);
     ASSERT_OK(it->Init(nullptr));
 
-    RowBlock block(&schema_, 100, &arena_);
+    RowBlockMemory mem;
+    RowBlock block(&schema_, 100, &mem);
 
     // Iterate through the faked table, starting with batches that
     // come before all of the updates, and extending a bit further
@@ -185,7 +187,7 @@ class TestDeltaFile : public KuduTest {
     int start_row = 0;
     while (start_row < FLAGS_last_row_to_update + 10000) {
       block.ZeroMemory();
-      arena_.Reset();
+      mem.Reset();
 
       ASSERT_OK_FAST(it->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
       SelectionVector sv(block.nrows());
@@ -218,7 +220,6 @@ class TestDeltaFile : public KuduTest {
  protected:
   unique_ptr<FsManager> fs_manager_;
   Schema schema_;
-  Arena arena_;
   BlockId test_block_;
 };
 
@@ -311,13 +312,15 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     vector<Mutation *> mutations;
     mutations.resize(100);
 
+    Arena arena(1024);
+
     int start_row = 0;
     while (start_row < FLAGS_last_row_to_update + 10000) {
+      arena.Reset();
       std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
 
-      arena_.Reset();
       ASSERT_OK_FAST(it->PrepareBatch(mutations.size(), DeltaIterator::PREPARE_FOR_COLLECT));
-      ASSERT_OK(it->CollectMutations(&mutations, &arena_));
+      ASSERT_OK(it->CollectMutations(&mutations, &arena));
 
       for (int i = 0; i < mutations.size(); i++) {
         Mutation *mut_head = mutations[i];

@@ -34,6 +34,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -44,7 +45,6 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -294,10 +294,10 @@ class TestRandomAccess : public KuduTabletTest {
     optional<ExpectedKeyValueRow> ret;
     int n_results = 0;
 
-    Arena arena(1024);
-    RowBlock block(&schema, 100, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema, 100, &mem);
     while (iter->HasNext()) {
-      arena.Reset();
+      mem.Reset();
       CHECK_OK(iter->NextBlock(&block));
       for (int i = 0; i < block.nrows(); i++) {
         if (!block.selection_vector()->IsRowSelected(i)) {

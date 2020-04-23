@@ -44,6 +44,7 @@
 #include "kudu/common/key_range.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -2892,9 +2893,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // TODO(todd): could size the RowBlock based on the user's requested batch size?
   // If people had really large indirect objects, we would currently overshoot
   // their requested batch size by a lot.
-  Arena arena(32 * 1024);
-  RowBlock block(&iter->schema(),
-                 FLAGS_scanner_batch_size_rows, &arena);
+  RowBlockMemory mem(32 * 1024);
+  RowBlock block(&iter->schema(), FLAGS_scanner_batch_size_rows, &mem);
 
   // TODO(todd): in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.

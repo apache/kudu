@@ -49,6 +49,7 @@
 #include "kudu/common/predicate_effectiveness.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/casts.h"
@@ -115,7 +116,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
  public:
   explicit MergeIterState(IterWithBounds iwb)
       : iwb_(std::move(iwb)),
-        arena_(1024),
+        memory_(1024),
         next_row_idx_(0)
   {}
 
@@ -148,18 +149,18 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   // exist. If not, we have to pull a block immediately: after Init() is
   // finished it must be safe to call next_row() and last_row().
   //
-  // Decoded bound allocations are done against 'decoded_bounds_arena'.
-  Status Init(Arena* decoded_bounds_arena) {
+  // Decoded bound allocations are done against the arena in 'decoded_bounds_memory'.
+  Status Init(RowBlockMemory* decoded_bounds_memory) {
     DCHECK(!read_block_);
 
     if (iwb_.encoded_bounds) {
-      decoded_bounds_.emplace(&schema(), decoded_bounds_arena);
+      decoded_bounds_.emplace(&schema(), decoded_bounds_memory);
       decoded_bounds_->lower = decoded_bounds_->block.row(0);
       decoded_bounds_->upper = decoded_bounds_->block.row(1);
       RETURN_NOT_OK(schema().DecodeRowKey(
-          iwb_.encoded_bounds->first, &decoded_bounds_->lower, decoded_bounds_arena));
+          iwb_.encoded_bounds->first, &decoded_bounds_->lower, &decoded_bounds_memory->arena));
       RETURN_NOT_OK(schema().DecodeRowKey(
-          iwb_.encoded_bounds->second, &decoded_bounds_->upper, decoded_bounds_arena));
+          iwb_.encoded_bounds->second, &decoded_bounds_->upper, &decoded_bounds_memory->arena));
     } else {
       RETURN_NOT_OK(PullNextBlock());
     }
@@ -223,14 +224,14 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   IterWithBounds iwb_;
 
   // Allocates memory for read_block_.
-  Arena arena_;
+  RowBlockMemory memory_;
 
   // Optional rowset bounds, decoded during Init().
   struct DecodedBounds {
     // 'block' must be constructed immediately; the bounds themselves can be
     // initialized later.
-    DecodedBounds(const Schema* schema, Arena* arena)
-        : block(schema, /*nrows=*/2, arena) {}
+    DecodedBounds(const Schema* schema, RowBlockMemory* mem)
+        : block(schema, /*nrows=*/2, mem) {}
 
     RowBlock block;
     RowBlockRow lower;
@@ -274,7 +275,7 @@ Status MergeIterState::Advance(size_t num_rows, bool* pulled_new_block) {
   // We either exhausted the block outright, or all subsequent rows were
   // deselected. Either way, we need to pull the next block.
   next_row_idx_ = read_block_->nrows();
-  arena_.Reset();
+  memory_.Reset();
   RETURN_NOT_OK(PullNextBlock());
   *pulled_new_block = true;
   return Status::OK();
@@ -285,7 +286,7 @@ Status MergeIterState::PullNextBlock() {
       << "should not pull next block until current block is exhausted";
 
   if (!read_block_) {
-    read_block_.reset(new RowBlock(&schema(), kMergeRowBuffer, &arena_));
+    read_block_.reset(new RowBlock(&schema(), kMergeRowBuffer, &memory_));
   }
   while (iwb_.iter->HasNext()) {
     RETURN_NOT_OK(iwb_.iter->NextBlock(read_block_.get()));
@@ -540,7 +541,7 @@ class MergeIterator : public RowwiseIterator {
   // Each MergeIterState has an arena for buffered row data, but it is reset
   // every time a new block is pulled. This single arena ensures that a
   // MergeIterState's decoded bounds remain allocated for its lifetime.
-  Arena decoded_bounds_arena_;
+  RowBlockMemory decoded_bounds_memory_;
 
   // Min-heap that orders rows by their keys. A call to top() will yield the row
   // with the smallest key.
@@ -595,7 +596,7 @@ MergeIterator::MergeIterator(MergeIteratorOptions opts,
       initted_(false),
       orig_iters_(std::move(iters)),
       num_orig_iters_(orig_iters_.size()),
-      decoded_bounds_arena_(1024) {
+      decoded_bounds_memory_(1024) {
   CHECK_GT(orig_iters_.size(), 0);
 }
 
@@ -664,7 +665,7 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(InitAndMaybeWrap(&i.iter, spec_copy));
     unique_ptr<MergeIterState> state(new MergeIterState(std::move(i)));
-    RETURN_NOT_OK(state->Init(&decoded_bounds_arena_));
+    RETURN_NOT_OK(state->Init(&decoded_bounds_memory_));
     states_.push_back(*state.release());
   }
   orig_iters_.clear();

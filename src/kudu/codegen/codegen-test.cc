@@ -35,6 +35,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
@@ -66,7 +67,7 @@ class CodegenTest : public KuduTest {
   CodegenTest()
     : random_(SeedRandom()),
       // Set the initial Arena size as small as possible to catch errors during relocation.
-      projections_arena_(16) {
+      projections_mem_(16) {
     // Create the base schema.
     vector<ColumnSchema> cols = { ColumnSchema("key           ", UINT64, false),
                                   ColumnSchema("int32         ",  INT32, false),
@@ -138,7 +139,7 @@ class CodegenTest : public KuduTest {
 
  private:
   // Projects the test rows into parameter rowblock using projector and
-  // member projections_arena_ (should be Reset() manually).
+  // member projections_mem_ (should be Reset() manually).
   template<bool READ, class RowProjectorType>
   void ProjectTestRows(RowProjectorType* rp, RowBlock* rb);
   void AddRandomString(RowBuilder* rb);
@@ -153,7 +154,7 @@ class CodegenTest : public KuduTest {
   codegen::CodeGenerator generator_;
   Random random_;
   unique_ptr<ConstContiguousRow> test_rows_[kNumTestRows];
-  Arena projections_arena_;
+  RowBlockMemory projections_mem_;
   unique_ptr<Arena> test_rows_arena_;
 };
 
@@ -203,9 +204,9 @@ void CodegenTest::ProjectTestRows(RowProjectorType* rp, RowBlock* rb) {
     ConstContiguousRow src = *test_rows_[i];
     RowBlockRow dst = rb->row(i);
     if (READ) {
-      CHECK_OK(rp->ProjectRowForRead(src, &dst, &projections_arena_));
+      CHECK_OK(rp->ProjectRowForRead(src, &dst, rb->arena()));
     } else {
-      CHECK_OK(rp->ProjectRowForWrite(src, &dst, &projections_arena_));
+      CHECK_OK(rp->ProjectRowForWrite(src, &dst, rb->arena()));
     }
   }
 }
@@ -220,10 +221,10 @@ void CodegenTest::TestProjection(const Schema* proj) {
   CHECK_EQ(with->base_schema(), &base_);
   CHECK_EQ(with->projection(), proj);
 
-  RowBlock rb_with(proj, kNumTestRows, &projections_arena_);
-  RowBlock rb_without(proj, kNumTestRows, &projections_arena_);
+  RowBlock rb_with(proj, kNumTestRows, &projections_mem_);
+  RowBlock rb_without(proj, kNumTestRows, &projections_mem_);
 
-  projections_arena_.Reset();
+  projections_mem_.Reset();
   ProjectTestRows<READ>(with.get(), &rb_with);
   ProjectTestRows<READ>(&without, &rb_without);
   CheckRowBlocksEqual(&rb_with, &rb_without, "Codegen", "Expected");

@@ -45,6 +45,7 @@
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/predicate_effectiveness.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -54,7 +55,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/hash.pb.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -258,7 +258,8 @@ TEST(TestMergeIterator, TestNotConsumedCleanup) {
   ASSERT_OK(merger->Init(nullptr));
 
   ASSERT_TRUE(merger->HasNext());
-  RowBlock dst(&kIntSchema, 1, nullptr);
+  RowBlockMemory mem;
+  RowBlock dst(&kIntSchema, 1, &mem);
   ASSERT_OK(merger->NextBlock(&dst));
   ASSERT_EQ(1, dst.nrows());
   ASSERT_TRUE(merger->HasNext());
@@ -435,7 +436,8 @@ void TestMerge(const Schema& schema,
 
       // The RowBlock is sized to a power of 2 to improve BitmapCopy performance
       // when copying another RowBlock into it.
-      RowBlock dst(&schema, 128, nullptr);
+      RowBlockMemory mem;
+      RowBlock dst(&schema, 128, &mem);
       size_t total_idx = 0;
       auto expected_iter = expected.cbegin();
       while (merger->HasNext()) {
@@ -524,8 +526,8 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ASSERT_OK(materializing->Init(&spec));
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
-  Arena arena(1024);
-  RowBlock dst(&kIntSchema, 100, &arena);
+  RowBlockMemory mem(1024);
+  RowBlock dst(&kIntSchema, 100, &mem);
   ASSERT_OK(materializing->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
 
@@ -572,8 +574,8 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   ASSERT_EQ(1, GetIteratorPredicatesForTests(outer_iter).size())
     << "Predicate should be evaluated by the outer iterator";
 
-  Arena arena(1024);
-  RowBlock dst(&kIntSchema, 100, &arena);
+  RowBlockMemory mem(1024);
+  RowBlock dst(&kIntSchema, 100, &mem);
   ASSERT_OK(outer_iter->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
 
@@ -726,11 +728,11 @@ class PredicateEffectivenessTest :
     ASSERT_TRUE(GetIteratorPredicateEffectivenessCtxForTests(iter)[0].enabled)
         << "Predicate must be enabled to begin with";
 
-    Arena arena(1024);
+    RowBlockMemory mem;
     FLAGS_predicate_effectivess_num_skip_blocks = 4;
     if (all_values) {
       for (int i = 0; i < kNumRows / kBatchSize; i++) {
-        RowBlock dst(&kIntSchema, kBatchSize, &arena);
+        RowBlock dst(&kIntSchema, kBatchSize, &mem);
         ASSERT_OK(iter->NextBlock(&dst));
         ASSERT_EQ(kBatchSize, dst.nrows());
         ASSERT_EQ(kBatchSize, dst.selection_vector()->CountSelected());
@@ -741,7 +743,7 @@ class PredicateEffectivenessTest :
       }
     } else {
       for (int i = 0; i < kNumRows / kBatchSize; i++) {
-        RowBlock dst(&kIntSchema, kBatchSize, &arena);
+        RowBlock dst(&kIntSchema, kBatchSize, &mem);
         ASSERT_OK(iter->NextBlock(&dst));
         ASSERT_EQ(kBatchSize, dst.nrows());
         // For subset case, the predicate should never be disabled.

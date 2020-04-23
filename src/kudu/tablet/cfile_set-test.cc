@@ -39,6 +39,7 @@
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -192,9 +193,10 @@ class TestCFileSet : public KuduRowSetTest {
     ASSERT_OK(iter->Init(&spec));
 
     // Check that the range was respected on all the results.
-    Arena arena(1024);
-    RowBlock block(&schema_, 100, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema_, 100, &mem);
     while (iter->HasNext()) {
+      mem.Reset();
       ASSERT_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
@@ -226,8 +228,8 @@ class TestCFileSet : public KuduRowSetTest {
     }
     ASSERT_OK(iter->Init(&spec));
     // Check that the range was respected on all the results.
-    Arena arena(1024);
-    RowBlock block(&schema_, 100, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock block(&schema_, 100, &mem);
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
@@ -288,11 +290,11 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   unique_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
   ASSERT_OK(iter->Init(nullptr));
 
-  Arena arena(4096);
-  RowBlock block(&schema_, 100, &arena);
+  RowBlockMemory mem(4096);
+  RowBlock block(&schema_, 100, &mem);
   rowid_t row_idx = 0;
   while (iter->HasNext()) {
-    arena.Reset();
+    mem.Reset();
 
     size_t n = block.nrows();
     ASSERT_OK_FAST(iter->PrepareBatch(&n));

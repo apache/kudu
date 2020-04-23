@@ -29,6 +29,7 @@
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -447,7 +448,7 @@ void TimeReadFileForDataType(CFileIterator* iter, int* count) {
     ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
     sum += FastSum<ScopedColumnBlock<Type>, SumType>(cb, n);
     *count += n;
-    cb.arena()->Reset();
+    cb.memory()->Reset();
   }
   LOG(INFO)<< "Sum: " << sum;
   LOG(INFO)<< "Count: " << *count;
@@ -469,7 +470,7 @@ void ReadBinaryFile(CFileIterator* iter, int* count) {
       }
     }
     *count += n;
-    cb.arena()->Reset();
+    cb.memory()->Reset();
   }
   LOG(INFO) << "Sum of value lengths: " << sum_lens;
   LOG(INFO) << "Count: " << *count;

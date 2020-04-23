@@ -39,6 +39,7 @@
 #include "kudu/common/key_range.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -507,7 +508,8 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   ASSERT_TRUE(iter->HasNext());
 
-  RowBlock block(&this->schema_, 100, &this->arena_);
+  RowBlockMemory mem;
+  RowBlock block(&this->schema_, 100, &mem);
 
   // First call to CopyNextRows should fetch the whole memrowset.
   ASSERT_OK_FAST(iter->NextBlock(&block));
@@ -579,8 +581,10 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
 
       // Iterate the tablet collecting rows.
       vector<shared_ptr<faststring> > rows;
+      RowBlockMemory mem;
       for (int i = 0; i < numBlocks; i++) {
-        RowBlock block(&this->schema_, rowsPerBlock, &this->arena_);
+        mem.Reset();
+        RowBlock block(&this->schema_, rowsPerBlock, &mem);
         ASSERT_TRUE(iter->HasNext());
         ASSERT_OK(iter->NextBlock(&block));
         ASSERT_EQ(rowsPerBlock, block.nrows()) << "unexpected number of rows returned";
@@ -683,9 +687,10 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   vector<bool> seen(max_rows, false);
   int seen_count = 0;
 
-  RowBlock block(&schema, 100, &this->arena_);
+  RowBlockMemory mem;
+  RowBlock block(&schema, 100, &mem);
   while (iter->HasNext()) {
-    this->arena_.Reset();
+    mem.Reset();
     ASSERT_OK(iter->NextBlock(&block));
     LOG(INFO) << "Fetched batch of " << block.nrows();
     for (size_t i = 0; i < block.nrows(); i++) {

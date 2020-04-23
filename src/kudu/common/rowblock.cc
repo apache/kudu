@@ -168,13 +168,13 @@ std::vector<uint16_t> SelectedRows::CreateRowIndexes() {
 //////////////////////////////
 RowBlock::RowBlock(const Schema* schema,
                    size_t nrows,
-                   Arena *arena)
+                   RowBlockMemory* memory)
   : schema_(schema),
     columns_data_(schema->num_columns()),
     column_non_null_bitmaps_(schema->num_columns()),
     row_capacity_(nrows),
     nrows_(nrows),
-    arena_(arena),
+    memory_(memory),
     sel_vec_(nrows) {
   CHECK_GT(row_capacity_, 0);
 

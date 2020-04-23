@@ -31,6 +31,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/fs/block_manager.h"
@@ -128,8 +129,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   RETURN_NOT_OK(delta_iter_->Init(&spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
-  Arena arena(32 * 1024);
-  RowBlock block(&partial_schema_, kRowsPerBlock, &arena);
+  RowBlockMemory mem(32 * 1024);
+  RowBlock block(&partial_schema_, kRowsPerBlock, &mem);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
   unique_ptr<DeltaStats> redo_stats(new DeltaStats);
@@ -140,7 +141,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   while (old_base_data_rwise->HasNext()) {
 
     // 1) Get the next batch of base data for the columns we're compacting.
-    arena.Reset();
+    mem.Reset();
     RETURN_NOT_OK(old_base_data_rwise->NextBlock(&block));
     size_t n = block.nrows();
 
@@ -177,12 +178,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
       // NOTE: This is presently ignored.
       bool is_garbage_collected;
 
-      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
-                                                   *input_row,
-                                                   &new_undos_head,
-                                                   &new_redos_head,
-                                                   &arena,
-                                                   &dst_row));
+      RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(
+          snap, *input_row, &new_undos_head, &new_redos_head, &mem.arena, &dst_row));
 
       RemoveAncientUndos(history_gc_opts_,
                          &new_undos_head,
@@ -210,9 +207,9 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
     // 5) Remove the columns that we've done our major REDO delta compaction on
     //    from this delta flush, except keep all the delete and reinsert
     //    mutations.
-    arena.Reset();
+    mem.Reset();
     vector<DeltaKeyAndUpdate> out;
-    RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(column_ids_, &out, &arena));
+    RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(column_ids_, &out, &mem.arena));
 
     // We only create a new redo delta file if we need to.
     if (!out.empty() && !new_redo_delta_writer_) {

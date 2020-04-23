@@ -28,13 +28,13 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -106,8 +106,8 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   }
 
   void ReadVerify(DiskRowSet *rs) {
-    Arena arena(1024);
-    RowBlock dst(&schema_, 1000, &arena);
+    RowBlockMemory mem(1024);
+    RowBlock dst(&schema_, 1000, &mem);
     RowIteratorOptions opts;
     opts.projection = &schema_;
     unique_ptr<RowwiseIterator> iter;
@@ -115,6 +115,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_OK(iter->Init(nullptr));
     while (iter->HasNext()) {
+      mem.Reset();
       ASSERT_OK_FAST(iter->NextBlock(&dst));
       size_t n = dst.nrows();
       ASSERT_GT(n, 0);

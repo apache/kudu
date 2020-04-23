@@ -38,6 +38,7 @@
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
@@ -199,8 +200,8 @@ class KuduRowSetTest : public KuduTabletTest {
 static inline Status SilentIterateToStringList(RowwiseIterator* iter,
                                                int* fetched) {
   const Schema& schema = iter->schema();
-  Arena arena(1024);
-  RowBlock block(&schema, 100, &arena);
+  RowBlockMemory memory(1024);
+  RowBlock block(&schema, 100, &memory);
   *fetched = 0;
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
@@ -218,8 +219,8 @@ static inline Status IterateToStringList(RowwiseIterator* iter,
                                          int limit = INT_MAX) {
   out->clear();
   Schema schema = iter->schema();
-  Arena arena(1024);
-  RowBlock block(&schema, 100, &arena);
+  RowBlockMemory memory(1024);
+  RowBlock block(&schema, 100, &memory);
   int fetched = 0;
   while (iter->HasNext() && fetched < limit) {
     RETURN_NOT_OK(iter->NextBlock(&block));
