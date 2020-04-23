@@ -32,6 +32,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/slice.h"
@@ -177,12 +178,27 @@ Status IndexTreeBuilder::FinishAndWriteBlock(size_t level, BlockPointer *written
 ////////////////////////////////////////////////////////////
 
 
+struct IndexTreeIterator::SeekedIndex {
+  SeekedIndex() :
+      iter(&reader)
+  {}
+
+  // Hold a copy of the underlying block data, which would
+  // otherwise go out of scope. The reader and iter
+  // do not themselves retain the data.
+  BlockPointer block_ptr;
+  scoped_refptr<BlockHandle> data;
+  IndexBlockReader reader;
+  IndexBlockIterator iter;
+};
+
 IndexTreeIterator::IndexTreeIterator(const IOContext* io_context, const CFileReader *reader,
                                      const BlockPointer &root_blockptr)
     : reader_(reader),
       root_block_(root_blockptr),
       io_context_(io_context) {
 }
+IndexTreeIterator::~IndexTreeIterator() = default;
 
 Status IndexTreeIterator::SeekAtOrBefore(const Slice &search_key) {
   return SeekDownward(search_key, root_block_, 0);
@@ -290,7 +306,7 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block,
   seeked->block_ptr = block;
 
   // Parse the new block.
-  RETURN_NOT_OK_PREPEND(seeked->reader.Parse(seeked->data.data()),
+  RETURN_NOT_OK_PREPEND(seeked->reader.Parse(seeked->data->data()),
                         Substitute("failed to parse index block in block $0 at $1",
                                    reader_->block_id().ToString(),
                                    block.ToString()));

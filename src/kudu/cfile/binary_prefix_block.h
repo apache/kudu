@@ -26,8 +26,10 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -83,7 +85,7 @@ class BinaryPrefixBlockBuilder final : public BlockBuilder {
 // Decoder for BINARY type, PREFIX encoding
 class BinaryPrefixBlockDecoder final : public BlockDecoder {
  public:
-  explicit BinaryPrefixBlockDecoder(Slice slice);
+  explicit BinaryPrefixBlockDecoder(scoped_refptr<BlockHandle> block);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
@@ -130,6 +132,7 @@ class BinaryPrefixBlockDecoder final : public BlockDecoder {
 
   void SeekToStart();
 
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
 
   bool parsed_;

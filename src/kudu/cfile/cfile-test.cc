@@ -247,11 +247,11 @@ class TestCFile : public CFileTestBase {
     WriteTestFile(generator, encoding, compression, 10000, SMALL_BLOCKSIZE, &block_id);
 
     size_t n;
-    TimeReadFile(fs_manager_.get(), block_id, &n);
+    NO_FATALS(TimeReadFile(fs_manager_.get(), block_id, &n));
     ASSERT_EQ(n, 10000);
 
     generator->Reset();
-    TimeSeekAndReadFileWithNulls(generator, block_id, n);
+    NO_FATALS(TimeSeekAndReadFileWithNulls(generator, block_id, n));
   }
 
   void TestReadWriteRawBlocks(CompressionType compression, int num_entries) {
@@ -300,12 +300,12 @@ class TestCFile : public CFileTestBase {
 
     uint32_t count = 0;
     do {
-      BlockHandle dblk_data;
+      scoped_refptr<BlockHandle> dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
       ASSERT_OK(reader->ReadBlock(nullptr, blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
 
       memcpy(data + 12, &count, 4);
-      ASSERT_EQ(expected_data, dblk_data.data());
+      ASSERT_EQ(expected_data, dblk_data->data());
 
       count++;
     } while (iter->Next().ok());
@@ -383,7 +383,7 @@ class TestCFile : public CFileTestBase {
     RETURN_NOT_OK(iter->SeekToFirst());
 
     do {
-      BlockHandle dblk_data;
+      scoped_refptr<BlockHandle> dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
       RETURN_NOT_OK(reader->ReadBlock(&io_context, blk_ptr,
           CFileReader::DONT_CACHE_BLOCK, &dblk_data));
@@ -1060,7 +1060,7 @@ TEST_P(TestCFileBothCacheMemoryTypes, TestCacheKeysAreStable) {
     iter.reset(IndexTreeIterator::Create(nullptr, reader.get(), reader->posidx_root()));
     ASSERT_OK(iter->SeekToFirst());
 
-    BlockHandle bh;
+    scoped_refptr<BlockHandle> bh;
     ASSERT_OK(reader->ReadBlock(nullptr, iter->GetCurrentBlockPointer(),
                                 CFileReader::CACHE_BLOCK,
                                 &bh));

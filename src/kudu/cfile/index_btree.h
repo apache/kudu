@@ -22,7 +22,6 @@
 #include <memory>
 #include <vector>
 
-#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/gutil/macros.h"
@@ -82,6 +81,7 @@ class IndexTreeIterator {
       const fs::IOContext* io_context,
       const CFileReader *reader,
       const BlockPointer &root_blockptr);
+  ~IndexTreeIterator();
 
   Status SeekToFirst();
   Status SeekAtOrBefore(const Slice &search_key);
@@ -112,19 +112,7 @@ class IndexTreeIterator {
                       int cur_depth);
   Status SeekToFirstDownward(const BlockPointer &in_block, int cur_depth);
 
-  struct SeekedIndex {
-    SeekedIndex() :
-      iter(&reader)
-    {}
-
-    // Hold a copy of the underlying block data, which would
-    // otherwise go out of scope. The reader and iter
-    // do not themselves retain the data.
-    BlockPointer block_ptr;
-    BlockHandle data;
-    IndexBlockReader reader;
-    IndexBlockIterator iter;
-  };
+  struct SeekedIndex;
 
   const CFileReader *reader_;
 

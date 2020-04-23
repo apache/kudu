@@ -18,85 +18,83 @@
 #ifndef KUDU_CFILE_BLOCK_HANDLE_H
 #define KUDU_CFILE_BLOCK_HANDLE_H
 
+#include <memory>
+
+#include <boost/variant/get.hpp>
+#include <boost/variant/variant.hpp>
+
 #include "kudu/cfile/block_cache.h"
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
-
 namespace cfile {
 
 // When blocks are read, they are sometimes resident in the block cache, and sometimes skip the
 // block cache. In the case that they came from the cache, we just need to dereference them when
 // they stop being used. In the case that they didn't come from cache, we need to actually free
 // the underlying data.
-class BlockHandle {
+//
+// NOTE ON REFERENCE COUNTING
+// ---------------------------
+// Note that the BlockHandle itself may refer to a BlockCacheHandle, which itself is
+// reference-counted. When all of the references to a BlockHandle go out of scope, it
+// results in decrementing the BlockCacheHandle's reference count.
+class BlockHandle : public RefCountedThreadSafe<BlockHandle> {
  public:
-  static BlockHandle WithOwnedData(const Slice& data) {
-    return BlockHandle(data);
+  static scoped_refptr<BlockHandle> WithOwnedData(const Slice& data) {
+    return { new BlockHandle(data) };
   }
 
-  static BlockHandle WithDataFromCache(BlockCacheHandle *handle) {
-    return BlockHandle(handle);
+  static scoped_refptr<BlockHandle> WithDataFromCache(BlockCacheHandle handle) {
+    return { new BlockHandle(std::move(handle)) };
   }
 
-  // Constructor to use to Pass to.
-  BlockHandle()
-    : is_data_owner_(false) { }
+  Slice data() const { return data_; }
 
-  // Move constructor and assignment
-  BlockHandle(BlockHandle&& other) noexcept {
-    TakeState(&other);
+  scoped_refptr<BlockHandle> SubrangeBlock(size_t offset, size_t len) {
+    return { new BlockHandle(this, offset, len) };
   }
-  BlockHandle& operator=(BlockHandle&& other) noexcept {
-    TakeState(&other);
-    return *this;
-  }
+
+ protected:
+  friend class RefCountedThreadSafe<BlockHandle>;
+
+  // Marker to indicate that this object isn't initialized (owns no data).
+  struct Uninitialized {};
+  // Marker that the handle directly owns the data in 'data_', rather than referring
+  // to data in the block cache or to another BlockHandle.
+  struct OwnedData {};
 
   ~BlockHandle() {
     Reset();
   }
-
-  Slice data() const {
-    if (is_data_owner_) {
-      return data_;
-    } else {
-      return dblk_data_.data();
-    }
-  }
-
- private:
-  BlockCacheHandle dblk_data_;
-  Slice data_;
-  bool is_data_owner_;
-
+  // Constructor for owned data.
   explicit BlockHandle(Slice data)
       : data_(data),
-        is_data_owner_(true) {
+        ref_(OwnedData{}) {
   }
 
-  explicit BlockHandle(BlockCacheHandle* dblk_data)
-      : is_data_owner_(false) {
-    dblk_data_.swap(dblk_data);
+  explicit BlockHandle(BlockCacheHandle dblk_data)
+      : data_(dblk_data.data()),
+        ref_(std::move(dblk_data)) {
   }
 
-  void TakeState(BlockHandle* other) {
-    Reset();
-
-    is_data_owner_ = other->is_data_owner_;
-    if (is_data_owner_) {
-      data_ = other->data_;
-      other->is_data_owner_ = false;
-    } else {
-      dblk_data_.swap(&other->dblk_data_);
-    }
+  BlockHandle(scoped_refptr<BlockHandle> other, size_t offset, size_t len)
+      : data_(other->data()),
+        ref_(std::move(other)) {
+    data_.remove_prefix(offset);
+    data_.truncate(len);
   }
 
   void Reset() {
-    if (is_data_owner_) {
+    if (boost::get<OwnedData>(&ref_) != nullptr) {
       delete [] data_.data();
-      is_data_owner_ = false;
     }
     data_ = "";
+    ref_ = Uninitialized{};
   }
+
+  Slice data_;
+  boost::variant<Uninitialized, OwnedData, BlockCacheHandle, scoped_refptr<BlockHandle>> ref_;
 
   DISALLOW_COPY_AND_ASSIGN(BlockHandle);
 };

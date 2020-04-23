@@ -25,15 +25,16 @@
 #include "kudu/cfile/binary_plain_block.h" // IWYU pragma: keep
 #include "kudu/cfile/binary_prefix_block.h" // IWYU pragma: keep
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/bshuf_block.h" // IWYU pragma: keep
 #include "kudu/cfile/plain_bitmap_block.h" // IWYU pragma: keep
 #include "kudu/cfile/plain_block.h" // IWYU pragma: keep
 #include "kudu/cfile/rle_block.h" // IWYU pragma: keep
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/slice.h"
 
 using std::make_pair;
 using std::pair;
@@ -52,9 +53,12 @@ struct EncodingTraits {
     return Status::OK();
   }
 
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
+                                   // https://bugs.llvm.org/show_bug.cgi?id=44598
+                                   // NOLINTNEXTLINE(performance-unnecessary-value-param)
+                                   scoped_refptr<BlockHandle> block,
                                    CFileIterator* /*parent_cfile_iter*/) {
-    bd->reset(new Decoder(slice));
+    bd->reset(new Decoder(std::move(block)));
     return Status::OK();
   }
 };
@@ -107,9 +111,10 @@ struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING>
 template<>
 struct DataTypeEncodingTraits<BINARY, DICT_ENCODING>
     : public EncodingTraits<BinaryDictBlockBuilder, BinaryDictBlockDecoder> {
-  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd, const Slice& slice,
+  static Status CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
+                                   scoped_refptr<BlockHandle> block,
                                    CFileIterator* parent_cfile_iter) {
-    bd->reset(new BinaryDictBlockDecoder(slice, parent_cfile_iter));
+    bd->reset(new BinaryDictBlockDecoder(std::move(block), parent_cfile_iter));
     return Status::OK();
   }
 };
@@ -126,9 +131,9 @@ TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass /*t*/)
 }
 
 Status TypeEncodingInfo::CreateBlockDecoder(unique_ptr<BlockDecoder>* bd,
-                                            const Slice& slice,
+                                            scoped_refptr<BlockHandle> block,
                                             CFileIterator* parent_cfile_iter) const {
-  return create_decoder_func_(bd, slice, parent_cfile_iter);
+  return create_decoder_func_(bd, std::move(block), parent_cfile_iter);
 }
 
 Status TypeEncodingInfo::CreateBlockBuilder(

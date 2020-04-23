@@ -42,12 +42,14 @@
 
 #include <sparsehash/dense_hash_map>
 
-#include "kudu/common/rowid.h"
-#include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
+#include "kudu/common/rowid.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
@@ -67,7 +69,6 @@ namespace cfile {
 
 class CFileFooterPB;
 class CFileWriter;
-
 struct WriterOptions;
 
 // Header Mode type
@@ -139,7 +140,7 @@ class CFileIterator;
 
 class BinaryDictBlockDecoder final : public BlockDecoder {
  public:
-  explicit BinaryDictBlockDecoder(Slice slice, CFileIterator* iter);
+  explicit BinaryDictBlockDecoder(scoped_refptr<BlockHandle> block, CFileIterator* iter);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
@@ -171,6 +172,7 @@ class BinaryDictBlockDecoder final : public BlockDecoder {
  private:
   Status CopyNextDecodeStrings(size_t* n, ColumnDataView* dst);
 
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
 

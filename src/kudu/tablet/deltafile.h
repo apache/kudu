@@ -28,8 +28,6 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
-#include "kudu/cfile/block_handle.h"
-#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowid.h"
@@ -236,6 +234,8 @@ class DeltaFileReader : public DeltaStore,
   KuduOnceLambda init_once_;
 };
 
+struct PreparedDeltaBlock;
+
 // Iterator over the deltas contained in a delta file.
 //
 // See DeltaIterator for details.
@@ -246,6 +246,10 @@ class DeltaFileIterator : public DeltaIterator {
 
   Status SeekToOrdinal(rowid_t idx) override;
 
+  // PrepareBatch() will read forward all blocks from the deltafile
+  // which overlap with the block being prepared, enqueueing them onto
+  // the 'delta_blocks_' deque. The prepared blocks are then used to
+  // actually apply deltas in ApplyUpdates().
   Status PrepareBatch(size_t nrows, int prepare_flags) override;
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
@@ -271,43 +275,6 @@ class DeltaFileIterator : public DeltaIterator {
   friend class DeltaFileReader;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
-
-  // PrepareBatch() will read forward all blocks from the deltafile
-  // which overlap with the block being prepared, enqueueing them onto
-  // the 'delta_blocks_' deque. The prepared blocks are then used to
-  // actually apply deltas in ApplyUpdates().
-  struct PreparedDeltaBlock {
-    // The pointer from which this block was read. This is only used for
-    // logging, etc.
-    cfile::BlockPointer block_ptr_;
-
-    // Handle to the block, so it doesn't get freed from underneath us.
-    cfile::BlockHandle block_;
-
-    // The block decoder, to avoid having to re-parse the block header
-    // on every ApplyUpdates() call
-    std::unique_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
-
-    // The first row index for which there is an update in this delta block.
-    rowid_t first_updated_idx_;
-
-    // The last row index for which there is an update in this delta block.
-    rowid_t last_updated_idx_;
-
-    // Within this block, the index of the update which is the first one that
-    // needs to be consulted. This allows deltas to be skipped at the beginning
-    // of the block when the row block starts towards the end of the delta block.
-    // For example:
-    // <-- delta block ---->
-    //                   <--- prepared row block --->
-    // Here, we can skip a bunch of deltas at the beginning of the delta block
-    // which we know don't apply to the prepared row block.
-    rowid_t prepared_block_start_idx_;
-
-    // Return a string description of this prepared block, for logging.
-    std::string ToString() const;
-  };
-
 
   // The pointers in 'opts' and 'dfr' must remain valid for the lifetime of the iterator.
   DeltaFileIterator(std::shared_ptr<DeltaFileReader> dfr,

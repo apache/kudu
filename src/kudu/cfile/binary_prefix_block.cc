@@ -18,14 +18,15 @@
 #include "kudu/cfile/binary_prefix_block.h"
 
 #include <algorithm>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <ostream>
 #include <string>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
@@ -208,8 +209,9 @@ Status BinaryPrefixBlockBuilder::GetLastKey(void *key) const {
 // StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
-BinaryPrefixBlockDecoder::BinaryPrefixBlockDecoder(Slice slice)
-    : data_(slice),
+BinaryPrefixBlockDecoder::BinaryPrefixBlockDecoder(scoped_refptr<BlockHandle> block)
+    : block_(std::move(block)),
+      data_(block_->data()),
       parsed_(false),
       num_elems_(0),
       ordinal_pos_base_(0),

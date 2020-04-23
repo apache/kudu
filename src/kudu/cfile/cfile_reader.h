@@ -34,6 +34,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
@@ -103,8 +104,10 @@ class CFileReader {
   // Reads the data block pointed to by `ptr`. Will pull the data block from
   // the block cache if it exists, and reads from the filesystem block
   // otherwise.
-  Status ReadBlock(const fs::IOContext* io_context, const BlockPointer& ptr,
-                   CacheControl cache_control, BlockHandle* ret) const;
+  Status ReadBlock(const fs::IOContext* io_context,
+                   const BlockPointer& ptr,
+                   CacheControl cache_control,
+                   scoped_refptr<BlockHandle>* ret) const;
 
   // Return the number of rows in this cfile.
   // This is assumed to be reasonably fast (i.e does not scan
@@ -404,7 +407,7 @@ class CFileIterator : public ColumnIterator {
 
   struct PreparedBlock {
     BlockPointer dblk_ptr_;
-    BlockHandle dblk_data_;
+    scoped_refptr<BlockHandle> dblk_handle_;
     std::unique_ptr<BlockDecoder> dblk_;
 
     // The rowid of the first row in this block.
@@ -467,7 +470,7 @@ class CFileIterator : public ColumnIterator {
 
   // Decoder for the dictionary block.
   std::unique_ptr<BinaryPlainBlockDecoder> dict_decoder_;
-  BlockHandle dict_block_handle_;
+  scoped_refptr<BlockHandle> dict_block_handle_;
 
   // Set containing the codewords that match the predicate in a dictionary.
   std::unique_ptr<SelectionVector> codewords_matching_pred_;

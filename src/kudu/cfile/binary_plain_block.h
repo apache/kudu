@@ -41,6 +41,7 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -53,11 +54,13 @@ class SelectionVectorView;
 
 namespace cfile {
 
+class BlockHandle;
 struct WriterOptions;
 
 class BinaryPlainBlockBuilder final : public BlockBuilder {
  public:
   explicit BinaryPlainBlockBuilder(const WriterOptions *options);
+  virtual ~BinaryPlainBlockBuilder();
 
   bool IsBlockFull() const override;
 
@@ -101,7 +104,8 @@ class BinaryPlainBlockBuilder final : public BlockBuilder {
 
 class BinaryPlainBlockDecoder final : public BlockDecoder {
  public:
-  explicit BinaryPlainBlockDecoder(Slice slice);
+  explicit BinaryPlainBlockDecoder(scoped_refptr<BlockHandle> block);
+  virtual ~BinaryPlainBlockDecoder();
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
@@ -159,6 +163,7 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
     return ret;
   }
 
+  scoped_refptr<BlockHandle> block_handle_;
   Slice data_;
   bool parsed_;
 

@@ -47,6 +47,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"
@@ -87,6 +88,7 @@ using kudu::fs::ErrorHandlerType;
 using kudu::fs::IOContext;
 using kudu::fs::ReadableBlock;
 using kudu::pb_util::SecureDebugString;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -429,8 +431,10 @@ class ScratchMemory {
 };
 } // anonymous namespace
 
-Status CFileReader::ReadBlock(const IOContext* io_context, const BlockPointer &ptr,
-                              CacheControl cache_control, BlockHandle *ret) const {
+Status CFileReader::ReadBlock(const IOContext* io_context,
+                              const BlockPointer& ptr,
+                              CacheControl cache_control,
+                              scoped_refptr<BlockHandle>* ret) const {
   DCHECK(init_once_.init_succeeded());
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
@@ -444,7 +448,7 @@ Status CFileReader::ReadBlock(const IOContext* io_context, const BlockPointer &p
   if (cache->Lookup(key, cache_behavior, &bc_handle)) {
     TRACE_COUNTER_INCREMENT("cfile_cache_hit", 1);
     TRACE_COUNTER_INCREMENT(CFILE_CACHE_HIT_BYTES_METRIC_NAME, ptr.size());
-    *ret = BlockHandle::WithDataFromCache(&bc_handle);
+    *ret = BlockHandle::WithDataFromCache(std::move(bc_handle));
     // Cache hit
     return Status::OK();
   }
@@ -543,7 +547,7 @@ Status CFileReader::ReadBlock(const IOContext* io_context, const BlockPointer &p
   // generated key and the data read from disk.
   if (cache_control == CACHE_BLOCK && scratch.IsFromCache()) {
     cache->Insert(scratch.mutable_pending_entry(), &bc_handle);
-    *ret = BlockHandle::WithDataFromCache(&bc_handle);
+    *ret = BlockHandle::WithDataFromCache(std::move(bc_handle));
   } else {
     // We get here by either not intending to cache the block or
     // if the entry could not be allocated from the block cache.
@@ -890,7 +894,7 @@ Status CFileIterator::PrepareForNewSeek() {
         reader_->ReadBlock(io_context_, bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
         "couldn't read dictionary block");
 
-    dict_decoder_.reset(new BinaryPlainBlockDecoder(dict_block_handle_.data()));
+    dict_decoder_.reset(new BinaryPlainBlockDecoder(dict_block_handle_));
     RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(),
                           Substitute("couldn't parse dictionary block header in block $0 ($1)",
                                      reader_->block_id().ToString(),
@@ -918,30 +922,39 @@ string CFileIterator::PreparedBlock::ToString() const {
                       last_row_idx());
 }
 
-// Decode the null header in the beginning of the data block
-Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *non_null_bitmap) {
-  if (!GetVarint32(data_block, num_rows_in_block)) {
+// Decode the null header in the beginning of the data block.
+// Modifies data_block_handle to be a new block containing the nested encoded
+// data block.
+Status DecodeNullInfo(scoped_refptr<BlockHandle>* data_block_handle,
+                      uint32_t* num_rows_in_block,
+                      Slice* non_null_bitmap) {
+  Slice data_block = (*data_block_handle)->data();
+  if (!GetVarint32(&data_block, num_rows_in_block)) {
     return Status::Corruption("bad null header, num elements in block");
   }
 
   uint32_t non_null_bitmap_size;
-  if (!GetVarint32(data_block, &non_null_bitmap_size)) {
+  if (!GetVarint32(&data_block, &non_null_bitmap_size)) {
     return Status::Corruption("bad null header, bitmap size");
   }
 
-  *non_null_bitmap = Slice(data_block->data(), non_null_bitmap_size);
-  data_block->remove_prefix(non_null_bitmap_size);
+  *non_null_bitmap = Slice(data_block.data(), non_null_bitmap_size);
+  data_block.remove_prefix(non_null_bitmap_size);
+
+  auto offset = data_block.data() - (*data_block_handle)->data().data();
+  *data_block_handle = (*data_block_handle)->SubrangeBlock(offset, data_block.size());
   return Status::OK();
 }
 
 Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
                                            PreparedBlock *prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
-  RETURN_NOT_OK(reader_->ReadBlock(io_context_, prep_block->dblk_ptr_,
-                                   cache_control_, &prep_block->dblk_data_));
+  RETURN_NOT_OK(reader_->ReadBlock(
+      io_context_, prep_block->dblk_ptr_, cache_control_, &prep_block->dblk_handle_));
 
   uint32_t num_rows_in_block = 0;
-  Slice data_block = prep_block->dblk_data_.data();
+  scoped_refptr<BlockHandle> data_block = prep_block->dblk_handle_;
+  size_t total_size_read = data_block->data().size();
   if (reader_->is_nullable()) {
     RETURN_NOT_OK(DecodeNullInfo(&data_block, &num_rows_in_block, &(prep_block->rle_bitmap)));
     prep_block->rle_decoder_ = RleDecoder<bool>(prep_block->rle_bitmap.data(),
@@ -949,7 +962,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   }
 
   RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(
-      &prep_block->dblk_, data_block, this));
+      &prep_block->dblk_, std::move(data_block), this));
 
   RETURN_NOT_OK_PREPEND(prep_block->dblk_->ParseHeader(),
                         Substitute("unable to decode data block header in block $0 ($1)",
@@ -965,7 +978,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
 
   io_stats_.cells_read += num_rows_in_block;
   io_stats_.blocks_read++;
-  io_stats_.bytes_read += data_block.size();
+  io_stats_.bytes_read += total_size_read;
 
   prep_block->idx_in_block_ = 0;
   prep_block->num_rows_in_block_ = num_rows_in_block;

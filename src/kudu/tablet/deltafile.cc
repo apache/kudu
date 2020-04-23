@@ -27,6 +27,8 @@
 #include <gflags/gflags.h>
 
 #include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/block_handle.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
@@ -42,6 +44,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_relevancy.h"
@@ -486,6 +489,42 @@ Status DeltaFileIterator<Type>::SeekToOrdinal(rowid_t idx) {
   return Status::OK();
 }
 
+struct PreparedDeltaBlock {
+  // The pointer from which this block was read. This is only used for
+  // logging, etc.
+  cfile::BlockPointer block_ptr_;
+
+  // Handle to the block, so it doesn't get freed from underneath us.
+  scoped_refptr<cfile::BlockHandle> block_;
+
+  // The block decoder, to avoid having to re-parse the block header
+  // on every ApplyUpdates() call
+  std::unique_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
+
+  // The first row index for which there is an update in this delta block.
+  rowid_t first_updated_idx_;
+
+  // The last row index for which there is an update in this delta block.
+  rowid_t last_updated_idx_;
+
+  // Within this block, the index of the update which is the first one that
+  // needs to be consulted. This allows deltas to be skipped at the beginning
+  // of the block when the row block starts towards the end of the delta block.
+  // For example:
+  // <-- delta block ---->
+  //                   <--- prepared row block --->
+  // Here, we can skip a bunch of deltas at the beginning of the delta block
+  // which we know don't apply to the prepared row block.
+  rowid_t prepared_block_start_idx_;
+
+  // Return a string description of this prepared block, for logging.
+  std::string ToString() const {
+    return StringPrintf("%d-%d (%s)", first_updated_idx_, last_updated_idx_,
+                        block_ptr_.ToString().c_str());
+  }
+};
+
+
 template<DeltaType Type>
 Status DeltaFileIterator<Type>::ReadCurrentBlockOntoQueue() {
   DCHECK(initted_) << "Must call Init()";
@@ -502,7 +541,7 @@ Status DeltaFileIterator<Type>::ReadCurrentBlockOntoQueue() {
   pdb->block_ptr_ = dblk_ptr;
 
   // Decode the block.
-  pdb->decoder_.reset(new BinaryPlainBlockDecoder(pdb->block_.data()));
+  pdb->decoder_.reset(new BinaryPlainBlockDecoder(pdb->block_));
   RETURN_NOT_OK_PREPEND(pdb->decoder_->ParseHeader(),
                         Substitute("unable to decode data block header in delta block $0 ($1)",
                                    dfr_->cfile_reader()->block_id().ToString(),
@@ -543,11 +582,6 @@ Status DeltaFileIterator<Type>::GetLastRowIndexInDecodedBlock(const BinaryPlainB
   return Status::OK();
 }
 
-template<DeltaType Type>
-string DeltaFileIterator<Type>::PreparedDeltaBlock::ToString() const {
-  return StringPrintf("%d-%d (%s)", first_updated_idx_, last_updated_idx_,
-                      block_ptr_.ToString().c_str());
-}
 
 template<DeltaType Type>
 Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {

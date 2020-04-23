@@ -24,6 +24,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/column_predicate.h"
@@ -51,6 +52,7 @@ BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions *options)
     options_(options) {
   Reset();
 }
+BinaryPlainBlockBuilder::~BinaryPlainBlockBuilder() = default;
 
 void BinaryPlainBlockBuilder::Reset() {
   offsets_.clear();
@@ -160,13 +162,15 @@ Status BinaryPlainBlockBuilder::GetLastKey(void *key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(Slice slice)
-    : data_(slice),
+BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(scoped_refptr<BlockHandle> block)
+    : block_handle_(std::move(block)),
+      data_(block_handle_->data()),
       parsed_(false),
       num_elems_(0),
       ordinal_pos_base_(0),
       cur_idx_(0) {
 }
+BinaryPlainBlockDecoder::~BinaryPlainBlockDecoder() = default;
 
 Status BinaryPlainBlockDecoder::ParseHeader() {
   CHECK(!parsed_);

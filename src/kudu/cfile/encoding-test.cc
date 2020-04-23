@@ -37,6 +37,7 @@
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/columnblock.h"
@@ -44,6 +45,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
@@ -60,6 +62,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -99,21 +102,22 @@ class TestEncoding : public KuduTest {
     return bb;
   }
 
-  static unique_ptr<BlockDecoder> CreateBlockDecoderOrDie(
-      DataType type, EncodingType encoding, Slice s) {
+  static unique_ptr<BlockDecoder> CreateBlockDecoderOrDie(DataType type,
+                                                          EncodingType encoding,
+                                                          scoped_refptr<BlockHandle> block) {
     const TypeEncodingInfo* tei;
     CHECK_OK(TypeEncodingInfo::Get(GetTypeInfo(type), encoding, &tei));
     unique_ptr<BlockDecoder> bd;
-    CHECK_OK(tei->CreateBlockDecoder(&bd, s, /*parent_cfile_iter=*/nullptr));
+    CHECK_OK(tei->CreateBlockDecoder(&bd, std::move(block), /*parent_cfile_iter=*/nullptr));
     return bd;
   }
 
   // Insert a given number of strings into the provided BlockBuilder.
   //
   // The strings are generated using the provided 'formatter' function.
-  Slice CreateBinaryBlock(BlockBuilder *sbb,
-                          int num_items,
-                          const std::function<string(int)>& formatter) {
+  static scoped_refptr<BlockHandle> CreateBinaryBlock(BlockBuilder* sbb,
+                                                   int num_items,
+                                                   const std::function<string(int)>& formatter) {
     vector<string> to_insert(num_items);
     vector<Slice> slices;
     for (int i = 0; i < num_items; i++) {
@@ -135,22 +139,20 @@ class TestEncoding : public KuduTest {
     return FinishAndMakeContiguous(sbb, 12345L);
   }
 
-  // Concatenate the given slices into 'contiguous_buf_' and return a new slice.
-  Slice MakeContiguous(const vector<Slice>& slices) {
-    if (slices.size() == 1) {
-      return slices[0];
-    }
+  // Concatenate the given slices and return a BlockHandle with the resulting data.
+  static scoped_refptr<BlockHandle> MakeContiguous(const vector<Slice>& slices) {
     // Concat the slices into a local buffer, since the block decoders and
     // tests expect contiguous data.
-    contiguous_buf_.clear();
+    faststring buf;
     for (const auto& s : slices) {
-      contiguous_buf_.append(s.data(), s.size());
+      buf.append(s.data(), s.size());
     }
 
-    return Slice(contiguous_buf_);
+    auto size = buf.size();
+    return BlockHandle::WithOwnedData(Slice(buf.release(), size));
   }
 
-  Slice FinishAndMakeContiguous(BlockBuilder* b, int ord_val) {
+  static scoped_refptr<BlockHandle> FinishAndMakeContiguous(BlockBuilder* b, int ord_val) {
     vector<Slice> slices;
     b->Finish(ord_val, &slices);
     return MakeContiguous(slices);
@@ -160,10 +162,10 @@ class TestEncoding : public KuduTest {
     auto bb = CreateBlockBuilderOrDie(BINARY, encoding);
     // Insert "hello 0" through "hello 9"
     const int kCount = 10;
-    Slice s = CreateBinaryBlock(
+    scoped_refptr<BlockHandle> block = CreateBinaryBlock(
         bb.get(), kCount, [](int item) { return StringPrintf("hello %d", item); });
 
-    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, s);
+    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, std::move(block));
     ASSERT_OK(sbd->ParseHeader());
 
     // Seeking to just after a key should return the
@@ -214,9 +216,9 @@ class TestEncoding : public KuduTest {
     auto sbb = CreateBlockBuilderOrDie(BINARY, encoding);
     // Insert 'hello 000' through 'hello 999'
     const int kCount = 1000;
-    Slice s = CreateBinaryBlock(
+    scoped_refptr<BlockHandle> block = CreateBinaryBlock(
         sbb.get(), kCount, [](int item) { return StringPrintf("hello %03d", item); });
-    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, s);;
+    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, std::move(block));
     ASSERT_OK(sbd->ParseHeader());
 
     // Seeking to just after a key should return the
@@ -306,12 +308,12 @@ class TestEncoding : public KuduTest {
     // such as when the number of elements is a multiple of the 'restart interval' in
     // prefix-encoded blocks.
     const uint kCount = r.Uniform(1000) + 1;
-    Slice s = CreateBinaryBlock(sbb.get(), kCount, GenTestString);
+    scoped_refptr<BlockHandle> block = CreateBinaryBlock(sbb.get(), kCount, GenTestString);
 
-    LOG(INFO) << "Block: " << HexDump(s);
+    LOG(INFO) << "Block: " << HexDump(block->data());
 
     // The encoded data should take at least 1 byte per entry.
-    ASSERT_GT(s.size(), kCount);
+    ASSERT_GT(block->data().size(), kCount);
 
     // Check first/last keys
     Slice key;
@@ -320,7 +322,7 @@ class TestEncoding : public KuduTest {
     ASSERT_OK(sbb->GetLastKey(&key));
     ASSERT_EQ(GenTestString(kCount - 1), key);
 
-    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, s);
+    auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, std::move(block));
     ASSERT_OK(sbd->ParseHeader());
     ASSERT_EQ(kCount, sbd->Count());
     ASSERT_EQ(12345U, sbd->GetFirstRowId());
@@ -382,10 +384,11 @@ class TestEncoding : public KuduTest {
     auto ibb = CreateBlockBuilderOrDie(IntType, encoding);
     CHECK_EQ(num_ints, ibb->Add(reinterpret_cast<uint8_t *>(&data[0]),
                                num_ints));
-    Slice s = FinishAndMakeContiguous(ibb.get(), 0);
-    LOG(INFO) << "Created " << TypeTraits<IntType>::name() << " block with " << num_ints << " ints"
-              << " (" << s.size() << " bytes)";
-    auto ibd = CreateBlockDecoderOrDie(IntType, encoding, s);
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), 0);
+    LOG(INFO) << "Created " << TypeTraits<IntType>::name() << " block with " << num_ints
+              << " ints"
+              << " (" << block->data().size() << " bytes)";
+    auto ibd = CreateBlockDecoderOrDie(IntType, encoding, std::move(block));
     ASSERT_OK(ibd->ParseHeader());
 
     // Benchmark seeking
@@ -427,11 +430,11 @@ class TestEncoding : public KuduTest {
 
   void TestEmptyBlockEncodeDecode(DataType type, EncodingType encoding) {
     auto bb = CreateBlockBuilderOrDie(type, encoding);
-    Slice s = FinishAndMakeContiguous(bb.get(), 0);
-    ASSERT_GT(s.size(), 0);
-    LOG(INFO) << "Encoded size for 0 items: " << s.size();
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), 0);
+    ASSERT_GT(block->data().size(), 0);
+    LOG(INFO) << "Encoded size for 0 items: " << block->data().size();
 
-    auto bd = CreateBlockDecoderOrDie(type, encoding, s);
+    auto bd = CreateBlockDecoderOrDie(type, encoding, std::move(block));
     ASSERT_OK(bd->ParseHeader());
     ASSERT_EQ(0, bd->Count());
     ASSERT_FALSE(bd->HasNext());
@@ -446,11 +449,11 @@ class TestEncoding : public KuduTest {
 
     auto bb = CreateBlockBuilderOrDie(Type, encoding);
     bb->Add(reinterpret_cast<const uint8_t *>(src), size);
-    Slice s = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
 
-    LOG(INFO)<< "Encoded size for " << size << " elems: " << s.size();
+    LOG(INFO) << "Encoded size for " << size << " elems: " << block->data().size();
 
-    auto bd = CreateBlockDecoderOrDie(Type, encoding, s);
+    auto bd = CreateBlockDecoderOrDie(Type, encoding, std::move(block));
     ASSERT_OK(bd->ParseHeader());
     ASSERT_EQ(kOrdinalPosBase, bd->GetFirstRowId());
     ASSERT_EQ(0, bd->GetCurrentIndex());
@@ -501,25 +504,27 @@ class TestEncoding : public KuduTest {
     const int kCount = 10;
     size_t sbsize;
 
-    Slice s = CreateBinaryBlock(
+    scoped_refptr<BlockHandle> block = CreateBinaryBlock(
         sbb.get(), kCount, [](int item) { return StringPrintf("hello %d", item); });
+    CHECK(block);
     do {
-      sbsize = s.size();
+      sbsize = block->data().size();
 
-      LOG(INFO) << "Block: " << HexDump(s);
+      LOG(INFO) << "Block: " << HexDump(block->data());
 
-      auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, s);
+      auto sbd = CreateBlockDecoderOrDie(BINARY, encoding, block);
       Status st = sbd->ParseHeader();
 
       if (sbsize < DecoderType::kMinHeaderSize) {
         ASSERT_TRUE(st.IsCorruption());
         ASSERT_STR_CONTAINS(st.ToString(), "not enough bytes for header");
-      } else if (sbsize < coding::DecodeGroupVarInt32_GetGroupSize(s.data())) {
+      } else if (sbsize < coding::DecodeGroupVarInt32_GetGroupSize(block->data().data())) {
         ASSERT_TRUE(st.IsCorruption());
         ASSERT_STR_CONTAINS(st.ToString(), "less than length");
       }
       if (sbsize > 0) {
-        s.truncate(sbsize - 1);
+        block = block->SubrangeBlock(0, sbsize - 1);
+        CHECK(block);
       }
     } while (sbsize > 0);
   }
@@ -557,7 +562,7 @@ class TestEncoding : public KuduTest {
     auto ibb = CreateBlockBuilderOrDie(IntType, encoding);
     ibb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
              to_insert.size());
-    Slice s = FinishAndMakeContiguous(ibb.get(), kOrdinalPosBase);
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), kOrdinalPosBase);
 
     // Check GetFirstKey() and GetLastKey().
     CppType key;
@@ -566,7 +571,7 @@ class TestEncoding : public KuduTest {
     ASSERT_OK(ibb->GetLastKey(&key));
     ASSERT_EQ(to_insert.back(), key);
 
-    auto ibd = CreateBlockDecoderOrDie(IntType, encoding, s);
+    auto ibd = CreateBlockDecoderOrDie(IntType, encoding, std::move(block));
     ASSERT_OK(ibd->ParseHeader());
 
     ASSERT_EQ(kOrdinalPosBase, ibd->GetFirstRowId());
@@ -648,9 +653,9 @@ class TestEncoding : public KuduTest {
     auto bb = CreateBlockBuilderOrDie(BOOL, encoding);
     bb->Add(reinterpret_cast<const uint8_t *>(&to_insert[0]),
             to_insert.size());
-    Slice s = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
+    scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(bb.get(), kOrdinalPosBase);
 
-    auto bd = CreateBlockDecoderOrDie(BOOL, encoding, s);
+    auto bd = CreateBlockDecoderOrDie(BOOL, encoding, std::move(block));
     ASSERT_OK(bd->ParseHeader());
 
     ASSERT_EQ(kOrdinalPosBase, bd->GetFirstRowId());
@@ -787,8 +792,8 @@ TEST_F(TestEncoding, TestRleIntBlockEncoder) {
                                                     &rand);
   ibb->Add(reinterpret_cast<const uint8_t *>(ints.data()), 10000);
 
-  Slice s = FinishAndMakeContiguous(ibb.get(), 12345);
-  LOG(INFO) << "RLE Encoded size for 10k ints: " << s.size();
+  scoped_refptr<BlockHandle> block = FinishAndMakeContiguous(ibb.get(), 12345);
+  LOG(INFO) << "RLE Encoded size for 10k ints: " << block->data().size();
 
   ibb->Reset();
   ints.resize(100);
@@ -796,8 +801,8 @@ TEST_F(TestEncoding, TestRleIntBlockEncoder) {
     ints[i] = 0;
   }
   ibb->Add(reinterpret_cast<const uint8_t *>(ints.data()), 100);
-  s = FinishAndMakeContiguous(ibb.get(), 12345);
-  ASSERT_EQ(14UL, s.size());
+  block = FinishAndMakeContiguous(ibb.get(), 12345);
+  ASSERT_EQ(14UL, block->data().size());
 }
 
 TEST_F(TestEncoding, TestPlainBitMapRoundTrip) {

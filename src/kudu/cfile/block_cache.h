@@ -176,6 +176,12 @@ class BlockCacheHandle {
       : handle_(Cache::UniqueHandle(nullptr, Cache::HandleDeleter(nullptr))) {
   }
 
+  BlockCacheHandle(BlockCacheHandle&& other) noexcept : handle_(std::move(other.handle_)) {}
+  BlockCacheHandle& operator=(BlockCacheHandle&& other) noexcept {
+    handle_ = std::move(other.handle_);
+    return *this;
+  }
+
   ~BlockCacheHandle() = default;
 
   // Swap this handle with another handle.

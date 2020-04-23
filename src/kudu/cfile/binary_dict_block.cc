@@ -24,6 +24,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/cfile.pb.h"
@@ -195,8 +196,10 @@ Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-BinaryDictBlockDecoder::BinaryDictBlockDecoder(Slice slice, CFileIterator* iter)
-    : data_(slice),
+BinaryDictBlockDecoder::BinaryDictBlockDecoder(scoped_refptr<BlockHandle> block,
+                                               CFileIterator* iter)
+    : block_(std::move(block)),
+      data_(block_->data()),
       parsed_(false),
       dict_decoder_(iter->GetDictDecoder()),
       parent_cfile_iter_(iter) {
@@ -216,15 +219,15 @@ Status BinaryDictBlockDecoder::ParseHeader() {
   if (PREDICT_FALSE(!valid)) {
     return Status::Corruption("header Mode information corrupted");
   }
-  Slice content(data_.data() + 4, data_.size() - 4);
+  auto sub_block = block_->SubrangeBlock(4, data_.size() - 4);
 
   if (mode_ == kCodeWordMode) {
-    data_decoder_.reset(new BShufBlockDecoder<UINT32>(content));
+    data_decoder_.reset(new BShufBlockDecoder<UINT32>(std::move(sub_block)));
   } else {
     if (mode_ != kPlainBinaryMode) {
       return Status::Corruption("Unrecognized Dictionary encoded data block header");
     }
-    data_decoder_.reset(new BinaryPlainBlockDecoder(content));
+    data_decoder_.reset(new BinaryPlainBlockDecoder(std::move(sub_block)));
   }
 
   RETURN_NOT_OK(data_decoder_->ParseHeader());

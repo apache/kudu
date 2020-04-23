@@ -17,6 +17,7 @@
 #include "kudu/cfile/bloomfile.h"
 
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -37,6 +38,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/compression/compression.pb.h"
@@ -48,6 +50,7 @@
 
 DECLARE_bool(cfile_lazy_open);
 
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -82,7 +85,7 @@ class BloomCacheItem {
   // The block pointer to the specific block we read last time we used this bloom reader.
   BlockPointer cur_block_pointer;
   // The block handle and parsed BloomFilter corresponding to cur_block_pointer.
-  BlockHandle cur_block_handle;
+  scoped_refptr<BlockHandle> cur_block_handle;
   BloomFilter cur_bloom;
 
  private:
@@ -321,14 +324,14 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   // block in the BloomFile, we need to read the correct block and re-hydrate the
   // BloomFilter instance.
   if (!bci->cur_block_pointer.Equals(bblk_ptr)) {
-    BlockHandle dblk_data;
+    scoped_refptr<BlockHandle> dblk_data;
     RETURN_NOT_OK(reader_->ReadBlock(io_context, bblk_ptr,
                                      CFileReader::CACHE_BLOCK, &dblk_data));
 
     // Parse the header in the block.
     BloomBlockHeaderPB hdr;
     Slice bloom_data;
-    RETURN_NOT_OK(ParseBlockHeader(dblk_data.data(), &hdr, &bloom_data));
+    RETURN_NOT_OK(ParseBlockHeader(dblk_data->data(), &hdr, &bloom_data));
 
     // Save the data back into our threadlocal cache.
     bci->cur_bloom = BloomFilter(bloom_data, hdr.num_hash_functions());

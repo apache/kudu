@@ -34,6 +34,7 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/bitshuffle_arch_wrapper.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
@@ -42,6 +43,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/coding.h"
@@ -230,8 +232,9 @@ void BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos, std::vector<Slice>* 
 template<DataType Type>
 class BShufBlockDecoder final : public BlockDecoder {
  public:
-  explicit BShufBlockDecoder(Slice slice)
-      : data_(slice),
+  explicit BShufBlockDecoder(scoped_refptr<BlockHandle> block)
+      : block_(std::move(block)),
+        data_(block_->data()),
         parsed_(false),
         ordinal_pos_base_(0),
         num_elems_(0),
@@ -400,6 +403,7 @@ class BShufBlockDecoder final : public BlockDecoder {
     size_of_type = TypeTraits<Type>::size
   };
 
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
 

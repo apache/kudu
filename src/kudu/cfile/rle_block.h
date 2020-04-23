@@ -24,6 +24,7 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/util/coding.h"
@@ -110,8 +111,9 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
 //
 class RleBitMapBlockDecoder final : public BlockDecoder {
  public:
-  explicit RleBitMapBlockDecoder(Slice slice)
-      : data_(slice),
+  explicit RleBitMapBlockDecoder(scoped_refptr<BlockHandle> block)
+      : block_(std::move(block)),
+        data_(block_->data()),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),
@@ -207,6 +209,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
   virtual rowid_t GetFirstRowId() const OVERRIDE { return ordinal_pos_base_; }
 
  private:
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
   uint32_t num_elems_;
@@ -309,8 +312,9 @@ class RleIntBlockBuilder final : public BlockBuilder {
 template <DataType IntType>
 class RleIntBlockDecoder final : public BlockDecoder {
  public:
-  explicit RleIntBlockDecoder(Slice slice)
-      : data_(slice),
+  explicit RleIntBlockDecoder(scoped_refptr<BlockHandle> block)
+      : block_(std::move(block)),
+        data_(block_->data()),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),
@@ -495,6 +499,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     kCppTypeSize = TypeTraits<IntType>::size
   };
 
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
   uint32_t num_elems_;

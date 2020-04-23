@@ -21,15 +21,16 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-class Slice;
 class TypeInfo;
 
 namespace cfile {
 class BlockBuilder;
 class BlockDecoder;
+class BlockHandle;
 class CFileIterator;
 struct WriterOptions;
 
@@ -51,8 +52,10 @@ class TypeEncodingInfo {
   // if successful, otherwise returns a non-OK Status.
   //
   // Input parent_cfile_iter parameter will only be used in case of dictionary encoding.
-  Status CreateBlockDecoder(std::unique_ptr<BlockDecoder>* bd, const Slice& slice,
+  Status CreateBlockDecoder(std::unique_ptr<BlockDecoder>* bd,
+                            scoped_refptr<BlockHandle> block,
                             CFileIterator* parent_cfile_iter) const;
+
  private:
   friend class TypeEncodingResolver;
 
@@ -64,7 +67,8 @@ class TypeEncodingInfo {
   typedef Status (*CreateBlockBuilderFunc)(std::unique_ptr<BlockBuilder>*, const WriterOptions*);
   const CreateBlockBuilderFunc create_builder_func_;
 
-  typedef Status (*CreateBlockDecoderFunc)(std::unique_ptr<BlockDecoder>*, const Slice&,
+  typedef Status (*CreateBlockDecoderFunc)(std::unique_ptr<BlockDecoder>*,
+                                           scoped_refptr<BlockHandle>,
                                            CFileIterator*);
   const CreateBlockDecoderFunc create_decoder_func_;
 

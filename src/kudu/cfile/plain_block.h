@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/cfile/block_encodings.h"
+#include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/port.h"
@@ -113,8 +114,9 @@ class PlainBlockBuilder final : public BlockBuilder {
 template<DataType Type>
 class PlainBlockDecoder final : public BlockDecoder {
  public:
-  explicit PlainBlockDecoder(Slice slice)
-      : data_(slice),
+  explicit PlainBlockDecoder(scoped_refptr<BlockHandle> block)
+      : block_(std::move(block)),
+        data_(block_->data()),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),
@@ -227,7 +229,7 @@ class PlainBlockDecoder final : public BlockDecoder {
   }
 
  private:
-
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
   uint32_t num_elems_;
