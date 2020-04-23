@@ -43,8 +43,8 @@ docker run -d --name kudu-impala --network="docker_default" \
 You can view the running Impala instance at link:http://localhost:25000[localhost:25000]
 once it is up and running. It may take a few seconds to start.
 
-NOTE: `--network="docker_default"` is specified to connect the container the
-same network as the quickstart cluster.
+NOTE: `--network="docker_default"` is optional and used for enabling Impala to connect to the
+same network as the Kudu quickstart cluster hence allowing the use of Kudu tables.
 
 NOTE: You can remove the `-d` flag to run the container in the foreground.
 
