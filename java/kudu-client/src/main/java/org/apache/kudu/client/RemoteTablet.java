@@ -189,12 +189,14 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
   @Nullable
   ServerInfo getClosestServerInfo(String location) {
     // This method returns
-    // 1. a randomly picked server among local servers, if there is a local server, or
-    // 2. a randomly picked server in the same location, if there is a server in the
-    //    same location, or, finally,
+    // 1. a randomly picked server among local servers, if there is one based
+    //    on IP and assigned location, or
+    // 2. a randomly picked server in the same assigned location, if there is a
+    //    server in the same location, or, finally,
     // 3. a randomly picked server among all tablet servers.
     // TODO(wdberkeley): Eventually, the client might use the hierarchical
     // structure of a location to determine proximity.
+    // NOTE: this is the same logic implemented in client-internal.cc.
     synchronized (tabletServers) {
       if (tabletServers.isEmpty()) {
         return null;
@@ -205,10 +207,17 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
       int randomIndex = randomInt % tabletServers.size();
       int index = 0;
       for (ServerInfo e : tabletServers.values()) {
-        if (e.isLocal()) {
-          localServers.add(e);
+        boolean serverInSameLocation = !location.isEmpty() && e.inSameLocation(location);
+
+        // Only consider a server "local" if we're in the same location, or if
+        // there is missing location info.
+        if (location.isEmpty() || e.getLocation().isEmpty() ||
+            serverInSameLocation) {
+          if (e.isLocal()) {
+            localServers.add(e);
+          }
         }
-        if (e.inSameLocation(location)) {
+        if (serverInSameLocation) {
           serversInSameLocation.add(e);
         }
         if (index == randomIndex) {

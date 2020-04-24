@@ -219,28 +219,32 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(
         break;
       }
       // Choose a replica as follows:
-      // 1. If there is a replica local to the client, pick it. If there are
-      // multiple, pick a random one.
-      // 2. Otherwise, if there is a replica in the same location, pick it. If
-      // there are multiple, pick a random one.
+      // 1. If there is a replica local to the client according to its IP and
+      //    assigned location, pick it. If there are multiple, pick a random one.
+      // 2. Otherwise, if there is a replica in the same assigned location,
+      //    pick it. If there are multiple, pick a random one.
       // 3. If there are no local replicas or replicas in the same location,
-      // pick a random replica.
+      //    pick a random replica.
       // TODO(wdberkeley): Eventually, the client might use the hierarchical
       // structure of a location to determine proximity.
+      // NOTE: this is the same logic implemented in RemoteTablet.java.
       const string client_location = location();
       small_vector<RemoteTabletServer*, 1> local;
       small_vector<RemoteTabletServer*, 3> same_location;
       local.reserve(filtered.size());
       same_location.reserve(filtered.size());
       for (RemoteTabletServer* rts : filtered) {
-        if (IsTabletServerLocal(*rts)) {
-          local.push_back(rts);
-        }
-        if (!client_location.empty()) {
-          const string replica_location = rts->location();
-          if (client_location == replica_location) {
-            same_location.push_back(rts);
+        bool ts_same_location = !client_location.empty() && client_location == rts->location();
+        // Only consider a server "local" if the client is in the same
+        // location, or if there is missing location info.
+        if (client_location.empty() || rts->location().empty() ||
+            ts_same_location) {
+          if (IsTabletServerLocal(*rts)) {
+            local.push_back(rts);
           }
+        }
+        if (ts_same_location) {
+          same_location.push_back(rts);
         }
       }
       if (!local.empty()) {

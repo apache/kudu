@@ -129,12 +129,9 @@ TEST_F(ClientLocationAssignmentITest, Basic) {
                                     "value",
                                     &scans_started));
     total_scans_started += scans_started;
-# if defined(__linux__)
-    // When running on Linux, the client and tablet servers each have their own
-    // IP in the local address space, so no tablet server will be considered
-    // local to the client. If there is a tablet server in the same location as
-    // the client, it will be the only tablet server scanned. Otherwise, some
-    // random tablet server will be scanned.
+    // If there is a tablet server in the same location as the client, it will
+    // be the only tablet server scanned. Otherwise, some random tablet server
+    // will be scanned.
     if (!client_colocated_tserver_uuid.empty()) {
       if (tserver->uuid() == client_colocated_tserver_uuid) {
         ASSERT_EQ(1, scans_started);
@@ -142,7 +139,6 @@ TEST_F(ClientLocationAssignmentITest, Basic) {
         ASSERT_EQ(0, scans_started);
       }
     }
-# endif
   }
   ASSERT_EQ(1, total_scans_started);
 }

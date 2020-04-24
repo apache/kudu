@@ -105,35 +105,41 @@ public class TestRemoteTablet {
   @Test
   public void testLocalReplica() {
     {
-      // Tablet with no replicas in the same location as the client.
+      // Let's examine a tablet where the first UUID is local to the client,
+      // but no UUID is in the same location.
       RemoteTablet tablet = getTablet(0, 0, -1);
 
-      // No location for the client.
+      // If the client has no location, we should pick the local server.
       assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
 
-      // Client with location.
-      assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
+      // NOTE: if the client did have a location, because the test replicas are
+      // assigned a different default location, they aren't considered local,
+      // so we would select one at random.
     }
 
     {
-      // Tablet with a non-local replica in the same location as the client.
+      // Let's examine a tablet where the first UUID is local to the client,
+      // and the second is in the same location.
       RemoteTablet tablet = getTablet(0, 0, 1);
 
-      // No location for the client.
+      // If the client has no location, we should pick the local server.
       assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
 
-      // Client with location. The local replica should be chosen.
-      assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
+      // If the client does have a location, we should pick the one in the same
+      // location.
+      assertEquals(kUuids[1], tablet.getClosestServerInfo(kClientLocation).getUuid());
     }
 
     {
-      // Tablet with a local replica in the same location as the client.
+      // Let's examine a tablet where the first UUID is local to the client and
+      // is also in the same location.
       RemoteTablet tablet = getTablet(0, 0, 0);
 
-      // No location for the client.
+      // If the client has no location, we should pick the local server.
       assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
 
-      // Client with location. The local replica should be chosen.
+      // If the client does have a location, we should pick the one in the same
+      // location.
       assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
     }
   }
@@ -169,10 +175,24 @@ public class TestRemoteTablet {
           tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY, kClientLocation)
               .getUuid());
 
-      // CLOSEST_REPLICA picks the local replica even if there's a replica in the same location.
-      assertEquals(kUuids[1],
+      // Since there are locations assigned, CLOSEST_REPLICA picks the replica
+      // in the same location, even if there's a local one.
+      assertEquals(kUuids[2],
           tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA, kClientLocation)
               .getUuid());
+    }
+
+    {
+      RemoteTablet tablet = getTablet(0, 1, -1);
+
+      // LEADER_ONLY picks the leader even if there's a local replica.
+      assertEquals(kUuids[0],
+          tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY, kClientLocation)
+              .getUuid());
+
+      // NOTE: the test replicas are assigned a default location. So, even if
+      // there are local replicas, because they are in different locations than
+      // the client, with CLOSEST_REPLICA, a replica is chosen at random.
     }
 
     {
@@ -232,6 +252,8 @@ public class TestRemoteTablet {
     return getTablet(leaderIndex, -1, -1);
   }
 
+  // Returns a three-replica remote tablet that considers the given indices of
+  // replicas to be leader, local to the client, and in the same location.
   static RemoteTablet getTablet(int leaderIndex,
                                 int localReplicaIndex,
                                 int sameLocationReplicaIndex) {
