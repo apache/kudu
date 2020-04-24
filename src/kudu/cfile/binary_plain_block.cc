@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <vector>
 
@@ -31,6 +32,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/stringprintf.h"
@@ -39,7 +41,6 @@
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
-#include "kudu/util/memory/arena.h"
 
 using std::vector;
 
@@ -163,8 +164,8 @@ Status BinaryPlainBlockBuilder::GetLastKey(void *key_void) const {
 ////////////////////////////////////////////////////////////
 
 BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(scoped_refptr<BlockHandle> block)
-    : block_handle_(std::move(block)),
-      data_(block_handle_->data()),
+    : block_(std::move(block)),
+      data_(block_->data()),
       parsed_(false),
       num_elems_(0),
       ordinal_pos_base_(0),
@@ -301,7 +302,6 @@ Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, Cell
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
-  Arena *out_arena = dst->arena();
   if (PREDICT_FALSE(*n == 0 || cur_idx_ >= num_elems_)) {
     *n = 0;
     return Status::OK();
@@ -311,15 +311,16 @@ Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, Cell
   Slice *out = reinterpret_cast<Slice*>(dst->data());
   for (size_t i = 0; i < max_fetch; i++, out++, cur_idx_++) {
     Slice elem(string_at_index(cur_idx_));
-    c(i, elem, out, out_arena);
+    c(i, elem, out);
   }
   *n = max_fetch;
   return Status::OK();
 }
 
 Status BinaryPlainBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
-  return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
-    CHECK(out_arena->RelocateSlice(elem, out));
+  dst->memory()->RetainReference(block_);
+  return HandleBatch(n, dst, [&](size_t /*i*/, Slice elem, Slice* out) {
+                               *out = elem;
   });
 }
 
@@ -327,16 +328,23 @@ Status BinaryPlainBlockDecoder::CopyNextAndEval(size_t* n,
                                                 ColumnMaterializationContext* ctx,
                                                 SelectionVectorView* sel,
                                                 ColumnDataView* dst) {
+  bool retain_block = false;
   ctx->SetDecoderEvalSupported();
-  return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
+  Status s = HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out) {
     if (!sel->TestBit(i)) {
       return;
-    } else if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void*>(&elem))) {
-      CHECK(out_arena->RelocateSlice(elem, out));
+    }
+    if (ctx->pred()->EvaluateCell<BINARY>(static_cast<const void*>(&elem))) {
+      *out = elem;
+      retain_block = true;
     } else {
       sel->ClearBit(i);
     }
   });
+  if (PREDICT_TRUE(s.ok() && retain_block)) {
+    dst->memory()->RetainReference(block_);
+  }
+  return s;
 }
 
 

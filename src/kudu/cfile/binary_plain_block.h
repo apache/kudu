@@ -142,6 +142,10 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
     return Slice(&data_[str_offset], len);
   }
 
+  const scoped_refptr<BlockHandle>& block_handle() {
+    return block_;
+  }
+
   // Minimum length of a header.
   static const size_t kMinHeaderSize = sizeof(uint32_t) * 3;
 
@@ -163,7 +167,7 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
     return ret;
   }
 
-  scoped_refptr<BlockHandle> block_handle_;
+  scoped_refptr<BlockHandle> block_;
   Slice data_;
   bool parsed_;
 

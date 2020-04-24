@@ -17,6 +17,7 @@
 
 #include "kudu/cfile/binary_dict_block.h"
 
+#include <functional>
 #include <limits>
 #include <ostream>
 #include <utility>
@@ -35,6 +36,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowblock_memory.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
@@ -293,12 +295,13 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
     return CopyNextDecodeStrings(n, dst);
   }
 
+  bool retain_dict = false;
+
   // Load the rows' codeword values into a buffer for scanning.
   BShufBlockDecoder<UINT32>* d_bptr = down_cast<BShufBlockDecoder<UINT32>*>(data_decoder_.get());
   codeword_buf_.resize(*n * sizeof(uint32_t));
   d_bptr->CopyNextValuesToArray(n, codeword_buf_.data());
   Slice* out = reinterpret_cast<Slice*>(dst->data());
-  Arena* out_arena = dst->arena();
   for (size_t i = 0; i < *n; i++, out++) {
     // Check with the SelectionVectorView to see whether the data has already
     // been cleared, in which case we can skip evaluation.
@@ -307,12 +310,17 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
     }
     uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i*sizeof(uint32_t)]);
     if (BitmapTest(codewords_matching_pred->bitmap(), codeword)) {
-      // Row is included in predicate, copy data to block.
-      CHECK(out_arena->RelocateSlice(dict_decoder_->string_at_index(codeword), out));
+      // Row is included in predicate: point the cell in the block
+      // to the entry in the dictionary.
+      *out = dict_decoder_->string_at_index(codeword);
+      retain_dict = true;
     } else {
       // Mark that the row will not be returned.
       sel->ClearBit(i);
     }
+  }
+  if (retain_dict) {
+    dst->memory()->RetainReference(dict_decoder_->block_handle());
   }
   return Status::OK();
 }
@@ -323,22 +331,21 @@ Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* 
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
 
-  Arena* out_arena = dst->arena();
   Slice* out = reinterpret_cast<Slice*>(dst->data());
 
   codeword_buf_.resize((*n)*sizeof(uint32_t));
 
   // Copy the codewords into a temporary buffer first.
-  // And then Copy the strings corresponding to the codewords to the destination buffer.
   BShufBlockDecoder<UINT32>* d_bptr = down_cast<BShufBlockDecoder<UINT32>*>(data_decoder_.get());
   RETURN_NOT_OK(d_bptr->CopyNextValuesToArray(n, codeword_buf_.data()));
 
+  // Now point the cells in the destination block to the string data in the dictionary
+  // block.
   for (int i = 0; i < *n; i++) {
     uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i*sizeof(uint32_t)]);
-    Slice elem = dict_decoder_->string_at_index(codeword);
-    CHECK(out_arena->RelocateSlice(elem, out));
-    out++;
+    *out++ = dict_decoder_->string_at_index(codeword);
   }
+  dst->memory()->RetainReference(dict_decoder_->block_handle());
   return Status::OK();
 }
 

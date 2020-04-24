@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -40,6 +41,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -98,6 +100,7 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using std::set;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -196,9 +199,17 @@ class FullStackInsertScanTest : public KuduTest {
   // Insert the rows that are associated with that ID.
   void InsertRows(CountDownLatch* start_latch, int id, uint32_t seed);
 
+  enum class ScanFlag {
+    // Disable the block cache for the scan.
+    kDontCacheBlocks,
+    // Enable fault tolerance. This triggers different iterator code paths.
+    kFaultTolerant,
+  };
+
   // Run a scan from the reader_client_ with the projection schema schema
   // and LOG_TIMING message msg.
-  void ScanProjection(const vector<string>& cols, const string& msg);
+  void ScanProjection(const vector<string>& cols, const string& msg,
+                      const set<ScanFlag>& flags = {});
 
   vector<string> AllColumnNames() const;
   vector<string> StringColumnNames() const;
@@ -325,6 +336,11 @@ void FullStackInsertScanTest::DoTestScans() {
 
   NO_FATALS(ScanProjection({}, "empty projection, 0 col"));
   NO_FATALS(ScanProjection({ "key" }, "key scan, 1 col"));
+  NO_FATALS(ScanProjection(AllColumnNames(), "full schema scan, no cache, 10 col",
+                           { ScanFlag::kDontCacheBlocks }));
+  NO_FATALS(ScanProjection(AllColumnNames(),
+                           "fault-tolerant full schema scan, no cache, 10 col",
+                           { ScanFlag::kDontCacheBlocks, ScanFlag::kFaultTolerant }));
   NO_FATALS(ScanProjection(AllColumnNames(), "full schema scan, 10 col"));
   NO_FATALS(ScanProjection(StringColumnNames(), "String projection, 1 col"));
   NO_FATALS(ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col"));
@@ -394,8 +410,10 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   FlushSessionOrDie(session);
 }
 
+
 void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
-                                             const string& msg) {
+                                             const string& msg,
+                                             const set<ScanFlag>& flags) {
   {
     // Warmup codegen cache
     KuduScanner scanner(reader_table_.get());
@@ -404,6 +422,12 @@ void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
     codegen::CompilationManager::GetSingleton()->Wait();
   }
   KuduScanner scanner(reader_table_.get());
+  if (ContainsKey(flags, ScanFlag::kDontCacheBlocks)) {
+    CHECK_OK(scanner.SetCacheBlocks(false));
+  }
+  if (ContainsKey(flags, ScanFlag::kFaultTolerant)) {
+    CHECK_OK(scanner.SetFaultTolerant());
+  }
   ASSERT_OK(scanner.SetProjectedColumnNames(cols));
   uint64_t nrows = 0;
   LOG_TIMING(INFO, msg) {

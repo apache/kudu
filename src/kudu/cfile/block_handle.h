@@ -24,8 +24,8 @@
 #include <boost/variant/variant.hpp>
 
 #include "kudu/cfile/block_cache.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/common/rowblock_memory.h"
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 namespace cfile {
@@ -40,7 +40,7 @@ namespace cfile {
 // Note that the BlockHandle itself may refer to a BlockCacheHandle, which itself is
 // reference-counted. When all of the references to a BlockHandle go out of scope, it
 // results in decrementing the BlockCacheHandle's reference count.
-class BlockHandle : public RefCountedThreadSafe<BlockHandle> {
+class BlockHandle final : public RefCountedThreadSafe<BlockHandle> {
  public:
   static scoped_refptr<BlockHandle> WithOwnedData(const Slice& data) {
     return { new BlockHandle(data) };
