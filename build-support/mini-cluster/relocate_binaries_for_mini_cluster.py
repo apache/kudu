@@ -91,7 +91,7 @@ PAT_MACOS_LIB_EXCLUDE = re.compile(r"""(AppleFSCompression$|
                                         libSystem|
                                         libapple_nghttp2|
                                         libarchive|
-                                        libc\+\+|
+                                        libc\+\+\.|
                                         libenergytrace|
                                         libicucore|
                                         libncurses|
