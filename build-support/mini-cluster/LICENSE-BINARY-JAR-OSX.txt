@@ -10,3 +10,7 @@ OpenSSL: OpenSSL software license
 libraries: libssl, libcrypto
 Source: Homebrew repository
 
+--------------------------------------------------------------------------------
+LLVM: Apache 2.0 License
+libraries: libc\+\+abi
+Source: LLVM source tarball
