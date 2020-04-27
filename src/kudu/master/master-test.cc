@@ -17,13 +17,13 @@
 
 #include "kudu/master/master.h"
 
-#include <time.h>
-
 #include <algorithm>
 #include <cstdint>
+#include <ctime>
 #include <functional>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <ostream>
 #include <set>
 #include <string>
@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -85,6 +86,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -96,6 +98,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using std::accumulate;
 using std::map;
 using std::multiset;
 using std::pair;
@@ -115,6 +118,7 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
+DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
@@ -1055,6 +1059,161 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
   done.Store(true);
   t.join();
 }
+
+class ConcurrentGetTableSchemaTest :
+    public MasterTest,
+    public ::testing::WithParamInterface<bool> {
+ protected:
+  ConcurrentGetTableSchemaTest()
+      : supports_authz_(GetParam()) {
+  }
+
+  void SetUp() override {
+    MasterTest::SetUp();
+    FLAGS_master_support_authz_tokens = supports_authz_;
+  }
+
+  const bool supports_authz_;
+  static const MonoDelta kRunInterval;
+  static const Schema kTableSchema;
+  static const string kTableNamePattern;
+};
+
+const MonoDelta ConcurrentGetTableSchemaTest::kRunInterval =
+    MonoDelta::FromSeconds(5);
+const Schema ConcurrentGetTableSchemaTest::kTableSchema = {
+    {
+      ColumnSchema("key", INT32),
+      ColumnSchema("v1", UINT64),
+      ColumnSchema("v2", STRING)
+    }, 1 };
+const string ConcurrentGetTableSchemaTest::kTableNamePattern = "test_table_$0"; // NOLINT
+
+// Send multiple GetTableSchema() RPC requests for different tables.
+TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // kNumTables corresponds to the number of threads sending GetTableSchema
+  // RPCs. If setting a bit higher than the RPC queue size limit, there is
+  // a chance of overflowing the RPC queue.
+  const int kNumTables = FLAGS_rpc_service_queue_length;
+
+  for (auto idx = 0; idx < kNumTables; ++idx) {
+    EXPECT_OK(CreateTable(Substitute(kTableNamePattern, idx), kTableSchema));
+  }
+
+  AtomicBool done(false);
+
+  // Start many threads that hammer the master with GetTableSchema() calls
+  // for various tables.
+  vector<thread> caller_threads;
+  caller_threads.reserve(kNumTables);
+  vector<uint64_t> call_counters(kNumTables, 0);
+  vector<uint64_t> error_counters(kNumTables, 0);
+  for (auto idx = 0; idx < kNumTables; ++idx) {
+    caller_threads.emplace_back([&, idx]() {
+      auto table_name = Substitute(kTableNamePattern, idx);
+      GetTableSchemaRequestPB req;
+      req.mutable_table()->set_table_name(table_name);
+      while (!done.Load()) {
+        RpcController controller;
+        GetTableSchemaResponsePB resp;
+        CHECK_OK(proxy_->GetTableSchema(req, &resp, &controller));
+        ++call_counters[idx];
+        if (resp.has_error()) {
+          LOG(WARNING) << "GetTableSchema failed: " << SecureDebugString(resp);
+          ++error_counters[idx];
+          break;
+        }
+      }
+    });
+  }
+  SCOPED_CLEANUP({
+    for (auto& t : caller_threads) {
+      t.join();
+    }
+  });
+
+  SleepFor(kRunInterval);
+  done.Store(true);
+
+  const auto errors = accumulate(error_counters.begin(), error_counters.end(), 0UL);
+  if (errors != 0) {
+    FAIL() << Substitute("detected $0 errors", errors);
+  }
+
+  const double total = accumulate(call_counters.begin(), call_counters.end(), 0UL);
+  LOG(INFO) << Substitute(
+      "GetTableSchema RPC: $0 req/sec (authz $1)",
+      total / kRunInterval.ToSeconds(), supports_authz_ ? "enabled" : "disabled");
+}
+
+// Run multiple threads calling GetTableSchema() directly to system catalog.
+TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr int kNumTables = 200;
+  static const string kUserName = "test-user";
+
+  for (auto idx = 0; idx < kNumTables; ++idx) {
+    EXPECT_OK(CreateTable(Substitute(kTableNamePattern, idx), kTableSchema));
+  }
+
+  AtomicBool done(false);
+  CatalogManager* cm = mini_master_->master()->catalog_manager();
+  const auto* token_signer = supports_authz_
+      ? mini_master_->master()->token_signer() : nullptr;
+  const auto username = supports_authz_
+      ? boost::make_optional<const string&>(kUserName) : boost::none;
+
+  // Start many threads that hammer the master with GetTableSchema() calls
+  // for various tables.
+  vector<thread> caller_threads;
+  caller_threads.reserve(kNumTables);
+  vector<uint64_t> call_counters(kNumTables, 0);
+  vector<uint64_t> error_counters(kNumTables, 0);
+  for (auto idx = 0; idx < kNumTables; ++idx) {
+    caller_threads.emplace_back([&, idx]() {
+      GetTableSchemaRequestPB req;
+      req.mutable_table()->set_table_name(Substitute(kTableNamePattern, idx));
+      while (!done.Load()) {
+        RpcController controller;
+        GetTableSchemaResponsePB resp;
+        {
+          CatalogManager::ScopedLeaderSharedLock l(cm);
+          CHECK_OK(cm->GetTableSchema(&req, &resp, username, token_signer));
+        }
+        ++call_counters[idx];
+        if (resp.has_error()) {
+          LOG(WARNING) << "GetTableSchema failed: " << SecureDebugString(resp);
+          ++error_counters[idx];
+          break;
+        }
+      }
+    });
+  }
+  SCOPED_CLEANUP({
+    for (auto& t : caller_threads) {
+      t.join();
+    }
+  });
+
+  SleepFor(kRunInterval);
+  done.Store(true);
+
+  const auto errors = accumulate(error_counters.begin(), error_counters.end(), 0UL);
+  if (errors != 0) {
+    FAIL() << Substitute("detected $0 errors", errors);
+  }
+
+  const double total = accumulate(call_counters.begin(), call_counters.end(), 0UL);
+  LOG(INFO) << Substitute(
+      "GetTableSchema function: $0 req/sec (authz $1)",
+      total / kRunInterval.ToSeconds(), supports_authz_ ? "enabled" : "disabled");
+}
+
+INSTANTIATE_TEST_CASE_P(SupportsAuthzTokens,
+                        ConcurrentGetTableSchemaTest, ::testing::Bool());
 
 // Verifies that on-disk master metadata is self-consistent and matches a set
 // of expected contents.
