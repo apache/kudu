@@ -17,10 +17,12 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/routing.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
@@ -30,6 +32,7 @@ class FsManager;
 class Status;
 
 namespace consensus {
+class DurableRoutingTable;
 class RaftConfigPB;
 
 // API and implementation for a consensus metadata "manager" that controls
@@ -51,46 +54,70 @@ class ConsensusMetadataManager : public RefCountedThreadSafe<ConsensusMetadataMa
 
   // Create a ConsensusMetadata instance keyed by 'tablet_id'.
   // Returns an error if a ConsensusMetadata instance with that key already exists.
-  Status Create(const std::string& tablet_id,
-                const RaftConfigPB& config,
-                int64_t initial_term,
-                ConsensusMetadataCreateMode create_mode =
-                    ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
-                scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
+  Status CreateCMeta(const std::string& tablet_id,
+                     const RaftConfigPB& config,
+                     int64_t initial_term,
+                     ConsensusMetadataCreateMode create_mode =
+                         ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                     scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Load the ConsensusMetadata instance keyed by 'tablet_id'.
   // Returns an error if it cannot be found, either in 'cmeta_cache_' or on
   // disk.
-  Status Load(const std::string& tablet_id,
-              scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
+  Status LoadCMeta(const std::string& tablet_id,
+                   scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Load the ConsensusMetadata instance keyed by 'tablet_id' if it exists,
   // otherwise create it using the given parameters 'config' and
   // 'initial_term'. If the instance already exists, those parameters are
   // ignored.
-  Status LoadOrCreate(const std::string& tablet_id,
-                      const RaftConfigPB& config,
-                      int64_t initial_term,
-                      ConsensusMetadataCreateMode create_mode =
-                          ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
-                      scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
+  Status LoadOrCreateCMeta(const std::string& tablet_id,
+                           const RaftConfigPB& config,
+                           int64_t initial_term,
+                           ConsensusMetadataCreateMode create_mode =
+                               ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                           scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Permanently delete the ConsensusMetadata instance keyed by 'tablet_id'.
   // Returns Status::NotFound if the instance does not exist on disk.
   // Returns another error if the cmeta instance exists but cannot be deleted
   // for some reason, perhaps due to a permissions or I/O-related issue.
-  Status Delete(const std::string& tablet_id);
+  Status DeleteCMeta(const std::string& tablet_id);
+
+  // Create DurableRoutingTable.
+  Status CreateDRT(const std::string& tablet_id,
+                   RaftConfigPB raft_config,
+                   ProxyTopologyPB proxy_topology,
+                   std::shared_ptr<DurableRoutingTable>* drt_out = nullptr);
+
+  // Load DurableRoutingTable.
+  Status LoadDRT(const std::string& tablet_id,
+                 RaftConfigPB raft_config,
+                 std::shared_ptr<DurableRoutingTable>* drt_out = nullptr);
+
+  // Load or Create DurableRoutingTable.
+  Status LoadOrCreateDRT(const std::string& tablet_id,
+                         RaftConfigPB raft_config,
+                         ProxyTopologyPB proxy_topology,
+                         std::shared_ptr<DurableRoutingTable>* drt_out = nullptr);
+
+  // Delete DurableRoutingTable.
+  Status DeleteDRT(const std::string& tablet_id);
 
  private:
   friend class RefCountedThreadSafe<ConsensusMetadataManager>;
 
   FsManager* const fs_manager_;
 
-  // Lock protecting the map below.
-  Mutex lock_;
+  // Lock protecting cmeta_cache_.
+  Mutex cmeta_lock_;
 
   // Cache for ConsensusMetadata objects (tablet_id => cmeta).
   std::unordered_map<std::string, scoped_refptr<ConsensusMetadata>> cmeta_cache_;
+
+  Mutex drt_lock_;
+  // Cache for DurableRoutingTable objects (tablet_id => drt).
+  std::unordered_map<std::string, std::shared_ptr<DurableRoutingTable>> drt_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(ConsensusMetadataManager);
 };

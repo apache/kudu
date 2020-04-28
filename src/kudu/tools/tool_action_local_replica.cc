@@ -225,7 +225,7 @@ Status PrintReplicaUuids(const RunnerContext& context) {
 
   // Load the cmeta file and print all peer uuids.
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+  RETURN_NOT_OK(cmeta_manager->LoadCMeta(tablet_id, &cmeta));
   cout << JoinMapped(cmeta->CommittedConfig().peers(),
                      [](const RaftPeerPB& p){ return p.permanent_uuid(); },
                      " ") << endl;
@@ -272,7 +272,7 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   // Load the cmeta file and rewrite the raft config.
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+  RETURN_NOT_OK(cmeta_manager->LoadCMeta(tablet_id, &cmeta));
   RaftConfigPB current_config = cmeta->CommittedConfig();
   RaftConfigPB new_config = current_config;
   new_config.clear_peers();
@@ -305,7 +305,7 @@ Status SetRaftTerm(const RunnerContext& context) {
   // Load the cmeta file and rewrite the raft config.
   scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+  RETURN_NOT_OK(cmeta_manager->LoadCMeta(tablet_id, &cmeta));
   if (new_term <= cmeta->current_term()) {
     return Status::InvalidArgument(Substitute(
         "specified term $0 must be higher than current term $1",

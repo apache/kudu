@@ -224,7 +224,7 @@ RaftConsensus::RaftConsensus(
 
 Status RaftConsensus::Init() {
   DCHECK_EQ(kNew, state_) << State_Name(state_);
-  RETURN_NOT_OK(cmeta_manager_->Load(options_.tablet_id, &cmeta_));
+  RETURN_NOT_OK(cmeta_manager_->LoadCMeta(options_.tablet_id, &cmeta_));
   SetStateUnlocked(kInitialized);
   return Status::OK();
 }

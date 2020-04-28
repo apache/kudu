@@ -651,7 +651,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     // We also need to update the ConsensusMetadata to match with the term we
     // want to end up with.
     scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager->Load(tablet_id, &cmeta));
+    ASSERT_OK(cmeta_manager->LoadCMeta(tablet_id, &cmeta));
     cmeta->set_current_term(kDesiredIndexValue);
     ASSERT_OK(cmeta->Flush());
   }

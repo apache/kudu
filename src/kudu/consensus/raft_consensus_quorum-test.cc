@@ -199,7 +199,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     CHECK_EQ(config_.peers_size(), cmeta_managers_.size());
     CHECK_EQ(config_.peers_size(), fs_managers_.size());
     for (int i = 0; i < config_.peers_size(); i++) {
-      RETURN_NOT_OK(cmeta_managers_[i]->Create(kTestTablet, config_, kMinimumTerm));
+      RETURN_NOT_OK(cmeta_managers_[i]->CreateCMeta(kTestTablet, config_, kMinimumTerm));
 
       RaftPeerPB* local_peer_pb;
       RETURN_NOT_OK(GetRaftConfigMember(&config_, fs_managers_[i]->uuid(), &local_peer_pb));
@@ -555,7 +555,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   // Read the ConsensusMetadata for the given peer from disk.
   scoped_refptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
     scoped_refptr<ConsensusMetadata> cmeta;
-    CHECK_OK(cmeta_managers_[peer_index]->Load(kTestTablet, &cmeta));
+    CHECK_OK(cmeta_managers_[peer_index]->LoadCMeta(kTestTablet, &cmeta));
     return cmeta;
   }
 

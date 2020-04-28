@@ -133,7 +133,7 @@ Status TSTabletManager::Load(FsManager *fs_manager) {
   if (server_->opts().IsDistributed()) {
     LOG(INFO) << "Verifying existing consensus state";
     scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(kSysCatalogTabletId, &cmeta),
+    RETURN_NOT_OK_PREPEND(cmeta_manager_->LoadCMeta(kSysCatalogTabletId, &cmeta),
                           "Unable to load consensus metadata for tablet " + kSysCatalogTabletId);
     ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
     RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config()));
@@ -189,7 +189,7 @@ Status TSTabletManager::CreateNew(FsManager *fs_manager) {
     peer->set_member_type(RaftPeerPB::VOTER);
   }
 
-  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(kSysCatalogTabletId, config, consensus::kMinimumTerm),
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->CreateCMeta(kSysCatalogTabletId, config, consensus::kMinimumTerm),
                         "Unable to persist consensus metadata for tablet " + kSysCatalogTabletId);
 
   return SetupRaft();
@@ -323,7 +323,7 @@ Status TSTabletManager::Start(bool is_first_run) {
   // SetStatusMessage("Initialized. Waiting to start...");
 
   scoped_refptr<ConsensusMetadata> cmeta;
-  Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
+  Status s = cmeta_manager_->LoadCMeta(kSysCatalogTabletId, &cmeta);
 
   consensus::ConsensusBootstrapInfo bootstrap_info;
   // Abstracted logs will do their own log recovery
@@ -413,7 +413,7 @@ Status TSTabletManager::SetupRaft() {
 
   // Not sure these 2 lines are required
   scoped_refptr<ConsensusMetadata> cmeta;
-  Status s = cmeta_manager_->Load(kSysCatalogTabletId, &cmeta);
+  Status s = cmeta_manager_->LoadCMeta(kSysCatalogTabletId, &cmeta);
 
   // Open the log, while passing in the factory class.
   // Factory could be empty.
