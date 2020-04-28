@@ -53,6 +53,7 @@ class PeriodicTimer;
 namespace consensus {
 class PeerMessageQueue;
 class PeerProxy;
+class PeerProxyPool;
 
 // A remote peer in consensus.
 //
@@ -115,6 +116,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
                               std::string tablet_id,
                               std::string leader_uuid,
                               PeerMessageQueue* queue,
+                              PeerProxyPool* peer_proxy_pool,
                               ThreadPoolToken* raft_pool_token,
                               std::shared_ptr<PeerProxy> proxy,
                               std::shared_ptr<rpc::Messenger> messenger,
@@ -125,6 +127,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
        std::string tablet_id,
        std::string leader_uuid,
        PeerMessageQueue* queue,
+       PeerProxyPool* peer_proxy_pool,
        ThreadPoolToken* raft_pool_token,
        std::shared_ptr<PeerProxy> proxy,
        std::shared_ptr<rpc::Messenger> messenger);
@@ -168,6 +171,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
   std::shared_ptr<PeerProxy> proxy_;
 
   PeerMessageQueue* queue_;
+  PeerProxyPool* peer_proxy_pool_;
   uint64_t failed_attempts_;
 
   // The latest consensus update request and response.
@@ -253,6 +257,25 @@ class PeerProxyFactory {
   virtual ~PeerProxyFactory() {}
 
   virtual const std::shared_ptr<rpc::Messenger>& messenger() const = 0;
+};
+
+// Provides access to shared PeerProxy instances based on destination server uuid.
+// This class is thread-safe.
+class PeerProxyPool {
+ public:
+  // Return the PeerProxy associated with the given uuid.
+  // If 'uuid' is not found, returns a shared_ptr initialized to nullptr, which is falsy.
+  std::shared_ptr<PeerProxy> Get(const std::string& uuid) const;
+
+  // Add a PeerProxy to the pool, given its uuid.
+  void Put(const std::string& uuid, std::shared_ptr<PeerProxy> proxy);
+
+  // Clear the pool. Does not close the PeerProxy instances.
+  void Clear();
+
+ private:
+  mutable percpu_rwlock lock_;
+  std::unordered_map<std::string, std::shared_ptr<PeerProxy>> peer_proxy_map_;
 };
 
 // PeerProxy implementation that does RPC calls

@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
@@ -36,9 +37,7 @@ class Log;
 
 namespace consensus {
 
-class Peer;
 class PeerMessageQueue;
-class PeerProxyFactory;
 class RaftConfigPB;
 
 // Manages the remote peers that pull data from the local queue and send updates to the
@@ -71,14 +70,14 @@ class PeerManager {
  private:
   std::string GetLogPrefix() const;
 
-  typedef std::unordered_map<std::string, std::shared_ptr<Peer>> PeersMap;
   const std::string tablet_id_;
   const std::string local_uuid_;
   PeerProxyFactory* peer_proxy_factory_;
   PeerMessageQueue* queue_;
   ThreadPoolToken* raft_pool_token_;
   scoped_refptr<log::Log> log_;
-  PeersMap peers_;
+  PeerProxyPool peer_proxy_pool_;
+  std::unordered_map<std::string, std::shared_ptr<Peer>> peers_;
   mutable simple_spinlock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(PeerManager);

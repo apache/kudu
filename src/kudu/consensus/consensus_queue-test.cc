@@ -34,9 +34,9 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #ifdef FB_DO_NOT_REMOVE
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/log-test-base.h"
 #endif
@@ -51,6 +51,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/consensus/routing.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -70,6 +71,11 @@ DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
 
 using kudu::consensus::HealthReportPB;
+using std::atomic;
+using std::deque;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -82,7 +88,7 @@ static const char* kTestTablet = "test-tablet";
 class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
-      : 
+      :
 #ifdef FB_DO_NOT_REMOVE
         schema_(GetSimpleTestSchema()),
 #endif
@@ -104,6 +110,8 @@ class ConsensusQueueTest : public KuduTest {
 #endif
                             NULL,
                             &log_));
+
+    ASSERT_OK(DurableRoutingTable::Create(fs_manager_.get(), kTestTablet, {}, {}, &routing_table_));
     clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 
@@ -120,6 +128,7 @@ class ConsensusQueueTest : public KuduTest {
         log_.get(),
         time_manager,
         FakeRaftPeerPB(kLeaderUuid),
+        routing_table_,
         kTestTablet,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
         replicated_opid,
@@ -244,6 +253,8 @@ class ConsensusQueueTest : public KuduTest {
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<log::Log> log_;
   gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<TimeManager> time_manager_;
+  shared_ptr<DurableRoutingTable> routing_table_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   scoped_refptr<clock::Clock> clock_;
