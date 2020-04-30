@@ -47,10 +47,6 @@ set(MASTER_SRCS
   mini_master.cc
   placement_policy.cc
   ranger_authz_provider.cc
-  sentry_authz_provider.cc
-  sentry_client_metrics.cc
-  sentry_privileges_cache_metrics.cc
-  sentry_privileges_fetcher.cc
   sys_catalog.cc
   table_metrics.cc
   ts_descriptor.cc
@@ -65,7 +61,6 @@ target_link_libraries(master
   kudu_common
   kudu_hms
   kudu_ranger
-  kudu_sentry
   kudu_subprocess
   kudu_thrift
   kudu_util
@@ -87,8 +82,7 @@ SET_KUDU_TEST_LINK_LIBS(
   master_proto
   mini_cluster
   mini_hms
-  mini_kdc
-  mini_sentry)
+  mini_kdc)
 
 ADD_KUDU_TEST(auto_rebalancer-test)
 ADD_KUDU_TEST(catalog_manager-test)
@@ -98,7 +92,6 @@ ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port"
                           DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
-ADD_KUDU_TEST(sentry_authz_provider-test NUM_SHARDS 8)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(ts_state-test)

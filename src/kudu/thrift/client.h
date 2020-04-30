@@ -132,7 +132,7 @@ class HaClient {
   std::vector<HostPort> addresses_;
   ClientOptions options_;
 
-  // The actual client service instance (HmsClient or SentryClient).
+  // The actual client service instance (ex: HmsClient).
   Service service_client_;
 
   // Fields which track consecutive reconnection attempts and backoff.
@@ -146,9 +146,9 @@ class HaClient {
 ///////////////////////////////////////////////////////////////////////////////
 // HaClient class definitions
 //
-// HaClient is defined inline so that it can be instantiated with HmsClient and
-// SentryClient as template parameters, which live in modules which are not
-// linked to the thrift module.
+// HaClient is defined inline so that it can be instantiated with HmsClient as
+// template parameters, which live in modules which are not linked to the
+// thrift module.
 ///////////////////////////////////////////////////////////////////////////////
 
 template<typename Service>

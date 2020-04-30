@@ -53,9 +53,7 @@ DEFINE_string(ranger_config_path, "",
               "When set, Ranger integration is enabled, fine-grained access "
               "control is enforced, and clients are issued authorization "
               "tokens. In addition, both --ranger_java_path and --ranger_jar_path "
-              "flags need to be set properly for Ranger integration to work. "
-              "The --sentry_service_rpc_addresses flag, which enables Sentry "
-              "integration, must not be set if this is enabled.");
+              "flags need to be set properly for Ranger integration to work.");
 
 DEFINE_string(ranger_java_path, "",
               "Path where the Java binary was installed. If the value "

@@ -64,11 +64,10 @@ typedef subprocess::SubprocessProxy<RangerRequestListPB, RangerResponseListPB,
 // NotAuthorized based on RangerClient's out parameters and return Status.
 class RangerClient {
  public:
-  // Similar to SentryAuthorizableScope scope which indicates the
-  // hierarchy of authorizables (database -> table -> column). For
-  // example, authorizable 'db=a' has database level scope, while
-  // authorizable 'db=a->table=b' has table level scope. Note that
-  // COLUMN level scope is not defined in the enum as it is not
+  // The privilege scope can indicate the hierarchy of authorizables
+  // (e.g. database -> table -> column). For example, authorizable 'db=a' has
+  // database level scope, while authorizable 'db=a->table=b' has table level scope.
+  // Note that COLUMN level scope is not defined in the enum as it is not
   // used yet in the code (although the concept still apply when
   // authorizing column level privileges).
   enum Scope {

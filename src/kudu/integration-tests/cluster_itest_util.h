@@ -50,7 +50,6 @@ namespace kudu {
 class HostPort;
 class MetricEntityPrototype;
 class MetricPrototype;
-class MiniKdc;
 class MonoDelta;
 class Status;
 
@@ -75,12 +74,6 @@ class Messenger;
 } // namespace rpc
 
 namespace itest {
-
-// Mode to indicate whether external service Sentry is enabled or not.
-enum class SentryMode {
-  DISABLED,
-  ENABLED
-};
 
 struct TServerDetails {
   NodeInstancePB instance_id;
@@ -461,12 +454,6 @@ Status GetInt64Metric(const HostPort& http_hp,
 Status GetTsCounterValue(cluster::ExternalTabletServer* ets,
                          MetricPrototype* metric,
                          int64_t* value);
-
-// Grants the 'test-admin' user Sentry privileges to perform any operation,
-// using 'kdc' to authenticate with the Sentry instance at 'address'. Once
-// called, the 'test-admin' user will be logged in.
-Status SetupAdministratorPrivileges(MiniKdc* kdc,
-                                    const HostPort& address);
 
 // Alter the table name.
 Status AlterTableName(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,

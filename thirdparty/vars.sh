@@ -216,15 +216,6 @@ HADOOP_VERSION=2.8.5
 HADOOP_NAME=hadoop-$HADOOP_VERSION
 HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 
-# TODO(dan): bump to a release version once SENTRY-2371, SENTRY-2440, SENTRY-2471
-# and SENTRY-2522 are published. The SHA below is the current head of the master branch.
-# Note: Sentry releases source code only. To build the binary tarball, use `dist`
-# maven profile. For example, `mvn clean install -Pdist`. After a successful build,
-# the tarball will be available under sentry-dist/target.
-SENTRY_VERSION=b71a78ed960702536b35e1f048dc40dfc79992d4
-SENTRY_NAME=sentry-$SENTRY_VERSION
-SENTRY_SOURCE=$TP_SOURCE_DIR/$SENTRY_NAME
-
 YAML_VERSION=0.6.2
 YAML_NAME=yaml-cpp-yaml-cpp-$YAML_VERSION
 YAML_SOURCE=$TP_SOURCE_DIR/$YAML_NAME

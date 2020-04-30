@@ -416,12 +416,6 @@ fetch_and_patch \
  $HADOOP_SOURCE \
  $HADOOP_PATCHLEVEL
 
-SENTRY_PATCHLEVEL=0
-fetch_and_patch \
- $SENTRY_NAME.tar.gz \
- $SENTRY_SOURCE \
- $SENTRY_PATCHLEVEL
-
 YAML_PATCHLEVEL=0
 fetch_and_patch \
  $YAML_NAME.tar.gz \

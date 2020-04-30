@@ -50,10 +50,6 @@ class RangerAuthzProvider : public AuthzProvider {
 
   void Stop() override {}
 
-  Status ResetCache() override {
-    return Status::NotSupported("Resetting cache is not supported with Ranger");
-  }
-
   Status AuthorizeCreateTable(const std::string& table_name,
                               const std::string& user,
                               const std::string& owner) override WARN_UNUSED_RESULT;

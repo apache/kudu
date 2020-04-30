@@ -70,19 +70,6 @@ void MiniHms::EnableKerberos(string krb5_conf,
   protection_ = protection;
 }
 
-void MiniHms::EnableSentry(const HostPort& sentry_address,
-                           string sentry_service_principal,
-                           int sentry_client_rpc_retry_num,
-                           int sentry_client_rpc_retry_interval_ms) {
-  CHECK(!hms_process_);
-  DCHECK(!sentry_service_principal.empty());
-  VLOG(1) << Substitute("Enabling Sentry, at $0, for HMS", sentry_address.ToString());
-  sentry_address_ = sentry_address.ToString();
-  sentry_service_principal_ = std::move(sentry_service_principal);
-  sentry_client_rpc_retry_num_ = sentry_client_rpc_retry_num;
-  sentry_client_rpc_retry_interval_ms_ = sentry_client_rpc_retry_interval_ms;
-}
-
 void MiniHms::EnableKuduPlugin(bool enable) {
   enable_kudu_plugin_ = enable;
 }
@@ -107,11 +94,9 @@ Status MiniHms::Start() {
   string hadoop_home;
   string hive_home;
   string java_home;
-  string sentry_home;
   RETURN_NOT_OK(FindHomeDir("hadoop", bin_dir, &hadoop_home));
   RETURN_NOT_OK(FindHomeDir("hive", bin_dir, &hive_home));
   RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
-  RETURN_NOT_OK(FindHomeDir("sentry", bin_dir, &sentry_home));
 
   if (data_root_.empty()) {
     data_root_ = GetTestDataDirectory();
@@ -122,9 +107,9 @@ Status MiniHms::Start() {
   RETURN_NOT_OK(CreateLogConfig());
 
   // Comma-separated list of additional jars to add to the HMS classpath, including
-  // the HMS plugins of Kudu and Sentry.
-  string aux_jars = Substitute("$0/hms-plugin.jar,$1/hcatalog/share/hcatalog/*,$2/lib/*",
-                               bin_dir, hive_home, sentry_home);
+  // the Kudu HMS plugins.
+  string aux_jars = Substitute("$0/hms-plugin.jar,$1/hcatalog/share/hcatalog/*",
+                               bin_dir, hive_home);
 
   // List of JVM environment options to pass to the HMS.
   string java_options =
@@ -220,10 +205,6 @@ string MiniHms::uris() const {
   return Substitute("thrift://127.0.0.1:$0", port_);
 }
 
-bool MiniHms::IsAuthorizationEnabled() const {
-  return !sentry_address_.empty() && IsKerberosEnabled();
-}
-
 Status MiniHms::CreateHiveSite() const {
 
   const string listeners = Substitute("org.apache.hive.hcatalog.listener.DbNotificationListener$0",
@@ -273,7 +254,7 @@ Status MiniHms::CreateHiveSite() const {
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
-    <value>jdbc:derby:$2/$9;create=true</value>
+    <value>jdbc:derby:$2/$8;create=true</value>
   </property>
 
   <property>
@@ -325,56 +306,8 @@ Status MiniHms::CreateHiveSite() const {
     <name>hive.log4j.file</name>
     <value>$7</value>
   </property>
-
-  $8
 </configuration>
   )";
-
-  string sentry_properties;
-  if (IsAuthorizationEnabled()) {
-
-    // - hive.sentry.conf.url
-    //     Configuration URL of the Sentry authorization plugin in the HMS.
-    //
-    // - hive.metastore.filter.hook
-    //     Configures the HMS to use the Sentry plugin for filtering
-    //     out information user has no privileges to access for operations
-    //     as SHOWTABLES and SHOWDATABASES.
-    //
-    // - hive.metastore.pre.event.listeners
-    //     Configures the HMS to use the Sentry event listener to
-    //     consult Sentry service for authorization metadata when servicing
-    //     requests.
-    //
-    // - hive.metastore.event.listeners
-    //     Configures the HMS to use the Sentry post-event listener, which
-    //     synchronizes the HMS events with the Sentry service. The Sentry
-    //     service will be made aware of events like table renames and
-    //     update itself accordingly.
-    static const string kHiveSentryFileTemplate = R"(
-<property>
-  <name>hive.sentry.conf.url</name>
-  <value>file://$0/hive-sentry-site.xml</value>
-</property>
-
-<property>
-  <name>hive.metastore.filter.hook</name>
-  <value>org.apache.sentry.binding.metastore.SentryMetaStoreFilterHook</value>
-</property>
-
-<property>
-  <name>hive.metastore.pre.event.listeners</name>
-  <value>org.apache.sentry.binding.metastore.MetastoreAuthzBinding</value>
-</property>
-
-<property>
-  <name>hive.metastore.event.listeners</name>
-  <value>org.apache.sentry.binding.metastore.SentrySyncHMSNotificationsPostEventListener</value>
-</property>
-    )";
-
-    sentry_properties = Substitute(kHiveSentryFileTemplate, data_root_);
-  }
 
   string hive_file_contents = Substitute(kHiveFileTemplate,
                                          listeners,
@@ -385,69 +318,7 @@ Status MiniHms::CreateHiveSite() const {
                                          service_principal_,
                                          SaslProtection::name_of(protection_),
                                          JoinPathSegments(data_root_, "hive-log4j2.properties"),
-                                         sentry_properties,
                                          metadb_subdir_);
-
-  if (IsAuthorizationEnabled()) {
-    // - hive.sentry.server
-    //     Server namespace the HMS instance belongs to for defining
-    //     server-level privileges in Sentry.
-    //
-    // - sentry.metastore.service.users
-    //     Set of service users whose access will be excluded from
-    //     Sentry authorization checks.
-    //
-    // - sentry.service.client.rpc.retry-total
-    //     Maximum number of attempts that Sentry RPC client does while
-    //     re-trying a remote call to Sentry.
-    //
-    // - sentry.service.client.rpc.retry.interval.msec
-    //     Time interval between attempts of Sentry's client to retry a remote
-    //     call to Sentry.
-    static const string kSentryFileTemplate = R"(
-<configuration>
-  <property>
-    <name>sentry.service.client.server.rpc-addresses</name>
-    <value>$0</value>
-  </property>
-
-  <property>
-    <name>sentry.service.server.principal</name>
-    <value>$1</value>
-  </property>
-
-  <property>
-    <name>hive.sentry.server</name>
-    <value>$2</value>
-  </property>
-
-  <property>
-    <name>sentry.metastore.service.users</name>
-    <value>kudu</value>
-  </property>
-
-  <property>
-    <name>sentry.service.client.rpc.retry-total</name>
-    <value>$3</value>
-  </property>
-
-  <property>
-    <name>sentry.service.client.rpc.retry.interval.msec</name>
-    <value>$4</value>
-  </property>
-</configuration>
-  )";
-    auto sentry_file_contents = Substitute(
-        kSentryFileTemplate,
-        sentry_address_,
-        sentry_service_principal_,
-        "server1",
-        sentry_client_rpc_retry_num_,
-        sentry_client_rpc_retry_interval_ms_);
-    RETURN_NOT_OK(WriteStringToFile(Env::Default(),
-                                    sentry_file_contents,
-                                    JoinPathSegments(data_root_, "hive-sentry-site.xml")));
-  }
 
   return WriteStringToFile(Env::Default(),
                            hive_file_contents,

@@ -102,13 +102,12 @@ DEPS_FOR_ALL = \
      # Tests that require tooling require this.
      "build/latest/bin/kudu",
 
-     # The HMS and Sentry tests require the Hadoop, Hive, and Sentry libraries.
+     # The HMS tests require the Hadoop, and Hive libraries.
      # These files are just symlinks, but dist-test will copy the entire
      # directories they point to. The symlinks themselves won't be recreated,
      # so we point to them with environment variables in run_dist_test.py.
      "build/latest/bin/hive-home",
      "build/latest/bin/hadoop-home",
-     "build/latest/bin/sentry-home",
 
      # Add the Kudu echo subprocess.
      "build/latest/bin/kudu-subprocess.jar",

@@ -37,7 +37,6 @@ set(MINI_CLUSTER_LIBS
   mini_hms
   mini_kdc
   mini_ranger
-  mini_sentry
   server_base_proto
   tablet_proto
   tserver
@@ -56,5 +55,5 @@ add_dependencies(mini_cluster
   kudu-master)
 
 # Tests
-SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms kudu_sentry)
+SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms)
 ADD_KUDU_TEST(external_mini_cluster-test PROCESSORS 3)

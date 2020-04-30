@@ -21,7 +21,6 @@
 #include <ostream> // IWYU pragma: keep
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -39,7 +38,6 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/sys_catalog.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
-#include "kudu/sentry/mini_sentry.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h" // IWYU pragma: keep
@@ -59,8 +57,6 @@ using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ScopedResumeExternalDaemon;
 using kudu::itest::GetInt64Metric;
-using kudu::itest::SentryMode;
-using std::pair;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -76,9 +72,9 @@ namespace client {
 
 const int kNumTabletServerReplicas = 3;
 
-// Parameterized based on HmsMode and whether or not to enable Sentry integration.
+// Parameterized based on HmsMode.
 class MasterFailoverTest : public KuduTest,
-                           public ::testing::WithParamInterface<pair<HmsMode, SentryMode>> {
+                           public ::testing::WithParamInterface<HmsMode> {
  public:
   enum CreateTableMode {
     kWaitForCreate = 0,
@@ -88,9 +84,7 @@ class MasterFailoverTest : public KuduTest,
   MasterFailoverTest() {
     opts_.num_masters = 3;
     opts_.num_tablet_servers = kNumTabletServerReplicas;
-    opts_.hms_mode = std::get<0>(GetParam());
-    opts_.enable_sentry = (std::get<1>(GetParam()) == SentryMode::ENABLED);
-    opts_.enable_kerberos = opts_.enable_sentry;
+    opts_.hms_mode = GetParam();
 
     // Reduce various timeouts below as to make the detection of
     // leader master failures (specifically, failures as result of
@@ -134,11 +128,6 @@ class MasterFailoverTest : public KuduTest,
     // the global operation timeout.
     builder.default_admin_operation_timeout(MonoDelta::FromSeconds(90));
     ASSERT_OK(cluster_->CreateClient(&builder, &client_));
-
-    if (opts_.enable_sentry) {
-      ASSERT_OK(itest::SetupAdministratorPrivileges(cluster_->kdc(),
-                                                    cluster_->sentry()->address()));
-    }
   }
 
   Status CreateTable(const std::string& table_name, CreateTableMode mode) {
@@ -170,14 +159,9 @@ class MasterFailoverTest : public KuduTest,
   shared_ptr<KuduClient> client_;
 };
 
-// Run the test with the HMS/Sentry integration enabled and disabled. Sentry integration
-// should be only enabled when HMS integration is enabled.
-INSTANTIATE_TEST_CASE_P(HmsSentryConfigurations, MasterFailoverTest, ::testing::ValuesIn(
-    vector<pair<HmsMode, SentryMode>> {
-      { HmsMode::NONE, SentryMode::DISABLED },
-      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::DISABLED },
-      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::ENABLED },
-  }
+// Run the test with the HMS integration enabled and disabled.
+INSTANTIATE_TEST_CASE_P(HmsConfigurations, MasterFailoverTest, ::testing::ValuesIn(
+    vector<HmsMode> { HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION }
 ));
 
 // Test that synchronous CreateTable (issue CreateTable call and then

@@ -102,7 +102,6 @@
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/placement_policy.h"
 #include "kudu/master/ranger_authz_provider.h"
-#include "kudu/master/sentry_authz_provider.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
@@ -314,19 +313,7 @@ DECLARE_int64(tsk_rotation_seconds);
 
 METRIC_DEFINE_entity(table);
 
-DECLARE_string(sentry_service_rpc_addresses);
 DECLARE_string(ranger_config_path);
-
-static bool ValidateRangerSentryFlags() {
-  if (!FLAGS_sentry_service_rpc_addresses.empty() &&
-      !FLAGS_ranger_config_path.empty()) {
-    LOG(ERROR) << "--sentry_service_rpc_addresses and --ranger_config_path "
-                  "cannot be set at the same time.";
-    return false;
-  }
-  return true;
-}
-GROUP_FLAG_VALIDATOR(ranger_sentry_flags, ValidateRangerSentryFlags);
 
 // Validates that if auto-rebalancing is enabled, the cluster uses 3-4-3 replication
 // (the --raft_prepare_replacement_before_eviction flag must be set to true).
@@ -780,9 +767,7 @@ CatalogManager::CatalogManager(Master* master)
       leader_ready_term_(-1),
       hms_notification_log_event_id_(-1),
       leader_lock_(RWMutex::Priority::PREFER_WRITING) {
-  if (SentryAuthzProvider::IsEnabled()) {
-    authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
-  } else if (RangerAuthzProvider::IsEnabled()) {
+  if (RangerAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new RangerAuthzProvider(master_->fs_manager()->env(),
                                                   master_->metric_entity()));
   } else {

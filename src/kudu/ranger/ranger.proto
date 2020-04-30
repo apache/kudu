@@ -18,7 +18,7 @@ syntax = "proto2";
 package kudu.ranger;
 option java_package = "org.apache.kudu.ranger";
 
-// Similar to Sentry, in Ranger, an action is an operation taken on an
+// In Ranger an action is an operation taken on an
 // authorizable, an authorizable is a linear hierarchically structured
 // resource (database -> table -> column), and 'privileges' are composed
 // of an authorizable and an action, e.g. CREATE ON DATABASE a (db=a).
@@ -27,22 +27,16 @@ option java_package = "org.apache.kudu.ranger";
 // except that ALL subsumes every other action, and every action subsumes
 // METADATA.
 
-// In term of privilege evaluation, unlike Sentry, (where authorizables higher
-// up on the hierarchy can imply authorizables lower on the hierarchy, e.g.
-// database implies table), Ranger doesn't have the concept of hierarchical
+// In term of privilege evaluation Ranger doesn't have the concept of hierarchical
 // implication. To be more specific, privilege 'METADATA ON DATABASE a (db=a)'
 // does not imply 'METADATA ON TABLE a.tbl (db=a->table=tbl)'. Thus, in Ranger
 // users granted with 'METADATA ON DATABASE a' cannot perform an action that
 // requires 'METADATA ON TABLE a.tbl'. On the other hand, Ranger supports
 // wildcard matching on authorizables, e.g. 'db=a->table=*' matches all the
-// tables that belong to DATABASE a. Therefore, in Ranger users actually need
-// 'METADATA ON db=a->table=*->column=*' privilege to match the semantics of
-// 'METADATA ON db=a' in Sentry.
+// tables that belong to DATABASE a.
 
-// Nevertheless, the same set of privileges are enforced/required for Kudu
-// operations with both Sentry and Ranger. For the detailed privilege
-// enforcement information see 'Policy for Kudu Masters/Tablet Servers'
-// section in docs/security.adoc.
+// For the detailed privilege enforcement information see 'Policy for
+// Kudu Masters/Tablet Servers' section in docs/security.adoc.
 
 enum ActionPB {
   SELECT = 0;

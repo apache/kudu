@@ -98,7 +98,6 @@ else
       "bison")        F_BISON=1 ;;
       "hadoop")       F_HADOOP=1 ;;
       "hive")         F_HIVE=1 ;;
-      "sentry")       F_SENTRY=1 ;;
       "yaml")         F_YAML=1 ;;
       "chrony")       F_CHRONY=1 ;;
       "gumbo-parser") F_GUMBO_PARSER=1 ;;
@@ -264,7 +263,7 @@ if [ -n "$F_COMMON" -o -n "$F_POSTGRES_JDBC" ]; then
   ln -nsf $POSTGRES_JDBC_SOURCE/$POSTGRES_JDBC_NAME.jar $PREFIX/opt/jdbc/postgresql.jar
 fi
 
-# Install Hadoop, Hive, and Sentry by symlinking their source directories (which
+# Install Hadoop, Hive, and Ranger by symlinking their source directories (which
 # are pre-built) into $PREFIX/opt.
 if [ -n "$F_COMMON" -o -n "$F_HADOOP" ]; then
   mkdir -p $PREFIX/opt
@@ -276,20 +275,10 @@ if [ -n "$F_COMMON" -o -n "$F_HIVE" ]; then
   ln -nsf $HIVE_SOURCE $PREFIX/opt/hive
 fi
 
-if [ -n "$F_COMMON" -o -n "$F_SENTRY" ]; then
-  mkdir -p $PREFIX/opt
-  # Remove any hadoop jars included in the Sentry package to avoid unexpected
-  # runtime behavior, due to different versions of hadoop jars are loaded
-  # (one from Kudu's third-party dependency, the other from the Sentry package).
-  rm -rf $SENTRY_SOURCE/lib/hadoop-[a-z-]*.jar
-  ln -nsf $SENTRY_SOURCE $PREFIX/opt/sentry
-fi
-
 if [ -n "$F_COMMON" -o -n "$F_RANGER" ]; then
   mkdir -p $PREFIX/opt
   # Remove any hadoop jars included in the Ranger package to avoid unexpected
-  # runtime behavior due to different versions of hadoop jars, similarly to
-  # Sentry.
+  # runtime behavior due to different versions of hadoop jars.
   rm -rf $RANGER_SOURCE/lib/hadoop-[a-z-]*.jar
   ln -nsf $RANGER_SOURCE $PREFIX/opt/ranger
 

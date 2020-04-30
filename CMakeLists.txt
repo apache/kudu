@@ -1322,7 +1322,7 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   add_custom_target(generated-headers
-    DEPENDS pb-gen krpc-gen hms_thrift sentry_thrift gen_version_info)
+    DEPENDS pb-gen krpc-gen hms_thrift gen_version_info)
 endif (UNIX)
 
 ############################################################
@@ -1439,7 +1439,6 @@ add_subdirectory(src/kudu/ranger)
 add_subdirectory(src/kudu/rebalance)
 add_subdirectory(src/kudu/rpc)
 add_subdirectory(src/kudu/security)
-add_subdirectory(src/kudu/sentry)
 add_subdirectory(src/kudu/server)
 add_subdirectory(src/kudu/subprocess)
 add_subdirectory(src/kudu/tablet)
