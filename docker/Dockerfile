@@ -380,7 +380,7 @@ LABEL name="Apache Kudu" \
 #
 FROM dev AS impala-build
 
-ARG IMPALA_VERSION="3.3.0"
+ARG IMPALA_VERSION="3.4.0"
 
 # Use the bash shell for all RUN commands.
 SHELL ["/bin/bash", "-c"]
