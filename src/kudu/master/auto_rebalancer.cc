@@ -34,6 +34,7 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -55,6 +56,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -77,6 +79,7 @@ using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::RaftPeerPB;
 using kudu::master::TSManager;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rebalance::BuildTabletExtraInfoMap;
 using kudu::rebalance::ClusterInfo;
 using kudu::rebalance::ClusterLocalityInfo;
@@ -167,8 +170,8 @@ AutoRebalancerTask::~AutoRebalancerTask() {
 Status AutoRebalancerTask::Init() {
   DCHECK(!thread_) << "AutoRebalancerTask is already initialized";
   RETURN_NOT_OK(MessengerBuilder("auto-rebalancer").Build(&messenger_));
-  return kudu::Thread::Create("catalog manager", "auto-rebalancer",
-                              [this]() { this->RunLoop(); }, &thread_);
+  return Thread::Create("catalog manager", "auto-rebalancer",
+                        [this]() { this->RunLoop(); }, &thread_);
 }
 
 void AutoRebalancerTask::Shutdown() {
@@ -181,9 +184,7 @@ void AutoRebalancerTask::Shutdown() {
 }
 
 void AutoRebalancerTask::RunLoop() {
-
   vector<Rebalancer::ReplicaMove> replica_moves;
-
   while (!shutdown_.WaitFor(
       MonoDelta::FromSeconds(FLAGS_auto_rebalancing_interval_seconds))) {
 
@@ -205,21 +206,19 @@ void AutoRebalancerTask::RunLoop() {
     ClusterRawInfo raw_info;
     ClusterInfo cluster_info;
     TabletsPlacementInfo placement_info;
-
     Status s = BuildClusterRawInfo(/*location*/boost::none, &raw_info);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Could not retrieve cluster info: $0", s.ToString());
       continue;
     }
 
-    // There should be no in-flight moves in progress, because this loop waits
-    // for scheduled moves to complete before continuing to the next iteration.
+    // NOTE: There should be no moves in progress, because this loop waits for
+    // scheduled moves to complete before continuing to the next iteration.
     s = rebalancer_.BuildClusterInfo(raw_info, Rebalancer::MovesInProgress(), &cluster_info);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Could not build cluster info: $0", s.ToString());
       continue;
     }
-
     if (config_.run_policy_fixer) {
       s = BuildTabletsPlacementInfo(raw_info, Rebalancer::MovesInProgress(), &placement_info);
       if (!s.ok()) {
@@ -228,25 +227,18 @@ void AutoRebalancerTask::RunLoop() {
       }
     }
 
-    // With the current synchronous implementation, verify that any moves
-    // scheduled in the previous iteration completed.
-    // The container 'replica_moves' should be empty.
-    DCHECK_EQ(0, replica_moves.size());
-
-    // For simplicity, if there are policy violations, only move replicas
-    // to satisfy placement policy in this loop iteration.
+    DCHECK(replica_moves.empty());
     s = GetMoves(raw_info, cluster_info.locality, placement_info, &replica_moves);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("could not retrieve auto-rebalancing replica moves: $0",
                                  s.ToString());
       continue;
     }
-
     WARN_NOT_OK(ExecuteMoves(replica_moves),
                 "failed to send replica move request");
-
     moves_scheduled_this_round_for_test_ = replica_moves.size();
 
+    // Wait for all of the moves from this iteration to complete.
     do {
       if (shutdown_.WaitFor(MonoDelta::FromSeconds(
             FLAGS_auto_rebalancing_wait_for_replica_moves_seconds))) {
@@ -255,7 +247,7 @@ void AutoRebalancerTask::RunLoop() {
       WARN_NOT_OK(CheckReplicaMovesCompleted(&replica_moves),
                   "scheduled replica move failed to complete");
     } while (!replica_moves.empty());
-  } // end while
+  }
 }
 
 Status AutoRebalancerTask::GetMoves(
@@ -327,6 +319,8 @@ Status AutoRebalancerTask::GetMovesUsingRebalancingAlgo(
   auto num_tservers = raw_info.tserver_summaries.size();
   auto max_moves = FLAGS_auto_rebalancing_max_moves_per_server * num_tservers;
   max_moves -= replica_moves->size();
+  // TODO(awong): it'd be nice to track the number of on-going moves for each
+  // tablet server and enforce the max moves at a more granular level.
   if (max_moves <= 0) {
     return Status::OK();
   }
@@ -390,79 +384,68 @@ Status AutoRebalancerTask::GetTabletLeader(
       int index = r.ts_info_idx();
       const TSInfoPB ts_info = *(ts_infos_dict.ts_info_pbs[index]);
       *leader_uuid = ts_info.permanent_uuid();
-      const auto& addr = ts_info.rpc_addresses(0);
-      leader_hp->set_host(addr.host());
-      leader_hp->set_port(addr.port());
+      *leader_hp = HostPortFromPB(ts_info.rpc_addresses(0));
       return Status::OK();
     }
   }
   return Status::NotFound(Substitute("Couldn't find leader for tablet $0", tablet_id));
 }
 
-// TODO(hannah.nguyen): remove moves that fail to be scheduled from 'replica_moves'.
+// TODO(hannah.nguyen): remove moves that fail to be scheduled from
+// 'replica_moves'.
 Status AutoRebalancerTask::ExecuteMoves(
     const vector<Rebalancer::ReplicaMove>& replica_moves) {
-
   for (const auto& move_info : replica_moves) {
     const auto& tablet_id = move_info.tablet_uuid;
     const auto& src_ts_uuid = move_info.ts_uuid_from;
     const auto& dst_ts_uuid = move_info.ts_uuid_to;
-
     string leader_uuid;
     HostPort leader_hp;
     RETURN_NOT_OK(GetTabletLeader(tablet_id, &leader_uuid, &leader_hp));
-
-    // Mark the replica to be replaced.
-    BulkChangeConfigRequestPB req;
-    auto* replace = req.add_config_changes();
-    replace->set_type(MODIFY_PEER);
-    *replace->mutable_peer()->mutable_permanent_uuid() = src_ts_uuid;
-    replace->mutable_peer()->mutable_attrs()->set_replace(true);
-
-    shared_ptr<TSDescriptor> desc;
-    if (!ts_manager_->LookupTSByUUID(leader_uuid, &desc)) {
+    shared_ptr<TSDescriptor> leader_desc;
+    if (!ts_manager_->LookupTSByUUID(leader_uuid, &leader_desc)) {
       return Status::NotFound(
           Substitute("Couldn't find leader replica's tserver $0", leader_uuid));
     }
+    // Mark the replica to be replaced.
+    BulkChangeConfigRequestPB req;
+    auto* modify_peer = req.add_config_changes();
+    modify_peer->set_type(MODIFY_PEER);
+    *modify_peer->mutable_peer()->mutable_permanent_uuid() = src_ts_uuid;
+    modify_peer->mutable_peer()->mutable_attrs()->set_replace(true);
 
-    // Set up the proxy to communicate with the leader replica's tserver.
-    shared_ptr<ConsensusServiceProxy> proxy;
-    HostPort hp;
-    RETURN_NOT_OK(hp.ParseString(leader_uuid, leader_hp.port()));
-    vector<Sockaddr> resolved;
-    RETURN_NOT_OK(hp.ResolveAddresses(&resolved));
-    proxy.reset(new ConsensusServiceProxy(messenger_, resolved[0], hp.host()));
-
-    // Find the specified destination tserver, if load rebalancing.
-    // Otherwise, replica moves to fix placement policy violations do not have
-    // destination tservers specified, i.e. dst_ts_uuid will be empty if
-    // there are placement policy violations.
+    // NOTE: 'dst_ts_uuid' is empty if the move was scheduled to fix location
+    // policy violations.
     if (!dst_ts_uuid.empty()) {
       // Verify that the destination tserver exists.
       shared_ptr<TSDescriptor> dest_desc;
       if (!ts_manager_->LookupTSByUUID(dst_ts_uuid, &dest_desc)) {
         return Status::NotFound("Could not find destination tserver");
       }
+      ServerRegistrationPB dest_reg;
+      dest_desc->GetRegistration(&dest_reg);
 
-      auto* change = req.add_config_changes();
-      change->set_type(ADD_PEER);
-      *change->mutable_peer()->mutable_permanent_uuid() = dst_ts_uuid;
-      change->mutable_peer()->set_member_type(RaftPeerPB::NON_VOTER);
-      change->mutable_peer()->mutable_attrs()->set_promote(true);
-      *change->mutable_peer()->mutable_last_known_addr() = HostPortToPB(hp);
+      auto* add_peer_change = req.add_config_changes();
+      add_peer_change->set_type(ADD_PEER);
+      auto* new_peer = add_peer_change->mutable_peer();
+      new_peer->set_permanent_uuid(dst_ts_uuid);
+      new_peer->set_member_type(RaftPeerPB::NON_VOTER);
+      new_peer->mutable_attrs()->set_promote(true);
+      *new_peer->mutable_last_known_addr() = dest_reg.rpc_addresses(0);
     }
 
-    // Request movement or replacement of the replica.
+    // Send the change config request to the tablet leader.
     ChangeConfigResponsePB resp;
     RpcController rpc;
     rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_auto_rebalancing_rpc_timeout_seconds));
     req.set_dest_uuid(leader_uuid);
     req.set_tablet_id(tablet_id);
-
-    RETURN_NOT_OK(proxy->BulkChangeConfig(req, &resp, &rpc));
+    vector<Sockaddr> resolved;
+    RETURN_NOT_OK(leader_hp.ResolveAddresses(&resolved));
+    ConsensusServiceProxy proxy(messenger_, resolved[0], leader_hp.host());
+    RETURN_NOT_OK(proxy.BulkChangeConfig(req, &resp, &rpc));
     if (resp.has_error()) return StatusFromPB(resp.error().status());
   }
-
   return Status::OK();
 }
 
@@ -496,7 +479,7 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
     }
     summary.health = ServerHealth::HEALTHY;
     tserver_uuids.insert(summary.uuid);
-    tserver_summaries.push_back(std::move(summary));
+    tserver_summaries.emplace_back(std::move(summary));
   }
 
   vector<scoped_refptr<TableInfo>> table_infos;
@@ -554,9 +537,9 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
       vector<string> non_voters;
       for (const auto& peer : cstatepb.committed_config().peers()) {
         if (peer.member_type() == RaftPeerPB::VOTER) {
-          voters.push_back(peer.permanent_uuid());
+          voters.emplace_back(peer.permanent_uuid());
         } else if (peer.member_type() == RaftPeerPB::NON_VOTER) {
-          non_voters.push_back(peer.permanent_uuid());
+          non_voters.emplace_back(peer.permanent_uuid());
         }
       }
 
@@ -583,10 +566,9 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
         }
         rep.is_voter = true;
         rep.ts_healthy = true;
-        replicas.push_back(rep);
+        replicas.emplace_back(std::move(rep));
       }
-
-      tablet_summary.replicas.swap(replicas);
+      tablet_summary.replicas = std::move(replicas);
 
       // Determine if tablet is healthy enough for rebalancing.
       if (voters.size() < table_summary.replication_factor) {
@@ -596,11 +578,9 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
       } else {
         tablet_summary.result = HealthCheckResult::HEALTHY;
       }
-
-      tablet_summaries.push_back(std::move(tablet_summary));
+      tablet_summaries.emplace_back(std::move(tablet_summary));
     }
-
-    table_summaries.push_back(std::move(table_summary));
+    table_summaries.emplace_back(std::move(table_summary));
   }
 
   if (!location) {
@@ -608,21 +588,18 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
     raw_info->tserver_summaries = std::move(tserver_summaries);
     raw_info->tablet_summaries = std::move(tablet_summaries);
     raw_info->table_summaries = std::move(table_summaries);
-
     return Status::OK();
   }
 
   // Information on the specified location only: filter out non-relevant info.
   const auto& location_str = *location;
-
   unordered_set<string> ts_ids_at_location;
   for (const auto& summary : tserver_summaries) {
     if (summary.ts_location == location_str) {
-      raw_info->tserver_summaries.push_back(summary);
+      raw_info->tserver_summaries.emplace_back(summary);
       InsertOrDie(&ts_ids_at_location, summary.uuid);
     }
   }
-
   unordered_set<string> table_ids_at_location;
   for (const auto& summary : tablet_summaries) {
     const auto& replicas = summary.replicas;
@@ -630,22 +607,20 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
     replicas_at_location.reserve(replicas.size());
     for (const auto& replica : replicas) {
       if (ContainsKey(ts_ids_at_location, replica.ts_uuid)) {
-        replicas_at_location.push_back(replica);
+        replicas_at_location.emplace_back(replica);
       }
     }
     if (!replicas_at_location.empty()) {
       table_ids_at_location.insert(summary.table_id);
-      raw_info->tablet_summaries.push_back(summary);
+      raw_info->tablet_summaries.emplace_back(summary);
       raw_info->tablet_summaries.back().replicas = std::move(replicas_at_location);
     }
   }
-
   for (const auto& summary : table_summaries) {
     if (ContainsKey(table_ids_at_location, summary.id)) {
-      raw_info->table_summaries.push_back(summary);
+      raw_info->table_summaries.emplace_back(summary);
     }
   }
-
   return Status::OK();
 }
 
@@ -658,18 +633,17 @@ Status AutoRebalancerTask::CheckReplicaMovesCompleted(
   for (int i = 0; i < replica_moves->size(); ++i) {
     const rebalance::Rebalancer::ReplicaMove& move = (*replica_moves)[i];
 
-    // Check if there was an error in checking move completion.
-    // If so, moves are erased from 'replica_moves' other than this problematic one.
+    // Check if there was an error in checking move completion. If so, remove
+    // the problematic one from 'replica_moves'.
     Status s = CheckMoveCompleted(move, &move_is_complete);
     if (!s.ok()) {
       replica_moves->erase(replica_moves->begin() + i);
       LOG(WARNING) << Substitute("Could not move replica: $0", s.ToString());
       return s;
     }
-
-    // If move was completed, remove it from 'replica_moves'.
+    // If the move was completed, remove it from 'replica_moves'.
     if (move_is_complete) {
-      indexes_to_remove.push_back(i);
+      indexes_to_remove.emplace_back(i);
     }
   }
 
@@ -681,8 +655,9 @@ Status AutoRebalancerTask::CheckReplicaMovesCompleted(
   return Status::OK();
 }
 
-// TODO(hannah.nguyen): Retrieve consensus state information from the CatalogManager instead.
-// Currently, this implementation mirrors CheckCompleteMove() in tools/tool_replica_util.
+// TODO(hannah.nguyen): Retrieve consensus state information from the
+// CatalogManager instead. The current implementation mirrors
+// CheckCompleteMove() in tools/tool_replica_util.cc.
 Status AutoRebalancerTask::CheckMoveCompleted(
     const rebalance::Rebalancer::ReplicaMove& replica_move,
     bool* is_complete) {
@@ -739,8 +714,10 @@ Status AutoRebalancerTask::CheckMoveCompleted(
   // Failure case: newly added replica is no longer in the config.
   if (!to_ts_uuid.empty() && !to_ts_uuid_in_config) {
     return Status::Incomplete(Substitute(
-        "tablet $0, TS $1 -> TS $2 move failed, target replica disappeared",
-        tablet_uuid, from_ts_uuid, to_ts_uuid));
+        "tablet $0, TS $1 -> TS $2 move failed, destination replica "
+        "disappeared from tablet's Raft config: $3",
+        tablet_uuid, from_ts_uuid, to_ts_uuid,
+        SecureShortDebugString(cstate.committed_config())));
   }
 
   // Check if replica slated for removal is still in the config.
