@@ -21,13 +21,16 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -52,6 +55,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using std::set;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -66,6 +70,8 @@ DECLARE_uint32(auto_rebalancing_max_moves_per_server);
 DECLARE_uint32(auto_rebalancing_wait_for_replica_moves_seconds);
 
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
+METRIC_DECLARE_counter(tablet_copy_bytes_fetched);
+METRIC_DECLARE_counter(tablet_copy_bytes_sent);
 
 namespace {
 
@@ -161,8 +167,7 @@ class AutoRebalancerTest : public KuduTest {
   void CheckNoMovesScheduled() {
     int leader_idx;
     ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-    auto initial_loop_iterations = NumLoopIterations(leader_idx);
-
+    const auto initial_loop_iterations = NumLoopIterations(leader_idx);
     ASSERT_EVENTUALLY([&] {
       ASSERT_LT(initial_loop_iterations + 3, NumLoopIterations(leader_idx));
       ASSERT_EQ(0, NumMovesScheduled(leader_idx));
@@ -172,12 +177,43 @@ class AutoRebalancerTest : public KuduTest {
   void CheckSomeMovesScheduled() {
     int leader_idx;
     ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-    auto initial_loop_iterations = NumLoopIterations(leader_idx);
-
+    const auto initial_loop_iterations = NumLoopIterations(leader_idx);
     ASSERT_EVENTUALLY([&] {
       ASSERT_LT(initial_loop_iterations, NumLoopIterations(leader_idx));
       ASSERT_LT(0, NumMovesScheduled(leader_idx));
     });
+  }
+
+  // Maps from tserver UUID to the bytes sent and fetched by each tserver as a
+  // part of tablet copying.
+  typedef unordered_map<string, int> MetricByUuid;
+  MetricByUuid GetCountersByUuid(CounterPrototype* prototype) const {
+    MetricByUuid metric_by_uuid;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      const auto& ts = cluster_->mini_tablet_server(i);
+      scoped_refptr<Counter> metric =
+          prototype->Instantiate(ts->server()->metric_entity());
+      EmplaceOrDie(&metric_by_uuid, ts->uuid(), metric->value());
+    }
+    return metric_by_uuid;
+  }
+  MetricByUuid GetBytesSentByTServer() const {
+    return GetCountersByUuid(&METRIC_tablet_copy_bytes_sent);
+  }
+  MetricByUuid GetBytesFetchedByTServer() const {
+    return GetCountersByUuid(&METRIC_tablet_copy_bytes_fetched);
+  }
+
+  // Returns an aggregate of the counts in 'bytes_by_uuid' for tablet servers
+  // with indices in the range ['start_ts_idx', 'end_ts_idx').
+  int AggregateMetricCounts(const MetricByUuid& bytes_by_uuid,
+                            int start_ts_idx, int end_ts_idx) {
+    int ret = 0;
+    for (int i = start_ts_idx; i < end_ts_idx; i++) {
+      const auto& uuid = cluster_->mini_tablet_server(i)->uuid();
+      ret += FindOrDie(bytes_by_uuid, uuid);
+    }
+    return ret;
   }
 
   int NumLoopIterations(int master_idx) {
@@ -278,18 +314,36 @@ TEST_F(AutoRebalancerTest, NextLeaderResumesAutoRebalancing) {
 // Bring up another tserver, and verify that moves are scheduled,
 // since the cluster is no longer balanced.
 TEST_F(AutoRebalancerTest, MovesScheduledIfAddTserver) {
-  const int kNumTservers = 3;
+  const int kNumTServers = 3;
   const int kNumTablets = 2;
-  cluster_opts_.num_tablet_servers = kNumTservers;
+  cluster_opts_.num_tablet_servers = kNumTServers;
   ASSERT_OK(CreateAndStartCluster());
   NO_FATALS(CheckAutoRebalancerStarted());
 
   SetupWorkLoad(kNumTablets, /*num_replicas*/3);
 
   NO_FATALS(CheckNoMovesScheduled());
+  // Take a snapshot of the number of copy sources started on the original
+  // tablet servers.
+  const int initial_bytes_sent_in_orig_tservers =
+      AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumTServers);
 
+  // Add a tablet server and verify that the master schedules some moves, and
+  // the tablet servers copy bytes as appropriate.
   ASSERT_OK(cluster_->AddTabletServer());
   NO_FATALS(CheckSomeMovesScheduled());
+  ASSERT_EVENTUALLY([&] {
+    int bytes_sent_in_orig_tservers =
+        AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumTServers);
+    ASSERT_GT(bytes_sent_in_orig_tservers, initial_bytes_sent_in_orig_tservers);
+  });
+  // Our new tablet servers should start fetching data as well.
+  ASSERT_EVENTUALLY([&] {
+    int bytes_fetched_in_new_tservers =
+        AggregateMetricCounts(GetBytesFetchedByTServer(), kNumTServers,
+                              kNumTServers + 1);
+    ASSERT_GT(bytes_fetched_in_new_tservers, 0);
+  });
 }
 
 // A cluster with no tservers is balanced.
@@ -392,27 +446,49 @@ TEST_F(AutoRebalancerTest, TestMaxMovesPerServer) {
 
   SetupWorkLoad(kNumTablets, /*num_replicas*/3);
   workload_->Start();
-  ASSERT_EVENTUALLY([&]() {
-      ASSERT_LE(1000, workload_->rows_inserted());
-  });
+  while (workload_->rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
   workload_->StopAndJoin();
+
+  // Take a snapshot of the number of copy sources started on the original
+  // tablet servers.
+  const int initial_bytes_sent_in_orig_tservers =
+      AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumOrigTservers);
 
   // Bring up additional tservers, to trigger tablet replica copying.
   for (int i = 0; i < kNumAdditionalTservers; ++i) {
     ASSERT_OK(cluster_->AddTabletServer());
   }
+
+  // At some point we should start scheduling moves and see some copy source
+  // sessions start on the original tablet servers.
   NO_FATALS(CheckSomeMovesScheduled());
+  ASSERT_EVENTUALLY([&] {
+    int bytes_sent_in_orig_tservers =
+        AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumOrigTservers);
+    ASSERT_GT(bytes_sent_in_orig_tservers, initial_bytes_sent_in_orig_tservers);
+  });
+  // Our new tablet servers should start fetching data as well.
+  ASSERT_EVENTUALLY([&] {
+    int bytes_fetched_in_new_tservers =
+        AggregateMetricCounts(GetBytesFetchedByTServer(), kNumOrigTservers,
+                              kNumOrigTservers + kNumAdditionalTservers);
+    ASSERT_GT(bytes_fetched_in_new_tservers, 0);
+  });
 
   // Check metric 'tablet_copy_open_client_sessions', which must be
   // less than the auto_rebalancing_max_moves_per_server, for each tserver.
-  for (int i = 0; i < kNumOrigTservers + kNumAdditionalTservers; ++i) {
-    auto metric = cluster_->mini_tablet_server(i)->server()->metric_entity();
+  MetricByUuid open_copy_clients_by_uuid;
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    const auto& ts = cluster_->mini_tablet_server(i);
     int open_client_sessions = METRIC_tablet_copy_open_client_sessions.
-        Instantiate(metric, 0)->value();
-
-    // Check that the total number of sessions does not excceed the flag.
-    ASSERT_GE(FLAGS_auto_rebalancing_max_moves_per_server, open_client_sessions);
+        Instantiate(ts->server()->metric_entity(), 0)->value();
+    EmplaceOrDie(&open_copy_clients_by_uuid, ts->uuid(), open_client_sessions);
   }
+  // The average number of moves per tablet server should not exceed that specified.
+  ASSERT_GE(FLAGS_auto_rebalancing_max_moves_per_server * cluster_->num_tablet_servers(),
+      AggregateMetricCounts(open_copy_clients_by_uuid, 0, cluster_->num_tablet_servers()));
 }
 
 // Attempt rebalancing a cluster with unstable Raft configurations.
@@ -420,10 +496,10 @@ TEST_F(AutoRebalancerTest, AutoRebalancingUnstableCluster) {
   // Set a low Raft heartbeat.
   FLAGS_raft_heartbeat_interval_ms = kLowRaftTimeout;
 
-  const int kNumTservers = 3;
+  const int kNumTServers = 3;
   const int kNumTablets = 3;
 
-  cluster_opts_.num_tablet_servers = kNumTservers;
+  cluster_opts_.num_tablet_servers = kNumTServers;
   ASSERT_OK(CreateAndStartCluster());
   NO_FATALS(CheckAutoRebalancerStarted());
 
@@ -433,11 +509,28 @@ TEST_F(AutoRebalancerTest, AutoRebalancingUnstableCluster) {
   // frequent leader re-elections.
   FLAGS_consensus_inject_latency_ms_in_notifications = kLowRaftTimeout;
 
-  // Bring up an additional tserver, to trigger rebalancing.
+  // Take a snapshot of the number of copy sources started on the original
+  // tablet servers.
+  const int initial_bytes_sent_in_orig_tservers =
+      AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumTServers);
+
+  // Bring up an additional tserver to trigger rebalancing.
   // Moves should be scheduled, even if they cannot be completed because of
   // the frequent leadership changes.
   ASSERT_OK(cluster_->AddTabletServer());
   NO_FATALS(CheckSomeMovesScheduled());
+  // At some point, the move should succeed though.
+  ASSERT_EVENTUALLY([&] {
+    int bytes_sent_in_orig_tservers =
+        AggregateMetricCounts(GetBytesSentByTServer(), 0, kNumTServers);
+    ASSERT_GT(bytes_sent_in_orig_tservers, initial_bytes_sent_in_orig_tservers);
+  });
+  ASSERT_EVENTUALLY([&] {
+    int bytes_fetched_in_new_tservers =
+        AggregateMetricCounts(GetBytesFetchedByTServer(), kNumTServers,
+                              cluster_->num_tablet_servers());
+    ASSERT_GT(bytes_fetched_in_new_tservers, 0);
+  });
 }
 
 // A cluster that cannot become healthy and meet the replication factor
@@ -476,12 +569,12 @@ TEST_F(AutoRebalancerTest, NoRebalancingIfReplicasRecovering) {
 
   SetupWorkLoad(kNumTablets, /*num_replicas*/3);
 
-  // Add another tserver; immediately take down one of the original tservers.
-  ASSERT_OK(cluster_->AddTabletServer());
+  // Kill a tablet server so when we add a tablet server, auto-rebalancing will
+  // do nothing. Also wait a bit until the tserver is deemed unresponsive so
+  // the auto-rebalancer will not attempt to rebalance anything.
   NO_FATALS(cluster_->mini_tablet_server(0)->Shutdown());
-  // Wait for recovery re-replication to start.
-  SleepFor(MonoDelta::FromSeconds(
-      FLAGS_follower_unavailable_considered_failed_sec));
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_tserver_unresponsive_timeout_ms));
+  ASSERT_OK(cluster_->AddTabletServer());
 
   // No rebalancing should occur while there are under-replicated replicas.
   NO_FATALS(CheckNoMovesScheduled());
@@ -521,8 +614,11 @@ TEST_F(AutoRebalancerTest, TestHandlingFailedTservers) {
     // tservers to the new one.
     NO_FATALS(CheckSomeMovesScheduled());
   }
-  ASSERT_STRINGS_ANY_MATCH(pre_capture_logs.logged_msgs(),
-                           "scheduled replica move failed to complete: Network error");
+  {
+    SCOPED_TRACE(JoinStrings(pre_capture_logs.logged_msgs(), "\n"));
+    ASSERT_STRINGS_ANY_MATCH(pre_capture_logs.logged_msgs(),
+        "scheduled replica move failed to complete|failed to send replica move request");
+  }
 
   // Wait for the TSManager to realize that the original tservers are unavailable.
   FLAGS_tserver_unresponsive_timeout_ms = 5 * 1000;
@@ -546,5 +642,6 @@ TEST_F(AutoRebalancerTest, TestHandlingFailedTservers) {
     ASSERT_STR_NOT_CONTAINS(str, "scheduled replica move failed to complete: Network error");
   }
 }
+
 } // namespace master
 } // namespace kudu
