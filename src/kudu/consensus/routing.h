@@ -160,6 +160,11 @@ class RoutingTable {
 //
 class DurableRoutingTable {
  public:
+  enum class LoadOptions {
+    kDoNotCreate,
+    kCreateEmptyIfDoesNotExist
+  };
+
   // Initialize for the first time and write to disk.
   static Status Create(FsManager* fs_manager,
                        std::string tablet_id,
@@ -171,6 +176,7 @@ class DurableRoutingTable {
   static Status Load(FsManager* fs_manager,
                      std::string tablet_id,
                      RaftConfigPB raft_config,
+                     LoadOptions opts,
                      std::shared_ptr<DurableRoutingTable>* drt);
 
   // Delete the on-disk data for the DRT.

@@ -274,18 +274,24 @@ Status DurableRoutingTable::Create(FsManager* fs_manager,
 Status DurableRoutingTable::Load(FsManager* fs_manager,
                                  std::string tablet_id,
                                  RaftConfigPB raft_config,
+                                 LoadOptions opts,
                                  std::shared_ptr<DurableRoutingTable>* drt) {
   string path = fs_manager->GetProxyMetadataPath(tablet_id);
 
   ProxyTopologyPB proxy_topology;
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
-                                                 path,
-                                                 &proxy_topology));
+  Status s = pb_util::ReadPBContainerFromPath(fs_manager->env(),
+                                              path,
+                                              &proxy_topology);
+  if (PREDICT_FALSE(s.IsNotFound() && opts == LoadOptions::kCreateEmptyIfDoesNotExist)) {
+    s = Create(fs_manager, tablet_id, raft_config, {}, drt);
+  }
+  RETURN_NOT_OK(s);
 
-  *drt = std::shared_ptr<DurableRoutingTable>(new DurableRoutingTable(fs_manager,
-                                          std::move(tablet_id),
-                                          std::move(proxy_topology),
-                                          std::move(raft_config)));
+  *drt = std::shared_ptr<DurableRoutingTable>(
+      new DurableRoutingTable(fs_manager,
+                              std::move(tablet_id),
+                              std::move(proxy_topology),
+                              std::move(raft_config)));
   return Status::OK();
 }
 

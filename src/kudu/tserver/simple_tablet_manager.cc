@@ -191,6 +191,10 @@ Status TSTabletManager::CreateNew(FsManager *fs_manager) {
 
   RETURN_NOT_OK_PREPEND(cmeta_manager_->CreateCMeta(kSysCatalogTabletId, config, consensus::kMinimumTerm),
                         "Unable to persist consensus metadata for tablet " + kSysCatalogTabletId);
+  // TODO(mpercy): Provide a way to specify the proxy graph at tablet creation time.
+  // For now, we initialize with an empty proxy graph.
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->CreateDRT(kSysCatalogTabletId, config, {}),
+                        "Unable to create new durable routing table for tablet " + kSysCatalogTabletId);
 
   return SetupRaft();
 }

@@ -155,6 +155,7 @@ Status ConsensusMetadataManager::LoadDRT(const std::string& tablet_id,
   RETURN_NOT_OK_PREPEND(DurableRoutingTable::Load(fs_manager_,
                                                   tablet_id,
                                                   std::move(raft_config),
+                                                  DurableRoutingTable::LoadOptions::kCreateEmptyIfDoesNotExist,
                                                   &drt),
                         Substitute("Unable to load durable routing table for tablet $0",
                                    tablet_id));

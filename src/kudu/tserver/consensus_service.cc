@@ -406,7 +406,7 @@ void ConsensusServiceImpl::ChangeProxyTopology(const consensus::ChangeProxyTopol
     return;
   }
 
-  HandleResponse(req, resp, context, consensus->ChangeProxyTopology(*req));
+  HandleResponse(req, resp, context, consensus->ChangeProxyTopology(req->new_config()));
 }
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
