@@ -89,6 +89,7 @@ DEFINE_bool(synchronous_transfer_leadership, false,
             "caught up and initiates transfer leadership, short circuiting async "
             "wait for next response");
 TAG_FLAG(synchronous_transfer_leadership, advanced);
+DECLARE_bool(enable_flexi_raft);
 
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
@@ -883,6 +884,126 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
+void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
+    int64_t* watermark, const OpId& replicated_before,
+    const OpId& replicated_after,
+    const std::map<std::string, int>& data_commit_quorum,
+    ReplicaTypes replica_types, const TrackedPeer* who_caused) {
+  CHECK(watermark);
+  CHECK(who_caused);
+
+  if (VLOG_IS_ON(2)) {
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating majority_replicated watermark: "
+        << "Peer (" << who_caused->ToString() << ") changed from "
+        << replicated_before << " to " << replicated_after << ". "
+                                 << "Current value: " << *watermark;
+  }
+
+  // For each region, we compute a vector of indexes that were replicated.
+  // It might look like the following example:
+  // prn: <4,4,5,7>
+  // frc: <2,3,4>
+  // lla: <5,5>
+  // This example suggests that we received non-erroneous responses from 4
+  // replicas in prn, 3 in frc and 2 in lla. Two replicas in prn have received
+  // entries until index 4, one has received until 5 and one until 7. Similarly,
+  // 2 replicas in lla have received entries until index 5.
+  std::map<std::string, vector<int64_t> > watermarks_by_region;
+  for (const PeersMap::value_type& peer : peers_map_) {
+    if (replica_types == VOTER_REPLICAS &&
+        peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    // Refer to the comment in AdvanceQueueWatermark method for why only
+    // successful last exchanges are considered.
+    if (peer.second->last_exchange_status == PeerStatus::OK) {
+      const string& peer_region = peer.second->peer_pb.attrs().region();
+      std::vector<int64_t>& regional_watermarks = LookupOrInsert(
+          &watermarks_by_region, peer_region, std::vector<int64_t>());
+      regional_watermarks.push_back(peer.second->last_received.index());
+    }
+  }
+
+  // Vector of maximum indexes which satisfy requirements in each region
+  // that features in the data commit quorum. For example, if the data commit
+  // requirement specifies certain number of votes from prn and frc, this vector
+  // will have the maximum indexes corresponding to prn and frc that are
+  // considered replicated by a set of servers in those respective regions such
+  // that the cardinality of those sets is greater than or equal to the number
+  // of votes required.
+  std::vector<int64_t> commit_index_regional_level;
+  for (const std::pair<std::string, int>& regional_commit_requirement :
+      data_commit_quorum) {
+    std::map<std::string, std::vector<int64_t> >::iterator it =
+        watermarks_by_region.find(regional_commit_requirement.first);
+
+    // Return without advancing the commit watermark, if any region specified in
+    // the data commit quorum is not satisfied, ie. not enough number of
+    // replicas have responded from that region.
+    if (it == watermarks_by_region.end() ||
+        it->second.size() < regional_commit_requirement.second) {
+      VLOG_WITH_PREFIX_UNLOCKED(3)
+          << "Watermarks size: "
+          << ((it == watermarks_by_region.end()) ? 0 : it->second.size())
+          << ", Num peers required: " << regional_commit_requirement.second
+          << ", Region: " << regional_commit_requirement.first;
+      return;
+    }
+    std::sort(it->second.begin(), it->second.end());
+
+    // Let us assume the responses mentioned in the previous comment and let the
+    // data commit requirement be the following: prn = 3, frc = 2
+    // The next line would pick index 4 for prn, index 3 for frc and ignore lla.
+    // commit_index_regional_level = <4, 3>
+    commit_index_regional_level.push_back(
+        it->second[it->second.size() - regional_commit_requirement.second]);
+  }
+
+  // Since `data_commit_requirement` corresponds to a conjunction (logical AND)
+  // requirement, we compute the minimum index which is considered replicated
+  // in all regions that feature in the data commit quorum requirement.
+  // Following the previous example, for any index to be considered committed,
+  // we need 3 replicas in prn to ack it *and* 2 replicas in frc.
+  // Therefore, we choose the minimum from commit_index_regional_level. We can't
+  // advance the commit index to 4 because only 1 replica in frc has
+  // acknowledged that it has received it so far whereas we need 2.
+  // Therefore, the commit index will be 3.
+  std::vector<int64_t>::iterator new_watermark_it = std::min_element(
+      commit_index_regional_level.begin(), commit_index_regional_level.end());
+  int64_t old_watermark = *watermark;
+  *watermark = *new_watermark_it;
+
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Updated majority_replicated watermark "
+      << "from " << old_watermark << " to " << (*new_watermark_it);
+  if (VLOG_IS_ON(3)) {
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Peers: ";
+    for (const PeersMap::value_type& peer : peers_map_) {
+      VLOG_WITH_PREFIX_UNLOCKED(3) << "Peer: " << peer.second->ToString();
+    }
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Data commit quorum: ";
+    for (const std::pair<std::string, int>& regional_commit_requirement :
+        data_commit_quorum) {
+      VLOG_WITH_PREFIX_UNLOCKED(3)
+          << "Region: " << regional_commit_requirement.first << ", "
+          << "Count: " << regional_commit_requirement.second;
+    }
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Sorted watermarks:";
+    for (const std::pair<std::string, vector<int64_t> >& region_watermarks :
+        watermarks_by_region) {
+      VLOG_WITH_PREFIX_UNLOCKED(3) << "Region: " << region_watermarks.first;
+      for (const int64_t watermark : region_watermarks.second) {
+        VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << watermark;
+      }
+    }
+  }
+}
+
+std::map<std::string, int> PeerMessageQueue::GetDataCommitQuorum() {
+  std::map<std::string, int> data_commit_quorum;
+  // TODO(ritwikyadav) : Populate quorum from cmeta_
+  return data_commit_quorum;
+}
+
 void PeerMessageQueue::BeginWatchForSuccessor(
     const boost::optional<string>& successor_uuid,
     const std::function<bool(const kudu::consensus::RaftPeerPB&)>& filter_fn) {
@@ -1266,13 +1387,23 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     // the same watermarks and make the same advancement, so this is safe.
     if (mode_copy == LEADER) {
       // Advance the majority replicated index.
-      AdvanceQueueWatermark("majority_replicated",
-                            &queue_state_.majority_replicated_index,
-                            /*replicated_before=*/ prev_peer_state.last_received,
-                            /*replicated_after=*/ peer->last_received,
-                            /*num_peers_required=*/ queue_state_.majority_size_,
-                            VOTER_REPLICAS,
-                            peer);
+      if (!FLAGS_enable_flexi_raft) {
+        AdvanceQueueWatermark("majority_replicated",
+                              &queue_state_.majority_replicated_index,
+                              /*replicated_before=*/ prev_peer_state.last_received,
+                              /*replicated_after=*/ peer->last_received,
+                              /*num_peers_required=*/ queue_state_.majority_size_,
+                              VOTER_REPLICAS,
+                              peer);
+      } else {
+        AdvanceMajorityReplicatedWatermarkFlexiRaft(
+            &queue_state_.majority_replicated_index,
+            /*replicated_before=*/ prev_peer_state.last_received,
+            /*replicated_after=*/ peer->last_received,
+            /*data_commit_quorum=*/ GetDataCommitQuorum(),
+            VOTER_REPLICAS,
+            peer);
+      }
 
       // Advance the all replicated index.
       AdvanceQueueWatermark("all_replicated",

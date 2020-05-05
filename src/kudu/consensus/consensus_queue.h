@@ -564,6 +564,21 @@ class PeerMessageQueue {
                              ReplicaTypes replica_types,
                              const TrackedPeer* who_caused);
 
+  // Function to compute the commit index in flexi raft. Same as
+  // `AdvanceQueueWatermark` except that its only used for commit index
+  // advancement and takes in `data_commit_quorum` as a parameter which is a
+  // mapping from region to number of votes required in that region for a
+  // transaction to be considered as committed.
+  // Please note: `queue_lock_` is held as well as `lock_` from the associated
+  // RaftConsensus instance while this function gets called.
+  void AdvanceMajorityReplicatedWatermarkFlexiRaft(
+      int64_t* watermark, const OpId& replicated_before,
+      const OpId& replicated_after,
+      const std::map<std::string, int>& data_commit_quorum,
+      ReplicaTypes replica_types, const TrackedPeer* who_caused);
+
+  std::map<std::string, int> GetDataCommitQuorum();
+
   std::vector<PeerMessageQueueObserver*> observers_;
 
   // The pool token which executes observer notifications.
