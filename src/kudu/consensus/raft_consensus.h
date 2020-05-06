@@ -998,6 +998,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // restarts
   bool new_leader_detected_failsafe_;
 
+  // Proxy metrics.
+  scoped_refptr<Counter> raft_proxy_num_requests_received_;
+  scoped_refptr<Counter> raft_proxy_num_requests_success_;
+  scoped_refptr<Counter> raft_proxy_num_requests_unknown_dest_;
+  scoped_refptr<Counter> raft_proxy_num_requests_log_read_timeout_;
+
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };
 

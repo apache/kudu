@@ -205,6 +205,30 @@ METRIC_DEFINE_gauge_int64(server, time_since_last_leader_heartbeat,
                           "The time elapsed since the last heartbeat from the leader "
                           "in milliseconds. This metric is identically zero on a leader replica.");
 
+// Proxying metrics.
+METRIC_DEFINE_counter(server, raft_proxy_num_requests_received,
+                      "Number of RPC requests received for proxying to another node",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests (not events) received for proxying to another node.");
+METRIC_DEFINE_counter(server, raft_proxy_num_requests_success,
+                      "Number of RPC requests successfully proxied",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests (not events) delivered to the next hop without any "
+                      "problems. This may include requests where only a subset of events were "
+                      "delivered.");
+METRIC_DEFINE_counter(server, raft_proxy_num_requests_unknown_dest,
+                      "Number of RPC requests failed due to unknown destination",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests received that could not be "
+                      "delivered because the destination node was unroutable.");
+METRIC_DEFINE_counter(server, raft_proxy_num_requests_log_read_timeout,
+                      "Number of RPC requests degraded to heartbeats due to a log read timeout",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests received that were intended to be "
+                      "reconstituted and delivered to their ultimate "
+                      "destination, but due to a log read timeout, were "
+                      "gracefully degraded to a heartbeat. Use "
+                      "--raft_log_cache_proxy_wait_time_ms to control the log read timeout.");
 
 using boost::optional;
 using google::protobuf::util::MessageDifferencer;
@@ -301,6 +325,15 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   METRIC_time_since_last_leader_heartbeat.InstantiateFunctionGauge(
     metric_entity, Bind(&RaftConsensus::GetMillisSinceLastLeaderHeartbeat, Unretained(this)))
     ->AutoDetach(&metric_detacher_);
+
+  raft_proxy_num_requests_received_ =
+      metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_received);
+  raft_proxy_num_requests_success_ =
+      metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_success);
+  raft_proxy_num_requests_unknown_dest_ =
+      metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_unknown_dest);
+  raft_proxy_num_requests_log_read_timeout_ =
+      metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_log_read_timeout);
 
   // A single Raft thread pool token is shared between RaftConsensus and
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
@@ -3380,6 +3413,7 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
                                        rpc::RpcContext* context) {
   MonoDelta wal_wait_timeout = MonoDelta::FromMilliseconds(FLAGS_raft_log_cache_proxy_wait_time_ms);
   MonoTime wal_wait_deadline = MonoTime::Now() + wal_wait_timeout;
+  raft_proxy_num_requests_received_->Increment();
 
   // TODO(mpercy): Remove this config lookup when refactoring DRT to return a
   // RaftPeerPB, which will prevent a validation race.
@@ -3453,9 +3487,14 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
 
   string next_uuid = request->dest_uuid();
   if (FLAGS_raft_enable_multi_hop_proxy_routing) {
-    RET_RESPOND_ERROR_NOT_OK(routing_table_->NextHop(peer_uuid(), request->dest_uuid(), &next_uuid));
+    Status s = routing_table_->NextHop(peer_uuid(), request->dest_uuid(), &next_uuid);
+    if (PREDICT_FALSE(!s.ok())) {
+      raft_proxy_num_requests_unknown_dest_->Increment();
+    }
+    RET_RESPOND_ERROR_NOT_OK(s);
   }
 
+  bool degraded_to_heartbeat = false;
   if (request->dest_uuid() != next_uuid) {
     // Multi-hop proxy request.
     downstream_request.set_proxy_dest_uuid(next_uuid);
@@ -3516,25 +3555,30 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
                                                               &preceding_id));
       }
 
+      // Exit retry loop if we managed to get what we wanted.
       if (messages.size() >= request->ops_size()) {
         break;
       }
 
+      // Exit retry loop if we time out.
       if (MonoTime::Now() > wal_wait_deadline) {
-        // TODO(mpercy): Increment a counter for how often we time out.
         break;
       }
 
-      // Sleep and retry.
+      // Else, sleep and retry.
       SleepFor(MonoDelta::FromMilliseconds(5));
 
     } while (true);
 
     if (request->ops_size() > 0 && messages.size() == 0) {
-      // We got nothing from the cache, go back into hiding until the expected
-      // timeout when we turn into a heartbeat. TODO(mpercy): Increment a
-      // counter for how often we degrade to a heartbeat.
-      LOG_WITH_PREFIX(WARNING) << "no relevant events found in the log cache";
+      // We timed out and got nothing from the log cache.
+      Status s = Status::TimedOut(
+          Substitute("unable to reconstitute any of $0 proxied events starting at OpId $1: "
+                     "degrading to heartbeat",
+                     request->ops_size(), OpIdToString(request->ops(0).id())));
+      LOG_WITH_PREFIX(WARNING) << s.ToString(); // TODO(mpercy): Throttle this log message.
+      raft_proxy_num_requests_log_read_timeout_->Increment();
+      degraded_to_heartbeat = true;
     }
 
     // Reconstitute the proxied ops. We silently tolerate proxying a subset of
@@ -3609,6 +3653,10 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
   }
   if (downstream_response.has_error()) {
     *response->mutable_error() = downstream_response.error();
+  }
+
+  if (!degraded_to_heartbeat) {
+    raft_proxy_num_requests_success_->Increment();
   }
 
   context->RespondSuccess();
