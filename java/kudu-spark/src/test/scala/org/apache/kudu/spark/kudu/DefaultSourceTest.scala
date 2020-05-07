@@ -93,9 +93,9 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       new CreateTableOptions()
         .setRangePartitionColumns(List("key").asJava)
         .setNumReplicas(1))
-    val insertsBefore = kuduContext.numInserts.value
+    val insertsBefore = kuduContext.numInserts.value.get(tableName)
     kuduContext.insertRows(df, tableName)
-    assertEquals(insertsBefore + df.count(), kuduContext.numInserts.value)
+    assertEquals(insertsBefore + df.count(), kuduContext.numInserts.value.get(tableName))
 
     // Now use new options to refer to the new table name.
     val newOptions: Map[String, String] =
@@ -133,9 +133,9 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         .addRangePartition(lower, upper)
         .setNumReplicas(1)
     )
-    val insertsBefore = kuduContext.numInserts.value
+    val insertsBefore = kuduContext.numInserts.value.get(tableName)
     kuduContext.insertRows(df, tableName)
-    assertEquals(insertsBefore + df.count(), kuduContext.numInserts.value)
+    assertEquals(insertsBefore + df.count(), kuduContext.numInserts.value.get(tableName))
 
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] =
@@ -152,14 +152,15 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertion() {
-    val insertsBefore = kuduContext.numInserts.value
+    val insertsBefore = kuduContext.numInserts.value.get(tableName)
+    println(s"insertsBefore: $insertsBefore")
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val changedDF = df
       .limit(1)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
-    assertEquals(insertsBefore + changedDF.count(), kuduContext.numInserts.value)
+    assertEquals(insertsBefore + changedDF.count(), kuduContext.numInserts.value.get(tableName))
 
     val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collected = newDF.filter("key = 100").collect()
@@ -170,14 +171,14 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertionMultiple() {
-    val insertsBefore = kuduContext.numInserts.value
+    val insertsBefore = kuduContext.numInserts.value.get(tableName)
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val changedDF = df
       .limit(2)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
-    assertEquals(insertsBefore + changedDF.count(), kuduContext.numInserts.value)
+    assertEquals(insertsBefore + changedDF.count(), kuduContext.numInserts.value.get(tableName))
 
     val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collected = newDF.filter("key = 100").collect()
@@ -318,13 +319,13 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.upsertRows(upsertDF, tableName)
 
     // Change the key and insert.
-    val upsertsBefore = kuduContext.numUpserts.value
+    val upsertsBefore = kuduContext.numUpserts.value.get(tableName)
     val insertDF = df
       .limit(1)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("def"))
     kuduContext.upsertRows(insertDF, tableName)
-    assertEquals(upsertsBefore + insertDF.count(), kuduContext.numUpserts.value)
+    assertEquals(upsertsBefore + insertDF.count(), kuduContext.numUpserts.value.get(tableName))
 
     // Read the data back.
     val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
@@ -334,12 +335,46 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
 
     // Restore the original state of the table, and test the numUpdates metric.
-    val updatesBefore = kuduContext.numUpdates.value
+    val updatesBefore = kuduContext.numUpdates.value.get(tableName)
     val updateDF = baseDF.filter("key = 0").withColumn("c2_s", lit("0"))
     val updatesApplied = updateDF.count()
     kuduContext.updateRows(updateDF, tableName)
-    assertEquals(updatesBefore + updatesApplied, kuduContext.numUpdates.value)
+    assertEquals(updatesBefore + updatesApplied, kuduContext.numUpdates.value.get(tableName))
     deleteRow(100)
+  }
+
+  @Test
+  def testMultipleTableOperationCounts() {
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+
+    val tableUpsertsBefore = kuduContext.numUpserts.value.get(tableName)
+    val simpleTableUpsertsBefore = kuduContext.numUpserts.value.get(simpleTableName)
+
+    // Change the key and insert.
+    val insertDF = df
+      .limit(1)
+      .withColumn("key", df("key").plus(100))
+      .withColumn("c2_s", lit("def"))
+    kuduContext.upsertRows(insertDF, tableName)
+
+    // insert new row to simple table
+    val insertSimpleDF = sqlContext.createDataFrame(Seq((0, "foo"))).toDF("key", "val")
+    kuduContext.upsertRows(insertSimpleDF, simpleTableName)
+
+    assertEquals(tableUpsertsBefore + insertDF.count(), kuduContext.numUpserts.value.get(tableName))
+    assertEquals(
+      simpleTableUpsertsBefore + insertSimpleDF.count(),
+      kuduContext.numUpserts.value.get(simpleTableName))
+
+    // Restore the original state of the tables, and test the numDeletes metric.
+    val deletesBefore = kuduContext.numDeletes.value.get(tableName)
+    val simpleDeletesBefore = kuduContext.numDeletes.value.get(simpleTableName)
+    kuduContext.deleteRows(insertDF, tableName)
+    kuduContext.deleteRows(insertSimpleDF, simpleTableName)
+    assertEquals(deletesBefore + insertDF.count(), kuduContext.numDeletes.value.get(tableName))
+    assertEquals(
+      simpleDeletesBefore + insertSimpleDF.count(),
+      kuduContext.numDeletes.value.get(simpleTableName))
   }
 
   @Test
@@ -514,10 +549,10 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   def testDeleteRows() {
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val deleteDF = df.filter("key = 0").select("key")
-    val deletesBefore = kuduContext.numDeletes.value
+    val deletesBefore = kuduContext.numDeletes.value.get(tableName)
     val deletesApplied = deleteDF.count()
     kuduContext.deleteRows(deleteDF, tableName)
-    assertEquals(deletesBefore + deletesApplied, kuduContext.numDeletes.value)
+    assertEquals(deletesBefore + deletesApplied, kuduContext.numDeletes.value.get(tableName))
 
     // Read the data back.
     val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
@@ -711,7 +746,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.scanRequestTimeoutMs" -> "66666")
     val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
-    assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(66666))
+    assert(kuduRelation.readOptions.scanRequestTimeoutMs.contains(66666))
   }
 
   @Test

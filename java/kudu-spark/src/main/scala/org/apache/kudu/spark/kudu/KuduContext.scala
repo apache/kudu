@@ -38,7 +38,6 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.AccumulatorV2
 import org.apache.spark.util.CollectionAccumulator
-import org.apache.spark.util.LongAccumulator
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
@@ -75,18 +74,26 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   /**
    * A collection of accumulator metrics describing the usage of a KuduContext.
    */
-  private[kudu] val numInserts: LongAccumulator = sc.longAccumulator("kudu.num_inserts")
-  private[kudu] val numUpserts: LongAccumulator = sc.longAccumulator("kudu.num_upserts")
-  private[kudu] val numUpdates: LongAccumulator = sc.longAccumulator("kudu.num_updates")
-  private[kudu] val numDeletes: LongAccumulator = sc.longAccumulator("kudu.num_deletes")
+  private[kudu] val numInserts: MapAccumulator[String, Long] =
+    new MapAccumulator[String, Long](Math.addExact)
+  private[kudu] val numUpserts: MapAccumulator[String, Long] =
+    new MapAccumulator[String, Long](Math.addExact)
+  private[kudu] val numUpdates: MapAccumulator[String, Long] =
+    new MapAccumulator[String, Long](Math.addExact)
+  private[kudu] val numDeletes: MapAccumulator[String, Long] =
+    new MapAccumulator[String, Long](Math.addExact)
+  sc.register(numInserts, "kudu.num_inserts")
+  sc.register(numUpserts, "kudu.num_upserts")
+  sc.register(numUpdates, "kudu.num_updates")
+  sc.register(numDeletes, "kudu.num_deletes")
 
-  // Increments the appropriate metric given an OperationType and a count.
-  private def addForOperation(count: Long, opType: OperationType): Unit = {
+  // Increments the appropriate metric given an OperationType and a count per table.
+  private def addForOperation(count: Long, opType: OperationType, tableName: String): Unit = {
     opType match {
-      case Insert => numInserts.add(count)
-      case Upsert => numUpserts.add(count)
-      case Update => numUpdates.add(count)
-      case Delete => numDeletes.add(count)
+      case Insert => numInserts.add((tableName, count))
+      case Upsert => numUpserts.add((tableName, count))
+      case Update => numUpdates.add((tableName, count))
+      case Delete => numDeletes.add((tableName, count))
     }
   }
 
@@ -254,7 +261,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
     log.info(s"inserting into table '$tableName'")
     writeRows(data, tableName, Insert, writeOptions)
-    log.info(s"inserted ${numInserts.value} rows into table '$tableName'")
+    log.info(s"inserted ${numInserts.value.get(tableName)} rows into table '$tableName'")
   }
 
   /**
@@ -276,7 +283,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val writeOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
     log.info(s"inserting into table '$tableName'")
     writeRows(data, tableName, Insert, writeOptions)
-    log.info(s"inserted ${numInserts.value} rows into table '$tableName'")
+    log.info(s"inserted ${numInserts.value.get(tableName)} rows into table '$tableName'")
   }
 
   /**
@@ -292,7 +299,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
     log.info(s"upserting into table '$tableName'")
     writeRows(data, tableName, Upsert, writeOptions)
-    log.info(s"upserted ${numUpserts.value} rows into table '$tableName'")
+    log.info(s"upserted ${numUpserts.value.get(tableName)} rows into table '$tableName'")
   }
 
   /**
@@ -308,7 +315,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
     log.info(s"updating rows in table '$tableName'")
     writeRows(data, tableName, Update, writeOptions)
-    log.info(s"updated ${numUpdates.value} rows in table '$tableName'")
+    log.info(s"updated ${numUpdates.value.get(tableName)} rows in table '$tableName'")
   }
 
   /**
@@ -325,7 +332,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
     log.info(s"deleting rows from table '$tableName'")
     writeRows(data, tableName, Delete, writeOptions)
-    log.info(s"deleted ${numDeletes.value} rows from table '$tableName'")
+    log.info(s"deleted ${numDeletes.value.get(tableName)} rows from table '$tableName'")
   }
 
   private[kudu] def writeRows(
@@ -480,7 +487,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       // Update timestampAccumulator with the client's last propagated
       // timestamp on each executor.
       timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
-      addForOperation(numRows, opType)
+      addForOperation(numRows, opType, tableName)
       val elapsedTime = (System.currentTimeMillis() - startTime).toInt
       durationHistogram.add(elapsedTime)
       log.info(s"applied $numRows ${opType}s to table '$tableName' in ${elapsedTime}ms")
