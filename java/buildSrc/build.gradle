@@ -39,7 +39,7 @@ dependencies {
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.5.0"
   compile "com.google.code.gson:gson:2.8.6"
   compile "cz.alenkacz:gradle-scalafmt:1.7.2"
-  compile "com.google.guava:guava:28.2-jre"
+  compile "com.google.guava:guava:29.0-jre"
 }
 
 // Compiler configuration
