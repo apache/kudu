@@ -79,6 +79,7 @@
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/hdr_histogram.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -123,6 +124,8 @@ DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
 DECLARE_string(log_filename);
+
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 
 namespace kudu {
 namespace master {
@@ -1104,6 +1107,25 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
 
   AtomicBool done(false);
 
+  // Using multiple proxies to emulate multiple clients working concurrently,
+  // one proxy per a worker thread below. If using single proxy for all the
+  // threads instead, GetTableSchema() calls issued by the threads below
+  // would be serialized by that single proxy, not providing the required level
+  // of concurrency.
+  vector<unique_ptr<MasterServiceProxy>> proxies;
+  proxies.reserve(kNumTables);
+  for (auto i = 0; i < kNumTables; ++i) {
+    // No more than one reactor is needed since every worker thread below sends
+    // out a single GetTableSchema() request at a time; no other
+    // incoming/outgoing requests are handled by a worked thread.
+    MessengerBuilder bld("Client");
+    bld.set_num_reactors(1);
+    shared_ptr<Messenger> msg;
+    ASSERT_OK(bld.Build(&msg));
+    const auto& addr = mini_master_->bound_rpc_addr();
+    proxies.emplace_back(new MasterServiceProxy(std::move(msg), addr, addr.host()));
+  }
+
   // Start many threads that hammer the master with GetTableSchema() calls
   // for various tables.
   vector<thread> caller_threads;
@@ -1118,7 +1140,7 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
       while (!done.Load()) {
         RpcController controller;
         GetTableSchemaResponsePB resp;
-        CHECK_OK(proxy_->GetTableSchema(req, &resp, &controller));
+        CHECK_OK(proxies[idx]->GetTableSchema(req, &resp, &controller));
         ++call_counters[idx];
         if (resp.has_error()) {
           LOG(WARNING) << "GetTableSchema failed: " << SecureDebugString(resp);
@@ -1141,6 +1163,11 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
   if (errors != 0) {
     FAIL() << Substitute("detected $0 errors", errors);
   }
+
+  const auto& ent = master_->metric_entity();
+  auto hist = METRIC_handler_latency_kudu_master_MasterService_GetTableSchema
+      .Instantiate(ent);
+  hist->histogram()->DumpHumanReadable(&LOG(INFO));
 
   const double total = accumulate(call_counters.begin(), call_counters.end(), 0UL);
   LOG(INFO) << Substitute(
