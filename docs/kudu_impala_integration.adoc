@@ -249,6 +249,7 @@ STORED AS KUDU;
 If you have multiple primary key columns, you can specify partition bounds
 using tuple syntax: `('va',1), ('ab',2)`. The expression must be valid JSON.
 
+[[managed_tables]]
 ==== Impala Databases and Kudu
 
 Every Impala table is contained within a namespace called a _database_. The default
