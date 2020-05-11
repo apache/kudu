@@ -232,6 +232,7 @@ DEFINE_int32(table_locations_ttl_ms, 5 * 60 * 1000, // 5 minutes
              "New range partitions may not be visible to existing client instances "
              "until after waiting for the ttl period.");
 TAG_FLAG(table_locations_ttl_ms, advanced);
+TAG_FLAG(table_locations_ttl_ms, runtime);
 
 DEFINE_bool(catalog_manager_fail_ts_rpcs, false,
             "Whether all master->TS async calls should fail. Only for testing!");
