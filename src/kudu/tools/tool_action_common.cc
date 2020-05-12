@@ -194,6 +194,9 @@ const char* const kDestMasterAddressesArgDesc = "Either comma-separated list of 
 const char* const kTableNameArg = "table_name";
 const char* const kTabletIdArg = "tablet_id";
 const char* const kTabletIdArgDesc = "Tablet Identifier";
+const char* const kTabletIdsCsvArg = "tablet_ids";
+const char* const kTabletIdsCsvArgDesc =
+    "Comma-separated list of Tablet Identifiers";
 
 namespace {
 

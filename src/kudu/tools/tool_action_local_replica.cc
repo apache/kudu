@@ -61,6 +61,7 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -371,11 +372,9 @@ Status CopyFromRemote(const RunnerContext& context) {
   return client.Finish();
 }
 
-Status DeleteLocalReplica(const RunnerContext& context) {
-  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  FsManager fs_manager(Env::Default(), FsManagerOpts());
-  RETURN_NOT_OK(fs_manager.Open());
-  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
+Status DeleteLocalReplica(const string& tablet_id,
+                          FsManager* fs_manager,
+                          const scoped_refptr<ConsensusMetadataManager>& cmeta_manager) {
   boost::optional<OpId> last_logged_opid = boost::none;
   TabletDataState state = TabletDataState::TABLET_DATA_DELETED;
   if (!FLAGS_clean_unsafe) {
@@ -384,24 +383,54 @@ Status DeleteLocalReplica(const RunnerContext& context) {
     // the log, it's not an error. But if we receive any other error,
     // indicate the user to delete with --clean_unsafe flag.
     OpId opid;
-    Status s = FindLastLoggedOpId(&fs_manager, tablet_id, &opid);
+    Status s = FindLastLoggedOpId(fs_manager, tablet_id, &opid);
     if (s.ok()) {
       last_logged_opid = opid;
     } else if (s.IsNotFound()) {
       LOG(INFO) << "Could not find any replicated OpId from WAL, "
-                << "but proceeding with tablet tombstone: " << s.ToString();
+                   "but proceeding with tablet tombstone: " << s.ToString();
     } else {
-      LOG(ERROR) << "Error attempting to find last replicated OpId from WAL: " << s.ToString();
-      LOG(ERROR) << "Cannot delete (tombstone) the tablet, use --clean_unsafe to delete"
-                 << " the tablet permanently from this server.";
+      LOG(ERROR) << "Error attempting to find last replicated OpId from WAL: "
+                 << s.ToString();
+      LOG(ERROR) << "Cannot delete (tombstone) the tablet replica, "
+                    "use --clean_unsafe to delete the replica permanently "
+                    "from this server";
       return s;
     }
   }
 
   // Force the specified tablet on this node to be in 'state'.
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
-  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, cmeta_manager, state, last_logged_opid));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager, tablet_id, &meta));
+  return TSTabletManager::DeleteTabletData(
+      meta, cmeta_manager, state, last_logged_opid);
+}
+
+Status DeleteLocalReplicas(const RunnerContext& context) {
+  const string& tablet_ids_str = FindOrDie(context.required_args, kTabletIdsCsvArg);
+  vector<string> tablet_ids = strings::Split(tablet_ids_str, ",", strings::SkipEmpty());
+  if (tablet_ids.empty()) {
+    return Status::InvalidArgument("no tablet identifiers provided");
+  }
+  const auto orig_count = tablet_ids.size();
+  std::sort(tablet_ids.begin(), tablet_ids.end());
+  tablet_ids.erase(std::unique(tablet_ids.begin(), tablet_ids.end()),
+                   tablet_ids.end());
+  const auto uniq_count = tablet_ids.size();
+  if (orig_count != uniq_count) {
+    LOG(INFO) << Substitute("removed $0 duplicate tablet identifiers",
+                            orig_count - uniq_count);
+  }
+  LOG(INFO) << Substitute("deleting $0 tablets replicas", uniq_count);
+
+  FsManager fs_manager(Env::Default(), {});
+  RETURN_NOT_OK(fs_manager.Open());
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+      new ConsensusMetadataManager(&fs_manager));
+  for (const auto& tablet_id : tablet_ids) {
+    RETURN_NOT_OK(DeleteLocalReplica(tablet_id, &fs_manager, cmeta_manager));
+  }
+
   return Status::OK();
 }
 
@@ -894,10 +923,10 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Build();
 
   unique_ptr<Action> delete_local_replica =
-      ActionBuilder("delete", &DeleteLocalReplica)
-      .Description("Delete a tablet replica from the local filesystem. "
-          "By default, leaves a tombstone record.")
-      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      ActionBuilder("delete", &DeleteLocalReplicas)
+      .Description("Delete tablet replicas from the local filesystem. "
+          "By default, leaves a tombstone record upon replica removal.")
+      .AddRequiredParameter({ kTabletIdsCsvArg, kTabletIdsCsvArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
