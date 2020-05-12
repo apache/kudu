@@ -145,6 +145,7 @@
 DEFINE_int32(master_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
              "Timeout used for the master->TS async rpc calls.");
 TAG_FLAG(master_ts_rpc_timeout_ms, advanced);
+TAG_FLAG(master_ts_rpc_timeout_ms, runtime);
 
 DEFINE_int32(tablet_creation_timeout_ms, 30 * 1000, // 30 sec
              "Timeout used by the master when attempting to create tablet "
