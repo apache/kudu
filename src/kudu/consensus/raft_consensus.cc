@@ -551,7 +551,12 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       int majority_size = MajoritySize(num_voters);
       counter.reset(new VoteCounter(num_voters, majority_size));
     } else {
-      counter.reset(new FlexibleVoteCounter(active_config));
+      // TODO(ritwikyadav): The leader_uuid here should be the last known leader.
+      // The current implementation uses the current leader UUID which is always
+      // cleared before the election leading to us taking the worst case situation.
+      // This needs to be optimized in a future diff.
+      counter.reset(new FlexibleVoteCounter(
+          cmeta_->leader_uuid(), active_config));
     }
 
     // Vote for ourselves.

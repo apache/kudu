@@ -139,6 +139,27 @@ int MajoritySize(int num_voters) {
   return (num_voters / 2) + 1;
 }
 
+int ResolveCommitRequirement(
+    int total_voters, const std::string& commit_req) {
+  int num_votes_required =
+      ParseCommitRequirement(commit_req);
+  // Resolve majority specification.
+  if (num_votes_required != -1) {
+    DCHECK_GE(total_voters, num_votes_required);
+    return num_votes_required;
+  } else {
+    return MajoritySize(total_voters);
+  }
+}
+
+int ParseCommitRequirement(const std::string& commit_req) {
+  if (commit_req == "majority") {
+    return -1;
+  }
+  return std::stoi(commit_req);
+}
+
+
 RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
                                   const std::string& leader_uuid,
                                   const RaftConfigPB& config) {
@@ -815,6 +836,33 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
           << (should_evict ? to_evict : "");
 
   return should_evict;
+}
+
+void GetRegionalCountsFromConfig(
+    const RaftConfigPB& config, const std::string& leader_uuid,
+    std::map<std::string, int>* regional_count, std::string* leader_region) {
+  CHECK(regional_count);
+  CHECK(leader_uuid.empty() || leader_region != nullptr);
+  std::set<std::string> unique_uuids;
+  for (const RaftPeerPB& peer : config.peers()) {
+    // Only consider peers that are voters.
+    if (!peer.has_member_type() ||
+        peer.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    CHECK(peer.has_permanent_uuid() && peer.has_attrs() &&
+        peer.attrs().has_region());
+    const std::string& region = peer.attrs().region();
+    if (unique_uuids.find(peer.permanent_uuid()) == unique_uuids.end()) {
+      int& count = LookupOrInsert(regional_count, region, 0);
+      count++;
+      unique_uuids.insert(peer.permanent_uuid());
+      if (!leader_uuid.empty() &&
+          peer.permanent_uuid() == leader_uuid) {
+        *leader_region = region;
+      }
+    }
+  }
 }
 
 }  // namespace consensus

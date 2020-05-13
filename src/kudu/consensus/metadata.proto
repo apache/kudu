@@ -208,6 +208,9 @@ message RaftConfigPB {
 
   // Name of the replicaset.
   optional string replicaset_name = 6;
+
+  // Commit rules defined for FlexiRaft.
+  optional CommitRulePB commit_rule = 7;
 }
 
 // A single directed edge on the request proxying graph.

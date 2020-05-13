@@ -584,7 +584,9 @@ class PeerMessageQueue {
       const std::map<std::string, int>& data_commit_quorum,
       ReplicaTypes replica_types, const TrackedPeer* who_caused);
 
-  std::map<std::string, int> GetDataCommitQuorum();
+  // Fetches the data commit quorum as a mapping from region to count of
+  // votes required.
+  void GetDataCommitQuorum(std::map<std::string, int>*) const;
 
   std::vector<PeerMessageQueueObserver*> observers_;
 

@@ -35,6 +35,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
@@ -145,11 +146,98 @@ void FlexibleVoteCounter::FetchTopologyInfo(
   CHECK(le_quorum_requirement);
   voter_distribution->clear();
   le_quorum_requirement->clear();
-  // TODO(ritwikyadav): Populate the out params by reading config.
+
+  // Step 1: Compute number of voters in each region.
+  // Also, computes the leader's region from its UUID.
+  std::string leader_region = "";
+  GetRegionalCountsFromConfig(
+      config_, last_known_leader_uuid_, voter_distribution,
+      &leader_region);
+
+  CHECK(config_.has_commit_rule());
+
+  // A flag to denote if we could resolve a master.
+  // May involve cases of first election in the replicaset,
+  // last known master no longer part of the replicaset etc.
+  bool master_rule_unresolvable = false;
+
+  // Stores the requirement in the master region for a pessimistic
+  // computation of leader election quorum.
+  int master_region_req = -1;
+
+  // Step 2: Compute the leader election quorum from the corresponding
+  // data commit quorum. The requirement is for it to intersect with all the
+  // data commit quorums and all the leader election quorums.
+  for (const RegionRuleSpecPB& rule_spec :
+      config_.commit_rule().rule_conjunctions()) {
+    std::string region = rule_spec.region_identifier();
+
+    // This will throw if the configuration is not properly defined.
+    int commit_req_num = ParseCommitRequirement(
+        rule_spec.commit_requirement());
+
+    if (region == "master" && leader_region == "") {
+      master_rule_unresolvable = true;
+      master_region_req = commit_req_num;
+      continue;
+    } else {
+      region = leader_region;
+    }
+
+    // At this point region is resolved and we should be able to
+    // fetch its cardinalities.
+    // TODO(ritwikyadav): It is possible that all voters in a region
+    // have left the replicaset. Handle that case gracefully in a subsequent diff.
+    int total_voters = FindOrDie(*voter_distribution, region);
+    int region_majority = MajoritySize(total_voters);
+
+    // commit_req_num is -1 in case of majority requirement.
+    if (commit_req_num == -1) {
+      commit_req_num = region_majority;
+    }
+
+    // We chose the maximum of the two conditions required for intersection
+    // of leader election quorum with data commit quorum and for any two
+    // leader election quorums to intersect with one another.
+    int le_req_num = std::max(
+        total_voters + 1 - commit_req_num, region_majority);
+
+    InsertIfNotPresent(le_quorum_requirement, region, le_req_num);
+  }
+
+  // If master region cannot be resolved, we choose the most pessimistic quorum.
+  // TODO(ritwikyadav): Optimize further in a subsequent diff where the quorum
+  // would become a function of the votes that have been received and the respective
+  // terms of the voters that voted for this candidate.
+  // Here we enforce the same requirements that were needed in the leader region in
+  // all the regions which have voters.
+  if (master_rule_unresolvable) {
+    for (const std::pair<std::string, int>& region_count_pair :
+        *voter_distribution) {
+      int& pessimistic_le_count =
+          LookupOrInsert(le_quorum_requirement, region_count_pair.first, 0);
+      int region_majority_count = MajoritySize(region_count_pair.second);
+      int pessimistic_region_req = 0;
+
+      if (master_region_req <= 0) {
+        // -1 denotes majority.
+        pessimistic_region_req = region_majority_count;
+      } else {
+        pessimistic_region_req = std::max(
+            region_count_pair.second + 1 - master_region_req,
+            region_majority_count);
+      }
+
+      // It is possible that the region already had more stringent requirements.
+      pessimistic_le_count = std::max(pessimistic_le_count, pessimistic_region_req);
+    }
+  }
 }
 
-FlexibleVoteCounter::FlexibleVoteCounter(RaftConfigPB config)
+FlexibleVoteCounter::FlexibleVoteCounter(
+    const std::string& last_known_leader_uuid, RaftConfigPB config)
   : VoteCounter(0, 0),
+    last_known_leader_uuid_(last_known_leader_uuid),
     config_(std::move(config)) {
   num_voters_ = 0;
 

@@ -65,7 +65,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
 
 #ifdef FB_DO_NOT_REMOVE
     scanner_manager_(new ScannerManager(metric_entity())),
-    path_handlers_(new TabletServerPathHandlers(this)) 
+    path_handlers_(new TabletServerPathHandlers(this))
 #endif
 {
 }
