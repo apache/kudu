@@ -184,7 +184,7 @@ class OpState {
     return tablet_replica_;
   }
 
-  // Return metrics related to this transaction.
+  // Return metrics related to this op.
   const OpMetrics& metrics() const {
     return op_metrics_;
   }

@@ -22,12 +22,12 @@ set(TABLET_SRCS
   tablet_mm_ops.cc
   tablet_replica_mm_ops.cc
   tablet_replica.cc
-  transactions/transaction.cc
-  transactions/alter_schema_transaction.cc
-  transactions/transaction_driver.cc
-  transactions/transaction_tracker.cc
-  transactions/write_transaction.cc
-  transaction_order_verifier.cc
+  ops/op.cc
+  ops/alter_schema_op.cc
+  ops/op_driver.cc
+  ops/op_tracker.cc
+  ops/write_op.cc
+  op_order_verifier.cc
   cfile_set.cc
   compaction.cc
   compaction_policy.cc
@@ -109,6 +109,7 @@ ADD_KUDU_TEST(mt-diskrowset-test RUN_SERIAL true)
 ADD_KUDU_TEST(mt-rowset_delta_compaction-test PROCESSORS 2)
 ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true NUM_SHARDS 4)
 ADD_KUDU_TEST(mvcc-test)
+ADD_KUDU_TEST(ops/op_tracker-test)
 ADD_KUDU_TEST(rowset_tree-test NUM_SHARDS 6)
 ADD_KUDU_TEST(tablet-decoder-eval-test)
 ADD_KUDU_TEST(tablet-pushdown-test)
@@ -121,7 +122,6 @@ ADD_KUDU_TEST(tablet_mm_ops-test)
 ADD_KUDU_TEST(tablet_random_access-test)
 ADD_KUDU_TEST(tablet_replica-test)
 ADD_KUDU_TEST(tablet_throttle-test)
-ADD_KUDU_TEST(transactions/transaction_tracker-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET_KUDU_TEST_LINK_LIBS(kudu_util gutil)

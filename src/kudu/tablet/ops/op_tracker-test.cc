@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/transaction_tracker.h"
+#include "kudu/tablet/ops/op_tracker.h"
 
 #include <cstdint>
 #include <memory>
@@ -33,8 +33,8 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/transactions/transaction.h"
-#include "kudu/tablet/transactions/transaction_driver.h"
+#include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/ops/op_driver.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"

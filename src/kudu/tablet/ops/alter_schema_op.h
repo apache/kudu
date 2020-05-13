@@ -27,7 +27,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/tablet/transactions/transaction.h"
+#include "kudu/tablet/ops/op.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/status.h"
 

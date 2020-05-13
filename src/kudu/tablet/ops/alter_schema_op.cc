@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/alter_schema_transaction.h"
+#include "kudu/tablet/ops/alter_schema_op.h"
 
 #include <memory>
 #include <ostream>

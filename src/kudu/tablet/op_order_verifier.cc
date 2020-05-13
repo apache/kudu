@@ -19,7 +19,7 @@
 
 #include <glog/logging.h>
 
-#include "kudu/tablet/transaction_order_verifier.h"
+#include "kudu/tablet/op_order_verifier.h"
 
 namespace kudu {
 namespace tablet {

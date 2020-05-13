@@ -24,11 +24,11 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/transactions/write_transaction.h"
 
 namespace kudu {
 namespace tablet {

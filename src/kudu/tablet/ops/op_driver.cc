@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/transaction_driver.h"
+#include "kudu/tablet/ops/op_driver.h"
 
 #include <functional>
 #include <memory>
@@ -41,8 +41,8 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/transaction_order_verifier.h"
-#include "kudu/tablet/transactions/transaction_tracker.h"
+#include "kudu/tablet/op_order_verifier.h"
+#include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
@@ -243,7 +243,7 @@ void OpDriver::PrepareTask() {
 }
 
 void OpDriver::RegisterFollowerOpOnResultTracker() {
-  // If this is a transaction being executed by a follower and its result is being
+  // If this is an op being executed by a follower and its result is being
   // tracked, make sure that we're the driver of the op.
   if (!state()->are_results_tracked()) return;
 

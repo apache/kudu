@@ -45,7 +45,7 @@
 #include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
 #include "kudu/security/test/mini_kdc.h"
-#include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tablet/ops/write_op.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tablet/ops/write_op.h"
 
 #include <algorithm>
 #include <cstdint>

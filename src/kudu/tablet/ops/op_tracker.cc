@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/transaction_tracker.h"
+#include "kudu/tablet/ops/op_tracker.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -32,10 +32,10 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/ops/op_driver.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/transactions/transaction.h"
-#include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"

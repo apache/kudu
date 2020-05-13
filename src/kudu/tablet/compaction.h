@@ -231,10 +231,10 @@ Status FlushCompactionInput(CompactionInput *input,
                             const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter *out);
 
-// Iterate through this compaction input, finding any mutations which came between
-// snap_to_exclude and snap_to_include (ie those transactions that were not yet
-// committed in 'snap_to_exclude' but _are_ committed in 'snap_to_include'). For
-// each such mutation, propagate it into the compaction's output rowsets.
+// Iterate through this compaction input, finding any mutations which came
+// between snap_to_exclude and snap_to_include (ie those ops that were not yet
+// committed in 'snap_to_exclude' but _are_ committed in 'snap_to_include').
+// For each such mutation, propagate it into the compaction's output rowsets.
 //
 // The output rowsets passed in must be non-overlapping and in ascending key order:
 // typically they are the resulting rowsets from a RollingDiskRowSetWriter.

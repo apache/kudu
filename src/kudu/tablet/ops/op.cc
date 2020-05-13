@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/transactions/transaction.h"
+#include "kudu/tablet/ops/op.h"
 
 #include "kudu/rpc/result_tracker.h"
 
