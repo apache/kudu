@@ -319,6 +319,16 @@ class ColumnPredicate {
   // Evaluate the bloom filter and avoid the predicate type check on a single cell.
   template <DataType PhysicalType>
   bool EvaluateCellForBloomFilter(const void* cell) const {
+    // Check optional lower and upper bound.
+    // Range checks are cheaper compared to checking against Bloom filter and hence
+    // make these checks first.
+    if (lower_ != nullptr && DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) < 0) {
+      return false;
+    }
+    if (upper_ != nullptr && DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) >= 0) {
+      return false;
+    }
+
     typedef typename DataTypeTraits<PhysicalType>::cpp_type cpp_type;
     size_t size = sizeof(cpp_type);
     const void* data = cell;
@@ -333,17 +343,7 @@ class ColumnPredicate {
         return false;
       }
     }
-    // Check optional lower and upper bound.
-    if (lower_ != nullptr && upper_ != nullptr) {
-      return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
-             DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
-    }
-    if (upper_ != nullptr) {
-      return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
-    }
-    if (lower_ != nullptr) {
-      return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
-    }
+
     return true;
   }
 
