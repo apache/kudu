@@ -149,6 +149,8 @@ string Sockaddr::UnixDomainPath() const {
       size_t len = len_ - offsetof(struct sockaddr_un, sun_path) - 1;
       return "@" + string(storage_.un.sun_path + 1, len);
   }
+  LOG(FATAL) << "unknown unix address type";
+  return "";
 }
 
 Sockaddr::UnixAddressType Sockaddr::unix_address_type() const {
