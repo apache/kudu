@@ -104,6 +104,10 @@ DEFINE_bool(clean_unsafe, false,
             "This is not guaranteed to be safe because it also removes the "
             "consensus metadata (including Raft voting record) for the "
             "specified tablet, which violates the Raft vote durability requirements.");
+DEFINE_bool(ignore_nonexistent, false,
+            "Whether to ignore non-existent tablet replicas when deleting: if "
+            "set to 'true', the tool does not report an error if the requested "
+            "tablet replica to remove is not found");
 
 namespace kudu {
 namespace tools {
@@ -399,11 +403,18 @@ Status DeleteLocalReplica(const string& tablet_id,
     }
   }
 
-  // Force the specified tablet on this node to be in 'state'.
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(TabletMetadata::Load(fs_manager, tablet_id, &meta));
-  return TSTabletManager::DeleteTabletData(
-      meta, cmeta_manager, state, last_logged_opid);
+  const auto s = TabletMetadata::Load(fs_manager, tablet_id, &meta).AndThen([&]{
+    return TSTabletManager::DeleteTabletData(
+        meta, cmeta_manager, state, last_logged_opid);
+  });
+  if (FLAGS_ignore_nonexistent && s.IsNotFound()) {
+    LOG(INFO) << Substitute("ignoring error for tablet replica $0 because "
+                            "of the --ignore_nonexistent flag: $1",
+                            tablet_id, s.ToString());
+    return Status::OK();
+  }
+  return s;
 }
 
 Status DeleteLocalReplicas(const RunnerContext& context) {
@@ -430,7 +441,6 @@ Status DeleteLocalReplicas(const RunnerContext& context) {
   for (const auto& tablet_id : tablet_ids) {
     RETURN_NOT_OK(DeleteLocalReplica(tablet_id, &fs_manager, cmeta_manager));
   }
-
   return Status::OK();
 }
 
@@ -931,6 +941,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("clean_unsafe")
+      .AddOptionalParameter("ignore_nonexistent")
       .Build();
 
   unique_ptr<Action> data_size =

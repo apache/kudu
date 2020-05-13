@@ -2748,6 +2748,29 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
                                             Substitute("tablet-meta/$0", tablet_id));
   ASSERT_FALSE(env_->FileExists(meta_dir));
 
+  // Try to remove the same tablet replica again.
+  s = RunTool(Substitute(
+      "local_replica delete $0 --clean_unsafe --fs_wal_dir=$1 --fs_data_dirs=$1",
+      tablet_id, tserver_dir),
+      nullptr, &stderr, nullptr, nullptr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(stderr, "Not found: Could not load tablet metadata");
+  ASSERT_STR_CONTAINS(stderr, "No such file or directory");
+
+  // Try to remove the same tablet replica again if --ignore_nonexistent
+  // is specified. The tool should report success and output information on the
+  // error ignored.
+  ASSERT_OK(RunActionStderrString(
+      Substitute("local_replica delete $0 --clean_unsafe --fs_wal_dir=$1 "
+                 "--fs_data_dirs=$1 --ignore_nonexistent",
+                 tablet_id, tserver_dir),
+      &stderr));
+  ASSERT_STR_CONTAINS(stderr, Substitute("ignoring error for tablet replica $0 "
+                                         "because of the --ignore_nonexistent flag",
+                                         tablet_id));
+  ASSERT_STR_CONTAINS(stderr, "Not found: Could not load tablet metadata");
+  ASSERT_STR_CONTAINS(stderr, "No such file or directory");
+
   // Verify that the total size of the data on disk after 'delete' action
   // is less than before. Although this doesn't necessarily check
   // for orphan data blocks left behind for the given tablet, it certainly
