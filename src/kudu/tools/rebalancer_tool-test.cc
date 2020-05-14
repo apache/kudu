@@ -1488,10 +1488,7 @@ INSTANTIATE_TEST_CASE_P(, RebalancerAndSingleReplicaTablets,
     ::testing::Combine(::testing::Values("auto", "enabled", "disabled"),
                        ::testing::Values(Kudu1097::Disable, Kudu1097::Enable)));
 TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr auto kRepFactor = 1;
   constexpr auto kNumTservers = 2 * (kRepFactor + 1);
@@ -1554,6 +1551,7 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
     "rebalance",
     cluster_->master()->bound_rpc_addr().ToString(),
     Substitute("--move_single_replicas=$0", move_single_replica),
+    "--v=1", // We'll be looking for a VLOG message about single replicas.
   }, &out, &err);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
   ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")

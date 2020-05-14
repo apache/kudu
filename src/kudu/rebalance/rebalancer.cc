@@ -37,10 +37,12 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rebalance/cluster_status.h"
 #include "kudu/rebalance/placement_policy_util.h"
 #include "kudu/rebalance/rebalance_algo.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 using kudu::cluster_summary::HealthCheckResult;
@@ -307,23 +309,28 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
     InsertOrDie(&ts_ids, ts_id);
   }
 
+  vector<string> skipped_tserver_msgs;
   for (const auto& s : raw_info.tserver_summaries) {
     if (s.health != ServerHealth::HEALTHY) {
-      LOG(INFO) << Substitute("skipping tablet server $0 ($1) because of its "
-                              "non-HEALTHY status ($2)",
-                              s.uuid, s.address,
-                              ServerHealthToString(s.health));
+      skipped_tserver_msgs.emplace_back(
+          Substitute("skipping tablet server $0 ($1) because of its "
+                     "non-HEALTHY status ($2)",
+                     s.uuid, s.address,
+                     ServerHealthToString(s.health)));
       unhealthy_tablet_servers.emplace(s.uuid);
       continue;
     }
     tserver_replicas_count.emplace(s.uuid, 0);
   }
+  if (!skipped_tserver_msgs.empty()) {
+    KLOG_EVERY_N_SECS(INFO, 10) << JoinStrings(skipped_tserver_msgs, "\n") << THROTTLE_MSG;
+  }
 
   for (const auto& tablet : raw_info.tablet_summaries) {
     if (!config_.move_rf1_replicas) {
       if (ContainsKey(rf1_tables, tablet.table_id)) {
-        LOG(INFO) << Substitute("tablet $0 of table '$1' ($2) has single replica, skipping",
-                                tablet.id, tablet.table_name, tablet.table_id);
+        VLOG(1) << Substitute("tablet $0 of table '$1' ($2) has single replica, skipping",
+                              tablet.id, tablet.table_name, tablet.table_id);
         continue;
       }
     }
@@ -368,7 +375,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
           msg += " (" + *ri.ts_address + ")";
         }
         msg += " since it's not reported among known tservers";
-        LOG(INFO) << msg;
+        KLOG_EVERY_N_SECS(INFO, 10) << msg << THROTTLE_MSG;
         continue;
       }
       bool do_count_replica = true;
