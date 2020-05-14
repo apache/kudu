@@ -186,6 +186,18 @@ TEST_F(MetricsTest, SimpleMeanGaugeTest) {
   ASSERT_EQ(2.5, average_usage->value());
 }
 
+TEST_F(MetricsTest, SimpleMeanGaugeSnapshotTest) {
+  scoped_refptr<MeanGauge> average_usage =
+    METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
+  scoped_refptr<MeanGauge> old_metric =
+    down_cast<MeanGauge*>(average_usage->snapshot().get());
+  ASSERT_EQ(0, old_metric->value());
+  average_usage->set_value(10.0, 2.0);
+  scoped_refptr<MeanGauge> new_metric =
+    down_cast<MeanGauge*>(average_usage->snapshot().get());
+  ASSERT_EQ(5, new_metric->value());
+}
+
 TEST_F(MetricsTest, SimpleMeanGaugeMergeTest) {
   scoped_refptr<MeanGauge> average_usage =
     METRIC_test_mean_gauge.InstantiateMeanGauge(entity_);
