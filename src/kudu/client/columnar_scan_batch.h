@@ -58,35 +58,50 @@ class KUDU_EXPORT KuduColumnarScanBatch {
 
   /// Get the raw columnar data corresponding to the primitive-typed column with index 'idx'.
   ///
-  /// The data is in little-endian packed array format. No alignment or padding is guaranteed.
-  /// Space is reserved for all cells regardless of whether they might be null.
-  /// The data stored in a null cell may or may not be zeroed.
-  ///
   /// For variable-length (e.g. STRING, BINARY, VARCHAR) columns, use
   /// GetVariableLengthColumn instead.
   ///
   /// @note The Slice returned is only valid for the lifetime of the KuduColumnarScanBatch.
+  ///
+  /// @param [in] idx
+  ///   The column index.
+  /// @param [out] data
+  ///   The data is in little-endian packed array format. No alignment or padding is guaranteed.
+  ///   Space is reserved for all cells regardless of whether they might be null.
+  ///   The data stored in a null cell may or may not be zeroed.
+  /// @return Operation result status.
   Status GetFixedLengthColumn(int idx, Slice* data) const;
 
   /// Return the variable-length data for the variable-length-typed column with index 'idx'.
   ///
-  /// If NumRows() is 0, the 'offsets' array will have length 0. Otherwise, this array
-  /// will contain NumRows() + 1 entries, each indicating an offset within the
-  /// variable-length data array returned in 'data'. For each cell with index 'n',
-  /// offsets[n] indicates the starting offset of that cell, and offsets[n+1] indicates
-  /// the ending offset of that cell.
+  /// @param [in] idx
+  ///   The column index.
+  /// @param [out] offsets
+  ///   If NumRows() is 0, the 'offsets' array will have length 0. Otherwise, this array
+  ///   will contain NumRows() + 1 entries, each indicating an offset within the
+  ///   variable-length data array returned in 'data'. For each cell with index 'n',
+  ///   offsets[n] indicates the starting offset of that cell, and offsets[n+1] indicates
+  ///   the ending offset of that cell.
+  /// @param [out] data
+  ///   The variable-length data.
+  /// @return Operation result status.
   Status GetVariableLengthColumn(int idx, Slice* offsets, Slice* data) const;
 
   /// Get a bitmap corresponding to the non-null status of the cells in the given column.
-  ///
-  /// A set bit indicates a non-null cell.
-  /// If the number of rows is not a multiple of 8, the state of the trailing bits in the
-  /// bitmap is undefined.
   ///
   /// It is an error to call this function on a column which is not marked as nullable
   /// in the schema.
   ///
   /// @note The Slice returned is only valid for the lifetime of the KuduColumnarScanBatch.
+  ///
+  /// @param [in] idx
+  ///   The column index.
+  /// @param [out] data
+  ///   The bitmap corresponding to the non-null status of the cells in the given column.
+  ///   A set bit indicates a non-null cell.
+  ///   If the number of rows is not a multiple of 8, the state of the trailing bits in the
+  ///   bitmap is undefined.
+  /// @return Operation result status.
   Status GetNonNullBitmapForColumn(int idx, Slice* data) const;
 
  private:
