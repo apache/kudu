@@ -149,6 +149,7 @@ line tool.
 | Configuration      | Valid Options     | Default     | Description
 
 | kudu.table.history_max_age_sec | integer | | Number of seconds to retain history for tablets in this table.
+| kudu.table.maintenance_priority | integer | 0 | Priority level of a table for maintenance.
 |===
 
 == Next Steps
