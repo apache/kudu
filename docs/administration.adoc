@@ -1165,13 +1165,23 @@ more information.
 
 For higher read parallelism and larger volumes of storage per server, users may
 want to configure servers to store data in multiple directories on different
-devices. Once a server is started, users must go through the following steps
-to change the directory configuration.
+devices. Users can add or remove data directories to an existing master or
+tablet server by updating the `--fs_data_dirs` gflag configuration and
+restarting the server. Data is striped across data directories, and when a new
+data directory is added, new data will be striped across the union of the old
+and new directories.
 
-Users can add or remove data directories to an existing master or tablet server
-via the `kudu fs update_dirs` tool. Data is striped across data directories,
-and when a new data directory is added, new data will be striped across the
-union of the old and new directories.
+WARNING: Removing a data directory from `--fs_data_dirs` may result in failed tablet
+replicas in cases where there were data blocks in the directory that was
+removed. Use `ksck` to ensure the cluster can fully recover from the directory
+removal before moving onto another server.
+
+WARNING: In versions of Kudu below 1.12, Kudu requires that the `kudu fs
+update_dirs` tool be run before restarting with a different set of data
+directories. Such versions will fail to start if not run.
+
+If on a Kudu version below 1.12, once a server is started, users must go
+through the below steps to change the directory configuration:
 
 NOTE: Unless the `--force` flag is specified, Kudu will not allow for the
 removal of a directory across which tablets are configured to spread data. If
@@ -1192,13 +1202,9 @@ the new directory.
 WARNING: All of the command line steps below should be executed as the Kudu
 UNIX user, typically `kudu`.
 
-. The tool can only run while the server is offline, so establish a maintenance
-  window to update the server. The tool itself runs quickly, so this offline
-  window should be brief, and as such, only the server to update needs to be
-  offline. However, if the server is offline for too long (see the
-  `follower_unavailable_considered_failed_sec` flag), the tablet replicas on it
-  may be evicted from their Raft groups. To avoid this, it may be desirable to
-  bring the entire cluster offline while performing the update.
+. Establish a
+  <<minimizing_cluster_disruption_during_temporary_single_ts_downtime,maintenance
+  window>> and shut down the tablet server.
 
 . Run the tool with the desired directory configuration flags. For example, if a
   cluster was set up with `--fs_wal_dir=/wals`, `--fs_metadata_dir=/meta`, and
@@ -1212,7 +1218,7 @@ $ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_metadata_dir=
 ----
 +
 
-. Modify the values of the `fs_data_dirs` flags for the updated sever. If using
+. Modify the value of the `--fs_data_dirs` flag for the updated server. If using
   CM, make sure to only update the configurations of the updated server, rather
   than of the entire Kudu service.
 
@@ -1225,6 +1231,9 @@ $ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_metadata_dir=
 $ sudo service kudu-tserver start
 ----
 +
+
+. Use `ksck` to ensure Kudu returns to a healthy state before resuming normal
+  operation.
 
 
 [[disk_failure_recovery]]
@@ -1260,15 +1269,21 @@ E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c13
 
 While in this state, the affected node will avoid using the failed disk,
 leading to lower storage volume and reduced read parallelism. The administrator
-should schedule a brief window to <<change_dir_config,update the node's
-directory configuration>> to exclude the failed disk.
+can remove the failed directory from the `--fs_data_dirs` gflag to avoid seeing
+these errors.
+
+WARNING: In versions of Kudu below 1.12, in order to start Kudu with a
+different set of directories, the administrator should schedule a brief window
+to <<change_dir_config,update the node's directory configuration>>. Kudu will
+fail to start otherwise.
 
 When the disk is repaired, remounted, and ready to be reused by Kudu, take the
 following steps:
 
 . Make sure that the Kudu portion of the disk is completely empty.
 . Stop the tablet server.
-. Run the `update_dirs` tool. For example, to add `/data/3`, run the following:
+. Update the `--fs_data_dirs` gflag to add `/data/3`, potentially using the
+  `update_dirs` tool if on a version of Kudu that is below 1.12:
 +
 [source,bash]
 ----
@@ -1314,14 +1329,14 @@ avoid writing data to full directories. Kudu will crash if all data directories
 are full.
 
 In 1.7.0 and later, new tablets are assigned a disk group consisting of
--fs_target_data_dirs_per_tablet data dirs (default 3). If Kudu is not configured
-with enough data directories for a full disk group, all data directories are
-used. When a data directory is full, Kudu will stop writing new data to it and
-each tablet that uses that data directory will write new data to other data
-directories within its group. If all data directories for a tablet are full, Kudu
-will crash. Periodically, Kudu will check if full data directories are still
-full, and will resume writing to those data directories if space has become
-available.
+`--fs_target_data_dirs_per_tablet` data dirs (default 3). If Kudu is not
+configured with enough data directories for a full disk group, all data
+directories are used. When a data directory is full, Kudu will stop writing new
+data to it and each tablet that uses that data directory will write new data to
+other data directories within its group. If all data directories for a tablet
+are full, Kudu will crash. Periodically, Kudu will check if full data
+directories are still full, and will resume writing to those data directories
+if space has become available.
 
 If Kudu does crash because its data directories are full, freeing space on the
 full directories will allow the affected daemon to restart and resume writing.
