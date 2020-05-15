@@ -1,0 +1,306 @@
+---
+title: Apache Kudu 1.12.0 Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2020-05-14 21:51:01 PDT'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu 1.12.0 Release Notes</h1>
+      <div class="sect1">
+<h2 id="rn_1.12.0_upgrade_notes"><a class="link" href="#rn_1.12.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_obsoletions"><a class="link" href="#rn_1.12.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_deprecations"><a class="link" href="#rn_1.12.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Support for Python 2.x and Python 3.4 and earlier is deprecated and may be removed in the next minor release.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_new_features"><a class="link" href="#rn_1.12.0_new_features">New features</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_improvements"><a class="link" href="#rn_1.12.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_fixed_issues"><a class="link" href="#rn_1.12.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_wire_compatibility"><a class="link" href="#rn_1.12.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.12.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.12 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.11 and Kudu 1.12 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.12 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.12 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.12 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.12 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_incompatible_changes"><a class="link" href="#rn_1.12.0_incompatible_changes">Incompatible Changes in Kudu 1.12.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.12.0_client_compatibility"><a class="link" href="#rn_1.12.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.12 Java client library is API- and ABI-compatible with Kudu 1.11. Applications
+written against Kudu 1.11 will compile and run against the Kudu 1.12 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.12 C++ client is API- and ABI-forward-compatible with Kudu 1.11.
+Applications written and compiled against the Kudu 1.11 client library will run without
+modification against the Kudu 1.12 client library. Applications written and compiled
+against the Kudu 1.12 client library will run without modification against the Kudu 1.11
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.12 Python client is API-compatible with Kudu 1.11. Applications
+written against Kudu 1.11 will continue to run against the Kudu 1.12 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_known_issues"><a class="link" href="#rn_1.12.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.12.0_contributors"><a class="link" href="#rn_1.12.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="resources_and_next_steps"><a class="link" href="#resources_and_next_steps">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://kudu.apache.org">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/apache/kudu">Kudu GitHub Repository</a></p>
+</li>
+<li>
+<p><a href="index.html">Kudu Documentation</a></p>
+</li>
+<li>
+<p><a href="prior_release_notes.html">Release notes for older releases</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="quickstart.html">Kudu Quickstart</a></p>
+</li>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Release Notes</span>
+            <ul class="sectlevel1">
+<li><a href="#rn_1.12.0_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.12.0_obsoletions">Obsoletions</a></li>
+<li><a href="#rn_1.12.0_deprecations">Deprecations</a></li>
+<li><a href="#rn_1.12.0_new_features">New features</a></li>
+<li><a href="#rn_1.12.0_improvements">Optimizations and improvements</a></li>
+<li><a href="#rn_1.12.0_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.12.0_wire_compatibility">Wire Protocol compatibility</a></li>
+<li><a href="#rn_1.12.0_incompatible_changes">Incompatible Changes in Kudu 1.12.0</a>
+<ul class="sectlevel2">
+<li><a href="#rn_1.12.0_client_compatibility">Client Library Compatibility</a></li>
+</ul>
+</li>
+<li><a href="#rn_1.12.0_known_issues">Known Issues and Limitations</a></li>
+<li><a href="#rn_1.12.0_contributors">Contributors</a></li>
+<li><a href="#resources_and_next_steps">Resources</a></li>
+<li><a href="#_installation_options">Installation Options</a></li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

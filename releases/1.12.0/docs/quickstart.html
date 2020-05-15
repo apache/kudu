@@ -1,0 +1,452 @@
+---
+title: Apache Kudu Quickstart
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2020-05-14 16:58:37 PDT'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Quickstart</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Follow these instructions to set up and run a local Kudu Cluster using Docker,
+and get started using Apache Kudu in minutes.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+This is intended for demonstration purposes only and shouldn&#8217;t
+be used for production or performance/scale testing.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="quickstart_vm"><a class="link" href="#quickstart_vm">Install Docker</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Follow the Docker <a href="https://docs.docker.com/install/">install documentation</a>
+to install docker in your Linux, Mac, or Windows environment.</p>
+</div>
+<div class="paragraph">
+<p>Configure the Docker install to have enough resources to run the quickstart guides.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://docs.docker.com/docker-for-mac/#resources">Docker for Mac Resource Configuration Guide</a></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>A minimum configuration that can run all the quickstart examples comfortably is:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>4 CPUs</p>
+</li>
+<li>
+<p>6 GB Memory</p>
+</li>
+<li>
+<p>50 GB Disk</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+You can likely get by with a lower resource configuration, but you may lose some performance and stability.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>You may also want to read through the Docker getting started guide, but that isn&#8217;t a requirement.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_clone_the_repository"><a class="link" href="#_clone_the_repository">Clone the Repository</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Clone the Apache Kudu repository using Git and change to the <code>kudu</code> directory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git clone https://github.com/apache/kudu
+cd kudu</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_start_the_quickstart_cluster"><a class="link" href="#_start_the_quickstart_cluster">Start the Quickstart Cluster</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_set_kudu_quickstart_ip"><a class="link" href="#_set_kudu_quickstart_ip">Set KUDU_QUICKSTART_IP</a></h3>
+<div class="paragraph">
+<p>Set the <code>KUDU_QUICKSTART_IP</code> environment variable to your ip address:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_bring_up_the_cluster"><a class="link" href="#_bring_up_the_cluster">Bring up the Cluster</a></h3>
+<div class="paragraph">
+<p>Then use <code>docker-compose</code> to start a cluster with 3 master servers and 5 tablet servers.
+When inside the docker network/containers the master addresses will be
+<code>kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251</code> and when on the host machine
+you can specify the master addresses with <code>localhost:7051,localhost:7151,localhost:7251</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker-compose -f docker/quickstart.yml up -d</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+You can remove the <code>-d</code> flag to run the cluster in the foreground.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_view_the_web_ui"><a class="link" href="#_view_the_web_ui">View the Web-UI</a></h3>
+<div class="paragraph">
+<p>Once the cluster is started you can view the master web-ui by visiting <a href="localhost:8050">localhost:8050</a>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_check_the_cluster_health"><a class="link" href="#_check_the_cluster_health">Check the cluster health</a></h3>
+<div class="paragraph">
+<p>Use the command below to get a bash shell in the <code>kudu-master-1</code> container:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker exec -it $(docker ps -aqf "name=kudu-master-1") /bin/bash</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You can now run the Kudu <code>ksck</code> tool to verify the cluster is healthy:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">kudu cluster ksck kudu-master-1:7051,kudu-master-2:7151,kudu-master-3:7251</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Alternatively, if you have a kudu binary available on your host machine,
+you can run <code>ksck</code> there via:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">export KUDU_USER_NAME=kudu
+kudu cluster ksck localhost:7051,localhost:7151,localhost:7251</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Setting <code>KUDU_USER_NAME=kudu</code> simplifies using Kudu from various user
+accounts in a non-secure environment.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_running_a_brief_example"><a class="link" href="#_running_a_brief_example">Running a Brief Example</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Now that a Kudu cluster is up and running, examples and integrations can be
+run against the cluster. The commands below run the <code>java-example</code> against
+the quickstart cluster:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">export KUDU_USER_NAME=kudu
+cd examples/java/java-example
+mvn package
+java -DkuduMasters=localhost:7051,localhost:7151,localhost:7251 -jar target/kudu-java-example-1.0-SNAPSHOT.jar</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_more_examples"><a class="link" href="#_more_examples">More Examples</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>More complete walkthroughs using the quickstart Kudu cluster can be found in the
+<code>examples/quickstart</code> directory. For convenience you can browse them on
+<a href="https://github.com/apache/kudu/tree/master/examples/quickstart">Github</a>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://github.com/apache/kudu/tree/master/examples/quickstart/nifi">NiFi Quickstart Guide</a></p>
+</li>
+<li>
+<p><a href="https://github.com/apache/kudu/tree/master/examples/quickstart/spark">Spark Quickstart Guide</a></p>
+</li>
+<li>
+<p><a href="https://github.com/apache/kudu/tree/master/examples/quickstart/impala">Impala Quickstart Guide</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_destroying_the_cluster"><a class="link" href="#_destroying_the_cluster">Destroying the Cluster</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Once you are done with the quickstart cluster you can shutdown in a couple of ways.
+If you ran <code>docker-compose</code> without the <code>-d</code> flag, you can use <code>ctrl + c</code> to
+stop the cluster.</p>
+</div>
+<div class="paragraph">
+<p>If you ran <code>docker-compose</code> with the <code>-d</code> flag, you can use the following to
+gracefully shutdown the cluster:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker-compose -f docker/quickstart.yml down</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Another alternative is to stop all of the Kudu containers via:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker stop $(docker ps -aqf "name=kudu")</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you want to remove the cluster state you can also remove the docker
+containers and volumes via:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker rm $(docker ps -aqf "name=kudu")
+docker volume rm $(docker volume ls --filter name=kudu -q)</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_troubleshooting"><a class="link" href="#_troubleshooting">Troubleshooting</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_viewing_the_logs"><a class="link" href="#_viewing_the_logs">Viewing the logs</a></h3>
+<div class="paragraph">
+<p>To view the logs you can use the <code>docker logs</code> command. Below is an example
+that will show the logs one of the tablet servers:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">docker logs $(docker ps -aqf "name=kudu-tserver-1")</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_changing_the_kudu_version"><a class="link" href="#_changing_the_kudu_version">Changing the Kudu version</a></h3>
+<div class="paragraph">
+<p>To change the version of Kudu Docker images used you can override the default value
+of <code>latest</code> by setting the <code>KUDU_QUICKSTART_VERSION</code> environment variable.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">export KUDU_QUICKSTART_VERSION="1.9.0"</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_changing_the_kudu_configuration"><a class="link" href="#_changing_the_kudu_configuration">Changing the Kudu configuration</a></h3>
+<div class="paragraph">
+<p>To change the configuration flags passed to the master and tablet servers you
+can edit the <code>docker/quickstart.yml</code> file before starting the cluster.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_killing_a_kudu_master"><a class="link" href="#_killing_a_kudu_master">Killing a Kudu master</a></h3>
+<div class="paragraph">
+<p>Due to <a href="https://issues.apache.org/jira/browse/KUDU-1620">KUDU-1620</a> master hosts
+are always expected to be reachable.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+<span class="active-toc">Quickstart Guide</span>
+            <ul class="sectlevel1">
+<li><a href="#quickstart_vm">Install Docker</a></li>
+<li><a href="#_clone_the_repository">Clone the Repository</a></li>
+<li><a href="#_start_the_quickstart_cluster">Start the Quickstart Cluster</a>
+<ul class="sectlevel2">
+<li><a href="#_set_kudu_quickstart_ip">Set KUDU_QUICKSTART_IP</a></li>
+<li><a href="#_bring_up_the_cluster">Bring up the Cluster</a></li>
+<li><a href="#_view_the_web_ui">View the Web-UI</a></li>
+<li><a href="#_check_the_cluster_health">Check the cluster health</a></li>
+</ul>
+</li>
+<li><a href="#_running_a_brief_example">Running a Brief Example</a></li>
+<li><a href="#_more_examples">More Examples</a></li>
+<li><a href="#_destroying_the_cluster">Destroying the Cluster</a></li>
+<li><a href="#_troubleshooting">Troubleshooting</a>
+<ul class="sectlevel2">
+<li><a href="#_viewing_the_logs">Viewing the logs</a></li>
+<li><a href="#_changing_the_kudu_version">Changing the Kudu version</a></li>
+<li><a href="#_changing_the_kudu_configuration">Changing the Kudu configuration</a></li>
+<li><a href="#_killing_a_kudu_master">Killing a Kudu master</a></li>
+</ul>
+</li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,663 @@
+---
+title: Using the Hive Metastore with Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2020-05-14 16:58:37 PDT'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Using the Hive Metastore with Kudu</h1>
+      <div class="sect1">
+<h2 id="hive_metastore"><a class="link" href="#hive_metastore">Overview</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu has an optional feature which allows it to integrate its own catalog with
+the Hive Metastore (HMS). The HMS is the de-facto standard catalog and metadata
+provider in the Hadoop ecosystem. When the HMS integration is enabled, Kudu
+tables can be discovered and used by external HMS-aware tools, even if they are
+not otherwise aware of or integrated with Kudu. Additionally, these components
+can use the HMS to discover necessary information to connect to the Kudu
+cluster which owns the table, such as the Kudu master addresses.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_databases_and_table_names"><a class="link" href="#_databases_and_table_names">Databases and Table Names</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>With the Hive Metastore integration disabled, Kudu presents tables as a single
+flat namespace, with no hierarchy or concept of a database. Additionally,
+Kudu&#8217;s only restriction on table names is that they be a valid UTF-8 encoded
+string. When the HMS integration is enabled in Kudu, both of these properties
+change in order to match the HMS model: the table name must indicate the
+table&#8217;s membership of a Hive database, and table name identifiers (i.e. the
+table name and database name) are subject to the Hive table name identifier
+constraints.</p>
+</div>
+<div class="sect2">
+<h3 id="_databases"><a class="link" href="#_databases">Databases</a></h3>
+<div class="paragraph">
+<p>Hive has the concept of a database, which is a collection of individual tables.
+Each database forms its own independent namespace of table names. In order to
+fit into this model, Kudu tables must be assigned a database when the HMS
+integration is enabled. No new APIs have been added to create or delete
+databases, nor are there APIs to assign an existing Kudu table to a database.
+Instead, a new convention has been introduced that Kudu table names must be in
+the format <code>&lt;hive-database-name&gt;.&lt;hive-table-name&gt;</code>. Thus, databases are an
+implicit part of the Kudu table name. By including databases as an implicit
+part of the Kudu table name, existing applications that use Kudu tables can
+operate on non-HMS-integrated and HMS-integrated table names with minimal or no
+changes.</p>
+</div>
+<div class="paragraph">
+<p>Kudu provides no additional tooling to create or drop Hive databases.
+Administrators or users should use existing Hive tools such as the Beeline
+Shell or Impala to do so.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_naming_constraints"><a class="link" href="#_naming_constraints">Naming Constraints</a></h3>
+<div class="paragraph">
+<p>When the Hive Metastore integration is enabled, the database and table names of
+Kudu tables must follow the Hive Metastore naming constraints. Namely, the
+database and table name must contain only alphanumeric ASCII characters and
+underscores (<code>_</code>).</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+When the <code>hive.support.special.characters.tablename</code> Hive configuration
+is <code>true</code>, the forward-slash (<code>/</code>) character in table name identifiers (i.e. the
+table name and database name) is also supported.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Additionally, the Hive Metastore does not enforce case sensitivity for table
+name identifiers. As such, when enabled, Kudu will follow suit and disallow
+tables from being created when one already exists whose table name identifier
+differs only by case. Operations that open, alter, or drop tables will also be
+case-insensitive for the table name identifiers.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Given the case insensitivity upon enabling the integration, if
+multiple Kudu tables exist whose names only differ by case, the Kudu master(s)
+will fail to start up. Be sure to rename such conflicting tables before
+enabling the Hive Metastore integration.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="metadata_sync"><a class="link" href="#metadata_sync">Metadata Synchronization</a></h3>
+<div class="paragraph">
+<p>When the Hive Metastore integration is enabled, Kudu will automatically
+synchronize metadata changes to Kudu tables between Kudu and the HMS. As such,
+it is important to always ensure that the Kudu and HMS have a consistent view
+of existing tables, using the administrative tools described in the below
+section. Failure to do so may result in issues like Kudu tables not being
+discoverable or usable by external, HMS-aware components (e.g. Apache Sentry,
+Apache Impala).</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+the Hive Metastore automatically creates directories for Kudu tables.
+These directories are benign and can safely be ignored.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Impala has notions of internal and external Kudu tables. When dropping an
+internal table from Impala, the table&#8217;s data is dropped in Kudu; in contrast
+when dropping an external table, the table&#8217;s data is not dropped in Kudu.
+External tables may refer to tables by names that are different from the names
+of the underlying Kudu tables, while internal tables must use the same names as
+those stored in Kudu. Additionally, multiple external tables may refer to the
+same underlying Kudu table. Thus, since external tables may not map one-to-one
+with Kudu tables, the Hive Metastore integration and tooling will only
+automatically synchronize metadata for internal tables. See the
+<a href="kudu_impala_integration.html#kudu_impala">Kudu Impala integration documentation</a>
+for more information about table types in Impala</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="enabling-the-hive-metastore-integration"><a class="link" href="#enabling-the-hive-metastore-integration">Enabling the Hive Metastore Integration</a></h2>
+<div class="sectionbody">
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Before enabling the Hive Metastore integration on an existing cluster,
+make sure to upgrade any tables that may exist in Kudu&#8217;s or in the HMS&#8217;s
+catalog. See <a href="#upgrading-tables">Upgrading Existing Tables</a> for more details.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>When the Hive Metastore is configured with fine-grained authorization
+using Apache Sentry and the Sentry HDFS Sync feature is enabled, the Kudu admin
+needs to be able to access and modify directories that are created for Kudu by
+the HMS. This can be done by adding the Kudu admin user to the group of the
+Hive service users, e.g.  by running <code>usermod -aG hive kudu</code> on the HMS nodes.</p>
+</li>
+<li>
+<p>Configure the Hive Metastore to include the notification event listener and
+the Kudu HMS plugin, to allow altering and dropping columns, and to add full
+Thrift objects in notifications. Add the following values to the HMS
+configuration in <code>hive-site.xml</code>:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;property&gt;
+  &lt;name&gt;hive.metastore.transactional.event.listeners&lt;/name&gt;
+  &lt;value&gt;
+    org.apache.hive.hcatalog.listener.DbNotificationListener,
+    org.apache.kudu.hive.metastore.KuduMetastorePlugin
+  &lt;/value&gt;
+&lt;/property&gt;
+
+&lt;property&gt;
+  &lt;name&gt;hive.metastore.disallow.incompatible.col.type.changes&lt;/name&gt;
+  &lt;value&gt;false&lt;/value&gt;
+&lt;/property&gt;
+
+&lt;property&gt;
+  &lt;name&gt;hive.metastore.notifications.add.thrift.objects&lt;/name&gt;
+  &lt;value&gt;true&lt;/value&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>After building Kudu from source, add the <code>hms-plugin.jar</code> found under the build
+directory (e.g. <code>build/release/bin</code>) to the HMS classpath.</p>
+</li>
+<li>
+<p>Restart the HMS.</p>
+</li>
+<li>
+<p>Enable the Hive Metastore integration in Kudu with the following
+configuration properties for the Kudu master(s):</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>--hive_metastore_uris=&lt;HMS Thrift URI(s)&gt;
+--hive_metastore_sasl_enabled=&lt;value of the Hive Metastore's hive.metastore.sasl.enabled configuration&gt;</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+In a secured cluster, in which <code>--hive_metastore_sasl_enabled</code> is set to
+true, <code>--hive_metastore_kerberos_principal</code> must match the primary portion of
+<code>hive.metastore.kerberos.principal</code> in the Hive Metastore configuration.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Restart the Kudu master(s).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_administrative_tools"><a class="link" href="#_administrative_tools">Administrative Tools</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu provides the command line tools <code>kudu hms list</code>, <code>kudu hms precheck</code>,
+<code>kudu hms check</code>, and <code>kudu hms fix</code> to allow administrators to find and fix
+metadata inconsistencies between the internal Kudu catalog and the Hive
+Metastore catalog, during the upgrade process described below or during the
+normal operation of a Kudu cluster.</p>
+</div>
+<div class="paragraph">
+<p><code>kudu hms</code> tools should be run from the command line as the Kudu admin user.
+They require the full list of master addresses to be specified:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms check master-name-1:7051,master-name-2:7051,master-name-3:7051</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To see a full list of the options available with the <code>kudu hms</code> tool, use the
+<code>--help</code> flag.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+When fine-grained authorization is enabled, the Kudu admin user, commonly
+"kudu", needs to have access to all the Kudu tables to be
+able to run the <code>kudu hms</code> tools. This can be done by configuring the user as a
+trusted user via the <code>--trusted_user_acl</code> master configuration. See
+<a href="security.html#trusted-users">here</a> for more information about trusted users.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If the Hive Metastore is configured with fine-grained authorization using
+Apache Sentry, the Kudu admin user needs to have read and write privileges on
+HMS table entries. Configured this in the Hive Metastore using the
+<code>sentry.metastore.service.users</code> property.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_code_kudu_hms_list_code"><a class="link" href="#_code_kudu_hms_list_code"><code>kudu hms list</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu hms list</code> tool scans the Hive Metastore catalog, and lists the HMS
+entries (including table name and type) for Kudu tables, as indicated by their
+HMS storage handler.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_code_kudu_hms_precheck_code"><a class="link" href="#_code_kudu_hms_precheck_code"><code>kudu hms precheck</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu hms precheck</code> tool scans the Kudu catalog and validates that if there
+are multiple Kudu tables whose names only differ by case and logs the conflicted
+table names.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_code_kudu_hms_check_code"><a class="link" href="#_code_kudu_hms_check_code"><code>kudu hms check</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu hms check</code> tool scans the Kudu and Hive Metastore catalogs, and
+validates that the two catalogs agree on what Kudu tables exist. The tool will
+make suggestions on how to fix any inconsistencies that are found. Typically,
+the suggestion will be to run the <code>kudu hms fix</code> tool, however some certain
+inconsistencies require using Impala Shell for fixing.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_code_kudu_hms_fix_code"><a class="link" href="#_code_kudu_hms_fix_code"><code>kudu hms fix</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu hms fix</code> tool analyzes the Kudu and HMS catalogs and attempts to fix
+any automatically-fixable issues, for instance, by creating a table entry in
+the HMS for each Kudu table that doesn&#8217;t already have one. The <code>--dryrun</code> option
+shows the proposed fix instead of actually executing it. When no automatic fix
+is available, it will make suggestions on how a manual fix can help.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <code>kudu hms fix</code> tool will not automatically fix Impala external tables
+for the reasons described above. It is instead recommended to fix issues with
+external tables by dropping and recreating them.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_code_kudu_hms_downgrade_code"><a class="link" href="#_code_kudu_hms_downgrade_code"><code>kudu hms downgrade</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu hms downgrade</code> downgrades the metadata to legacy format for Kudu and
+the Hive Metastores. It is discouraged to use unless necessary, since the legacy
+format can be deprecated in future releases.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="upgrading-tables"><a class="link" href="#upgrading-tables">Upgrading Existing Tables</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Before enabling the Kudu-HMS integration, it is important to ensure that the
+Kudu and HMS start with a consistent view of existing tables. This may entail
+renaming Kudu tables to conform to the Hive naming constraints. This detailed
+workflow describes how to upgrade existing tables before enabling the Hive
+Metastore integration.</p>
+</div>
+<div class="sect2">
+<h3 id="_prepare_for_the_upgrade"><a class="link" href="#_prepare_for_the_upgrade">Prepare for the Upgrade</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Establish a maintenance window. During this time the Kudu cluster will still be
+available, but tables in Kudu and the Hive Metastore may be altered or
+renamed as a part of the upgrade process.</p>
+</li>
+<li>
+<p>Make note of all external tables using the following command and drop them. This reduces
+the chance of having naming conflicts with Kudu tables which can lead to errors during
+upgrading process. It also helps in cases where a catalog upgrade breaks
+external tables, due to the underlying Kudu tables being renamed. The
+external tables can be recreated after upgrade is complete.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms list master-name-1:7051,master-name-2:7051,master-name-3:7051</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_perform_the_upgrade"><a class="link" href="#_perform_the_upgrade">Perform the Upgrade</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Run the <code>kudu hms precheck</code> tool to ensure no Kudu tables only differ by
+case. If the tool does not report any warnings, you can skip the next step.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms precheck master-name-1:7051,master-name-2:7051,master-name-3:7051</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>If the <code>kudu hms precheck</code> tool reports conflicting tables, rename these to
+case-insensitive unique names using the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu table rename_table master-name-1:7051,master-name-2:7051,master-name-3:7051 &lt;conflicting_table_name&gt; &lt;new_table_name&gt;</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Run the <code>kudu hms check</code> tool using the following command. If the tool does
+not report any catalog inconsistencies, skip to Step 7 below.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms check master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=&lt;hive_metastore_uris&gt; [--ignore_other_clusters=&lt;ignores_other_clusters&gt;]</code></pre>
+</div>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+By default, the <code>kudu hms</code> tools will ignore metadata in the HMS that
+refer to a different Kudu cluster than that being operated on, as indicated by
+having different masters specified. The tools compare the value of the
+<code>kudu.master_addresses</code> table property (either supplied at table creation or as
+<code>--kudu_master_hosts</code> on impalad daemons) in each HMS metadata entry against
+the RPC endpoints (including the ports) of the Kudu masters. To have the
+tooling account for and fix metadata entries with different master RPC
+endpoints specified (e.g. if ports are not specified in the HMS), supply
+<code>--ignore_other_clusters=false</code> as an argument to the <code>kud hms check</code> and <code>fix</code>
+tools.
+</td>
+</tr>
+</table>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu hms check master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=thrift://hive-metastore:9083 --ignore_other_clusters=false</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>If the <code>kudu hms check</code> tool reports an inconsistent catalog, perform a
+dry-run of the <code>kudu hms fix</code> tool to understand how the tool will attempt to
+address the automatically-fixable issues.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms fix master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=&lt;hive_metastore_uris&gt; --dryrun=true [--ignore_other_clusters=&lt;ignore_other_clusters&gt;]</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu hms check master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=thrift://hive-metastore:9083 --dryrun=true --ignore_other_clusters=false</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Manually fix any issues that are reported by the check tool that cannot
+be automatically fixed. For example, rename any tables with names that are not
+Hive-conformant.</p>
+</li>
+<li>
+<p>Run <code>kudu hms fix</code> tool to automatically fix all the remaining issues.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu hms fix master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=&lt;hive_metastore_uris&gt; [--drop_orphan_hms_tables=&lt;drops_orphan_hms_tables&gt;] [--ignore_other_clusters=&lt;ignore_other_clusters&gt;]</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu hms fix master-name-1:7051,master-name-2:7051,master-name-3:7051 --hive_metastore_uris=thrift://hive-metastore:9083 --ignore_other_clusters=false</pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <code>--drop_orphan_hms_tables</code> argument indicates whether to drop orphan
+Hive Metastore tables that refer to non-existent Kudu tables. Due to
+<a href="https://issues.apache.org/jira/browse/KUDU-2883">KUDU-2883</a> this option may
+fail to drop HMS entries that have no table ID. A workaround to this is to drop
+the table via Impala Shell.
+</td>
+</tr>
+</table>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Recreate any external tables that were dropped when preparing for the upgrade
+by using Impala Shell.</p>
+</li>
+<li>
+<p>Enable the Hive Metastore Integration as described
+<a href="#enabling-the-hive-metastore-integration">Enabling the Hive Metastore Integration</a>.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Using the Hive Metastore with Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#hive_metastore">Overview</a></li>
+<li><a href="#_databases_and_table_names">Databases and Table Names</a>
+<ul class="sectlevel2">
+<li><a href="#_databases">Databases</a></li>
+<li><a href="#_naming_constraints">Naming Constraints</a></li>
+<li><a href="#metadata_sync">Metadata Synchronization</a></li>
+</ul>
+</li>
+<li><a href="#enabling-the-hive-metastore-integration">Enabling the Hive Metastore Integration</a></li>
+<li><a href="#_administrative_tools">Administrative Tools</a>
+<ul class="sectlevel2">
+<li><a href="#_code_kudu_hms_list_code"><code>kudu hms list</code></a></li>
+<li><a href="#_code_kudu_hms_precheck_code"><code>kudu hms precheck</code></a></li>
+<li><a href="#_code_kudu_hms_check_code"><code>kudu hms check</code></a></li>
+<li><a href="#_code_kudu_hms_fix_code"><code>kudu hms fix</code></a></li>
+<li><a href="#_code_kudu_hms_downgrade_code"><code>kudu hms downgrade</code></a></li>
+</ul>
+</li>
+<li><a href="#upgrading-tables">Upgrading Existing Tables</a>
+<ul class="sectlevel2">
+<li><a href="#_prepare_for_the_upgrade">Prepare for the Upgrade</a></li>
+<li><a href="#_perform_the_upgrade">Perform the Upgrade</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
