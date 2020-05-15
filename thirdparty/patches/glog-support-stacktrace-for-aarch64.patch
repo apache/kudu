@@ -1,6 +1,6 @@
 diff --git a/src/stacktrace_aarch64-inl.h b/src/stacktrace_aarch64-inl.h
 new file mode 100644
-index 0000000..1e3ce62
+index 00000000..bba61a0d
 --- /dev/null
 +++ b/src/stacktrace_aarch64-inl.h
 @@ -0,0 +1,105 @@
@@ -109,26 +109,23 @@ index 0000000..1e3ce62
 +}
 +
 +_END_GOOGLE_NAMESPACE_
-
-
 diff --git a/Makefile.am b/Makefile.am
-index 0c87c89..886594c 100644
+index e792332a..4939ce51 100644
 --- a/Makefile.am
 +++ b/Makefile.am
-@@ -64,6 +64,7 @@ libglog_la_SOURCES = $(gloginclude_HEADERS) \
+@@ -200,6 +200,7 @@ libglog_la_SOURCES = $(gloginclude_HEADERS) \
                         src/stacktrace_generic-inl.h \
                         src/stacktrace_libunwind-inl.h \
                         src/stacktrace_powerpc-inl.h \
-+                      src/stacktrace_aarch64-inl.h \
++                       src/stacktrace_aarch64-inl.h \
                         src/stacktrace_x86-inl.h \
                         src/stacktrace_x86_64-inl.h \
                         src/symbolize.cc src/symbolize.h \
-
 diff --git a/src/utilities.h b/src/utilities.h
-index 5f79968..3ca051b 100644
+index c66f9146..63f6050a 100644
 --- a/src/utilities.h
 +++ b/src/utilities.h
-@@ -102,7 +102,11 @@
+@@ -106,7 +106,11 @@
  // Some code may do that.
 
  #if defined(HAVE_LIB_UNWIND)
@@ -141,10 +138,10 @@ index 5f79968..3ca051b 100644
  #elif !defined(NO_FRAME_POINTER)
  # if defined(__i386__) && __GNUC__ >= 2
  #  define STACKTRACE_H "stacktrace_x86-inl.h"
-@@ -110,6 +114,8 @@
- #  define STACKTRACE_H "stacktrace_x86_64-inl.h"
- # elif (defined(__ppc__) || defined(__PPC__)) && __GNUC__ >= 2
+@@ -116,6 +120,8 @@
  #  define STACKTRACE_H "stacktrace_powerpc-inl.h"
+ # elif defined(OS_WINDOWS)
+ #  define STACKTRACE_H "stacktrace_windows-inl.h"
 +# elif defined(__aarch64__)
 +#  define STACKTRACE_H "stacktrace_aarch64-inl.h"
  # endif

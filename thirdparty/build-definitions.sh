@@ -418,7 +418,7 @@ build_glog() {
   GLOG_BDIR=$TP_BUILD_DIR/$GLOG_NAME$MODE_SUFFIX
   mkdir -p $GLOG_BDIR
   pushd $GLOG_BDIR
-
+  rm -Rf CMakeCache.txt CMakeFiles/
   # glog depends on libunwind and gflags.
   #
   # Specifying -Wl,-rpath has different default behavior on GNU binutils ld vs.
@@ -431,15 +431,18 @@ build_glog() {
   #
   # This comment applies both here and the locations elsewhere in this script
   # where we add something to -Wl,-rpath.
-  CXXFLAGS="$EXTRA_CXXFLAGS -I$PREFIX/include" \
+  CFLAGS="$EXTRA_CFLAGS -fPIC" \
+    CXXFLAGS="$EXTRA_CXXFLAGS -I$PREFIX/include -fPIC" \
     LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib" \
     LIBS="$EXTRA_LIBS" \
-    $GLOG_SOURCE/configure \
-    --with-pic \
-    --prefix=$PREFIX \
-    --with-gflags=$PREFIX
-  fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+    cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+    -DBUILD_TESTING=OFF \
+    -DWITH_GFLAGS=ON \
+    $EXTRA_CMAKE_FLAGS \
+    $GLOG_SOURCE
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
