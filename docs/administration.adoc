@@ -1202,9 +1202,9 @@ the new directory.
 WARNING: All of the command line steps below should be executed as the Kudu
 UNIX user, typically `kudu`.
 
-. Establish a
+. Use `ksck` to ensure the cluster is healthy, and establish a
   <<minimizing_cluster_disruption_during_temporary_single_ts_downtime,maintenance
-  window>> and shut down the tablet server.
+  window>> to bring the tablet server offline.
 
 . Run the tool with the desired directory configuration flags. For example, if a
   cluster was set up with `--fs_wal_dir=/wals`, `--fs_metadata_dir=/meta`, and
@@ -1531,6 +1531,39 @@ to its original value.
 
 NOTE: On Kudu versions prior to 1.8, the `--force` flag must be provided in the above
 `set_flag` commands.
+
+[[rolling_restart]]
+=== Orchestrating a rolling restart with no downtime
+
+As of Kudu 1.12, tooling is available to restart a cluster with no downtime. To
+perform such a "rolling restart", perform the following sequence:
+
+. Restart the master(s) one-by-one. If there is only a single master, this may
+  cause brief interference with on-going workloads.
+. Starting with a single tablet server, put the tablet server into
+  <<minimizing_cluster_disruption_during_temporary_single_ts_downtime,maintenance
+  mode>> by using the `kudu tserver state enter_maintenance` tool.
+. Start quiescing the tablet server using the `kudu tserver quiesce start`
+  tool. This will signal to Kudu to stop hosting leaders on the specified
+  tablet server and to redirect new scan requests to other tablet servers.
+. Periodically run `kudu tserver quiesce start` with the
+  `--error_if_not_fully_quiesced` option, until it returns success, indicating
+  that all leaders have been moved away from the tablet server and all on-going
+  scans have completed.
+. Restart the tablet server.
+. Periodically run `ksck` until the cluster is reported to be healthy.
+. Exit maintenance mode on the tablet server by running `kudu tserver state
+  exit_maintenance`. This will allow new tablet replicas to be placed on the
+  tablet server.
+. Repeat these steps for all tablet servers in the cluster.
+
+NOTE: If running with <<rack_awareness,rack awareness>>, the above steps can be
+performed restarting multiple tablet servers within a single rack at the same
+time. Users should use `ksck` to ensure the location assignment policy is
+enforced while going through these steps, and that no more than a single
+location is restarted at the same time. At least three locations should be
+defined in the cluster to safely restart multiple tablet service within one
+location.
 
 [[rebalancer_tool]]
 === Running the tablet rebalancing tool
