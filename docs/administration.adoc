@@ -1663,8 +1663,32 @@ movement.
 [[tablet_server_decommissioning]]
 === Decommissioning or Permanently Removing a Tablet Server From a Cluster
 
-Kudu does not currently have an automated way to remove a tablet server from
-a cluster permanently. Instead, use the following steps:
+Starting with Kudu 1.12, the Kudu rebalancer tool can be used to decommission a
+tablet server by supplying the `--ignored_tservers` and
+`--move_replicas_from_ignored_tservers` arguments.
+
+WARNING: Do not decommission multiple tablet servers at once. To remove
+multiple tablet servers from the cluster, follow the below instructions for
+each tablet server, ensuring that the previous tablet server is removed from
+the cluster and `ksck` is healthy before shutting down the next.
+
+. Ensure the cluster is in good health by using `ksck`. See <<ksck>>.
+. Put the tablet server into
+  <<minimizing_cluster_disruption_during_temporary_single_ts_downtime,maintenance
+  mode>> by using the `kudu tserver state enter_maintenance` tool.
+. Run `kudu cluster rebalance` tool, supplying the `--ignored_tservers`
+  argument with the UUIDs of the tablet servers to be decommissioned, and the
+  `--move_replicas_from_ignored_tservers` flag.
+. Wait for the moves to complete and for `ksck` to show the cluster in a
+  healthy state.
+. The decommissioned tablet server can be brought offline.
+. To completely remove it from the cluster so `ksck` shows the cluster as
+  completely healthy, restart the masters. In the case of a single master,
+  this will cause cluster downtime. With multi-master, restart the masters in
+  sequence to avoid cluster downtime.
+
+In Kudu versions that do not support the above tooling, different steps must be
+followed to decommission a tablet server:
 
 . Ensure the cluster is in good health using `ksck`. See <<ksck>>.
 . If the tablet server contains any replicas of tables with replication factor
@@ -1681,11 +1705,6 @@ a cluster permanently. Instead, use the following steps:
   cluster as completely healthy, restart the masters. In the case of a single
   master, this will cause cluster downtime. With multi-master, restart the
   masters in sequence to avoid cluster downtime.
-
-WARNING: Do not shut down multiple tablet servers at once. To remove multiple
-tablet servers from the cluster, follow the above instructions for each tablet
-server, ensuring that the previous tablet server is removed from the cluster and
-`ksck` is healthy before shutting down the next.
 
 [[using_cluster_names_in_kudu_tool]]
 === Using cluster names in the `kudu` command line tool
