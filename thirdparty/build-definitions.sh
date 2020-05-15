@@ -519,15 +519,16 @@ build_snappy() {
   SNAPPY_BDIR=$TP_BUILD_DIR/$SNAPPY_NAME$MODE_SUFFIX
   mkdir -p $SNAPPY_BDIR
   pushd $SNAPPY_BDIR
+  rm -Rf CMakeCache.txt CMakeFiles/
   CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS" \
-    LIBS="$EXTRA_LIBS" \
-    $SNAPPY_SOURCE/configure \
-    --with-pic \
-    --prefix=$PREFIX
-  fixup_libtool
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+    cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DBUILD_STATIC_LIBS=ON \
+    -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+    -DSNAPPY_BUILD_TESTS=OFF \
+    $EXTRA_CMAKE_FLAGS \
+    $SNAPPY_SOURCE
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 

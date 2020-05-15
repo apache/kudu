@@ -247,8 +247,7 @@ SNAPPY_PATCHLEVEL=0
 fetch_and_patch \
  snappy-${SNAPPY_VERSION}.tar.gz \
  $SNAPPY_SOURCE \
- $SNAPPY_PATCHLEVEL \
- "autoreconf -fvi"
+ $SNAPPY_PATCHLEVEL
 
 ZLIB_PATCHLEVEL=0
 fetch_and_patch \
