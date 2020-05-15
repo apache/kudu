@@ -170,14 +170,11 @@ fetch_and_patch() {
 mkdir -p $TP_SOURCE_DIR
 cd $TP_SOURCE_DIR
 
-GLOG_PATCHLEVEL=4
+GLOG_PATCHLEVEL=1
 fetch_and_patch \
  glog-${GLOG_VERSION}.tar.gz \
  $GLOG_SOURCE \
  $GLOG_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch" \
- "patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch" \
- "patch -p1 < $TP_DIR/patches/glog-fix-symbolization.patch" \
  "patch -p1 < $TP_DIR/patches/glog-support-stacktrace-for-aarch64.patch" \
  "autoreconf -fvi"
 

@@ -226,9 +226,6 @@ enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
 
 // The direct user-facing macros.
 #define KLOG_EVERY_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(google::GLOG_ ## severity < \
-                             google::NUM_SEVERITIES, \
-                             INVALID_REQUESTED_LOG_SEVERITY); \
   KUDU_SOME_KIND_OF_LOG_EVERY_N(severity, (n), google::LogMessage::SendToLog)
 
 #define KSYSLOG_EVERY_N(severity, n) \
@@ -246,23 +243,23 @@ enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
 // We also disable the un-annotated glog macros for anyone who includes this header.
 #undef LOG_EVERY_N
 #define LOG_EVERY_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(false, "LOG_EVERY_N is deprecated. Please use KLOG_EVERY_N.")
+  static_assert(false, "LOG_EVERY_N is deprecated. Please use KLOG_EVERY_N.")
 
 #undef SYSLOG_EVERY_N
 #define SYSLOG_EVERY_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(false, "SYSLOG_EVERY_N is deprecated. Please use KSYSLOG_EVERY_N.")
+  static_assert(false, "SYSLOG_EVERY_N is deprecated. Please use KSYSLOG_EVERY_N.")
 
 #undef PLOG_EVERY_N
 #define PLOG_EVERY_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(false, "PLOG_EVERY_N is deprecated. Please use KPLOG_EVERY_N.")
+  static_assert(false, "PLOG_EVERY_N is deprecated. Please use KPLOG_EVERY_N.")
 
 #undef LOG_FIRST_N
 #define LOG_FIRST_N(severity, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(false, "LOG_FIRST_N is deprecated. Please use KLOG_FIRST_N.")
+  static_assert(false, "LOG_FIRST_N is deprecated. Please use KLOG_FIRST_N.")
 
 #undef LOG_IF_EVERY_N
 #define LOG_IF_EVERY_N(severity, condition, n) \
-  GOOGLE_GLOG_COMPILE_ASSERT(false, "LOG_IF_EVERY_N is deprecated. Please use KLOG_IF_EVERY_N.")
+  static_assert(false, "LOG_IF_EVERY_N is deprecated. Please use KLOG_IF_EVERY_N.")
 
 namespace kudu {
 
