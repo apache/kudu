@@ -2,7 +2,7 @@
 title: Apache Kudu Administration
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2020-05-14 16:58:37 PDT'
+last_updated: 'Last updated 2020-05-18 13:53:43 PDT'
 ---
 <!--
 
@@ -1967,14 +1967,44 @@ more information.</p>
 <div class="paragraph">
 <p>For higher read parallelism and larger volumes of storage per server, users may
 want to configure servers to store data in multiple directories on different
-devices. Once a server is started, users must go through the following steps
-to change the directory configuration.</p>
+devices. Users can add or remove data directories to an existing master or
+tablet server by updating the <code>--fs_data_dirs</code> gflag configuration and
+restarting the server. Data is striped across data directories, and when a new
+data directory is added, new data will be striped across the union of the old
+and new directories.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Removing a data directory from <code>--fs_data_dirs</code> may result in failed tablet
+replicas in cases where there were data blocks in the directory that was
+removed. Use <code>ksck</code> to ensure the cluster can fully recover from the directory
+removal before moving onto another server.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+In versions of Kudu below 1.12, Kudu requires that the <code>kudu fs
+update_dirs</code> tool be run before restarting with a different set of data
+directories. Such versions will fail to start if not run.
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
-<p>Users can add or remove data directories to an existing master or tablet server
-via the <code>kudu fs update_dirs</code> tool. Data is striped across data directories,
-and when a new data directory is added, new data will be striped across the
-union of the old and new directories.</p>
+<p>If on a Kudu version below 1.12, once a server is started, users must go
+through the below steps to change the directory configuration:</p>
 </div>
 <div class="admonitionblock note">
 <table>
@@ -2038,13 +2068,9 @@ UNIX user, typically <code>kudu</code>.
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>The tool can only run while the server is offline, so establish a maintenance
-window to update the server. The tool itself runs quickly, so this offline
-window should be brief, and as such, only the server to update needs to be
-offline. However, if the server is offline for too long (see the
-<code>follower_unavailable_considered_failed_sec</code> flag), the tablet replicas on it
-may be evicted from their Raft groups. To avoid this, it may be desirable to
-bring the entire cluster offline while performing the update.</p>
+<p>Use <code>ksck</code> to ensure the cluster is healthy, and establish a
+<a href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">maintenance
+window</a> to bring the tablet server offline.</p>
 </li>
 <li>
 <p>Run the tool with the desired directory configuration flags. For example, if a
@@ -2058,7 +2084,7 @@ due to a disk error), run the command:</p>
 </div>
 </li>
 <li>
-<p>Modify the values of the <code>fs_data_dirs</code> flags for the updated sever. If using
+<p>Modify the value of the <code>--fs_data_dirs</code> flag for the updated server. If using
 CM, make sure to only update the configurations of the updated server, rather
 than of the entire Kudu service.</p>
 </li>
@@ -2070,6 +2096,10 @@ system packages, <code>service</code> is typically used:</p>
 <pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-tserver start</code></pre>
 </div>
 </div>
+</li>
+<li>
+<p>Use <code>ksck</code> to ensure Kudu returns to a healthy state before resuming normal
+operation.</p>
 </li>
 </ol>
 </div>
@@ -2137,8 +2167,23 @@ E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c13
 <div class="paragraph">
 <p>While in this state, the affected node will avoid using the failed disk,
 leading to lower storage volume and reduced read parallelism. The administrator
-should schedule a brief window to <a href="#change_dir_config">update the node&#8217;s
-directory configuration</a> to exclude the failed disk.</p>
+can remove the failed directory from the <code>--fs_data_dirs</code> gflag to avoid seeing
+these errors.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+In versions of Kudu below 1.12, in order to start Kudu with a
+different set of directories, the administrator should schedule a brief window
+to <a href="#change_dir_config">update the node&#8217;s directory configuration</a>. Kudu will
+fail to start otherwise.
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>When the disk is repaired, remounted, and ready to be reused by Kudu, take the
@@ -2153,7 +2198,8 @@ following steps:</p>
 <p>Stop the tablet server.</p>
 </li>
 <li>
-<p>Run the <code>update_dirs</code> tool. For example, to add <code>/data/3</code>, run the following:</p>
+<p>Update the <code>--fs_data_dirs</code> gflag to add <code>/data/3</code>, potentially using the
+<code>update_dirs</code> tool if on a version of Kudu that is below 1.12:</p>
 <div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2,/data/3</code></pre>
@@ -2224,14 +2270,14 @@ are full.</p>
 </div>
 <div class="paragraph">
 <p>In 1.7.0 and later, new tablets are assigned a disk group consisting of
--fs_target_data_dirs_per_tablet data dirs (default 3). If Kudu is not configured
-with enough data directories for a full disk group, all data directories are
-used. When a data directory is full, Kudu will stop writing new data to it and
-each tablet that uses that data directory will write new data to other data
-directories within its group. If all data directories for a tablet are full, Kudu
-will crash. Periodically, Kudu will check if full data directories are still
-full, and will resume writing to those data directories if space has become
-available.</p>
+<code>--fs_target_data_dirs_per_tablet</code> data dirs (default 3). If Kudu is not
+configured with enough data directories for a full disk group, all data
+directories are used. When a data directory is full, Kudu will stop writing new
+data to it and each tablet that uses that data directory will write new data to
+other data directories within its group. If all data directories for a tablet
+are full, Kudu will crash. Periodically, Kudu will check if full data
+directories are still full, and will resume writing to those data directories
+if space has become available.</p>
 </div>
 <div class="paragraph">
 <p>If Kudu does crash because its data directories are full, freeing space on the
@@ -2518,6 +2564,69 @@ On Kudu versions prior to 1.8, the <code>--force</code> flag must be provided in
 </div>
 </div>
 <div class="sect2">
+<h3 id="rolling_restart"><a class="link" href="#rolling_restart">Orchestrating a rolling restart with no downtime</a></h3>
+<div class="paragraph">
+<p>As of Kudu 1.12, tooling is available to restart a cluster with no downtime. To
+perform such a "rolling restart", perform the following sequence:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Restart the master(s) one-by-one. If there is only a single master, this may
+cause brief interference with on-going workloads.</p>
+</li>
+<li>
+<p>Starting with a single tablet server, put the tablet server into
+<a href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">maintenance
+mode</a> by using the <code>kudu tserver state enter_maintenance</code> tool.</p>
+</li>
+<li>
+<p>Start quiescing the tablet server using the <code>kudu tserver quiesce start</code>
+tool. This will signal to Kudu to stop hosting leaders on the specified
+tablet server and to redirect new scan requests to other tablet servers.</p>
+</li>
+<li>
+<p>Periodically run <code>kudu tserver quiesce start</code> with the
+<code>--error_if_not_fully_quiesced</code> option, until it returns success, indicating
+that all leaders have been moved away from the tablet server and all on-going
+scans have completed.</p>
+</li>
+<li>
+<p>Restart the tablet server.</p>
+</li>
+<li>
+<p>Periodically run <code>ksck</code> until the cluster is reported to be healthy.</p>
+</li>
+<li>
+<p>Exit maintenance mode on the tablet server by running <code>kudu tserver state
+exit_maintenance</code>. This will allow new tablet replicas to be placed on the
+tablet server.</p>
+</li>
+<li>
+<p>Repeat these steps for all tablet servers in the cluster.</p>
+</li>
+</ol>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If running with <a href="#rack_awareness">rack awareness</a>, the above steps can be
+performed restarting multiple tablet servers within a single rack at the same
+time. Users should use <code>ksck</code> to ensure the location assignment policy is
+enforced while going through these steps, and that no more than a single
+location is restarted at the same time. At least three locations should be
+defined in the cluster to safely restart multiple tablet service within one
+location.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
 <h3 id="rebalancer_tool"><a class="link" href="#rebalancer_tool">Running the tablet rebalancing tool</a></h3>
 <div class="paragraph">
 <p>The <code>kudu</code> CLI contains a rebalancing tool that can be used to rebalance
@@ -2692,8 +2801,58 @@ movement.</p>
 <div class="sect2">
 <h3 id="tablet_server_decommissioning"><a class="link" href="#tablet_server_decommissioning">Decommissioning or Permanently Removing a Tablet Server From a Cluster</a></h3>
 <div class="paragraph">
-<p>Kudu does not currently have an automated way to remove a tablet server from
-a cluster permanently. Instead, use the following steps:</p>
+<p>Starting with Kudu 1.12, the Kudu rebalancer tool can be used to decommission a
+tablet server by supplying the <code>--ignored_tservers</code> and
+<code>--move_replicas_from_ignored_tservers</code> arguments.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Do not decommission multiple tablet servers at once. To remove
+multiple tablet servers from the cluster, follow the below instructions for
+each tablet server, ensuring that the previous tablet server is removed from
+the cluster and <code>ksck</code> is healthy before shutting down the next.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Ensure the cluster is in good health by using <code>ksck</code>. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a>.</p>
+</li>
+<li>
+<p>Put the tablet server into
+<a href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">maintenance
+mode</a> by using the <code>kudu tserver state enter_maintenance</code> tool.</p>
+</li>
+<li>
+<p>Run <code>kudu cluster rebalance</code> tool, supplying the <code>--ignored_tservers</code>
+argument with the UUIDs of the tablet servers to be decommissioned, and the
+<code>--move_replicas_from_ignored_tservers</code> flag.</p>
+</li>
+<li>
+<p>Wait for the moves to complete and for <code>ksck</code> to show the cluster in a
+healthy state.</p>
+</li>
+<li>
+<p>The decommissioned tablet server can be brought offline.</p>
+</li>
+<li>
+<p>To completely remove it from the cluster so <code>ksck</code> shows the cluster as
+completely healthy, restart the masters. In the case of a single master,
+this will cause cluster downtime. With multi-master, restart the masters in
+sequence to avoid cluster downtime.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>In Kudu versions that do not support the above tooling, different steps must be
+followed to decommission a tablet server:</p>
 </div>
 <div class="olist arabic">
 <ol class="arabic">
@@ -2721,21 +2880,6 @@ master, this will cause cluster downtime. With multi-master, restart the
 masters in sequence to avoid cluster downtime.</p>
 </li>
 </ol>
-</div>
-<div class="admonitionblock warning">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-warning" title="Warning"></i>
-</td>
-<td class="content">
-Do not shut down multiple tablet servers at once. To remove multiple
-tablet servers from the cluster, follow the above instructions for each tablet
-server, ensuring that the previous tablet server is removed from the cluster and
-<code>ksck</code> is healthy before shutting down the next.
-</td>
-</tr>
-</table>
 </div>
 </div>
 <div class="sect2">
@@ -2907,6 +3051,7 @@ line tool that expects a list of Kudu master RPC addresses.
 <li><a href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a></li>
 <li><a href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></li>
 <li><a href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">Minimizing cluster disruption during temporary planned downtime of a single tablet server</a></li>
+<li><a href="#rolling_restart">Orchestrating a rolling restart with no downtime</a></li>
 <li><a href="#rebalancer_tool">Running the tablet rebalancing tool</a></li>
 <li><a href="#rebalancer_tool_with_rack_awareness">Running the tablet rebalancing tool on a rack-aware cluster</a></li>
 <li><a href="#tablet_server_decommissioning">Decommissioning or Permanently Removing a Tablet Server From a Cluster</a></li>

@@ -2,7 +2,7 @@
 title: Apache Kudu Security
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2020-05-14 21:51:01 PDT'
+last_updated: 'Last updated 2020-05-18 13:53:35 PDT'
 ---
 <!--
 
@@ -218,8 +218,24 @@ to access the cluster.
 <div class="paragraph">
 <p>As of Kudu 1.10.0, Kudu can be configured to enforce fine-grained authorization
 across servers. This ensures that users can see only the data they are
-explicitly authorized to see. Kudu currently supports this by leveraging
-policies defined in Apache Sentry 2.2 and later.</p>
+explicitly authorized to see. Kudu supports this by leveraging policies
+defined in Apache Sentry 2.2 and later. In addition, starting from Kudu
+1.12.0, Kudu can support fine-grained authorization by leveraging policies
+defined in Apache Ranger 2.1 and later.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Since support for Apache Sentry authorization has been deprecated since
+Kudu 1.12.0 and may be completely removed, fine-grained authorization via Apache
+Ranger is preferred going forward.
+</td>
+</tr>
+</table>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -236,6 +252,120 @@ web UI ports, or redact or disable the web UI entirely, as desired. See the
 </td>
 </tr>
 </table>
+</div>
+<div class="sect2">
+<h3 id="_apache_ranger"><a class="link" href="#_apache_ranger">Apache Ranger</a></h3>
+<div class="paragraph">
+<p>Apache Ranger models tabular objects stored in a Kudu cluster in the following
+hierarchy:</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Ranger allows you to add separate service repositories to manage privileges
+for different Kudu clusters. Depending on the value of the <code>ranger.plugin.kudu.service.name</code>
+configuration in Ranger client, Kudu knows which service repository to connect
+to. For more details about Ranger service repository, see the Apache Ranger
+<a href="https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=57901344">documentation</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Database</strong> - Kudu does not have the concept of a database. Therefore, a database
+is indicated as a prefix of table names with the format <code>&lt;database&gt;.&lt;table&gt;</code>.
+Since Kudu&#8217;s only restriction on table names is that they be valid UTF-8 encoded
+strings, Kudu considers special characters to be valid parts of database or table
+names. For example, if a managed Kudu table created from Impala (see Kudu Impala
+integration <a href="kudu_impala_integration.html#managed_tables">documentation</a>) is named
+<code>impala::bar.foo</code>, its database will be <code>impala::bar</code>.</p>
+</li>
+<li>
+<p><strong>Table</strong> - a single Kudu table.</p>
+</li>
+<li>
+<p><strong>Column</strong> - a column within a Kudu table.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>In Ranger, privileges are also associated with specific actions. Access to Kudu
+tables may rely on privileges on the following actions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ALTER</code></p>
+</li>
+<li>
+<p><code>CREATE</code></p>
+</li>
+<li>
+<p><code>DELETE</code></p>
+</li>
+<li>
+<p><code>DROP</code></p>
+</li>
+<li>
+<p><code>INSERT</code></p>
+</li>
+<li>
+<p><code>UPDATE</code></p>
+</li>
+<li>
+<p><code>SELECT</code></p>
+</li>
+<li>
+<p><code>ALL</code></p>
+</li>
+<li>
+<p><code>METADATA</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Specifically, if a user has the <code>ALL</code> privileges on a given table, that user has
+all of the above privileges on the table. <code>METADATA</code> privilege is modeled as any
+privilege. If a user has any privilege on a given table, that user has <code>METADATA</code>
+privileges on the table, i.e. a privilege granted on any action on a table implies
+that the user has the <code>METADATA</code> privilege on that table.</p>
+</div>
+<div class="paragraph">
+<p>In term of privilege evaluation Ranger doesn&#8217;t have the concept of hierarchical
+implication. To be more specific, if a user has <code>SELECT</code> privilege on a database,
+it does not imply that user has <code>SELECT</code> privileges on every table belonging to
+that database. On the other hand, Ranger supports privilege wildcard matching.
+For example, <code>db=a&#8594;table=*</code> matches all the tables that belong to database <code>a</code>.
+Therefore, in Ranger users actually need the <code>SELECT</code> privilege on
+<code>db=a&#8594;table=*&#8594;column=*</code> to match the semantics of the <code>SELECT</code> privilege on
+<code>db=a</code> in Sentry.</p>
+</div>
+<div class="paragraph">
+<p>Nevertheless, with Ranger integration, when a Kudu master receives a request,
+it consults Ranger to determine what privileges a user has. And the required
+policies documented in the <a href="#policy-for-kudu-masters">policy section</a>
+are enforced to determine whether the user is authorized to perform the requested
+action or not.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Even though Kudu table names remain case sensitive with Ranger integration,
+policies authorization is considered case-insensitive.
+</td>
+</tr>
+</table>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_apache_sentry"><a class="link" href="#_apache_sentry">Apache Sentry</a></h3>
@@ -335,12 +465,12 @@ user to decide whether to perform or reject a request.</p>
 <div class="sect2">
 <h3 id="_authorization_tokens"><a class="link" href="#_authorization_tokens">Authorization Tokens</a></h3>
 <div class="paragraph">
-<p>Rather than having every tablet server communicate directly with Sentry,
-privileges are propagated and checked via <strong>authorization tokens</strong>. These tokens
-encapsulate what privileges a user has on a given table. Tokens are generated
-by the master and returned to Kudu clients upon opening a Kudu table. Kudu
-clients automatically attach authorization tokens when sending requests to
-tablet servers.</p>
+<p>Rather than having every tablet server communicate directly with the underlying
+authorization service (e.g. Sentry or Ranger), privileges are propagated and checked
+via <strong>authorization tokens</strong>. These tokens encapsulate what privileges a user has
+on a given table. Tokens are generated by the master and returned to Kudu clients
+upon opening a Kudu table. Kudu clients automatically attach authorization tokens
+when sending requests to tablet servers.</p>
 </div>
 <div class="admonitionblock note">
 <table>
@@ -350,11 +480,11 @@ tablet servers.</p>
 </td>
 <td class="content">
 Authorization tokens are a means to limiting the number of nodes directly
-accessing Sentry to retrieve privileges. As such, since the expected number of
-tablet servers in a cluster is much higher than the number of Kudu masters,
-they are only used to authorize requests sent to tablet servers. Kudu masters
-fetch privileges directly from Sentry or cache. See <a href="#privilege-caching">Caching</a> for
-more details of Kudu&#8217;s privilege cache.
+accessing the authorization service to retrieve privileges. As such, since the
+expected number of tablet servers in a cluster is much higher than the number of
+Kudu masters, they are only used to authorize requests sent to tablet servers.
+Kudu masters fetch privileges directly from the authorization service or cache.
+See <a href="#privilege-caching">Kudu Master Caching for Sentry</a> for more details of Kudu&#8217;s privilege cache.
 </td>
 </tr>
 </table>
@@ -379,15 +509,15 @@ operation, or if it is invalid (e.g. expired).</p>
 <p>It may be desirable to allow certain users to view and modify any data stored
 in Kudu. Such users can be specified via the <code>--trusted_user_acl</code> master
 configuration. Trusted users can perform any operation that would otherwise
-require fine-grained privileges, without Kudu consulting Sentry.</p>
+require fine-grained privileges, without Kudu consulting the authorization service.</p>
 </div>
 <div class="paragraph">
 <p>Additionally, some services that interact with Kudu may authorize requests on
 behalf of their end users. For example, Apache Impala authorizes queries on
 behalf of its users, and sends requests to Kudu as the Impala service user,
 commonly "impala". Since Impala authorizes requests on its own, to avoid
-extraneous communication between Sentry and Kudu, the Impala service user
-should be listed as a trusted user.</p>
+extraneous communication between the authorization service and Kudu, the
+Impala service user should be listed as a trusted user.</p>
 </div>
 <div class="admonitionblock note">
 <table>
@@ -404,6 +534,181 @@ documentation</a>.
 </td>
 </tr>
 </table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_configuring_the_integration_with_apache_ranger"><a class="link" href="#_configuring_the_integration_with_apache_ranger">Configuring the Integration with Apache Ranger</a></h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Ranger is often configured with Kerberos authentication. See
+<a href="#configuration">Configuring a Secure Kudu Cluster</a> for how to configure Kudu to authenticate via Kerberos.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Sentry integration can not be enabled at the same time with Ranger
+integration.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>After building Kudu from source, find the <code>kudu-subprocess.jar</code> under the build
+directory (e.g. <code>build/release/bin</code>). Note its path, as it is the one to the
+JAR file containing the Ranger subprocess, which houses the Ranger client that
+Kudu will use to communicate with the Ranger server.</p>
+</li>
+<li>
+<p>Use the <code>kudu table list</code> tool to find any table names in the cluster that are
+not Ranger-compatible, which are names that begin or end with a period. Also check
+that there are no two table names that only differ by case, since authorization
+is case-insensitive. For those tables that don&#8217;t comply with the requirements,
+use the <code>kudu table rename_table</code> tool to rename the tables.</p>
+</li>
+<li>
+<p>Create Ranger client <code>ranger-kudu-security.xml</code> configuration file, and note down
+the directory containing this file.</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.cache.dir&lt;/name&gt;
+  &lt;value&gt;policycache&lt;/value&gt;
+  &lt;description&gt;Directory where Ranger policies are cached after successful retrieval from the Ranger service&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.service.name&lt;/name&gt;
+  &lt;value&gt;kudu&lt;/value&gt;
+  &lt;description&gt;Name of the Ranger service repository storing policies for this Kudu cluster&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.rest.url&lt;/name&gt;
+  &lt;value&gt;http://host:port&lt;/value&gt;
+  &lt;description&gt;Ranger Admin URL&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.source.impl&lt;/name&gt;
+  &lt;value&gt;org.apache.ranger.admin.client.RangerAdminRESTClient&lt;/value&gt;
+  &lt;description&gt;Ranger client implementation to retrieve policies from the Ranger service&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.rest.ssl.config.file&lt;/name&gt;
+  &lt;value&gt;ranger-kudu-policymgr-ssl.xml&lt;/value&gt;
+  &lt;description&gt;Path to the file containing SSL details to connect Ranger Admin&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.pollIntervalMs&lt;/name&gt;
+  &lt;value&gt;30000&lt;/value&gt;
+  &lt;description&gt;Ranger client policy polling interval&lt;/description&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>When Secure Socket Layer (SSL) is enabled for Ranger Admin, add <code>ranger-kudu-policymgr-ssl.xml</code>
+file to the Ranger client configuration directory with the following configurations:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.keystore&lt;/name&gt;
+  &lt;value&gt;[/path/to/keystore].jks&lt;/value&gt;
+  &lt;description&gt;Java keystore files&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.keystore.credential.file&lt;/name&gt;
+  &lt;value&gt;jceks://file/[path/to/credentials].jceks&lt;/value&gt;
+  &lt;description&gt;Java keystore credential file&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.truststore&lt;/name&gt;
+  &lt;value&gt;[/path/to/truststore].jks&lt;/value&gt;
+  &lt;description&gt;Java truststore file&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.truststore.credential.file&lt;/name&gt;
+  &lt;value&gt;jceks://file/[path/to/credentials].jceks&lt;/value&gt;
+  &lt;description&gt;Java truststore credential file&lt;/description&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the following configurations on the Kudu master:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code># The path to directory containing Ranger client configuration. This example
+# assumes the path is '/kudu/ranger-config'.
+--ranger_config_path=/kudu/ranger-config
+
+# The path where the Java binary was installed. This example assumes
+# '$JAVA_HOME=/usr/local'
+--ranger_java_path=/usr/local/bin/java
+
+# The path to the JAR file containing the Ranger subprocess. This example
+# assumes '$KUDU_HOME=/kudu'
+--ranger_jar_path=/kudu/build/release/bin/kudu-subprocess.jar
+
+# This example ACL setup allows the 'impala' user to access all data stored in
+# Kudu, assuming Impala will authorize requests on its own. The 'kudu' user is
+# also granted access to all Kudu data, which may facilitate testing and
+# debugging (such as running the 'kudu cluster ksck' tool).
+--trusted_user_acl=impala,kudu</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the following configurations on the tablet servers:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>--tserver_enforce_access_control=true</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Add a Kudu service repository with the following configurations via the Ranger
+Admin web UI:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml"># This example setup configures the Kudu service user as a privileged user to be
+# able to retrieve authorization policies stored in Ranger.
+
+&lt;property&gt;
+  &lt;name&gt;policy.download.auth.users&lt;/name&gt;
+  &lt;value&gt;kudu&lt;/value&gt;
+&lt;/property&gt;</code></pre>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -483,7 +788,7 @@ Metastore.
 </div>
 </div>
 <div class="sect2">
-<h3 id="privilege-caching"><a class="link" href="#privilege-caching">Caching</a></h3>
+<h3 id="privilege-caching"><a class="link" href="#privilege-caching">Kudu Master Caching for Sentry</a></h3>
 <div class="paragraph">
 <p>To avoid overwhelming Sentry with requests to fetch user privileges, the Kudu
 master can be configured to cache user privileges. A by-product of this caching
@@ -506,7 +811,30 @@ cached privileges to force Kudu to fetch new ones from Sentry:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_policy_for_kudu_masters"><a class="link" href="#_policy_for_kudu_masters">Policy for Kudu Masters</a></h3>
+<h3 id="_ranger_client_caching"><a class="link" href="#_ranger_client_caching">Ranger Client Caching</a></h3>
+<div class="paragraph">
+<p>On the other hand, privilege cache in Kudu master is disabled with Ranger integration,
+since Ranger provides client side cache the use privileges and can periodically poll
+the privilege store for any changes. When a change is detected, the cache will be
+automatically updated.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Update the <code>ranger.plugin.kudu.policy.pollIntervalMs</code> property specified in
+<code>ranger-kudu-security.xml</code> to set how often the Ranger client cache refreshes
+the privileges from the Ranger service.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="policy-for-kudu-masters"><a class="link" href="#policy-for-kudu-masters">Policy for Kudu Masters</a></h3>
 <div class="paragraph">
 <p>The following authorization policy is enforced by Kudu masters.</p>
 </div>
@@ -874,12 +1202,15 @@ Kudu can be used with whole-disk encryption tools such as dm-crypt.</p>
 <li><a href="#_coarse_grained_authorization">Coarse-Grained Authorization</a></li>
 <li><a href="#fine_grained_authz">Fine-Grained Authorization</a>
 <ul class="sectlevel2">
+<li><a href="#_apache_ranger">Apache Ranger</a></li>
 <li><a href="#_apache_sentry">Apache Sentry</a></li>
 <li><a href="#_authorization_tokens">Authorization Tokens</a></li>
 <li><a href="#trusted-users">Trusted Users</a></li>
+<li><a href="#_configuring_the_integration_with_apache_ranger">Configuring the Integration with Apache Ranger</a></li>
 <li><a href="#sentry-configuration">Configuring the Integration with Apache Sentry</a></li>
-<li><a href="#privilege-caching">Caching</a></li>
-<li><a href="#_policy_for_kudu_masters">Policy for Kudu Masters</a></li>
+<li><a href="#privilege-caching">Kudu Master Caching for Sentry</a></li>
+<li><a href="#_ranger_client_caching">Ranger Client Caching</a></li>
+<li><a href="#policy-for-kudu-masters">Policy for Kudu Masters</a></li>
 <li><a href="#_policy_for_kudu_tablet_servers">Policy for Kudu Tablet Servers</a></li>
 </ul>
 </li>
