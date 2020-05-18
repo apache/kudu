@@ -1137,9 +1137,6 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///
   /// @param [in] col_name
   ///   Name of the column to which the predicate applies.
-  /// @param [in] allocator
-  ///   Pointer to the BlockBloomFilterBufferAllocatorIf allocator used with
-  ///   Bloom filters.
   /// @param bloom_filters
   ///   Vector of BlockBloomFilter pointers that contain the values inserted to
   ///   match against the column. The column value must match against all the
@@ -1155,7 +1152,6 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///   a non-NULL value is still returned. The error will be returned when
   ///   attempting to add this predicate to a KuduScanner.
   KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
-                                           const Slice& allocator,
                                            const std::vector<Slice>& bloom_filters);
   ///@}
 

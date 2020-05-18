@@ -1413,15 +1413,12 @@ TEST_F(BloomFilterPredicateTest, TestDirectBlockBloomFilterPredicate) {
 
   InsertAllValuesInTable();
 
-  auto* allocator = DefaultBlockBloomFilterBufferAllocator::GetSingleton();
-  Slice allocator_slice(reinterpret_cast<const uint8_t*>(allocator), sizeof(*allocator));
-
   vector<Slice> included_bf_vec =
       { Slice(reinterpret_cast<const uint8_t*>(included_bf.get()), sizeof(*included_bf)) };
   const size_t included_bf_vec_size = included_bf_vec.size();
 
   auto* included_predicate =
-      table_->NewInBloomFilterPredicate("value", allocator_slice, included_bf_vec);
+      table_->NewInBloomFilterPredicate("value", included_bf_vec);
   auto* included_predicate_clone1 = included_predicate->Clone();
   auto* included_predicate_clone2 = included_predicate->Clone();
 
@@ -1434,7 +1431,7 @@ TEST_F(BloomFilterPredicateTest, TestDirectBlockBloomFilterPredicate) {
       { Slice(reinterpret_cast<const uint8_t*>(excluded_bf.get()), sizeof(*excluded_bf)) };
   const size_t excluded_bf_vec_size = excluded_bf_vec.size();
   auto* excluded_predicate =
-      table_->NewInBloomFilterPredicate("value", allocator_slice, excluded_bf_vec);
+      table_->NewInBloomFilterPredicate("value", excluded_bf_vec);
   ASSERT_EQ(excluded_bf_vec_size, excluded_bf_vec.size());
 
   int actual_count_excluded = CountRows(table_, { excluded_predicate });

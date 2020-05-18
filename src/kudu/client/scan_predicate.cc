@@ -195,25 +195,23 @@ Status InDirectBloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*
 }
 
 InDirectBloomFilterPredicateData* InDirectBloomFilterPredicateData::Clone() const {
-  // In the clone case, the objects are owned by InDirectBloomFilterPredicateData
-  // and hence use the default deleter with shared_ptr.
-  shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_clone =
-      CHECK_NOTNULL(allocator_->Clone());
-
   vector<DirectBlockBloomFilterUniqPtr> bloom_filter_clones;
   bloom_filter_clones.reserve(bloom_filters_.size());
+
+  // For the case of direct Bloom filter, we don't have access to the allocator
+  // so use the default allocator for cloning it.
+  auto* allocator = DefaultBlockBloomFilterBufferAllocator::GetSingleton();
   for (const auto& bf : bloom_filters_) {
     unique_ptr<BlockBloomFilter> bf_clone;
-    CHECK_OK(bf->Clone(allocator_clone.get(), &bf_clone));
+    CHECK_OK(bf->Clone(allocator, &bf_clone));
 
-    // Similarly for unique_ptr, specify that the BlockBloomFilter is owned by
+    // For unique_ptr, specify that the BlockBloomFilter is owned by
     // InDirectBloomFilterPredicateData.
     DirectBlockBloomFilterUniqPtr direct_bf_clone(
         bf_clone.release(), DirectBloomFilterDataDeleter<BlockBloomFilter>(true /*owned*/));
     bloom_filter_clones.emplace_back(std::move(direct_bf_clone));
   }
-  return new InDirectBloomFilterPredicateData(col_, std::move(allocator_clone),
-                                              std::move(bloom_filter_clones));
+  return new InDirectBloomFilterPredicateData(col_, std::move(bloom_filter_clones));
 }
 
 KuduBloomFilter::KuduBloomFilter()  {

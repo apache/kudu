@@ -133,10 +133,8 @@ class InDirectBloomFilterPredicateData : public KuduPredicate::Data {
  public:
   InDirectBloomFilterPredicateData(
       ColumnSchema col,
-      std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator,
       std::vector<DirectBlockBloomFilterUniqPtr> bloom_filters)
       : col_(std::move(col)),
-        allocator_(std::move(allocator)),
         bloom_filters_(std::move(bloom_filters)) {
   }
 
@@ -152,7 +150,6 @@ class InDirectBloomFilterPredicateData : public KuduPredicate::Data {
   // have worked fine. However for the case when predicate data is Clone()'d the internal data
   // is owned by the instance of this class. Hence using smart pointers with custom deleter
   // DirectBloomFilterDataDeleter to keep track of ownership.
-  std::shared_ptr<BlockBloomFilterBufferAllocatorIf> allocator_;
   std::vector<DirectBlockBloomFilterUniqPtr> bloom_filters_;
 };
 
