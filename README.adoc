@@ -319,7 +319,7 @@ You can proceed to commit the changes in the pages repository and send a code
 review for your changes. In the future, this step may be automated whenever
 changes are checked into the main Kudu repository.
 
-After making changes to the `gh-branch` branch, follow the instructions below
+After making changes to the `gh-pages` branch, follow the instructions below
 when you want to deploy those changes to the live web site.
 
 === Deploying changes to the Apache Kudu web site
