@@ -368,6 +368,9 @@ Note: You can upload to the test PyPi by adding
 . Once the review is finished and the commit is pushed, update the website following
   these link:https://github.com/apache/kudu/#deploying-changes-to-the-apache-kudu-web-site[instructions].
 
+. Add a release blog post about the new release, similar to
+  link:https://kudu.apache.org/2019/07/09/apache-kudu-1-10-0-release.html[this].
+
 . About 24 hours after all artifacts have been published, send an email to
   user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org to
   announce the new release. The email should be similar to
