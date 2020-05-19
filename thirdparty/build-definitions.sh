@@ -520,7 +520,8 @@ build_snappy() {
   mkdir -p $SNAPPY_BDIR
   pushd $SNAPPY_BDIR
   rm -Rf CMakeCache.txt CMakeFiles/
-  CFLAGS="$EXTRA_CFLAGS" \
+  CFLAGS="$EXTRA_CFLAGS -fPIC" \
+    CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
     cmake \
     -DCMAKE_BUILD_TYPE=release \
     -DBUILD_STATIC_LIBS=ON \
