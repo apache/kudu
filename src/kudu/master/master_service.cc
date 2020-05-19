@@ -510,16 +510,20 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
   TRACE_EVENT1("master", "GetTableLocations",
                "requestor", rpc->requestor_string());
 
-  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
-  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
-    return;
+  Status s;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+    if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+      return;
+    }
+
+    if (PREDICT_FALSE(FLAGS_master_inject_latency_on_tablet_lookups_ms > 0)) {
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
+    }
+    s = server_->catalog_manager()->GetTableLocations(
+        req, resp, make_optional<const string&>(rpc->remote_user().username()));
   }
 
-  if (PREDICT_FALSE(FLAGS_master_inject_latency_on_tablet_lookups_ms > 0)) {
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
-  }
-  Status s = server_->catalog_manager()->GetTableLocations(
-      req, resp, make_optional<const string&>(rpc->remote_user().username()));
   CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
@@ -527,14 +531,18 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
 void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
                                        GetTableSchemaResponsePB* resp,
                                        rpc::RpcContext* rpc) {
-  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
-  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
-    return;
+  Status s;
+  {
+    CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+    if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+      return;
+    }
+
+    s = server_->catalog_manager()->GetTableSchema(
+        req, resp, make_optional<const string&>(rpc->remote_user().username()),
+        FLAGS_master_support_authz_tokens ? server_->token_signer() : nullptr);
   }
 
-  Status s = server_->catalog_manager()->GetTableSchema(
-      req, resp, make_optional<const string&>(rpc->remote_user().username()),
-      FLAGS_master_support_authz_tokens ? server_->token_signer() : nullptr);
   CheckRespErrorOrSetUnknown(s, resp);
   if (resp->has_error()) {
     // If there was an application error, respond to the RPC.

@@ -48,6 +48,8 @@ set(MASTER_SRCS
   placement_policy.cc
   ranger_authz_provider.cc
   sys_catalog.cc
+  table_locations_cache.cc
+  table_locations_cache_metrics.cc
   table_metrics.cc
   ts_descriptor.cc
   ts_manager.cc)

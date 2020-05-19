@@ -104,6 +104,8 @@
 #include "kudu/master/placement_policy.h"
 #include "kudu/master/ranger_authz_provider.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/master/table_locations_cache.h"
+#include "kudu/master/table_locations_cache_metrics.h"
 #include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
@@ -125,6 +127,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
@@ -317,6 +320,11 @@ DEFINE_bool(auto_rebalancing_enabled, false,
             "Whether auto-rebalancing is enabled.");
 TAG_FLAG(auto_rebalancing_enabled, advanced);
 TAG_FLAG(auto_rebalancing_enabled, experimental);
+
+DEFINE_uint32(table_locations_cache_capacity_mb, 0,
+              "Capacity for the table locations cache (in MiB); a value "
+              "of 0 means table locations are not be cached");
+TAG_FLAG(table_locations_cache_capacity_mb, advanced);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int64(tsk_rotation_seconds);
@@ -789,6 +797,7 @@ CatalogManager::CatalogManager(Master* master)
            // closely timed consecutive elections).
            .set_max_threads(1)
            .Build(&leader_election_pool_));
+  ResetTableLocationsCache();
 }
 
 CatalogManager::~CatalogManager() {
@@ -1187,6 +1196,9 @@ void CatalogManager::PrepareForLeadershipTask() {
         }
       }
     }
+
+    // Reset the cache storing information on table locations.
+    ResetTableLocationsCache();
   }
 
   std::lock_guard<simple_spinlock> l(state_lock_);
@@ -2173,6 +2185,11 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
   // 8. Send a DeleteTablet() request to each tablet replica in the table.
   SendDeleteTableRequest(table, deletion_msg);
 
+  // 9. Invalidate/purge corresponding entries in the table locations cache.
+  if (table_locations_cache_) {
+    table_locations_cache_->Remove(table->id());
+  }
+
   VLOG(1) << "Deleted table " << table->ToString();
   return Status::OK();
 }
@@ -2865,6 +2882,12 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   for (const auto& tablet : tablets_to_drop) {
     TabletMetadataLock l(tablet.get(), LockMode::READ);
     SendDeleteTabletRequest(tablet, l, deletion_msg);
+  }
+
+  // 10. Invalidate/purge corresponding entries in the table locations cache.
+  if (table_locations_cache_ &&
+      (!tablets_to_add.empty() || !tablets_to_drop.empty())) {
+    table_locations_cache_->Remove(table->id());
   }
 
   background_tasks_->Wake();
@@ -4091,6 +4114,7 @@ Status CatalogManager::ProcessTabletReport(
   // 3. Process each tablet. This may not be in the order that the tablets
   // appear in 'full_report', but that has no bearing on correctness.
   vector<scoped_refptr<TabletInfo>> mutated_tablets;
+  unordered_set<string> mutated_table_ids;
   unordered_set<string> uuids_ignored_for_underreplication =
       master_->ts_manager()->GetUuidsToIgnoreForUnderreplication();
   for (const auto& e : tablet_infos) {
@@ -4336,6 +4360,7 @@ Status CatalogManager::ProcessTabletReport(
     // Done here and not on a per-mutation basis to avoid duplicate entries.
     if (tablet_was_mutated) {
       mutated_tablets.push_back(tablet);
+      mutated_table_ids.emplace(table->id());
     }
 
     // 10. Process the report's tablet statistics.
@@ -4419,6 +4444,13 @@ Status CatalogManager::ProcessTabletReport(
     }
     rpc->table()->AddTask(rpc->tablet_id(), rpc);
     WARN_NOT_OK(rpc->Run(), Substitute("Failed to send $0", rpc->description()));
+  }
+
+  // 16. Invalidate corresponding entries in the table locations cache.
+  if (table_locations_cache_) {
+    for (const auto& table_id : mutated_table_ids) {
+      table_locations_cache_->Remove(table_id);
+    }
   }
 
   return Status::OK();
@@ -4959,7 +4991,9 @@ Status CatalogManager::BuildLocationsForTablet(
         if (reg.has_unix_domain_socket_path()) {
           tsinfo_pb->set_unix_domain_socket_path(reg.unix_domain_socket_path());
         }
-        if (ts_desc->location()) tsinfo_pb->set_location(*(ts_desc->location()));
+        if (ts_desc->location()) {
+          tsinfo_pb->set_location(*(ts_desc->location()));
+        }
       } else {
         // If we've never received a heartbeat from the tserver, we'll fall back
         // to the last known RPC address in the RaftPeerPB.
@@ -4980,8 +5014,9 @@ Status CatalogManager::BuildLocationsForTablet(
           &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
           [&]() -> pair<StringPiece, int> {
             auto& ts_info_pbs = ts_infos_dict->ts_info_pbs;
-            auto ts_info_idx = ts_info_pbs.size();
-            ts_info_pbs.emplace_back(make_tsinfo_pb().release());
+            const auto ts_info_idx = ts_info_pbs.size();
+            auto new_elem = make_tsinfo_pb();
+            ts_info_pbs.emplace_back(std::move(new_elem));
             return { ts_info_pbs.back()->permanent_uuid(), ts_info_idx };
           });
 
@@ -5129,11 +5164,11 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          optional<const string&> user) {
   // If start-key is > end-key report an error instead of swapping the two
   // since probably there is something wrong app-side.
-  if (req->has_partition_key_start() && req->has_partition_key_end()
-      && req->partition_key_start() > req->partition_key_end()) {
+  if (PREDICT_FALSE(req->has_partition_key_start() && req->has_partition_key_end()
+      && req->partition_key_start() > req->partition_key_end())) {
     return Status::InvalidArgument("start partition key is greater than the end partition key");
   }
-  if (req->max_returned_locations() <= 0) {
+  if (PREDICT_FALSE(req->max_returned_locations() <= 0)) {
     return Status::InvalidArgument("max_returned_locations must be greater than 0");
   }
 
@@ -5154,27 +5189,42 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   vector<scoped_refptr<TabletInfo>> tablets_in_range;
   table->GetTabletsInRange(req, &tablets_in_range);
 
-  TSInfosDict infos_dict;
+  // Check for items in the cache.
+  if (table_locations_cache_) {
+    auto handle = table_locations_cache_->Get(
+        table->id(),
+        tablets_in_range.size(),
+        tablets_in_range.empty() ? "" : tablets_in_range.front()->id(),
+        *req);
+    if (handle) {
+      *resp = handle.value();
+      return Status::OK();
+    }
+  }
 
+  TSInfosDict infos_dict;
+  bool consistent_locations = true;
   for (const auto& tablet : tablets_in_range) {
-    Status s = BuildLocationsForTablet(
+    const auto s = BuildLocationsForTablet(
         tablet, req->replica_type_filter(), resp->add_tablet_locations(),
         req->intern_ts_infos_in_response() ? &infos_dict : nullptr);
-    if (s.ok()) {
+    if (PREDICT_TRUE(s.ok())) {
       continue;
     }
+
+    // All the rest are various error cases.
+    consistent_locations = false;
+    resp->Clear();
+    resp->mutable_error()->set_code(
+        MasterErrorPB_Code::MasterErrorPB_Code_TABLET_NOT_RUNNING);
     if (s.IsNotFound()) {
       // The tablet has been deleted; force the client to retry. This is a
       // transient state that only happens with a concurrent drop range
       // partition alter table operation.
-      resp->Clear();
-      resp->mutable_error()->set_code(MasterErrorPB_Code::MasterErrorPB_Code_TABLET_NOT_RUNNING);
       StatusToPB(Status::ServiceUnavailable("Tablet not running"),
                  resp->mutable_error()->mutable_status());
     } else if (s.IsServiceUnavailable()) {
       // The tablet is not yet running; fail the request.
-      resp->Clear();
-      resp->mutable_error()->set_code(MasterErrorPB_Code::MasterErrorPB_Code_TABLET_NOT_RUNNING);
       StatusToPB(s, resp->mutable_error()->mutable_status());
       break;
     } else {
@@ -5183,10 +5233,24 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
           << s.ToString();
     }
   }
+  resp->mutable_ts_infos()->Reserve(infos_dict.ts_info_pbs.size());
   for (auto& pb : infos_dict.ts_info_pbs) {
     resp->mutable_ts_infos()->AddAllocated(pb.release());
   }
   resp->set_ttl_millis(FLAGS_table_locations_ttl_ms);
+
+  // Items with consistent tablet location information are added into the cache.
+  if (table_locations_cache_ && consistent_locations) {
+    unique_ptr<GetTableLocationsResponsePB> entry_ptr(
+        new GetTableLocationsResponsePB(*resp));
+    table_locations_cache_->Put(
+        table->id(),
+        tablets_in_range.size(),
+        tablets_in_range.empty() ? "" : tablets_in_range.front()->id(),
+        *req,
+        std::move(entry_ptr));
+  }
+
   return Status::OK();
 }
 
@@ -5315,6 +5379,22 @@ const char* CatalogManager::StateToString(State state) {
     case CatalogManager::kClosing: return "Closing";
   }
   __builtin_unreachable();
+}
+
+void CatalogManager::ResetTableLocationsCache() {
+  const auto cache_capacity_bytes =
+      FLAGS_table_locations_cache_capacity_mb * 1024 * 1024;
+  if (cache_capacity_bytes == 0) {
+    table_locations_cache_.reset();
+  } else {
+    unique_ptr<TableLocationsCache> new_cache(
+        new TableLocationsCache(cache_capacity_bytes));
+    unique_ptr<TableLocationsCacheMetrics> metrics(
+        new TableLocationsCacheMetrics(master_->metric_entity()));
+    new_cache->SetMetrics(std::move(metrics));
+    table_locations_cache_ = std::move(new_cache);
+  }
+  VLOG(1) << "table locations cache has been reset";
 }
 
 ////////////////////////////////////////////////////////////
