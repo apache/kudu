@@ -370,8 +370,8 @@ unique_ptr<Mode> BuildClusterMode() {
         "consistent. Use the 'checksum' flag to check that tablet data is "
         "consistent (also see the 'tables' and 'tablets' flags). Use the "
         "'checksum_snapshot' along with 'checksum' if the table or tablets "
-        "are actively receiving inserts or updates. Use the 'verbose' flag to "
-        "output detailed information on cluster status even if no "
+        "are actively receiving inserts or updates. Use the 'ksck_format' flag "
+        "to output detailed information on cluster status even if no "
         "inconsistency is found in metadata.";
 
     unique_ptr<Action> ksck = ActionBuilder("ksck", &RunKsck)
