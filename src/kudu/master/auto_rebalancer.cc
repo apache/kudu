@@ -495,9 +495,13 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
   for (const auto& table : table_infos) {
     TableMetadataLock table_l(table.get(), LockMode::READ);
 
+    const SysTablesEntryPB& table_data = table->metadata().state().pb;
+    if (table_data.state() == SysTablesEntryPB::REMOVED) {
+      // Don't worry about rebalancing replicas that belong to deleted tables.
+      continue;
+    }
     TableSummary table_summary;
     table_summary.id = table->id();
-    const SysTablesEntryPB& table_data = table->metadata().state().pb;
     table_summary.name = table_data.name();
     table_summary.replication_factor = table_data.num_replicas();
 
