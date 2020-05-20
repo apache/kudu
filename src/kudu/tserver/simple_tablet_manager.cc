@@ -36,7 +36,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
@@ -59,6 +58,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
@@ -72,6 +72,7 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/pb_util.h"
 
+DECLARE_bool(enable_flexi_raft);
 
 using std::set;
 using std::shared_ptr;
@@ -244,6 +245,11 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
                                        SecureShortDebugString(peer)));
       resolved_config.add_peers()->CopyFrom(new_peer);
     }
+  }
+
+  if (FLAGS_enable_flexi_raft) {
+    DCHECK(options.topology_config.has_commit_rule());
+    resolved_config.mutable_commit_rule()->CopyFrom(options.topology_config.commit_rule());
   }
 
   RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config));

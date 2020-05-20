@@ -1023,10 +1023,41 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
   }
 }
 
-std::map<std::string, int> PeerMessageQueue::GetDataCommitQuorum() {
-  std::map<std::string, int> data_commit_quorum;
-  // TODO(ritwikyadav) : Populate quorum from cmeta_
-  return data_commit_quorum;
+void PeerMessageQueue::GetDataCommitQuorum(
+    std::map<std::string, int>* data_commit_quorum) const {
+  CHECK(data_commit_quorum);
+  CHECK(queue_state_.active_config->has_commit_rule());
+
+  data_commit_quorum->clear();
+
+  // Map to store the number of voters in each region from the active config.
+  std::map<std::string, int> voter_distribution;
+
+  // Step 1: Compute total number of voters in each region.
+  // We don't need leader region because the server advancing the commit index
+  // is the leader.
+  GetRegionalCountsFromConfig(
+      *queue_state_.active_config, "" /* leader_uuid */,
+      &voter_distribution);
+
+  // Step 2: Compute data commit quorum from the config.
+  for (const RegionRuleSpecPB& rule_spec :
+      queue_state_.active_config->commit_rule().rule_conjunctions()) {
+    std::string region = rule_spec.region_identifier();
+    const std::string& commit_req = rule_spec.commit_requirement();
+
+    // Resolve master region.
+    if (region == "master") {
+      CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
+      region = local_peer_pb_.attrs().region();
+    }
+
+    // TODO(ritwikyadav): It is possible that all voters in a region
+    // have left the replicaset. Handle that case gracefully in a subsequent diff.
+    int total_voters = FindOrDie(voter_distribution, region);
+    int commit_req_num = ResolveCommitRequirement(total_voters, commit_req);
+    InsertIfNotPresent(data_commit_quorum, region, commit_req_num);
+  }
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(
@@ -1429,11 +1460,14 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                               VOTER_REPLICAS,
                               peer);
       } else {
+        std::map<std::string, int> data_commit_quorum;
+        GetDataCommitQuorum(&data_commit_quorum);
+
         AdvanceMajorityReplicatedWatermarkFlexiRaft(
             &queue_state_.majority_replicated_index,
             /*replicated_before=*/ prev_peer_state.last_received,
             /*replicated_after=*/ peer->last_received,
-            /*data_commit_quorum=*/ GetDataCommitQuorum(),
+            /*data_commit_quorum=*/ data_commit_quorum,
             VOTER_REPLICAS,
             peer);
       }

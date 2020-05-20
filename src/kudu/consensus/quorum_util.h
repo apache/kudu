@@ -81,6 +81,15 @@ int CountVoters(const RaftConfigPB& config);
 // Calculates size of a configuration majority based on # of voters.
 int MajoritySize(int num_voters);
 
+// Based on `commit_req`, this helper computes the commit requirement
+// (number of votes) required from the total number of voters passed in as an
+// argument.
+int ResolveCommitRequirement(int total_voters, const std::string& commit_req);
+
+// Parses a string representation of quorum requirement and returns an integer.
+// -1 is returned if `commit_req` represents "majority".
+int ParseCommitRequirement(const std::string& commit_req);
+
 // Determines the role that the peer with uuid 'peer_uuid' plays in the
 // cluster. If 'peer_uuid' is empty or is not a member of the configuration,
 // this function will return NON_PARTICIPANT, regardless of whether it is
@@ -131,6 +140,13 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
                         int replication_factor,
                         MajorityHealthPolicy policy,
                         std::string* uuid_to_evict = nullptr);
+
+// Helper function to compute the regional count from the config. If the
+// leader_uuid is present, it also figures out the region of the leader.
+void GetRegionalCountsFromConfig(
+    const RaftConfigPB& config, const std::string& leader_uuid,
+    std::map<std::string, int>* regional_count,
+    std::string* leader_region = nullptr);
 
 }  // namespace consensus
 }  // namespace kudu
