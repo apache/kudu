@@ -1557,6 +1557,13 @@ perform such a "rolling restart", perform the following sequence:
   tablet server.
 . Repeat these steps for all tablet servers in the cluster.
 
+WARNING: If any tables in the cluster have a replication factor of 1, some
+quiescing tablet servers will never become fully quiesced, as single-replica
+tablets will not naturally relinquish leadership. If such tables exist, use the
+`kudu cluster rebalance` tool to move replicas of these tables away from the
+quiescing tablet server by specifying the `--ignored_tservers`,
+`--move_replicas_from_ignored_tservers`, and `--tables` options.
+
 NOTE: If running with <<rack_awareness,rack awareness>>, the above steps can be
 performed restarting multiple tablet servers within a single rack at the same
 time. Users should use `ksck` to ensure the location assignment policy is
