@@ -180,6 +180,7 @@ using kudu::clock::HybridClock;
 using kudu::fs::IOContext;
 using kudu::log::LogAnchorRegistry;
 using std::endl;
+using std::make_shared;
 using std::ostream;
 using std::pair;
 using std::shared_ptr;
@@ -305,18 +306,19 @@ Status Tablet::Open() {
     rowsets_opened.push_back(rowset);
   }
 
-  shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
-  CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
-
-  // Now that the current state is loaded, create the new MemRowSet with the next id.
-  shared_ptr<MemRowSet> new_mrs;
-  RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
-                                  log_anchor_registry_.get(),
-                                  mem_trackers_.tablet_tracker,
-                                  &new_mrs));
   {
+    auto new_rowset_tree(make_shared<RowSetTree>());
+    CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
+
+    // Now that the current state is loaded, create the new MemRowSet with the next id.
+    shared_ptr<MemRowSet> new_mrs;
+    RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
+                                    log_anchor_registry_.get(),
+                                    mem_trackers_.tablet_tracker,
+                                    &new_mrs));
     std::lock_guard<rw_spinlock> lock(component_lock_);
-    components_ = new TabletComponents(new_mrs, new_rowset_tree);
+    components_.reset(new TabletComponents(
+        std::move(new_mrs), std::move(new_rowset_tree)));
   }
 
   // Compute the initial average rowset height.
@@ -1071,11 +1073,10 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
                                        const RowSetVector &to_add) {
   DCHECK(component_lock_.is_locked());
 
-  shared_ptr<RowSetTree> new_tree(new RowSetTree());
-  ModifyRowSetTree(*components_->rowsets,
-                   to_remove, to_add, new_tree.get());
+  auto new_tree(make_shared<RowSetTree>());
+  ModifyRowSetTree(*components_->rowsets, to_remove, to_add, new_tree.get());
 
-  components_ = new TabletComponents(components_->memrowset, new_tree);
+  components_ = new TabletComponents(components_->memrowset, std::move(new_tree));
 }
 
 Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
@@ -1165,14 +1166,13 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
                                   log_anchor_registry_.get(),
                                   mem_trackers_.tablet_tracker,
                                   &new_mrs));
-  shared_ptr<RowSetTree> new_rst(new RowSetTree());
+  auto new_rst(make_shared<RowSetTree>());
   ModifyRowSetTree(*components_->rowsets,
                    RowSetVector(), // remove nothing
                    { *old_ms }, // add the old MRS
                    new_rst.get());
-
   // Swap it in
-  components_ = new TabletComponents(new_mrs, new_rst);
+  components_.reset(new TabletComponents(std::move(new_mrs), std::move(new_rst)));
   return Status::OK();
 }
 

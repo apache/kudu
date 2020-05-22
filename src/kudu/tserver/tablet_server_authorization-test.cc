@@ -74,8 +74,23 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::ErrorStatusPB;
+using kudu::rpc::RpcController;
+using kudu::security::ColumnPrivilegePB;
+using kudu::security::PrivateKey;
+using kudu::security::SignedTokenPB;
+using kudu::security::TablePrivilegePB;
+using kudu::security::TokenSigner;
+using kudu::security::TokenSigningPrivateKeyPB;
+using kudu::security::TokenSigningPublicKeyPB;
+using kudu::security::TokenVerifier;
+using kudu::tablet::TabletReplica;
+using kudu::tablet::WritePrivileges;
+using kudu::tablet::WritePrivilegeToString;
+using kudu::tablet::WritePrivilegeType;
+using std::make_shared;
 using std::set;
-using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -87,23 +102,6 @@ DECLARE_bool(tserver_enforce_access_control);
 DECLARE_double(tserver_inject_invalid_authz_token_ratio);
 
 namespace kudu {
-
-using pb_util::SecureShortDebugString;
-using rpc::ErrorStatusPB;
-using rpc::RpcController;
-using security::ColumnPrivilegePB;
-using security::PrivateKey;
-using security::SignedTokenPB;
-using security::TablePrivilegePB;
-using security::TokenSigner;
-using security::TokenSigningPrivateKeyPB;
-using security::TokenSigningPublicKeyPB;
-using security::TokenVerifier;
-using tablet::TabletReplica;
-using tablet::WritePrivileges;
-using tablet::WritePrivilegeToString;
-using tablet::WritePrivilegeType;
-
 namespace tserver {
 
 namespace {
@@ -211,7 +209,7 @@ class AuthzTabletServerTestBase : public TabletServerTestBase {
     proxy_->set_user_credentials(user);
 
     TokenSigningPrivateKeyPB tsk = GetTokenSigningPrivateKey(1);
-    shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+    auto verifier(make_shared<TokenVerifier>());
     // These tests aren't targeted at testing expiration, so pass in arbitrary
     // expiration values.
     signer_.reset(new TokenSigner(3600, 3600, 3600, verifier));
@@ -283,7 +281,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
   token_creators.emplace_back([&] {
     LOG(INFO) << "Generating expired authz token";
     TokenSigningPrivateKeyPB tsk = GetTokenSigningPrivateKey(2);
-    shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+    auto verifier(make_shared<TokenVerifier>());
     TokenSigner expired_signer(3600, /*authz_token_validity_seconds=*/1, 3600, verifier);
     CHECK_OK(expired_signer.ImportKeys({ tsk }));
     vector<TokenSigningPublicKeyPB> expired_public_keys = verifier->ExportKeys();

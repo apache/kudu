@@ -95,6 +95,7 @@ using kudu::rpc::RpcController;
 using kudu::server::GenericServiceProxy;
 using kudu::server::GetFlagsRequestPB;
 using kudu::server::GetFlagsResponsePB;
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -570,7 +571,7 @@ Status RemoteKsckCluster::RetrieveTabletServers() {
       continue;
     }
     HostPort hp = HostPortFromPB(ts_pb.registration().rpc_addresses(0));
-    auto ts = std::make_shared<RemoteKsckTabletServer>(uuid, hp, messenger_, ts_pb.location());
+    auto ts = make_shared<RemoteKsckTabletServer>(uuid, hp, messenger_, ts_pb.location());
     RETURN_NOT_OK(ts->Init());
     EmplaceOrUpdate(&tablet_servers, uuid, std::move(ts));
   }
@@ -609,11 +610,9 @@ Status RemoteKsckCluster::RetrieveTablesList() {
                                  table_name, s.ToString());
         return;
       }
-      shared_ptr<KsckTable> table(new KsckTable(t->id(),
-                                                table_name,
-                                                KuduSchema::ToSchema(t->schema()),
-                                                t->num_replicas()));
       {
+        auto table(make_shared<KsckTable>(
+            t->id(), table_name, KuduSchema::ToSchema(t->schema()), t->num_replicas()));
         std::lock_guard<simple_spinlock> l(tables_lock);
         tables.emplace_back(std::move(table));
       }
@@ -667,7 +666,7 @@ Status RemoteKsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table
         new KsckTablet(table.get(), t->tablet().id()));
     vector<shared_ptr<KsckTabletReplica>> replicas;
     for (const auto* r : t->tablet().replicas()) {
-      replicas.push_back(std::make_shared<KsckTabletReplica>(
+      replicas.push_back(make_shared<KsckTabletReplica>(
           r->ts().uuid(), r->is_leader(), ReplicaController::is_voter(*r)));
     }
     tablet->set_replicas(std::move(replicas));

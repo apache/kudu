@@ -46,6 +46,7 @@
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -306,7 +307,9 @@ struct DiskRowSetSpace {
 
 class MajorDeltaCompaction;
 
-class DiskRowSet : public RowSet {
+class DiskRowSet :
+    public RowSet,
+    public enable_make_shared<DiskRowSet> {
  public:
   static const char *kMinKeyMetaEntryName;
   static const char *kMaxKeyMetaEntryName;
@@ -446,6 +449,11 @@ class DiskRowSet : public RowSet {
 
   virtual Status DebugDump(std::vector<std::string> *lines) override;
 
+ protected:
+  DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
+             log::LogAnchorRegistry* log_anchor_registry,
+             TabletMemTrackers mem_trackers);
+
  private:
   FRIEND_TEST(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns);
   FRIEND_TEST(TestCompaction, TestOneToOne);
@@ -454,10 +462,6 @@ class DiskRowSet : public RowSet {
 
   friend class CompactionInput;
   friend class Tablet;
-
-  DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
-             log::LogAnchorRegistry* log_anchor_registry,
-             TabletMemTrackers mem_trackers);
 
   Status Open(const fs::IOContext* io_context);
 

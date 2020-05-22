@@ -37,6 +37,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/status.h"
 
 namespace boost {
@@ -69,7 +70,9 @@ struct ProbeStats;
 //
 // All of these files have the same number of rows, and thus the positional
 // indexes can be used to seek to corresponding entries in each.
-class CFileSet : public std::enable_shared_from_this<CFileSet> {
+class CFileSet :
+    public std::enable_shared_from_this<CFileSet>,
+    public enable_make_shared<CFileSet> {
  public:
   class Iterator;
 
@@ -128,14 +131,15 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
 
   virtual ~CFileSet();
 
+ protected:
+  CFileSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
+           std::shared_ptr<MemTracker> bloomfile_tracker,
+           std::shared_ptr<MemTracker> cfile_reader_tracker);
+
  private:
   friend class Iterator;
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
-
-  CFileSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
-           std::shared_ptr<MemTracker> bloomfile_tracker,
-           std::shared_ptr<MemTracker> cfile_reader_tracker);
 
   Status DoOpen(const fs::IOContext* io_context);
   Status OpenBloomReader(const fs::IOContext* io_context);

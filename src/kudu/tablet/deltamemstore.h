@@ -36,6 +36,7 @@
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
@@ -72,7 +73,8 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 // modified columns.
 
 class DeltaMemStore : public DeltaStore,
-                      public std::enable_shared_from_this<DeltaMemStore> {
+                      public std::enable_shared_from_this<DeltaMemStore>,
+                      public enable_make_shared<DeltaMemStore> {
  public:
   static Status Create(int64_t id, int64_t rs_id,
                        log::LogAnchorRegistry* log_anchor_registry,
@@ -158,13 +160,14 @@ class DeltaMemStore : public DeltaStore,
         boost::none : boost::make_optional(highest_timestamp_);
   }
 
- private:
-  friend class DMSIterator;
-
+ protected:
   DeltaMemStore(int64_t id,
                 int64_t rs_id,
                 log::LogAnchorRegistry* log_anchor_registry,
                 std::shared_ptr<MemTracker> parent_tracker);
+
+ private:
+  friend class DMSIterator;
 
   const DMSTree& tree() const {
     return tree_;

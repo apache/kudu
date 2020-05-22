@@ -122,9 +122,10 @@ Status CFileSet::Open(shared_ptr<RowSetMetadata> rowset_metadata,
                       shared_ptr<MemTracker> cfile_reader_tracker,
                       const IOContext* io_context,
                       shared_ptr<CFileSet>* cfile_set) {
-  shared_ptr<CFileSet> cfs(new CFileSet(std::move(rowset_metadata),
-                                        std::move(bloomfile_tracker),
-                                        std::move(cfile_reader_tracker)));
+  auto cfs(CFileSet::make_shared(
+      std::move(rowset_metadata),
+      std::move(bloomfile_tracker),
+      std::move(cfile_reader_tracker)));
   RETURN_NOT_OK(cfs->DoOpen(io_context));
 
   cfile_set->swap(cfs);

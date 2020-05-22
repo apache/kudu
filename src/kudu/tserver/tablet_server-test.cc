@@ -137,6 +137,7 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
 using kudu::tablet::TabletSuperBlockPB;
+using std::make_shared;
 using std::map;
 using std::pair;
 using std::set;
@@ -1567,7 +1568,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
 
   InsertTestRowsRemote(1, 7);
 
-  shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
+  auto hooks(make_shared<MyCommonHooks>(this));
 
   tablet_replica_->tablet()->SetFlushHooksForTests(hooks);
   tablet_replica_->tablet()->SetCompactionHooksForTests(hooks);
@@ -1607,7 +1608,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 
   InsertTestRowsRemote(1, 7);
 
-  shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
+  auto hooks(make_shared<MyCommonHooks>(this));
 
   tablet_replica_->tablet()->SetFlushHooksForTests(hooks);
   tablet_replica_->tablet()->SetCompactionHooksForTests(hooks);
@@ -4012,7 +4013,7 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   // Add a hook so that we can make the log wait right after an append
   // (before the callback is triggered).
   log::Log* log = tablet_replica_->log();
-  shared_ptr<DelayFsyncLogHook> log_hook(new DelayFsyncLogHook);
+  auto log_hook(make_shared<DelayFsyncLogHook>());
   log->SetLogFaultHooksForTests(log_hook);
 
   // Now start an op (delete) and stop just before commit.

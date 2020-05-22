@@ -56,16 +56,16 @@ TimeSeriesCollector::~TimeSeriesCollector() {
   }
 }
 
-shared_ptr<TimeSeries> TimeSeriesCollector::GetTimeSeries(const string &key) {
+shared_ptr<TimeSeries> TimeSeriesCollector::GetTimeSeries(const string& key) {
   MutexLock l(series_lock_);
   SeriesMap::const_iterator it = series_map_.find(key);
-  if (it == series_map_.end()) {
-    shared_ptr<TimeSeries> ts(new TimeSeries());
-    series_map_[key] = ts;
-    return ts;
-  } else {
+  if (it != series_map_.end()) {
     return (*it).second;
   }
+
+  auto ts(std::make_shared<TimeSeries>());
+  series_map_[key] = ts;
+  return ts;
 }
 
 void TimeSeriesCollector::StartDumperThread() {
@@ -102,7 +102,7 @@ void TimeSeriesCollector::DumperThread() {
 }
 
 void TimeSeriesCollector::BuildMetricsString(
-  WallTime time_since_start, faststring *dst_buf) const {
+  WallTime time_since_start, faststring* dst_buf) const {
   MutexLock l(series_lock_);
 
   dst_buf->append(StringPrintf("{ \"scope\": \"%s\", \"time\": %.3f",
@@ -114,6 +114,5 @@ void TimeSeriesCollector::BuildMetricsString(
   }
   dst_buf->append("}");
 }
-
 
 } // namespace kudu

@@ -146,7 +146,8 @@ Status InternalMiniCluster::StartMasters() {
               << HostPort::ToCommaSeparatedString(master_rpc_addrs);
 
     for (int i = 0; i < num_masters; i++) {
-      shared_ptr<MiniMaster> mini_master(new MiniMaster(GetMasterFsRoot(i), master_rpc_addrs[i]));
+      auto mini_master(std::make_shared<MiniMaster>(
+          GetMasterFsRoot(i), master_rpc_addrs[i]));
       if (num_masters > 1) {
         mini_master->SetMasterAddresses(master_rpc_addrs);
       }

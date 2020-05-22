@@ -112,13 +112,14 @@ Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
                            shared_ptr<Messenger> messenger,
                            shared_ptr<Peer>* peer) {
 
-  shared_ptr<Peer> new_peer(new Peer(std::move(peer_pb),
-                                     std::move(tablet_id),
-                                     std::move(leader_uuid),
-                                     queue,
-                                     raft_pool_token,
-                                     std::move(proxy),
-                                     std::move(messenger)));
+  auto new_peer(Peer::make_shared(
+      std::move(peer_pb),
+      std::move(tablet_id),
+      std::move(leader_uuid),
+      queue,
+      raft_pool_token,
+      std::move(proxy),
+      std::move(messenger)));
   RETURN_NOT_OK(new_peer->Init());
   *peer = std::move(new_peer);
   return Status::OK();

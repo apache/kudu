@@ -60,11 +60,9 @@ Status DeltaMemStore::Create(int64_t id,
                              LogAnchorRegistry* log_anchor_registry,
                              shared_ptr<MemTracker> parent_tracker,
                              shared_ptr<DeltaMemStore>* dms) {
-  shared_ptr<DeltaMemStore> local_dms(new DeltaMemStore(id, rs_id,
-                                                        log_anchor_registry,
-                                                        std::move(parent_tracker)));
-
-  dms->swap(local_dms);
+  auto local_dms(DeltaMemStore::make_shared(
+      id, rs_id, log_anchor_registry, std::move(parent_tracker)));
+  *dms = std::move(local_dms);
   return Status::OK();
 }
 

@@ -42,6 +42,7 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -203,7 +204,8 @@ struct MSBTreeTraits : public btree::BTreeTraits {
 //
 // The data is kept sorted.
 class MemRowSet : public RowSet,
-                  public std::enable_shared_from_this<MemRowSet> {
+                  public std::enable_shared_from_this<MemRowSet>,
+                  public enable_make_shared<MemRowSet> {
  public:
   class Iterator;
 
@@ -423,13 +425,14 @@ class MemRowSet : public RowSet,
   Status MinorCompactDeltaStores(
       const fs::IOContext* /*io_context*/) override { return Status::OK(); }
 
- private:
-  friend class Iterator;
-
+ protected:
   MemRowSet(int64_t id,
             const Schema &schema,
             log::LogAnchorRegistry* log_anchor_registry,
             std::shared_ptr<MemTracker> parent_tracker);
+
+ private:
+  friend class Iterator;
 
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.

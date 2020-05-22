@@ -103,7 +103,7 @@ class PlacementPolicyTest : public ::testing::Test {
     for (const auto& location_info : cluster_info) {
       const auto& ts_infos = location_info.tablet_servers;
       for (const auto& ts : ts_infos) {
-        shared_ptr<TSDescriptor> tsd(new TSDescriptor(ts.id));
+        auto tsd(TSDescriptor::make_shared(ts.id));
         tsd->set_num_live_replicas(ts.replica_num);
         tsd->location_.emplace(location_info.id);
         tsd->set_num_live_replicas_by_dimension(ts.replica_num_by_dimension);

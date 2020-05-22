@@ -391,7 +391,7 @@ Status HmsClient::GetPartitions(const string& database_name,
 
 
 Status HmsClient::DeserializeJsonTable(Slice json, hive::Table* table)  {
-  shared_ptr<TMemoryBuffer> membuffer(new TMemoryBuffer(json.size()));
+  auto membuffer(std::make_shared<TMemoryBuffer>(json.size()));
   membuffer->write(json.data(), json.size());
   TJSONProtocol protocol(membuffer);
   HMS_RET_NOT_OK(table->read(&protocol), "failed to deserialize JSON table");

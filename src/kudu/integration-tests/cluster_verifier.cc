@@ -104,7 +104,7 @@ Status ClusterVerifier::RunKsck() {
   }
   std::shared_ptr<KsckCluster> cluster;
   RETURN_NOT_OK(RemoteKsckCluster::Build(hp_strs, &cluster));
-  std::shared_ptr<Ksck> ksck(new Ksck(cluster));
+  auto ksck(std::make_shared<Ksck>(cluster));
 
   // Some unit tests create or remove replicas of tablets, which
   // we shouldn't consider fatal.

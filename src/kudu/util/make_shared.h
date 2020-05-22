@@ -20,7 +20,7 @@
 #include <memory>
 #include <utility>
 
-// It isn't possible to use 'std::make_shared' on a class with private or protected
+// It isn't possible to use 'std::make_shared' on a class with protected
 // constructors. Using friends as a workaround worked in some earlier libc++/libstdcxx
 // versions, but in the latest versions there are some static_asserts that seem to defeat
 // this trickery. So, instead, we rely on the "curiously recurring template pattern" (CRTP)

@@ -42,6 +42,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::unordered_set;
@@ -62,8 +63,8 @@ static RowSetVector GenerateRandomRowSets(int num_sets) {
     int min = rand() % 9000;
     int max = min + 1000;
 
-    vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", min),
-                                                        StringPrintf("%04d", max))));
+    vec.push_back(make_shared<MockDiskRowSet>(
+        StringPrintf("%04d", min), StringPrintf("%04d", max)));
   }
   return vec;
 }
@@ -72,10 +73,10 @@ static RowSetVector GenerateRandomRowSets(int num_sets) {
 
 TEST_F(TestRowSetTree, TestTree) {
   RowSetVector vec;
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("0", "5")));
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("3", "5")));
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("5", "9")));
-  vec.push_back(shared_ptr<RowSet>(new MockMemRowSet()));
+  vec.push_back(make_shared<MockDiskRowSet>("0", "5"));
+  vec.push_back(make_shared<MockDiskRowSet>("3", "5"));
+  vec.push_back(make_shared<MockDiskRowSet>("5", "9"));
+  vec.push_back(make_shared<MockMemRowSet>());
 
   RowSetTree tree;
   ASSERT_OK(tree.Reset(vec));
@@ -360,11 +361,11 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
   RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
   // Add pathological one-key rows
   for (int i = 0; i < 10; ++i) {
-    vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", 11000),
-                                                        StringPrintf("%04d", 11000))));
+    vec.push_back(make_shared<MockDiskRowSet>(
+        StringPrintf("%04d", 11000), StringPrintf("%04d", 11000)));
   }
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet(StringPrintf("%04d", 12000),
-                                                      StringPrintf("%04d", 12000))));
+  vec.push_back(make_shared<MockDiskRowSet>(
+      StringPrintf("%04d", 12000), StringPrintf("%04d", 12000)));
   // Make tree
   RowSetTree tree;
   ASSERT_OK(tree.Reset(vec));

@@ -75,6 +75,7 @@ using kudu::cluster_summary::TabletSummary;
 using kudu::server::GetFlagsResponsePB;
 using kudu::tablet::TabletDataState;
 
+using std::make_shared;
 using std::ostringstream;
 using std::shared_ptr;
 using std::static_pointer_cast;
@@ -279,7 +280,7 @@ class KsckTest : public KuduTest {
     for (int i = 0; i < 3; i++) {
       const string uuid = Substitute("master-id-$0", i);
       const string addr = Substitute("master-$0", i);
-      auto master = std::make_shared<MockKsckMaster>(addr, uuid, IsGetFlagsAvailable());
+      auto master = make_shared<MockKsckMaster>(addr, uuid, IsGetFlagsAvailable());
       master->cstate_ = cstate;
       cluster_->masters_.push_back(master);
     }
@@ -287,7 +288,7 @@ class KsckTest : public KuduTest {
     KsckCluster::TSMap tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
-      auto ts = std::make_shared<MockKsckTabletServer>(name, IsGetFlagsAvailable());
+      auto ts = make_shared<MockKsckTabletServer>(name, IsGetFlagsAvailable());
       InsertOrDie(&tablet_servers, ts->uuid(), ts);
     }
     cluster_->tablet_servers_.swap(tablet_servers);
@@ -334,7 +335,7 @@ class KsckTest : public KuduTest {
     CreateDefaultAssignmentPlan(1);
 
     auto table = CreateAndAddTable("test", 1);
-    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), "tablet-id-1"));
+    auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1"));
     CreateAndFillTablet(tablet, 1, true, true);
     table->set_tablets({ tablet });
   }
@@ -348,10 +349,10 @@ class KsckTest : public KuduTest {
 
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
-      shared_ptr<KsckTablet> tablet(new KsckTablet(
+      auto tablet(make_shared<KsckTablet>(
           table.get(), Substitute("$0tablet-id-$1", tablet_id_prefix, i)));
       CreateAndFillTablet(tablet, num_replicas, true, true);
-      tablets.push_back(tablet);
+      tablets.push_back(std::move(tablet));
     }
     table->set_tablets(tablets);
   }
@@ -364,10 +365,10 @@ class KsckTest : public KuduTest {
 
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
-      shared_ptr<KsckTablet> tablet(new KsckTablet(
+      auto tablet(make_shared<KsckTablet>(
           table.get(), Substitute("tablet-id-$0", i)));
       CreateAndFillTablet(tablet, num_replicas, true, i != 0);
-      tablets.push_back(tablet);
+      tablets.push_back(std::move(tablet));
     }
     table->set_tablets(tablets);
   }
@@ -378,14 +379,14 @@ class KsckTest : public KuduTest {
 
     auto table = CreateAndAddTable("test", 3);
 
-    shared_ptr<KsckTablet> tablet(new KsckTablet(table.get(), "tablet-id-1"));
+    auto tablet(make_shared<KsckTablet>(table.get(), "tablet-id-1"));
     CreateAndFillTablet(tablet, 2, false, true);
     table->set_tablets({ tablet });
   }
 
   shared_ptr<KsckTable> CreateAndAddTable(const string& id_and_name, int num_replicas) {
-    shared_ptr<KsckTable> table(new KsckTable(id_and_name, id_and_name,
-                                              Schema(), num_replicas));
+    auto table(make_shared<KsckTable>(
+        id_and_name, id_and_name, Schema(), num_replicas));
     cluster_->tables_.push_back(table);
     return table;
   }
@@ -1831,7 +1832,7 @@ TEST_F(KsckTest, TestChecksumWithAllPeersUnhealthy) {
   const char* const new_uuid = "new";
   EmplaceOrDie(&cluster_->tablet_servers_,
                new_uuid,
-               std::make_shared<MockKsckTabletServer>(new_uuid, IsGetFlagsAvailable()));
+               make_shared<MockKsckTabletServer>(new_uuid, IsGetFlagsAvailable()));
 
   // The checksum should fail for tablet because none of its replicas are
   // available to provide a timestamp.

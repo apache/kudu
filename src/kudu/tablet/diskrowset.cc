@@ -507,13 +507,10 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
                         const TabletMemTrackers& mem_trackers,
                         const IOContext* io_context,
                         shared_ptr<DiskRowSet> *rowset) {
-  shared_ptr<DiskRowSet> rs(new DiskRowSet(rowset_metadata,
-                                           log_anchor_registry,
-                                           mem_trackers));
-
+  auto rs(DiskRowSet::make_shared(
+      rowset_metadata, log_anchor_registry, mem_trackers));
   RETURN_NOT_OK(rs->Open(io_context));
-
-  rowset->swap(rs);
+  *rowset = std::move(rs);
   return Status::OK();
 }
 

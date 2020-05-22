@@ -49,6 +49,7 @@
 using kudu::rebalance::Rebalancer;
 using std::cout;
 using std::endl;
+using std::make_shared;
 using std::make_tuple;
 using std::shared_ptr;
 using std::string;
@@ -185,7 +186,7 @@ Status RunKsck(const RunnerContext& context) {
                         "unable to build KsckCluster");
   cluster->set_table_filters(Split(FLAGS_tables, ",", strings::SkipEmpty()));
   cluster->set_tablet_id_filters(Split(FLAGS_tablets, ",", strings::SkipEmpty()));
-  shared_ptr<Ksck> ksck(new Ksck(cluster));
+  auto ksck(make_shared<Ksck>(cluster));
 
   ksck->set_print_sections(Split(FLAGS_sections, ",", strings::SkipEmpty()));
 
@@ -230,7 +231,7 @@ Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
   shared_ptr<KsckCluster> cluster;
   RETURN_NOT_OK_PREPEND(RemoteKsckCluster::Build(master_addresses, &cluster),
                         "unable to build KsckCluster");
-  shared_ptr<Ksck> ksck(new Ksck(cluster));
+  auto ksck(make_shared<Ksck>(cluster));
 
   // Ignoring the result of the Ksck::Run() method: it's possible the cluster
   // is not completely healthy but rebalancing can proceed; for example,

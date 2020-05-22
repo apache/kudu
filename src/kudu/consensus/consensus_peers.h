@@ -31,6 +31,7 @@
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
@@ -65,7 +66,9 @@ class PeerProxy;
 // object, and performed on a thread pool (since it may do IO). When a
 // response is received, the peer updates the PeerMessageQueue
 // using PeerMessageQueue::ResponseFromPeer(...) on the same thread pool.
-class Peer : public std::enable_shared_from_this<Peer> {
+class Peer :
+    public std::enable_shared_from_this<Peer>,
+    public enable_make_shared<Peer> {
  public:
   // Initializes a peer and start sending periodic heartbeats.
   Status Init();
@@ -115,7 +118,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
                               std::shared_ptr<rpc::Messenger> messenger,
                               std::shared_ptr<Peer>* peer);
 
- private:
+ protected:
   Peer(RaftPeerPB peer_pb,
        std::string tablet_id,
        std::string leader_uuid,
@@ -124,6 +127,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
        std::unique_ptr<PeerProxy> proxy,
        std::shared_ptr<rpc::Messenger> messenger);
 
+ private:
   void SendNextRequest(bool even_if_queue_empty);
 
   // Signals that a response was received from the peer.

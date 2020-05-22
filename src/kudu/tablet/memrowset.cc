@@ -94,10 +94,9 @@ Status MemRowSet::Create(int64_t id,
                          LogAnchorRegistry* log_anchor_registry,
                          shared_ptr<MemTracker> parent_tracker,
                          shared_ptr<MemRowSet>* mrs) {
-  shared_ptr<MemRowSet> local_mrs(new MemRowSet(
+  auto local_mrs(MemRowSet::make_shared(
       id, schema, log_anchor_registry, std::move(parent_tracker)));
-
-  mrs->swap(local_mrs);
+  *mrs = std::move(local_mrs);
   return Status::OK();
 }
 

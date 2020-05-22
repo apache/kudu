@@ -55,6 +55,7 @@
 #include "kudu/util/trace.h"
 
 using std::atomic;
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -494,7 +495,7 @@ TEST_F(ThreadPoolTest, TestSlowDestructor) {
     // itself, so that the delay is incurred by that thread and not the task
     // submission thread. Without C++14 capture-by-move semantics we have to
     // work a little bit harder to accomplish that.
-    shared_ptr<SlowDestructorRunnable> task(new SlowDestructorRunnable());
+    auto task = make_shared<SlowDestructorRunnable>();
     auto wrapper = [task]() { task->Run(); };
     task.reset();
     ASSERT_OK(pool_->Submit(std::move(wrapper)));
@@ -552,7 +553,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenSubmitsProcessedConcurrently) {
   SCOPED_CLEANUP({
       alarm(0); // Disable alarm on test exit.
   });
-  shared_ptr<Barrier> b = std::make_shared<Barrier>(kNumTokens + 1);
+  auto b = make_shared<Barrier>(kNumTokens + 1);
   for (int i = 0; i < kNumTokens; i++) {
     tokens.emplace_back(pool_->NewToken(GetParam()));
     ASSERT_OK(tokens.back()->Submit([b]() {
@@ -575,7 +576,7 @@ TEST_F(ThreadPoolTest, TestTokenSubmitsNonSequential) {
   SCOPED_CLEANUP({
       alarm(0); // Disable alarm on test exit.
   });
-  shared_ptr<Barrier> b = std::make_shared<Barrier>(kNumSubmissions + 1);
+  auto b = make_shared<Barrier>(kNumSubmissions + 1);
   unique_ptr<ThreadPoolToken> t = pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   for (int i = 0; i < kNumSubmissions; i++) {
     ASSERT_OK(t->Submit([b]() {
