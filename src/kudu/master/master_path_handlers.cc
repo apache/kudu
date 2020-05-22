@@ -699,11 +699,11 @@ void JsonError(const Status& s, ostringstream* out) {
 void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/,
                                             Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = &resp->output;
-  Status s = master_->catalog_manager()->CheckOnline();
-  if (!s.ok()) {
-    JsonError(s, output);
+  if (!master_->catalog_manager()->IsInitialized()) {
+    JsonError(Status::ServiceUnavailable("CatalogManager is not running"), output);
     return;
   }
+
   JsonWriter jw(output, JsonWriter::COMPACT);
   JsonDumper d(&jw);
 
@@ -711,7 +711,7 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
 
   jw.String("tables");
   jw.StartArray();
-  s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
+  auto s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
   if (!s.ok()) {
     JsonError(s, output);
     return;

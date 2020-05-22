@@ -1384,13 +1384,6 @@ void CatalogManager::Shutdown() {
   }
 }
 
-Status CatalogManager::CheckOnline() const {
-  if (PREDICT_FALSE(!IsInitialized())) {
-    return Status::ServiceUnavailable("CatalogManager is not running");
-  }
-  return Status::OK();
-}
-
 namespace {
 
 Status ValidateLengthAndUTF8(const string& id, int32_t max_length) {
@@ -1494,7 +1487,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
@@ -1822,7 +1814,6 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                                          IsCreateTableDoneResponsePB* resp,
                                          optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Lookup the table, verify if it exists, and then check that
   //    the user is authorized to operate on the table.
@@ -2000,7 +1991,6 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
                           RequestorString(rpc), SecureShortDebugString(req));
 
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   optional<const string&> user = rpc ?
       make_optional<const string&>(rpc->remote_user().username()) : none;
@@ -2077,7 +2067,6 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
                                    optional<int64_t> hms_notification_log_event_id,
                                    optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Look up the table, lock it, and then check that the user is authorized
   //    to operate on the table. Last, mark it as removed.
@@ -2421,7 +2410,6 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
                                      AlterTableResponsePB* resp,
                                      rpc::RpcContext* rpc) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // If the HMS integration is enabled, wait for the notification log listener
   // to catch up. This reduces the likelihood of attempting to apply an
@@ -2532,7 +2520,6 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                                   optional<int64_t> hms_notification_log_event_id,
                                   optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Group the steps into schema altering steps and partition altering steps.
   vector<AlterTableRequestPB::Step> alter_schema_steps;
@@ -2841,7 +2828,6 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                         IsAlterTableDoneResponsePB* resp,
                                         optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // 1. Lookup the table, verify if it exists, and then check that
   //    the user is authorized to operate on the table.
@@ -2868,7 +2854,6 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                       optional<const string&> user,
                                       const TokenSigner* token_signer) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // Lookup the table, verify if it exists, and then check that
   // the user is authorized to operate on the table.
@@ -2915,7 +2900,6 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
                                   ListTablesResponsePB* resp,
                                   optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   vector<scoped_refptr<TableInfo>> tables_info;
   {
@@ -2982,7 +2966,6 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
                                           GetTableStatisticsResponsePB* resp,
                                           optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
@@ -3014,7 +2997,6 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
 
 Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
@@ -3023,7 +3005,6 @@ Status CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableI
 
 Status CatalogManager::GetAllTables(vector<scoped_refptr<TableInfo>>* tables) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   tables->clear();
   shared_lock<LockType> l(lock_);
@@ -3034,7 +3015,6 @@ Status CatalogManager::GetAllTables(vector<scoped_refptr<TableInfo>>* tables) {
 
 Status CatalogManager::TableNameExists(const string& table_name, bool* exists) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   shared_lock<LockType> l(lock_);
   *exists = ContainsKey(normalized_table_names_map_, NormalizeTableName(table_name));
@@ -4984,7 +4964,6 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
                                           TSInfosDict* ts_infos_dict,
                                           optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   locs_pb->mutable_deprecated_replicas()->Clear();
   locs_pb->mutable_interned_replicas()->Clear();
@@ -5010,7 +4989,6 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
 
 Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletResponsePB* resp) {
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // Lookup the tablet-to-be-replaced and get its table.
   scoped_refptr<TabletInfo> old_tablet;
@@ -5111,7 +5089,6 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   }
 
   leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
 
   // Lookup the table, verify if it exists, and then check that
   // the user is authorized to operate on the table.
