@@ -151,6 +151,31 @@ public final class AsyncKuduScanner {
     }
   }
 
+  /**
+   * Expected row data format in scanner result set.
+   *
+   * The server may or may not support the expected layout, and the actual layout is internal
+   * hidden by {@link RowResult} and {@link RowResultIterator} interfaces so it's transparent to
+   * application code.
+   */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
+  public enum RowDataFormat {
+    /**
+     * Server is expected to return scanner result data in row-wise layout.
+     * This is currently the default layout.
+     */
+    ROWWISE,
+
+    /**
+     * Server is expected to return scanner result data in columnar layout.
+     * This layout is more efficient in processing and bandwidth for both server and client side.
+     * It requires server support (kudu-1.12.0 and later), if it's not supported server still
+     * returns data in row-wise layout.
+     */
+    COLUMNAR,
+  }
+
   // This is private because it is not safe to use this column name as it may be
   // different in the case of collisions. Instead the `IS_DELETED` column should
   // be looked up by type.
@@ -229,6 +254,8 @@ public final class AsyncKuduScanner {
   private boolean hasMore = true;
 
   private long numRowsReturned = 0;
+
+  private RowDataFormat rowDataFormat = RowDataFormat.ROWWISE;
 
   /**
    * The tabletSlice currently being scanned.
@@ -481,6 +508,15 @@ public final class AsyncKuduScanner {
    */
   public void setReuseRowResult(boolean reuseRowResult) {
     this.reuseRowResult = reuseRowResult;
+  }
+
+  /**
+   * Optionally set expected row data format.
+   *
+   * @param rowDataFormat Row data format to be expected.
+   */
+  public void setRowDataFormat(RowDataFormat rowDataFormat) {
+    this.rowDataFormat = rowDataFormat;
   }
 
   /**
@@ -1043,6 +1079,12 @@ public final class AsyncKuduScanner {
           newBuilder.setTabletId(UnsafeByteOperations.unsafeWrap(tablet.getTabletIdAsBytes()));
           newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());
           newBuilder.setCacheBlocks(cacheBlocks);
+
+          long rowFormatFlags = Tserver.RowFormatFlags.NO_FLAGS_VALUE;
+          if (rowDataFormat == RowDataFormat.COLUMNAR) {
+            rowFormatFlags |= Tserver.RowFormatFlags.COLUMNAR_LAYOUT.getNumber();
+          }
+          newBuilder.setRowFormatFlags(rowFormatFlags);
           // If the last propagated timestamp is set, send it with the scan.
           // For READ_YOUR_WRITES scan, use the propagated timestamp from
           // the scanner.
@@ -1140,9 +1182,16 @@ public final class AsyncKuduScanner {
         }
       }
       // TODO: Find a clean way to plumb in reuseRowResult.
-      RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
-          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse,
-          reuseRowResult);
+      RowResultIterator iterator;
+      if (resp.hasData()) {
+        iterator = RowwiseRowResultIterator.makeRowResultIterator(
+                timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(),
+                callResponse, reuseRowResult);
+      } else {
+        iterator = ColumnarRowResultIterator.makeRowResultIterator(
+                timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getColumnarData(),
+                callResponse, reuseRowResult);
+      }
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {

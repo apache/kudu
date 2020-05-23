@@ -60,6 +60,15 @@ public class KuduScanner implements Iterable<RowResult> {
   }
 
   /**
+   * Optionally set expected row data format.
+   *
+   * @param rowDataFormat Row data format to be expected.
+   */
+  public void setRowDataFormat(AsyncKuduScanner.RowDataFormat rowDataFormat) {
+    asyncScanner.setRowDataFormat(rowDataFormat);
+  }
+
+  /**
    * Scans a number of rows.
    * <p>
    * Once this method returns {@code null} once (which indicates that this

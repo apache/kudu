@@ -18,14 +18,11 @@
 package org.apache.kudu.client;
 
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.WireProtocol;
-import org.apache.kudu.util.Slice;
 
 /**
  * Class that contains the rows sent by a tablet server, exhausting this iterator only means
@@ -34,18 +31,12 @@ import org.apache.kudu.util.Slice;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 @SuppressWarnings("IterableAndIterator")
-public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
+public abstract class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
     Iterable<RowResult> {
 
-  private static final RowResultIterator EMPTY =
-      new RowResultIterator(0, null, null, 0, null, null, false);
-
-  private final Schema schema;
-  private final Slice bs;
-  private final Slice indirectBs;
-  private final int numRows;
-  private int currentRow = 0;
-  private final RowResult sharedRowResult;
+  protected final Schema schema;
+  protected final int numRows;
+  protected int currentRow = 0;
 
   /**
    * Package private constructor, only meant to be instantiated from AsyncKuduScanner.
@@ -53,57 +44,23 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
    * @param tsUUID UUID of the tablet server that handled our request
    * @param schema schema used to parse the rows
    * @param numRows how many rows are contained in the bs slice
-   * @param bs normal row data
-   * @param indirectBs indirect row data
    */
-  private RowResultIterator(long elapsedMillis,
+  protected RowResultIterator(long elapsedMillis,
                             String tsUUID,
                             Schema schema,
                             int numRows,
-                            Slice bs,
-                            Slice indirectBs,
                             boolean reuseRowResult) {
     super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.numRows = numRows;
-    this.bs = bs;
-    this.indirectBs = indirectBs;
-    this.sharedRowResult = (reuseRowResult && numRows != 0) ?
-        new RowResult(this.schema, this.bs, this.indirectBs, -1) : null;
   }
 
-  static RowResultIterator makeRowResultIterator(long elapsedMillis,
-                                                 String tsUUID,
-                                                 Schema schema,
-                                                 WireProtocol.RowwiseRowBlockPB data,
-                                                 final CallResponse callResponse,
-                                                 boolean reuseRowResult)
-      throws KuduException {
-    if (data == null || data.getNumRows() == 0) {
-      return new RowResultIterator(elapsedMillis, tsUUID, schema, 0, null, null, reuseRowResult);
-    }
-
-    Slice bs = callResponse.getSidecar(data.getRowsSidecar());
-    Slice indirectBs = callResponse.getSidecar(data.getIndirectDataSidecar());
-    int numRows = data.getNumRows();
-
-    // Integrity check
-    int rowSize = schema.getRowSize();
-    int expectedSize = numRows * rowSize;
-    if (expectedSize != bs.length()) {
-      Status statusIllegalState = Status.IllegalState("RowResult block has " + bs.length() +
-          " bytes of data but expected " + expectedSize + " for " + numRows + " rows");
-      throw new NonRecoverableException(statusIllegalState);
-    }
-    return new RowResultIterator(elapsedMillis, tsUUID, schema, numRows, bs, indirectBs,
-        reuseRowResult);
+  public int getNumRows() {
+    return this.numRows;
   }
 
-  /**
-   * @return an empty row result iterator
-   */
   public static RowResultIterator empty() {
-    return EMPTY;
+    return RowwiseRowResultIterator.empty();
   }
 
   @Override
@@ -112,36 +69,8 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
   }
 
   @Override
-  public RowResult next() {
-    if (!hasNext()) {
-      throw new NoSuchElementException();
-    }
-    // If sharedRowResult is not null, we should reuse it for every next call.
-    if (sharedRowResult != null) {
-      this.sharedRowResult.advancePointerTo(this.currentRow++);
-      return sharedRowResult;
-    } else {
-      return new RowResult(this.schema, this.bs, this.indirectBs, this.currentRow++);
-    }
-  }
-
-  @Override
   public void remove() {
     throw new UnsupportedOperationException();
-  }
-
-  /**
-   * Get the number of rows in this iterator. If all you want is to count
-   * rows, call this and skip the rest.
-   * @return number of rows in this iterator
-   */
-  public int getNumRows() {
-    return this.numRows;
-  }
-
-  @Override
-  public String toString() {
-    return "RowResultIterator for " + this.numRows + " rows";
   }
 
   @Override
