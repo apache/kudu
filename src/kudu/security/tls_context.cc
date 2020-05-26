@@ -61,6 +61,9 @@
 #ifndef SSL_OP_NO_TLSv1_1
 #define SSL_OP_NO_TLSv1_1 0x10000000U
 #endif
+#ifndef SSL_OP_NO_TLSv1_3
+#define SSL_OP_NO_TLSv1_3 0x20000000U
+#endif
 #ifndef TLS1_1_VERSION
 #define TLS1_1_VERSION 0x0302
 #endif
@@ -164,6 +167,10 @@ Status TlsContext::Init() {
     return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
                                    tls_min_protocol_);
   }
+
+  // We don't currently support TLS 1.3 because the one-and-a-half-RTT negotiation
+  // confuses our RPC negotiation protocol. See KUDU-2871.
+  options |= SSL_OP_NO_TLSv1_3;
 
   SSL_CTX_set_options(ctx_.get(), options);
 
