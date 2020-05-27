@@ -30,8 +30,8 @@ class RemoteMethod {
  public:
   RemoteMethod() {}
   RemoteMethod(std::string service_name, std::string method_name);
-  std::string service_name() const { return service_name_; }
-  std::string method_name() const { return method_name_; }
+  const std::string& service_name() const { return service_name_; }
+  const std::string& method_name() const { return method_name_; }
 
   // Encode/decode to/from 'pb'.
   void FromPB(const RemoteMethodPB& pb);

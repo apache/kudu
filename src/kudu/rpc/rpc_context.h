@@ -195,10 +195,10 @@ class RpcContext {
   std::string requestor_string() const;
 
   // Return the name of the RPC service method being called.
-  std::string method_name() const;
+  const std::string& method_name() const;
 
   // Return the name of the RPC service being called.
-  std::string service_name() const;
+  const std::string& service_name() const;
 
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }
