@@ -2647,8 +2647,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   TRACE("Iterator init: $0", s.ToString());
 
   if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute("Error setting up scanner with request $0: $1",
-                               SecureShortDebugString(*req), s.ToString());
+    LOG(WARNING) << Substitute("Error setting up scanner with request: $0: $1",
+                               s.ToString(), SecureShortDebugString(*req));
     // If the replica has been stopped, e.g. due to disk failure, return
     // TABLET_FAILED so the scan can be handled appropriately (fail over to
     // another tablet server if fault-tolerant).
