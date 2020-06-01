@@ -43,6 +43,15 @@ enum class ConsensusMetadataCreateMode {
   NO_FLUSH_ON_CREATE,
 };
 
+// Last known leader information.
+struct LastKnownLeader {
+  // UUID of the last known leader
+  std::string uuid;
+
+  // Election term of the last known leader.
+  int64_t election_term;
+};
+
 // Provides methods to read, write, and persist consensus-related metadata.
 // This partly corresponds to Raft Figure 2's "Persistent state on all servers".
 //
@@ -121,6 +130,10 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Accessors for setting the active leader.
   const std::string& leader_uuid() const;
   void set_leader_uuid(std::string uuid);
+
+  // Accessor for last known leader. It's not necessarily an active leader.
+  // Used for computation of quorums for flexiraft leader elections.
+  LastKnownLeader last_known_leader() const;
 
   std::pair<std::string, unsigned int> leader_hostport() const;
 
@@ -225,6 +238,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   DFAKE_MUTEX(fake_lock_);
 
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
+  LastKnownLeader last_known_leader_; // Last known leader
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
                             // configuration change pending.
   // RaftConfig used by the peers when there is a pending config change operation.

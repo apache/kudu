@@ -151,7 +151,7 @@ void FlexibleVoteCounter::FetchTopologyInfo(
   // Also, computes the leader's region from its UUID.
   std::string leader_region = "";
   GetRegionalCountsFromConfig(
-      config_, last_known_leader_uuid_, voter_distribution,
+      config_, last_known_leader_.uuid, voter_distribution,
       &leader_region);
 
   CHECK(config_.has_commit_rule());
@@ -235,9 +235,9 @@ void FlexibleVoteCounter::FetchTopologyInfo(
 }
 
 FlexibleVoteCounter::FlexibleVoteCounter(
-    const std::string& last_known_leader_uuid, RaftConfigPB config)
+    const LastKnownLeader& last_known_leader, RaftConfigPB config)
   : VoteCounter(0, 0),
-    last_known_leader_uuid_(last_known_leader_uuid),
+    last_known_leader_(last_known_leader),
     config_(std::move(config)) {
   num_voters_ = 0;
 

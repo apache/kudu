@@ -173,9 +173,23 @@ const string& ConsensusMetadata::leader_uuid() const {
   return leader_uuid_;
 }
 
+LastKnownLeader ConsensusMetadata::last_known_leader() const {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  return last_known_leader_;
+}
+
 void ConsensusMetadata::set_leader_uuid(string uuid) {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   leader_uuid_ = std::move(uuid);
+
+  // Only update last_known_leader_ when the current node
+  // 1) has won a leader election (LEADER)
+  // 2) receives AppendEntries from a legitimate leader (FOLLOWER)
+  if (!leader_uuid_.empty()) {
+    DCHECK(pb_.has_current_term());
+    last_known_leader_.uuid = leader_uuid_;
+    last_known_leader_.election_term = pb_.current_term();
+  }
   UpdateActiveRole();
 }
 
