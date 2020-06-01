@@ -2536,11 +2536,17 @@ Status RaftConsensus::RequestVoteRespondIsBusy(const VoteRequestPB* request,
 
 Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                                     VoteResponsePB* response) {
+  DCHECK(lock_.is_locked());
   // We know our vote will be "yes", so avoid triggering an election while we
   // persist our vote to disk. We use an exponential backoff to avoid too much
   // split-vote contention when nodes display high latencies.
   MonoDelta backoff = LeaderElectionExpBackoffDeltaUnlocked();
   SnoozeFailureDetector(string("vote granted"), backoff);
+
+  // Get previous vote history here since it gets updated
+  // by `SetVotedForCurrentTermUnlocked`.
+  const std::map<int64_t, PreviousVotePB>& previous_vote_history =
+      cmeta_->previous_vote_history();
 
   if (!request->is_pre_election()) {
     // Persist our vote to disk.
@@ -2548,6 +2554,14 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   }
 
   FillVoteResponseVoteGranted(response);
+
+  // Populate previous vote history.
+  std::map<int64_t, PreviousVotePB>::const_iterator it =
+      previous_vote_history.begin();
+  while (it != previous_vote_history.end()) {
+    response->add_previous_vote_history()->CopyFrom(it->second);
+    it++;
+  }
 
   // Give peer time to become leader. Snooze one more time after persisting our
   // vote. When disk latency is high, this should help reduce churn.

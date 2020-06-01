@@ -283,3 +283,9 @@ message ConsensusMetadataPB {
   // if no vote was made in the current term.
   optional string voted_for = 3;
 }
+
+// Information about previously granted vote.
+message PreviousVotePB {
+  required string candidate_uuid = 1;
+  required int64 election_term = 2;
+}

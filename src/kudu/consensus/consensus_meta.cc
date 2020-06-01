@@ -44,6 +44,7 @@ DEFINE_double(fault_crash_before_cmeta_flush, 0.0,
               "Fraction of the time when the server will crash just before flushing "
               "consensus metadata. (For testing only!)");
 TAG_FLAG(fault_crash_before_cmeta_flush, unsafe);
+DECLARE_bool(enable_flexi_raft);
 
 namespace kudu {
 namespace consensus {
@@ -84,6 +85,15 @@ void ConsensusMetadata::set_voted_for(const string& uuid) {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   DCHECK(!uuid.empty());
   pb_.set_voted_for(uuid);
+
+  // Populate previous vote information.
+  DCHECK(pb_.has_current_term());
+  PreviousVotePB prev_vote;
+  prev_vote.set_candidate_uuid(uuid);
+  prev_vote.set_election_term(pb_.current_term());
+
+  // TODO(ritwikyadav) : Put an upper bound on the memory utilized.
+  previous_vote_history_.emplace(prev_vote.election_term(), prev_vote);
 }
 
 bool ConsensusMetadata::IsVoterInConfig(const string& uuid,
@@ -176,6 +186,12 @@ const string& ConsensusMetadata::leader_uuid() const {
 LastKnownLeader ConsensusMetadata::last_known_leader() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return last_known_leader_;
+}
+
+std::map<int64_t, PreviousVotePB>
+ConsensusMetadata::previous_vote_history() const {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  return previous_vote_history_;
 }
 
 void ConsensusMetadata::set_leader_uuid(string uuid) {

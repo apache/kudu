@@ -135,6 +135,10 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Used for computation of quorums for flexiraft leader elections.
   LastKnownLeader last_known_leader() const;
 
+  // Getter for PreviousVote.
+  // TODO(ritwikyadav) : Persist previous vote history.
+  std::map<int64_t, PreviousVotePB> previous_vote_history() const;
+
   std::pair<std::string, unsigned int> leader_hostport() const;
 
   // Returns the currently active role of the current node.
@@ -238,7 +242,13 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   DFAKE_MUTEX(fake_lock_);
 
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
-  LastKnownLeader last_known_leader_; // Last known leader
+
+  // Flexible quorums artifacts.
+  LastKnownLeader last_known_leader_;  // Last known leader
+
+  // Previous granted vote
+  std::map<int64_t, PreviousVotePB> previous_vote_history_;
+
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
                             // configuration change pending.
   // RaftConfig used by the peers when there is a pending config change operation.

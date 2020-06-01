@@ -393,6 +393,10 @@ message VoteResponsePB {
   // True if this peer voted for the caller, false otherwise.
   optional bool vote_granted = 3;
 
+  // Previously granted vote by this server. Only populated when
+  // the response is VOTE_GRANTED.
+  repeated PreviousVotePB previous_vote_history = 4;
+
   // TODO: Migrate ConsensusService to the AppStatusPB RPC style and merge these errors.
   // Error message from the consensus implementation.
   optional ConsensusErrorPB consensus_error = 998;
