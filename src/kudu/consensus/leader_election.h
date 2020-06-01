@@ -44,6 +44,30 @@ enum ElectionVote {
   VOTE_GRANTED = 1,
 };
 
+// Details of the vote received from a peer.
+struct VoteInfo {
+  ElectionVote vote;
+
+  // Previous voting history of this voter.
+  std::vector<PreviousVotePB> previous_vote_history;
+};
+
+// Internal structure to denote the optimizer's computation of the
+// next potential leader.
+struct PotentialNextLeaderResponse {
+  enum Status {
+    ERROR = 0,
+    POTENTIAL_NEXT_LEADERS_DETECTED = 1,
+    WAITING_FOR_MORE_VOTES = 2,
+    ALL_INTERMEDIATE_TERMS_SCANNED = 3
+  };
+  PotentialNextLeaderResponse(Status);
+  PotentialNextLeaderResponse(Status, const std::set<std::string>&, int64_t);
+  Status status;
+  std::set<std::string> potential_leader_regions;
+  int64_t next_term;
+};
+
 // Simple class to count votes (in-memory, not persisted to disk).
 // This class is not thread safe and requires external synchronization.
 class VoteCounter {
@@ -61,7 +85,8 @@ class VoteCounter {
   // Otherwise, it is set to false.
   // If an OK status is not returned, the value in 'is_duplicate' is undefined.
   virtual Status RegisterVote(
-      const std::string& voter_uuid, ElectionVote vote, bool* is_duplicate);
+      const std::string& voter_uuid, const VoteInfo& vote_info,
+      bool* is_duplicate);
 
   // Return whether the vote is decided yet.
   virtual bool IsDecided() const;
@@ -82,7 +107,7 @@ class VoteCounter {
  protected:
   int num_voters_;
 
-  typedef std::map<std::string, ElectionVote> VoteMap;
+  typedef std::map<std::string, VoteInfo> VoteMap;
   VoteMap votes_; // Voting record.
 
  private:
@@ -95,39 +120,136 @@ class VoteCounter {
   DISALLOW_COPY_AND_ASSIGN(VoteCounter);
 };
 
+// Class to enable FlexiRaft vote counting for different quorum modes.
 class FlexibleVoteCounter : public VoteCounter {
  public:
-  FlexibleVoteCounter(const LastKnownLeader& last_known_leader, RaftConfigPB config);
+  FlexibleVoteCounter(
+      int64_t election_term, const LastKnownLeader& last_known_leader,
+      RaftConfigPB config);
 
   // Synchronization is done by the LeaderElection class. Therefore, VoteCounter
   // class doesn't need to take care of thread safety of its book-keeping
   // variables.
   Status RegisterVote(
-      const std::string& voter_uuid, ElectionVote vote,
+      const std::string& voter_uuid, const VoteInfo& vote,
       bool* is_duplicate) override;
   bool IsDecided() const override;
   Status GetDecision(ElectionVote* decision) const override;
  private:
+  // Mapping from region to set of voter UUIDs that have responded in that
+  // region.
+  typedef std::map<std::string, std::set<std::string> > RegionToVoterSet;
+
+  // UUID and term pair for which a vote was given.
+  typedef std::pair<std::string, int64_t> UUIDTermPair;
+
+  // A mapping from UUID term pair to maps from region to voter sets in those
+  // regions that have voted for the UUID term pair.
+  typedef std::map<UUIDTermPair, RegionToVoterSet> VoteHistoryCollation;
+
+  // Fetches topology information required by the flexible vote counter.
+  void FetchTopologyInfo();
+
+  // Fetches the number of votes that still haven't arrived in this election
+  // cycle from the given `region`.
+  int FetchVotesRemainingInRegion(const std::string& region) const;
+
+  // Given a set of regions, returns a pair of booleans for each region
+  // representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  std::vector<std::pair<bool, bool> > IsMajoritySatisfiedInRegions(
+      const std::vector<std::string>& regions) const;
+
+  // For the static modes (STATIC_DISJUNCTION & STATIC_CONJUNCTION), return
+  // a pair of booleans representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  std::pair<bool, bool> IsStaticQuorumSatisfied() const;
+
+  // For the most pessimistic quorum (one that assumes all regions could have
+  // the leader), returns a pair of booleans representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  std::pair<bool, bool> IsPessimisticQuorumSatisfied() const;
+
+  // For the region provided, returns a pair of booleans representing:
+  // 1. if the majority in region is satisfied in the current state
+  // 2. if the majority in region can still be satisfied in the current state
+  std::pair<bool, bool> IsMajoritySatisfiedInRegion(
+      const std::string& region) const;
+
+  // Given a set of potential leader regions, returns a pair of booleans:
+  // 1. if the majority is satisfied in all regions
+  // 2. if the majority can be satisfied in one of the regions
+  std::pair<bool, bool>
+  IsMajoritySatisfiedInPotentialLeaderRegions(
+      const std::set<std::string>& leader_regions) const;
+
+  // Extends the `next_leader_regions` set to include the regions of the UUIDs
+  // in `next_leader_uuids`. Returns an error status if the UUID does not
+  // belong to the configuration.
+  Status ExtendNextLeaderRegions(
+      const std::set<std::string>& next_leader_uuids,
+      std::set<std::string>* next_leader_regions) const;
+
+  // Figure out if `region_to_voter_set` satisfies the majority
+  // in `leader_region`.
+  // `region_to_voter_set` is constructed from the voting history.
+  // Returns a pair of booleans representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  // Please note the underlying assumption that the configuration for
+  // leader election quorum remains immutable.
+  std::pair<bool, bool> FetchQuorumSatisfactionInfoFromVoteHistory(
+      const std::string& leader_region,
+      const RegionToVoterSet& region_to_voter_set) const;
+
+  // Iterates over all the votes that have come in so far and collates them
+  // corresponding to each UUID term pair for the purpose of determining if
+  // one of those UUIDs could have won an election after the `term` provided
+  // when the possible leader regions in `term` were `leader_regions`.
+  // It also computes the `min_term` greater than `term` in which one of the
+  // servers from the `leader_regions` had voted.
+  void ConstructRegionWiseVoteCollation(
+      int64_t term,
+      const std::set<std::string>& leader_regions,
+      VoteHistoryCollation* vote_collation,
+      int64_t* min_term) const;
+
+  // Optimizer function which tries to recursively figure out the next leader
+  // regions since the last term provided and the potential set of leaders regions
+  // in that term. It returns the set of potential leader regions and the next term
+  // to consider. It is possible that the next possible leader regions cannot be
+  // determined in which case, the situation is reflected in the status.
+  PotentialNextLeaderResponse GetPotentialNextLeader(
+      int64_t term, const std::set<std::string>& leader_regions) const;
+
+  // For the dynamic mode (SINGLE_REGION_DYNAMIC), return
+  // a pair of booleans representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  std::pair<bool, bool> IsDynamicQuorumSatisfied() const;
+
   // Returns a couple of booleans - the first denotes if the election quorum
   // has been satisfied and the second denotes if it can still be satisfied.
   std::pair<bool, bool> GetQuorumState() const;
 
-  // Fetches topology information required by the flexible vote counter.
-  void FetchTopologyInfo(
-      std::map<std::string, int>* voter_distribution,
-      std::map<std::string, int>* le_quorum_requirement);
+  // Generic log prefix.
+  std::string LogPrefix() const;
+
+  // Term of this election.
+  const int64_t election_term_;
 
   // Mapping from each region to number of active voters.
   std::map<std::string, int> voter_distribution_;
 
-  // Mapping from each region to number of yes votes required.
-  std::map<std::string, int> le_quorum_requirement_;
-
   // Vote count per region.
   std::map<std::string, int> yes_vote_count_, no_vote_count_;
 
-  // Last known leader.
+  // Last known leader properties.
   const LastKnownLeader last_known_leader_;
+  std::string last_known_leader_region_;
 
   // Config at the beginning of the leader election.
   const RaftConfigPB config_;
@@ -231,7 +353,8 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   void VoteResponseRpcCallback(const std::string& voter_uuid);
 
   // Record vote from specified peer.
-  void RecordVoteUnlocked(const VoterState& state, ElectionVote vote);
+  void RecordVoteUnlocked(
+    const VoterState& state, ElectionVote vote);
 
   // Handle a peer that reponded with a term greater than the election term.
   void HandleHigherTermUnlocked(const VoterState& state);

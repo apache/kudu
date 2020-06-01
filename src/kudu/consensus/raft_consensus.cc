@@ -586,21 +586,40 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting " << mode_str << " with config: "
                                    << SecureShortDebugString(active_config);
 
+    int64_t candidate_term = CurrentTermUnlocked();
+    if (mode == PRE_ELECTION) {
+      // In a pre-election, we haven't bumped our own term yet, so we need to be
+      // asking for votes for the next term.
+      candidate_term += 1;
+    }
+
     // Initialize the VoteCounter.
     gscoped_ptr<VoteCounter> counter;
 
+    VoteInfo vote_info;
+    vote_info.vote = VOTE_GRANTED;
     if (!FLAGS_enable_flexi_raft) {
       int num_voters = CountVoters(active_config);
       int majority_size = MajoritySize(num_voters);
       counter.reset(new VoteCounter(num_voters, majority_size));
     } else {
       counter.reset(new FlexibleVoteCounter(
-          cmeta_->last_known_leader(), active_config));
+          candidate_term, cmeta_->last_known_leader(), active_config));
+
+      // Populate vote history for self. Although not really needed, this makes
+      // the code simpler.
+      const std::map<int64_t, PreviousVotePB>& pvh =
+          cmeta_->previous_vote_history();
+      std::map<int64_t, PreviousVotePB>::const_iterator it = pvh.begin();
+      while(it != pvh.end()) {
+        vote_info.previous_vote_history.push_back(it->second);
+        it++;
+      }
     }
 
     // Vote for ourselves.
     bool duplicate;
-    RETURN_NOT_OK(counter->RegisterVote(peer_uuid(), VOTE_GRANTED, &duplicate));
+    RETURN_NOT_OK(counter->RegisterVote(peer_uuid(), vote_info, &duplicate));
     CHECK(!duplicate) << LogPrefixUnlocked()
                       << "Inexplicable duplicate self-vote for term "
                       << CurrentTermUnlocked();
@@ -608,13 +627,9 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     VoteRequestPB request;
     request.set_ignore_live_leader(mode == ELECT_EVEN_IF_LEADER_IS_ALIVE);
     request.set_candidate_uuid(peer_uuid());
+    request.set_candidate_term(candidate_term);
     if (mode == PRE_ELECTION) {
-      // In a pre-election, we haven't bumped our own term yet, so we need to be
-      // asking for votes for the next term.
       request.set_is_pre_election(true);
-      request.set_candidate_term(CurrentTermUnlocked() + 1);
-    } else {
-      request.set_candidate_term(CurrentTermUnlocked());
     }
     request.set_tablet_id(options_.tablet_id);
     *request.mutable_candidate_status()->mutable_last_received() =

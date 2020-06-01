@@ -200,7 +200,9 @@ void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
 gscoped_ptr<VoteCounter> LeaderElectionTest::InitVoteCounter(int num_voters, int majority_size) {
   gscoped_ptr<VoteCounter> counter(new VoteCounter(num_voters, majority_size));
   bool duplicate;
-  CHECK_OK(counter->RegisterVote(candidate_uuid_, VOTE_GRANTED, &duplicate));
+  VoteInfo vote_info;
+  vote_info.vote = VOTE_GRANTED;
+  CHECK_OK(counter->RegisterVote(candidate_uuid_, vote_info, &duplicate));
   CHECK(!duplicate);
   return std::move(counter);
 }
@@ -509,14 +511,16 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
 
     // First yes vote.
     bool duplicate;
-    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
+    VoteInfo vote_info;
+    vote_info.vote = VOTE_GRANTED;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
     ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // Second yes vote wins it in a configuration of 3.
-    ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_GRANTED, &duplicate));
+    ASSERT_OK(counter.RegisterVote(voter_uuids[1], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
     ElectionVote decision;
@@ -536,14 +540,16 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
 
     // First no vote.
     bool duplicate;
-    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate));
+    VoteInfo vote_info;
+    vote_info.vote = VOTE_DENIED;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
     ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 1));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // Second no vote loses it in a configuration of 3.
-    ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_DENIED, &duplicate));
+    ASSERT_OK(counter.RegisterVote(voter_uuids[1], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
     ElectionVote decision;
@@ -568,21 +574,24 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
 
   // Add single yes vote, still undecided.
   bool duplicate;
-  ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
+  VoteInfo vote_info;
+  vote_info.vote = VOTE_GRANTED;
+  ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
   ASSERT_FALSE(duplicate);
   ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Attempt duplicate vote.
-  ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
+  ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
   ASSERT_TRUE(duplicate);
   ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Attempt to change vote.
-  Status s = counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate);
+  vote_info.vote = VOTE_DENIED;
+  Status s = counter.RegisterVote(voter_uuids[0], vote_info, &duplicate);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "voted a different way twice");
   LOG(INFO) << "Expected vote-changed error: " << s.ToString();
@@ -591,26 +600,29 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Add more votes...
-  ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_DENIED, &duplicate));
+  ASSERT_OK(counter.RegisterVote(voter_uuids[1], vote_info, &duplicate));
   ASSERT_FALSE(duplicate);
   ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 1));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
-  ASSERT_OK(counter.RegisterVote(voter_uuids[2], VOTE_GRANTED, &duplicate));
+  vote_info.vote = VOTE_GRANTED;
+  ASSERT_OK(counter.RegisterVote(voter_uuids[2], vote_info, &duplicate));
   ASSERT_FALSE(duplicate);
   ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 2, 1));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
-  ASSERT_OK(counter.RegisterVote(voter_uuids[3], VOTE_DENIED, &duplicate));
+  vote_info.vote = VOTE_DENIED;
+  ASSERT_OK(counter.RegisterVote(voter_uuids[3], vote_info, &duplicate));
   ASSERT_FALSE(duplicate);
   ASSERT_NO_FATAL_FAILURE(AssertUndecided(counter));
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 2, 2));
   ASSERT_FALSE(counter.AreAllVotesIn());
 
   // Win the election.
-  ASSERT_OK(counter.RegisterVote(voter_uuids[4], VOTE_GRANTED, &duplicate));
+  vote_info.vote = VOTE_GRANTED;
+  ASSERT_OK(counter.RegisterVote(voter_uuids[4], vote_info, &duplicate));
   ASSERT_FALSE(duplicate);
   ASSERT_TRUE(counter.IsDecided());
   ElectionVote decision;
@@ -620,7 +632,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_TRUE(counter.AreAllVotesIn());
 
   // Attempt to vote with > the whole configuration.
-  s = counter.RegisterVote("some-random-node", VOTE_GRANTED, &duplicate);
+  s = counter.RegisterVote("some-random-node", vote_info, &duplicate);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "cause the number of votes to exceed the expected number");
   LOG(INFO) << "Expected voters-exceeded error: " << s.ToString();
@@ -644,14 +656,16 @@ TEST_F(VoteCounterTest, TestVoteCounter_EvenVoters) {
 
     // Initial yes vote.
     bool duplicate;
-    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
+    VoteInfo vote_info;
+    vote_info.vote = VOTE_GRANTED;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     NO_FATALS(AssertUndecided(counter));
     NO_FATALS(AssertVoteCount(counter, 1, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
     // Second yes vote wins it.
-    ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_GRANTED, &duplicate));
+    ASSERT_OK(counter.RegisterVote(voter_uuids[1], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
     ElectionVote decision;
@@ -670,7 +684,9 @@ TEST_F(VoteCounterTest, TestVoteCounter_EvenVoters) {
 
     // The first "no" vote guarantees a failed election when num voters == 2.
     bool duplicate;
-    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate));
+    VoteInfo vote_info;
+    vote_info.vote = VOTE_DENIED;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], vote_info, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
     ElectionVote decision;
