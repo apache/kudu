@@ -390,20 +390,20 @@ TEST_F(MaintenanceManagerTest, TestPrioritizeLogRetentionUnderMemoryPressure) {
 
   auto op_and_why = manager_->FindBestOp();
   ASSERT_EQ(&op1, op_and_why.first);
-  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 100 bytes log retention, and "
-                               "flush 100 bytes memory");
+  EXPECT_STR_CONTAINS(
+      op_and_why.second, "100 bytes log retention, and flush 100 bytes memory");
   manager_->UnregisterOp(&op1);
 
   op_and_why = manager_->FindBestOp();
   ASSERT_EQ(&op2, op_and_why.first);
-  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 100 bytes log retention, and "
-                               "flush 99 bytes memory");
+  EXPECT_STR_CONTAINS(
+      op_and_why.second, "100 bytes log retention, and flush 99 bytes memory");
   manager_->UnregisterOp(&op2);
 
   op_and_why = manager_->FindBestOp();
   ASSERT_EQ(&op3, op_and_why.first);
-  EXPECT_EQ(op_and_why.second, "under memory pressure (0.00% used), 99 bytes log retention, and "
-                               "flush 101 bytes memory");
+  EXPECT_STR_CONTAINS(
+      op_and_why.second, "99 bytes log retention, and flush 101 bytes memory");
   manager_->UnregisterOp(&op3);
 }
 
