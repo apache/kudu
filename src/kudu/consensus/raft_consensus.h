@@ -1042,6 +1042,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   scoped_refptr<Counter> raft_proxy_num_requests_success_;
   scoped_refptr<Counter> raft_proxy_num_requests_unknown_dest_;
   scoped_refptr<Counter> raft_proxy_num_requests_log_read_timeout_;
+  scoped_refptr<Counter> raft_proxy_num_requests_hops_remaining_exhausted_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

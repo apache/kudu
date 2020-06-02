@@ -229,6 +229,12 @@ METRIC_DEFINE_counter(server, raft_proxy_num_requests_log_read_timeout,
                       "destination, but due to a log read timeout, were "
                       "gracefully degraded to a heartbeat. Use "
                       "--raft_log_cache_proxy_wait_time_ms to control the log read timeout.");
+METRIC_DEFINE_counter(server, raft_proxy_num_requests_hops_remaining_exhausted,
+                      "Number of RPC requests failed due to maximum hops exhausted",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests received that were unable to be delivered due to "
+                      "exceeding the maximum allowable number of hops. This is usually due to "
+                      "either a routing loop or a misconfigured value for --raft_proxy_max_hops");
 
 using boost::optional;
 using google::protobuf::util::MessageDifferencer;
@@ -334,6 +340,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_unknown_dest);
   raft_proxy_num_requests_log_read_timeout_ =
       metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_log_read_timeout);
+  raft_proxy_num_requests_hops_remaining_exhausted_ =
+      metric_entity->FindOrCreateCounter(&METRIC_raft_proxy_num_requests_hops_remaining_exhausted);
 
   // A single Raft thread pool token is shared between RaftConsensus and
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
@@ -3528,6 +3536,17 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
     return;
   }
 
+  if (request->proxy_hops_remaining() < 1) {
+    LOG_WITH_PREFIX(WARNING) << "Proxy hops remaining exhausted (possible routing loop?) "
+                             << "in request to peer "
+                             << request->proxy_dest_uuid() << ": "
+                             << request->ShortDebugString();
+    raft_proxy_num_requests_hops_remaining_exhausted_->Increment();
+    context->RespondFailure(Status::Incomplete("proxy hops remaining exhausted",
+                                               "possible routing loop"));
+    return;
+  }
+
   // Construct the downstream request; copy the relevant fields from the
   // proxied request.
   ConsensusRequestPB downstream_request;
@@ -3540,6 +3559,9 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
   downstream_request.set_tablet_id(request->tablet_id());
   downstream_request.set_caller_uuid(request->caller_uuid());
   downstream_request.set_caller_term(request->caller_term());
+
+  // Decrement hops remaining.
+  downstream_request.set_proxy_hops_remaining(request->proxy_hops_remaining() - 1);
 
   if (request->has_preceding_id()) {
     *downstream_request.mutable_preceding_id() = request->preceding_id();

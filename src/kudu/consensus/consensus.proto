@@ -419,6 +419,9 @@ message ConsensusRequestPB {
   // Must be set if this request was proxied on behalf of the leader.
   optional bytes proxy_caller_uuid = 13;
 
+  // Hop count / TTL field for proxy requests.
+  optional int32 proxy_hops_remaining = 14;
+
   // The caller's term. As only leaders can send messages,
   // replicas will accept all messages as long as the term
   // is equal to or higher than the last term they know about.

@@ -92,6 +92,10 @@ DEFINE_bool(enable_tablet_copy, true,
             "replica. For testing purposes only.");
 TAG_FLAG(enable_tablet_copy, unsafe);
 
+DEFINE_int32(raft_proxy_max_hops, 16,
+             "Maximum proxy routing hops allowed. In other words, the proxy routing TTL");
+TAG_FLAG(raft_proxy_max_hops, advanced);
+
 DECLARE_int32(raft_heartbeat_interval_ms);
 
 using kudu::pb_util::SecureShortDebugString;
@@ -299,6 +303,11 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   // state of the current Peer object?
   string next_hop_uuid;
   CHECK_OK(queue_->GetNextRoutingHopFromLeader(peer_pb().permanent_uuid(), &next_hop_uuid));
+
+  if (next_hop_uuid != peer_pb().permanent_uuid()) {
+    // If this is a proxy request, set the hops remaining value.
+    request_.set_proxy_hops_remaining(FLAGS_raft_proxy_max_hops);
+  }
 
   shared_ptr<PeerProxy> next_hop_proxy = peer_proxy_pool_->Get(next_hop_uuid);
   if (!next_hop_proxy) {
