@@ -425,6 +425,16 @@ Status Tablet::NewRowIterator(const Schema& projection,
   return NewRowIterator(std::move(opts), iter);
 }
 
+Status Tablet::NewOrderedRowIterator(const Schema& projection,
+                                     unique_ptr<RowwiseIterator>* iter) const {
+  RowIteratorOptions opts;
+  // Yield current rows.
+  opts.snap_to_include = MvccSnapshot(mvcc_);
+  opts.projection = &projection;
+  opts.order = ORDERED;
+  return NewRowIterator(std::move(opts), iter);
+}
+
 Status Tablet::NewRowIterator(RowIteratorOptions opts,
                               unique_ptr<RowwiseIterator>* iter) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);

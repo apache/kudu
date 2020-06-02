@@ -83,7 +83,6 @@ class HistoryGcOpts;
 class MemRowSet;
 class RowSetTree;
 class RowSetsInCompaction;
-class TabletReplicaTestBase;
 class WriteOpState;
 struct RowOp;
 struct TabletComponents;
@@ -197,6 +196,10 @@ class Tablet {
   // The returned iterator is not initialized.
   Status NewRowIterator(const Schema& projection,
                         std::unique_ptr<RowwiseIterator>* iter) const;
+
+  // Like above, but returns an ordered iterator.
+  Status NewOrderedRowIterator(const Schema& projection,
+                               std::unique_ptr<RowwiseIterator>* iter) const;
 
   // Create a new row iterator using specific iterator options.
   //
