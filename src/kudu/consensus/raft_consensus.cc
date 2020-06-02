@@ -3586,6 +3586,7 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
 
     vector<ReplicateRefPtr> messages;
     do {
+      messages.clear();
 
       // We assume and enforce that a single request is composed of a range of ops.
       int64_t first_op_index = -1;
@@ -3661,12 +3662,20 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
       // Ensure that the OpIds match. We don't expect a mismatch to ever
       // happen, so we log an error locally before reponding to the caller.
       if (!OpIdEquals(request->ops(i).id(), messages[i]->get()->id())) {
-          Status s = Status::IllegalState(Substitute(
-              "log cache returned non-consecutive OpId indexes: expected {}, found {}",
-              OpIdToString(request->ops(i).id()),
-              OpIdToString(messages[i]->get()->id())));
-          LOG_WITH_PREFIX(ERROR) << s.ToString();
-          RET_RESPOND_ERROR_NOT_OK(s);
+        string extra_info;
+        if (i > 0) {
+          extra_info = Substitute(" (previously received OpId: $0)",
+                                  OpIdToString(messages[i-1]->get()->id()));
+        }
+        Status s = Status::IllegalState(Substitute(
+            "log cache returned non-consecutive OpId index for message $0 in request: "
+            "requested $1, received $2$3",
+            i,
+            OpIdToString(request->ops(i).id()),
+            OpIdToString(messages[i]->get()->id()),
+            extra_info));
+        LOG_WITH_PREFIX(ERROR) << s.ToString();
+        RET_RESPOND_ERROR_NOT_OK(s);
       }
       downstream_request.mutable_ops()->AddAllocated(messages[i]->get());
     }
