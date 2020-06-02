@@ -85,7 +85,8 @@ target_link_libraries(tablet
   consensus)
 
 add_library(tablet_test_util
-  tablet-test-util.cc)
+  tablet-test-util.cc
+  tablet_replica-test-base.cc)
 target_link_libraries(tablet_test_util
   kudu_common
   log_proto)

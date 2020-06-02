@@ -72,6 +72,7 @@ class ResultTracker;
 
 namespace tablet {
 class AlterSchemaOpState;
+class TabletReplicaTestBase;
 class TabletStatusPB;
 class OpDriver;
 class WriteOpState;
@@ -313,6 +314,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
   friend class TabletReplicaTest;
+  friend class TabletReplicaTestBase;
   FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
   FRIEND_TEST(TabletReplicaTest, TestActiveOpPreventsLogGC);

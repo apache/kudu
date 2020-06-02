@@ -83,6 +83,7 @@ class HistoryGcOpts;
 class MemRowSet;
 class RowSetTree;
 class RowSetsInCompaction;
+class TabletReplicaTestBase;
 class WriteOpState;
 struct RowOp;
 struct TabletComponents;
@@ -489,6 +490,7 @@ class Tablet {
   friend class kudu::AlterTableTest;
   friend class Iterator;
   friend class TabletReplicaTest;
+  friend class TabletReplicaTestBase;
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRange);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithZeroRowSets);
