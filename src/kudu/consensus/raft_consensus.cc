@@ -744,7 +744,6 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
 }
 
 Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
-
   std::lock_guard<simple_spinlock> lock(update_lock_);
   {
     ThreadRestrictions::AssertWaitAllowed();

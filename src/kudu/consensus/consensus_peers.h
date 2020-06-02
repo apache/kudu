@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -151,7 +152,7 @@ class Peer :
   void ProcessTabletCopyResponse();
 
   // Signals there was an error sending the request to the peer.
-  void ProcessResponseError(const Status& status);
+  void ProcessResponseErrorUnlocked(const Status& status);
 
   std::string LogPrefixUnlocked() const;
 
@@ -193,11 +194,18 @@ class Peer :
   // Repeating timer responsible for scheduling heartbeats to this peer.
   std::shared_ptr<rpc::PeriodicTimer> heartbeater_;
 
-  // Lock that protects Peer state changes, initialization, etc.
-  mutable simple_spinlock peer_lock_;
-  bool request_pending_ = false;
-  bool closed_ = false;
-  bool has_sent_first_request_ = false;
+  // Lock that protects Peer state changes, initialization, etc. It's necessary
+  // to hold 'peer_lock_' if setting 'request_pending_', 'closed_', and
+  // 'has_sent_first_request_' fields below. To read 'has_sent_first_request_',
+  // it's necessary to hold 'peer_lock_'. To read the 'closed_' and
+  // 'request_pending_' fields, there is no need to hold 'peer_lock_' unless
+  // it's necessary to block the threads which might be setting these fields
+  // concurrently.
+  simple_spinlock peer_lock_;
+
+  std::atomic<bool> request_pending_;
+  std::atomic<bool> closed_;
+  bool has_sent_first_request_;
 };
 
 // A proxy to another peer. Usually a thin wrapper around an rpc proxy but can

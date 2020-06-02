@@ -131,15 +131,17 @@ OpTracker::Metrics::Metrics(const scoped_refptr<MetricEntity>& entity)
 #undef MINIT
 
 OpTracker::State::State()
-  : memory_footprint(0) {
+    : memory_footprint(0) {
 }
 
 OpTracker::OpTracker() {
 }
 
 OpTracker::~OpTracker() {
+#ifndef NDEBUG
   std::lock_guard<simple_spinlock> l(lock_);
-  CHECK_EQ(pending_ops_.size(), 0);
+  DCHECK(pending_ops_.empty());
+#endif
 }
 
 Status OpTracker::Add(OpDriver* driver) {
@@ -219,13 +221,13 @@ void OpTracker::Release(OpDriver* driver) {
 
   // Remove the op from the map updating memory consumption if needed.
   std::lock_guard<simple_spinlock> l(lock_);
-  State st = FindOrDie(pending_ops_, driver);
   if (mem_tracker_) {
+    const State& st = FindOrDie(pending_ops_, driver);
     mem_tracker_->Release(st.memory_footprint);
   }
   if (PREDICT_FALSE(pending_ops_.erase(driver) != 1)) {
-    LOG(FATAL) << "Could not remove pending op from map: "
-        << driver->ToStringUnlocked();
+    LOG(FATAL) << Substitute("Could not remove pending op from map: $0",
+                             driver->ToStringUnlocked());
   }
 }
 

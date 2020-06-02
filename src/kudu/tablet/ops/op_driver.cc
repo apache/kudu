@@ -173,8 +173,7 @@ Status OpDriver::Init(unique_ptr<Op> op,
     }
   }
 
-  RETURN_NOT_OK(op_tracker_->Add(this));
-  return Status::OK();
+  return op_tracker_->Add(this);
 }
 
 consensus::OpId OpDriver::GetOpId() {

@@ -122,13 +122,11 @@ Status PeerManager::StartElection(const string& uuid) {
 }
 
 void PeerManager::Close() {
-  {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    for (const auto& entry : peers_) {
-      entry.second->Close();
-    }
-    peers_.clear();
+  std::lock_guard<simple_spinlock> lock(lock_);
+  for (const auto& entry : peers_) {
+    entry.second->Close();
   }
+  peers_.clear();
 }
 
 string PeerManager::GetLogPrefix() const {
