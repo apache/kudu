@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
@@ -30,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -44,11 +46,15 @@
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/hash.pb.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
@@ -57,7 +63,12 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(predicate_effectivess_num_skip_blocks);
+METRIC_DECLARE_counter(scanner_predicates_disabled);
+METRIC_DECLARE_entity(tablet);
+
 using std::count_if;
+using std::deque;
 using std::numeric_limits;
 using std::string;
 using std::unique_ptr;
@@ -341,6 +352,27 @@ class PredicateTest : public KuduTest {
     return bf;
   }
 
+  template<typename BloomFilterType, typename Collection>
+  static void InsertValuesInBloomFilter(BloomFilterType* bloom_filter, const Collection& values) {
+    for (const auto& v : values) {
+      bloom_filter->Insert(Slice(reinterpret_cast<const uint8_t*>(&v), sizeof(v)));
+    }
+  }
+
+  template<class Collection>
+  static KuduBloomFilter* CreateBloomFilterWithValues(const Collection& values) {
+    KuduBloomFilter* bloom_filter = CreateBloomFilter(values.size());
+    InsertValuesInBloomFilter(bloom_filter, values);
+    return bloom_filter;
+  }
+
+  template<class Collection>
+  static unique_ptr<BlockBloomFilter> CreateDirectBloomFilterWithValues(const Collection& values) {
+    unique_ptr<BlockBloomFilter> bloom_filter = CreateDirectBloomFilter(values.size());
+    InsertValuesInBloomFilter(bloom_filter.get(), values);
+    return bloom_filter;
+  }
+
   void CheckInBloomFilterPredicate(const shared_ptr<KuduTable>& table,
                                    KuduBloomFilter* in_bloom_filter,
                                    int expected_count) {
@@ -582,6 +614,30 @@ class PredicateTest : public KuduTest {
 
     // IS NULL predicate
     ASSERT_EQ(1, CountRows(table, { table->NewIsNullPredicate("value") }));
+  }
+
+  string GetTheOnlyTabletId() {
+    // Cluster is setup with single tablet server and a single table.
+    CHECK_EQ(1, cluster_->num_tablet_servers());
+    const auto* mini_tserver = cluster_->mini_tablet_server(0);
+    const auto& tablets = mini_tserver->ListTablets();
+    CHECK_EQ(1, tablets.size());
+    return tablets[0];
+  }
+
+  // Function to verify ineffective disabled predicates on specified tablet.
+  void CheckDisabledPredicates(const string& tablet_id, int64_t expected_disabled_predicates) {
+    // Cluster is setup with single tablet server and a single table.
+    ASSERT_EQ(1, cluster_->num_tablet_servers());
+    const auto* mini_tserver = cluster_->mini_tablet_server(0);
+    int64_t predicates_disabled = 0;
+    ASSERT_OK(itest::GetInt64Metric(HostPort(mini_tserver->bound_http_addr()),
+                                    &METRIC_ENTITY_tablet,
+                                    tablet_id.c_str(),
+                                    &METRIC_scanner_predicates_disabled,
+                                    "value",
+                                    &predicates_disabled));
+    ASSERT_EQ(expected_disabled_predicates, predicates_disabled);
   }
 
   shared_ptr<KuduClient> client_;
@@ -1295,8 +1351,7 @@ class BloomFilterPredicateTest : public PredicateTest {
   // one with 'num_included_values' values from the table, and one with 'num_excluded_values'
   // values that aren't present in the table.
   void Init(int num_all_values, int num_included_values, int num_excluded_values) {
-    ASSERT_LT(num_included_values, num_all_values);
-    ASSERT_LT(num_excluded_values, num_all_values);
+    ASSERT_LE(num_included_values, num_all_values);
 
     table_ = CreateAndOpenTable(KuduColumnSchema::INT32);
     session_ = CreateSession();
@@ -1311,27 +1366,6 @@ class BloomFilterPredicateTest : public PredicateTest {
                                                            &rand_);
     // NOLINTNEXTLINE(bugprone-narrowing-conversions)
     num_false_positive_values_ = num_all_values * kBloomFilterFalsePositiveProb;
-  }
-
-  template<typename BloomFilterType, typename Collection>
-  static void InsertValues(BloomFilterType* bloom_filter, const Collection& values) {
-    for (const auto& v : values) {
-      bloom_filter->Insert(Slice(reinterpret_cast<const uint8_t*>(&v), sizeof(v)));
-    }
-  }
-
-  template<class Collection>
-  static KuduBloomFilter* CreateBloomFilterWithValues(const Collection& values) {
-    KuduBloomFilter* bloom_filter = CreateBloomFilter(values.size());
-    InsertValues(bloom_filter, values);
-    return bloom_filter;
-  }
-
-  template<class Collection>
-  static unique_ptr<BlockBloomFilter> CreateDirectBloomFilterWithValues(const Collection& values) {
-    unique_ptr<BlockBloomFilter> bloom_filter = CreateDirectBloomFilter(values.size());
-    InsertValues(bloom_filter.get(), values);
-    return bloom_filter;
   }
 
   void InsertAllValuesInTable() {
@@ -1442,6 +1476,28 @@ TEST_F(BloomFilterPredicateTest, TestDirectBlockBloomFilterPredicate) {
   TestWithRangePredicate(included_predicate_clone1, included_predicate_clone2);
 }
 
+// Test to verify that an ineffective Bloom filter predicate will be disabled.
+TEST_F(BloomFilterPredicateTest, TestDisabledBloomFilterPredicate) {
+  // Insert all values from the table in Bloom filter so that the predicate
+  // is determined to be ineffective.
+  Init(10000/*num_all_values*/, 10000/*num_included_values*/, 0/*num_excluded_values*/);
+  KuduBloomFilter* included_bf = CreateBloomFilterWithValues(included_values_);
+
+  InsertAllValuesInTable();
+
+  vector<KuduBloomFilter*> included_bf_vec = { included_bf };
+  auto* included_predicate =
+      table_->NewInBloomFilterPredicate("value", &included_bf_vec);
+
+  ASSERT_TRUE(included_bf_vec.empty());
+  FLAGS_predicate_effectivess_num_skip_blocks = 4;
+  int actual_count_included = CountRows(table_, { included_predicate });
+  ASSERT_EQ(included_values_.size(), actual_count_included);
+
+  // CountRows() runs 2 scans using a cloned predicate.
+  CheckDisabledPredicates(GetTheOnlyTabletId(), 2 /* expected_disabled_predicates */);
+}
+
 // Benchmark test that combines Bloom filter predicate with range predicate.
 TEST_F(BloomFilterPredicateTest, TestKuduBloomFilterPredicateBenchmark) {
   SKIP_IF_SLOW_NOT_ALLOWED();
@@ -1457,6 +1513,83 @@ TEST_F(BloomFilterPredicateTest, TestKuduBloomFilterPredicateBenchmark) {
   auto* included_predicate_clone = included_predicate->Clone();
 
   TestWithRangePredicate(included_predicate, included_predicate_clone);
+}
+
+class ParameterizedBloomFilterPredicateTest :
+    public PredicateTest,
+    public ::testing::WithParamInterface<std::tuple<bool, bool>> {};
+
+INSTANTIATE_TEST_CASE_P(, ParameterizedBloomFilterPredicateTest,
+                        ::testing::Combine(::testing::Bool(),
+                                           ::testing::Bool()));
+
+// Test to verify that an ineffective Bloom filter predicate will be disabled
+// using a pattern of repeated strings.
+TEST_P(ParameterizedBloomFilterPredicateTest, TestDisabledBloomFilterWithRepeatedStrings) {
+  // Combination of following 2 flags help test cases with MRSs flushed, DRS and delta files.
+  const bool flush_tablet = std::get<0>(GetParam());
+  const bool update_rows = std::get<1>(GetParam());
+
+  shared_ptr<KuduTable> table = CreateAndOpenTable(KuduColumnSchema::STRING);
+  shared_ptr<KuduSession> session = CreateSession();
+
+  // Use a set of predetermined strings and populate the table.
+  // Create a BF predicate with same set of strings.
+  deque<string> values = {"Alice", "Bob", "Charlie", "Doug", "Elizabeth", "Frank", "George",
+                          "Harry"};
+
+  // Populate table with a small set of strings that are repeated.
+  static constexpr int kNumRows = 10000;
+  auto upsert_rows = [&]() {
+    int i = 0;
+    while (i < kNumRows) {
+      for (int j = 0; j < values.size() && i < kNumRows; j++, i++) {
+        const string &value = values[j];
+        unique_ptr<KuduUpsert> upsert(table->NewUpsert());
+        ASSERT_OK(upsert->mutable_row()->SetInt64("key", i));
+        ASSERT_OK(upsert->mutable_row()->SetStringNoCopy("value", value));
+        ASSERT_OK(session->Apply(upsert.release()));
+      }
+      // TSAN builds timeout and fail on flushing with large number of rows.
+      if ((i % (kNumRows / 10))  == 0) {
+        ASSERT_OK(session->Flush());
+      }
+    }
+    ASSERT_OK(session->Flush());
+  };
+
+  upsert_rows();
+  const string tablet_id = GetTheOnlyTabletId();
+
+  if (flush_tablet) {
+    ASSERT_OK(cluster_->FlushTablet(tablet_id));
+  }
+
+  if (update_rows) {
+    string first_name = values.front();
+    values.pop_front();
+    values.push_back(first_name);
+
+    upsert_rows();
+    if (flush_tablet) {
+      ASSERT_OK(cluster_->FlushTablet(tablet_id));
+    }
+  }
+
+  // Create Bloom filter predicate with string values.
+  auto* bf = CreateBloomFilter(values.size());
+  for (const auto& value : values) {
+    bf->Insert(Slice(value));
+  }
+  vector<KuduBloomFilter*> bf_vec = { bf };
+  auto* bf_predicate = table->NewInBloomFilterPredicate("value", &bf_vec);
+  ASSERT_TRUE(bf_vec.empty());
+
+  FLAGS_predicate_effectivess_num_skip_blocks = 4;
+  int actual_count_included = DoCountRows(table, { bf_predicate });
+  ASSERT_EQ(kNumRows, actual_count_included);
+
+  CheckDisabledPredicates(tablet_id, 1 /* expected_disabled_predicates */);
 }
 
 class ParameterizedPredicateTest : public PredicateTest,

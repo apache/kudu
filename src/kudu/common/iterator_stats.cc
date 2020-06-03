@@ -29,18 +29,20 @@ using strings::Substitute;
 IteratorStats::IteratorStats()
     : cells_read(0),
       bytes_read(0),
-      blocks_read(0) {
+      blocks_read(0),
+      predicates_disabled(0) {
 }
 
 string IteratorStats::ToString() const {
-  return Substitute("cells_read=$0 bytes_read=$1 blocks_read=$2",
-                    cells_read, bytes_read, blocks_read);
+  return Substitute("cells_read=$0 bytes_read=$1 blocks_read=$2 predicates_disabled=$3",
+                    cells_read, bytes_read, blocks_read, predicates_disabled);
 }
 
 IteratorStats& IteratorStats::operator+=(const IteratorStats& other) {
   cells_read += other.cells_read;
   bytes_read += other.bytes_read;
   blocks_read += other.blocks_read;
+  predicates_disabled += other.predicates_disabled;
   DCheckNonNegative();
   return *this;
 }
@@ -49,6 +51,7 @@ IteratorStats& IteratorStats::operator-=(const IteratorStats& other) {
   cells_read -= other.cells_read;
   bytes_read -= other.bytes_read;
   blocks_read -= other.blocks_read;
+  predicates_disabled -= other.predicates_disabled;
   DCheckNonNegative();
   return *this;
 }
@@ -69,5 +72,6 @@ void IteratorStats::DCheckNonNegative() const {
   DCHECK_GE(cells_read, 0);
   DCHECK_GE(bytes_read, 0);
   DCHECK_GE(blocks_read, 0);
+  DCHECK_GE(predicates_disabled, 0);
 }
 } // namespace kudu

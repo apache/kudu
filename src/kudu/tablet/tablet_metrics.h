@@ -59,6 +59,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> scanner_rows_scanned;
   scoped_refptr<Counter> scanner_cells_scanned_from_disk;
   scoped_refptr<Counter> scanner_bytes_scanned_from_disk;
+  scoped_refptr<Counter> scanner_predicates_disabled;
   scoped_refptr<Counter> scans_started;
   scoped_refptr<AtomicGauge<size_t>> tablet_active_scanners;
 

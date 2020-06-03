@@ -327,15 +327,6 @@ class ClientTest : public KuduTest {
     return resp.tablet_locations(0).tablet_id();
   }
 
-  void FlushTablet(const string& tablet_id) {
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      scoped_refptr<TabletReplica> tablet_replica;
-      ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
-          tablet_id, &tablet_replica));
-      ASSERT_OK(tablet_replica->tablet()->Flush());
-    }
-  }
-
   void CheckNoRpcOverflow() {
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       MiniTabletServer* server = cluster_->mini_tablet_server(i);
@@ -451,7 +442,7 @@ class ClientTest : public KuduTest {
     KuduScanner scanner(client_table_.get());
     string tablet_id = GetFirstTabletId(client_table_.get());
     // Flush to ensure we scan disk later
-    FlushTablet(tablet_id);
+    ASSERT_OK(cluster_->FlushTablet(tablet_id));
     ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
     LOG_TIMING(INFO, "Scanning disk with no predicates") {
       ASSERT_OK(scanner.Open());
@@ -1551,7 +1542,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
       // disk.
       if (with_flush) {
         string tablet_id = GetFirstTabletId(table.get());
-        FlushTablet(tablet_id);
+        ASSERT_OK(cluster_->FlushTablet(tablet_id));
       }
 
       // Test a few different recoverable server-side error conditions.
@@ -6619,7 +6610,7 @@ TEST_F(ClientTest, TestProjectionPredicatesFuzz) {
     // Leave one row in the tablet's MRS so that the scan includes one rowset
     // without bounds. This affects the behavior of FT scans.
     if (i < kNumRows - 1 && rng.OneIn(2)) {
-      NO_FATALS(FlushTablet(GetFirstTabletId(table.get())));
+      ASSERT_OK(cluster_->FlushTablet(GetFirstTabletId(table.get())));
     }
   }
 

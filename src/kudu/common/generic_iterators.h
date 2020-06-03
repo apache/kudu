@@ -81,7 +81,7 @@ Status InitAndMaybeWrap(std::unique_ptr<RowwiseIterator>* base_iter,
 // Gets the predicates associated with a PredicateEvaluatingIterator.
 //
 // Only for use by tests.
-const std::vector<ColumnPredicate>& GetIteratorPredicatesForTests(
+std::vector<const ColumnPredicate*> GetIteratorPredicatesForTests(
     const std::unique_ptr<RowwiseIterator>& iter);
 
 } // namespace kudu

@@ -160,6 +160,9 @@ class InternalMiniCluster : public MiniCluster {
 
   std::string GetTabletServerFsRoot(int idx) const;
 
+  // Flush the specified tablet on all tablet replicas in the cluster.
+  Status FlushTablet(const std::string& tablet_id);
+
   // Wait until the number of registered tablet servers reaches the given
   // count on all masters. Returns Status::TimedOut if the desired count is not
   // achieved within kRegistrationWaitTimeSeconds.

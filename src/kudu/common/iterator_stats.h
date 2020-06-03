@@ -37,6 +37,12 @@ struct IteratorStats {
   // The number of CFile data blocks read from disk (or cache) by the iterator.
   int64_t blocks_read;
 
+  // The number of column predicates disabled because they were determined to be
+  // ineffective.
+  // There is only one predicate per column (if any) so for a per column stat this would be 0 or 1.
+  // Using an integer helps the stat work well when aggregating or computing delta.
+  int64_t predicates_disabled;
+
   // Add statistics contained 'other' to this object (for each field
   // in this object, increment it by the value of the equivalent field
   // in 'other').

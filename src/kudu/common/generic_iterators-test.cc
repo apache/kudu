@@ -43,15 +43,20 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/common/predicate_effectiveness.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/block_bloom_filter.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -61,6 +66,7 @@ DEFINE_int32(num_lists, 3, "Number of lists to merge");
 DEFINE_int32(num_rows, 1000, "Number of entries per list");
 DEFINE_int32(num_iters, 1, "Number of times to run merge");
 DECLARE_bool(materializing_iterator_do_pushdown);
+DECLARE_int32(predicate_effectivess_num_skip_blocks);
 
 using std::map;
 using std::pair;
@@ -633,6 +639,15 @@ class DummyIterator : public RowwiseIterator {
   Schema schema_;
 };
 
+// Verify the vectors of ColumnPredicate are the same.
+void CheckColumnPredicatesAreEqual(const vector<ColumnPredicate>& expected,
+                                   const vector<const ColumnPredicate*>& actual) {
+  ASSERT_EQ(expected.size(), actual.size());
+  for (int i = 0; i < expected.size(); i++) {
+    ASSERT_EQ(expected[i], *actual[i]);
+  }
+}
+
 TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
   Schema schema({ ColumnSchema("a_int64", INT64),
                   ColumnSchema("b_int64", INT64),
@@ -653,8 +668,9 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
 
     unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
     ASSERT_OK(InitAndMaybeWrap(&iter, &spec));
-    ASSERT_EQ(GetIteratorPredicatesForTests(iter),
-              vector<ColumnPredicate>({ c_equality, b_equality, a_range }));
+    NO_FATALS(CheckColumnPredicatesAreEqual(
+        vector<ColumnPredicate>({ c_equality, b_equality, a_range }),
+        GetIteratorPredicatesForTests(iter)));
   }
 
   { // Test that smaller columns come before larger ones, and ties are broken by idx.
@@ -666,9 +682,152 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
     unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
     ASSERT_OK(InitAndMaybeWrap(&iter, &spec));
 
-    ASSERT_EQ(GetIteratorPredicatesForTests(iter),
-              vector<ColumnPredicate>({ c_equality, a_equality, b_equality }));
+    NO_FATALS(CheckColumnPredicatesAreEqual(
+        vector<ColumnPredicate>({ c_equality, a_equality, b_equality }),
+        GetIteratorPredicatesForTests(iter)));
   }
 }
+
+// Class to test column predicate effectiveness.
+class PredicateEffectivenessTest :
+    public KuduTest,
+    public ::testing::WithParamInterface<bool> {
+ public:
+  // For 'all_values' true case, initialize the Bloom filter 'bf' with all values that are
+  // added to the output 'ints' vector. Otherwise insert subset of the values in the Bloom filter.
+  static ColumnPredicate CreateBloomFilterPredicate(bool all_values, BlockBloomFilter* bf,
+                                                    vector<int64_t>* ints) {
+    CHECK_OK(bf->Init(BlockBloomFilter::MinLogSpace(kNumRows, 0.01), FAST_HASH, 0));
+    ints->resize(kNumRows);
+
+    for (int64_t i = 0; i < kNumRows; i++) {
+      (*ints)[i] = i;
+      if (all_values || i < kSubsetNums) {
+        bf->Insert(Slice(reinterpret_cast<uint8 *>(&i), sizeof(i)));
+      }
+    }
+
+    vector<BlockBloomFilter*> bloom_filters;
+    bloom_filters.push_back(bf);
+    auto bf_pred = ColumnPredicate::InBloomFilter(kIntSchema.column(0), bloom_filters, nullptr,
+                                                  nullptr);
+    LOG(INFO) << "Bloom filter predicate: " << bf_pred.ToString();
+    return bf_pred;
+  }
+
+  // For 'all_values' true case, verify predicate effectiveness for the iterator 'iter'
+  // when the Bloom filter predicate was initialized with all values being iterated.
+  // Otherwise verify for the case when Bloom filter was initialized with subset of values
+  // being iterated.
+  static void VerifyPredicateEffectiveness(bool all_values,
+                                           const unique_ptr<RowwiseIterator>& iter) {
+    ASSERT_EQ(1, GetIteratorPredicateEffectivenessCtxForTests(iter).num_predicate_ctxs())
+        << "Predicate effectiveness contexts must match with number of predicates";
+    ASSERT_TRUE(GetIteratorPredicateEffectivenessCtxForTests(iter)[0].enabled)
+        << "Predicate must be enabled to begin with";
+
+    Arena arena(1024);
+    FLAGS_predicate_effectivess_num_skip_blocks = 4;
+    if (all_values) {
+      for (int i = 0; i < kNumRows / kBatchSize; i++) {
+        RowBlock dst(&kIntSchema, kBatchSize, &arena);
+        ASSERT_OK(iter->NextBlock(&dst));
+        ASSERT_EQ(kBatchSize, dst.nrows());
+        ASSERT_EQ(kBatchSize, dst.selection_vector()->CountSelected());
+        // For all values case, the predicate gets disabled on first effectiveness check.
+        if (i >= FLAGS_predicate_effectivess_num_skip_blocks) {
+          ASSERT_FALSE(GetIteratorPredicateEffectivenessCtxForTests(iter)[0].enabled);
+        }
+      }
+    } else {
+      for (int i = 0; i < kNumRows / kBatchSize; i++) {
+        RowBlock dst(&kIntSchema, kBatchSize, &arena);
+        ASSERT_OK(iter->NextBlock(&dst));
+        ASSERT_EQ(kBatchSize, dst.nrows());
+        // For subset case, the predicate should never be disabled.
+        ASSERT_TRUE(GetIteratorPredicateEffectivenessCtxForTests(iter)[0].enabled);
+        auto rows_selected = dst.selection_vector()->CountSelected();
+        if (i == 0) {
+          ASSERT_EQ(kBatchSize, rows_selected);
+        } else {
+          ASSERT_EQ(0, rows_selected);
+        }
+      }
+    }
+  }
+
+ private:
+  static constexpr int kNumRows = 1000;
+  static constexpr int kSubsetNums = 100;
+  static constexpr int kBatchSize = 100;
+};
+
+// Despite being a static constexpr integer, this static variable needs explicit definition
+// outside to avoid linker error because it's used with ASSERT_EQ() macro that binds 1st variable
+// to const reference.
+constexpr int PredicateEffectivenessTest::kBatchSize;
+
+// Test effectiveness of Bloom filter predicate with PredicateEvaluatingIterator.
+TEST_P(PredicateEffectivenessTest, PredicateEvaluatingIterator) {
+  // For 'all_values' true case, initialize the Bloom filter with all values that are inserted in
+  // the iterator. This helps test the case of ineffective Bloom filter predicate.
+  // For 'all_values' false case i.e. subset values case, initialize the Bloom filter with a subset
+  // of values inserted in the iterator. This helps test the case of effective Bloom filter
+  // predicate that filters out rows.
+  bool all_values = GetParam();
+  BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+  vector<int64_t> ints;
+  auto bf_pred = CreateBloomFilterPredicate(all_values, &bf, &ints);
+
+  ScanSpec spec;
+  spec.AddPredicate(bf_pred);
+
+  // Set up a MaterializingIterator with pushdown disabled, so that the
+  // PredicateEvaluatingIterator will wrap it and do evaluation.
+  unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  FLAGS_materializing_iterator_do_pushdown = false;
+  unique_ptr<RowwiseIterator> materializing(NewMaterializingIterator(std::move(colwise)));
+
+  // Wrap it in another iterator to do the evaluation
+  const RowwiseIterator* mat_iter_addr = materializing.get();
+  unique_ptr<RowwiseIterator> outer_iter(std::move(materializing));
+  ASSERT_OK(InitAndMaybeWrap(&outer_iter, &spec));
+
+  ASSERT_NE(reinterpret_cast<uintptr_t>(outer_iter.get()),
+            reinterpret_cast<uintptr_t>(mat_iter_addr))
+      << "Iterator pointer should differ after wrapping";
+  ASSERT_EQ(0, spec.predicates().size()) << "Iterator tree should have accepted predicate";
+  ASSERT_EQ(1, GetIteratorPredicatesForTests(outer_iter).size())
+      << "Predicate should be evaluated by the outer iterator";
+  VerifyPredicateEffectiveness(all_values, outer_iter);
+}
+
+// Test effectiveness of Bloom filter predicate with MaterializingIterator.
+TEST_P(PredicateEffectivenessTest, MaterializingIterator) {
+  // For 'all_values' true case, initialize the Bloom filter with all values that are inserted in
+  // the iterator. This helps test the case of ineffective Bloom filter predicate.
+  // For 'all_values' false case i.e. subset values case, initialize the Bloom filter with a subset
+  // of values inserted in the iterator. This helps test the case of effective Bloom filter
+  // predicate that filters out rows.
+  bool all_values = GetParam();
+  BlockBloomFilter bf(DefaultBlockBloomFilterBufferAllocator::GetSingleton());
+  vector<int64_t> ints;
+  auto bf_pred = CreateBloomFilterPredicate(all_values, &bf, &ints);
+
+  ScanSpec spec;
+  spec.AddPredicate(bf_pred);
+
+  // Setup a materializing iterator with pushdown enabled(default).
+  unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  unique_ptr<RowwiseIterator> mat_iter(
+      NewMaterializingIterator(std::move(colwise)));
+
+  ASSERT_OK(mat_iter->Init(&spec));
+  ASSERT_EQ(0, spec.predicates().size()) << "Iterator tree should have accepted predicate";
+
+  VerifyPredicateEffectiveness(all_values, mat_iter);
+}
+
+INSTANTIATE_TEST_CASE_P(, PredicateEffectivenessTest, ::testing::Bool());
 
 } // namespace kudu

@@ -1104,6 +1104,13 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// hand with IN Bloom filter predicate large number of values can be tested
   /// for membership in a space-efficient manner.
   ///
+  /// IN Bloom filter predicate may be automatically disabled if determined to
+  /// be ineffective in filtering rows during scan requests.
+  ///
+  /// Users are expected to perform further filtering to guard against false
+  /// positives and automatic disablement of an ineffective Bloom filter
+  /// predicate to get precise set membership information.
+  ///
   /// @param [in] col_name
   ///   Name of the column to which the predicate applies.
   /// @param [in] bloom_filters
@@ -1134,6 +1141,13 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// IN list predicate can be used with small number of values; on the other
   /// hand with IN Bloom filter predicate large number of values can be tested
   /// for membership in a space-efficient manner.
+  ///
+  /// IN Bloom filter predicate may be automatically disabled if determined to
+  /// be ineffective in filtering rows during scan requests.
+  ///
+  /// Users are expected to perform further filtering to guard against false
+  /// positives and automatic disablement of an ineffective Bloom filter
+  /// predicate to get precise set membership information.
   ///
   /// @param [in] col_name
   ///   Name of the column to which the predicate applies.

@@ -2882,6 +2882,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     tablet->metrics()->scanner_rows_scanned->IncrementBy(rows_scanned);
     tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(delta_stats.cells_read);
     tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(delta_stats.bytes_read);
+    tablet->metrics()->scanner_predicates_disabled->IncrementBy(delta_stats.predicates_disabled);
 
     // Last read timestamp.
     tablet->UpdateLastReadTime();

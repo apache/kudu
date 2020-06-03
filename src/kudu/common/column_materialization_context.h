@@ -116,8 +116,9 @@ class ColumnMaterializationContext {
     // correct status will be set.
     kNotSet = 0,
 
-    // May be set before scanning if the decoder eval flag is set to false or
-    // if iterator has deltas associated with it.
+    // May be set before scanning if the decoder eval flag is set to false
+    // or if iterator has deltas associated with it or if the predicate is
+    // determined to be ineffective.
     // May be set by decoder during scan if decoder eval is not supported.
     // Once set, scanning will materialize the entire column into the block,
     // leaving evaluation for after the scan.

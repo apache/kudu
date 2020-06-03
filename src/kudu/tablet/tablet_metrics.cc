@@ -79,6 +79,13 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_returned, "Scanner Bytes Returned",
                       "for consumption by clients, and thus is not "
                       "a reflection of the amount of work being done by scanners.",
                       kudu::MetricLevel::kDebug);
+METRIC_DEFINE_counter(tablet, scanner_predicates_disabled, "Scanner Column Predicates Disabled",
+                      kudu::MetricUnit::kUnits,
+                      "Number of column predicates disabled during scan requests. "
+                      "This count measures the number of disableable column predicates like "
+                      "Bloom filter predicate that are automatically disabled if determined to "
+                      "be ineffective.",
+                      kudu::MetricLevel::kInfo);
 
 METRIC_DEFINE_counter(tablet, scanner_rows_scanned, "Scanner Rows Scanned",
                       kudu::MetricUnit::kRows,
@@ -365,6 +372,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(scanner_rows_scanned),
     MINIT(scanner_cells_scanned_from_disk),
     MINIT(scanner_bytes_scanned_from_disk),
+    MINIT(scanner_predicates_disabled),
     MINIT(scans_started),
     GINIT(tablet_active_scanners),
     MINIT(bloom_lookups),

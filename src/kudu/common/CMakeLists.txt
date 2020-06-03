@@ -53,6 +53,7 @@ set(COMMON_SRCS
   partial_row.cc
   partition.cc
   partition_pruner.cc
+  predicate_effectiveness.cc
   rowblock.cc
   row_changelist.cc
   row_operations.cc
