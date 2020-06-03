@@ -53,6 +53,8 @@ DEFINE_int32(scanner_ttl_ms, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 TAG_FLAG(scanner_ttl_ms, advanced);
+TAG_FLAG(scanner_ttl_ms, runtime);
+
 DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L *1000L, // 5 seconds
              "Number of microseconds in the interval at which we remove expired scanners");
 TAG_FLAG(scanner_gc_check_interval_us, hidden);
