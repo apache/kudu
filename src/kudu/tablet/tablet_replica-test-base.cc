@@ -165,25 +165,25 @@ Status TabletReplicaTestBase::RestartReplica() {
 
   tablet_replica_->SetBootstrapping();
   RETURN_NOT_OK(BootstrapTablet(tablet_replica_->tablet_metadata(),
-                            cmeta->CommittedConfig(),
-                            clock(),
-                            /*mem_tracker*/nullptr,
-                            /*result_tracker*/nullptr,
-                            &metric_registry_,
-                            /*file_cache*/nullptr,
-                            tablet_replica_,
-                            tablet_replica_->log_anchor_registry(),
-                            &tablet,
-                            &log,
-                            &bootstrap_info));
+                                cmeta->CommittedConfig(),
+                                clock(),
+                                /*mem_tracker*/nullptr,
+                                /*result_tracker*/nullptr,
+                                &metric_registry_,
+                                /*file_cache*/nullptr,
+                                tablet_replica_,
+                                tablet_replica_->log_anchor_registry(),
+                                &tablet,
+                                &log,
+                                &bootstrap_info));
   RETURN_NOT_OK(tablet_replica_->Start(bootstrap_info,
-                                    tablet,
-                                    clock(),
-                                    messenger_,
-                                    scoped_refptr<ResultTracker>(),
-                                    log,
-                                    prepare_pool_.get(),
-                                    dns_resolver_.get()));
+                                       tablet,
+                                       clock(),
+                                       messenger_,
+                                       scoped_refptr<ResultTracker>(),
+                                       log,
+                                       prepare_pool_.get(),
+                                       dns_resolver_.get()));
   // Wait for the replica to be usable.
   return tablet_replica_->consensus()->WaitUntilLeaderForTests(kLeadershipTimeout);
 }

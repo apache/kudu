@@ -89,7 +89,8 @@ add_library(tablet_test_util
   tablet_replica-test-base.cc)
 target_link_libraries(tablet_test_util
   kudu_common
-  log_proto)
+  log_proto
+  tablet)
 
 SET_KUDU_TEST_LINK_LIBS(tablet tablet_test_util)
 ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8 PROCESSORS 2)
