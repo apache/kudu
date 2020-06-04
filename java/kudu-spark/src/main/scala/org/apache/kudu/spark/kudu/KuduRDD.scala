@@ -80,6 +80,9 @@ class KuduRDD private[kudu] (
       builder.setSplitSizeBytes(size)
     }
 
+    builder.includeTableMetadata(options.useDriverMetadata)
+    builder.includeTabletMetadata(options.useDriverMetadata)
+
     for (predicate <- predicates) {
       builder.addPredicate(predicate)
     }

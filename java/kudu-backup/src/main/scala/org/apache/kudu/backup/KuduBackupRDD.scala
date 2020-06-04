@@ -45,7 +45,6 @@ class KuduBackupRDD private[kudu] (
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
 
-  // TODO (KUDU-2785): Split large tablets into smaller scan tokens?
   override protected def getPartitions: Array[Partition] = {
     val client = kuduContext.syncClient
 
@@ -58,6 +57,10 @@ class KuduBackupRDD private[kudu] (
       .scanRequestTimeout(options.scanRequestTimeoutMs)
       .prefetching(options.scanPrefetching)
       .keepAlivePeriodMs(options.keepAlivePeriodMs)
+      // TODO(KUDU-3135): Make backup scans a bit more resilient to column renames given these
+      //  jobs are often critical, longer running, and scheduled in bulk. Once scans with
+      //  provided table metadata better handle column renames this can be removed.
+      .includeTableMetadata(false)
 
     options.splitSizeBytes.foreach { size =>
       builder.setSplitSizeBytes(size)

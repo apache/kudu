@@ -204,7 +204,7 @@ public class ProtobufHelper {
    * @param pb the partition schema protobuf message
    * @return a partition instance
    */
-  static PartitionSchema pbToPartitionSchema(Common.PartitionSchemaPB pb, Schema schema) {
+  public static PartitionSchema pbToPartitionSchema(Common.PartitionSchemaPB pb, Schema schema) {
     List<Integer> rangeColumns = pbToIds(pb.getRangeSchema().getColumnsList());
     PartitionSchema.RangeSchema rangeSchema = new PartitionSchema.RangeSchema(rangeColumns);
 
@@ -225,6 +225,28 @@ public class ProtobufHelper {
     return new PartitionSchema(rangeSchema, hashSchemas.build(), schema);
   }
 
+  public static Common.PartitionSchemaPB partitionSchemaToPb(PartitionSchema partitionSchema) {
+    Common.PartitionSchemaPB.Builder builder = Common.PartitionSchemaPB.newBuilder();
+
+    for (PartitionSchema.HashBucketSchema hashBucketSchema :
+        partitionSchema.getHashBucketSchemas()) {
+      Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hbsBuilder =
+          Common.PartitionSchemaPB.HashBucketSchemaPB.newBuilder()
+                .addAllColumns(idsToPb(hashBucketSchema.getColumnIds()))
+                .setNumBuckets(hashBucketSchema.getNumBuckets())
+                .setSeed(hashBucketSchema.getSeed());
+      builder.addHashBucketSchemas(hbsBuilder.build());
+    }
+
+    Common.PartitionSchemaPB.RangeSchemaPB rangeSchemaPB =
+        Common.PartitionSchemaPB.RangeSchemaPB.newBuilder()
+              .addAllColumns(idsToPb(partitionSchema.getRangeSchema().getColumnIds()))
+              .build();
+    builder.setRangeSchema(rangeSchemaPB);
+
+    return builder.build();
+  }
+
   /**
    * Constructs a new {@code Partition} instance from the a protobuf message.
    * @param pb the protobuf message
@@ -234,6 +256,14 @@ public class ProtobufHelper {
     return new Partition(pb.getPartitionKeyStart().toByteArray(),
                          pb.getPartitionKeyEnd().toByteArray(),
                          pb.getHashBucketsList());
+  }
+
+  static Common.PartitionPB partitionToPb(Partition partition) {
+    return Common.PartitionPB.newBuilder()
+        .setPartitionKeyStart(ByteString.copyFrom(partition.getPartitionKeyStart()))
+        .setPartitionKeyEnd(ByteString.copyFrom(partition.getPartitionKeyEnd()))
+        .addAllHashBuckets(partition.getHashBuckets())
+        .build();
   }
 
   /**
@@ -263,6 +293,24 @@ public class ProtobufHelper {
       }
     }
     return columnIds.build();
+  }
+
+  /**
+   * Serializes a list of column IDs into a list of column identifier protobufs.
+   *
+   * @param columnIds the column IDs
+   * @return the column identifiers
+   */
+  private static List<Common.PartitionSchemaPB.ColumnIdentifierPB> idsToPb(
+      List<Integer> columnIds) {
+    ImmutableList.Builder<Common.PartitionSchemaPB.ColumnIdentifierPB> columnIdentifiers =
+        ImmutableList.builder();
+    for (Integer id : columnIds) {
+      Common.PartitionSchemaPB.ColumnIdentifierPB columnIdentifierPB =
+          Common.PartitionSchemaPB.ColumnIdentifierPB.newBuilder().setId(id).build();
+      columnIdentifiers.add(columnIdentifierPB);
+    }
+    return columnIdentifiers.build();
   }
 
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {

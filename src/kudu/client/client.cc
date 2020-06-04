@@ -1911,6 +1911,16 @@ Status KuduScanTokenBuilder::SetTimeoutMillis(int millis) {
   return Status::OK();
 }
 
+Status KuduScanTokenBuilder::IncludeTableMetadata(bool include_metadata) {
+  data_->IncludeTableMetadata(include_metadata);
+  return Status::OK();
+}
+
+Status KuduScanTokenBuilder::IncludeTabletMetadata(bool include_metadata) {
+  data_->IncludeTabletMetadata(include_metadata);
+  return Status::OK();
+}
+
 Status KuduScanTokenBuilder::AddConjunctPredicate(KuduPredicate* pred) {
   return data_->mutable_configuration()->AddConjunctPredicate(pred);
 }

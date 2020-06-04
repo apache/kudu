@@ -1249,6 +1249,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   friend class KuduClient;
   friend class KuduPartitioner;
+  friend class KuduScanToken;
 
   KuduTable(const sp::shared_ptr<KuduClient>& client,
             const std::string& name,
@@ -2657,6 +2658,24 @@ class KUDU_EXPORT KuduScanTokenBuilder {
 
   /// @copydoc KuduScanner::SetTimeoutMillis
   Status SetTimeoutMillis(int millis) WARN_UNUSED_RESULT;
+
+  /// If the table metadata is included on the scan token a GetTableSchema
+  /// RPC call to the master can be avoided when deserializing each scan token
+  /// into a scanner.
+  ///
+  /// @param [in] include_metadata
+  ///   true, if table metadata should be included.
+  /// @return Operation result status.
+  Status IncludeTableMetadata(bool include_metadata) WARN_UNUSED_RESULT;
+
+  /// If the tablet metadata is included on the scan token a GetTableLocations
+  /// RPC call to the master can be avoided when scanning with a scanner constructed
+  /// from a scan token.
+  ///
+  /// @param [in] include_metadata
+  ///   true, if table metadata should be included.
+  /// @return Operation result status.
+  Status IncludeTabletMetadata(bool include_metadata) WARN_UNUSED_RESULT;
 
   /// Build the set of scan tokens.
   ///

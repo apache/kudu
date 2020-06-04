@@ -18,6 +18,7 @@
 #include "kudu/client/scan_token-internal.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -27,6 +28,8 @@
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client.h"
@@ -51,6 +54,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -58,17 +62,25 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using std::map;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
+using master::GetTableLocationsResponsePB;
 using master::TableIdentifierPB;
+using master::TabletLocationsPB;
+using master::TSInfoPB;
+using security::SignedTokenPB;
 
 namespace client {
 
 using internal::MetaCache;
+using internal::MetaCacheEntry;
+using internal::RemoteReplica;
+using internal::RemoteTabletServer;
 
 KuduScanToken::Data::Data(KuduTable* table,
                           ScanTokenPB message,
@@ -109,40 +121,112 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     }
   }
 
-  TableIdentifierPB table_identifier;
-  if (message.has_table_id()) {
-    table_identifier.set_table_id(message.table_id());
-  }
-  if (message.has_table_name()) {
-    table_identifier.set_table_name(message.table_name());
-  }
+  // Use the table metadata from the scan token if it exists,
+  // otherwise call OpenTable to get the metadata from the master.
   sp::shared_ptr<KuduTable> table;
-  RETURN_NOT_OK(client->data_->OpenTable(client,
-                                         table_identifier,
-                                         &table));
+  if (message.has_table_metadata()) {
+    const TableMetadataPB& metadata = message.table_metadata();
+    Schema schema;
+    RETURN_NOT_OK(SchemaFromPB(metadata.schema(), &schema));
+    KuduSchema kudu_schema(schema);
+    PartitionSchema partition_schema;
+    RETURN_NOT_OK(PartitionSchema::FromPB(metadata.partition_schema(), schema,
+        &partition_schema));
+    map<string, string> extra_configs(metadata.extra_configs().begin(),
+        metadata.extra_configs().end());
+    table.reset(new KuduTable(client->shared_from_this(), metadata.table_name(),
+        metadata.table_id(), metadata.num_replicas(), kudu_schema, partition_schema,
+        extra_configs));
+  } else {
+    TableIdentifierPB table_identifier;
+    if (message.has_table_id()) {
+      table_identifier.set_table_id(message.table_id());
+    }
+    if (message.has_table_name()) {
+      table_identifier.set_table_name(message.table_name());
+    }
+    RETURN_NOT_OK(client->data_->OpenTable(client, table_identifier, &table));
+  }
+
+  // Prime the client tablet location cache if no entry is already present.
+  if (message.has_tablet_metadata()) {
+    const TabletMetadataPB& tablet_metadata = message.tablet_metadata();
+    Partition partition;
+    Partition::FromPB(tablet_metadata.partition(), &partition);
+    MetaCacheEntry entry;
+    if (!client->data_->meta_cache_->LookupEntryByKeyFastPath(table.get(),
+        partition.partition_key_start(), &entry)) {
+      // Generate a fake GetTableLocationsResponsePB to pass to the client
+      // meta cache in order to "inject" the tablet metadata into the client.
+      GetTableLocationsResponsePB mock_resp;
+      mock_resp.set_ttl_millis(tablet_metadata.ttl_millis());
+
+      // Populate the locations.
+      TabletLocationsPB locations_pb;
+      locations_pb.set_tablet_id(tablet_metadata.tablet_id());
+      PartitionPB partition_pb;
+      partition.ToPB(&partition_pb);
+      *locations_pb.mutable_partition() = std::move(partition_pb);
+      for (const TabletMetadataPB::ReplicaMetadataPB& replica_meta : tablet_metadata.replicas()) {
+        TabletLocationsPB::InternedReplicaPB replica_pb;
+        replica_pb.set_ts_info_idx(replica_meta.ts_idx());
+        replica_pb.set_role(replica_meta.role());
+        if (replica_meta.has_dimension_label()) {
+          replica_pb.set_dimension_label(replica_meta.dimension_label());
+        }
+        *locations_pb.add_interned_replicas() = std::move(replica_pb);
+      }
+      *mock_resp.add_tablet_locations() = std::move(locations_pb);
+
+      // Populate the servers.
+      for (const ServerMetadataPB& server_meta : tablet_metadata.tablet_servers()) {
+        TSInfoPB server_pb;
+        server_pb.set_permanent_uuid(server_meta.uuid());
+        server_pb.set_location(server_meta.location());
+        for (const HostPortPB& host_port :server_meta.rpc_addresses()) {
+          *server_pb.add_rpc_addresses() = host_port;
+        }
+        *mock_resp.add_ts_infos() = std::move(server_pb);
+      }
+
+      client->data_->meta_cache_->ProcessGetTableLocationsResponse(
+          table.get(), partition.partition_key_start(), true, mock_resp, &entry, 1);
+    }
+  }
+
+  if (message.has_authz_token()) {
+    client->data_->StoreAuthzToken(table->id(), message.authz_token());
+  }
+
   Schema* schema = table->schema().schema_;
 
   unique_ptr<KuduScanner> scan_builder(new KuduScanner(table.get()));
 
   vector<int> column_indexes;
-  for (const ColumnSchemaPB& column : message.projected_columns()) {
-    int column_idx = schema->find_column(column.name());
-    if (column_idx == Schema::kColumnNotFound) {
-      return Status::IllegalState("unknown column in scan token", column.name());
+  if (!message.projected_column_idx().empty()) {
+    for (const int column_idx : message.projected_column_idx()) {
+      column_indexes.push_back(column_idx);
     }
-    DataType expected_type = schema->column(column_idx).type_info()->type();
-    if (column.type() != expected_type) {
-      return Status::IllegalState(Substitute(
+  } else {
+    for (const ColumnSchemaPB& column : message.projected_columns()) {
+      int column_idx = schema->find_column(column.name());
+      if (column_idx == Schema::kColumnNotFound) {
+        return Status::IllegalState("unknown column in scan token", column.name());
+      }
+      DataType expected_type = schema->column(column_idx).type_info()->type();
+      if (column.type() != expected_type) {
+        return Status::IllegalState(Substitute(
             "invalid type $0 for column '$1' in scan token, expected: $2",
             DataType_Name(column.type()), column.name(), DataType_Name(expected_type)));
-    }
-    bool expected_is_nullable = schema->column(column_idx).is_nullable();
-    if (column.is_nullable() != expected_is_nullable) {
-      return Status::IllegalState(Substitute(
+      }
+      bool expected_is_nullable = schema->column(column_idx).is_nullable();
+      if (column.is_nullable() != expected_is_nullable) {
+        return Status::IllegalState(Substitute(
             "invalid nullability for column '$0' in scan token, expected: $1",
             column.name(), expected_is_nullable ? "NULLABLE" : "NOT NULL"));
+      }
+      column_indexes.push_back(column_idx);
     }
-    column_indexes.push_back(column_idx);
   }
   RETURN_NOT_OK(scan_builder->SetProjectedColumnIndexes(column_indexes));
 
@@ -245,10 +329,48 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
 
   ScanTokenPB pb;
 
-  pb.set_table_id(table->id());
-  pb.set_table_name(table->name());
-  RETURN_NOT_OK(SchemaToColumnPBs(*configuration_.projection(), pb.mutable_projected_columns(),
-                                  SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
+  if (include_table_metadata_) {
+    // Set the table metadata so that a call to the master is not needed when
+    // deserializing the token into a scanner.
+    TableMetadataPB table_pb;
+    table_pb.set_table_id(table->id());
+    table_pb.set_table_name(table->name());
+    table_pb.set_num_replicas(table->num_replicas());
+    SchemaPB schema_pb;
+    RETURN_NOT_OK(SchemaToPB(KuduSchema::ToSchema(table->schema()), &schema_pb));
+    *table_pb.mutable_schema() = std::move(schema_pb);
+    PartitionSchemaPB partition_schema_pb;
+    table->partition_schema().ToPB(&partition_schema_pb);
+    table_pb.mutable_partition_schema()->CopyFrom(partition_schema_pb);
+    table_pb.mutable_extra_configs()->insert(table->extra_configs().begin(),
+                                             table->extra_configs().end());
+    *pb.mutable_table_metadata() = std::move(table_pb);
+
+    // Only include the authz token if the table metadata is included.
+    // It is returned in the required GetTableSchema request otherwise.
+    SignedTokenPB authz_token;
+    bool found_authz_token = client->data_->FetchCachedAuthzToken(table->id(), &authz_token);
+    if (found_authz_token) {
+      *pb.mutable_authz_token() = std::move(authz_token);
+    }
+  } else {
+    // If we add the table metadata, we don't need to set the old table id
+    // and table name. It is expected that the creation and use of a scan token
+    // will be on the same or compatible versions.
+    pb.set_table_id(table->id());
+    pb.set_table_name(table->name());
+  }
+
+  if (include_table_metadata_) {
+    for (const ColumnSchema& col : configuration_.projection()->columns()) {
+      int column_idx;
+      table->schema().schema_->FindColumn(col.name(), &column_idx);
+      pb.mutable_projected_column_idx()->Add(column_idx);
+    }
+  } else {
+    RETURN_NOT_OK(SchemaToColumnPBs(*configuration_.projection(), pb.mutable_projected_columns(),
+        SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
+  }
 
   if (configuration_.spec().lower_bound_key()) {
     pb.mutable_lower_bound_primary_key()->assign(
@@ -378,6 +500,58 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
         tablet->partition().partition_key_start());
     message.set_upper_bound_partition_key(
         tablet->partition().partition_key_end());
+
+    // Set the tablet metadata so that a call to the master is not needed to
+    // locate the tablet to scan when opening the scanner.
+    if (include_tablet_metadata_) {
+      internal::MetaCacheEntry entry;
+      if (client->data_->meta_cache_->LookupEntryByKeyFastPath(table,
+          tablet->partition().partition_key_start(), &entry)) {
+        if (!entry.is_non_covered_range() && !entry.stale()) {
+          TabletMetadataPB tablet_pb;
+          tablet_pb.set_tablet_id(entry.tablet()->tablet_id());
+          PartitionPB partition_pb;
+          entry.tablet()->partition().ToPB(&partition_pb);
+          *tablet_pb.mutable_partition() = std::move(partition_pb);
+          MonoDelta ttl = entry.expiration_time() - MonoTime::Now();
+          tablet_pb.set_ttl_millis(ttl.ToMilliseconds());
+
+          // Build the list of server metadata.
+          vector<RemoteTabletServer*> servers;
+          map<string, int> server_index_map;
+          entry.tablet()->GetRemoteTabletServers(&servers);
+          for (int i = 0; i < servers.size(); i++) {
+            RemoteTabletServer* server = servers[i];
+            ServerMetadataPB server_pb;
+            server_pb.set_uuid(server->permanent_uuid());
+            server_pb.set_location(server->location());
+            vector<HostPort> host_ports;
+            server->GetHostPorts(&host_ports);
+            for (const HostPort& host_port : host_ports) {
+              *server_pb.add_rpc_addresses() = HostPortToPB(host_port);
+              server_index_map[host_port.ToString()] = i;
+            }
+            *tablet_pb.add_tablet_servers() = std::move(server_pb);
+          }
+
+          // Build the list of replica metadata.
+          vector<RemoteReplica> replicas;
+          entry.tablet()->GetRemoteReplicas(&replicas);
+          for (const RemoteReplica& replica : replicas) {
+            vector<HostPort> host_ports;
+            replica.ts->GetHostPorts(&host_ports);
+            int server_index = server_index_map[host_ports[0].ToString()];
+            TabletMetadataPB::ReplicaMetadataPB replica_pb;
+            replica_pb.set_role(replica.role);
+            replica_pb.set_ts_idx(server_index);
+            *tablet_pb.add_replicas() = std::move(replica_pb);
+          }
+
+          *message.mutable_tablet_metadata() = std::move(tablet_pb);
+        }
+      }
+    }
+
     unique_ptr<KuduScanToken> client_scan_token(new KuduScanToken);
     client_scan_token->data_ =
         new KuduScanToken::Data(table,

@@ -2288,18 +2288,7 @@ public class AsyncKuduClient implements AutoCloseable {
     String tableId = table.getTableId();
     String tableName = table.getName();
 
-    // Doing a get first instead of putIfAbsent to avoid creating unnecessary
-    // table locations caches because in the most common case the table should
-    // already be present.
-    TableLocationsCache locationsCache = tableLocations.get(tableId);
-    if (locationsCache == null) {
-      locationsCache = new TableLocationsCache();
-      TableLocationsCache existingLocationsCache =
-          tableLocations.putIfAbsent(tableId, locationsCache);
-      if (existingLocationsCache != null) {
-        locationsCache = existingLocationsCache;
-      }
-    }
+    TableLocationsCache locationsCache = getOrCreateTableLocationsCache(tableId);
 
     // Build the list of discovered remote tablet instances. If we have
     // already discovered the tablet, its locations are refreshed.
@@ -2383,6 +2372,22 @@ public class AsyncKuduClient implements AutoCloseable {
       throw new NoLeaderFoundException(
           Status.NotFound("Tablet " + entry.toString() + " doesn't have a leader"));
     }
+  }
+
+  TableLocationsCache getOrCreateTableLocationsCache(String tableId) {
+    // Doing a get first instead of putIfAbsent to avoid creating unnecessary
+    // table locations caches because in the most common case the table should
+    // already be present.
+    TableLocationsCache locationsCache = tableLocations.get(tableId);
+    if (locationsCache == null) {
+      locationsCache = new TableLocationsCache();
+      TableLocationsCache existingLocationsCache =
+          tableLocations.putIfAbsent(tableId, locationsCache);
+      if (existingLocationsCache != null) {
+        locationsCache = existingLocationsCache;
+      }
+    }
+    return locationsCache;
   }
 
   /**

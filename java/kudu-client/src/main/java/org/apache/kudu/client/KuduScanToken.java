@@ -18,12 +18,19 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.UnsafeByteOperations;
@@ -34,6 +41,8 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.Client.ScanTokenPB;
+import org.apache.kudu.security.Token;
+import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.Pair;
 
 /**
@@ -126,15 +135,11 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    */
   public static String stringifySerializedToken(byte[] buf, KuduClient client) throws IOException {
     ScanTokenPB token = ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf));
-    KuduTable table = token.hasTableId() ? client.openTableById(token.getTableId()) :
-                                           client.openTable(token.getTableName());
+    KuduTable table = getKuduTable(token, client);
 
     MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper("ScanToken")
-                                                   .add("table-name", token.getTableName());
-
-    if (token.hasTableId()) {
-      helper.add("table-id", token.getTableId());
-    }
+                                                   .add("table-name", table.getName());
+    helper.add("table-id", table.getTableId());
 
     if (token.hasLowerBoundPrimaryKey() && !token.getLowerBoundPrimaryKey().isEmpty()) {
       helper.add("lower-bound-primary-key",
@@ -162,6 +167,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
   private static List<Integer> computeProjectedColumnIndexesForScanner(ScanTokenPB message,
                                                                        Schema schema) {
+    if (message.getProjectedColumnIdxCount() != 0) {
+      return message.getProjectedColumnIdxList();
+    }
+
     List<Integer> columns = new ArrayList<>(message.getProjectedColumnsCount());
     for (Common.ColumnSchemaPB colSchemaFromPb : message.getProjectedColumnsList()) {
       int colIdx = colSchemaFromPb.hasId() && schema.hasColumnIds() ?
@@ -192,10 +201,55 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         !message.getFeatureFlagsList().contains(ScanTokenPB.Feature.Unknown),
         "Scan token requires an unsupported feature. This Kudu client must be updated.");
 
-    KuduTable table = message.hasTableId() ? client.openTableById(message.getTableId()) :
-                                             client.openTable(message.getTableName());
-    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table);
+    // Use the table metadata from the scan token if it exists,
+    // otherwise call OpenTable to get the metadata from the master.
+    KuduTable table = getKuduTable(message, client);
 
+    // Prime the client tablet location cache if no entry is already present.
+    if (message.hasTabletMetadata()) {
+      Client.TabletMetadataPB tabletMetadata = message.getTabletMetadata();
+      Partition partition =
+          ProtobufHelper.pbToPartition(tabletMetadata.getPartition());
+      if (client.asyncClient.getTableLocationEntry(table.getTableId(),
+          partition.partitionKeyStart) == null) {
+        TableLocationsCache tableLocationsCache =
+            client.asyncClient.getOrCreateTableLocationsCache(table.getTableId());
+
+        List<LocatedTablet.Replica> replicas = new ArrayList<>();
+        for (Client.TabletMetadataPB.ReplicaMetadataPB replicaMetadataPB :
+            tabletMetadata.getReplicasList()) {
+          Client.ServerMetadataPB server =
+              tabletMetadata.getTabletServers(replicaMetadataPB.getTsIdx());
+          LocatedTablet.Replica replica = new LocatedTablet.Replica(
+              server.getRpcAddresses(0).getHost(),
+              server.getRpcAddresses(0).getPort(),
+              replicaMetadataPB.getRole(), replicaMetadataPB.getDimensionLabel());
+          replicas.add(replica);
+        }
+
+        List<ServerInfo> servers = new ArrayList<>();
+        for (Client.ServerMetadataPB serverMetadataPB : tabletMetadata.getTabletServersList()) {
+          HostAndPort hostPort =
+              ProtobufHelper.hostAndPortFromPB(serverMetadataPB.getRpcAddresses(0));
+          final InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
+          ServerInfo serverInfo = new ServerInfo(serverMetadataPB.getUuid().toString(),
+              hostPort, inetAddress, serverMetadataPB.getLocation());
+          servers.add(serverInfo);
+        }
+
+        RemoteTablet remoteTablet = new RemoteTablet(table.getTableId(),
+            tabletMetadata.getTabletId(), partition, replicas, servers);
+
+        tableLocationsCache.cacheTabletLocations(Collections.singletonList(remoteTablet),
+            partition.partitionKeyStart, 1, tabletMetadata.getTtlMillis());
+      }
+    }
+
+    if (message.hasAuthzToken()) {
+      client.asyncClient.getAuthzTokenCache().put(table.getTableId(), message.getAuthzToken());
+    }
+
+    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table);
 
     builder.setProjectedColumnIndexes(
         computeProjectedColumnIndexesForScanner(message, table.getSchema()));
@@ -289,6 +343,25 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     return builder.build();
   }
 
+  private static KuduTable getKuduTable(ScanTokenPB message,
+                                        KuduClient client) throws KuduException {
+    // Use the table metadata from the scan token if it exists,
+    // otherwise call OpenTable to get the metadata from the master.
+    if (message.hasTableMetadata()) {
+      Client.TableMetadataPB tableMetadata = message.getTableMetadata();
+      Schema schema = ProtobufHelper.pbToSchema(tableMetadata.getSchema());
+      PartitionSchema partitionSchema =
+          ProtobufHelper.pbToPartitionSchema(tableMetadata.getPartitionSchema(), schema);
+      return new KuduTable(client.asyncClient, tableMetadata.getTableName(),
+          tableMetadata.getTableId(), schema, partitionSchema,
+          tableMetadata.getNumReplicas(), tableMetadata.getExtraConfigsMap());
+    } else if (message.hasTableId()) {
+      return client.openTableById(message.getTableId());
+    } else {
+      return client.openTable(message.getTableName());
+    }
+  }
+
   @Override
   public int compareTo(KuduScanToken other) {
     if (message.hasTableId() && other.message.hasTableId()) {
@@ -334,6 +407,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     // By default, a scan token is created for each tablet to be scanned.
     private long splitSizeBytes = DEFAULT_SPLIT_SIZE_BYTES;
 
+    private boolean includeTableMetadata = true;
+    private boolean includeTabletMetadata = true;
+
     KuduScanTokenBuilder(AsyncKuduClient client, KuduTable table) {
       super(client, table);
       timeout = client.getDefaultOperationTimeoutMs();
@@ -361,6 +437,28 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       return this;
     }
 
+    /**
+     * If the table metadata is included on the scan token a GetTableSchema
+     * RPC call to the master can be avoided when deserializing each scan token
+     * into a scanner.
+     * @param includeMetadata true, if table metadata should be included.
+     */
+    public KuduScanTokenBuilder includeTableMetadata(boolean includeMetadata) {
+      this.includeTableMetadata = includeMetadata;
+      return this;
+    }
+
+    /**
+     * If the tablet metadata is included on the scan token a GetTableLocations
+     * RPC call to the master can be avoided when scanning with a scanner constructed
+     * from a scan token.
+     * @param includeMetadata true, if tablet metadata should be included.
+     */
+    public KuduScanTokenBuilder includeTabletMetadata(boolean includeMetadata) {
+      this.includeTabletMetadata = includeMetadata;
+      return this;
+    }
+
     @Override
     public List<KuduScanToken> build() {
       if (lowerBoundPartitionKey.length != 0 ||
@@ -378,37 +476,80 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
       Client.ScanTokenPB.Builder proto = Client.ScanTokenPB.newBuilder();
 
-      proto.setTableId(table.getTableId());
-      proto.setTableName(table.getName());
+      if (includeTableMetadata) {
+        // Set the table metadata so that a call to the master is not needed when
+        // deserializing the token into a scanner.
+        Client.TableMetadataPB tableMetadataPB = Client.TableMetadataPB.newBuilder()
+            .setTableId(table.getTableId())
+            .setTableName(table.getName())
+            .setNumReplicas(table.getNumReplicas())
+            .setSchema(ProtobufHelper.schemaToPb(table.getSchema()))
+            .setPartitionSchema(ProtobufHelper.partitionSchemaToPb(table.getPartitionSchema()))
+            .putAllExtraConfigs(table.getExtraConfig())
+            .build();
+        proto.setTableMetadata(tableMetadataPB);
+
+        // Only include the authz token if the table metadata is included.
+        // It is returned in the required GetTableSchema request otherwise.
+        Token.SignedTokenPB authzToken = client.getAuthzToken(table.getTableId());
+        if (authzToken != null) {
+          proto.setAuthzToken(authzToken);
+        }
+      } else {
+        // If we add the table metadata, we don't need to set the old table id
+        // and table name. It is expected that the creation and use of a scan token
+        // will be on the same or compatible versions.
+        proto.setTableId(table.getTableId());
+        proto.setTableName(table.getName());
+      }
 
       // Map the column names or indices to actual columns in the table schema.
       // If the user did not set either projection, then scan all columns.
       Schema schema = table.getSchema();
-      if (projectedColumnNames != null) {
-        for (String columnName : projectedColumnNames) {
-          ColumnSchema columnSchema = schema.getColumn(columnName);
-          Preconditions.checkArgument(columnSchema != null, "unknown column i%s", columnName);
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
-                                    schema.hasColumnIds() ? schema.getColumnId(columnName) : -1,
-                                    columnSchema);
-        }
-      } else if (projectedColumnIndexes != null) {
-        for (int columnIdx : projectedColumnIndexes) {
-          ColumnSchema columnSchema = schema.getColumnByIndex(columnIdx);
-          Preconditions.checkArgument(columnSchema != null, "unknown column index %s", columnIdx);
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
-                                    schema.hasColumnIds() ?
-                                        schema.getColumnId(columnSchema.getName()) :
-                                        -1,
-                                    columnSchema);
+      if (includeTableMetadata) {
+        // If the table metadata is included, then the column indexes can be
+        // used instead of duplicating the ColumnSchemaPBs in the serialized
+        // scan token.
+        if (projectedColumnNames != null) {
+          for (String columnName : projectedColumnNames) {
+            proto.addProjectedColumnIdx(schema.getColumnIndex(columnName));
+          }
+        } else if (projectedColumnIndexes != null) {
+          proto.addAllProjectedColumnIdx(projectedColumnIndexes);
+        } else {
+          List<Integer> indexes = IntStream.range(0, schema.getColumnCount())
+              .boxed().collect(Collectors.toList());
+          proto.addAllProjectedColumnIdx(indexes);
         }
       } else {
-        for (ColumnSchema column : schema.getColumns()) {
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
-                                    schema.hasColumnIds() ?
-                                        schema.getColumnId(column.getName()) :
-                                        -1,
-                                    column);
+        if (projectedColumnNames != null) {
+          for (String columnName : projectedColumnNames) {
+            ColumnSchema columnSchema = schema.getColumn(columnName);
+            Preconditions.checkArgument(columnSchema != null,
+                "unknown column i%s", columnName);
+            ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                schema.hasColumnIds() ? schema.getColumnId(columnName) : -1,
+                columnSchema);
+          }
+        } else if (projectedColumnIndexes != null) {
+          for (int columnIdx : projectedColumnIndexes) {
+            ColumnSchema columnSchema = schema.getColumnByIndex(columnIdx);
+            Preconditions.checkArgument(columnSchema != null,
+                "unknown column index %s", columnIdx);
+            ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                schema.hasColumnIds() ?
+                    schema.getColumnId(columnSchema.getName()) :
+                    -1,
+                columnSchema);
+          }
+        } else {
+          for (ColumnSchema column : schema.getColumns()) {
+            ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                schema.hasColumnIds() ?
+                    schema.getColumnId(column.getName()) :
+                    -1,
+                column);
+          }
         }
       }
 
@@ -492,6 +633,61 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           if (primaryKeyEnd != null && primaryKeyEnd.length > 0) {
             builder.setUpperBoundPrimaryKey(UnsafeByteOperations.unsafeWrap(primaryKeyEnd));
           }
+
+          LocatedTablet tablet = keyRange.getTablet();
+
+          // Set the tablet metadata so that a call to the master is not needed to
+          // locate the tablet to scan when opening the scanner.
+          if (includeTabletMetadata) {
+            TableLocationsCache.Entry entry = client.getTableLocationEntry(table.getTableId(),
+                tablet.getPartition().partitionKeyStart);
+            if (entry != null && !entry.isNonCoveredRange() && !entry.isStale()) {
+              RemoteTablet remoteTablet = entry.getTablet();
+
+              // Build the list of server metadata.
+              List<Client.ServerMetadataPB> servers = new ArrayList<>();
+              Map<HostAndPort, Integer> serverIndexMap = new HashMap<>();
+              List<ServerInfo> tabletServers = remoteTablet.getTabletServersCopy();
+              for (int i = 0; i < tabletServers.size(); i++) {
+                ServerInfo serverInfo = tabletServers.get(i);
+                Client.ServerMetadataPB serverMetadataPB =
+                    Client.ServerMetadataPB.newBuilder()
+                        .setUuid(ByteString.copyFromUtf8(serverInfo.getUuid()))
+                        .addRpcAddresses(
+                            ProtobufHelper.hostAndPortToPB(serverInfo.getHostAndPort()))
+                        .setLocation(serverInfo.getLocation())
+                      .build();
+                servers.add(serverMetadataPB);
+                serverIndexMap.put(serverInfo.getHostAndPort(), i);
+              }
+
+              // Build the list of replica metadata.
+              List<Client.TabletMetadataPB.ReplicaMetadataPB> replicas = new ArrayList<>();
+              for (LocatedTablet.Replica replica : remoteTablet.getReplicas()) {
+                Integer serverIndex = serverIndexMap.get(
+                    new HostAndPort(replica.getRpcHost(), replica.getRpcPort()));
+                Client.TabletMetadataPB.ReplicaMetadataPB.Builder tabletMetadataBuilder =
+                    Client.TabletMetadataPB.ReplicaMetadataPB.newBuilder()
+                        .setRole(replica.getRoleAsEnum())
+                        .setTsIdx(serverIndex);
+                if (replica.getDimensionLabel() != null) {
+                  tabletMetadataBuilder.setDimensionLabel(replica.getDimensionLabel());
+                }
+                replicas.add(tabletMetadataBuilder.build());
+              }
+
+              // Build the tablet metadata and add it to the token.
+              Client.TabletMetadataPB tabletMetadataPB = Client.TabletMetadataPB.newBuilder()
+                  .setTabletId(remoteTablet.getTabletId())
+                  .setPartition(ProtobufHelper.partitionToPb(remoteTablet.getPartition()))
+                  .addAllReplicas(replicas)
+                  .addAllTabletServers(servers)
+                  .setTtlMillis(entry.ttl())
+                  .build();
+              builder.setTabletMetadata(tabletMetadataPB);
+            }
+          }
+
           tokens.add(new KuduScanToken(keyRange.getTablet(), builder.build()));
         }
         return tokens;

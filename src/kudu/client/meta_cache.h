@@ -56,6 +56,7 @@ class TabletServerServiceProxy;
 namespace master {
 class TSInfoPB;
 class TabletLocationsPB;
+class GetTableLocationsResponsePB;
 } // namespace master
 
 namespace client {
@@ -337,6 +338,10 @@ class MetaCacheEntry {
     }
   }
 
+  const MonoTime& expiration_time() const {
+    return expiration_time_;
+  }
+
   void refresh_expiration_time(MonoTime expiration_time) {
     DCHECK(Initialized());
     DCHECK(expiration_time.Initialized());
@@ -415,6 +420,19 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
 
+  // Lookup the given tablet by key, only consulting local information.
+  // Returns true and sets *entry if successful.
+  bool LookupEntryByKeyFastPath(const KuduTable* table,
+                                const std::string& partition_key,
+                                MetaCacheEntry* entry);
+
+  Status ProcessGetTableLocationsResponse(const KuduTable* table,
+                                          const std::string& partition_key,
+                                          bool is_exact_lookup,
+                                          const master::GetTableLocationsResponsePB& resp,
+                                          MetaCacheEntry* cache_entry,
+                                          int max_returned_locations);
+
   // Clears the non-covered range entries from a table's meta cache.
   void ClearNonCoveredRangeEntries(const std::string& table_id);
 
@@ -447,12 +465,6 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   Status ProcessLookupResponse(const LookupRpc& rpc,
                                MetaCacheEntry* cache_entry,
                                int max_returned_locations);
-
-  // Lookup the given tablet by key, only consulting local information.
-  // Returns true and sets *entry if successful.
-  bool LookupEntryByKeyFastPath(const KuduTable* table,
-                                const std::string& partition_key,
-                                MetaCacheEntry* entry);
 
   // Perform the complete fast-path lookup. Returns:
   //  - NotFound if the lookup hits a non-covering range.

@@ -282,6 +282,14 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     return tabletId.getBytes(UTF_8);
   }
 
+  List<ServerInfo> getTabletServersCopy() {
+    List<ServerInfo> results = new ArrayList<>();
+    synchronized (tabletServers) {
+      results.addAll(tabletServers.values());
+    }
+    return results;
+  }
+
   @Override
   public int compareTo(RemoteTablet remoteTablet) {
     if (remoteTablet == null) {

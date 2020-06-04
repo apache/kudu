@@ -72,8 +72,18 @@ class KuduScanTokenBuilder::Data {
     return &configuration_;
   }
 
- private:
+  void IncludeTableMetadata(bool include_metadata) {
+    include_table_metadata_ = include_metadata;
+  }
+
+  void IncludeTabletMetadata(bool include_metadata) {
+    include_tablet_metadata_ = include_metadata;
+  }
+
+private:
   ScanConfiguration configuration_;
+  bool include_table_metadata_ = true;
+  bool include_tablet_metadata_ = true;
 };
 
 } // namespace client

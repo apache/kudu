@@ -27,6 +27,8 @@ import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
 import static org.apache.kudu.test.MetricTestUtils.totalRequestCount;
 import static org.apache.kudu.test.MetricTestUtils.validateRequestCount;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -46,6 +48,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
 
 public class TestScanToken {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
@@ -55,8 +58,15 @@ public class TestScanToken {
   private KuduClient client;
   private AsyncKuduClient asyncClient;
 
+  // Enable Kerberos and access control so we can validate the requests in secure environment.
+  // Specifically that authz tokens in the scan tokens work.
+  private static final MiniKuduCluster.MiniKuduClusterBuilder clusterBuilder =
+      KuduTestHarness.getBaseClusterBuilder()
+          .enableKerberos()
+          .addTabletServerFlag("--tserver_enforce_access_control=true");
+
   @Rule
-  public KuduTestHarness harness = new KuduTestHarness();
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   @Before
   public void setUp() {
@@ -177,9 +187,9 @@ public class TestScanToken {
     List<KuduScanToken> tokens = tokenBuilder.build();
     assertEquals(6, tokens.size());
     assertEquals('f' - 'a' + 'z' - 'h',
-                 countScanTokenRows(tokens,
-                     client.getMasterAddressesAsString(),
-                     client.getDefaultOperationTimeoutMs()));
+        countScanTokenRows(tokens,
+            client.getMasterAddressesAsString(),
+            client.getDefaultOperationTimeoutMs()));
 
     for (KuduScanToken token : tokens) {
       // Sanity check to make sure the debug printing does not throw.
@@ -205,9 +215,12 @@ public class TestScanToken {
     KuduTable table = client.openTable(testTableName);
 
     KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
-    List<KuduScanToken> tokens = tokenBuilder.build();
+    List<KuduScanToken> tokens = tokenBuilder.includeTableMetadata(false).build();
+    List<KuduScanToken> tokensWithMetadata = tokenBuilder.includeTableMetadata(true).build();
     assertEquals(1, tokens.size());
+    assertEquals(1, tokensWithMetadata.size());
     KuduScanToken token = tokens.get(0);
+    KuduScanToken tokenWithMetadata = tokensWithMetadata.get(0);
 
     // Drop a column
     client.alterTable(testTableName, new AlterTableOptions().dropColumn("a"));
@@ -216,6 +229,13 @@ public class TestScanToken {
       fail();
     } catch (IllegalArgumentException e) {
       assertTrue(e.getMessage().contains("Unknown column"));
+    }
+    try {
+      KuduScanner scanner = tokenWithMetadata.intoScanner(client);
+      countRowsInScan(scanner);
+      fail();
+    } catch (KuduException e) {
+      assertTrue(e.getMessage().contains("Some columns are not present in the current schema: a"));
     }
 
     // Add a column with the same name, type, and nullability. It will have a different id-- it's a
@@ -251,6 +271,9 @@ public class TestScanToken {
     KuduTable table = client.openTable(testTableName);
 
     KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+    // TODO(KUDU-3146): Disable including the table metadata so the new column name is retrieved
+    //  when deserializing the scanner.
+    tokenBuilder.includeTableMetadata(false);
     List<KuduScanToken> tokens = tokenBuilder.build();
     assertEquals(1, tokens.size());
     KuduScanToken token = tokens.get(0);
@@ -261,7 +284,7 @@ public class TestScanToken {
 
     KuduScanner scanner = token.intoScanner(client);
 
-    // TODO(wdberkeley): Handle renaming a column between when the token is rehydrated as a scanner
+    // TODO(KUDU-3146): Handle renaming a column between when the token is rehydrated as a scanner
     //  and when the scanner first hits a replica. Note that this is almost certainly a very
     //  short period of vulnerability.
 
@@ -368,7 +391,9 @@ public class TestScanToken {
         scannedRows <= 2 * numRows / 3);
   }
 
-  /** Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class. */
+  /**
+   * Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class.
+   */
   @Test
   public void testScanRequestTimeout() throws IOException {
     final int NUM_ROWS_DESIRED = 100;
@@ -391,7 +416,7 @@ public class TestScanToken {
                                       KuduTable table,
                                       int numRows) throws Exception {
     KuduSession session = client.newSession();
-    for (int i = 0 ; i < numRows / 2; i++) {
+    for (int i = 0; i < numRows / 2; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }
 
@@ -429,7 +454,9 @@ public class TestScanToken {
     assertEquals(numExpectedDeletes, numDeletes);
   }
 
-  /** Test that scan tokens work with diff scans. */
+  /**
+   * Test that scan tokens work with diff scans.
+   */
   @Test
   public void testDiffScanTokens() throws Exception {
     Schema schema = getBasicSchema();
@@ -446,6 +473,9 @@ public class TestScanToken {
     // the last row inserted in the first group of ops, and increment the end timestamp to include
     // the last row deleted in the second group of ops.
     List<KuduScanToken> tokens = client.newScanTokenBuilder(table)
+        // TODO(KUDU-3146): Disable including the table metadata so the new column name is
+        //  retrieved when deserializing the scanner.
+        .includeTableMetadata(false)
         .diffScan(timestamp + 1, client.getLastPropagatedTimestamp() + 1)
         .build();
     assertEquals(1, tokens.size());
@@ -453,7 +483,9 @@ public class TestScanToken {
     checkDiffScanResults(tokens.get(0).intoScanner(client), 3 * numRows / 4, numRows / 4);
   }
 
-  /** Test that scan tokens work with diff scans even when columns are renamed. */
+  /**
+   * Test that scan tokens work with diff scans even when columns are renamed.
+   */
   @Test
   public void testDiffScanTokensConcurrentColumnRename() throws Exception {
     Schema schema = getBasicSchema();
@@ -470,13 +502,16 @@ public class TestScanToken {
     // the last row inserted in the first group of ops, and increment the end timestamp to include
     // the last row deleted in the second group of ops.
     List<KuduScanToken> tokens = client.newScanTokenBuilder(table)
+        // TODO(KUDU-3146): Disable including the table metadata so the new column name is
+        //  retrieved when deserializing the scanner.
+        .includeTableMetadata(false)
         .diffScan(timestamp + 1, client.getLastPropagatedTimestamp() + 1)
         .build();
     assertEquals(1, tokens.size());
 
     // Rename a column between when the token is created and when it is rehydrated into a scanner
     client.alterTable(table.getName(),
-                      new AlterTableOptions().renameColumn("column1_i", "column1_i_new"));
+        new AlterTableOptions().renameColumn("column1_i", "column1_i_new"));
 
     KuduScanner scanner = tokens.get(0).intoScanner(client);
 
@@ -488,7 +523,52 @@ public class TestScanToken {
   }
 
   @Test
-  public void testScanTokenRequests() throws Exception {
+  public void testScanTokenRequestsWithMetadata() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(1);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    // Use a new client to simulate hydrating in a new process.
+    KuduClient newClient =
+        new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build();
+    newClient.getTablesList(); // List the tables to prevent counting initialization RPCs.
+    // Ensure the client doesn't have an authorization token for the table.
+    assertNull(newClient.asyncClient.getAuthzTokenCache().get(table.getTableId()));
+
+    KuduMetrics.logMetrics(); // Log the metric values to help debug failures.
+    final long beforeRequests = totalRequestCount();
+
+    // Validate that building a scan token results in a single GetTableLocations request.
+    KuduScanToken token = validateRequestCount(1, client.getClientId(),
+        "GetTableLocations", () -> {
+          KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+          List<KuduScanToken> tokens = tokenBuilder.includeTableMetadata(true).build();
+          assertEquals(1, tokens.size());
+          return tokens.get(0);
+        });
+
+    // Validate that hydrating a token doesn't result in a request.
+    KuduScanner scanner = validateRequestCount(0, newClient.getClientId(),
+        () -> token.intoScanner(newClient));
+    // Ensure the client now has an authorization token.
+    assertNotNull(newClient.asyncClient.getAuthzTokenCache().get(table.getTableId()));
+
+    // Validate that starting to scan results in a Scan request.
+    validateRequestCount(1, newClient.getClientId(), "Scan",
+        scanner::nextRows);
+
+    final long afterRequests = totalRequestCount();
+
+    // Validate no other unexpected requests were sent.
+    // GetTableLocations, Scan.
+    KuduMetrics.logMetrics(); // Log the metric values to help debug failures.
+    assertEquals(2, afterRequests - beforeRequests);
+  }
+
+  @Test
+  public void testScanTokenRequestsNoMetadata() throws Exception {
     Schema schema = getBasicSchema();
     CreateTableOptions createOptions = new CreateTableOptions();
     createOptions.setRangePartitionColumns(ImmutableList.of());
@@ -506,11 +586,14 @@ public class TestScanToken {
     // Validate that building a scan token results in a single GetTableLocations request.
     KuduScanToken token = validateRequestCount(1, client.getClientId(),
         "GetTableLocations", () -> {
-        KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
-        List<KuduScanToken> tokens = tokenBuilder.build();
-        assertEquals(1, tokens.size());
-        return tokens.get(0);
-      });
+          KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+          List<KuduScanToken> tokens = tokenBuilder
+              .includeTableMetadata(false)
+              .includeTabletMetadata(false)
+              .build();
+          assertEquals(1, tokens.size());
+          return tokens.get(0);
+        });
 
     // Validate that hydrating a token into a scanner results in a single GetTableSchema request.
     KuduScanner scanner = validateRequestCount(1, newClient.getClientId(), "GetTableSchema",
@@ -526,5 +609,57 @@ public class TestScanToken {
     // GetTableLocations x 2, GetTableSchema, Scan.
     KuduMetrics.logMetrics(); // Log the metric values to help debug failures.
     assertEquals(4, afterRequests - beforeRequests);
+  }
+
+  @Test
+  public void testScanTokenSize() throws Exception {
+    List<ColumnSchema> columns = new ArrayList<>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT8).key(true).build());
+    for (int i = 0; i < 100; i++) {
+      columns.add(new ColumnSchema.ColumnSchemaBuilder("int64-" + i, Type.INT64).build());
+    }
+    Schema schema = new Schema(columns);
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(1);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+    List<KuduScanToken> tokens = tokenBuilder
+        .includeTabletMetadata(false)
+        .includeTableMetadata(false)
+        .build();
+    assertEquals(1, tokens.size());
+    final byte[] tokenBytes = tokens.get(0).serialize();
+
+    List<KuduScanToken> tokensWithTabletMetadata = tokenBuilder
+        .includeTabletMetadata(true)
+        .includeTableMetadata(false)
+        .build();
+    assertEquals(1, tokensWithTabletMetadata.size());
+    final byte[] tokenWithTabletMetadataBytes = tokensWithTabletMetadata.get(0).serialize();
+
+    List<KuduScanToken> tokensWithTableMetadata = tokenBuilder
+        .includeTabletMetadata(false)
+        .includeTableMetadata(true)
+        .build();
+    assertEquals(1, tokensWithTabletMetadata.size());
+    final byte[] tokenWithTableMetadataBytes = tokensWithTableMetadata.get(0).serialize();
+
+    List<KuduScanToken> tokensWithAllMetadata = tokenBuilder
+        .includeTabletMetadata(true)
+        .includeTableMetadata(true)
+        .build();
+    assertEquals(1, tokensWithAllMetadata.size());
+    final byte[] tokenWithAllMetadataBytes = tokensWithAllMetadata.get(0).serialize();
+
+    LOG.info("tokenBytes: " + tokenBytes.length);
+    LOG.info("tokenWithTabletMetadataBytes: " + tokenWithTabletMetadataBytes.length);
+    LOG.info("tokenWithTableMetadataBytes: " + tokenWithTableMetadataBytes.length);
+    LOG.info("tokenWithAllMetadataBytes: " + tokenWithAllMetadataBytes.length);
+
+    assertTrue(tokenWithAllMetadataBytes.length > tokenWithTableMetadataBytes.length);
+    assertTrue(tokenWithTableMetadataBytes.length > tokenWithTabletMetadataBytes.length);
+    assertTrue(tokenWithTabletMetadataBytes.length > tokenBytes.length);
   }
 }

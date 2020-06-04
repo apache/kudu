@@ -298,7 +298,7 @@ class TableLocationsCache {
       return tablet == null ? upperBoundPartitionKey : tablet.getPartition().getPartitionKeyEnd();
     }
 
-    private long ttl() {
+    long ttl() {
       return TimeUnit.NANOSECONDS.toMillis(deadline - ticker.read());
     }
 

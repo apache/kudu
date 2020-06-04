@@ -22,8 +22,65 @@ package kudu.client;
 option java_package = "org.apache.kudu.client";
 
 import "kudu/common/common.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/security/token.proto";
 import "kudu/util/pb_util.proto";
+
+// All of the metadata required to create a KuduTable object in the C++
+// and Java clients.
+// TODO(KUDU-3135): Use for generic metadata tokens outside of the scan token.
+message TableMetadataPB {
+  optional string table_id = 1;
+  optional string table_name = 2;
+  optional int32 num_replicas = 3;
+
+  optional SchemaPB schema = 4;
+  optional PartitionSchemaPB partition_schema = 5;
+
+  // The table's extra configuration properties.
+  map<string, string> extra_configs = 6;
+}
+
+// Metdata about a single server.
+// This can be used on the client to update the local cache of where
+// each server is located.
+message ServerMetadataPB {
+  optional bytes uuid = 1;
+
+  repeated HostPortPB rpc_addresses = 2;
+
+  // The location assignment for this server.
+  optional string location = 3;
+}
+
+// All of the metadata required to create a RemoteTablet object in the C++
+// and Java clients.
+message TabletMetadataPB {
+
+  optional string tablet_id = 1;
+
+  optional PartitionPB partition = 2;
+
+  // The servers that host the replicas.
+  repeated ServerMetadataPB tablet_servers = 3;
+
+  message ReplicaMetadataPB {
+      // The index of the tablet server in tablet_servers.
+      required uint32 ts_idx = 1;
+      required consensus.RaftPeerPB.Role role = 2;
+      optional string dimension_label = 3;
+  }
+
+  repeated ReplicaMetadataPB replicas = 4;
+
+  // Cached table locations should not live longer than this timeout.
+  // Note: Some time will pass between serializing and deserializing
+  // the token. This means that that effective TTL would be longer
+  // than initially set. This shouldn't be a problem in normal usage
+  // given the time shouldn't be an extended period. Additionally,
+  // the client can retry if any failures occur due to outdated metadata.
+  optional uint64 ttl_millis = 5;
+}
 
 // Serialization format for client scan tokens. Scan tokens are serializable
 // scan descriptors that are used by query engines to plan a set of parallizable
@@ -48,6 +105,20 @@ message ScanTokenPB {
   // when rehydrating the scanner because the id cannot change.
   optional string table_id = 20;
   optional string table_name = 2;
+
+  // Optional table metadata. If provided the scan token can avoid
+  // an extra GetTableSchema RPC call to the master.
+  // If set, neither table_id or table_name above are required.
+  optional TableMetadataPB table_metadata = 21;
+
+  // Optional tablet metadata. If provided the scan token can avoid
+  // an extra GetTableLocations RPC call to the master.
+  optional TabletMetadataPB tablet_metadata = 22;
+
+  // The index of which columns in table_metadata to select.
+  // This can be used in place of projected_columns if this
+  // scan token has table_metadata.
+  repeated int32 projected_column_idx = 23;
 
   // Which columns to select.
   // if this is an empty list, no data will be returned, but the num_rows
@@ -119,6 +190,9 @@ message ScanTokenPB {
   // The period, in milliseconds, at which to send keep-alive requests to the tablet
   // server to ensure this scanner won't time out.
   optional int64 keep_alive_period_ms = 18;
+
+  // An authorization token with which to authorize the scan requests.
+  optional security.SignedTokenPB authz_token = 24;
 }
 
 // All of the data necessary to authenticate to a cluster from a client with

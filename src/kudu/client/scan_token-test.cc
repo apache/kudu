@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -42,16 +43,25 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/master/master.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_bool(tserver_enforce_access_control);
+
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 
 namespace kudu {
 namespace client {
@@ -72,6 +82,10 @@ class ScanTokenTest : public KuduTest {
  protected:
 
   void SetUp() override {
+    // Enable access control so we can validate the requests in secure environment.
+    // Specifically that authz tokens in the scan tokens work.
+    FLAGS_tserver_enforce_access_control = true;
+
     // Set up the mini cluster
     cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
@@ -139,6 +153,31 @@ class ScanTokenTest : public KuduTest {
     ASSERT_EQ(tokens.size(), tablet_ids.size());
   }
 
+  static Status IntoUniqueScanner(KuduClient* client,
+                                  const KuduScanToken& token,
+                                  unique_ptr<KuduScanner>* scanner_ptr) {
+    string serialized_token;
+    CHECK_OK(token.Serialize(&serialized_token));
+    KuduScanner* scanner_ptr_raw;
+    RETURN_NOT_OK(KuduScanToken::DeserializeIntoScanner(client,
+                                                        serialized_token,
+                                                        &scanner_ptr_raw));
+    scanner_ptr->reset(scanner_ptr_raw);
+    return Status::OK();
+  }
+
+  uint64_t NumGetTableSchemaRequests() const {
+    const auto& ent = cluster_->mini_master()->master()->metric_entity();
+    return METRIC_handler_latency_kudu_master_MasterService_GetTableSchema
+        .Instantiate(ent)->TotalCount();
+  }
+
+  uint64_t NumGetTableLocationsRequests() const {
+    const auto& ent = cluster_->mini_master()->master()->metric_entity();
+    return METRIC_handler_latency_kudu_master_MasterService_GetTableLocations
+        .Instantiate(ent)->TotalCount();
+  }
+
   shared_ptr<KuduClient> client_;
   unique_ptr<InternalMiniCluster> cluster_;
 };
@@ -193,9 +232,8 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     ASSERT_OK(builder.Build(&tokens));
 
     ASSERT_EQ(8, tokens.size());
-    KuduScanner* scanner_ptr;
-    ASSERT_OK(tokens[0]->IntoKuduScanner(&scanner_ptr));
-    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    unique_ptr<KuduScanner> scanner;
+    ASSERT_OK(IntoUniqueScanner(client_.get(), *tokens[0], &scanner));
     ASSERT_OK(scanner->Open());
     ASSERT_EQ(0, scanner->data_->last_response_.data().num_rows());
   }
@@ -226,6 +264,18 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+
+    ASSERT_EQ(8, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // disable table metadata
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.IncludeTableMetadata(false));
+    ASSERT_OK(builder.Build(&tokens));
 
     ASSERT_EQ(8, tokens.size());
     ASSERT_EQ(200, CountRows(tokens));
@@ -585,9 +635,16 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
   }
 
   vector<KuduScanToken*> tokens;
-  ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+  vector<KuduScanToken*> tokens_with_metadata;
+  KuduScanTokenBuilder builder(table.get());
+  ASSERT_OK(builder.IncludeTableMetadata(false));
+  ASSERT_OK(builder.Build(&tokens));
+  ASSERT_OK(builder.IncludeTableMetadata(true));
+  ASSERT_OK(builder.Build(&tokens_with_metadata));
   ASSERT_EQ(1, tokens.size());
+  ASSERT_EQ(1, tokens_with_metadata.size());
   unique_ptr<KuduScanToken> token(tokens[0]);
+  unique_ptr<KuduScanToken> token_with_metadata(tokens_with_metadata[0]);
 
   // Drop a column.
   {
@@ -596,9 +653,15 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
     ASSERT_OK(table_alterer->Alter());
   }
 
-  KuduScanner* scanner_ptr;
-  Status s = token->IntoKuduScanner(&scanner_ptr);
+  unique_ptr<KuduScanner> scanner;
+  Status s = IntoUniqueScanner(client_.get(), *token, &scanner);
   ASSERT_EQ("Illegal state: unknown column in scan token: a", s.ToString());
+
+  unique_ptr<KuduScanner> scanner_with_metadata;
+  ASSERT_OK(IntoUniqueScanner(client_.get(), *token_with_metadata, &scanner_with_metadata));
+  s = scanner_with_metadata->Open();
+  ASSERT_EQ("Invalid argument: Some columns are not present in the current schema: a",
+      s.ToString());
 
   // Add back the column with the wrong type.
   {
@@ -607,7 +670,7 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
     ASSERT_OK(table_alterer->Alter());
   }
 
-  s = token->IntoKuduScanner(&scanner_ptr);
+  s = IntoUniqueScanner(client_.get(), *token, &scanner);
   ASSERT_EQ("Illegal state: invalid type INT64 for column 'a' in scan token, expected: STRING",
             s.ToString());
 
@@ -619,7 +682,7 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
     ASSERT_OK(table_alterer->Alter());
   }
 
-  s = token->IntoKuduScanner(&scanner_ptr);
+  s = IntoUniqueScanner(client_.get(), *token, &scanner);
   ASSERT_EQ("Illegal state: invalid nullability for column 'a' in scan token, expected: NULLABLE",
             s.ToString());
 
@@ -634,8 +697,7 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
     ASSERT_OK(table_alterer->Alter());
   }
 
-  ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
-  delete scanner_ptr;
+  ASSERT_OK(IntoUniqueScanner(client_.get(), *token, &scanner));
 }
 
 // Tests the results of creating scan tokens, renaming the table being
@@ -675,14 +737,121 @@ TEST_F(ScanTokenTest, TestConcurrentRenameTable) {
     ASSERT_OK(table_alterer->Alter());
   }
 
-  KuduScanner* scanner_ptr;
-  ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
+  unique_ptr<KuduScanner> scanner;
+  ASSERT_OK(IntoUniqueScanner(client_.get(), *token, &scanner));
+
   size_t row_count;
-  ASSERT_OK(CountRowsWithRetries(scanner_ptr, &row_count));
+  ASSERT_OK(CountRowsWithRetries(scanner.get(), &row_count));
   ASSERT_EQ(0, row_count);
-  delete scanner_ptr;
 }
 
+TEST_F(ScanTokenTest, TestMasterRequestsWithMetadata) {
+  const char* kTableName = "scan-token-requests";
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("a")->NotNull()->Type(KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                            .schema(&schema)
+                            .set_range_partition_columns({})
+                            .num_replicas(1)
+                            .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+  }
+
+  vector<KuduScanToken*> tokens;
+  KuduScanTokenBuilder builder(table.get());
+  ASSERT_OK(builder.IncludeTableMetadata(true));
+  ASSERT_OK(builder.IncludeTabletMetadata(true));
+  ASSERT_OK(builder.Build(&tokens));
+  ASSERT_EQ(1, tokens.size());
+  unique_ptr<KuduScanToken> token(tokens[0]);
+
+  shared_ptr<KuduClient> new_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
+  // List the tables to prevent counting initialization RPCs.
+  vector<string> tables;
+  ASSERT_OK(new_client->ListTables(&tables));
+
+  const auto init_schema_requests = NumGetTableSchemaRequests();
+  const auto init_location_requests = NumGetTableLocationsRequests();
+
+  // Validate that hydrating a token doesn't result in a GetTableSchema
+  // or GetTableLocations request.
+  unique_ptr<KuduScanner> scanner;
+  ASSERT_OK(IntoUniqueScanner(new_client.get(), *token, &scanner));
+  ASSERT_EQ(init_schema_requests, NumGetTableSchemaRequests());
+  ASSERT_EQ(init_location_requests, NumGetTableLocationsRequests());
+
+  // Validate that hydrating a token doesn't result in a GetTableSchema
+  // or GetTableLocations request.
+  ASSERT_OK(scanner->Open());
+  KuduScanBatch batch;
+  ASSERT_OK(scanner->NextBatch(&batch));
+  ASSERT_EQ(init_schema_requests, NumGetTableSchemaRequests());
+  ASSERT_EQ(init_location_requests, NumGetTableLocationsRequests());
+}
+
+TEST_F(ScanTokenTest, TestMasterRequestsNoMetadata) {
+  const char* kTableName = "scan-token-requests-no-meta";
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("a")->NotNull()->Type(KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                  .schema(&schema)
+                  .set_range_partition_columns({})
+                  .num_replicas(1)
+                  .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+  }
+
+  shared_ptr<KuduClient> new_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
+  // List the tables to prevent counting initialization RPCs.
+  vector<string> tables;
+  ASSERT_OK(new_client->ListTables(&tables));
+
+  vector<KuduScanToken*> tokens;
+  KuduScanTokenBuilder builder(table.get());
+  ASSERT_OK(builder.IncludeTableMetadata(false));
+  ASSERT_OK(builder.IncludeTabletMetadata(false));
+  ASSERT_OK(builder.Build(&tokens));
+  ASSERT_EQ(1, tokens.size());
+  unique_ptr<KuduScanToken> token(tokens[0]);
+
+  const auto init_schema_requests = NumGetTableSchemaRequests();
+  const auto init_location_requests = NumGetTableLocationsRequests();
+
+  // Validate that hydrating a token into a scanner results in a single GetTableSchema request.
+  unique_ptr<KuduScanner> scanner;
+  ASSERT_OK(IntoUniqueScanner(new_client.get(), *token, &scanner));
+  ASSERT_EQ(init_schema_requests + 1, NumGetTableSchemaRequests());
+
+  // Validate that opening the scanner results in a GetTableLocations request.
+  ASSERT_OK(scanner->Open());
+  KuduScanBatch batch;
+  ASSERT_OK(scanner->NextBatch(&batch));
+  ASSERT_EQ(init_location_requests + 1, NumGetTableLocationsRequests());
+}
 
 } // namespace client
 } // namespace kudu

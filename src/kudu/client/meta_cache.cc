@@ -806,26 +806,39 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   VLOG(2) << "Processing master response for " << rpc.ToString()
           << ". Response: " << pb_util::SecureShortDebugString(rpc.resp());
 
-  MonoTime expiration_time = MonoTime::Now() +
-      MonoDelta::FromMilliseconds(rpc.resp().ttl_millis());
-
-  std::lock_guard<percpu_rwlock> l(lock_);
-  TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
-                                             rpc.table_id(), TabletMap());
-
-  const auto& tablet_locations = rpc.resp().tablet_locations();
-
-  if (tablet_locations.empty()) {
+  if (rpc.resp().tablet_locations().empty()) {
     // If there are no tablets in the response, then the table is empty. If
     // there were any tablets in the table they would have been returned, since
     // the master guarantees that if the partition key falls in a non-covered
     // range, the previous tablet will be returned, and we did not set an upper
     // bound partition key on the request.
     DCHECK(!rpc.req().has_partition_key_end());
+  }
 
+  return ProcessGetTableLocationsResponse(rpc.table(), rpc.partition_key(), rpc.is_exact_lookup(),
+      rpc.resp(), cache_entry, max_returned_locations);
+
+}
+
+Status MetaCache::ProcessGetTableLocationsResponse(const KuduTable* table,
+                                                   const string& partition_key,
+                                                   bool is_exact_lookup,
+                                                   const GetTableLocationsResponsePB& resp,
+                                                   MetaCacheEntry* cache_entry,
+                                                   int max_returned_locations) {
+  MonoTime expiration_time = MonoTime::Now() +
+      MonoDelta::FromMilliseconds(resp.ttl_millis());
+
+  std::lock_guard<percpu_rwlock> l(lock_);
+  TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
+                                             table->id(), TabletMap());
+
+  const auto& tablet_locations = resp.tablet_locations();
+
+  if (tablet_locations.empty()) {
     tablets_by_key.clear();
     MetaCacheEntry entry(expiration_time, "", "");
-    VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
+    VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
     InsertOrDie(&tablets_by_key, "", entry);
   } else {
     // First, update the tserver cache, needed for the Refresh calls below.
@@ -837,7 +850,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
     }
     // In the case of "interned" replicas, the above 'deprecated_replicas' lists will be empty
     // and instead we'll need to update from the top-level list of tservers.
-    const auto& ts_infos = rpc.resp().ts_infos();
+    const auto& ts_infos = resp.ts_infos();
     for (const TSInfoPB& ts_info : ts_infos) {
       UpdateTabletServer(ts_info);
     }
@@ -858,14 +871,14 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
     // in A.
 
     const auto& first_lower_bound = tablet_locations.Get(0).partition().partition_key_start();
-    if (rpc.partition_key() < first_lower_bound) {
+    if (partition_key < first_lower_bound) {
       // If the first tablet is past the requested partition key, then the
       // partition key falls in an initial non-covered range, such as A.
 
       // Clear any existing entries which overlap with the discovered non-covered range.
       tablets_by_key.erase(tablets_by_key.begin(), tablets_by_key.lower_bound(first_lower_bound));
       MetaCacheEntry entry(expiration_time, "", first_lower_bound);
-      VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
+      VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
       InsertOrDie(&tablets_by_key, "", entry);
     }
 
@@ -885,7 +898,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
                              tablets_by_key.lower_bound(tablet_lower_bound));
 
         MetaCacheEntry entry(expiration_time, last_upper_bound, tablet_lower_bound);
-        VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
+        VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
         InsertOrDie(&tablets_by_key, last_upper_bound, entry);
       }
       last_upper_bound = tablet_upper_bound;
@@ -928,7 +941,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
                                        tablet_id));
 
       MetaCacheEntry entry(expiration_time, remote);
-      VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
+      VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
 
       InsertOrDie(&tablets_by_id_, tablet_id, remote);
       InsertOrDie(&tablets_by_key, tablet_lower_bound, entry);
@@ -943,14 +956,14 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
                            tablets_by_key.end());
 
       MetaCacheEntry entry(expiration_time, last_upper_bound, "");
-      VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
+      VLOG(3) << "Caching '" << table->name() << "' entry " << entry.DebugString(table);
       InsertOrDie(&tablets_by_key, last_upper_bound, entry);
     }
   }
 
   // Finally, lookup the discovered entry and return it to the requestor.
-  *cache_entry = FindFloorOrDie(tablets_by_key, rpc.partition_key());
-  if (!rpc.is_exact_lookup() && cache_entry->is_non_covered_range() &&
+  *cache_entry = FindFloorOrDie(tablets_by_key, partition_key);
+  if (!is_exact_lookup && cache_entry->is_non_covered_range() &&
       !cache_entry->upper_bound_partition_key().empty()) {
     *cache_entry = FindFloorOrDie(tablets_by_key, cache_entry->upper_bound_partition_key());
     DCHECK(!cache_entry->is_non_covered_range());
