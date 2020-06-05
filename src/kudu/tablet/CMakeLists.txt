@@ -89,6 +89,7 @@ add_library(tablet_test_util
   tablet_replica-test-base.cc)
 target_link_libraries(tablet_test_util
   kudu_common
+  kudu_test_util
   log_proto
   tablet)
 
