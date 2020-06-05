@@ -26,14 +26,12 @@ import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import com.google.protobuf.Any;
-import org.apache.ranger.plugin.model.RangerServiceDef;
-import org.apache.ranger.plugin.policyengine.RangerAccessRequestImpl;
-import org.apache.ranger.plugin.policyengine.RangerAccessResult;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.kudu.ranger.Ranger;
 import org.apache.kudu.ranger.Ranger.ActionPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerRequestPB;
@@ -105,20 +103,13 @@ public class TestRangerSubprocess extends SubprocessTestUtil {
     final SubprocessRequestPB subprocessRequest = createRangerSubprocessRequest(requestList);
 
     // Mock the authorization results.
-    List<RangerAccessResult> rangerResults = new ArrayList<>();
-    final RangerAccessResult positiveResult = new RangerAccessResult(
-        /* policyType= */1, "kudu",
-        new RangerServiceDef(), new RangerAccessRequestImpl());
-    positiveResult.setIsAllowed(true);
-    final RangerAccessResult negativeResult = new RangerAccessResult(
-        /* policyType= */1, "kudu",
-        new RangerServiceDef(), new RangerAccessRequestImpl());
-    negativeResult.setIsAllowed(false);
-    rangerResults.add(positiveResult);
-    rangerResults.add(negativeResult);
-    rangerResults.add(positiveResult);
+    RangerResponseListPB responseListPB = RangerResponseListPB.newBuilder()
+        .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(true).build())
+        .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(false).build())
+        .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(true).build())
+        .build();
     Mockito.when(RangerProtocolHandler.authz.authorize(requestList))
-           .thenReturn(rangerResults);
+           .thenReturn(responseListPB);
 
     SubprocessExecutor executor =
         setUpExecutorIO(NO_ERR, /*injectIOError*/false);

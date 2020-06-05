@@ -67,6 +67,9 @@ message RangerRequestPB {
 
   // Action to be authorized on the resource.
   optional ActionPB action = 4;
+
+  // Whether delegate admin privilege is required to perform the action.
+  optional bool requires_delegate_admin = 5;
 }
 
 // Describes a single Ranger authorization response for a single user.

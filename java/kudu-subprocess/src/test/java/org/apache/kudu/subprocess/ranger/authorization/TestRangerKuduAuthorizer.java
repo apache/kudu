@@ -20,9 +20,7 @@ package org.apache.kudu.subprocess.ranger.authorization;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
+import java.util.List;
 
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.policyengine.RangerAccessRequest;
@@ -33,6 +31,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
+import org.apache.kudu.ranger.Ranger;
 import org.apache.kudu.test.junit.RetryRule;
 
 /**
@@ -66,17 +65,18 @@ public class TestRangerKuduAuthorizer {
         new RangerServiceDef(), mockCreateRequest);
     createResult.setIsAllowed(false);
 
-    Collection<RangerAccessRequest> requests = new ArrayList<>();
-    requests.add(mockUpdateRequest);
-    requests.add(mockCreateRequest);
-    Collection<RangerAccessResult> results = new ArrayList<>();
-    results.add(updateResult);
-    results.add(createResult);
+    Mockito.when(authz.plugin.isAccessAllowed(Mockito.any(RangerAccessRequest.class)))
+        .thenReturn(updateResult, createResult);
 
-    Mockito.when(authz.plugin.isAccessAllowed(requests))
-           .thenReturn(results);
-    Iterator<RangerAccessResult> actualResultsIter = authz.authorize(requests).iterator();
-    assertTrue(actualResultsIter.next().getIsAllowed());
-    assertFalse(actualResultsIter.next().getIsAllowed());
+    Ranger.RangerRequestListPB rangerRequests = Ranger.RangerRequestListPB.newBuilder()
+        .addRequests(Ranger.RangerRequestPB.newBuilder().build())
+        .addRequests(Ranger.RangerRequestPB.newBuilder().build())
+        .setUser("jdoe")
+        .build();
+
+    List<Ranger.RangerResponsePB> actualResultsIter = authz.authorize(rangerRequests)
+        .getResponsesList();
+    assertTrue(actualResultsIter.get(0).getAllowed());
+    assertFalse(actualResultsIter.get(1).getAllowed());
   }
 }

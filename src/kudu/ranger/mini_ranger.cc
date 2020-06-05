@@ -308,12 +308,13 @@ Status MiniRanger::AddPolicy(AuthorizationPolicy policy) {
     EasyJson item = policy_items.PushBack(EasyJson::kObject);
 
     EasyJson users = item.Set("users", EasyJson::kArray);
-    for (const string& user : policy_item.first) {
+    for (const string& user : std::get<0>(policy_item)) {
       users.PushBack(user);
     }
 
+    item.Set("delegateAdmin", std::get<2>(policy_item));
     EasyJson accesses = item.Set("accesses", EasyJson::kArray);
-    for (const ActionPB& action : policy_item.second) {
+    for (const ActionPB& action : std::get<1>(policy_item)) {
       EasyJson access = accesses.PushBack(EasyJson::kObject);
       access.Set("type", ActionPB_Name(action));
       access.Set("isAllowed", true);

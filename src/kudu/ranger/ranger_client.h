@@ -84,7 +84,8 @@ class RangerClient {
   // Authorizes an action on the table. Sets 'authorized' to true if it's
   // authorized, false otherwise.
   Status AuthorizeAction(const std::string& user_name, const ActionPB& action,
-                         const std::string& database, const std::string& table, bool* authorized,
+                         const std::string& database, const std::string& table,
+                         bool requires_delegate_admin, bool* authorized,
                          Scope scope = Scope::TABLE) WARN_UNUSED_RESULT;
 
   // Authorizes action on multiple tables. It sets 'table_names' to the

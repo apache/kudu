@@ -172,14 +172,16 @@ class RangerClientTest : public KuduTest {
 
 TEST_F(RangerClientTest, TestAuthorizeCreateTableUnauthorized) {
   bool authorized;
-  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar", "baz", &authorized));
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar", "baz",
+                                    /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
 }
 
 TEST_F(RangerClientTest, TestAuthorizeCreateTableAuthorized) {
   Allow("jdoe", ActionPB::CREATE, "foo", "bar");
   bool authorized;
-  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar", &authorized));
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar",
+                                    /*requires_delegate_admin=*/false, &authorized));
   ASSERT_TRUE(authorized);
 }
 
@@ -395,7 +397,8 @@ TEST_F(RangerClientTestBase, TestLogging) {
   // Make a request. It doesn't matter whether it succeeds or not -- debug logs
   // should include info about each request.
   bool authorized;
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+                                     /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {
     // Check that the Ranger client logs some DEBUG messages.
@@ -414,7 +417,8 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = false;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+                                     /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {
     // Our logs should still contain DEBUG messages since we didn't update the
@@ -430,7 +434,8 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = true;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", &authorized));
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+                                     /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {
     // We shouldn't see any DEBUG messages since the client is configured to

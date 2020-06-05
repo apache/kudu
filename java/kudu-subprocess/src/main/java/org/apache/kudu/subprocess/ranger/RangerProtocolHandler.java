@@ -36,8 +36,6 @@ import org.apache.kudu.subprocess.ranger.authorization.RangerKuduAuthorizer;
 @InterfaceAudience.Private
 class RangerProtocolHandler extends ProtocolHandler<RangerRequestListPB,
                                                     RangerResponseListPB> {
-  private static final Logger LOG = LoggerFactory.getLogger(RangerProtocolHandler.class);
-
   // The Ranger Kudu authorizer plugin. This field is not final
   // as it is used in the mock test.
   @InterfaceAudience.LimitedPrivate("Test")
@@ -49,21 +47,7 @@ class RangerProtocolHandler extends ProtocolHandler<RangerRequestListPB,
 
   @Override
   protected RangerResponseListPB executeRequest(RangerRequestListPB requests) {
-    RangerResponseListPB.Builder responses = RangerResponseListPB.newBuilder();
-    for (RangerAccessResult result : authz.authorize(requests)) {
-      // The result can be null when Ranger plugin fails to load the policies
-      // from the Ranger admin server.
-      // TODO(Hao): add a test for the above case.
-      boolean isAllowed = (result != null && result.getIsAllowed());
-      RangerResponsePB.Builder response = RangerResponsePB.newBuilder();
-      response.setAllowed(isAllowed);
-      responses.addResponses(response);
-      if (LOG.isDebugEnabled()) {
-        LOG.debug(String.format("RangerAccessRequest [%s] receives result [%s]",
-                                result.getAccessRequest().toString(), result.toString()));
-      }
-    }
-    return responses.build();
+    return authz.authorize(requests);
   }
 
   @Override

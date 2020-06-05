@@ -48,9 +48,7 @@ class MiniRangerTest : public KuduTest {
 };
 
 TEST_F(MiniRangerTest, TestGrantPrivilege) {
-  PolicyItem item;
-  item.first.emplace_back("testuser");
-  item.second.emplace_back(ActionPB::ALTER);
+  PolicyItem item({ "testuser" }, { ActionPB::ALTER }, false);
 
   AuthorizationPolicy policy;
   policy.databases.emplace_back("foo");
@@ -61,9 +59,7 @@ TEST_F(MiniRangerTest, TestGrantPrivilege) {
 }
 
 TEST_F(MiniRangerTest, TestPersistence) {
-  PolicyItem item;
-  item.first.emplace_back("testuser");
-  item.second.emplace_back(ActionPB::ALTER);
+  PolicyItem item({ "testuser" }, { ActionPB::ALTER }, false);
 
   AuthorizationPolicy policy;
   policy.databases.emplace_back("foo");

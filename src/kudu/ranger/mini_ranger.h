@@ -46,10 +46,10 @@ namespace ranger {
 // List of usernames to be used in PolicyItem;
 typedef std::vector<std::string> UserList;
 
-// Pair of a vector of usernames and a vector of allowed actions to be used in
-// AuthorizationPolicy. Number of users and actions doesn't have to match, their
-// cross-product is taken.
-typedef std::pair<UserList, std::vector<ActionPB>> PolicyItem;
+// Tuple of a vector of usernames,  a vector of allowed actions and a delegate
+// admin flag to be used in AuthorizationPolicy. Number of users and actions
+// doesn't have to match, their cross-product is taken.
+typedef std::tuple<UserList, std::vector<ActionPB>, bool> PolicyItem;
 
 // Policy key used for searching policies_ (values are PolicyItems).
 typedef std::tuple<std::vector<std::string>,

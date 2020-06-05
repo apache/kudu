@@ -286,9 +286,9 @@ class TSAuthzITestHarness {
   // These abide the hierarchical definition of privileges, so if granting privileges on a
   // table, these grant privileges on the table and all columns in that table.
   virtual Status GrantTablePrivilege(const string& db, const string& tbl, const string& user,
-                                     const string& action) = 0;
+                                     const string& action, bool admin) = 0;
   virtual Status GrantColumnPrivilege(const string& db, const string& tbl, const string& col,
-                                      const string& user, const string& action) = 0;
+                                      const string& user, const string& action, bool admin) = 0;
 
   // Creates a table named 'table_ident' with 'kNumColsPerTable' columns.
   Status CreateTable(const string& table_ident, const shared_ptr<KuduClient>& client) {
@@ -352,7 +352,7 @@ class RangerITestHarness : public TSAuthzITestHarness {
     policy.databases = { kDb };
     policy.tables = { "*" };
     policy.columns = { "*" };
-    policy.items.emplace_back(PolicyItem({ kAdminUser }, { ActionPB::ALL }));
+    policy.items.emplace_back(PolicyItem({ kAdminUser }, { ActionPB::ALL }, true));
     RETURN_NOT_OK(ranger_->AddPolicy(std::move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -365,23 +365,23 @@ class RangerITestHarness : public TSAuthzITestHarness {
     return Status::OK();
   }
   Status GrantTablePrivilege(const string& db, const string& tbl, const string& user,
-                             const string& action) override {
+                             const string& action, bool admin) override {
     AuthorizationPolicy policy;
     policy.databases = { db };
     policy.tables = { tbl };
     policy.columns = { "*" };
-    policy.items.emplace_back(PolicyItem({ user }, { StringToActionPB(action) }));
+    policy.items.emplace_back(PolicyItem({ user }, { StringToActionPB(action) }, admin));
     RETURN_NOT_OK(ranger_->AddPolicy(std::move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
   }
   Status GrantColumnPrivilege(const string& db, const string& tbl, const string& col,
-                              const string& user, const string& action) override {
+                              const string& user, const string& action, bool admin) override {
     AuthorizationPolicy policy;
     policy.databases = { db };
     policy.tables = { tbl };
     policy.columns = { col };
-    policy.items.emplace_back(PolicyItem({ user }, { StringToActionPB(action) }));
+    policy.items.emplace_back(PolicyItem({ user }, { StringToActionPB(action) }, admin));
     RETURN_NOT_OK(ranger_->AddPolicy(std::move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -495,10 +495,12 @@ TEST_P(TSAuthzITest, TestReadsAndWrites) {
     for (const string& table_name : tables) {
       RWPrivileges granted_privileges = GeneratePrivileges(cols, &prng);
       for (const auto& wp : granted_privileges.table_write_privileges) {
-        ASSERT_OK(harness_->GrantTablePrivilege(kDb, table_name, user, WritePrivilegeToString(wp)));
+        ASSERT_OK(harness_->GrantTablePrivilege(kDb, table_name, user, WritePrivilegeToString(wp),
+                                                /*admin=*/false));
       }
       for (const auto& col : granted_privileges.column_scan_privileges) {
-        ASSERT_OK(harness_->GrantColumnPrivilege(kDb, table_name, col, user, "SELECT"));
+        ASSERT_OK(harness_->GrantColumnPrivilege(kDb, table_name, col, user, "SELECT",
+                                                 /*admin=*/false));
       }
       RWPrivileges not_granted_privileges = ComplementaryPrivileges(cols, granted_privileges);
       InsertOrDie(&table_to_privileges, table_name,
@@ -575,12 +577,13 @@ TEST_P(TSAuthzITest, TestAlters) {
   // Note: we only need privileges on the metadata for OpenTable() calls.
   // METADATA isn't a first-class privilege and won't get carried over
   // on table rename, so we just grant INSERT privileges.
-  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kTableName, user, "INSERT"));
+  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kTableName, user, "INSERT", /*admin=*/false));
 
   // First, grant privileges on a new column that doesn't yet exist. Once that
   // column is created, we should be able to scan it immediately.
   const string new_column = Substitute("col$0", kNumColsPerTable);
-  ASSERT_OK(harness_->GrantColumnPrivilege(kDb, kTableName, new_column, user, "SELECT"));
+  ASSERT_OK(harness_->GrantColumnPrivilege(kDb, kTableName, new_column, user, "SELECT",
+                                           /*admin=*/false));
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_ident));
     table_alterer->AddColumn(new_column)->Type(KuduColumnSchema::INT32);
@@ -592,7 +595,8 @@ TEST_P(TSAuthzITest, TestAlters) {
 
   // Now create another column and grant the user privileges for that column.
   const string another_column = Substitute("col$0", kNumColsPerTable + 1);
-  ASSERT_OK(harness_->GrantColumnPrivilege(kDb, kTableName, another_column, user, "SELECT"));
+  ASSERT_OK(harness_->GrantColumnPrivilege(kDb, kTableName, another_column, user, "SELECT",
+                                           /*admin=*/false));
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_ident));
     table_alterer->AddColumn(another_column)->Type(KuduColumnSchema::INT32);
@@ -611,7 +615,7 @@ TEST_P(TSAuthzITest, TestAlters) {
   // We need to explicitly grant privileges on the new table name.
   const string kNewTableName = "newtable";
   const string new_table_ident = Substitute("$0.$1", kDb, kNewTableName);
-  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kNewTableName, user, "SELECT"));
+  ASSERT_OK(harness_->GrantTablePrivilege(kDb, kNewTableName, user, "SELECT", /*admin=*/false));
   {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_ident));
     table_alterer->RenameTo(new_table_ident);

@@ -305,6 +305,10 @@ class MasterAuthzITestHarness {
   virtual Status GrantAlterTablePrivilege(const PrivilegeParams& p) = 0;
   virtual Status GrantRenameTablePrivilege(const PrivilegeParams& p) = 0;
   virtual Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) = 0;
+  virtual Status GrantAllTablePrivilege(const PrivilegeParams& p) = 0;
+  virtual Status GrantAllDatabasePrivilege(const PrivilegeParams& p) = 0;
+  virtual Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) = 0;
+  virtual Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) = 0;
   virtual Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) = 0;
   virtual Status CreateTable(const OperationParams& p,
                              const shared_ptr<KuduClient>& client) = 0;
@@ -332,14 +336,14 @@ class MasterAuthzITestHarness {
 
 class RangerITestHarness : public MasterAuthzITestHarness {
  public:
-  static constexpr int kSleepAfterNewPolicyMs = 1200;
+  static constexpr int kSleepAfterNewPolicyMs = 1400;
 
   Status GrantCreateTablePrivilege(const PrivilegeParams& p) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
     policy.tables.emplace_back("*");
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
 
@@ -350,7 +354,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::DROP}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::DROP}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
 
@@ -368,7 +372,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALTER}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALTER}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -379,13 +383,13 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy_new_table.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
     policy_new_table.tables.emplace_back("*");
-    policy_new_table.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}));
+    policy_new_table.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy_new_table)));
 
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -394,7 +398,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
   Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -404,8 +408,56 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}));
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
+    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
+    return Status::OK();
+  }
+
+  Status GrantAllTablePrivilege(const PrivilegeParams& p) override {
+    AuthorizationPolicy policy;
+    policy.databases.emplace_back(p.db_name);
+    policy.tables.emplace_back(p.table_name);
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
+    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
+    return Status::OK();
+  }
+
+  Status GrantAllDatabasePrivilege(const PrivilegeParams& p) override {
+    AuthorizationPolicy db_policy;
+    db_policy.databases.emplace_back(p.db_name);
+    db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(db_policy)));
+    AuthorizationPolicy tbl_policy;
+    tbl_policy.databases.emplace_back(p.db_name);
+    tbl_policy.tables.emplace_back("*");
+    tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
+    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
+    return Status::OK();
+  }
+
+  Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) override {
+    AuthorizationPolicy policy;
+    policy.databases.emplace_back(p.db_name);
+    policy.tables.emplace_back(p.table_name);
+    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
+    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
+    return Status::OK();
+  }
+
+  Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) override {
+    AuthorizationPolicy db_policy;
+    db_policy.databases.emplace_back(p.db_name);
+    db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(db_policy)));
+    AuthorizationPolicy tbl_policy;
+    tbl_policy.databases.emplace_back(p.db_name);
+    tbl_policy.tables.emplace_back("*");
+    tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
   }
@@ -443,7 +495,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(kDatabaseName);
     policy.tables.emplace_back("*");
-    policy.items.emplace_back(PolicyItem({kAdminUser}, {ActionPB::ALL}));
+    policy.items.emplace_back(PolicyItem({kAdminUser}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
     return Status::OK();
@@ -515,6 +567,22 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
 
   Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) {
     return harness_->GrantGetMetadataTablePrivilege(p);
+  }
+
+  Status GrantAllTablePrivilege(const PrivilegeParams& p) {
+    return harness_->GrantAllTablePrivilege(p);
+  }
+
+  Status GrantAllDatabasePrivilege(const PrivilegeParams& p) {
+    return harness_->GrantAllDatabasePrivilege(p);
+  }
+
+  Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) {
+    return harness_->GrantAllWithGrantTablePrivilege(p);
+  }
+
+  Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) {
+    return harness_->GrantAllWithGrantDatabasePrivilege(p);
   }
 
   Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) {
@@ -638,6 +706,35 @@ TEST_P(MasterAuthzITest, TestCreateTableUnauthorized) {
     .Create().IsNotAuthorized());
 }
 
+TEST_P(MasterAuthzITest, TestCreateTableDifferentOwner) {
+  ASSERT_OK(cluster_->kdc()->Kinit(kTestUser));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
+                    ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+
+  const string kTableName = "another_table";
+  PrivilegeParams p = { kDatabaseName, kTableName };
+  this->GrantAllDatabasePrivilege(p);
+  this->GrantAllTablePrivilege(p);
+  this->GrantAllWithGrantTablePrivilege(p);
+  ASSERT_TRUE(table_creator->table_name(Substitute("$0.$1", kDatabaseName,
+                                                   kTableName))
+    .schema(&schema)
+    .num_replicas(1)
+    .set_range_partition_columns({"key"})
+    .set_owner("another_user")
+    .Create().IsNotAuthorized());
+
+  this->GrantAllWithGrantDatabasePrivilege(p);
+
+  ASSERT_OK(table_creator->Create());
+}
+
 // Test that the trusted user can access the cluster without being authorized.
 TEST_P(MasterAuthzITest, TestTrustedUserAcl) {
   // Log in as 'impala' and reset the client to pick up the change in user.
@@ -652,6 +749,23 @@ TEST_P(MasterAuthzITest, TestTrustedUserAcl) {
             tables_set);
 
   ASSERT_OK(this->CreateKuduTable(kDatabaseName, "new_table"));
+
+  // Create another table with a different owner
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
+                    ->PrimaryKey();
+  KuduSchema schema;
+  ASSERT_OK(b.Build(&schema));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+
+  const string kTableName = "another_table";
+  ASSERT_OK(table_creator->table_name(Substitute("$0.$1", kDatabaseName,
+                                                 kTableName))
+    .schema(&schema)
+    .num_replicas(1)
+    .set_range_partition_columns({"key"})
+    .set_owner("another_user")
+    .Create());
   NO_FATALS(this->CheckTable(kDatabaseName, "new_table",
                              make_optional<const string&>(kImpalaUser)));
 }

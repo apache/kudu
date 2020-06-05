@@ -394,7 +394,8 @@ Status RangerClient::Start() {
 
 // TODO(abukor): refactor to avoid code duplication
 Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& action,
-                                     const string& database, const string& table, bool* authorized,
+                                     const string& database, const string& table,
+                                     bool requires_delegate_admin, bool* authorized,
                                      Scope scope) {
   DCHECK(subprocess_);
   RangerRequestListPB req_list;
@@ -405,6 +406,7 @@ Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& ac
 
   req->set_action(action);
   req->set_database(database);
+  req->set_requires_delegate_admin(requires_delegate_admin);
   // Only pass the table name if this is table level request.
   if (scope == Scope::TABLE) {
     req->set_table(table);
