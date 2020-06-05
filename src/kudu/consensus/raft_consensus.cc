@@ -623,12 +623,12 @@ Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_lead
 Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
     const boost::optional<string>& successor_uuid) {
   DCHECK(lock_.is_locked());
-  if (leader_transfer_in_progress_.CompareAndSwap(false, true)) {
+  if (std::atomic_exchange(&leader_transfer_in_progress_, true)) {
     return Status::ServiceUnavailable(
         Substitute("leadership transfer for $0 already in progress",
                    options_.tablet_id));
   }
-  leader_transfer_in_progress_.Store(true, kMemOrderAcquire);
+  leader_transfer_in_progress_ = true;
   queue_->BeginWatchForSuccessor(successor_uuid);
   transfer_period_timer_->Start();
   return Status::OK();
@@ -637,7 +637,7 @@ Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
 void RaftConsensus::EndLeaderTransferPeriod() {
   transfer_period_timer_->Stop();
   queue_->EndWatchForSuccessor();
-  leader_transfer_in_progress_.Store(false, kMemOrderRelease);
+  leader_transfer_in_progress_ = false;
 }
 
 scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
@@ -1017,7 +1017,7 @@ void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid) {
 
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
-  update_calls_for_tests_.Increment();
+  ++update_calls_for_tests_;
 
   if (PREDICT_FALSE(FLAGS_follower_reject_update_consensus_requests)) {
     return Status::IllegalState("Rejected: --follower_reject_update_consensus_requests "
@@ -2227,14 +2227,16 @@ void RaftConsensus::Shutdown() {
   // ThreadRestrictions assertions in the case where the RaftConsensus
   // destructor runs on the reactor thread due to an election callback being
   // the last outstanding reference.
-  if (shutdown_.Load(kMemOrderAcquire)) return;
+  if (shutdown_) {
+    return;
+  }
 
   Stop();
   {
     LockGuard l(lock_);
     SetStateUnlocked(kShutdown);
   }
-  shutdown_.Store(true, kMemOrderRelease);
+  shutdown_ = true;
 }
 
 Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg) {
@@ -3002,7 +3004,7 @@ Status RaftConsensus::CheckActiveLeaderUnlocked() const {
       // Check for the consistency of the information in the consensus metadata
       // and the state of the consensus queue.
       DCHECK(queue_->IsInLeaderMode());
-      if (leader_transfer_in_progress_.Load()) {
+      if (leader_transfer_in_progress_) {
         return Status::ServiceUnavailable("leader transfer in progress");
       }
       return Status::OK();

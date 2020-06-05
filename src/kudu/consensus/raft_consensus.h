@@ -42,7 +42,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
@@ -359,7 +358,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status AdvanceTermForTests(int64_t new_term);
 
   int update_calls_for_tests() const {
-    return update_calls_for_tests_.Load();
+    return update_calls_for_tests_;
   }
 
   //------------------------------------------------------------
@@ -888,7 +887,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   std::shared_ptr<rpc::PeriodicTimer> failure_detector_;
 
-  AtomicBool leader_transfer_in_progress_;
+  std::atomic<bool> leader_transfer_in_progress_;
   boost::optional<std::string> designated_successor_uuid_;
   std::shared_ptr<rpc::PeriodicTimer> transfer_period_timer_;
 
@@ -912,10 +911,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // A flag to help us avoid taking a lock on the reactor thread if the object
   // is already in kShutdown state.
   // TODO(mpercy): Try to get rid of this extra flag.
-  AtomicBool shutdown_;
+  std::atomic<bool> shutdown_;
 
   // The number of times Update() has been called, used for some test assertions.
-  AtomicInt<int32_t> update_calls_for_tests_;
+  std::atomic<int32_t> update_calls_for_tests_;
 
   // The wrapping into std::atomic<> is to simplify the synchronization between
   // consensus-related writers and readers of the attached metric gauge.
