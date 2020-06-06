@@ -16,7 +16,8 @@
 // under the License.
 #include "kudu/consensus/consensus_meta.h"
 
-#include <mutex>
+#include <cstddef>
+#include <limits>
 #include <ostream>
 #include <utility>
 
@@ -49,12 +50,75 @@ DEFINE_bool(cmeta_force_fsync, false,
             "Whether fsync() should be called when consensus metadata files are updated");
 TAG_FLAG(cmeta_force_fsync, advanced);
 
+using std::string;
+using strings::Substitute;
+
 namespace kudu {
 namespace consensus {
 
-using std::lock_guard;
-using std::string;
-using strings::Substitute;
+namespace {
+
+constexpr size_t kPackedRoleBits = 3;
+constexpr size_t kPackedTermBits = 8 * sizeof(uint64_t) - kPackedRoleBits;
+constexpr uint64_t kUnknownRolePacked = (1ULL << kPackedRoleBits) - 1;
+constexpr uint64_t kRoleMask = kUnknownRolePacked << kPackedTermBits;
+constexpr uint64_t kTermMask = ~kRoleMask;
+
+static_assert((kRoleMask | kTermMask) == std::numeric_limits<uint64_t>::max(),
+              "term and role should fit into uint64_t");
+static_assert((kTermMask & kRoleMask) == 0,
+              "term and role masks must not intersect");
+//
+// Packing role and term into uint64_t:
+//
+//  * * * * * ... * * * *
+//  ^     ^             ^
+// 63    60             0
+//
+// Bits 0..60 inclusive contain term.  Bits 61..63 contain role.
+
+uint64_t PackRoleAndTerm(RaftPeerPB::Role role, int64_t term) {
+  // Ensure the term is not wider than kPackedTermBits: maximum possible is
+  // 2305843009213693951. Here it might be something like
+  //
+  //   CHECK_EQ(0, kRoleMask & term) << "term is too big: " << term;
+  //
+  // However, sometimes the data read from disk is corrupted, and we don't want
+  // to crash just because of that. The corruption is detected and handled
+  // gracefully at a higher level (e.g., the server marks corresponding replica
+  // as failed). With current approach, the maximum acceptable term is
+  // 2305843009213693950; 2305843009213693951 (kTermMask) is a special value.
+  if (PREDICT_FALSE((term & kRoleMask) != 0)) {
+    // A special value to signal that a 'non-packable' term was supplied.
+    term = kTermMask;
+  }
+
+  // The allocated bit space for role is just 3 bits, but it's necessary
+  // to handle the constant 999 defined in the proto file for UNKNOWN_ROLE.
+  // Changing the constant behind UNKNOWN_ROLE is not an option
+  // due to compatibility issues.
+  uint64_t r = (role == RaftPeerPB::UNKNOWN_ROLE) ? kUnknownRolePacked
+                                                  : static_cast<uint64_t>(role);
+  return (r << kPackedTermBits) | term;
+}
+
+RaftPeerPB::Role UnpackRole(uint64_t role_and_term_packed) {
+  const auto role = role_and_term_packed >> kPackedTermBits;
+  if (PREDICT_FALSE(role == kUnknownRolePacked)) {
+    return RaftPeerPB::UNKNOWN_ROLE;
+  }
+  return static_cast<RaftPeerPB::Role>(role);
+}
+
+int64_t UnpackTerm(uint64_t role_and_term_packed) {
+  const auto t = role_and_term_packed & kTermMask;
+  if (PREDICT_FALSE(t == kTermMask)) {
+    LOG(FATAL) << "packed term is invalid: " << t;
+  }
+  return static_cast<int64_t>(t);
+}
+
+} // anonymous namespace
 
 int64_t ConsensusMetadata::current_term() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
@@ -66,6 +130,7 @@ void ConsensusMetadata::set_current_term(int64_t term) {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   DCHECK_GE(term, kMinimumTerm);
   pb_.set_current_term(term);
+  UpdateRoleAndTermCache();
 }
 
 bool ConsensusMetadata::has_voted_for() const {
@@ -253,8 +318,13 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       FLAGS_log_force_fsync_all || FLAGS_cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
-  RETURN_NOT_OK(UpdateOnDiskSize());
-  return Status::OK();
+  return UpdateOnDiskSize();
+}
+
+ConsensusMetadata::RoleAndTerm ConsensusMetadata::GetRoleAndTerm() const {
+  // Read the cached role and term atomically to unpack them consistently.
+  const uint64_t val = role_and_term_cache_;
+  return std::make_pair(UnpackRole(val), UnpackTerm(val));
 }
 
 ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
@@ -265,7 +335,9 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
       peer_uuid_(std::move(peer_uuid)),
       has_pending_config_(false),
       flush_count_for_tests_(0),
+      active_role_(RaftPeerPB::UNKNOWN_ROLE),
       on_disk_size_(0) {
+  UpdateRoleAndTermCache();
 }
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
@@ -324,9 +396,16 @@ std::string ConsensusMetadata::LogPrefix() const {
 void ConsensusMetadata::UpdateActiveRole() {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   active_role_ = GetConsensusRole(peer_uuid_, leader_uuid_, ActiveConfig());
+  UpdateRoleAndTermCache();
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
                       << ". Consensus state: "
                       << pb_util::SecureShortDebugString(ToConsensusStatePB());
+}
+
+void ConsensusMetadata::UpdateRoleAndTermCache() {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  role_and_term_cache_ = PackRoleAndTerm(
+      active_role_, pb_.has_current_term() ? current_term() : -1);
 }
 
 Status ConsensusMetadata::UpdateOnDiskSize() {

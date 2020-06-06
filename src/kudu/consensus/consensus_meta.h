@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include <gtest/gtest_prod.h>
 
@@ -74,6 +75,8 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
     OVERWRITE,
     NO_OVERWRITE
   };
+
+  typedef std::pair<RaftPeerPB::Role, int64_t> RoleAndTerm;
 
   // Accessors for current term.
   int64_t current_term() const;
@@ -161,6 +164,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
     return on_disk_size_.load(std::memory_order_relaxed);
   }
 
+  // Return cached peer role and term, lock-free.
+  RoleAndTerm GetRoleAndTerm() const;
+
  private:
   friend class RaftConsensusQuorumTest;
   friend class RefCountedThreadSafe<ConsensusMetadata>;
@@ -212,6 +218,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Updates the cached active role.
   void UpdateActiveRole();
 
+  // Update the cached active role and term.
+  void UpdateRoleAndTermCache();
+
   // Updates the cached on-disk size of the consensus metadata.
   Status UpdateOnDiskSize();
 
@@ -229,14 +238,22 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // RaftConfig used by the peers when there is a pending config change operation.
   RaftConfigPB pending_config_;
 
-  // Cached role of the peer_uuid_ within the active configuration.
-  RaftPeerPB::Role active_role_;
-
   // The number of times the metadata has been flushed to disk.
   int64_t flush_count_for_tests_;
 
   // Durable fields.
   ConsensusMetadataPB pb_;
+
+  // Role of the peer_uuid_ within the active configuration.
+  RaftPeerPB::Role active_role_;
+
+  // Cached term and role of the peer_uuid_ within the active configuration,
+  // packed into 64-bit integer. These are used to get a consistent snapshot of
+  // the replica role and term in a lock-free manner. The cached information
+  // might become stale right after it retrieved by GetRoleAndTerm() method
+  // (i.e. active_role_ and term in pending_config_ updated right after that),
+  // but it's totally fine for the intended use.
+  std::atomic<uint64_t> role_and_term_cache_;
 
   // The on-disk size of the consensus metadata, as of the last call to
   // Load() or Flush().

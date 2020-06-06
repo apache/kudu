@@ -856,7 +856,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Coarse-grained lock that protects all mutable data members.
   mutable simple_spinlock lock_;
 
-  State state_;
+  std::atomic<State> state_;
 
   // Consensus metadata persistence object.
   scoped_refptr<ConsensusMetadata> cmeta_;
@@ -887,6 +887,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   std::shared_ptr<rpc::PeriodicTimer> failure_detector_;
 
+  // Whether a replica, switched into the leader mode, has successfully
+  // scheduled a NO_OP Raft message to replicate, asserting its leadership in
+  // the term where it has just become a leader.
+  std::atomic<bool> leader_is_ready_;
+
+  // A few fields used for the leadership transfer process.
   std::atomic<bool> leader_transfer_in_progress_;
   boost::optional<std::string> designated_successor_uuid_;
   std::shared_ptr<rpc::PeriodicTimer> transfer_period_timer_;
@@ -1036,8 +1042,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   void NotifyReplicationFinished(const Status& status);
 
   // Binds this round such that it may not be eventually executed in any term
-  // other than 'term'.
-  // See CheckBoundTerm().
+  // other than 'term'. See CheckBoundTerm().
   void BindToTerm(int64_t term) {
     DCHECK_EQ(bound_term_, -1);
     bound_term_ = term;

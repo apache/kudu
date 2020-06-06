@@ -783,7 +783,8 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
   EXPECT_TRUE(s.IsIllegalState());
-  ASSERT_STR_CONTAINS(s.ToString(), "is not leader of this config. Role: FOLLOWER");
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "is not leader of this config: current role FOLLOWER");
   // TODO(unknown): need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.

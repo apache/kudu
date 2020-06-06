@@ -654,8 +654,8 @@ class RpcOpCompletionCallback : public OpCompletionCallback {
  public:
   RpcOpCompletionCallback(rpc::RpcContext* context,
                           Response* response)
- : context_(context),
-   response_(response) {}
+      : context_(context),
+        response_(response) {}
 
   virtual void OpCompleted() OVERRIDE {
     if (!status_.ok()) {
@@ -665,10 +665,9 @@ class RpcOpCompletionCallback : public OpCompletionCallback {
     } else {
       context_->RespondSuccess();
     }
-  };
+  }
 
  private:
-
   TabletServerErrorPB* get_error() {
     return response_->mutable_error();
   }
