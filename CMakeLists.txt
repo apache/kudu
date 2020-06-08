@@ -431,6 +431,19 @@ if (${KUDU_USE_TSAN})
   endif()
 endif()
 
+# If we still don't know what kind of linking to perform, choose based on
+# build type (developers like fast builds).
+if ("${KUDU_LINK}" STREQUAL "a")
+  if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR
+      "${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
+    message("Using dynamic linking for ${CMAKE_BUILD_TYPE} builds")
+    set(KUDU_LINK "d")
+  else()
+    message("Using static linking for ${CMAKE_BUILD_TYPE} builds")
+    set(KUDU_LINK "s")
+  endif()
+endif()
+
 include("KuduLinker")
 APPEND_LINKER_FLAGS()
 
@@ -470,19 +483,6 @@ if ("${KUDU_GENERATE_COVERAGE}")
     # compiler. clang also handles flushing coverage from shared libraries
     # better than gcc.
     message(SEND_ERROR "Must use clang for coverage build")
-  endif()
-endif()
-
-# If we still don't know what kind of linking to perform, choose based on
-# build type (developers like fast builds).
-if ("${KUDU_LINK}" STREQUAL "a")
-  if ("${CMAKE_BUILD_TYPE}" STREQUAL "DEBUG" OR
-      "${CMAKE_BUILD_TYPE}" STREQUAL "FASTDEBUG")
-    message("Using dynamic linking for ${CMAKE_BUILD_TYPE} builds")
-    set(KUDU_LINK "d")
-  else()
-    message("Using static linking for ${CMAKE_BUILD_TYPE} builds")
-    set(KUDU_LINK "s")
   endif()
 endif()
 
