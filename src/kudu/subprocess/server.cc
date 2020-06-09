@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -175,7 +176,7 @@ Status SubprocessServer::Execute(SubprocessRequestPB* req,
   CallAndTimer call_and_timer = {
       make_shared<SubprocessCall>(req, resp, &cb, MonoTime::Now() + call_timeout_), {} };
   RETURN_NOT_OK_PREPEND(
-      outbound_call_queue_.BlockingPut(call_and_timer, call_and_timer.first->deadline()),
+      outbound_call_queue_.BlockingPut(std::move(call_and_timer), call_and_timer.first->deadline()),
       "couldn't enqueue call");
   return sync.Wait();
 }
@@ -255,7 +256,7 @@ void SubprocessServer::ReceiveMessagesThread() {
     // Before adding to the queue, record the size of the response queue.
     metrics_.server_inbound_queue_size_bytes->Increment(inbound_response_queue_.size());
     ResponsePBAndTimer resp_and_timer = { std::move(response), {} };
-    if (s.ok() && !inbound_response_queue_.BlockingPut(resp_and_timer).ok()) {
+    if (s.ok() && !inbound_response_queue_.BlockingPut(std::move(resp_and_timer)).ok()) {
       // The queue has been shut down and we should shut down too.
       DCHECK_EQ(0, closing_.count());
       LOG(INFO) << "failed to put response onto inbound queue";

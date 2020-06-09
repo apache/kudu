@@ -20,8 +20,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
-#include <list>
 #include <map>
 #include <memory>
 #include <mutex>

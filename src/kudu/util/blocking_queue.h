@@ -16,11 +16,14 @@
 // under the License.
 #pragma once
 
-#include <list>
+#include <unistd.h>
+
+#include <algorithm>
+#include <deque>
 #include <memory>
 #include <string>
 #include <type_traits>
-#include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/basictypes.h"
@@ -55,17 +58,17 @@ class BlockingQueue {
   typedef typename std::remove_pointer<T>::type T_VAL;
 
   explicit BlockingQueue(size_t max_size)
-    : shutdown_(false),
-      size_(0),
-      max_size_(max_size),
-      not_empty_(&lock_),
-      not_full_(&lock_) {
+      : max_size_(max_size),
+        size_(0),
+        shutdown_(false),
+        not_empty_(&lock_),
+        not_full_(&lock_) {
   }
 
   // If the queue holds a bare pointer, it must be empty on destruction, since
   // it may have ownership of the pointer.
   ~BlockingQueue() {
-    DCHECK(list_.empty() || !std::is_pointer<T>::value)
+    DCHECK(queue_.empty() || !std::is_pointer<T>::value)
         << "BlockingQueue holds bare pointers at destruction time";
   }
 
@@ -79,17 +82,18 @@ class BlockingQueue {
   // - OK if successful
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
-  Status BlockingGet(T* out, MonoTime deadline = MonoTime()) {
+  Status BlockingGet(T* out, MonoTime deadline = {}) {
     MutexLock l(lock_);
     while (true) {
-      if (!list_.empty()) {
-        *out = list_.front();
-        list_.pop_front();
+      if (!queue_.empty()) {
+        *out = std::move(queue_.front());
+        queue_.pop_front();
         decrement_size_unlocked(*out);
+        l.Unlock();
         not_full_.Signal();
         return Status::OK();
       }
-      if (shutdown_) {
+      if (PREDICT_FALSE(shutdown_)) {
         return Status::Aborted("");
       }
       if (!deadline.Initialized()) {
@@ -98,15 +102,6 @@ class BlockingQueue {
         return Status::TimedOut("");
       }
     }
-  }
-
-  // Get an element from the queue.  Returns false if the queue is empty and
-  // we were shut down prior to getting the element.
-  Status BlockingGet(std::unique_ptr<T_VAL>* out, MonoTime deadline = MonoTime()) {
-    T t = nullptr;
-    RETURN_NOT_OK(BlockingGet(&t, deadline));
-    out->reset(t);
-    return Status::OK();
   }
 
   // Get all elements from the queue and append them to a vector.
@@ -122,16 +117,17 @@ class BlockingQueue {
   // - OK if successful
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
-  Status BlockingDrainTo(std::vector<T>* out, MonoTime deadline = MonoTime()) {
+  Status BlockingDrainTo(std::vector<T>* out, MonoTime deadline = {}) {
     MutexLock l(lock_);
     while (true) {
-      if (!list_.empty()) {
-        out->reserve(list_.size());
-        for (const T& elt : list_) {
-          out->push_back(elt);
+      if (!queue_.empty()) {
+        out->reserve(queue_.size());
+        for (const T& elt : queue_) {
           decrement_size_unlocked(elt);
         }
-        list_.clear();
+        std::move(queue_.begin(), queue_.end(), std::back_inserter(*out));
+        queue_.clear();
+        l.Unlock();
         not_full_.Signal();
         return Status::OK();
       }
@@ -151,30 +147,24 @@ class BlockingQueue {
   //   QUEUE_SUCCESS: if successfully enqueued
   //   QUEUE_FULL: if the queue has reached max_size
   //   QUEUE_SHUTDOWN: if someone has already called Shutdown()
-  QueueStatus Put(const T& val) {
+  //
+  // The templatized approach is for perfect forwarding while providing both
+  // Put(const T&) and Put(T&&) signatures for the method. See
+  // https://en.cppreference.com/w/cpp/utility/forward for details.
+  template<typename U>
+  QueueStatus Put(U&& val) {
     MutexLock l(lock_);
+    if (PREDICT_FALSE(shutdown_)) {
+      return QUEUE_SHUTDOWN;
+    }
     if (size_ >= max_size_) {
       return QUEUE_FULL;
     }
-    if (shutdown_) {
-      return QUEUE_SHUTDOWN;
-    }
-    list_.push_back(val);
     increment_size_unlocked(val);
+    queue_.emplace_back(std::forward<U>(val));
     l.Unlock();
     not_empty_.Signal();
     return QUEUE_SUCCESS;
-  }
-
-  // Same as other Put() overload above.
-  //
-  // If the element was enqueued, the contents of 'val' are released.
-  QueueStatus Put(std::unique_ptr<T_VAL>* val) {
-    QueueStatus s = Put(val->get());
-    if (s == QUEUE_SUCCESS) {
-      ignore_result<>(val->release());
-    }
-    return s;
   }
 
   // Puts an element onto the queue; if the queue is full, blocks until space
@@ -188,18 +178,23 @@ class BlockingQueue {
   // - OK if successful
   // - TimedOut if the deadline passed
   // - Aborted if the queue shut down
-  Status BlockingPut(const T& val, MonoTime deadline = MonoTime()) {
-    if (deadline.Initialized() && MonoTime::Now() > deadline) {
+  //
+  // The templatized approach is for perfect forwarding while providing both
+  // BlockingPut(const T&) and BlockingPut(T&&) signatures for the method. See
+  // https://en.cppreference.com/w/cpp/utility/forward for details.
+  template<typename U>
+  Status BlockingPut(U&& val, MonoTime deadline = {}) {
+    if (PREDICT_FALSE(deadline.Initialized() && MonoTime::Now() > deadline)) {
       return Status::TimedOut("");
     }
     MutexLock l(lock_);
     while (true) {
-      if (shutdown_) {
+      if (PREDICT_FALSE(shutdown_)) {
         return Status::Aborted("");
       }
       if (size_ < max_size_) {
-        list_.push_back(val);
         increment_size_unlocked(val);
+        queue_.emplace_back(std::forward<U>(val));
         l.Unlock();
         not_empty_.Signal();
         return Status::OK();
@@ -210,15 +205,6 @@ class BlockingQueue {
         return Status::TimedOut("");
       }
     }
-  }
-
-  // Same as other BlockingPut() overload above.
-  //
-  // If the element was enqueued, the contents of 'val' are released.
-  Status BlockingPut(std::unique_ptr<T_VAL>* val, MonoTime deadline = MonoTime()) {
-    RETURN_NOT_OK(BlockingPut(val->get(), deadline));
-    ignore_result(val->release());
-    return Status::OK();
   }
 
   // Shuts down the queue.
@@ -237,7 +223,7 @@ class BlockingQueue {
 
   bool empty() const {
     MutexLock l(lock_);
-    return list_.empty();
+    return queue_.empty();
   }
 
   size_t max_size() const {
@@ -253,7 +239,7 @@ class BlockingQueue {
     std::string ret;
 
     MutexLock l(lock_);
-    for (const T& t : list_) {
+    for (const T& t : queue_) {
       ret.append(t->ToString());
       ret.append("\n");
     }
@@ -272,13 +258,13 @@ class BlockingQueue {
     size_ -= LOGICAL_SIZE::logical_size(t);
   }
 
-  bool shutdown_;
-  size_t size_;
   const size_t max_size_;
+  size_t size_;
+  bool shutdown_;
   mutable Mutex lock_;
   ConditionVariable not_empty_;
   ConditionVariable not_full_;
-  std::list<T> list_;
+  std::deque<T> queue_;
 };
 
 } // namespace kudu

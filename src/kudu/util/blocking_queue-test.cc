@@ -20,13 +20,14 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <list>
+#include <deque>
 #include <map>
 #include <memory>
-#include <ostream>
 #include <numeric>
+#include <ostream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -264,9 +265,9 @@ TEST(BlockingQueueTest, TestGetFromShutdownQueue) {
 }
 
 TEST(BlockingQueueTest, TestUniquePtrMethods) {
-  BlockingQueue<int*> test_queue(2);
+  BlockingQueue<unique_ptr<int>> test_queue(2);
   unique_ptr<int> input_int(new int(123));
-  ASSERT_EQ(test_queue.Put(&input_int), QUEUE_SUCCESS);
+  ASSERT_EQ(QUEUE_SUCCESS, test_queue.Put(std::move(input_int)));
   unique_ptr<int> output_int;
   ASSERT_OK(test_queue.BlockingGet(&output_int));
   ASSERT_EQ(123, *output_int.get());

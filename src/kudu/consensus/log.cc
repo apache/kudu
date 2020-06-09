@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <type_traits>
 #include <utility>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -245,9 +246,8 @@ class Log::AppendThread {
   // a new task was enqueued just as we were trying to go idle.
   bool GoIdle();
 
-  // Handle the actual appending of a group of entries. Responsible for deleting the
-  // LogEntryBatch* pointers.
-  void HandleBatches(vector<LogEntryBatch*> entry_batches);
+  // Handle the actual appending of a group of entries.
+  void HandleBatches(vector<unique_ptr<LogEntryBatch>> entry_batches);
 
   string LogPrefix() const;
 
@@ -348,7 +348,7 @@ void Log::AppendThread::ProcessQueue() {
   while (true) {
     MonoTime deadline = MonoTime::Now() +
         MonoDelta::FromMilliseconds(FLAGS_log_thread_idle_threshold_ms);
-    vector<LogEntryBatch*> entry_batches;
+    vector<unique_ptr<LogEntryBatch>> entry_batches;
     Status s = log_->entry_queue()->BlockingDrainTo(&entry_batches, deadline);
     if (PREDICT_FALSE(s.IsAborted())) {
       break;
@@ -362,7 +362,7 @@ void Log::AppendThread::ProcessQueue() {
   VLOG_WITH_PREFIX(2) << "WAL Appender going idle";
 }
 
-void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
+void Log::AppendThread::HandleBatches(vector<unique_ptr<LogEntryBatch>> entry_batches) {
   if (log_->ctx_.metrics) {
     log_->ctx_.metrics->entry_batches_per_group->Increment(entry_batches.size());
   }
@@ -371,9 +371,9 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   SCOPED_LATENCY_METRIC(log_->ctx_.metrics, group_commit_latency);
 
   bool is_all_commits = true;
-  for (auto* entry_batch : entry_batches) {
-    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
-    Status s = log_->WriteBatch(entry_batch);
+  for (auto& entry_batch : entry_batches) {
+    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
+    Status s = log_->WriteBatch(entry_batch.get());
     if (PREDICT_FALSE(!s.ok())) {
       LOG_WITH_PREFIX(ERROR) << "Error appending to the log: " << s.ToString();
       // TODO(af): If a single op fails to append, should we
@@ -393,7 +393,7 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   }
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(ERROR) << "Error syncing log: " << s.ToString();
-    for (auto* entry_batch : entry_batches) {
+    for (const auto& entry_batch : entry_batches) {
       entry_batch->SetAppendError(s);
     }
   } else {
@@ -401,13 +401,12 @@ void Log::AppendThread::HandleBatches(vector<LogEntryBatch*> entry_batches) {
   }
   TRACE_EVENT0("log", "Callbacks");
   SCOPED_WATCH_STACK(100);
-  for (auto* entry_batch : entry_batches) {
+  for (auto& entry_batch : entry_batches) {
     entry_batch->RunCallback();
-
     // It's important to delete each batch as we see it, because
     // deleting it may free up memory from memory trackers, and the
     // callback of a later batch may want to use that memory.
-    delete entry_batch;
+    entry_batch.reset();
   }
 }
 
@@ -840,13 +839,15 @@ unique_ptr<LogEntryBatch> Log::CreateBatchFromPB(
 
 Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch) {
   TRACE_EVENT0("log", "Log::AsyncAppend");
-  TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch.get());
-  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(entry_batch.get()).ok())) {
-    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
+  // entry_batch_trace_id is used the identifier for the trace, where only the
+  // address is stored, the pointer isn't de-referenced.
+  const LogEntryBatch* entry_batch_trace_id = entry_batch.get();
+  TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch_trace_id);
+  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(std::move(entry_batch)).ok())) {
+    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch_trace_id);
     return kLogShutdownStatus;
   }
   append_thread_->Wake();
-  entry_batch.release();
   return Status::OK();
 }
 

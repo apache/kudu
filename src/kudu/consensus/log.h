@@ -19,9 +19,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <limits>
-#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -79,7 +79,8 @@ struct LogContext {
   std::string LogPrefix() const;
 };
 
-typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQueue;
+typedef BlockingQueue<std::unique_ptr<LogEntryBatch>, LogEntryBatchLogicalSize>
+    LogEntryBatchQueue;
 
 // State of segment allocation.
 enum SegmentAllocationState {
@@ -641,7 +642,7 @@ class LogEntryBatch {
 
 // Used by 'Log::queue_' to determine logical size of a LogEntryBatch.
 struct LogEntryBatchLogicalSize {
-  static size_t logical_size(const LogEntryBatch* batch) {
+  static size_t logical_size(const std::unique_ptr<LogEntryBatch>& batch) {
     return batch->total_size_bytes();
   }
 };
