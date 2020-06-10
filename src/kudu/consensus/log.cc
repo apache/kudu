@@ -102,11 +102,6 @@ DEFINE_bool(log_inject_latency, false,
             "If true, injects artificial latency in log sync operations. "
             "Advanced option. Use at your own risk -- has a negative effect "
             "on performance for obvious reasons!");
-
-DEFINE_bool(skip_remove_old_recovery_dir, false,
-            "Skip removing WAL recovery dir after startup. (useful for debugging)");
-TAG_FLAG(skip_remove_old_recovery_dir, hidden);
-
 TAG_FLAG(log_inject_latency, unsafe);
 TAG_FLAG(log_inject_latency, runtime);
 
@@ -164,6 +159,10 @@ DEFINE_bool(fs_wal_use_file_cache, true,
 TAG_FLAG(fs_wal_use_file_cache, runtime);
 TAG_FLAG(fs_wal_use_file_cache, advanced);
 
+DEFINE_bool(skip_remove_old_recovery_dir, false,
+            "Skip removing WAL recovery dir after startup. (useful for debugging)");
+TAG_FLAG(skip_remove_old_recovery_dir, hidden);
+
 // Validate that log_min_segments_to_retain >= 1
 static bool ValidateLogsToRetain(const char* flagname, int value) {
   if (value >= 1) {
@@ -175,16 +174,15 @@ static bool ValidateLogsToRetain(const char* flagname, int value) {
 }
 DEFINE_validator(log_min_segments_to_retain, &ValidateLogsToRetain);
 
-namespace kudu {
-namespace log {
-
-using consensus::CommitMsg;
-using consensus::ReplicateRefPtr;
-using std::shared_ptr;
+using kudu::consensus::CommitMsg;
+using kudu::consensus::ReplicateRefPtr;
 using std::string;
 using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
+
+namespace kudu {
+namespace log {
 
 string LogContext::LogPrefix() const {
   return Substitute("T $0 P $1: ", tablet_id, fs_manager->uuid());
@@ -507,10 +505,9 @@ Status SegmentAllocator::Sync() {
     }
   }
 
-  if (opts_->force_fsync_all && !false) {
+  if (opts_->force_fsync_all) {
     LOG_SLOW_EXECUTION(WARNING, 50, Substitute("$0Fsync log took a long time", LogPrefix())) {
       RETURN_NOT_OK(active_segment_->Sync());
-
       if (hooks_) {
         RETURN_NOT_OK_PREPEND(hooks_->PostSyncIfFsyncEnabled(),
                               "PostSyncIfFsyncEnabled hook failed");
