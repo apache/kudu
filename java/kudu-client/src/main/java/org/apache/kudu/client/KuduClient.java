@@ -93,6 +93,14 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Returns the unique client id assigned to this client.
+   * @return the unique client id assigned to this client.
+   */
+  String getClientId() {
+    return asyncClient.getClientId();
+  }
+
+  /**
    * Returns the Hive Metastore configuration of the cluster.
    *
    * @return the Hive Metastore configuration of the cluster

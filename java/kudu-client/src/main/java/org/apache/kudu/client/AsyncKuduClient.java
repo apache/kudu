@@ -315,6 +315,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final HashedWheelTimer timer;
 
+  private final String clientId;
+
   /**
    * Timestamp required for HybridTime external consistency through timestamp
    * propagation.
@@ -378,7 +380,8 @@ public class AsyncKuduClient implements AutoCloseable {
     this.statisticsDisabled = b.statisticsDisabled;
     this.statistics = statisticsDisabled ? null : new Statistics();
     this.timer = b.timer;
-    this.requestTracker = new RequestTracker(UUID.randomUUID().toString().replace("-", ""));
+    this.clientId = UUID.randomUUID().toString().replace("-", "");
+    this.requestTracker = new RequestTracker(clientId);
 
     this.securityContext = new SecurityContext();
     this.connectionCache = new ConnectionCache(securityContext, bootstrap);
@@ -535,6 +538,14 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   Timer getTimer() {
     return timer;
+  }
+
+  /**
+   * Returns the unique client id assigned to this client.
+   * @return the unique client id assigned to this client.
+   */
+  String getClientId() {
+    return clientId;
   }
 
   /**

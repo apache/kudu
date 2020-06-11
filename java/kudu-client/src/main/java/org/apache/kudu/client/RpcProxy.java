@@ -26,6 +26,11 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.client.KuduMetrics.RPC_REQUESTS_METRIC;
+import static org.apache.kudu.client.KuduMetrics.RPC_RESPONSE_METRIC;
+import static org.apache.kudu.client.KuduMetrics.RPC_RETRIES_METRIC;
+import static org.apache.kudu.client.KuduMetrics.counter;
+
 import java.util.Set;
 import javax.annotation.Nonnull;
 
@@ -114,6 +119,10 @@ class RpcProxy {
   static <R> void sendRpc(final AsyncKuduClient client,
                           final Connection connection,
                           final KuduRpc<R> rpc) {
+    counter(RPC_REQUESTS_METRIC, rpcTags(client, connection, rpc)).increment();
+    if (rpc.attempt > 1) {
+      counter(RPC_RETRIES_METRIC, rpcTags(client, connection, rpc)).increment();
+    }
     try {
       // Throw an exception to enable testing failures. See `failNextRpcs`.
       if (staticNumFail > 0) {
@@ -224,7 +233,7 @@ class RpcProxy {
             response.getTotalResponseSize(), rpc);
       }
     }
-
+    counter(RPC_RESPONSE_METRIC, rpcTags(client, connection, rpc)).increment();
     RpcTraceFrame.RpcTraceFrameBuilder traceBuilder = new RpcTraceFrame.RpcTraceFrameBuilder(
         rpc.method(), RpcTraceFrame.Action.RECEIVE_FROM_SERVER).serverInfo(
             connection.getServerInfo());
@@ -440,5 +449,16 @@ class RpcProxy {
   @InterfaceAudience.LimitedPrivate("Test")
   Connection getConnection() {
     return connection;
+  }
+
+  private static String[] rpcTags(final AsyncKuduClient client,
+                                  final Connection connection,
+                                  final KuduRpc<?> rpc) {
+    return new String[] {
+        KuduMetrics.SERVICE_NAME_TAG, rpc.serviceName(),
+        KuduMetrics.METHOD_NAME_TAG, rpc.method(),
+        KuduMetrics.SERVER_ID_TAG, connection.getServerInfo().getUuid(),
+        KuduMetrics.CLIENT_ID_TAG, client.getClientId()
+    };
   }
 }

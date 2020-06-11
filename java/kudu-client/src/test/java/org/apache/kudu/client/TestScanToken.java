@@ -24,12 +24,15 @@ import static org.apache.kudu.test.ClientTestUtil.createDefaultTable;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
+import static org.apache.kudu.test.MetricTestUtils.totalRequestCount;
+import static org.apache.kudu.test.MetricTestUtils.validateRequestCount;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
@@ -477,10 +480,51 @@ public class TestScanToken {
 
     KuduScanner scanner = tokens.get(0).intoScanner(client);
 
-    // TODO(wdberkeley): Handle renaming a column between when the token is rehydrated as a scanner
+    // TODO(KUDU-3146): Handle renaming a column between when the token is rehydrated as a scanner
     //  and when the scanner first hits a replica. Note that this is almost certainly a very
     //  short period of vulnerability.
 
     checkDiffScanResults(scanner, 3 * numRows / 4, numRows / 4);
+  }
+
+  @Test
+  public void testScanTokenRequests() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(1);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    // Use a new client to simulate hydrating in a new process.
+    KuduClient newClient =
+        new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build();
+    newClient.getTablesList(); // List the tables to prevent counting initialization RPCs.
+
+    KuduMetrics.logMetrics(); // Log the metric values to help debug failures.
+    long beforeRequests = totalRequestCount();
+
+    // Validate that building a scan token results in a single GetTableLocations request.
+    KuduScanToken token = validateRequestCount(1, client.getClientId(),
+        "GetTableLocations", () -> {
+        KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+        List<KuduScanToken> tokens = tokenBuilder.build();
+        assertEquals(1, tokens.size());
+        return tokens.get(0);
+      });
+
+    // Validate that hydrating a token into a scanner results in a single GetTableSchema request.
+    KuduScanner scanner = validateRequestCount(1, newClient.getClientId(), "GetTableSchema",
+        () -> token.intoScanner(newClient));
+
+    // Validate that starting to scan results in a GetTableLocations request and a Scan request.
+    validateRequestCount(2, newClient.getClientId(), Arrays.asList("GetTableLocations", "Scan"),
+        scanner::nextRows);
+
+    long afterRequests = totalRequestCount();
+
+    // Validate no other unexpected requests were sent.
+    // GetTableLocations x 2, GetTableSchema, Scan.
+    KuduMetrics.logMetrics(); // Log the metric values to help debug failures.
+    assertEquals(4, afterRequests - beforeRequests);
   }
 }

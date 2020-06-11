@@ -40,6 +40,7 @@ import org.apache.kudu.client.AsyncKuduClient.AsyncKuduClientBuilder;
 import org.apache.kudu.client.HostAndPort;
 import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduException;
+import org.apache.kudu.client.KuduMetrics;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.LocatedTablet;
 import org.apache.kudu.client.RemoteTablet;
@@ -138,6 +139,8 @@ public class KuduTestHarness extends ExternalResource {
   @Override
   public void before() throws Exception {
     FakeDNS.getInstance().install();
+    // Enable the client metrics for tests.
+    KuduMetrics.setEnabled(true);
     LOG.info("Creating a new MiniKuduCluster...");
     miniCluster = clusterBuilder.build();
     LOG.info("Creating a new Kudu client...");

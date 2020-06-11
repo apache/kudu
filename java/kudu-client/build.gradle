@@ -29,6 +29,7 @@ dependencies {
   compileUnshaded libs.slf4jApi
 
   compile libs.guava
+  compile libs.micrometerCore
   compile libs.murmur
   compile libs.netty
   compile libs.protobufJava
