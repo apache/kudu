@@ -265,6 +265,7 @@ RaftConsensus::RaftConsensus(
       rng_(GetRandomSeed32()),
       leader_transfer_in_progress_(false),
       withhold_votes_until_(MonoTime::Min()),
+      reject_append_entries_(false),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
       disable_noop_(false),
@@ -1124,7 +1125,9 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
   update_calls_for_tests_.Increment();
 
-  if (PREDICT_FALSE(FLAGS_follower_reject_update_consensus_requests)) {
+  if (PREDICT_FALSE(
+      FLAGS_follower_reject_update_consensus_requests ||
+      reject_append_entries_)) {
     return Status::IllegalState("Rejected: --follower_reject_update_consensus_requests "
                                 "is set to true.");
   }
@@ -3095,6 +3098,18 @@ void RaftConsensus::DisableFailureDetector() {
   if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
     failure_detector_->Stop();
   }
+}
+
+void RaftConsensus::SetWitholdVotesForTests(bool withold_votes) {
+  if (withold_votes) {
+    withhold_votes_until_ = MonoTime::Max();
+  } else {
+    withhold_votes_until_ = MonoTime::Min();
+  }
+}
+
+void RaftConsensus::SetRejectAppendEntriesForTests(bool reject_append_entries) {
+  reject_append_entries_ = reject_append_entries;
 }
 
 void RaftConsensus::UpdateFailureDetectorState(boost::optional<MonoDelta> delta) {

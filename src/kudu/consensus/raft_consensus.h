@@ -200,6 +200,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the failure detector is already disabled, has no effect.
   void DisableFailureDetector();
 
+  // Pauses outgoing votes from this server during elections, if set to true.
+  void SetWitholdVotesForTests(bool withold_votes);
+
+  // Rejects AppendEntries RPCs, if set to true.
+  void SetRejectAppendEntriesForTests(bool reject_append_entries);
+
   // Emulates an election by increasing the term number and asserting leadership
   // in the configuration by sending a NO_OP to other peers.
   // This is NOT safe to use in a distributed configuration with failure detection
@@ -993,6 +999,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // the request will be ignored. This prevents abandoned or partitioned
   // nodes from disturbing the healthy leader.
   MonoTime withhold_votes_until_;
+
+  // This is used in tests to reject AppendEntries RPC requests.
+  bool reject_append_entries_;
 
   // The last OpId received from the current leader. This is updated whenever the follower
   // accepts operations from a leader, and passed back so that the leader knows from what
