@@ -399,3 +399,10 @@ Note: You can upload to the test PyPi by adding
   `1.7.1`). If releasing a maintenance version, delete the previous maintenance
   branch (e.g. if you released `1.2.1`, delete `1.2.0`). Also delete any
   release candidates from the dev SVN.
+
+. Set the release date for the just released version in
+  link:https://issues.apache.org[Apache JIRA] or ask someone with permission
+  to do so. After logging in, in the left sidebar switch to the `Releases` item.
+  Once at the `Releases` page, apply the `Unreleased` filter. In the row
+  corresponding to the new release, click at the ellipsis in the `Action`
+  column and select the `Release` item, setting the appropriate release date.
