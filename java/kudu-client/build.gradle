@@ -15,12 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-plugins {
-  id "me.champeau.gradle.jmh" version "0.5.0"
-}
-
 apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
+apply from: "$rootDir/gradle/benchmarks.gradle"
 
 dependencies {
   // Not shaded in the client JAR because it's part of the public API.
@@ -49,9 +46,6 @@ dependencies {
   testCompile libs.log4j
   testCompile libs.log4jSlf4jImpl
   testCompile libs.mockitoCore
-
-  jmh 'org.openjdk.jmh:jmh-core:1.23'
-  jmh 'org.openjdk.jmh:jmh-generator-annprocess:1.23'
 }
 
 // Add protobuf files to the proto source set.
@@ -63,9 +57,4 @@ sourceSets {
       exclude "**/*test*.proto"
     }
   }
-}
-
-jmh {
-  duplicateClassesStrategy = 'exclude'
-  zip64 = true
 }

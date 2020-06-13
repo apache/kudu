@@ -40,6 +40,7 @@ dependencies {
   compile "com.google.code.gson:gson:2.8.6"
   compile "cz.alenkacz:gradle-scalafmt:1.7.2"
   compile "com.google.guava:guava:29.0-jre"
+  compile "me.champeau.gradle:jmh-gradle-plugin:0.5.0"
 }
 
 // Compiler configuration
