@@ -148,7 +148,7 @@ void LogCache::TruncateOpsAfterUnlocked(int64_t index) {
   next_sequential_op_index_ = index + 1;
 }
 
-Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
+Status LogCache::AppendOperations(vector<ReplicateRefPtr> msgs,
                                   const StatusCallback& callback) {
   CHECK_GT(msgs.size(), 0);
 
@@ -212,7 +212,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   metrics_.log_cache_num_ops->IncrementBy(msgs.size());
 
   Status log_status = log_->AsyncAppendReplicates(
-      msgs, [this, last_idx_in_batch, borrowed_memory, callback](const Status& s) {
+      std::move(msgs), [this, last_idx_in_batch, borrowed_memory, callback](const Status& s) {
         this->LogCallback(last_idx_in_batch, borrowed_memory, callback, s);
       });
 
@@ -221,7 +221,6 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     tracker_->Release(mem_required);
     return log_status;
   }
-
 
   return Status::OK();
 }

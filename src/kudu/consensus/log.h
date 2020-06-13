@@ -25,6 +25,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -296,7 +297,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Append the given set of replicate messages, asynchronously.
   // This requires that the replicates have already been assigned OpIds.
-  Status AsyncAppendReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates,
+  Status AsyncAppendReplicates(std::vector<consensus::ReplicateRefPtr> replicates,
                                StatusCallback callback);
 
   // Append the given commit message, asynchronously.
@@ -448,8 +449,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // After the batch is appended to the log, 'cb' will be invoked with the
   // result status of the append.
   static std::unique_ptr<LogEntryBatch> CreateBatchFromPB(
-      LogEntryTypePB type, std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
-      StatusCallback cb);
+      LogEntryTypePB type, LogEntryBatchPB entry_batch_pb, StatusCallback cb);
 
   // Asynchronously appends 'entry_batch' to the log.
   Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch);
@@ -564,7 +564,7 @@ class LogEntryBatch {
   friend class SegmentAllocator;
 
   LogEntryBatch(LogEntryTypePB type,
-                std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                LogEntryBatchPB entry_batch_pb,
                 size_t count,
                 StatusCallback cb);
 
@@ -588,13 +588,13 @@ class LogEntryBatch {
   // Requires that this be a REPLICATE batch.
   consensus::OpId MaxReplicateOpId() const {
     DCHECK_EQ(REPLICATE, type_);
-    int idx = entry_batch_pb_->entry_size() - 1;
-    DCHECK(entry_batch_pb_->entry(idx).replicate().IsInitialized());
-    return entry_batch_pb_->entry(idx).replicate().id();
+    int idx = entry_batch_pb_.entry_size() - 1;
+    DCHECK(entry_batch_pb_.entry(idx).replicate().IsInitialized());
+    return entry_batch_pb_.entry(idx).replicate().id();
   }
 
-  void SetReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates) {
-    replicates_ = replicates;
+  void SetReplicates(std::vector<consensus::ReplicateRefPtr> replicates) {
+    replicates_ = std::move(replicates);
   }
 
   void SetAppendError(const Status& s) {
@@ -612,7 +612,7 @@ class LogEntryBatch {
   const LogEntryTypePB type_;
 
   // Contents of the log entries that will be written to disk.
-  std::unique_ptr<LogEntryBatchPB> entry_batch_pb_;
+  LogEntryBatchPB entry_batch_pb_;
 
    // Total size in bytes of all entries
   const uint32_t total_size_bytes_;

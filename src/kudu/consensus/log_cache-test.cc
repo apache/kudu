@@ -26,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -128,8 +129,9 @@ class LogCacheTest : public KuduTest {
       int64_t index = cur_index;
       vector<ReplicateRefPtr> msgs;
       msgs.push_back(make_scoped_refptr_replicate(
-                       CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
-      RETURN_NOT_OK(cache_->AppendOperations(msgs, [](const Status& s) { FatalOnError(s); }));
+          CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));
+      RETURN_NOT_OK(cache_->AppendOperations(std::move(msgs),
+                                             [](const Status& s) { FatalOnError(s); }));
     }
     return Status::OK();
   }

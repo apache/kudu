@@ -384,7 +384,7 @@ Status PeerMessageQueue::AppendOperation(const ReplicateRefPtr& msg) {
   });
 }
 
-Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
+Status PeerMessageQueue::AppendOperations(vector<ReplicateRefPtr> msgs,
                                           const StatusCallback& log_append_callback) {
 
   DFAKE_SCOPED_LOCK(append_fake_lock_);
@@ -424,7 +424,7 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   // which also needs queue_lock_.
   lock.unlock();
   RETURN_NOT_OK(log_cache_.AppendOperations(
-      msgs, [this, last_id, log_append_callback](const Status& s) {
+      std::move(msgs), [this, last_id, log_append_callback](const Status& s) {
         this->LocalPeerAppendFinished(last_id, log_append_callback, s);
       }));
   lock.lock();

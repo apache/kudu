@@ -181,7 +181,7 @@ class LogReader : public enable_make_shared<LogReader> {
   // 'tmp_buf' is used as scratch space to avoid extra allocation.
   Status ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                   faststring* tmp_buf,
-                                  std::unique_ptr<LogEntryBatchPB>* batch) const;
+                                  LogEntryBatchPB* batch) const;
 
   // Reads the headers of all segments in 'tablet_wal_path'.
   Status Init(const std::string& tablet_wal_path);

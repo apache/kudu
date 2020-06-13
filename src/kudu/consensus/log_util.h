@@ -343,7 +343,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // If unsuccessful, '*offset' is not updated, and *status_detail will be updated
   // to indicate the cause of the error.
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                 std::unique_ptr<LogEntryBatchPB>* batch,
+                                 LogEntryBatchPB* batch,
                                  EntryHeaderStatus* status_detail) const;
 
   // Reads a log entry header from the segment.
@@ -366,7 +366,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   Status ReadEntryBatch(int64_t* offset,
                         const EntryHeader& header,
                         faststring* tmp_buf,
-                        std::unique_ptr<LogEntryBatchPB>* entry_batch) const;
+                        LogEntryBatchPB* entry_batch) const;
 
   void UpdateReadableToOffset(int64_t readable_to_offset);
 

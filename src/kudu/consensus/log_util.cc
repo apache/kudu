@@ -147,7 +147,7 @@ Status LogEntryReader::ReadNextEntry(unique_ptr<LogEntryPB>* entry) {
     }
 
     // We still expect to have more entries in the log.
-    unique_ptr<LogEntryBatchPB> current_batch;
+    LogEntryBatchPB current_batch;
 
     // Read and validate the entry header first.
     Status s;
@@ -163,8 +163,8 @@ Status LogEntryReader::ReadNextEntry(unique_ptr<LogEntryPB>* entry) {
     }
 
     // Add the entries from this batch to our pending queue.
-    for (int i = 0; i < current_batch->entry_size(); i++) {
-      auto entry = current_batch->mutable_entry(i);
+    for (int i = 0; i < current_batch.entry_size(); i++) {
+      auto entry = current_batch.mutable_entry(i);
       pending_entries_.emplace_back(entry);
       num_entries_read_++;
 
@@ -180,8 +180,8 @@ Status LogEntryReader::ReadNextEntry(unique_ptr<LogEntryPB>* entry) {
       }
       recent_entries_.push_back({ offset_, entry->type(), op_id });
     }
-    current_batch->mutable_entry()->ExtractSubrange(
-        0, current_batch->entry_size(), nullptr);
+    current_batch.mutable_entry()->ExtractSubrange(
+        0, current_batch.entry_size(), nullptr);
   }
 
   *entry = std::move(pending_entries_.front());
@@ -628,7 +628,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(
 }
 
 Status ReadableLogSegment::ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                                   unique_ptr<LogEntryBatchPB>* batch,
+                                                   LogEntryBatchPB* batch,
                                                    EntryHeaderStatus* status_detail) const {
   int64_t cur_offset = *offset;
   EntryHeader header;
@@ -701,12 +701,11 @@ EntryHeaderStatus ReadableLogSegment::DecodeEntryHeader(
 Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
                                           const EntryHeader& header,
                                           faststring* tmp_buf,
-                                          unique_ptr<LogEntryBatchPB>* entry_batch) const {
+                                          LogEntryBatchPB* entry_batch) const {
   TRACE_EVENT2("log", "ReadableLogSegment::ReadEntryBatch",
                "path", path_,
                "range", Substitute("offset=$0 entry_len=$1",
                                    *offset, header.msg_length));
-
   if (header.msg_length == 0) {
     return Status::Corruption("Invalid 0 entry length");
   }
@@ -728,9 +727,10 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
   tmp_buf->resize(buf_len);
   Slice entry_batch_slice(tmp_buf->data(), header.msg_length_compressed);
   Status s =  file_->Read(*offset, entry_batch_slice);
-
-  if (!s.ok()) return Status::IOError(Substitute("Could not read entry. Cause: $0",
-                                                 s.ToString()));
+  if (PREDICT_FALSE(!s.ok())) {
+    return Status::IOError(Substitute("Could not read entry. Cause: $0",
+                                      s.ToString()));
+  }
 
   // Verify the CRC.
   uint32_t read_crc = crc::Crc32c(entry_batch_slice.data(), entry_batch_slice.size());
@@ -750,17 +750,16 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t* offset,
     entry_batch_slice = Slice(uncompress_buf, header.msg_length);
   }
 
-  unique_ptr<LogEntryBatchPB> read_entry_batch(new LogEntryBatchPB);
-  s = pb_util::ParseFromArray(read_entry_batch.get(),
+  LogEntryBatchPB read_entry_batch;
+  s = pb_util::ParseFromArray(&read_entry_batch,
                               entry_batch_slice.data(),
                               header.msg_length);
-
   if (!s.ok()) {
     return Status::Corruption(Substitute("Could not parse PB. Cause: $0", s.ToString()));
   }
 
   *offset += header.msg_length_compressed;
-  entry_batch->reset(read_entry_batch.release());
+  *entry_batch = std::move(read_entry_batch);
   return Status::OK();
 }
 

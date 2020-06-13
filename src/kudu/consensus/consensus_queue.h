@@ -241,7 +241,7 @@ class PeerMessageQueue {
   //
   // This is thread-safe against all of the read methods, but not thread-safe
   // with concurrent Append calls.
-  Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
+  Status AppendOperations(std::vector<ReplicateRefPtr> msgs,
                           const StatusCallback& log_append_callback);
 
   // Truncate all operations coming after 'index'. Following this, the 'last_appended'

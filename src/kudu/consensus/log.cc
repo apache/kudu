@@ -577,7 +577,7 @@ void SegmentAllocator::UpdateFooterForBatch(const LogEntryBatch& batch) {
   // immediately.
   if (batch.type_ == REPLICATE) {
     // Update the index bounds for the current segment.
-    for (const LogEntryPB& entry_pb : batch.entry_batch_pb_->entry()) {
+    for (const LogEntryPB& entry_pb : batch.entry_batch_pb_.entry()) {
       UpdateFooterForReplicateEntry(entry_pb, &footer_);
     }
   }
@@ -827,9 +827,9 @@ Status Log::Init() {
 
 unique_ptr<LogEntryBatch> Log::CreateBatchFromPB(
     LogEntryTypePB type,
-    unique_ptr<LogEntryBatchPB> entry_batch_pb,
+    LogEntryBatchPB entry_batch_pb,
     StatusCallback cb) {
-  int num_ops = entry_batch_pb->entry_size();
+  size_t num_ops = entry_batch_pb.entry_size();
   unique_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(
       type, std::move(entry_batch_pb), num_ops, std::move(cb)));
   new_entry_batch->Serialize();
@@ -851,18 +851,18 @@ Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch) {
   return Status::OK();
 }
 
-Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
+Status Log::AsyncAppendReplicates(vector<ReplicateRefPtr> replicates,
                                   StatusCallback callback) {
-  unique_ptr<LogEntryBatchPB> batch_pb(new LogEntryBatchPB);
-  batch_pb->mutable_entry()->Reserve(replicates.size());
+  LogEntryBatchPB batch_pb;
+  batch_pb.mutable_entry()->Reserve(replicates.size());
   for (const auto& r : replicates) {
-    LogEntryPB* entry_pb = batch_pb->add_entry();
+    LogEntryPB* entry_pb = batch_pb.add_entry();
     entry_pb->set_type(REPLICATE);
     entry_pb->set_allocated_replicate(r->get());
   }
   unique_ptr<LogEntryBatch> batch = CreateBatchFromPB(
       REPLICATE, std::move(batch_pb), std::move(callback));
-  batch->SetReplicates(replicates);
+  batch->SetReplicates(std::move(replicates));
   return AsyncAppend(std::move(batch));
 }
 
@@ -870,8 +870,8 @@ Status Log::AsyncAppendCommit(unique_ptr<consensus::CommitMsg> commit_msg,
                               StatusCallback callback) {
   MAYBE_FAULT(FLAGS_fault_crash_before_append_commit);
 
-  unique_ptr<LogEntryBatchPB> batch_pb(new LogEntryBatchPB);
-  LogEntryPB* entry = batch_pb->add_entry();
+  LogEntryBatchPB batch_pb;
+  LogEntryPB* entry = batch_pb.add_entry();
   entry->set_type(COMMIT);
   entry->set_allocated_commit(commit_msg.release());
 
@@ -939,9 +939,8 @@ Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
     return Status::OK();
   }
 
-  for (const LogEntryPB& entry_pb : batch.entry_batch_pb_->entry()) {
+  for (const LogEntryPB& entry_pb : batch.entry_batch_pb_.entry()) {
     LogIndexEntry index_entry;
-
     index_entry.op_id = entry_pb.replicate().id();
     index_entry.segment_sequence_number = segment_allocator_.active_segment_sequence_number();
     index_entry.offset_in_segment = start_offset;
@@ -1003,24 +1002,24 @@ void Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
 }
 
 Status Log::Append(LogEntryPB* entry) {
-  unique_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
-  entry_batch_pb->mutable_entry()->AddAllocated(entry);
-  LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1,
-                            &DoNothingStatusCB);
+  LogEntryBatchPB entry_batch_pb;
+  entry_batch_pb.mutable_entry()->AddAllocated(entry);
+  LogEntryBatch entry_batch(
+      entry->type(), std::move(entry_batch_pb), 1, &DoNothingStatusCB);
   entry_batch.Serialize();
   Status s = WriteBatch(&entry_batch);
   if (s.ok()) {
     s = Sync();
   }
-  entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, nullptr);
+  entry_batch.entry_batch_pb_.mutable_entry()->ExtractSubrange(0, 1, nullptr);
   return s;
 }
 
 Status Log::WaitUntilAllFlushed() {
   // In order to make sure we empty the queue we need to use
   // the async api.
-  unique_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
-  entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
+  LogEntryBatchPB entry_batch;
+  entry_batch.add_entry()->set_type(log::FLUSH_MARKER);
   Synchronizer s;
   unique_ptr<LogEntryBatch> reserved_entry_batch = CreateBatchFromPB(
       FLUSH_MARKER, std::move(entry_batch), s.AsStatusCallback());
@@ -1234,21 +1233,21 @@ Log::~Log() {
 }
 
 LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
-                             unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                             LogEntryBatchPB entry_batch_pb,
                              size_t count,
                              StatusCallback cb)
     : type_(type),
       entry_batch_pb_(std::move(entry_batch_pb)),
       total_size_bytes_(
-          PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
-          0 : entry_batch_pb_->ByteSize()),
+          PREDICT_FALSE(count == 1 && entry_batch_pb_.entry(0).type() == FLUSH_MARKER)
+              ? 0 : entry_batch_pb_.ByteSize()),
       count_(count),
       callback_(std::move(cb)) {
 }
 
 LogEntryBatch::~LogEntryBatch() {
-  if (type_ == REPLICATE && entry_batch_pb_) {
-    for (LogEntryPB& entry : *entry_batch_pb_->mutable_entry()) {
+  if (type_ == REPLICATE) {
+    for (LogEntryPB& entry : *entry_batch_pb_.mutable_entry()) {
       // ReplicateMsg elements are owned by and must be freed by the caller
       // (e.g. the LogCache).
       entry.release_replicate();
@@ -1259,11 +1258,11 @@ LogEntryBatch::~LogEntryBatch() {
 void LogEntryBatch::Serialize() {
   DCHECK_EQ(buffer_.size(), 0);
   // FLUSH_MARKER LogEntries are markers and are not serialized.
-  if (PREDICT_FALSE(count() == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER)) {
+  if (PREDICT_FALSE(count() == 1 && entry_batch_pb_.entry(0).type() == FLUSH_MARKER)) {
     return;
   }
   buffer_.reserve(total_size_bytes_);
-  pb_util::AppendToString(*entry_batch_pb_, &buffer_);
+  pb_util::AppendToString(entry_batch_pb_, &buffer_);
 }
 
 

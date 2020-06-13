@@ -94,7 +94,7 @@ class LogCache {
   // when the callback fires.
   //
   // Returns non-OK if the Log append itself fails.
-  Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
+  Status AppendOperations(std::vector<ReplicateRefPtr> msgs,
                           const StatusCallback& callback);
 
   // Truncate any operations with index > 'index'.

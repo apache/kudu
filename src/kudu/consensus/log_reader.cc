@@ -245,7 +245,7 @@ scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t 
 
 Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                            faststring* tmp_buf,
-                                           unique_ptr<LogEntryBatchPB>* batch) const {
+                                           LogEntryBatchPB* batch) const {
   const int64_t index = index_entry.op_id.index();
 
   scoped_refptr<ReadableLogSegment> segment = GetSegmentBySequenceNumber(
@@ -270,7 +270,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
 
   if (bytes_read_) {
     bytes_read_->IncrementBy(segment->entry_header_size() + tmp_buf->length());
-    entries_read_->IncrementBy((**batch).entry_size());
+    entries_read_->IncrementBy(batch->entry_size());
   }
 
   return Status::OK();
@@ -291,7 +291,7 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
   int64_t total_size = 0;
   bool limit_exceeded = false;
   faststring tmp_buf;
-  unique_ptr<LogEntryBatchPB> batch;
+  LogEntryBatchPB batch;
   for (int64_t index = starting_at; index <= up_to && !limit_exceeded; index++) {
     LogIndexEntry index_entry;
     RETURN_NOT_OK_PREPEND(log_index_->GetEntry(index, &index_entry),
@@ -308,21 +308,21 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
 
       // Sanity-check the property that a batch should only have increasing indexes.
       int64_t prev_index = 0;
-      for (int i = 0; i < batch->entry_size(); ++i) {
-        LogEntryPB* entry = batch->mutable_entry(i);
+      for (int i = 0; i < batch.entry_size(); ++i) {
+        LogEntryPB* entry = batch.mutable_entry(i);
         if (!entry->has_replicate()) continue;
         int64_t this_index = entry->replicate().id().index();
         CHECK_GT(this_index, prev_index)
           << "Expected that an entry batch should only include increasing log indexes: "
           << index_entry.ToString()
-          << "\nBatch: " << SecureDebugString(*batch);
+          << "\nBatch: " << SecureDebugString(batch);
         prev_index = this_index;
       }
     }
 
     bool found = false;
-    for (int i = 0; i < batch->entry_size(); ++i) {
-      LogEntryPB* entry = batch->mutable_entry(i);
+    for (int i = 0; i < batch.entry_size(); ++i) {
+      LogEntryPB* entry = batch.mutable_entry(i);
       if (!entry->has_replicate()) {
         continue;
       }
