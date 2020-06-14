@@ -434,4 +434,51 @@ class CowGroupLock {
   DISALLOW_COPY_AND_ASSIGN(CowGroupLock);
 };
 
+// Helper to manage locking on the metadata protected by a CowLock.
+//
+// Example:
+//
+// struct MetadataState {
+//   MessagePB pb;
+// };
+//
+// class Metadata {
+//  public:
+//   typedef MetadataState cow_state;
+//
+//   const CowObject<MetadataState>& metadata() const { return metadata_; }
+//   CowObject<MetadataState>* mutable_metadata() { return &metadata_; }
+//
+//  private:
+//   CowObject<MetadataState> metadata_;
+// };
+//
+// Sample usage:
+//
+// Metadata m;
+// MessagePB pb_copy;
+// {
+//   MetadataLock l(&m, LockMode::READ);
+//   pb_copy = l.data().pb;
+// }
+// {
+//   MetadataLock l(&m, LockMode::WRITE);
+//   l.mutable_data().pb = new_pb;
+//   l.Commit();
+// }
+template<class MetadataClass>
+class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
+ public:
+  typedef CowLock<typename MetadataClass::cow_state> super;
+  MetadataLock()
+      : super() {
+  }
+  MetadataLock(MetadataClass* info, LockMode mode)
+      : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
+  }
+  MetadataLock(const MetadataClass* info, LockMode mode)
+      : super(&(DCHECK_NOTNULL(info))->metadata(), mode) {
+  }
+};
+
 } // namespace kudu

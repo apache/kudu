@@ -30,6 +30,8 @@ target_link_libraries(transactions_proto
 )
 
 set(TRANSACTIONS_SRCS
+  txn_status_entry.cc
+  txn_status_manager.cc
   txn_status_tablet.cc)
 
 add_library(transactions ${TRANSACTIONS_SRCS})
@@ -42,4 +44,5 @@ target_link_libraries(transactions
 )
 
 SET_KUDU_TEST_LINK_LIBS(transactions tablet_test_util)
+ADD_KUDU_TEST(txn_status_manager-test)
 ADD_KUDU_TEST(txn_status_tablet-test)

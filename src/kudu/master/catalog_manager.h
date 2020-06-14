@@ -398,22 +398,6 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
 
-// Helper to manage locking on the persistent metadata of TabletInfo or TableInfo.
-template<class MetadataClass>
-class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
- public:
-  typedef CowLock<typename MetadataClass::cow_state> super;
-  MetadataLock()
-      : super() {
-  }
-  MetadataLock(MetadataClass* info, LockMode mode)
-      : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
-  }
-  MetadataLock(const MetadataClass* info, LockMode mode)
-      : super(&(DCHECK_NOTNULL(info))->metadata(), mode) {
-  }
-};
-
 // Helper to manage locking on the persistent metadata of multiple TabletInfo
 // or TableInfo objects.
 template<class MetadataClass>
