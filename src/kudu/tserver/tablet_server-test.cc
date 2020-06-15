@@ -84,6 +84,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -166,16 +167,19 @@ DECLARE_bool(enable_flush_deltamemstores);
 DECLARE_bool(enable_flush_memrowset);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_rowset_compaction);
+DECLARE_bool(enable_workload_score_for_perf_improvement_ops);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_bool(scanner_unregister_on_invalid_seq_id);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_double(env_inject_full);
+DECLARE_double(workload_score_upper_bound);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(fs_data_dirs_available_space_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
+DECLARE_int32(maintenance_manager_inject_latency_ms);
 DECLARE_int32(maintenance_manager_num_threads);
 DECLARE_int32(maintenance_manager_polling_interval_ms);
 DECLARE_int32(memory_pressure_percentage);
@@ -183,6 +187,8 @@ DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(workload_stats_rate_collection_min_interval_ms);
+DECLARE_int32(workload_stats_metric_collection_interval_ms);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_full_globs);
@@ -4278,6 +4284,71 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
       NO_FATALS(verify_authz_error(s));
     }
   }
+}
+
+TEST_F(TabletServerTest, TestStarvePerfImprovementOpsInColdTablet) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  FLAGS_enable_maintenance_manager = true;
+  NO_FATALS(ShutdownAndRebuildTablet());
+
+  // Disable flushing and compactions to create overlapping rowsets.
+  FLAGS_enable_flush_memrowset = false;
+  FLAGS_enable_rowset_compaction = false;
+
+  // Create a cold tablet and insert sets of overlapping rows to it.
+  const char* kColdTablet = "cold_tablet";
+  ASSERT_OK(mini_server_->AddTestTablet(kTableId, kColdTablet, schema_));
+  ASSERT_OK(WaitForTabletRunning(kColdTablet));
+  scoped_refptr<TabletReplica> cold_replica;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kColdTablet, &cold_replica));
+  NO_FATALS(InsertTestRowsDirect(0, 1, kColdTablet));
+  NO_FATALS(InsertTestRowsDirect(2, 1, kColdTablet));
+  ASSERT_OK(cold_replica->tablet()->Flush());
+  NO_FATALS(InsertTestRowsDirect(1, 1, kColdTablet));
+  ASSERT_OK(cold_replica->tablet()->Flush());
+
+  // Make MRS flush op starts out with the highest adjusted perf score.
+  FLAGS_enable_flush_memrowset = true;
+  FLAGS_enable_workload_score_for_perf_improvement_ops = true;
+  FLAGS_workload_stats_rate_collection_min_interval_ms = 10;
+  FLAGS_workload_score_upper_bound = 10;
+  // Make maintenance manager find best op more slowly than a new MRS could flush,
+  // so there are always something to do in the hot tablet.
+  FLAGS_flush_threshold_secs = 1;
+  FLAGS_maintenance_manager_inject_latency_ms = 1000;
+
+  // Make the default tablet 'hot'.
+  std::atomic<bool> keep_inserting_and_scanning(true);
+  thread insert_thread([&] {
+    int cur_row = 0;
+    while (keep_inserting_and_scanning) {
+      NO_FATALS(InsertTestRowsDirect(cur_row, 1000));
+      cur_row += 1000;
+      ScanResponsePB resp;
+      NO_FATALS(OpenScannerWithAllColumns(&resp));
+      ASSERT_TRUE(!resp.scanner_id().empty());
+    }
+  });
+  SCOPED_CLEANUP({
+    keep_inserting_and_scanning = false;
+    insert_thread.join();
+  });
+
+  // Wait a bit to allow workload stats collection to begin.
+  SleepFor(MonoDelta::FromSeconds(1));
+  FLAGS_enable_rowset_compaction = true;
+  // Wait a couple seconds to test if we can starve compaction in the cold tablet even
+  // if the compaction op has a higher raw perf improvement score than that of time-based
+  // flushes in the hot tablet.
+  SleepFor(MonoDelta::FromSeconds(5));
+  ASSERT_EQ(0, cold_replica->tablet()->metrics()->compact_rs_duration->TotalCount());
+
+  // Disable workload score, now we can launch compaction in the cold tablet.
+  FLAGS_enable_workload_score_for_perf_improvement_ops = false;
+  // Compaction in the cold tablet will eventually complete.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, cold_replica->tablet()->metrics()->compact_rs_duration->TotalCount());
+  });
 }
 
 } // namespace tserver

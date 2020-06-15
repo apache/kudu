@@ -81,7 +81,6 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -150,6 +149,34 @@ DEFINE_int32(max_encoded_key_size_bytes, 16 * 1024,
              "Attempting to insert a row with a larger encoded composite key will "
              "result in an error.");
 TAG_FLAG(max_encoded_key_size_bytes, unsafe);
+
+DEFINE_int32(workload_stats_rate_collection_min_interval_ms, 60 * 1000,
+             "The minimal interval in milliseconds at which we collect read/write rates.");
+TAG_FLAG(workload_stats_rate_collection_min_interval_ms, experimental);
+TAG_FLAG(workload_stats_rate_collection_min_interval_ms, runtime);
+
+DEFINE_int32(workload_stats_metric_collection_interval_ms, 5 * 60 * 1000,
+             "The interval in milliseconds at which we collect workload metrics.");
+TAG_FLAG(workload_stats_metric_collection_interval_ms, experimental);
+TAG_FLAG(workload_stats_metric_collection_interval_ms, runtime);
+
+DEFINE_double(workload_score_upper_bound, 1.0, "Upper bound for workload score.");
+TAG_FLAG(workload_score_upper_bound, experimental);
+TAG_FLAG(workload_score_upper_bound, runtime);
+
+DEFINE_int32(scans_started_per_sec_for_hot_tablets, 1,
+    "Minimum read rate for tablets to be considered 'hot' (scans/sec). If a tablet's "
+    "read rate exceeds this value, flush/compaction ops for it will be assigned the highest "
+    "possible workload score, which is defined by --workload_score_upper_bound.");
+TAG_FLAG(scans_started_per_sec_for_hot_tablets, experimental);
+TAG_FLAG(scans_started_per_sec_for_hot_tablets, runtime);
+
+DEFINE_int32(rows_writed_per_sec_for_hot_tablets, 1000,
+    "Minimum write rate for tablets to be considered 'hot' (rows/sec). If a tablet's "
+    "write rate exceeds this value, compaction ops for it will be assigned the highest "
+    "possible workload score, which is defined by --workload_score_upper_bound.");
+TAG_FLAG(rows_writed_per_sec_for_hot_tablets, experimental);
+TAG_FLAG(rows_writed_per_sec_for_hot_tablets, runtime);
 
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
@@ -229,7 +256,12 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     rowsets_flush_sem_(1),
     state_(kInitialized),
     last_write_time_(MonoTime::Now()),
-    last_read_time_(MonoTime::Now()) {
+    last_read_time_(MonoTime::Now()),
+    last_update_workload_stats_time_(MonoTime::Now()),
+    last_scans_started_(0),
+    last_rows_mutated_(0),
+    last_read_score_(0.0),
+    last_write_score_(0.0) {
       CHECK(schema()->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
@@ -1835,9 +1867,6 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  // TODO: use workload statistics here to find out how "hot" the tablet has
-  // been in the last 5 minutes, and somehow scale the compaction quality
-  // based on that, so we favor hot tablets.
   double quality = 0;
   unordered_set<const RowSet*> picked_set_ignored;
 
@@ -2037,6 +2066,48 @@ uint64_t Tablet::LastWriteElapsedSeconds() const {
   shared_lock<rw_spinlock> l(last_rw_time_lock_);
   DCHECK(last_write_time_.Initialized());
   return static_cast<uint64_t>((MonoTime::Now() - last_write_time_).ToSeconds());
+}
+
+double Tablet::CollectAndUpdateWorkloadStats(MaintenanceOp::PerfImprovementOpType type) {
+  DCHECK(last_update_workload_stats_time_.Initialized());
+  double workload_score = 0;
+  MonoDelta elapse = MonoTime::Now() - last_update_workload_stats_time_;
+  if (metrics_) {
+    int64_t scans_started = metrics_->scans_started->value();
+    int64_t rows_mutated = metrics_->rows_inserted->value() +
+                           metrics_->rows_upserted->value() +
+                           metrics_->rows_updated->value() +
+                           metrics_->rows_deleted->value();
+    if (elapse.ToMilliseconds() > FLAGS_workload_stats_rate_collection_min_interval_ms) {
+      double last_read_rate =
+          static_cast<double>(scans_started - last_scans_started_) / elapse.ToSeconds();
+      last_read_score_ =
+          std::min(1.0, last_read_rate / FLAGS_scans_started_per_sec_for_hot_tablets) *
+          FLAGS_workload_score_upper_bound;
+      double last_write_rate =
+          static_cast<double>(rows_mutated - last_rows_mutated_) / elapse.ToSeconds();
+      last_write_score_ =
+          std::min(1.0, last_write_rate / FLAGS_rows_writed_per_sec_for_hot_tablets) *
+          FLAGS_workload_score_upper_bound;
+    }
+    if (elapse.ToMilliseconds() > FLAGS_workload_stats_metric_collection_interval_ms) {
+      last_update_workload_stats_time_ = MonoTime::Now();
+      last_scans_started_ = metrics_->scans_started->value();
+      last_rows_mutated_ = rows_mutated;
+    }
+  }
+  if (type == MaintenanceOp::FLUSH_OP) {
+    // Flush ops are already scored based on how hot the tablet is
+    // for writes, so we'll only adjust the workload score based on
+    // how hot the tablet is for reads.
+    workload_score = last_read_score_;
+  } else if (type == MaintenanceOp::COMPACT_OP) {
+    // Since compactions may improve both read and write performance, increase
+    // the workload score based on the read and write rate to the tablet.
+    workload_score = std::min(FLAGS_workload_score_upper_bound,
+                              last_read_score_ + last_write_score_);
+  }
+  return workload_score;
 }
 
 size_t Tablet::DeltaMemStoresSize() const {

@@ -45,6 +45,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/rw_semaphore.h"
@@ -56,9 +57,6 @@ class AlterTableTest;
 class ConstContiguousRow;
 class EncodedKey;
 class KeyRange;
-class MaintenanceManager;
-class MaintenanceOp;
-class MaintenanceOpStats;
 class MemTracker;
 class RowBlock;
 class ScanSpec;
@@ -468,6 +466,12 @@ class Tablet {
   // variable there.
   void UpdateLastReadTime() const;
 
+  // Collect and update recent workload statistics for the tablet.
+  // Return the current workload score of the tablet.
+  //
+  // This method is not thread safe and should only be called from a single thread at once.
+  double CollectAndUpdateWorkloadStats(MaintenanceOp::PerfImprovementOpType type);
+
  private:
   friend class kudu::AlterTableTest;
   friend class Iterator;
@@ -772,6 +776,12 @@ class Tablet {
   // NOTE: it's important that this is the first member to be destructed. This
   // ensures we do not attempt to collect metrics while calling the destructor.
   FunctionGaugeDetacher metric_detacher_;
+
+  MonoTime last_update_workload_stats_time_;
+  int64_t last_scans_started_;
+  int64_t last_rows_mutated_;
+  double last_read_score_;
+  double last_write_score_;
 
   DISALLOW_COPY_AND_ASSIGN(Tablet);
 };

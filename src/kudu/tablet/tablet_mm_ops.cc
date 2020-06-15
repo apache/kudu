@@ -83,6 +83,12 @@ DEFINE_bool(enable_deleted_rowset_gc, true,
     "considered ancient history (see --tablet_history_max_age_sec) are deleted.");
 TAG_FLAG(enable_deleted_rowset_gc, runtime);
 
+DEFINE_bool(enable_workload_score_for_perf_improvement_ops, false,
+            "Whether to enable prioritization of maintenance operations based on "
+            "whether there are on-going workloads, favoring ops of 'hot' tablets.");
+TAG_FLAG(enable_workload_score_for_perf_improvement_ops, experimental);
+TAG_FLAG(enable_workload_score_for_perf_improvement_ops, runtime);
+
 using std::string;
 using strings::Substitute;
 
@@ -128,6 +134,9 @@ void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
 
   std::lock_guard<simple_spinlock> l(lock_);
 
+  double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
+                          tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
+
   // Any operation that changes the on-disk row layout invalidates the
   // cached stats.
   TabletMetrics* metrics = tablet_->metrics();
@@ -137,15 +146,16 @@ void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
     if (prev_stats_.valid() &&
         new_num_mrs_flushed == last_num_mrs_flushed_ &&
         new_num_rs_compacted == last_num_rs_compacted_) {
+      prev_stats_.set_workload_score(workload_score);
       *stats = prev_stats_;
       return;
-    } else {
-      last_num_mrs_flushed_ = new_num_mrs_flushed;
-      last_num_rs_compacted_ = new_num_rs_compacted;
     }
+    last_num_mrs_flushed_ = new_num_mrs_flushed;
+    last_num_rs_compacted_ = new_num_rs_compacted;
   }
 
   tablet_->UpdateCompactionStats(&prev_stats_);
+  prev_stats_.set_workload_score(workload_score);
   *stats = prev_stats_;
 }
 
@@ -199,6 +209,9 @@ void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
 
   std::lock_guard<simple_spinlock> l(lock_);
 
+  double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
+                          tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
+
   // Any operation that changes the number of REDO files invalidates the
   // cached stats.
   TabletMetrics* metrics = tablet_->metrics();
@@ -213,20 +226,21 @@ void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
         new_num_dms_flushed == last_num_dms_flushed_ &&
         new_num_rs_compacted == last_num_rs_compacted_ &&
         new_num_rs_minor_delta_compacted == last_num_rs_minor_delta_compacted_) {
+      prev_stats_.set_workload_score(workload_score);
       *stats = prev_stats_;
       return;
-    } else {
-      last_num_mrs_flushed_ = new_num_mrs_flushed;
-      last_num_dms_flushed_ = new_num_dms_flushed;
-      last_num_rs_compacted_ = new_num_rs_compacted;
-      last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
     }
+    last_num_mrs_flushed_ = new_num_mrs_flushed;
+    last_num_dms_flushed_ = new_num_dms_flushed;
+    last_num_rs_compacted_ = new_num_rs_compacted;
+    last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
   }
 
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
       RowSet::MINOR_DELTA_COMPACTION, nullptr);
   prev_stats_.set_perf_improvement(perf_improv);
   prev_stats_.set_runnable(perf_improv > 0);
+  prev_stats_.set_workload_score(workload_score);
   *stats = prev_stats_;
 }
 
@@ -278,6 +292,9 @@ void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
 
   std::lock_guard<simple_spinlock> l(lock_);
 
+  double workload_score = FLAGS_enable_workload_score_for_perf_improvement_ops ?
+                          tablet_->CollectAndUpdateWorkloadStats(MaintenanceOp::COMPACT_OP) : 0;
+
   // Any operation that changes the size of the on-disk data invalidates the
   // cached stats.
   TabletMetrics* metrics = tablet_->metrics();
@@ -295,21 +312,22 @@ void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
         new_num_rs_compacted == last_num_rs_compacted_ &&
         new_num_rs_minor_delta_compacted == last_num_rs_minor_delta_compacted_ &&
         new_num_rs_major_delta_compacted == last_num_rs_major_delta_compacted_) {
+      prev_stats_.set_workload_score(workload_score);
       *stats = prev_stats_;
       return;
-    } else {
-      last_num_mrs_flushed_ = new_num_mrs_flushed;
-      last_num_dms_flushed_ = new_num_dms_flushed;
-      last_num_rs_compacted_ = new_num_rs_compacted;
-      last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
-      last_num_rs_major_delta_compacted_ = new_num_rs_major_delta_compacted;
     }
+    last_num_mrs_flushed_ = new_num_mrs_flushed;
+    last_num_dms_flushed_ = new_num_dms_flushed;
+    last_num_rs_compacted_ = new_num_rs_compacted;
+    last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
+    last_num_rs_major_delta_compacted_ = new_num_rs_major_delta_compacted;
   }
 
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
       RowSet::MAJOR_DELTA_COMPACTION, nullptr);
   prev_stats_.set_perf_improvement(perf_improv);
   prev_stats_.set_runnable(perf_improv > 0);
+  prev_stats_.set_workload_score(workload_score);
   *stats = prev_stats_;
 }
 

@@ -75,6 +75,7 @@ DEFINE_int32(flush_threshold_secs, 2 * 60,
 TAG_FLAG(flush_threshold_secs, experimental);
 TAG_FLAG(flush_threshold_secs, runtime);
 
+DECLARE_bool(enable_workload_score_for_perf_improvement_ops);
 
 METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,
                            "Log GCs Running",
@@ -178,8 +179,12 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   stats->set_logs_retained_bytes(
       tablet_replica_->tablet()->MemRowSetLogReplaySize(replay_size_map));
 
-  // TODO(todd): use workload statistics here to find out how "hot" the tablet has
-  // been in the last 5 minutes.
+  if (FLAGS_enable_workload_score_for_perf_improvement_ops) {
+    double workload_score =
+        tablet_replica_->tablet()->CollectAndUpdateWorkloadStats(MaintenanceOp::FLUSH_OP);
+    stats->set_workload_score(workload_score);
+  }
+
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
       stats,
       time_since_flush_.elapsed().wall_millis());
@@ -247,6 +252,12 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   stats->set_ram_anchored(dms_size);
   stats->set_runnable(true);
   stats->set_logs_retained_bytes(retention_size);
+
+  if (FLAGS_enable_workload_score_for_perf_improvement_ops) {
+    double workload_score =
+        tablet_replica_->tablet()->CollectAndUpdateWorkloadStats(MaintenanceOp::FLUSH_OP);
+    stats->set_workload_score(workload_score);
+  }
 
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
       stats,

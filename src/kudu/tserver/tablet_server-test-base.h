@@ -71,7 +71,9 @@ class TabletServerTestBase : public KuduTest {
   void ResetClientProxies();
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRowsDirect(int32_t start_row, int32_t num_rows);
+  void InsertTestRowsDirect(int32_t start_row,
+                            int32_t num_rows,
+                            const std::string& tablet_id = kTabletId);
 
   // Inserts 'num_rows' test rows remotely into the tablet (i.e via RPC)
   // Rows are grouped in batches of 'count'/'num_batches' size.

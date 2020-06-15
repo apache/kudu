@@ -33,6 +33,7 @@
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -110,6 +111,11 @@ TAG_FLAG(max_priority_range, advanced);
 TAG_FLAG(max_priority_range, experimental);
 TAG_FLAG(max_priority_range, runtime);
 
+DEFINE_int32(maintenance_manager_inject_latency_ms, 0,
+             "Injects latency into maintenance thread. For use in tests only.");
+TAG_FLAG(maintenance_manager_inject_latency_ms, runtime);
+TAG_FLAG(maintenance_manager_inject_latency_ms, unsafe);
+
 namespace kudu {
 
 MaintenanceOpStats::MaintenanceOpStats() {
@@ -123,6 +129,7 @@ void MaintenanceOpStats::Clear() {
   logs_retained_bytes_ = 0;
   data_retained_bytes_ = 0;
   perf_improvement_ = 0;
+  workload_score_ = 0;
   last_modified_ = MonoTime();
 }
 
@@ -292,6 +299,12 @@ void MaintenanceManager::RunSchedulerThread() {
       return;
     }
 
+    if (PREDICT_FALSE(FLAGS_maintenance_manager_inject_latency_ms > 0)) {
+      LOG(WARNING) << "Injecting " << FLAGS_maintenance_manager_inject_latency_ms
+                   << "ms of latency into maintenance thread";
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_maintenance_manager_inject_latency_ms));
+    }
+
     // If we found no work to do, then we should sleep before trying again to schedule.
     // Otherwise, we can go right into trying to find the next op.
     prev_iter_found_no_work = !FindAndLaunchOp(&guard);
@@ -408,7 +421,8 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
                         op->name(), data_retained_bytes);
     }
 
-    const auto perf_improvement = PerfImprovement(stats.perf_improvement(), op->priority());
+    const auto perf_improvement =
+        AdjustedPerfScore(stats.perf_improvement(), stats.workload_score(), op->priority());
     if ((!best_perf_improvement_op) ||
         (perf_improvement > best_perf_improvement)) {
       best_perf_improvement_op = op;
@@ -472,14 +486,20 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   return {nullptr, "no ops with positive improvement"};
 }
 
-double MaintenanceManager::PerfImprovement(double perf_improvement, int32_t priority) const {
+double MaintenanceManager::AdjustedPerfScore(double perf_improvement,
+                                             double workload_score,
+                                             int32_t priority) {
+  if (perf_improvement == 0) {
+    return 0;
+  }
+  double perf_score = perf_improvement + workload_score;
   if (priority == 0) {
-    return perf_improvement;
+    return perf_score;
   }
 
   priority = std::max(priority, -FLAGS_max_priority_range);
   priority = std::min(priority, FLAGS_max_priority_range);
-  return perf_improvement * std::pow(FLAGS_maintenance_op_multiplier, priority);
+  return perf_score * std::pow(FLAGS_maintenance_op_multiplier, priority);
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
@@ -542,11 +562,13 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
       op_pb->set_ram_anchored_bytes(stats.ram_anchored());
       op_pb->set_logs_retained_bytes(stats.logs_retained_bytes());
       op_pb->set_perf_improvement(stats.perf_improvement());
+      op_pb->set_workload_score(stats.workload_score());
     } else {
       op_pb->set_runnable(false);
       op_pb->set_ram_anchored_bytes(0);
       op_pb->set_logs_retained_bytes(0);
       op_pb->set_perf_improvement(0.0);
+      op_pb->set_workload_score(0.0);
     }
   }
 

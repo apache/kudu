@@ -106,6 +106,19 @@ class MaintenanceOpStats {
     perf_improvement_ = perf_improvement;
   }
 
+  double workload_score() const {
+    DCHECK(valid_);
+    return workload_score_;
+  }
+
+  void set_workload_score(double workload_score) {
+    if (workload_score == workload_score_) {
+      return;
+    }
+    UpdateLastModified();
+    workload_score_ = workload_score;
+  }
+
   const MonoTime& last_modified() const {
     DCHECK(valid_);
     return last_modified_;
@@ -146,6 +159,8 @@ class MaintenanceOpStats {
   // absolute scale (yet TBD).
   double perf_improvement_;
 
+  double workload_score_;
+
   // The last time that the stats were modified.
   MonoTime last_modified_;
 };
@@ -177,6 +192,11 @@ class MaintenanceOp {
   enum IOUsage {
     LOW_IO_USAGE, // Low impact operations like removing a file, updating metadata.
     HIGH_IO_USAGE // Everything else.
+  };
+
+  enum PerfImprovementOpType {
+    FLUSH_OP,
+    COMPACT_OP
   };
 
   explicit MaintenanceOp(std::string name, IOUsage io_usage);
@@ -325,7 +345,9 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // suitable for logging.
   std::pair<MaintenanceOp*, std::string> FindBestOp();
 
-  double PerfImprovement(double perf_improvement, int32_t priority) const;
+  // Adjust the perf score based on the raw perf score, the tablet's workload_score
+  // and the table's priority.
+  static double AdjustedPerfScore(double perf_improvement, double workload_score, int32_t priority);
 
   void LaunchOp(MaintenanceOp* op);
 

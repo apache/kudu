@@ -191,8 +191,12 @@ void TabletServerTestBase::ResetClientProxies() {
 
 // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
 void TabletServerTestBase::InsertTestRowsDirect(int32_t start_row,
-                                                int32_t num_rows) {
-  tablet::LocalTabletWriter writer(tablet_replica_->tablet(), &schema_);
+                                                int32_t num_rows,
+                                                const string& tablet_id) {
+  scoped_refptr<tablet::TabletReplica> tablet_replica;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(tablet_id,
+                                                                     &tablet_replica));
+  tablet::LocalTabletWriter writer(tablet_replica->tablet(), &schema_);
   KuduPartialRow row(&schema_);
   for (int32_t i = 0; i < num_rows; i++) {
     BuildTestRow(start_row + i, &row);

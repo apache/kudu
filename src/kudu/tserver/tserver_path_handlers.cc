@@ -640,6 +640,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
     registered_op["ram_anchored"] = HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes());
     registered_op["logs_retained"] = HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes());
     registered_op["perf"] = op_pb.perf_improvement();
+    registered_op["workload_score"] = op_pb.workload_score();
   }
 }
 

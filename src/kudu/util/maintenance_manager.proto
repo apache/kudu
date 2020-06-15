@@ -29,6 +29,7 @@ message MaintenanceManagerStatusPB {
     required int64 ram_anchored_bytes = 4;
     required int64 logs_retained_bytes = 5;
     required double perf_improvement = 6;
+    required double workload_score = 7;
   }
 
   message OpInstancePB {
