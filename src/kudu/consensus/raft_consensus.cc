@@ -628,7 +628,6 @@ Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
         Substitute("leadership transfer for $0 already in progress",
                    options_.tablet_id));
   }
-  leader_transfer_in_progress_ = true;
   queue_->BeginWatchForSuccessor(successor_uuid);
   transfer_period_timer_->Start();
   return Status::OK();
