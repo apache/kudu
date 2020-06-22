@@ -59,6 +59,8 @@ FS_SCANINSERT_MRS=FullStackScanInsertMRSOnly
 FS_SCANINSERT_DISK=FullStackScanInsertWithDisk
 
 DENSE_NODE_ITEST=DenseNodeItest
+BLOCKING_QUEUE_SYMMETRIC_TEST=BlockingQueueSymmetric
+BLOCKING_QUEUE_NON_SYMMETRIC_TEST=BlockingQueueNonSymmetric
 
 LOG_DIR_NAME=build/latest/bench-logs
 OUT_DIR_NAME=build/latest/bench-out
@@ -282,6 +284,28 @@ run_benchmarks() {
       --measure_startup_wait_for_bootstrap \
       &> $LOGDIR/${DENSE_NODE_ITEST}$i.log
   done
+
+  # Run BlockingQueue concurrency test with 3 writers and 3 readers,
+  # (i.e. symmetric in number of readers/writers), no non-blocking writers.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/blocking_queue-test \
+      --gtest_filter=BlockingQueueMultiThreadPerfTest.RequestRates \
+      --num_blocking_writers=3 \
+      --num_blocking_readers=3 \
+      --num_non_blocking_writers=0 \
+      &> $LOGDIR/${BLOCKING_QUEUE_SYMMETRIC_TEST}$i.log
+  done
+
+  # Run BlockingQueue concurrency test with 3 writers
+  # (2 blocking, 1 non-blocking) and 1 reader.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/blocking_queue-test \
+      --gtest_filter=BlockingQueueMultiThreadPerfTest.RequestRates \
+      --num_blocking_writers=2 \
+      --num_blocking_readers=1 \
+      --num_non_blocking_writers=1 \
+      &> $LOGDIR/${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -460,6 +484,17 @@ parse_and_record_all_results() {
       record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_time_bootstrapping_tablets $i $time_bootstrapping_tablets
     fi
 
+  done
+
+  # Parse out total call rate and record the results for BlockingQueue test.
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${BLOCKING_QUEUE_SYMMETRIC_TEST}$i.log
+    rate=$(grep -o 'total rate: .* calls/sec' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${BLOCKING_QUEUE_SYMMETRIC_TEST}_total_call_rate $i $rate
+
+    local log=$LOGDIR/${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}$i.log
+    rate=$(grep -o 'total rate: .* calls/sec' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}_total_call_rate $i $rate
   done
 
   popd
