@@ -26,7 +26,9 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.PredicateType.RANGE;
 
 import java.math.BigDecimal;
+import java.sql.Date;
 import java.util.Arrays;
+import java.util.List;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -38,6 +40,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.util.CharUtil;
+import org.apache.kudu.util.DateUtil;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestKuduPredicate {
@@ -89,6 +92,11 @@ public class TestKuduPredicate {
           .typeAttributes(CharUtil.typeAttributes(10))
           .nullable(true)
           .build();
+
+  private static final ColumnSchema dateCol =
+          new ColumnSchema.ColumnSchemaBuilder("date", Type.DATE)
+                  .nullable(true)
+                  .build();
 
   @Rule
   public RetryRule retryRule = new RetryRule();
@@ -1011,6 +1019,14 @@ public class TestKuduPredicate {
     Assert.assertEquals(
         KuduPredicate.newComparisonPredicate(doubleCol, LESS_EQUAL, Double.POSITIVE_INFINITY),
         KuduPredicate.newIsNotNullPredicate(doubleCol));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(dateCol, LESS_EQUAL,
+            Date.valueOf("2020-06-01")),
+            KuduPredicate.newComparisonPredicate(dateCol, LESS, Date.valueOf("2020-06-02")));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(dateCol, LESS_EQUAL,
+            DateUtil.epochDaysToSqlDate(DateUtil.MAX_DATE_VALUE)),
+            KuduPredicate.newIsNotNullPredicate(dateCol));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(dateCol, LESS_EQUAL,
+            DateUtil.MAX_DATE_VALUE), KuduPredicate.newIsNotNullPredicate(dateCol));
   }
 
   @Test
@@ -1063,6 +1079,9 @@ public class TestKuduPredicate {
     Assert.assertEquals(
         KuduPredicate.none(doubleCol),
         KuduPredicate.newComparisonPredicate(doubleCol, GREATER, Double.POSITIVE_INFINITY));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(dateCol, GREATER_EQUAL,
+            Date.valueOf("2020-06-15")),
+            KuduPredicate.newComparisonPredicate(dateCol, GREATER, Date.valueOf("2020-06-14")));
   }
 
   @Test
@@ -1096,6 +1115,8 @@ public class TestKuduPredicate {
                         KuduPredicate.none(binaryCol));
     Assert.assertEquals(KuduPredicate.newComparisonPredicate(varcharCol, LESS, ""),
                         KuduPredicate.none(varcharCol));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(dateCol, LESS,
+            DateUtil.epochDaysToSqlDate(DateUtil.MIN_DATE_VALUE)), KuduPredicate.none(dateCol));
   }
 
   @Test
@@ -1153,6 +1174,13 @@ public class TestKuduPredicate {
     Assert.assertEquals(
         KuduPredicate.newComparisonPredicate(doubleCol, GREATER_EQUAL, Double.POSITIVE_INFINITY),
         KuduPredicate.newComparisonPredicate(doubleCol, EQUAL, Double.POSITIVE_INFINITY));
+    Assert.assertEquals(
+            KuduPredicate.newComparisonPredicate(dateCol, GREATER_EQUAL,
+            DateUtil.epochDaysToSqlDate(DateUtil.MIN_DATE_VALUE)),
+            KuduPredicate.newIsNotNullPredicate(dateCol));
+    Assert.assertEquals(
+            KuduPredicate.newComparisonPredicate(dateCol, GREATER_EQUAL, DateUtil.MIN_DATE_VALUE),
+            KuduPredicate.newIsNotNullPredicate(dateCol));
   }
 
   @Test
@@ -1186,9 +1214,12 @@ public class TestKuduPredicate {
     Assert.assertEquals(
         KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, (Object) new byte[] { (byte) 10 }),
         KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, new byte[] { (byte) 10 }));
-    Assert.assertEquals(
-        KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, (Object) "a"),
-        KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, "a"));
+    Assert.assertEquals(KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, (Object) "a"),
+            KuduPredicate.newComparisonPredicate(varcharCol, EQUAL, "a"));
+    Assert.assertEquals(KuduPredicate
+                    .newComparisonPredicate(dateCol, EQUAL, (Object) Date.valueOf("2020-06-15")),
+            KuduPredicate
+                    .newComparisonPredicate(dateCol, EQUAL, Date.valueOf("2020-06-15")));
   }
 
   @Test
@@ -1259,6 +1290,23 @@ public class TestKuduPredicate {
     Assert.assertEquals("`binary` IN (0x00, 0xAB01CD)", KuduPredicate.newInListPredicate(
         binaryCol, ImmutableList.of(new byte[] { (byte) 0xAB, (byte) 0x01, (byte) 0xCD },
                                     new byte[] { (byte) 0x00 })).toString());
+    Assert.assertEquals("`date` IS NULL", KuduPredicate.newIsNullPredicate(dateCol).toString());
+    Assert.assertEquals("`date` IS NOT NULL",
+            KuduPredicate.newIsNotNullPredicate(dateCol).toString());
+
+    Assert.assertEquals("`date` = 2020-06-16",
+            KuduPredicate.newComparisonPredicate(dateCol, EQUAL, Date.valueOf("2020-06-16"))
+                    .toString());
+    List<Integer> intDates = ImmutableList
+            .of(DateUtil.sqlDateToEpochDays(Date.valueOf("2020-06-16")),
+                    DateUtil.sqlDateToEpochDays(Date.valueOf("2019-01-01")),
+                    DateUtil.sqlDateToEpochDays(Date.valueOf("2020-11-10")));
+    List<Date> sqlDates = ImmutableList
+            .of(Date.valueOf("2020-06-16"), Date.valueOf("2019-01-01"), Date.valueOf("2020-11-10"));
+    Assert.assertEquals("`date` IN (2019-01-01, 2020-06-16, 2020-11-10)",
+            KuduPredicate.newInListPredicate(dateCol, intDates).toString());
+    Assert.assertEquals("`date` IN (2019-01-01, 2020-06-16, 2020-11-10)",
+            KuduPredicate.newInListPredicate(dateCol, sqlDates).toString());
   }
 
   @Test
