@@ -517,6 +517,7 @@ public class KuduPredicate {
    *  Type.VARCHAR -> java.lang.String
    *  Type.BINARY -> byte[]
    *  Type.DECIMAL -> java.math.BigDecimal
+   *  Type.DATE -> java.sql.Date
    *
    * @param column column the column schema
    * @param op the comparison operation
@@ -547,6 +548,8 @@ public class KuduPredicate {
       return newComparisonPredicate(column, op, (String) value);
     } else if (value instanceof byte[]) {
       return newComparisonPredicate(column, op, (byte[]) value);
+    } else if (value instanceof Date) {
+      return newComparisonPredicate(column, op, (Date) value);
     } else {
       throw new IllegalArgumentException(String.format("illegal type for %s predicate: %s",
               op, value.getClass().getName()));
@@ -626,6 +629,11 @@ public class KuduPredicate {
       checkColumn(column, Type.BINARY);
       for (T value : values) {
         vals.add((byte[]) value);
+      }
+    } else if (t instanceof Date) {
+      checkColumn(column, Type.DATE);
+      for (T value : values) {
+        vals.add(Bytes.fromInt(DateUtil.sqlDateToEpochDays((Date) value)));
       }
     } else {
       throw new IllegalArgumentException(String.format("illegal type for IN list values: %s",
@@ -1119,6 +1127,8 @@ public class KuduPredicate {
       case UNIXTIME_MICROS:
       case INT64:
         return Long.MAX_VALUE;
+      case DATE:
+        return DateUtil.MAX_DATE_VALUE;
       default:
         throw new IllegalArgumentException("type must be an integer type");
     }
@@ -1141,6 +1151,8 @@ public class KuduPredicate {
       case UNIXTIME_MICROS:
       case INT64:
         return Long.MIN_VALUE;
+      case DATE:
+        return DateUtil.MIN_DATE_VALUE;
       default:
         throw new IllegalArgumentException("type must be an integer type");
     }
