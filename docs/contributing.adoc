@@ -432,6 +432,17 @@ if (!isCriticalConditionSatisfied) {
 }
 ----
 
+===== Checking code style with Gradle checkStyle
+
+Before posting a Java patch to Gerrit for review, make sure to check Java code
+style with Gradle `checkstyle` plugin. See
+link:https://docs.gradle.org/current/userguide/checkstyle_plugin.html[Gradle Checkstyle Plugin documentation]
+for more information.
+[source,bash]
+----
+./gradlew checkstyle
+----
+
 ===== References
 * link:https://docs.oracle.com/javase/8/docs/technotes/guides/language/assert.html[Programming With Assertions]
 * link:https://github.com/google/guava/wiki/PreconditionsExplained[Guava Preconditions Explained]
