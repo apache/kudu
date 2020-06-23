@@ -757,6 +757,7 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   Synchronizer sync;
   vector<pair<Sockaddr, string>> addrs_with_names;
   Sockaddr leader_master_addr;
+  string leader_master_hostname;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
 
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
@@ -764,9 +765,10 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   }
   const auto& cb = [&](const Status& status,
                        const pair<Sockaddr, string>& leader_master,
-                       const master::ConnectToMasterResponsePB& resp) {
+                       const master::ConnectToMasterResponsePB& /*resp*/) {
     if (status.ok()) {
       leader_master_addr = leader_master.first;
+      leader_master_hostname = leader_master.second;
     }
     sync.StatusCB(status);
   };
@@ -782,7 +784,13 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   RETURN_NOT_OK(sync.Wait());
   bool found = false;
   for (int i = 0; i < masters_.size(); i++) {
-    if (masters_[i]->bound_rpc_hostport().port() == leader_master_addr.port()) {
+    const auto& bound_hp = masters_[i]->bound_rpc_hostport();
+    // If using BindMode::UNIQUE_LOOPBACK mode, in rare cases different masters
+    // might bind to different local IP addresses but use same port numbers.
+    // So, it's necessary to check both the returned hostnames and IP addresses
+    // to point to leader master.
+    if (bound_hp.port() == leader_master_addr.port() &&
+        bound_hp.host() == leader_master_hostname) {
       found = true;
       *idx = i;
       break;
