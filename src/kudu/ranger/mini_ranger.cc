@@ -229,7 +229,7 @@ Status MiniRanger::StartRanger() {
     uint16_t port;
     RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
                                  &port,
-                                 {},
+                                 { "0.0.0.0", "127.0.0.1", },
                                  MonoDelta::FromMilliseconds(kRangerStartTimeoutMs)));
     LOG(INFO) << "Ranger bound to " << port;
     LOG(INFO) << "Ranger admin URL: " << ranger_admin_url_;
