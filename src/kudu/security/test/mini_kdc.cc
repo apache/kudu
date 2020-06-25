@@ -156,8 +156,8 @@ Status MiniKdc::Start() {
   const bool need_config_update = (options_.port == 0);
   // Wait for KDC to start listening on its ports and commencing operation
   // with a wildcard binding.
-  RETURN_NOT_OK(WaitForUdpBind(kdc_process_->pid(), &options_.port,
-                               /*addr=*/none, MonoDelta::FromSeconds(1)));
+  RETURN_NOT_OK(WaitForUdpBind(
+      kdc_process_->pid(), &options_.port, {}, MonoDelta::FromSeconds(1)));
 
   if (need_config_update) {
     // If we asked for an ephemeral port, grab the actual ports and

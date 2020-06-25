@@ -168,7 +168,7 @@ Status MiniHms::Start() {
   // Wait for HMS to start listening on its ports and commencing operation
   // with a wildcard binding.
   VLOG(1) << "Waiting for HMS ports";
-  Status wait = WaitForTcpBind(hms_process_->pid(), &port_, /*addr=*/none,
+  Status wait = WaitForTcpBind(hms_process_->pid(), &port_, {},
                                MonoDelta::FromMilliseconds(kHmsStartTimeoutMs));
   if (!wait.ok()) {
     WARN_NOT_OK(hms_process_->Kill(SIGQUIT), "failed to send SIGQUIT to HMS");

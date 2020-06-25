@@ -22,7 +22,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -228,8 +227,10 @@ Status MiniRanger::StartRanger() {
     });
     RETURN_NOT_OK(process_->Start());
     uint16_t port;
-    RETURN_NOT_OK(WaitForTcpBind(process_->pid(), &port, boost::none,
-                  MonoDelta::FromMilliseconds(kRangerStartTimeoutMs)));
+    RETURN_NOT_OK(WaitForTcpBind(process_->pid(),
+                                 &port,
+                                 {},
+                                 MonoDelta::FromMilliseconds(kRangerStartTimeoutMs)));
     LOG(INFO) << "Ranger bound to " << port;
     LOG(INFO) << "Ranger admin URL: " << ranger_admin_url_;
   }

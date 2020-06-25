@@ -86,7 +86,7 @@ Status MiniPostgres::Start() {
   });
   RETURN_NOT_OK(process_->Start());
 
-  Status wait = WaitForTcpBind(process_->pid(), &port_, host_,
+  Status wait = WaitForTcpBind(process_->pid(), &port_, { host_ },
                                MonoDelta::FromMilliseconds(kPgStartTimeoutMs));
   if (!wait.ok()) {
     // TODO(abukor): implement retry with a different port if it can't bind

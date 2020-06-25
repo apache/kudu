@@ -25,8 +25,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/port.h"
@@ -144,16 +144,17 @@ void AssertEventually(const std::function<void(void)>& f,
 // unlike the usual behavior of path globs.
 int CountOpenFds(Env* env, const std::string& path_pattern);
 
-// Waits for the subprocess to bind to any listening TCP port on the provided
-// IP address (if the address is not provided, it is a wildcard binding), and
-// returns the port.
+// Waits for the subprocess to bind to any listening TCP port at least on one
+// of the provided IP addresses and returns the port number. As for values
+// for the 'addresses' parameter, {} (an empty vector) and { "0.0.0.0" }
+// semantically mean the same.
 Status WaitForTcpBind(pid_t pid, uint16_t* port,
-                      const boost::optional<const std::string&>& addr,
+                      const std::vector<std::string>& addresses,
                       MonoDelta timeout) WARN_UNUSED_RESULT;
 
 // Similar to above but binds to any listening UDP port.
 Status WaitForUdpBind(pid_t pid, uint16_t* port,
-                      const boost::optional<const std::string&>& addr,
+                      const std::vector<std::string>& addresses,
                       MonoDelta timeout) WARN_UNUSED_RESULT;
 
 // Find the home directory of a Java-style application, e.g. JAVA_HOME or
