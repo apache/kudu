@@ -196,6 +196,7 @@ const char* const TxnStatusTablet::kTxnIdColName = "txn_id";
 const char* const TxnStatusTablet::kEntryTypeColName = "entry_type";
 const char* const TxnStatusTablet::kIdentifierColName = "identifier";
 const char* const TxnStatusTablet::kMetadataColName = "metadata";
+const char* const TxnStatusTablet::kTxnStatusTableName = "kudu_system.kudu_transactions";
 
 TxnStatusTablet::TxnStatusTablet(tablet::TabletReplica* tablet_replica)
     : tablet_replica_(DCHECK_NOTNULL(tablet_replica)) {

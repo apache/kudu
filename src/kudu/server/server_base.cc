@@ -635,6 +635,10 @@ bool ServerBase::IsFromSuperUser(const rpc::RpcContext* rpc) {
   return superuser_acl_.UserAllowed(rpc->remote_user().username());
 }
 
+bool ServerBase::IsServiceUserOrSuperUser(const string& user) {
+  return service_acl_.UserAllowed(user) || superuser_acl_.UserAllowed(user);
+}
+
 bool ServerBase::Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) {
   if ((allowed_roles & SUPER_USER) && IsFromSuperUser(rpc)) {
     return true;

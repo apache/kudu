@@ -1227,10 +1227,11 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
   Partition partition;
   Partition::FromPB(req->partition(), &partition);
 
-  LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
-            << " (table=" << req->table_name()
-            << " [id=" << req->table_id() << "]), partition="
-            << partition_schema.PartitionDebugString(partition, schema);
+  LOG(INFO) << Substitute("Processing CreateTablet for tablet $0 ($1table=$2 [id=$3]), "
+                          "partition=$4", req->tablet_id(),
+                          req->has_table_type() ? TableTypePB_Name(req->table_type()) + " ": "",
+                          req->table_name(), req->table_id(),
+                          partition_schema.PartitionDebugString(partition, schema));
   VLOG(1) << "Full request: " << SecureDebugString(*req);
 
   s = server_->tablet_manager()->CreateNewTablet(
@@ -1243,7 +1244,8 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
       req->config(),
       req->has_extra_config() ? boost::make_optional(req->extra_config()) : boost::none,
       req->has_dimension_label() ? boost::make_optional(req->dimension_label()) : boost::none,
-      req->has_table_type() ? boost::make_optional(req->table_type()) : boost::none,
+      req->has_table_type() && req->table_type() != TableTypePB::DEFAULT_TABLE ?
+          boost::make_optional(req->table_type()) : boost::none,
       nullptr);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;

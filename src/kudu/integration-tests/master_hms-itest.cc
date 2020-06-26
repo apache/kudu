@@ -42,7 +42,9 @@
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/thrift/client.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -55,6 +57,7 @@ using kudu::client::KuduTableAlterer;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::hms::HmsClient;
+using kudu::transactions::TxnSystemClient;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -606,6 +609,27 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
   ASSERT_OK(client_->DeleteTable("DEFAULT.abc"));
   NO_FATALS(CheckTableDoesNotExist("default", "AbC"));
   NO_FATALS(CheckTableDoesNotExist("default", "abc"));
+}
+
+// Test that we can create a transaction status table that doesn't get
+// synchronized to the HMS.
+TEST_F(MasterHmsTest, TestTransactionStatusTableDoesntSync) {
+  // Create a transaction status table.
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  unique_ptr<TxnSystemClient> txn_sys_client;
+  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client));
+  ASSERT_OK(txn_sys_client->CreateTxnStatusTable(100));
+
+  // We shouldn't see the table in the HMS catalog.
+  vector<string> tables;
+  ASSERT_OK(harness_.hms_client()->GetTableNames("kudu_system", &tables));
+  ASSERT_TRUE(tables.empty());
+
+  // We should still be able to add partitions.
+  ASSERT_OK(txn_sys_client->AddTxnStatusTableRange(100, 200));
 }
 
 class MasterHmsUpgradeTest : public MasterHmsTest {

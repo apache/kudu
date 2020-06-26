@@ -73,6 +73,7 @@ target_link_libraries(master
   server_process
   tablet
   token_proto
+  transactions
   tserver)
 
 # Tests

@@ -50,7 +50,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <ostream>
 #include <set>
 #include <string>
@@ -381,9 +380,6 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
 using kudu::tserver::TabletServerErrorPB;
-using std::accumulate;
-using std::inserter;
-using std::map;
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -1542,20 +1538,29 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     RETURN_NOT_OK(SetupError(ProcessColumnPBDefaults(col), resp, MasterErrorPB::INVALID_SCHEMA));
   }
 
-  // a. Validate the user request.
+  bool is_user_table = req.table_type() == TableTypePB::DEFAULT_TABLE;
   const string& normalized_table_name = NormalizeTableName(req.name());
-  if (rpc) {
-    DCHECK_NE(boost::none, user);
-    RETURN_NOT_OK(SetupError(
-        authz_provider_->AuthorizeCreateTable(normalized_table_name, user.get(), req.owner()),
-        resp, MasterErrorPB::NOT_AUTHORIZED));
-  }
+  if (is_user_table) {
+    // a. Validate the user request.
+    if (rpc) {
+      DCHECK_NE(boost::none, user);
+      RETURN_NOT_OK(SetupError(
+          authz_provider_->AuthorizeCreateTable(normalized_table_name, user.get(), req.owner()),
+          resp, MasterErrorPB::NOT_AUTHORIZED));
+    }
 
-  // If the HMS integration is enabled, wait for the notification log listener
-  // to catch up. This reduces the likelihood of attempting to create a table
-  // with a name that conflicts with a table that has just been deleted or
-  // renamed in the HMS.
-  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+    // If the HMS integration is enabled, wait for the notification log listener
+    // to catch up. This reduces the likelihood of attempting to create a table
+    // with a name that conflicts with a table that has just been deleted or
+    // renamed in the HMS.
+    RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+  } else {
+    if (user && !master_->IsServiceUserOrSuperUser(*user)) {
+      return SetupError(
+          Status::NotAuthorized("must be a service user or super user to create system tables"),
+          resp, MasterErrorPB::NOT_AUTHORIZED);
+    }
+  }
 
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
@@ -1771,7 +1776,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   //
   // It is critical that this step happen before writing the table to the sys catalog,
   // since this step validates that the table name is available in the HMS catalog.
-  if (hms_catalog_) {
+  if (hms_catalog_ && is_user_table) {
     CHECK(rpc);
     Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, req.owner(), schema);
     if (!s.ok()) {
@@ -1785,7 +1790,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Delete the new HMS entry if we exit early.
   auto abort_hms = MakeScopedCleanup([&] {
       // TODO(dan): figure out how to test this.
-      if (hms_catalog_) {
+      if (hms_catalog_ && is_user_table) {
         TRACE("Rolling back HMS table creation");
         WARN_NOT_OK(hms_catalog_->DropTable(table->id(), normalized_table_name),
                     "an error occurred while attempting to delete orphaned HMS table entry");
@@ -1886,6 +1891,9 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   metadata->set_version(0);
   metadata->set_next_column_id(ColumnId(schema.max_col_id() + 1));
   metadata->set_num_replicas(req.num_replicas());
+  if (req.has_table_type()) {
+    metadata->set_table_type(req.table_type());
+  }
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
@@ -1998,7 +2006,13 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   // found is authorized.
   TableMetadataLock lock(table.get(), lock_mode);
   string table_name = NormalizeTableName(lock.data().name());
-  RETURN_NOT_OK(authorize(table_name, lock.data().owner()));
+  if (lock.data().pb.table_type() == TableTypePB::DEFAULT_TABLE) {
+    RETURN_NOT_OK(authorize(table_name, lock.data().owner()));
+  } else {
+    if (user && !master_->IsServiceUserOrSuperUser(*user)) {
+      return Status::NotAuthorized("must be a service user or super user to access system tables");
+    }
+  }
 
   // If the table name and table ID refer to different tables, for example,
   //   1. the ID maps to table A.
@@ -2463,10 +2477,12 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
                                      rpc::RpcContext* rpc) {
   leader_lock_.AssertAcquiredForReading();
 
-  // If the HMS integration is enabled, wait for the notification log listener
-  // to catch up. This reduces the likelihood of attempting to apply an
-  // alteration to a table which has just been renamed or deleted through the HMS.
-  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+  if (req.modify_external_catalogs()) {
+    // If the HMS integration is enabled, wait for the notification log listener
+    // to catch up. This reduces the likelihood of attempting to apply an
+    // alteration to a table which has just been renamed or deleted through the HMS.
+    RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+  }
 
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
@@ -3006,10 +3022,16 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
   unordered_map<string, bool> table_owner_map;
   for (const auto& table_info : tables_info) {
     TableMetadataLock ltm(table_info.get(), LockMode::READ);
-    if (!ltm.data().is_running()) continue; // implies !is_deleted() too
+    const auto& table_data = ltm.data();
+    // Don't list system tables or tables that aren't running
+    // TODO(awong): consider allow for opting into listing system tables.
+    if (!table_data.is_running() ||
+        table_data.pb.table_type() != TableTypePB::DEFAULT_TABLE) {
+      continue;
+    }
 
-    const string& table_name = ltm.data().name();
-    const string& owner = ltm.data().owner();
+    const string& table_name = table_data.name();
+    const string& owner = table_data.owner();
     if (req->has_name_filter()) {
       size_t found = table_name.find(req->name_filter());
       if (found == string::npos) {
@@ -3539,6 +3561,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     req_.mutable_extra_config()->CopyFrom(
         table_lock.data().pb.extra_config());
     req_.set_dimension_label(tablet_lock.data().pb.dimension_label());
+    req_.set_table_type(table_lock.data().pb.table_type());
   }
 
   string type_name() const override { return "CreateTablet"; }

@@ -32,10 +32,12 @@ target_link_libraries(transactions_proto
 set(TRANSACTIONS_SRCS
   txn_status_entry.cc
   txn_status_manager.cc
-  txn_status_tablet.cc)
+  txn_status_tablet.cc
+  txn_system_client.cc)
 
 add_library(transactions ${TRANSACTIONS_SRCS})
 target_link_libraries(transactions
+  kudu_client
   kudu_common
   tablet
   transactions_proto

@@ -66,6 +66,10 @@ class KuduClient;
 class KuduTable;
 } // namespace client
 
+namespace transactions {
+class TxnSystemClient;
+} // namespace transactions
+
 namespace tools {
 class LeaderMasterProxy;
 class RemoteKsckCluster;
@@ -963,6 +967,7 @@ class KUDU_EXPORT KuduTableCreator {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
+  friend class transactions::TxnSystemClient;
 
   explicit KuduTableCreator(KuduClient* client);
 

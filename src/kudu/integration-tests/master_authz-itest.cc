@@ -46,8 +46,10 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -81,6 +83,7 @@ using kudu::ranger::MiniRanger;
 using kudu::ranger::PolicyItem;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
+using kudu::transactions::TxnSystemClient;
 using std::function;
 using std::move;
 using std::ostream;
@@ -734,6 +737,34 @@ INSTANTIATE_TEST_CASE_P(AuthzProviders, MasterAuthzITest,
     [] (const testing::TestParamInfo<MasterAuthzITest::ParamType>& info) {
       return HarnessEnumToString(info.param);
     });
+
+// Test that creation of the transaction status table foregoes fine-grained
+// authorization.
+TEST_P(MasterAuthzITest, TestCreateTransactionStatusTable) {
+  // Create a transaction status table and add a range. Both requests should
+  // succeed, despite no privileges being granted in Ranger.
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  ASSERT_OK(this->cluster_->kdc()->Kinit(kTestUser));
+  // Attempting to call system client DDL as a non-admin should result in a
+  // NotAuthorized error.
+  {
+    unique_ptr<TxnSystemClient> non_admin_client;
+    ASSERT_OK(TxnSystemClient::Create(master_addrs, &non_admin_client));
+    Status s = non_admin_client->CreateTxnStatusTable(100);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+    s = non_admin_client->AddTxnStatusTableRange(100, 200);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  }
+  // But as service user, we should have no trouble making the calls.
+  ASSERT_OK(this->cluster_->kdc()->Kinit(kAdminUser));
+  unique_ptr<TxnSystemClient> txn_sys_client;
+  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_sys_client));
+  ASSERT_OK(txn_sys_client->CreateTxnStatusTable(100));
+  ASSERT_OK(txn_sys_client->AddTxnStatusTableRange(100, 200));
+}
 
 TEST_P(MasterAuthzITest, TestCreateTableAuthorized) {
   ASSERT_OK(cluster_->kdc()->Kinit(kAdminUser));

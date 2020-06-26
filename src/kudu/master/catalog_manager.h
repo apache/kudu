@@ -574,7 +574,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   // Create a new Table with the specified attributes.
   //
-  // The RPC context is provided for logging/tracing purposes,
+  // The RPC context is provded for logging/tracing purposes,
   // but this function does not itself respond to the RPC.
   Status CreateTable(const CreateTableRequestPB* req,
                      CreateTableResponsePB* resp,

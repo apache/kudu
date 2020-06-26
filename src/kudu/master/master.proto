@@ -198,6 +198,10 @@ message SysTablesEntryPB {
 
   // The user that owns the table.
   optional string owner = 13;
+
+  // The table type. If not set, it is assumed this table is a user-defined
+  // table, rather than a system table.
+  optional TableTypePB table_type = 14;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent
@@ -501,6 +505,10 @@ message CreateTableRequestPB {
   // dimension-specific placement of tablet replicas corresponding to the partitions of
   // the newly created table.
   optional string dimension_label = 10;
+
+  // The table type. If not set, it is assumed this table is a user-defined
+  // table, rather than a system table.
+  optional TableTypePB table_type = 11;
 }
 
 message CreateTableResponsePB {
@@ -996,20 +1004,20 @@ service MasterService {
   }
 
   rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc IsCreateTableDone(IsCreateTableDoneRequestPB) returns (IsCreateTableDoneResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
 
   rpc AlterTable(AlterTableRequestPB) returns (AlterTableResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc IsAlterTableDone(IsAlterTableDoneRequestPB) returns (IsAlterTableDoneResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 
   rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB) {

@@ -853,6 +853,10 @@ Status KuduTableCreator::Create() {
 
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
 
+  if (data_->table_type_) {
+    req.set_table_type(*data_->table_type_);
+  }
+
   MonoTime deadline = MonoTime::Now();
   if (data_->timeout_.Initialized()) {
     deadline += data_->timeout_;
