@@ -110,7 +110,9 @@ TabletServerOptions::TabletServerOptions() {
 }
 
 bool TabletServerOptions::IsDistributed() const {
-  return !tserver_addresses.empty();
+  // bootstrap can happen via tserver_addresses
+  // or bootstrap_tservers
+  return !tserver_addresses.empty() || !bootstrap_tservers.empty();
 }
 
 } // namespace tserver
