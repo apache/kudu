@@ -747,6 +747,8 @@ class TestKuduBackup extends KuduTestSuite {
   def validateTablesMatch(tableA: String, tableB: String): Unit = {
     val tA = kuduClient.openTable(tableA)
     val tB = kuduClient.openTable(tableB)
+    assertEquals(tA.getOwner, tB.getOwner)
+    assertNotEquals("", tA.getOwner);
     assertEquals(tA.getNumReplicas, tB.getNumReplicas)
     assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))

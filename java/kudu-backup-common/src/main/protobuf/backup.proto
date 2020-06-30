@@ -136,4 +136,6 @@ message TableMetadataPB {
   // This is validation only and not used when creating the restored table.
   // This is useful for detecting dropped and added partitions.
   map<string, PartitionMetadataPB> tablets = 11;
+  // The owner of the table.
+  string table_owner = 12;
 }
