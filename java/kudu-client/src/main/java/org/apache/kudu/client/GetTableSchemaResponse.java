@@ -34,6 +34,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   private final int numReplicas;
   private final SignedTokenPB authzToken;
   private final Map<String, String> extraConfig;
+  private final String owner;
 
   /**
    * @param elapsedMillis Time in milliseconds since RPC creation to now
@@ -45,6 +46,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    * @param partitionSchema the table's partition schema
    * @param authzToken an authorization token for use with this table
    * @param extraConfig the table's extra configuration properties
+   * @param owner the table's owner
    */
   GetTableSchemaResponse(long elapsedMillis,
                          String tsUUID,
@@ -54,7 +56,8 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
                          int numReplicas,
                          PartitionSchema partitionSchema,
                          SignedTokenPB authzToken,
-                         Map<String, String> extraConfig) {
+                         Map<String, String> extraConfig,
+                         String owner) {
     super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.partitionSchema = partitionSchema;
@@ -63,6 +66,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
     this.numReplicas = numReplicas;
     this.authzToken = authzToken;
     this.extraConfig = extraConfig;
+    this.owner = owner;
   }
 
   /**
@@ -119,5 +123,13 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public Map<String, String> getExtraConfig() {
     return extraConfig;
+  }
+
+  /**
+   * Get the owner for the table.
+   * @return the table's owner
+   */
+  public String getOwner() {
+    return owner;
   }
 }

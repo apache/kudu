@@ -54,6 +54,16 @@ public class AlterTableOptions {
   }
 
   /**
+   * Change a table's owner.
+   * @param owner the new table owner
+   * @return this instance
+   */
+  public AlterTableOptions setOwner(String owner) {
+    pb.setNewTableOwner(owner);
+    return this;
+  }
+
+  /**
    * Add a new column.
    * @param colSchema the schema of the new column
    * @return this instance

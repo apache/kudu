@@ -176,7 +176,7 @@ public class TestAsyncKuduClient {
     // Test that a tablet full of unreachable replicas won't make us retry.
     try {
       KuduTable badTable = new KuduTable(asyncClient, "Invalid table name",
-          "Invalid table ID", null, null, 3, null);
+          "Invalid table ID", null, null, 3, null, null);
       asyncClient.discoverTablets(badTable, null, requestBatchSize,
                                   tabletLocations, tsInfos, 1000);
       fail("This should have failed quickly");

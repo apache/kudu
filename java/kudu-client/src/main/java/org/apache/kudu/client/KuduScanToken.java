@@ -354,7 +354,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           ProtobufHelper.pbToPartitionSchema(tableMetadata.getPartitionSchema(), schema);
       return new KuduTable(client.asyncClient, tableMetadata.getTableName(),
           tableMetadata.getTableId(), schema, partitionSchema,
-          tableMetadata.getNumReplicas(), tableMetadata.getExtraConfigsMap());
+          tableMetadata.getNumReplicas(), tableMetadata.getExtraConfigsMap(),
+          tableMetadata.getOwner());
     } else if (message.hasTableId()) {
       return client.openTableById(message.getTableId());
     } else {
@@ -482,6 +483,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         Client.TableMetadataPB tableMetadataPB = Client.TableMetadataPB.newBuilder()
             .setTableId(table.getTableId())
             .setTableName(table.getName())
+            .setOwner(table.getOwner())
             .setNumReplicas(table.getNumReplicas())
             .setSchema(ProtobufHelper.schemaToPb(table.getSchema()))
             .setPartitionSchema(ProtobufHelper.partitionSchemaToPb(table.getPartitionSchema()))
