@@ -121,6 +121,7 @@ class TsTabletManagerTest : public KuduTest {
                                                    config_,
                                                    std::move(extra_config),
                                                    std::move(dimension_label),
+                                                   /*table_type*/boost::none,
                                                    &tablet_replica));
     if (out_tablet_replica) {
       (*out_tablet_replica) = tablet_replica;

@@ -55,6 +55,7 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/debug/trace_event.h"
@@ -220,6 +221,7 @@ using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletMetadata;
 using kudu::tablet::TabletReplica;
+using kudu::transactions::TxnStatusManagerFactory;
 using kudu::tserver::TabletCopyClient;
 using std::make_shared;
 using std::set;
@@ -451,6 +453,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         RaftConfigPB config,
                                         boost::optional<TableExtraConfigPB> extra_config,
                                         boost::optional<string> dimension_label,
+                                        boost::optional<TableTypePB> table_type,
                                         scoped_refptr<TabletReplica>* replica) {
   CHECK_EQ(state(), MANAGER_RUNNING);
   CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
@@ -491,6 +494,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               /*supports_live_row_count=*/ true,
                               std::move(extra_config),
                               std::move(dimension_label),
+                              std::move(table_type),
                               &meta),
     "Couldn't create tablet metadata");
 
@@ -826,12 +830,17 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
     scoped_refptr<TabletMetadata> meta,
     RegisterTabletReplicaMode mode,
     scoped_refptr<TabletReplica>* replica_out) {
+  // TODO(awong): this factory will at some point contain some tserver-wide
+  // state like a system client that can make calls to leader tablets. For now,
+  // just use a simple local factory.
+  TxnStatusManagerFactory tsm_factory;
   const auto& tablet_id = meta->tablet_id();
   scoped_refptr<TabletReplica> replica(
       new TabletReplica(std::move(meta),
                         cmeta_manager_,
                         local_peer_pb_,
                         server_->tablet_apply_pool(),
+                        &tsm_factory,
                         [this, tablet_id](const string& reason) {
                           this->MarkTabletDirty(tablet_id, reason);
                         }));

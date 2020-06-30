@@ -93,6 +93,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  bool supports_live_row_count,
                                  boost::optional<TableExtraConfigPB> extra_config,
                                  boost::optional<string> dimension_label,
+                                 boost::optional<TableTypePB> table_type,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -116,7 +117,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        std::move(tombstone_last_logged_opid),
                                                        supports_live_row_count,
                                                        std::move(extra_config),
-                                                       std::move(dimension_label)));
+                                                       std::move(dimension_label),
+                                                       std::move(table_type)));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -144,6 +146,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     boost::optional<OpId> tombstone_last_logged_opid,
                                     boost::optional<TableExtraConfigPB> extra_config,
                                     boost::optional<string> dimension_label,
+                                    boost::optional<TableTypePB> table_type,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -161,6 +164,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                      /*supports_live_row_count=*/ true,
                      std::move(extra_config),
                      std::move(dimension_label),
+                     std::move(table_type),
                      metadata);
   }
   return s;
@@ -281,7 +285,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                boost::optional<OpId> tombstone_last_logged_opid,
                                bool supports_live_row_count,
                                boost::optional<TableExtraConfigPB> extra_config,
-                               boost::optional<string> dimension_label)
+                               boost::optional<string> dimension_label,
+                               boost::optional<TableTypePB> table_type)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -297,6 +302,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
       extra_config_(std::move(extra_config)),
       dimension_label_(std::move(dimension_label)),
+      table_type_(std::move(table_type)),
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
@@ -474,6 +480,10 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       dimension_label_ = superblock.dimension_label();
     } else {
       dimension_label_ = boost::none;
+    }
+
+    if (superblock.has_table_type() && superblock.table_type() != TableTypePB::DEFAULT_TABLE) {
+      table_type_ = superblock.table_type();
     }
   }
 
@@ -724,6 +734,11 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     pb.set_dimension_label(*dimension_label_);
   }
 
+  if (table_type_) {
+    DCHECK_NE(TableTypePB::DEFAULT_TABLE, *table_type_);
+    pb.set_table_type(*table_type_);
+  }
+
   super_block->Swap(&pb);
   return Status::OK();
 }
@@ -822,6 +837,11 @@ boost::optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
 boost::optional<string> TabletMetadata::dimension_label() const {
   std::lock_guard<LockType> l(data_lock_);
   return dimension_label_;
+}
+
+const boost::optional<TableTypePB>& TabletMetadata::table_type() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return table_type_;
 }
 
 } // namespace tablet

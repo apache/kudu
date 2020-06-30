@@ -53,8 +53,8 @@ class ThreadPoolToken;
 
 namespace consensus {
 class ConsensusMetadataManager;
-class TimeManager;
 class OpStatusPB;
+class TimeManager;
 }
 
 namespace clock {
@@ -72,9 +72,10 @@ class ResultTracker;
 
 namespace tablet {
 class AlterSchemaOpState;
-class TabletReplicaTestBase;
-class TabletStatusPB;
 class OpDriver;
+class TabletStatusPB;
+class TxnCoordinator;
+class TxnCoordinatorFactory;
 class WriteOpState;
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
@@ -89,6 +90,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                 scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                 consensus::RaftPeerPB local_peer_pb,
                 ThreadPool* apply_pool,
+                TxnCoordinatorFactory* txn_coordinator_factory,
                 consensus::MarkDirtyCallback cb);
 
   // Initializes RaftConsensus.
@@ -310,6 +312,10 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Return the tablet stats.
   ReportedTabletStatsPB GetTabletStats() const;
 
+  TxnCoordinator* txn_coordinator() const {
+    return txn_coordinator_.get();
+  }
+
  private:
   friend class kudu::AlterTableTest;
   friend class RefCountedThreadSafe<TabletReplica>;
@@ -341,6 +347,11 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // constructor-injected by either the Master (for system tables) or the
   // Tablet server.
   ThreadPool* const apply_pool_;
+
+  // If this tablet is a part of the transaction status table, this is the
+  // entity responsible for accepting and managing requests to coordinate
+  // transactions.
+  const std::unique_ptr<TxnCoordinator> txn_coordinator_;
 
   // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
   //

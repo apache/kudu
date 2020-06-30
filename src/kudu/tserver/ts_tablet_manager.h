@@ -28,6 +28,7 @@
 
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -55,7 +56,6 @@ class NodeInstancePB;
 class Partition;
 class PartitionSchema;
 class Schema;
-class TableExtraConfigPB;
 class ThreadPool;
 
 namespace consensus {
@@ -126,6 +126,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          consensus::RaftConfigPB config,
                          boost::optional<TableExtraConfigPB> extra_config,
                          boost::optional<std::string> dimension_label,
+                         boost::optional<TableTypePB> table_type,
                          scoped_refptr<tablet::TabletReplica>* replica);
 
   // Delete the specified tablet asynchronously with callback 'cb'.

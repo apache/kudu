@@ -67,11 +67,6 @@ namespace transactions {
 
 namespace {
 
-const char* kTxnIdColName = "txn_id";
-const char* kEntryTypeColName = "entry_type";
-const char* kIdentifierColName = "identifier";
-const char* kMetadataColName = "metadata";
-
 int kTxnIdColIdx = -1;
 int kEntryTypeColIdx = -1;
 int kIdentifierColIdx = -1;
@@ -81,10 +76,10 @@ Status InitTxnStatusColIdxs() {
   static KuduOnceLambda col_idx_initializer;
   return col_idx_initializer.Init([] {
     const auto& schema = TxnStatusTablet::GetSchemaWithoutIds();
-    kTxnIdColIdx = schema.find_column(kTxnIdColName);
-    kEntryTypeColIdx = schema.find_column(kEntryTypeColName);
-    kIdentifierColIdx = schema.find_column(kIdentifierColName);
-    kMetadataColIdx = schema.find_column(kMetadataColName);
+    kTxnIdColIdx = schema.find_column(TxnStatusTablet::kTxnIdColName);
+    kEntryTypeColIdx = schema.find_column(TxnStatusTablet::kEntryTypeColName);
+    kIdentifierColIdx = schema.find_column(TxnStatusTablet::kIdentifierColName);
+    kMetadataColIdx = schema.find_column(TxnStatusTablet::kMetadataColName);
     return Status::OK();
   });
 }
@@ -107,15 +102,25 @@ int MetadataColIdx() {
   return kMetadataColIdx;
 }
 
+Schema kTxnStatusSchema;
 Schema kTxnStatusSchemaNoIds;
 // Populates the schema of the transaction status table.
 Status PopulateTxnStatusSchema(SchemaBuilder* builder) {
-  RETURN_NOT_OK(builder->AddKeyColumn(kTxnIdColName, INT64));
-  RETURN_NOT_OK(builder->AddKeyColumn(kEntryTypeColName, INT8));
-  RETURN_NOT_OK(builder->AddKeyColumn(kIdentifierColName, STRING));
-  return builder->AddColumn(kMetadataColName, STRING);
+  RETURN_NOT_OK(builder->AddKeyColumn(TxnStatusTablet::kTxnIdColName, INT64));
+  RETURN_NOT_OK(builder->AddKeyColumn(TxnStatusTablet::kEntryTypeColName, INT8));
+  RETURN_NOT_OK(builder->AddKeyColumn(TxnStatusTablet::kIdentifierColName, STRING));
+  return builder->AddColumn(TxnStatusTablet::kMetadataColName, STRING);
 }
 // Initializes the static transaction status schema.
+Status InitTxnStatusSchemaOnce() {
+  static KuduOnceLambda schema_initializer;
+  return schema_initializer.Init([] {
+    SchemaBuilder builder;
+    RETURN_NOT_OK(PopulateTxnStatusSchema(&builder));
+    kTxnStatusSchema = builder.Build();
+    return Status::OK();
+  });
+}
 Status InitTxnStatusSchemaWithNoIdsOnce() {
   static KuduOnceLambda schema_initializer;
   return schema_initializer.Init([] {
@@ -171,27 +176,36 @@ Status ExtractMetadataEntry(const RowBlockRow& row, T* pb) {
 }
 
 Status PopulateTransactionEntryRow(int64_t txn_id, const faststring& entry, KuduPartialRow* row) {
-  RETURN_NOT_OK(row->SetInt64(kTxnIdColName, txn_id));
-  RETURN_NOT_OK(row->SetInt8(kEntryTypeColName, TxnStatusTablet::TRANSACTION));
-  RETURN_NOT_OK(row->SetString(kIdentifierColName, ""));
-  return row->SetString(kMetadataColName, entry);
+  RETURN_NOT_OK(row->SetInt64(TxnStatusTablet::kTxnIdColName, txn_id));
+  RETURN_NOT_OK(row->SetInt8(TxnStatusTablet::kEntryTypeColName, TxnStatusTablet::TRANSACTION));
+  RETURN_NOT_OK(row->SetString(TxnStatusTablet::kIdentifierColName, ""));
+  return row->SetString(TxnStatusTablet::kMetadataColName, entry);
 }
 
 Status PopulateParticipantEntryRow(int64_t txn_id, const string& tablet_id, const faststring& entry,
                                    KuduPartialRow* row) {
-  RETURN_NOT_OK(row->SetInt64(kTxnIdColName, txn_id));
-  RETURN_NOT_OK(row->SetInt8(kEntryTypeColName, TxnStatusTablet::PARTICIPANT));
-  RETURN_NOT_OK(row->SetString(kIdentifierColName, tablet_id));
-  return row->SetString(kMetadataColName, entry);
+  RETURN_NOT_OK(row->SetInt64(TxnStatusTablet::kTxnIdColName, txn_id));
+  RETURN_NOT_OK(row->SetInt8(TxnStatusTablet::kEntryTypeColName, TxnStatusTablet::PARTICIPANT));
+  RETURN_NOT_OK(row->SetString(TxnStatusTablet::kIdentifierColName, tablet_id));
+  return row->SetString(TxnStatusTablet::kMetadataColName, entry);
 }
 
 } // anonymous namespace
+
+const char* const TxnStatusTablet::kTxnIdColName = "txn_id";
+const char* const TxnStatusTablet::kEntryTypeColName = "entry_type";
+const char* const TxnStatusTablet::kIdentifierColName = "identifier";
+const char* const TxnStatusTablet::kMetadataColName = "metadata";
 
 TxnStatusTablet::TxnStatusTablet(tablet::TabletReplica* tablet_replica)
     : tablet_replica_(DCHECK_NOTNULL(tablet_replica)) {
   CHECK_OK(InitTxnStatusColIdxs());
 }
 
+const Schema& TxnStatusTablet::GetSchema() {
+  CHECK_OK(InitTxnStatusSchemaOnce());
+  return kTxnStatusSchema;
+}
 const Schema& TxnStatusTablet::GetSchemaWithoutIds() {
   CHECK_OK(InitTxnStatusSchemaWithNoIdsOnce());
   return kTxnStatusSchemaNoIds;

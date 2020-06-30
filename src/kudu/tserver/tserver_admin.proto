@@ -53,6 +53,10 @@ message CreateTabletRequestPB {
   // UUID of server this request is addressed to.
   optional bytes dest_uuid = 8;
 
+  // The type of table this tablet belongs to. If not set, the assumption is
+  // this is a user-defined table as opposed to a Kudu-internal system table.
+  optional TableTypePB table_type = 13;
+
   required bytes table_id = 1;
   required bytes tablet_id = 2;
   // DEPRECATED.

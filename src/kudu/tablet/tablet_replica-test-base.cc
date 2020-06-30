@@ -112,6 +112,7 @@ Status TabletReplicaTestBase::SetUpReplica(bool new_replica) {
                       cmeta_manager_,
                       *config_peer,
                       apply_pool_.get(),
+                      /*txn_coordinator_factory*/nullptr,
                       [tablet_id] (const string& reason) {
                         LOG(INFO) << Substitute(
                             "state change callback run for $0: $1", tablet_id, reason);

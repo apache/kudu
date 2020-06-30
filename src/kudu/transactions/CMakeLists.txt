@@ -39,7 +39,6 @@ target_link_libraries(transactions
   kudu_common
   tablet
   transactions_proto
-  tserver
   ${KUDU_BASE_LIBS}
 )
 

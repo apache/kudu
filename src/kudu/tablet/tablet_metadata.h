@@ -26,6 +26,7 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
@@ -42,7 +43,6 @@ namespace kudu {
 class BlockIdPB;
 class FsManager;
 class Schema;
-class TableExtraConfigPB;
 
 namespace consensus {
 class OpId;
@@ -83,6 +83,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           bool supports_live_row_count,
                           boost::optional<TableExtraConfigPB> extra_config,
                           boost::optional<std::string> dimension_label,
+                          boost::optional<TableTypePB> table_type,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk.
@@ -106,6 +107,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              boost::optional<consensus::OpId> tombstone_last_logged_opid,
                              boost::optional<TableExtraConfigPB> extra_config,
                              boost::optional<std::string> dimension_label,
+                             boost::optional<TableTypePB> table_type,
                              scoped_refptr<TabletMetadata>* metadata);
 
   static std::vector<BlockIdPB> CollectBlockIdPBs(
@@ -127,6 +129,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     DCHECK_NE(state_, kNotLoadedYet);
     return table_id_;
   }
+
+  const boost::optional<TableTypePB>& table_type() const;
 
   std::string table_name() const;
 
@@ -304,7 +308,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  boost::optional<consensus::OpId> tombstone_last_logged_opid,
                  bool supports_live_row_count,
                  boost::optional<TableExtraConfigPB> extra_config,
-                 boost::optional<std::string> dimension_label);
+                 boost::optional<std::string> dimension_label,
+                 boost::optional<TableTypePB> table_type);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id);
@@ -397,6 +402,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Tablet's dimension label.
   boost::optional<std::string> dimension_label_;
+
+  // The table type of the table this tablet belongs to.
+  boost::optional<TableTypePB> table_type_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.

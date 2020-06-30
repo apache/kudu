@@ -39,6 +39,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
+#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/barrier.h"
@@ -52,6 +53,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::consensus::ConsensusBootstrapInfo;
+using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tablet::TabletReplicaTestBase;
 using std::string;
 using std::thread;

@@ -17,7 +17,7 @@
 #pragma once
 
 #include <cstdint>
-#include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -26,6 +26,7 @@
 #include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/txn_status_entry.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/locks.h"
@@ -43,10 +44,6 @@ class TxnStatusEntryPB;
 
 // Maps the transaction ID to the corresponding TransactionEntry.
 typedef std::unordered_map<int64_t, scoped_refptr<TransactionEntry>> TransactionsMap;
-
-// Maps the transaction ID to the transaction's participants' tablet IDs. This
-// is convenient to use in testing, given its relative ease of construction.
-typedef std::map<int64_t, std::vector<std::string>> ParticipantIdsByTxnId;
 
 // Visitor used to iterate over and load into memory the existing state from a
 // status tablet.
@@ -68,13 +65,15 @@ class TxnStatusManagerBuildingVisitor : public TransactionsVisitor {
 
 // Manages ongoing transactions and participants therein, backed by an
 // underlying tablet.
-class TxnStatusManager {
+class TxnStatusManager : public tablet::TxnCoordinator {
  public:
   explicit TxnStatusManager(tablet::TabletReplica* tablet_replica)
       : highest_txn_id_(-1),
         status_tablet_(tablet_replica) {}
+  virtual ~TxnStatusManager() {}
+
   // Loads the contents of the status tablet into memory.
-  Status LoadFromTablet();
+  Status LoadFromTablet() override;
 
   // Writes an entry to the status tablet and creates a transaction in memory.
   // Returns an error if a higher transaction ID has already been attempted
@@ -84,11 +83,11 @@ class TxnStatusManager {
   // TODO(awong): consider computing the next available transaction ID in this
   // partition and using it in case this transaction is already used, or having
   // callers forward a request for the next-highest transaction ID.
-  Status BeginTransaction(int64_t txn_id, const std::string& user);
+  Status BeginTransaction(int64_t txn_id, const std::string& user) override;
 
   // Begins committing the given transaction, returning an error if the
   // transaction doesn't exist, isn't open, or isn't owned by the given user.
-  Status BeginCommitTransaction(int64_t txn_id, const std::string& user);
+  Status BeginCommitTransaction(int64_t txn_id, const std::string& user) override;
 
   // Finalizes the commit of the transaction, returning an error if the
   // transaction isn't in an appropraite state.
@@ -97,12 +96,12 @@ class TxnStatusManager {
   // so it doesn't take a user.
   //
   // TODO(awong): add a commit timestamp.
-  Status FinalizeCommitTransaction(int64_t txn_id);
+  Status FinalizeCommitTransaction(int64_t txn_id) override;
 
   // Aborts the given transaction, returning an error if the transaction
   // doesn't exist, is committed or not yet opened, or isn't owned by the given
   // user.
-  Status AbortTransaction(int64_t txn_id, const std::string& user);
+  Status AbortTransaction(int64_t txn_id, const std::string& user) override;
 
   // Creates an in-memory participant, writes an entry to the status table, and
   // attaches the in-memory participant to the transaction.
@@ -110,13 +109,13 @@ class TxnStatusManager {
   // If the transaction is open, it is ensured to be active for the duration of
   // this call. Returns an error if the given transaction isn't open.
   Status RegisterParticipant(int64_t txn_id, const std::string& tablet_id,
-                             const std::string& user);
+                             const std::string& user) override;
 
   // Populates a map from transaction ID to the sorted list of participants
   // associated with that transaction ID.
-  ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const;
+  tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
 
-  int64_t highest_txn_id() const {
+  int64_t highest_txn_id() const override {
     std::lock_guard<simple_spinlock> l(lock_);
     return highest_txn_id_;
   }
@@ -140,6 +139,15 @@ class TxnStatusManager {
 
   // The access to underlying storage.
   TxnStatusTablet status_tablet_;
+};
+
+class TxnStatusManagerFactory : public tablet::TxnCoordinatorFactory {
+ public:
+  TxnStatusManagerFactory() {}
+
+  std::unique_ptr<tablet::TxnCoordinator> Create(tablet::TabletReplica* replica) override {
+    return std::unique_ptr<tablet::TxnCoordinator>(new TxnStatusManager(replica));
+  }
 };
 
 } // namespace transactions

@@ -164,6 +164,7 @@ class TabletCopyTest : public KuduTabletTest {
                           cmeta_manager,
                           *config_peer,
                           apply_pool_.get(),
+                          nullptr,
                           [this, tablet_id](const string& reason) {
                             this->TabletReplicaStateChangedCallback(tablet_id, reason);
                           }));

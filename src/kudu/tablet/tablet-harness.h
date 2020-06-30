@@ -102,6 +102,7 @@ class TabletHarness {
                                                /*tombstone_last_logged_opid=*/ boost::none,
                                                /*extra_config=*/ boost::none,
                                                /*dimension_label=*/ boost::none,
+                                               /*table_type=*/ boost::none,
                                                &metadata));
     metrics_registry_.reset(new MetricRegistry);
     metric_entity_ = METRIC_ENTITY_server.Instantiate(metrics_registry_.get(),

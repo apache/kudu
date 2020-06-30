@@ -1720,6 +1720,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
       /*supports_live_row_count=*/ true,
       /*extra_config=*/ boost::none,
       /*dimension_label=*/ boost::none,
+      /*table_type=*/ boost::none,
       &meta));
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump data_dirs $0 "
@@ -1757,6 +1758,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
                   /*supports_live_row_count=*/ true,
                   /*extra_config=*/ boost::none,
                   /*dimension_label=*/ boost::none,
+                  /*table_type=*/ boost::none,
                   &meta);
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "

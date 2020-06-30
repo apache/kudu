@@ -89,6 +89,10 @@ message TabletSuperBlockPB {
   // Tablet Id
   required bytes tablet_id = 2;
 
+  // The type of table this tablet belongs to. If not set, the assumption is
+  // this is a user-defined table as opposed to a Kudu-internal system table.
+  optional TableTypePB table_type = 19;
+
   // The latest durable MemRowSet id
   required int64 last_durable_mrs_id = 3;
 

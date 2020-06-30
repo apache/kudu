@@ -34,6 +34,7 @@
 #include "kudu/util/status.h"
 
 using kudu::pb_util::SecureShortDebugString;
+using kudu::tablet::ParticipantIdsByTxnId;
 using std::string;
 using std::vector;
 using strings::Substitute;

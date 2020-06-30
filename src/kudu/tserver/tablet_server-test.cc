@@ -3837,7 +3837,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
       "TestWriteOutOfBoundsTable", tabletId,
       partitions[1],
       tabletId, schema, partition_schema,
-      mini_server_->CreateLocalConfig(), boost::none, boost::none, nullptr));
+      mini_server_->CreateLocalConfig(), boost::none, boost::none, boost::none, nullptr));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));
 

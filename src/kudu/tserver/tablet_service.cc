@@ -1243,6 +1243,7 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
       req->config(),
       req->has_extra_config() ? boost::make_optional(req->extra_config()) : boost::none,
       req->has_dimension_label() ? boost::make_optional(req->dimension_label()) : boost::none,
+      req->has_table_type() ? boost::make_optional(req->table_type()) : boost::none,
       nullptr);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;

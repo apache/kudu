@@ -82,6 +82,10 @@ class TransactionsVisitor {
 // TODO(awong): consider batching writes.
 class TxnStatusTablet {
  public:
+  static const char* const kTxnIdColName;
+  static const char* const kEntryTypeColName;
+  static const char* const kIdentifierColName;
+  static const char* const kMetadataColName;
   enum TxnStatusEntryType {
     TRANSACTION = 1,
     PARTICIPANT = 2,
@@ -89,6 +93,7 @@ class TxnStatusTablet {
   explicit TxnStatusTablet(tablet::TabletReplica* tablet_replica);
 
   // Returns the schema of the transactions status table.
+  static const Schema& GetSchema();
   static const Schema& GetSchemaWithoutIds();
 
   // Uses the given visitor to iterate over the entries in the rows of the
@@ -105,6 +110,11 @@ class TxnStatusTablet {
                            const TxnParticipantEntryPB& pb);
 
  private:
+  friend class TxnStatusManager;
+  tablet::TabletReplica* tablet_replica() const {
+    return tablet_replica_;
+  }
+
   // Writes 'req' to the underlying tablet replica, returning an error if there
   // was a problem replicating the request, or if there were any row errors.
   Status SyncWrite(const tserver::WriteRequestPB& req);

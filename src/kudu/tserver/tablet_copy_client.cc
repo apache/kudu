@@ -357,17 +357,21 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
 
     // Create the superblock on disk.
     RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
-                                            superblock_->table_name(),
-                                            superblock_->table_id(),
-                                            schema,
-                                            partition_schema,
-                                            partition,
-                                            superblock_->tablet_data_state(),
-                                            superblock_->tombstone_last_logged_opid(),
-                                            remote_superblock_->supports_live_row_count(),
-                                            superblock_->extra_config(),
-                                            superblock_->dimension_label(),
-                                            &meta_));
+        superblock_->table_name(),
+        superblock_->table_id(),
+        schema,
+        partition_schema,
+        partition,
+        superblock_->tablet_data_state(),
+        superblock_->tombstone_last_logged_opid(),
+        remote_superblock_->supports_live_row_count(),
+        superblock_->has_extra_config() ?
+            boost::make_optional(superblock_->extra_config()) : boost::none,
+        superblock_->has_dimension_label() ?
+            boost::make_optional(superblock_->dimension_label()) : boost::none,
+        superblock_->has_table_type() ?
+            boost::make_optional(superblock_->table_type()) : boost::none,
+        &meta_));
     TRACE("Wrote new tablet metadata");
 
     // We have begun persisting things to disk. Update the tablet copy state

@@ -273,6 +273,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   /*supports_live_row_count=*/ true,
                                                   /*extra_config=*/ boost::none,
                                                   /*dimension_label=*/ boost::none,
+                                                  /*table_type=*/ boost::none,
                                                   &metadata));
 
   RaftConfigPB config;
@@ -394,6 +395,7 @@ Status SysCatalogTable::SetupTablet(
       cmeta_manager_,
       local_peer_pb_,
       master_->tablet_apply_pool(),
+      /*txn_coordinator_factory*/ nullptr,
       [this, tablet_id](const string& reason) {
         this->SysCatalogStateChanged(tablet_id, reason);
       }));

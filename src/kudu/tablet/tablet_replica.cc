@@ -25,8 +25,10 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -49,6 +51,7 @@
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
+#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
@@ -130,12 +133,16 @@ TabletReplica::TabletReplica(
     scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
     consensus::RaftPeerPB local_peer_pb,
     ThreadPool* apply_pool,
+    TxnCoordinatorFactory* txn_coordinator_factory,
     MarkDirtyCallback cb)
     : meta_(DCHECK_NOTNULL(std::move(meta))),
       cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
       local_peer_pb_(std::move(local_peer_pb)),
       log_anchor_registry_(new LogAnchorRegistry()),
       apply_pool_(apply_pool),
+      txn_coordinator_(meta_->table_type() &&
+                       *meta_->table_type() == TableTypePB::TXN_STATUS_TABLE ?
+                       DCHECK_NOTNULL(txn_coordinator_factory)->Create(this) : nullptr),
       mark_dirty_clbk_(std::move(cb)),
       state_(NOT_INITIALIZED),
       last_status_("Tablet initializing...") {
@@ -251,6 +258,11 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
 
     CHECK_EQ(BOOTSTRAPPING, state_); // We are still protected by 'state_change_lock_'.
     set_state(RUNNING);
+  }
+  // TODO(awong): hook a callback into the TxnStatusManager that runs this when
+  // we become leader such that only leaders load the tablet into memory.
+  if (txn_coordinator_) {
+    RETURN_NOT_OK(txn_coordinator_->LoadFromTablet());
   }
 
   return Status::OK();

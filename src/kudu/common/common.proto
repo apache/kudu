@@ -446,3 +446,14 @@ message TableExtraConfigPB {
   // calculate maintenance priority score.
   optional int32 maintenance_priority = 2;
 }
+
+// The type of a given table. This is useful in determining whether a
+// table/tablet stores user-specified data, as opposed to being a Kudu-internal
+// system table.
+enum TableTypePB {
+  // The table stores user data.
+  DEFAULT_TABLE = 0;
+
+  // The table stores transaction status management metadata.
+  TXN_STATUS_TABLE = 1;
+}

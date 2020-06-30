@@ -37,13 +37,16 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -63,12 +66,16 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_coordinator.h"
+#include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
@@ -111,6 +118,9 @@ using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::SimpleIntKeyKuduSchema;
+using kudu::itest::StartTabletCopy;
+using kudu::itest::TabletServerMap;
+using kudu::itest::TServerDetails;
 using kudu::KuduPartialRow;
 using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsResponsePB;
@@ -120,9 +130,14 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::ReportedTabletPB;
 using kudu::master::TableInfo;
 using kudu::master::TabletReportPB;
+using kudu::pb_util::SecureDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
 using kudu::tablet::TabletReplica;
+using kudu::tablet::ParticipantIdsByTxnId;
+using kudu::tablet::TxnCoordinator;
+using kudu::transactions::TxnStatusTablet;
 using kudu::tserver::MiniTabletServer;
 using kudu::ClusterVerifier;
 using std::map;
@@ -976,6 +991,173 @@ TEST_F(TsTabletManagerITest, TestDeleteTableDuringTabletCopy) {
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(0, tserver_tablets_count(follower_index));
   });
+}
+
+namespace {
+
+Status GetPartitionForTxnStatusTablet(int64_t start_txn_id, int64_t end_txn_id,
+                                      PartitionSchema* partition_schema,
+                                      Partition* partition) {
+  const auto& schema = TxnStatusTablet::GetSchema();
+  // Add range partitioning on the transaction ID column.
+  PartitionSchemaPB partition_pb;
+  auto* range_schema = partition_pb.mutable_range_schema();
+  range_schema->add_columns()->set_name(TxnStatusTablet::kTxnIdColName);
+  PartitionSchema pschema;
+  RETURN_NOT_OK(PartitionSchema::FromPB(partition_pb, schema, &pschema));
+
+  // Create some bounds for the partition.
+  KuduPartialRow lower_bound(&schema);
+  KuduPartialRow upper_bound(&schema);
+  RETURN_NOT_OK(lower_bound.SetInt64(TxnStatusTablet::kTxnIdColName, start_txn_id));
+  RETURN_NOT_OK(upper_bound.SetInt64(TxnStatusTablet::kTxnIdColName, end_txn_id));
+  vector<Partition> ps;
+  RETURN_NOT_OK(pschema.CreatePartitions(/*split_rows=*/{},
+      { std::make_pair(lower_bound, upper_bound) }, schema, &ps));
+  *partition = ps[0];
+  *partition_schema = pschema;
+  return Status::OK();
+}
+
+} // anonymous namespace
+
+class TxnStatusTabletManagementTest : public TsTabletManagerITest {
+ public:
+  static constexpr const char* kOwner = "jojo";
+  const char* kParticipant = "participant";
+  const char* kTxnStatusTabletId = "11111111111111111111111111111111";
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+  // Creates a request to create a transaction status tablet with the given IDs
+  // and Raft config.
+  CreateTabletRequestPB CreateTxnTabletReq(const string& tablet_id, const string& replica_id,
+                                           RaftConfigPB raft_config) {
+    CreateTabletRequestPB req;
+    req.set_table_type(TableTypePB::TXN_STATUS_TABLE);
+    req.set_dest_uuid(replica_id);
+    req.set_table_id("txn_status_table");
+    req.set_table_name("txn_status_table");
+    req.set_tablet_id(tablet_id);
+    *req.mutable_config() = std::move(raft_config);
+    CHECK_OK(SchemaToPB(TxnStatusTablet::GetSchema(), req.mutable_schema()));
+    return req;
+  }
+
+  // Creates a transaction status tablet at the given tablet server.
+  Status CreateTxnStatusTablet(MiniTabletServer* ts) {
+    CreateTabletRequestPB req = CreateTxnTabletReq(
+        kTxnStatusTabletId, ts->server()->fs_manager()->uuid(), ts->CreateLocalConfig());
+    CreateTabletResponsePB resp;
+    rpc::RpcController rpc;
+
+    // Put together a partition spec for this tablet.
+    PartitionSchema partition_schema;
+    Partition partition;
+    RETURN_NOT_OK(GetPartitionForTxnStatusTablet(0, 100, &partition_schema, &partition));
+    partition.ToPB(req.mutable_partition());
+
+    unique_ptr<TabletServerAdminServiceProxy> admin_proxy(
+        new TabletServerAdminServiceProxy(client_messenger_, ts->bound_rpc_addr(),
+                                          ts->bound_rpc_addr().host()));
+    RETURN_NOT_OK(admin_proxy->CreateTablet(req, &resp, &rpc));
+    scoped_refptr<TabletReplica> r;
+    CHECK(ts->server()->tablet_manager()->LookupTablet(kTxnStatusTabletId, &r));
+    return r->consensus()->WaitUntilLeaderForTests(kTimeout);
+  }
+
+  Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {
+    for (const auto& txn_id_and_prt_ids : txns) {
+      const auto& txn_id = txn_id_and_prt_ids.first;
+      RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner));
+      for (const auto& prt_id : txn_id_and_prt_ids.second) {
+        RETURN_NOT_OK(coordinator->RegisterParticipant(txn_id, prt_id, kOwner));
+      }
+    }
+    return Status::OK();
+  }
+};
+
+TEST_F(TxnStatusTabletManagementTest, TestBootstrapTransactionStatusTablet) {
+  NO_FATALS(StartCluster({}));
+  auto* ts0 = cluster_->mini_tablet_server(0);
+  ASSERT_OK(CreateTxnStatusTablet(ts0));
+  const ParticipantIdsByTxnId kExpectedTxns = {
+    { 1, { kParticipant } },
+    { 2, {} },
+  };
+  {
+    // Ensure the replica has a coordinator.
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_TRUE(ts0->server()->tablet_manager()->LookupTablet(
+        kTxnStatusTabletId, &replica));
+    ASSERT_OK(replica->WaitUntilConsensusRunning(kTimeout));
+    TxnCoordinator* coordinator = replica->txn_coordinator();
+    ASSERT_NE(nullptr, coordinator);
+
+    // Create a transaction and participant.
+    ASSERT_OK(StartTransactions(kExpectedTxns, coordinator));
+  }
+  // Restart the tablet server, reload the transaction status tablet, and
+  // ensure we have the expected state.
+  ts0->Shutdown();
+  ASSERT_OK(ts0->Restart());
+  {
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_TRUE(ts0->server()->tablet_manager()->LookupTablet(
+        kTxnStatusTabletId, &replica));
+    TxnCoordinator* coordinator = replica->txn_coordinator();
+    ASSERT_NE(nullptr, coordinator);
+    // Wait for the contents of the tablet to be loaded into memory.
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(kExpectedTxns, coordinator->GetParticipantsByTxnIdForTests());
+    });
+  }
+}
+
+TEST_F(TxnStatusTabletManagementTest, TestCopyTransactionStatusTablet) {
+  InternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 2;
+  NO_FATALS(StartCluster(std::move(opts)));
+  const ParticipantIdsByTxnId kExpectedTxns = {
+    { 1, { kParticipant } },
+    { 2, {} },
+  };
+
+  auto* ts0 = cluster_->mini_tablet_server(0);
+  ASSERT_OK(CreateTxnStatusTablet(ts0));
+  {
+    // Ensure the replica has a coordinator.
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_TRUE(ts0->server()->tablet_manager()->LookupTablet(
+        kTxnStatusTabletId, &replica));
+    ASSERT_OK(replica->WaitUntilConsensusRunning(kTimeout));
+    TxnCoordinator* coordinator = replica->txn_coordinator();
+    ASSERT_NE(nullptr, coordinator);
+
+    // Create a transaction and participant.
+    ASSERT_OK(StartTransactions(kExpectedTxns, coordinator));
+  }
+  TabletServerMap ts_map;
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(), client_messenger_, &ts_map));
+  ValueDeleter deleter(&ts_map);
+  auto* ts1 = cluster_->mini_tablet_server(1);
+  TServerDetails* src_details = ts_map[ts0->uuid()];
+  TServerDetails* dst_details = ts_map[ts1->uuid()];
+  HostPort src_addr = HostPortFromPB(src_details->registration.rpc_addresses(0));
+  ASSERT_OK(StartTabletCopy(dst_details, kTxnStatusTabletId, src_details->uuid(),
+                            src_addr, std::numeric_limits<int64_t>::max(), kTimeout));
+  {
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_TRUE(ts1->server()->tablet_manager()->LookupTablet(
+        kTxnStatusTabletId, &replica));
+    ASSERT_OK(replica->WaitUntilConsensusRunning(MonoDelta::FromSeconds(3)));
+    TxnCoordinator* coordinator = replica->txn_coordinator();
+    ASSERT_NE(nullptr, coordinator);
+    // Wait for the contents of the tablet to be loaded into memory.
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(kExpectedTxns, coordinator->GetParticipantsByTxnIdForTests());
+    });
+  }
 }
 
 } // namespace tserver
