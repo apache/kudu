@@ -311,7 +311,8 @@ TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
   SchemaBuilder b(schema);
   b.AddColumn("new_column", DataType::INT32);
   Schema altered_schema = b.Build();
-  ASSERT_OK(hms_catalog_->AlterTable(kTableId, kTableName, kAlteredTableName, altered_schema));
+  ASSERT_OK(hms_catalog_->AlterTable(kTableId, kTableName, kAlteredTableName,
+                                     kOwner, altered_schema));
   NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, kHmsTableName));
   NO_FATALS(CheckTable(kHmsDatabase, kHmsAlteredTableName, kTableId, kOwner, altered_schema));
 
@@ -353,14 +354,14 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
   NO_FATALS(CheckExternalTable());
 
   // Try and rename the Kudu table to the external table name.
-  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext", schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext", boost::none, schema);
   EXPECT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckExternalTable());
   NO_FATALS(CheckTable("default", "a", kTableId, boost::none, schema));
 
   // Try and rename the external table. This shouldn't succeed because the Table
   // ID doesn't match.
-  s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.b", schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.b", boost::none, schema);
   EXPECT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckExternalTable());
   NO_FATALS(CheckTable("default", "a", kTableId, boost::none, schema));
@@ -436,7 +437,7 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   Status s = hms_catalog_->CreateTable(kTableId, "default.b", kOwner, schema);
   EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
 
-  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.c", schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.c", kOwner, schema);
   EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Start the HMS back up and ensure that the same operations succeed.
@@ -449,7 +450,7 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, kOwner, schema));
   NO_FATALS(CheckTable(kHmsDatabase, "d", kTableId, kOwner, schema));
 
-  EXPECT_OK(hms_catalog_->AlterTable(kTableId, "default.a", "default.c", schema));
+  EXPECT_OK(hms_catalog_->AlterTable(kTableId, "default.a", "default.c", kOwner, schema));
   NO_FATALS(CheckTable(kHmsDatabase, "c", kTableId, kOwner, schema));
   NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, "a"));
 }

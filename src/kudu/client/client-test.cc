@@ -5372,6 +5372,37 @@ TEST_F(ClientTest, TestCreateAndAlterTableWithInvalidComment) {
   }
 }
 
+TEST_F(ClientTest, TestAlterTableChangeOwner) {
+  const string kTableName = "table_owner";
+  const string kOriginalOwner = "alice";
+  const string kNewOwner = "bob";
+
+  // Create table
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  schema_builder.AddColumn("val")->Type(KuduColumnSchema::INT32);
+  ASSERT_OK(schema_builder.Build(&schema));
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+      .schema(&schema).num_replicas(1).set_range_partition_columns({ "key" })
+      .set_owner(kOriginalOwner).Create());
+  {
+    shared_ptr<KuduTable> table;
+    client_->OpenTable(kTableName, &table);
+    ASSERT_EQ(kOriginalOwner, table->owner());
+  }
+
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  table_alterer->SetOwner(kNewOwner);
+  ASSERT_OK(table_alterer->Alter());
+  {
+    shared_ptr<KuduTable> table;
+    client_->OpenTable(kTableName, &table);
+    ASSERT_EQ(kNewOwner, table->owner());
+  }
+}
+
 enum IntEncoding {
   kPlain,
   kBitShuffle,

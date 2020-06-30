@@ -151,6 +151,15 @@ Status HmsITestHarness::RenameHmsTable(const string& database_name,
   return hms_client_->AlterTable(database_name, old_table_name, table);
 }
 
+Status HmsITestHarness::ChangeHmsOwner(const string& database_name,
+                                       const string& table_name,
+                                       const string& new_table_owner) {
+  hive::Table table;
+  RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
+  table.owner = new_table_owner;
+  return hms_client_->AlterTable(database_name, table_name, table);
+}
+
 Status HmsITestHarness::AlterHmsTableDropColumns(const string& database_name,
                                                  const string& table_name) {
     hive::Table table;
@@ -203,6 +212,7 @@ void HmsITestHarness::CheckTable(const string& database_name,
     ASSERT_OK(GetLoggedInUser(&username));
   }
   ASSERT_EQ(hms_table.owner, username);
+  ASSERT_EQ(table->owner(), username);
 
   const auto& schema = table->schema();
   ASSERT_EQ(schema.num_columns(), hms_table.sd.cols.size());

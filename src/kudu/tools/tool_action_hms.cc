@@ -108,6 +108,16 @@ Status RenameTableInKuduCatalog(KuduClient* kudu_client,
                 ->Alter();
 }
 
+// Only alter the table in Kudu but not in the Hive Metastore.
+Status ChangeOwnerInKuduCatalog(KuduClient* kudu_client,
+                                const string& name,
+                                const string& owner) {
+  unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
+  return alterer->SetOwner(owner)
+                ->modify_external_catalogs(false)
+                ->Alter();
+}
+
 Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
             unique_ptr<HmsCatalog>* hms_catalog,
@@ -183,8 +193,9 @@ bool IsSynced(const set<string>& master_addresses,
       master_addresses != static_cast<set<string>>(Split(*hms_masters_field, ","))) {
     return false;
   }
-  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), hms_table.owner, schema,
-                                       *hms_masters_field, hms_table.tableType, &hms_table_copy);
+  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), kudu_table.owner(),
+                                       schema, *hms_masters_field, hms_table.tableType,
+                                       &hms_table_copy);
   return s.ok() && hms_table_copy == hms_table;
 }
 
@@ -214,10 +225,12 @@ Status PrintTables(const string& master_addrs,
   DataTable table({
       "Kudu table",
       "Kudu table ID",
+      "Kudu owner",
       "Kudu master addresses",
       "HMS database",
       "HMS table",
       "HMS table type",
+      "HMS owner",
       Substitute("HMS $0", HmsClient::kKuduTableNameKey),
       Substitute("HMS $0", HmsClient::kKuduTableIdKey),
       Substitute("HMS $0", HmsClient::kKuduMasterAddrsKey),
@@ -229,21 +242,23 @@ Status PrintTables(const string& master_addrs,
       const KuduTable& kudu_table = *pair.first;
       row.emplace_back(kudu_table.name());
       row.emplace_back(kudu_table.id());
+      row.emplace_back(kudu_table.owner());
       row.emplace_back(master_addrs);
     } else {
-      row.resize(3);
+      row.resize(4);
     }
     if (pair.second) {
       hive::Table& hms_table = *pair.second;
       row.emplace_back(hms_table.dbName);
       row.emplace_back(hms_table.tableName);
       row.emplace_back(hms_table.tableType);
+      row.emplace_back(hms_table.owner);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduTableNameKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduTableIdKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduMasterAddrsKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kStorageHandlerKey]);
     } else {
-      row.resize(10);
+      row.resize(12);
     }
     table.AddRow(std::move(row));
   }
@@ -635,7 +650,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
       if (FLAGS_dryrun) {
         LOG(INFO) << "[dryrun] Creating HMS table for Kudu table " << TableIdent(*kudu_table);
       } else {
-        Status s = hms_catalog->CreateTable(table_id, table_name, boost::none, schema);
+        Status s = hms_catalog->CreateTable(table_id, table_name, kudu_table->owner(), schema);
         if (s.IsAlreadyPresent()) {
           LOG(ERROR) << "Failed to create HMS table for Kudu table "
                      << TableIdent(*kudu_table)
@@ -730,6 +745,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
       const KuduTable& kudu_table = *table_pair.first;
       const hive::Table& hms_table = table_pair.second;
       string hms_table_name = Substitute("$0.$1", hms_table.dbName, hms_table.tableName);
+      string owner = kudu_table.owner();
 
       if (hms_table_name != kudu_table.name()) {
         // Update the Kudu table name to match the HMS table name.
@@ -752,6 +768,22 @@ Status FixHmsMetadata(const RunnerContext& context) {
         }
       }
 
+      // If the HMS table has an owner and Kudu does not, update the Kudu table owner to match
+      // the HMS table owner. Otherwise the metadata step below will ensure the Kudu owner
+      // is updated in the HMS.
+      if (hms_table.owner != owner && owner.empty()) {
+        if (FLAGS_dryrun) {
+          LOG(INFO) << "[dryrun] Changing owner of " << TableIdent(kudu_table)
+                    << " to " << hms_table.owner << " in Kudu catalog.";
+        } else {
+          RETURN_NOT_OK_PREPEND(
+              ChangeOwnerInKuduCatalog(kudu_client.get(), kudu_table.name(), hms_table.owner),
+              Substitute("failed to change owner of $0 to $1 in Kudu catalog",
+                TableIdent(kudu_table), hms_table.owner));
+          owner = hms_table.owner;
+        }
+      }
+
       // Update the HMS table metadata to match Kudu.
       if (FLAGS_dryrun) {
         LOG(INFO) << "[dryrun] Refreshing HMS table metadata for Kudu table "
@@ -760,8 +792,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
         auto schema = KuduSchema::ToSchema(kudu_table.schema());
         RETURN_NOT_OK_PREPEND(
             // Disable table ID checking to support fixing tables with unsynchronized IDs.
-            hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name, schema,
-                /* check_id */ false),
+            hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name,
+                owner, schema, /* check_id */ false),
             Substitute("failed to refresh HMS table metadata for Kudu table $0",
               TableIdent(kudu_table)));
       }

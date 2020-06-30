@@ -93,6 +93,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
+using boost::none;
+using boost::optional;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -165,7 +167,8 @@ class MasterTest : public KuduTest {
   Status CreateTable(const string& table_name,
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
-                     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds);
+                     const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
+                     const optional<string>& owner);
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
@@ -529,13 +532,14 @@ Status MasterTest::CreateTable(const string& table_name,
   KuduPartialRow split2(&schema);
   RETURN_NOT_OK(split2.SetInt32("key", 20));
 
-  return CreateTable(table_name, schema, { split1, split2 }, {});
+  return CreateTable(table_name, schema, { split1, split2 }, {}, boost::none);
 }
 
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema,
                                const vector<KuduPartialRow>& split_rows,
-                               const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds) {
+                               const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
+                               const optional<string>& owner) {
 
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
@@ -552,6 +556,9 @@ Status MasterTest::CreateTable(const string& table_name,
     encoder.Add(RowOperationsPB::RANGE_UPPER_BOUND, bound.second);
   }
 
+  if (owner) {
+    req.set_owner(*owner);
+  }
   if (!bounds.empty()) {
     controller.RequireServerFeature(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
@@ -669,7 +676,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
     ASSERT_OK(split2.SetInt32("key", 2));
-    Status s = CreateTable(kTableName, kTableSchema, { split1, split1, split2 }, {});
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split1, split2 }, {}, none);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "duplicate split row");
   }
@@ -679,7 +686,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow split1(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
-    Status s = CreateTable(kTableName, kTableSchema, { split1, split2 }, {});
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split2 }, {}, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: split rows must contain a value for at "
@@ -691,7 +698,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow split(&kTableSchema);
     ASSERT_OK(split.SetInt32("key", 1));
     ASSERT_OK(split.SetInt32("val", 1));
-    Status s = CreateTable(kTableName, kTableSchema, { split }, {});
+    Status s = CreateTable(kTableName, kTableSchema, { split }, {}, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: split rows may only contain values "
@@ -708,7 +715,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(b_lower.SetInt32("key", 50));
     ASSERT_OK(b_upper.SetInt32("key", 150));
     Status s = CreateTable(kTableName, kTableSchema, { }, { { a_lower, a_upper },
-                                                            { b_lower, b_upper } });
+                                                            { b_lower, b_upper } },
+                                                            none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: overlapping range partition");
   }
@@ -722,7 +730,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split.SetInt32("key", 200));
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
-                           { { bound_lower, bound_upper } });
+                           { { bound_lower, bound_upper } },
+                           none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
   }
@@ -736,7 +745,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(split.SetInt32("key", -120));
 
     Status s = CreateTable(kTableName, kTableSchema, { split },
-                           { { bound_lower, bound_upper } });
+                           { { bound_lower, bound_upper } },
+                           none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split out of bounds");
   }
@@ -746,7 +756,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(bound_lower.SetInt32("key", 150));
     ASSERT_OK(bound_upper.SetInt32("key", 0));
 
-    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } }, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: range partition lower bound must be "
@@ -758,7 +768,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_OK(bound_lower.SetInt32("key", 0));
     ASSERT_OK(bound_upper.SetInt32("key", 0));
 
-    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } });
+    Status s = CreateTable(kTableName, kTableSchema, { }, { { bound_lower, bound_upper } }, none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: range partition lower bound must be "
@@ -773,7 +783,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow split(&kTableSchema);
     ASSERT_OK(split.SetInt32("key", 0));
 
-    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } });
+    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } },
+                           none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
   }
@@ -786,7 +797,8 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     KuduPartialRow split(&kTableSchema);
     ASSERT_OK(split.SetInt32("key", 10));
 
-    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } });
+    Status s = CreateTable(kTableName, kTableSchema, { split }, { { bound_lower, bound_upper } },
+                           none);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: split matches lower or upper bound");
   }
@@ -798,11 +810,22 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   const DataType types[] = { BOOL, FLOAT, DOUBLE };
   for (DataType type : types) {
     const Schema kTableSchema({ ColumnSchema("key", type) }, 1);
-    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {});
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>(), {}, none);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "key column may not have type of BOOL, FLOAT, or DOUBLE");
   }
+}
+
+TEST_F(MasterTest, TestCreateTableOwnerNameTooLong) {
+  const char *kTableName = "testb";
+  const string kOwnerName = "abcdefghijklmnopqrstuvwxyz01234567899abcdefghijklmnopqrstuvw"
+    "xyz01234567899abcdefghijklmnopqrstuvwxyz01234567899abcdefghijklmnopqrstuvwxyz01234567899";
+
+  const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
+  Status s = CreateTable(kTableName, kTableSchema, { }, { }, kOwnerName);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid owner name");
 }
 
 // Regression test for KUDU-253/KUDU-592: crash if the schema passed to CreateTable

@@ -72,7 +72,7 @@ class HmsCatalog {
   // Fails the HMS is unreachable, or a table with the same name is already present.
   Status CreateTable(const std::string& id,
                      const std::string& name,
-                     boost::optional<const std::string&> owner,
+                     const boost::optional<const std::string&>& owner,
                      const Schema& schema,
                      const std::string& table_type = hms::HmsClient::kManagedTable)
                      WARN_UNUSED_RESULT;
@@ -102,6 +102,7 @@ class HmsCatalog {
   Status AlterTable(const std::string& id,
                     const std::string& name,
                     const std::string& new_name,
+                    boost::optional<const std::string&> owner,
                     const Schema& schema,
                     const bool& check_id = true) WARN_UNUSED_RESULT;
 

@@ -195,6 +195,9 @@ message SysTablesEntryPB {
   optional int64 alter_timestamp = 11;
   // The table's extra configuration properties.
   optional TableExtraConfigPB extra_config = 12;
+
+  // The user that owns the table.
+  optional string owner = 13;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent
@@ -487,8 +490,8 @@ message CreateTableRequestPB {
   optional PartitionSchemaPB partition_schema = 7;
   optional int32 num_replicas = 4;
 
-  // If set, uses the provided value as the table owner when creating the table
-  // in external catalogs such as the Hive Metastore.
+  // If set, uses the provided value as the table owner when creating the table.
+  // Otherwise, the owner is defaulted to the user that created the table.
   optional string owner = 8;
 
   // The table's extra configuration properties.
@@ -676,6 +679,8 @@ message AlterTableRequestPB {
   optional bool modify_external_catalogs = 5 [default = true];
 
   map<string, string> new_extra_configs = 6;
+
+  optional string new_table_owner = 7;
 }
 
 message AlterTableResponsePB {
@@ -739,6 +744,9 @@ message GetTableSchemaResponsePB {
 
   // The table's extra configuration properties.
   map<string, string> extra_configs = 9;
+
+  // The user that owns the table.
+  optional string owner = 10;
 }
 
 message ConnectToMasterRequestPB {

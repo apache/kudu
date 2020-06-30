@@ -43,6 +43,7 @@ class KuduTable::Data {
        std::string name,
        std::string id,
        int num_replicas,
+       std::string owner,
        const KuduSchema& schema,
        PartitionSchema partition_schema,
        std::map<std::string, std::string> extra_configs);
@@ -69,10 +70,12 @@ class KuduTable::Data {
   const std::string name_;
   const std::string id_;
   const int num_replicas_;
+  const std::string owner_;
 
-  // TODO: figure out how we deal with a schema change from the client perspective.
-  // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
-  // a new KuduTable instance (which would simplify the object lifecycle a little?)
+  // TODO(unknown): figure out how we deal with a schema change from the client
+  // perspective. Do we make them call a RefreshSchema() method? Or maybe
+  // reopen the table and get a new KuduTable instance (which would simplify the
+  // object lifecycle a little?)
   const KuduSchema schema_;
   const PartitionSchema partition_schema_;
 

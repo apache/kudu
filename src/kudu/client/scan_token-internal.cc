@@ -135,8 +135,8 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     map<string, string> extra_configs(metadata.extra_configs().begin(),
         metadata.extra_configs().end());
     table.reset(new KuduTable(client->shared_from_this(), metadata.table_name(),
-        metadata.table_id(), metadata.num_replicas(), kudu_schema, partition_schema,
-        extra_configs));
+        metadata.table_id(), metadata.num_replicas(), metadata.owner(), kudu_schema,
+        partition_schema, extra_configs));
   } else {
     TableIdentifierPB table_identifier;
     if (message.has_table_id()) {
@@ -336,6 +336,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     table_pb.set_table_id(table->id());
     table_pb.set_table_name(table->name());
     table_pb.set_num_replicas(table->num_replicas());
+    table_pb.set_owner(table->owner());
     SchemaPB schema_pb;
     RETURN_NOT_OK(SchemaToPB(KuduSchema::ToSchema(table->schema()), &schema_pb));
     *table_pb.mutable_schema() = std::move(schema_pb);

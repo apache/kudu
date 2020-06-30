@@ -60,6 +60,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <boost/optional/optional_io.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
@@ -183,7 +184,14 @@ DEFINE_int32(max_identifier_length, 256,
              "Maximum length of the name of a column or table.");
 
 DEFINE_int32(max_column_comment_length, 256,
-             "Maximum length of the comment of a column");
+             "Maximum length of the comment of a column.");
+
+DEFINE_int32(max_owner_length, 128,
+             "Maximum length of the name of a table owner.");
+
+DEFINE_bool(allow_empty_owner, false,
+            "Allow empty owner. Only for testing.");
+TAG_FLAG(allow_empty_owner, hidden);
 
 // Tag as unsafe because we end up writing schemas in every WAL entry, etc,
 // and having very long column names would enter untested territory and affect
@@ -1431,11 +1439,23 @@ Status ValidateCommentIdentifier(const string& id) {
   return ValidateLengthAndUTF8(id, FLAGS_max_column_comment_length);
 }
 
+Status ValidateOwner(const string& name) {
+  if (name.empty() && !FLAGS_allow_empty_owner) {
+    return Status::InvalidArgument("empty string is not a valid owner");
+  }
+
+  return ValidateLengthAndUTF8(name, FLAGS_max_owner_length);
+}
+
 // Validate the client-provided schema and name.
 Status ValidateClientSchema(const optional<string>& name,
+                            const optional<string>& owner,
                             const Schema& schema) {
   if (name) {
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(name.get()), "invalid table name");
+  }
+  if (owner) {
+    RETURN_NOT_OK_PREPEND(ValidateOwner(*owner), "invalid owner name");
   }
   for (int i = 0; i < schema.num_columns(); i++) {
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(schema.column(i).name()),
@@ -1493,6 +1513,13 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   LOG(INFO) << Substitute("Servicing CreateTable request from $0:\n$1",
                           RequestorString(rpc), SecureDebugString(req));
 
+  optional<const string&> user = rpc ?
+      make_optional<const string&>(rpc->remote_user().username()) : none;
+  // Default the owner if it isn't set.
+  if (user && !req.has_owner()) {
+    req.set_owner(*user);
+  }
+
   // Do some fix-up of any defaults specified on columns.
   // Clients are only expected to pass the default value in the 'read_default'
   // field, but we need to write the schema to disk including the default
@@ -1506,10 +1533,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // a. Validate the user request.
   const string& normalized_table_name = NormalizeTableName(req.name());
   if (rpc) {
-    const string& user = rpc->remote_user().username();
-    const string& owner = req.has_owner() ? req.owner() : user;
+    DCHECK_NE(boost::none, user);
     RETURN_NOT_OK(SetupError(
-        authz_provider_->AuthorizeCreateTable(normalized_table_name, user, owner),
+        authz_provider_->AuthorizeCreateTable(normalized_table_name, user.get(), req.owner()),
         resp, MasterErrorPB::NOT_AUTHORIZED));
   }
 
@@ -1522,7 +1548,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
 
-  RETURN_NOT_OK(SetupError(ValidateClientSchema(normalized_table_name, client_schema),
+  RETURN_NOT_OK(SetupError(ValidateClientSchema(normalized_table_name, req.owner(), client_schema),
                            resp, MasterErrorPB::INVALID_SCHEMA));
   if (client_schema.has_column_ids()) {
     return SetupError(Status::InvalidArgument("user requests should not have Column IDs"),
@@ -1735,8 +1761,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_) {
     CHECK(rpc);
-    const string& owner = req.has_owner() ? req.owner() : rpc->remote_user().username();
-    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, owner, schema);
+    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, req.owner(), schema);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
                                        normalized_table_name));
@@ -1855,6 +1880,9 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
   metadata->set_create_timestamp(time(nullptr));
   (*metadata->mutable_extra_config()) = std::move(extra_config_pb);
   table->RegisterMetrics(master_->metric_registry(), metadata->name());
+  if (req.has_owner()) {
+    metadata->set_owner(req.owner());
+  }
   return table;
 }
 
@@ -2462,7 +2490,7 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     // Rename the table in the HMS.
     RETURN_NOT_OK(SetupError(hms_catalog_->AlterTable(
             table->id(), l.data().name(), normalized_new_table_name,
-            schema),
+            l.data().owner(), schema),
         resp, MasterErrorPB::HIVE_METASTORE_ERROR));
 
     // Unlock the table, and wait for the notification log listener to handle
@@ -2493,15 +2521,21 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   return AlterTable(req, resp, /*hms_notification_log_event_id=*/ none, user);
 }
 
-Status CatalogManager::RenameTableHms(const string& table_id,
-                                      const string& table_name,
-                                      const string& new_table_name,
-                                      int64_t notification_log_event_id) {
+Status CatalogManager::AlterTableHms(const string& table_id,
+                                     const string& table_name,
+                                     const optional<string>& new_table_name,
+                                     const optional<string>& new_table_owner,
+                                     int64_t notification_log_event_id) {
   AlterTableRequestPB req;
   AlterTableResponsePB resp;
   req.mutable_table()->set_table_id(table_id);
   req.mutable_table()->set_table_name(table_name);
-  req.set_new_table_name(new_table_name);
+  if (new_table_name) {
+    req.set_new_table_name(new_table_name.get());
+  }
+  if (new_table_owner) {
+    req.set_new_table_owner(new_table_owner.get());
+  }
 
   // Use empty user to skip the authorization validation since the operation
   // originates from catalog manager. Moreover, this avoids duplicate effort,
@@ -2583,9 +2617,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   DCHECK_EQ(new_schema.find_column_by_id(next_col_id),
             static_cast<int>(Schema::kColumnNotFound));
 
-  // Just validate the schema, not the name (validated below).
+  // Just validate the schema, not the name and owner (validated below).
   RETURN_NOT_OK(SetupError(
-        ValidateClientSchema(none, new_schema),
+        ValidateClientSchema(none, none, new_schema),
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   // 4. Validate and try to acquire the new table name.
@@ -2638,7 +2672,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   });
 
-  // 5. Alter table partitioning.
+  // 5. Alter the table owner.
+  // TODO(abukor): Only the owner (or superuser) can alter the owner?
+  if (req.has_new_table_owner()) {
+    RETURN_NOT_OK(SetupError(
+          ValidateOwner(req.new_table_owner()).CloneAndAppend("invalid owner name"),
+          resp, MasterErrorPB::INVALID_SCHEMA));
+
+    l.mutable_data()->pb.set_owner(req.new_table_owner());
+  }
+
+  // 6. Alter table partitioning.
   vector<scoped_refptr<TabletInfo>> tablets_to_add;
   vector<scoped_refptr<TabletInfo>> tablets_to_drop;
   if (!alter_partitioning_steps.empty()) {
@@ -2652,7 +2696,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
           resp, MasterErrorPB::UNKNOWN_ERROR));
   }
 
-  // 6. Alter table's extra configuration properties.
+  // 7. Alter table's extra configuration properties.
   if (!req.new_extra_configs().empty()) {
     TRACE("Apply alter extra-config");
     Map<string, string> new_extra_configs;
@@ -2668,9 +2712,11 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
 
   // Set to true if columns are altered, added or dropped.
   bool has_schema_changes = !alter_schema_steps.empty();
-  // Set to true if there are schema changes, or the table is renamed.
-  bool has_metadata_changes =
-      has_schema_changes || req.has_new_table_name() || !req.new_extra_configs().empty();
+  // Set to true if there are schema changes, the table is renamed, the owner changed,
+  // or extra configuration has changed.
+  bool has_metadata_changes = has_schema_changes ||
+      req.has_new_table_name() || req.has_new_table_owner() ||
+      !req.new_extra_configs().empty();
   // Set to true if there are partitioning changes.
   bool has_partitioning_changes = !alter_partitioning_steps.empty();
   // Set to true if metadata changes need to be applied to existing tablets.
@@ -2682,7 +2728,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     return Status::OK();
   }
 
-  // 7. Serialize the schema and increment the version number.
+  // 8. Serialize the schema and increment the version number.
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }
@@ -2707,7 +2753,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   TabletMetadataGroupLock tablets_to_add_lock(LockMode::WRITE);
   TabletMetadataGroupLock tablets_to_drop_lock(LockMode::RELEASED);
 
-  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 9. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   {
     SysCatalogTable::Actions actions;
@@ -2737,7 +2783,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   }
 
-  // 9. Commit the in-memory state.
+  // 10. Commit the in-memory state.
   TRACE("Committing alterations to in-memory state");
   {
     // Commit new tablet in-memory state. This doesn't require taking the global
@@ -2793,17 +2839,18 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // the tablet again.
   tablets_to_drop_lock.Commit();
 
-  // If there are schema changes, then update the entry in the Hive Metastore.
+  // If there are schema changes or the owner changed, then update the entry in the Hive Metastore.
   // This is done on a best-effort basis, since Kudu is the source of truth for
   // table schema information, and the table has already been altered in the
   // Kudu catalog via the successful sys-table write above.
-  if (hms_catalog_ && has_schema_changes) {
+  if (hms_catalog_ && (has_schema_changes || req.has_new_table_owner())) {
     // Sanity check: if there are schema changes then this is necessarily not a
     // table rename, since we split out the rename portion into its own
     // 'transaction' which is serialized through the HMS.
     DCHECK(!req.has_new_table_name());
     WARN_NOT_OK(hms_catalog_->AlterTable(
-          table->id(), normalized_table_name, normalized_table_name, new_schema),
+          table->id(), normalized_table_name, normalized_table_name,
+          l.mutable_data()->owner(), new_schema),
         Substitute("failed to alter HiveMetastore schema for table $0, "
                    "HMS schema information will be stale", table->ToString()));
   }
@@ -2891,6 +2938,8 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   resp->set_table_id(table->id());
   resp->mutable_partition_schema()->CopyFrom(l.data().pb.partition_schema());
   resp->set_table_name(l.data().pb.name());
+  resp->set_owner(l.data().pb.owner());
+
   RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(), resp->mutable_extra_configs()));
 
   return Status::OK();

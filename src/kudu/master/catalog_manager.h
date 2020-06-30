@@ -244,6 +244,11 @@ struct PersistentTableInfo {
     return pb.name();
   }
 
+  // Return the table's owner.
+  const std::string& owner() const {
+    return pb.owner();
+  }
+
   // Helper to set the state of the tablet with a custom message.
   void set_state(SysTablesEntryPB::State state, const std::string& msg);
 
@@ -618,11 +623,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                        AlterTableResponsePB* resp,
                        rpc::RpcContext* rpc);
 
-  // Rename the specified table in response to an 'ALTER TABLE RENAME' HMS
+  // Alter the specified table in response to an 'ALTER TABLE' HMS
   // notification log listener event.
-  Status RenameTableHms(const std::string& table_id,
+  Status AlterTableHms(const std::string& table_id,
                         const std::string& table_name,
-                        const std::string& new_table_name,
+                        const boost::optional<std::string>& new_table_name,
+                        const boost::optional<std::string>& new_table_owner,
                         int64_t notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Get the information about an in-progress alter operation. If 'user' is

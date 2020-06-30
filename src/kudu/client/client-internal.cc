@@ -499,6 +499,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   string table_id;
   string table_name;
   int num_replicas;
+  string owner;
   PartitionSchema partition_schema;
   map<string, string> extra_configs;
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout_;
@@ -510,6 +511,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
                                &table_id,
                                &table_name,
                                &num_replicas,
+                               &owner,
                                &extra_configs));
 
   // When the table name is specified, use the caller-provided table name.
@@ -523,7 +525,7 @@ Status KuduClient::Data::OpenTable(KuduClient* client,
   //                   map to reuse KuduTable instances.
   table->reset(new KuduTable(client->shared_from_this(),
                              effective_table_name, table_id, num_replicas,
-                             schema, partition_schema, extra_configs));
+                             owner, schema, partition_schema, extra_configs));
 
   // When opening a table, clear the existing cached non-covered range entries.
   // This avoids surprises where a new table instance won't be able to see the
@@ -541,6 +543,7 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         std::string* table_id,
                                         std::string* table_name,
                                         int* num_replicas,
+                                        std::string* owner,
                                         map<string, string>* extra_configs) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
@@ -580,6 +583,9 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   }
   if (num_replicas) {
     *num_replicas = resp.num_replicas();
+  }
+  if (owner) {
+    *owner = resp.owner();
   }
   if (extra_configs) {
     map<string, string> result(resp.extra_configs().begin(), resp.extra_configs().end());

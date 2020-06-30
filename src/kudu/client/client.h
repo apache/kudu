@@ -874,6 +874,15 @@ class KUDU_EXPORT KuduTableCreator {
   /// @return Reference to the modified table creator.
   KuduTableCreator& add_range_partition_split(KuduPartialRow* split_row);
 
+  /// Set the table owner.
+  ///
+  /// If unspecified, the owner will be the user creating the table.
+  ///
+  /// @param [in] owner
+  ///   The username of the table owner.
+  /// @return Reference to the modified table creator.
+  KuduTableCreator& set_owner(const std::string& owner);
+
   /// @deprecated Use @c add_range_partition_split() instead.
   ///
   /// @param [in] split_rows
@@ -1038,6 +1047,9 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   /// @return Replication factor of the table.
   int num_replicas() const;
+
+  /// @return Owner of the table (empty string if unset).
+  const std::string& owner() const;
 
   /// @return New @c INSERT operation for this table. It is the caller's
   ///   responsibility to free the result, unless it is passed to
@@ -1255,6 +1267,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
             const std::string& name,
             const std::string& id,
             int num_replicas,
+            const std::string& owner,
             const KuduSchema& schema,
             const PartitionSchema& partition_schema,
             const std::map<std::string, std::string>& extra_configs);
@@ -1286,6 +1299,13 @@ class KUDU_EXPORT KuduTableAlterer {
   ///   The new name for the table.
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* RenameTo(const std::string& new_name);
+
+  /// Set the owner of the table.
+  ///
+  /// @param [in] new_owner
+  ///   The new owner for the table.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* SetOwner(const std::string& new_owner);
 
   /// Add a new column to the table.
   ///

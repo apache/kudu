@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
@@ -64,6 +65,7 @@ TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, hidden);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, unsafe);
 TAG_FLAG(hive_metastore_notification_log_poll_inject_latency_ms, runtime);
 
+using boost::optional;
 using rapidjson::Document;
 using rapidjson::Value;
 using std::string;
@@ -374,14 +376,27 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
   string before_table_name = Substitute("$0.$1", before_table.dbName, before_table.tableName);
   string after_table_name = Substitute("$0.$1", event.dbName, event.tableName);
 
-  if (before_table_name == after_table_name) {
-    VLOG(2) << "Ignoring non-rename alter table event on table "
+  optional<string> new_table_name;
+  if (before_table_name != after_table_name) {
+    new_table_name = after_table_name;
+  }
+
+  optional<string> new_table_owner;
+  if (before_table.owner != after_table.owner) {
+    new_table_owner = after_table.owner;
+  }
+
+  if (!new_table_name && !new_table_owner) {
+    VLOG(2) << "Ignoring alter table event on table "
             << *table_id << " " << before_table_name;
     return Status::OK();
   }
 
-  RETURN_NOT_OK(catalog_manager_->RenameTableHms(*table_id, before_table_name,
-                                                 after_table_name, event.eventId));
+  RETURN_NOT_OK(catalog_manager_->AlterTableHms(*table_id,
+                                                before_table_name,
+                                                new_table_name,
+                                                new_table_owner,
+                                                event.eventId));
   *durable_event_id = event.eventId;
   return Status::OK();
 }

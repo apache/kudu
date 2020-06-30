@@ -47,7 +47,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using boost::make_optional;
 using boost::none;
+using boost::optional;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::sp::shared_ptr;
@@ -117,6 +119,12 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
                         const std::string& old_table_name,
                         const std::string& new_table_name) {
     return harness_.RenameHmsTable(database_name, old_table_name, new_table_name);
+  }
+
+  Status ChangeHmsOwner(const std::string& database_name,
+                        const std::string& table_name,
+                        const std::string& new_table_owner) {
+    return harness_.ChangeHmsOwner(database_name, table_name, new_table_owner);
   }
 
   Status AlterHmsTableDropColumns(const std::string& database_name,
@@ -290,6 +298,27 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   NO_FATALS(CheckTable("db2", "t2", /*user=*/ none));
   NO_FATALS(CheckTableDoesNotExist("db1", "t1"));
   NO_FATALS(CheckTableDoesNotExist("db1", "t2"));
+}
+
+TEST_F(MasterHmsTest, TestAlterTableOwner) {
+  // Create the Kudu table.
+  ASSERT_OK(CreateKuduTable("default", "userTable"));
+  NO_FATALS(CheckTable("default", "userTable", /*user=*/ none));
+
+  // Change the owner through the HMS, and ensure the owner is handled in Kudu.
+  const char* const user_a = "user_a";
+  ASSERT_OK(ChangeHmsOwner("default", "userTable", user_a));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("default", "userTable", make_optional<const string&>(user_a)));
+  });
+
+  // Change the owner through Kudu, and ensure the owner is reflected in HMS.
+  const char* const user_b = "user_b";
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.userTable"));
+  ASSERT_OK(table_alterer->SetOwner(user_b)->Alter());
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("default", "userTable", make_optional<const string&>(user_b)));
+  });
 }
 
 TEST_F(MasterHmsTest, TestAlterTable) {

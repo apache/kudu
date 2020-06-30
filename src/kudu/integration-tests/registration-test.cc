@@ -98,6 +98,7 @@ void CreateTableForTesting(MiniMaster* mini_master,
 
     req.set_name(table_name);
     req.set_num_replicas(1);
+    req.set_owner("jdoe");
     ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
     CatalogManager* catalog = mini_master->master()->catalog_manager();
     CatalogManager::ScopedLeaderSharedLock l(catalog);

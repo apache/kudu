@@ -145,7 +145,7 @@ void HmsCatalog::Stop() {
 
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
-                               optional<const string&> owner,
+                               const optional<const string&>& owner,
                                const Schema& schema,
                                const string& table_type) {
   hive::Table table;
@@ -254,6 +254,7 @@ Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
 Status HmsCatalog::AlterTable(const string& id,
                               const string& name,
                               const string& new_name,
+                              optional<const string&> owner,
                               const Schema& schema,
                               const bool& check_id) {
   Slice hms_database;
@@ -288,7 +289,7 @@ Status HmsCatalog::AlterTable(const string& id,
       }
 
       // Overwrite fields in the table that have changed, including the new name.
-      RETURN_NOT_OK(PopulateTable(id, new_name, table.owner, schema, master_addresses_,
+      RETURN_NOT_OK(PopulateTable(id, new_name, owner, schema, master_addresses_,
           table.tableType, &table));
       return client->AlterTable(hms_database.ToString(), hms_table.ToString(),
                                 table, EnvironmentContext(check_id));

@@ -39,6 +39,8 @@ message TableMetadataPB {
 
   // The table's extra configuration properties.
   map<string, string> extra_configs = 6;
+
+  optional string owner = 7;
 }
 
 // Metdata about a single server.
