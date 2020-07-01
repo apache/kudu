@@ -16,6 +16,7 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | adar | Adar Dembo | VP, PMC |
 | alexey | Alexey Serbin | PMC |
 | awong | Andrew Wong | PMC |
+| bankim | Bankim Bhavsar | PMC |
 | bchang | Binglin Chang | PMC |
 | danburkert | Dan Burkert | PMC |
 | dralves | David Alves | PMC |
