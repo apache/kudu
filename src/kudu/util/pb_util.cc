@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <deque>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -140,9 +141,9 @@ namespace {
 // protobuf implementation but is more likely caused by concurrent modification
 // of the message.  This function attempts to distinguish between the two and
 // provide a useful error message.
-void ByteSizeConsistencyError(int byte_size_before_serialization,
-                              int byte_size_after_serialization,
-                              int bytes_produced_by_serialization) {
+void ByteSizeConsistencyError(size_t byte_size_before_serialization,
+                              size_t byte_size_after_serialization,
+                              size_t bytes_produced_by_serialization) {
   CHECK_EQ(byte_size_before_serialization, byte_size_after_serialization)
       << "Protocol message was modified concurrently during serialization.";
   CHECK_EQ(bytes_produced_by_serialization, byte_size_before_serialization)
@@ -365,7 +366,7 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version,
   // integer overflow warnings, so that's what we'll use.
   ArrayInputStream ais(body.data(), body.size());
   CodedInputStream cis(&ais);
-  cis.SetTotalBytesLimit(512 * 1024 * 1024, -1);
+  cis.SetTotalBytesLimit(512 * 1024 * 1024);
   if (PREDICT_FALSE(!msg->ParseFromCodedStream(&cis))) {
     return Status::IOError("Unable to parse PB from path", reader->filename());
   }
@@ -471,16 +472,16 @@ void AppendToString(const MessageLite &msg, faststring *output) {
 
 void AppendPartialToString(const MessageLite &msg, faststring* output) {
   size_t old_size = output->size();
-  int byte_size = msg.ByteSize();
+  size_t byte_size = msg.ByteSizeLong();
   // Messages >2G cannot be serialized due to overflow computing ByteSize.
   DCHECK_GE(byte_size, 0) << "Error computing ByteSize";
 
-  output->resize(old_size + static_cast<size_t>(byte_size));
+  output->resize(old_size + byte_size);
 
   uint8* start = &((*output)[old_size]);
   uint8* end = msg.SerializeWithCachedSizesToArray(start);
   if (end - start != byte_size) {
-    ByteSizeConsistencyError(byte_size, msg.ByteSize(), end - start);
+    ByteSizeConsistencyError(byte_size, msg.ByteSizeLong(), end - start);
   }
 }
 
@@ -593,31 +594,44 @@ void TruncateFields(Message* message, int max_len) {
 }
 
 namespace {
-class SecureFieldPrinter : public TextFormat::FieldValuePrinter {
+class SecureFieldPrinter : public TextFormat::FastFieldValuePrinter {
  public:
-  using super = TextFormat::FieldValuePrinter;
+  using super = TextFormat::FastFieldValuePrinter;
+  using BaseTextGenerator = TextFormat::BaseTextGenerator;
 
-  string PrintFieldName(const Message& message,
-                        const Reflection* reflection,
-                        const FieldDescriptor* field) const override {
+  void PrintFieldName(const Message& message,
+                      const Reflection* reflection,
+                      const FieldDescriptor* field,
+                      BaseTextGenerator* generator) const override {
     hide_next_string_ = field->cpp_type() == FieldDescriptor::CPPTYPE_STRING &&
         field->options().GetExtension(REDACT);
-    return super::PrintFieldName(message, reflection, field);
+    super::PrintFieldName(message, reflection, field, generator);
   }
 
-  string PrintString(const string& val) const override {
-    if (hide_next_string_) {
-      hide_next_string_ = false;
-      return KUDU_REDACT(super::PrintString(val));
-    }
-    return super::PrintString(val);
+  void PrintFieldName(const Message& message, int field_index,
+                      int field_count, const Reflection* reflection,
+                      const FieldDescriptor* field,
+                      BaseTextGenerator* generator) const override {
+    hide_next_string_ = field->cpp_type() == FieldDescriptor::CPPTYPE_STRING &&
+        field->options().GetExtension(REDACT);
+    super::PrintFieldName(message, field_index, field_count, reflection, field,
+        generator);
   }
-  string PrintBytes(const string& val) const override {
+
+  void PrintString(const string& val, BaseTextGenerator* generator) const override {
     if (hide_next_string_) {
       hide_next_string_ = false;
-      return KUDU_REDACT(super::PrintBytes(val));
+      super::PrintString(KUDU_REDACT(val), generator);
+      return;
     }
-    return super::PrintBytes(val);
+    super::PrintString(val, generator);
+  }
+  void PrintBytes(const string& val, BaseTextGenerator* generator) const override {
+    if (hide_next_string_) {
+      hide_next_string_ = false;
+      super::PrintBytes(KUDU_REDACT(val), generator);
+    }
+    super::PrintBytes(val, generator);
   }
 
   mutable bool hide_next_string_ = false;
@@ -774,9 +788,10 @@ const string& WritablePBContainerFile::filename() const {
 
 Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring* buf) {
   DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
-  int data_len = msg.ByteSize();
-  // Messages >2G cannot be serialized due to overflow computing ByteSize.
-  DCHECK_GE(data_len, 0) << "Error computing ByteSize";
+  size_t data_len_long = msg.ByteSizeLong();
+  // Messages >2G cannot be serialized due to format restrictions.
+  CHECK_LT(data_len_long, std::numeric_limits<int32_t>::max());
+  uint32_t data_len = static_cast<uint32_t>(data_len_long);
   uint64_t record_buflen =  sizeof(uint32_t) + data_len + sizeof(uint32_t);
   if (version_ >= 2) {
     record_buflen += sizeof(uint32_t); // Additional checksum just for the length.
@@ -789,7 +804,7 @@ Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring
 
   // Serialize the data length.
   size_t cur_offset = 0;
-  InlineEncodeFixed32(dst + cur_offset, static_cast<uint32_t>(data_len));
+  InlineEncodeFixed32(dst + cur_offset, data_len);
   cur_offset += sizeof(uint32_t);
 
   // For version >= 2: Serialize the checksum of the data length.

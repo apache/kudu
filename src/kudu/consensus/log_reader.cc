@@ -18,6 +18,7 @@
 #include "kudu/consensus/log_reader.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -288,7 +289,7 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
   ElementDeleter d(&replicates_tmp);
   LogIndexEntry prev_index_entry;
 
-  int64_t total_size = 0;
+  size_t total_size = 0;
   bool limit_exceeded = false;
   faststring tmp_buf;
   LogEntryBatchPB batch;
@@ -331,7 +332,7 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
         continue;
       }
 
-      int64_t space_required = entry->replicate().SpaceUsed();
+      size_t space_required = entry->replicate().SpaceUsedLong();
       if (replicates_tmp.empty() ||
           max_bytes_to_read <= 0 ||
           total_size + space_required < max_bytes_to_read) {

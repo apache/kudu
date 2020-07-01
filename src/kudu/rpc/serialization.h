@@ -43,7 +43,7 @@ namespace serialization {
 //        the protobuf itself).
 //      'use_cached_size' Additional optional argument whether to use the cached
 //        or explicit byte size by calling MessageLite::GetCachedSize() or
-//        MessageLite::ByteSize(), respectively.
+//        MessageLite::ByteSizeLong(), respectively.
 // Out: The faststring 'param_buf' to be populated with the serialized bytes.
 //        The faststring's length is only determined by the amount that
 //        needs to be serialized for the protobuf (i.e., no additional space

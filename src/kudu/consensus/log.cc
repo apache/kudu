@@ -23,7 +23,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <type_traits>
 #include <utility>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -1240,7 +1239,7 @@ LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
       entry_batch_pb_(std::move(entry_batch_pb)),
       total_size_bytes_(
           PREDICT_FALSE(count == 1 && entry_batch_pb_.entry(0).type() == FLUSH_MARKER)
-              ? 0 : entry_batch_pb_.ByteSize()),
+              ? 0 : entry_batch_pb_.ByteSizeLong()),
       count_(count),
       callback_(std::move(cb)) {
 }

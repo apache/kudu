@@ -157,7 +157,7 @@ Status CFileWriter::Start() {
   CFileHeaderPB header;
   FlushMetadataToPB(header.mutable_metadata());
 
-  uint32_t pb_size = header.ByteSize();
+  uint32_t pb_size = header.ByteSizeLong();
 
   faststring header_str;
   // First the magic.

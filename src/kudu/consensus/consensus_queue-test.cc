@@ -429,7 +429,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
 
   // Save the current flag state.
   google::FlagSaver saver;
-  FLAGS_consensus_max_batch_size_bytes = page_size_estimator.ByteSize();
+  FLAGS_consensus_max_batch_size_bytes =
+      static_cast<int32_t>(page_size_estimator.ByteSizeLong());
 
   ConsensusRequestPB request;
   ConsensusResponsePB response;

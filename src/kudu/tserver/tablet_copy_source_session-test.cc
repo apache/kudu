@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/tablet_copy_source_session.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -279,7 +280,7 @@ TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
 
   {
     const TabletSuperBlockPB& session_superblock = session_->tablet_superblock();
-    int size = session_superblock.ByteSize();
+    size_t size = session_superblock.ByteSizeLong();
     session_buf.resize(size);
     uint8_t* session_dst = session_buf.data();
     session_superblock.SerializeWithCachedSizesToArray(session_dst);
@@ -288,7 +289,7 @@ TEST_F(TabletCopyTest, TestSuperBlocksEqual) {
   {
     TabletSuperBlockPB tablet_superblock;
     ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
-    int size = tablet_superblock.ByteSize();
+    size_t size = tablet_superblock.ByteSizeLong();
     tablet_buf.resize(size);
     uint8_t* tablet_dst = tablet_buf.data();
     tablet_superblock.SerializeWithCachedSizesToArray(tablet_dst);

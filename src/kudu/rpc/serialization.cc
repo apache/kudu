@@ -55,8 +55,8 @@ enum {
 void SerializeMessage(const MessageLite& message, faststring* param_buf,
                         int additional_size, bool use_cached_size) {
   DCHECK_GE(additional_size, 0);
-  int pb_size = use_cached_size ? message.GetCachedSize() : message.ByteSize();
-  DCHECK_EQ(message.ByteSize(), pb_size);
+  size_t pb_size = use_cached_size ? message.GetCachedSize() : message.ByteSizeLong();
+  DCHECK_EQ(message.ByteSizeLong(), pb_size);
   // Use 8-byte integers to avoid overflowing when additional_size approaches INT_MAX.
   int64_t recorded_size = static_cast<int64_t>(pb_size) +
       static_cast<int64_t>(additional_size);
@@ -90,7 +90,7 @@ void SerializeHeader(const MessageLite& header,
       << "RPC header missing fields: " << header.InitializationErrorString();
 
   // Compute all the lengths for the packet.
-  size_t header_pb_len = header.ByteSize();
+  size_t header_pb_len = header.ByteSizeLong();
   size_t header_tot_len = kMsgLengthPrefixLength        // Int prefix for the total length.
       + CodedOutputStream::VarintSize32(header_pb_len)  // Varint delimiter for header PB.
       + header_pb_len;                                  // Length for the header PB itself.
@@ -136,7 +136,7 @@ Status ParseMessage(const Slice& buf,
   // Protobuf enforces a 64MB total bytes limit on CodedInputStream by default.
   // Override this default with the actual size of the buffer to allow messages
   // larger than 64MB.
-  in.SetTotalBytesLimit(buf.size(), -1);
+  in.SetTotalBytesLimit(buf.size());
   in.Skip(kMsgLengthPrefixLength);
 
   uint32_t header_len;

@@ -47,6 +47,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
+using google::protobuf::util::JsonParseOptions;
+using google::protobuf::util::JsonStringToMessage;
 using std::cout;
 using std::string;
 using std::unique_ptr;
@@ -198,9 +200,11 @@ Status EditFile(const RunnerContext& context) {
     unique_ptr<google::protobuf::Message> m(prototype->New());
     vector<string> lines;
     RETURN_NOT_OK(LoadFileToLines(tmp_json_path, &lines));
+    JsonParseOptions opts;
+    opts.case_insensitive_enum_parsing = true;
     for (const string& l : lines) {
       m->Clear();
-      const auto& google_status = google::protobuf::util::JsonStringToMessage(l, m.get());
+      const auto& google_status = JsonStringToMessage(l, m.get(), opts);
       if (!google_status.ok()) {
         return Status::InvalidArgument(
             Substitute("Unable to parse JSON line: $0", l),

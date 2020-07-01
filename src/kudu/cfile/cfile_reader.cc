@@ -605,10 +605,10 @@ size_t CFileReader::memory_footprint() const {
   // the size of base objects (recursively too), thus not accounting for
   // malloc "slop".
   if (header_) {
-    size += header_->SpaceUsed();
+    size += header_->SpaceUsedLong();
   }
   if (footer_) {
-    size += footer_->SpaceUsed();
+    size += footer_->SpaceUsedLong();
   }
   return size;
 }

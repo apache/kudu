@@ -18,6 +18,7 @@
 #include "kudu/rpc/inbound_call.h"
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <ostream>
 
@@ -178,7 +179,8 @@ void InboundCall::SerializeResponseBuffer(const MessageLite& response,
     // happened.
   }
 
-  uint32_t protobuf_msg_size = response.ByteSize();
+  size_t protobuf_msg_size = response.ByteSizeLong();
+  CHECK_LE(protobuf_msg_size, std::numeric_limits<uint32_t>::max());
 
   ResponseHeader resp_hdr;
   resp_hdr.set_call_id(header_.call_id());

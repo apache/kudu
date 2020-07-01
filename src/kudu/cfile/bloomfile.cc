@@ -170,7 +170,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
   BloomBlockHeaderPB hdr;
   hdr.set_num_hash_functions(bloom_builder_.n_hashes());
   faststring hdr_str;
-  PutFixed32(&hdr_str, hdr.ByteSize());
+  PutFixed32(&hdr_str, static_cast<uint32_t>(hdr.ByteSizeLong()));
   pb_util::AppendToString(hdr, &hdr_str);
 
   // The data is the concatenation of the header and the bloom itself.

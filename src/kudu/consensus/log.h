@@ -615,7 +615,7 @@ class LogEntryBatch {
   LogEntryBatchPB entry_batch_pb_;
 
    // Total size in bytes of all entries
-  const uint32_t total_size_bytes_;
+  const size_t total_size_bytes_;
 
   // Number of entries in 'entry_batch_pb_'
   const size_t count_;

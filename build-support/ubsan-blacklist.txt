@@ -42,8 +42,12 @@ src:*/boost/functional/hash/hash.hpp
 # Protobuf's coded output stream and hash implementations have unsigned-integer overflows:
 # include/google/protobuf/io/coded_stream.h:925:61: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned int'
 # include/google/protobuf/stubs/hash.h:353:18: runtime error: unsigned integer overflow: 5 * 5697019175939388048 cannot be represented in type 'unsigned long'
+# include/google/protobuf/map.h:951:21: runtime error: unsigned integer overflow: 11400714819323198485 * 6142505534017268963 cannot be represented in type 'unsigned long'
+# include/google/protobuf/parse_context.h:191:57: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned int'
 src:*/google/protobuf/io/coded_stream.h
 src:*/google/protobuf/stubs/hash.h
+src:*/google/protobuf/map.h
+src:*/google/protobuf/parse_context.h
 
 # Sparsepp has an unsigned-integer negation overflow:
 # /include/sparsepp/spp.h:1196:20: runtime error: negation of 8192 cannot be represented in type 'group_bm_type' (aka 'unsigned int')

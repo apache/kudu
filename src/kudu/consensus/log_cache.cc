@@ -28,7 +28,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/wire_format_lite.h>
-#include <google/protobuf/wire_format_lite_inl.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.h"
@@ -110,7 +109,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   // code paths elsewhere.
   auto zero_op = new ReplicateMsg();
   *zero_op->mutable_id() = MinimumOpId();
-  InsertOrDie(&cache_, 0, { make_scoped_refptr_replicate(zero_op), zero_op->SpaceUsed() });
+  InsertOrDie(&cache_, 0, { make_scoped_refptr_replicate(zero_op), zero_op->SpaceUsedLong() });
 }
 
 LogCache::~LogCache() {
@@ -158,7 +157,7 @@ Status LogCache::AppendOperations(vector<ReplicateRefPtr> msgs,
   vector<CacheEntry> entries_to_insert;
   entries_to_insert.reserve(msgs.size());
   for (const auto& msg : msgs) {
-    CacheEntry e = { msg, static_cast<int64_t>(msg->get()->SpaceUsedLong()) };
+    CacheEntry e = { msg, msg->get()->SpaceUsedLong() };
     mem_required += e.mem_usage;
     entries_to_insert.emplace_back(std::move(e));
   }
@@ -283,15 +282,15 @@ namespace {
 // this message as part of a consensus update request. This accounts for the
 // length delimiting and tagging of the message.
 int64_t TotalByteSizeForMessage(const ReplicateMsg& msg) {
-  int msg_size = google::protobuf::internal::WireFormatLite::LengthDelimitedSize(
-    msg.ByteSize());
+  int64_t msg_size = google::protobuf::internal::WireFormatLite::LengthDelimitedSize(
+    msg.ByteSizeLong());
   msg_size += 1; // for the type tag
   return msg_size;
 }
 } // anonymous namespace
 
 Status LogCache::ReadOps(int64_t after_op_index,
-                         int max_size_bytes,
+                         int64_t max_size_bytes,
                          std::vector<ReplicateRefPtr>* messages,
                          OpId* preceding_op) {
   DCHECK_GE(after_op_index, 0);
@@ -470,7 +469,7 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
       Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4",
                  counter++, msg->id().term(), msg->id().index(),
                  OperationType_Name(msg->op_type()),
-                 msg->ByteSize()));
+                 msg->ByteSizeLong()));
   }
 }
 
@@ -489,7 +488,7 @@ void LogCache::DumpToHtml(std::ostream& out) const {
                       "<td>$4</td><td>$5</td></tr>",
                       counter++, msg->id().term(), msg->id().index(),
                       OperationType_Name(msg->op_type()),
-                      msg->ByteSize(), SecureShortDebugString(msg->id())) << endl;
+                      msg->ByteSizeLong(), SecureShortDebugString(msg->id())) << endl;
   }
   out << "</table>";
 }

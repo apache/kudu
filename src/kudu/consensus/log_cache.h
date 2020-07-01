@@ -17,6 +17,7 @@
 #ifndef KUDU_CONSENSUS_LOG_CACHE_H
 #define KUDU_CONSENSUS_LOG_CACHE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <iosfwd>
 #include <map>
@@ -72,9 +73,9 @@ class LogCache {
   // If such an op exists in the log, an OK result will always include at least one
   // operation.
   //
-  // The result will be limited such that the total ByteSize() of the returned ops
-  // is less than max_size_bytes, unless that would result in an empty result, in
-  // which case exactly one op is returned.
+  // The result will be limited such that the total ByteSizeLong() of the
+  // returned ops is less than max_size_bytes, unless that would result in an
+  // empty result, in which case exactly one op is returned.
   //
   // The OpId which precedes the returned ops is returned in *preceding_op.
   // The index of this OpId will match 'after_op_index'.
@@ -83,7 +84,7 @@ class LogCache {
   // read these ops from disk. Therefore, this function may take a substantial amount
   // of time and should not be called with important locks held, etc.
   Status ReadOps(int64_t after_op_index,
-                 int max_size_bytes,
+                 int64_t max_size_bytes,
                  std::vector<ReplicateRefPtr>* messages,
                  OpId* preceding_op);
 
@@ -154,7 +155,7 @@ class LogCache {
     ReplicateRefPtr msg;
     // The cached value of msg->SpaceUsedLong(). This method is expensive
     // to compute, so we compute it only once upon insertion.
-    int64_t mem_usage;
+    size_t mem_usage;
   };
 
   // Try to evict the oldest operations from the queue, stopping either when

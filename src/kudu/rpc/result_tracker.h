@@ -283,7 +283,7 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
     int64_t memory_footprint() const {
       return kudu_malloc_usable_size(this)
           + (ongoing_rpcs.capacity() > 0 ? kudu_malloc_usable_size(ongoing_rpcs.data()) : 0)
-          + (response.get() != nullptr ? response->SpaceUsed() : 0);
+          + (response ? response->SpaceUsedLong() : 0);
     }
   };
 

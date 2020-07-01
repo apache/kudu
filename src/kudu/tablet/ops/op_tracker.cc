@@ -145,7 +145,7 @@ OpTracker::~OpTracker() {
 }
 
 Status OpTracker::Add(OpDriver* driver) {
-  int64_t driver_mem_footprint = driver->state()->request()->SpaceUsed();
+  size_t driver_mem_footprint = driver->state()->request()->SpaceUsedLong();
   if (mem_tracker_ && !mem_tracker_->TryConsume(driver_mem_footprint)) {
     if (metrics_) {
       metrics_->transaction_memory_pressure_rejections->Increment();

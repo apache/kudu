@@ -192,7 +192,7 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   // so the on_disk_size should be at least as big.
   TabletSuperBlockPB superblock_pb;
   ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
-  ASSERT_GE(final_size, superblock_pb.ByteSize());
+  ASSERT_GE(final_size, superblock_pb.ByteSizeLong());
 }
 
 TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {

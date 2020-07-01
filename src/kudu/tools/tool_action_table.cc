@@ -61,6 +61,8 @@
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
 
+using google::protobuf::util::JsonStringToMessage;
+using google::protobuf::util::JsonParseOptions;
 using google::protobuf::RepeatedPtrField;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -1136,8 +1138,9 @@ Status ParseTablePartition(const PartitionPB& partition,
 Status CreateTable(const RunnerContext& context) {
   const string& json_str = FindOrDie(context.required_args, kCreateTableJSONArg);
   CreateTablePB table_req;
-  const auto& google_status =
-      google::protobuf::util::JsonStringToMessage(json_str, &table_req);
+  JsonParseOptions opts;
+  opts.case_insensitive_enum_parsing = true;
+  const auto& google_status = JsonStringToMessage(json_str, &table_req, opts);
   if (!google_status.ok()) {
     return Status::InvalidArgument(
         Substitute("unable to parse JSON: $0", json_str),
