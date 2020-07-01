@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -149,6 +150,10 @@ class InboundCall {
   const scoped_refptr<Connection>& connection() const;
 
   Trace* trace();
+
+  google::protobuf::Arena* pb_arena() {
+    return &arena_;
+  }
 
   const InboundCallTiming& timing() const {
     return timing_;
@@ -284,6 +289,8 @@ class InboundCall {
   // A time at which the client will time out, or MonoTime::Max if the
   // client did not pass a timeout.
   MonoTime deadline_;
+
+  google::protobuf::Arena arena_;
 
   DISALLOW_COPY_AND_ASSIGN(InboundCall);
 };

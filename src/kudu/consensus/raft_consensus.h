@@ -522,7 +522,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // haven't appended to our log yet.
   // On return 'deduplicated_req' is instantiated with only the new messages
   // and the correct preceding id.
-  void DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
+  void DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
                                         LeaderRequest* deduplicated_req);
 
   // Handles a request from a leader, refusing the request if the term is lower than

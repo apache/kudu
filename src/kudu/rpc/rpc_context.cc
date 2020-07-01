@@ -70,7 +70,7 @@ void RpcContext::SetResultTracker(scoped_refptr<ResultTracker> result_tracker) {
 void RpcContext::RespondSuccess() {
   if (AreResultsTracked()) {
     result_tracker_->RecordCompletionAndRespond(call_->header().request_id(),
-                                                response_pb_.get());
+                                                response_pb_);
   } else {
     VLOG(4) << call_->remote_method().service_name() << ": Sending RPC success response for "
         << call_->ToString() << ":" << std::endl << SecureDebugString(*response_pb_);
@@ -85,7 +85,7 @@ void RpcContext::RespondSuccess() {
 void RpcContext::RespondNoCache() {
   if (AreResultsTracked()) {
     result_tracker_->FailAndRespond(call_->header().request_id(),
-                                    response_pb_.get());
+                                    response_pb_);
   } else {
     VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
         << call_->ToString() << ": " << SecureDebugString(*response_pb_);

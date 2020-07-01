@@ -1139,7 +1139,7 @@ string RaftConsensus::LeaderRequest::OpsRangeString() const {
   return ret;
 }
 
-void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
+void RaftConsensus::DeduplicateLeaderRequestUnlocked(const ConsensusRequestPB* rpc_req,
                                                      LeaderRequest* deduplicated_req) {
   DCHECK(lock_.is_locked());
 
@@ -1156,7 +1156,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
   // In this loop we discard duplicates and advance the leader's preceding id
   // accordingly.
   for (int i = 0; i < rpc_req->ops_size(); i++) {
-    ReplicateMsg* leader_msg = rpc_req->mutable_ops(i);
+    const ReplicateMsg* leader_msg = &rpc_req->ops(i);
 
     if (leader_msg->id().index() <= last_committed_index) {
       VLOG_WITH_PREFIX_UNLOCKED(2) << "Skipping op id " << leader_msg->id()
@@ -1191,7 +1191,8 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
     if (deduplicated_req->first_message_idx == - 1) {
       deduplicated_req->first_message_idx = i;
     }
-    deduplicated_req->messages.push_back(make_scoped_refptr_replicate(leader_msg));
+    deduplicated_req->messages.emplace_back(
+        make_scoped_refptr_replicate(new ReplicateMsg(*leader_msg)));
   }
 
   if (deduplicated_req->messages.size() != rpc_req->ops_size()) {
@@ -1292,8 +1293,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
                                    "before restarting.");
   }
 
-  ConsensusRequestPB* mutable_req = const_cast<ConsensusRequestPB*>(request);
-  DeduplicateLeaderRequestUnlocked(mutable_req, deduped_req);
+  DeduplicateLeaderRequestUnlocked(request, deduped_req);
 
   // This is an additional check for KUDU-639 that makes sure the message's index
   // and term are in the right sequence in the request, after we've deduplicated
@@ -1302,30 +1302,16 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   // TODO move this to raft_consensus-state or whatever we transform that into.
   // We should be able to do this check for each append, but right now the way
   // we initialize raft_consensus-state is preventing us from doing so.
-  Status s;
   const OpId* prev = deduped_req->preceding_opid;
   for (const ReplicateRefPtr& message : deduped_req->messages) {
-    s = PendingRounds::CheckOpInSequence(*prev, message->get()->id());
+    Status s = PendingRounds::CheckOpInSequence(*prev, message->get()->id());
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "
           << s.ToString() << ". Leader Request: " << SecureShortDebugString(*request);
-      break;
+      return s;
     }
     prev = &message->get()->id();
   }
-
-  // We only release the messages from the request after the above check so that
-  // that we can print the original request, if it fails.
-  if (!deduped_req->messages.empty()) {
-    // We take ownership of the deduped ops.
-    DCHECK_GE(deduped_req->first_message_idx, 0);
-    mutable_req->mutable_ops()->ExtractSubrange(
-        deduped_req->first_message_idx,
-        deduped_req->messages.size(),
-        nullptr);
-  }
-
-  RETURN_NOT_OK(s);
 
   RETURN_NOT_OK(HandleLeaderRequestTermUnlocked(request, response));
 

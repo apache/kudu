@@ -104,13 +104,13 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
     RespondBadMethod(call);
     return;
   }
-  unique_ptr<Message> req(method_info->req_prototype->New());
-  if (PREDICT_FALSE(!ParseParam(call, req.get()))) {
+  Message* req = method_info->req_prototype->New(call->pb_arena());
+  if (PREDICT_FALSE(!ParseParam(call, req))) {
     return;
   }
-  Message* resp = method_info->resp_prototype->New();
+  Message* resp = method_info->resp_prototype->New(call->pb_arena());
 
-  RpcContext* ctx = new RpcContext(call, req.release(), resp);
+  RpcContext* ctx = new RpcContext(call, req, resp);
   if (!method_info->authz_method(ctx->request_pb(), resp, ctx)) {
     // The authz_method itself should have responded to the RPC.
     return;
