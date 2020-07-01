@@ -1372,7 +1372,12 @@ class Counter : public Metric {
     IncrementBy(down_cast<Counter *>(other.get())->value());
   }
 
+  virtual void Reset() {
+    value_.Reset();
+  }
+
  private:
+  FRIEND_TEST(MetricsTest, ResetCounter);
   FRIEND_TEST(MetricsTest, SimpleCounterTest);
   FRIEND_TEST(MetricsTest, SimpleCounterMergeTest);
   FRIEND_TEST(MultiThreadedMetricsTest, CounterIncrementTest);
