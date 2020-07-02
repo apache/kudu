@@ -54,6 +54,11 @@
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
+namespace google {
+namespace protobuf {
+class Arena;
+}  // namespace protobuf
+}  // namespace google
 template <class X> struct GoodFastHash;
 
 namespace kudu {
@@ -651,12 +656,32 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                            GetTableLocationsResponsePB* resp,
                            boost::optional<const std::string&> user);
 
-  struct TSInfosDict {
-    std::vector<std::unique_ptr<TSInfoPB>> ts_info_pbs;
-    google::dense_hash_map<StringPiece, int, GoodFastHash<StringPiece>> uuid_to_idx;
-    TSInfosDict() {
-      uuid_to_idx.set_empty_key(StringPiece());
+  // Dictionary mapping tablet servers to indexes, so that when a GetTableLocations
+  // response returns many replicas mapping to the same UUID, they can be sent
+  // only once in the returned protobuf and referred to by an index.
+  class TSInfosDict {
+   public:
+    // If 'arena' is non-NULL, the TSInfoPBs allocated by 'LookupOrAdd' will be
+    // allocated from the arena. Otherwise, they will be heap-allocated and freed
+    // when the TSInfosDict is destructed.
+    explicit TSInfosDict(google::protobuf::Arena* arena = nullptr) : arena_(arena) {
+      uuid_to_idx_.set_empty_key(StringPiece());
     }
+    ~TSInfosDict();
+
+    // Lookup the index for the given tablet server UUID. If that UUID has not been
+    // added yet, allocates a new TSInfoPB and calls 'creator(pb)' to fill it in,
+    // returning the index of the newly-added TS.
+    int LookupOrAdd(const std::string& uuid, const std::function<void(TSInfoPB*)>& creator);
+
+    const std::vector<TSInfoPB*>& ts_info_pbs() const { return ts_info_pbs_; }
+
+   private:
+    std::vector<TSInfoPB*> ts_info_pbs_;
+    google::dense_hash_map<StringPiece, int, GoodFastHash<StringPiece>> uuid_to_idx_;
+
+    // If non-null, the TSInfoPBs are allocated from this Arena.
+    google::protobuf::Arena* const arena_;
   };
 
   // Look up the locations of the given tablet. If 'user' is provided, checks

@@ -32,6 +32,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -546,17 +547,18 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmarkFunctionCall) {
   for (size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back([&, idx]() {
       GetTableLocationsRequestPB req;
-      GetTableLocationsResponsePB resp;
+      google::protobuf::Arena arena;
       while (!stop) {
         req.Clear();
-        resp.Clear();
+        arena.Reset();
+        auto* resp = google::protobuf::Arena::CreateMessage<GetTableLocationsResponsePB>(&arena);
         req.mutable_table()->set_table_name(table_name);
         req.set_max_returned_locations(1000);
         req.set_intern_ts_infos_in_response(true);
         ++req_counters[idx];
         {
           CatalogManager::ScopedLeaderSharedLock l(cm);
-          auto s = cm->GetTableLocations(&req, &resp, username);
+          auto s = cm->GetTableLocations(&req, resp, username);
           if (!s.ok()) {
             ++err_counters[idx];
           }

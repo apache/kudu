@@ -382,7 +382,7 @@ Status AutoRebalancerTask::GetTabletLeader(
   for (const auto& r : locs_pb.interned_replicas()) {
     if (r.role() == RaftPeerPB::LEADER) {
       int index = r.ts_info_idx();
-      const TSInfoPB ts_info = *(ts_infos_dict.ts_info_pbs[index]);
+      const TSInfoPB& ts_info = *(ts_infos_dict.ts_info_pbs()[index]);
       *leader_uuid = ts_info.permanent_uuid();
       *leader_hp = HostPortFromPB(ts_info.rpc_addresses(0));
       return Status::OK();
@@ -555,7 +555,7 @@ Status AutoRebalancerTask::BuildClusterRawInfo(
       // If not, return an error.
       for (const auto& r : locs_pb.interned_replicas()) {
         int index = r.ts_info_idx();
-        const TSInfoPB& ts_info = *(ts_infos_dict.ts_info_pbs[index]);
+        const TSInfoPB& ts_info = *(ts_infos_dict.ts_info_pbs()[index]);
         ReplicaSummary rep;
         rep.ts_uuid = ts_info.permanent_uuid();
         if (!ContainsKey(tserver_uuids, rep.ts_uuid)) {

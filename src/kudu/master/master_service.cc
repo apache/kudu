@@ -387,7 +387,7 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
   }
 
-  CatalogManager::TSInfosDict infos_dict;
+  CatalogManager::TSInfosDict infos_dict(resp->GetArena());
   for (const string& tablet_id : req->tablet_ids()) {
     // TODO(todd): once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
@@ -404,8 +404,9 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
       StatusToPB(s, err->mutable_status());
     }
   }
-  for (auto& pb : infos_dict.ts_info_pbs) {
-    resp->mutable_ts_infos()->AddAllocated(pb.release());
+  for (auto* pb : infos_dict.ts_info_pbs()) {
+    DCHECK_EQ(pb->GetArena(), resp->GetArena());
+    resp->mutable_ts_infos()->AddAllocated(pb);
   }
 
   rpc->RespondSuccess();

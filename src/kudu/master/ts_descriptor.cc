@@ -33,6 +33,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -212,6 +213,19 @@ void TSDescriptor::GetRegistration(ServerRegistrationPB* reg) const {
   shared_lock<rw_spinlock> l(lock_);
   CHECK(registration_) << "No registration";
   CHECK_NOTNULL(reg)->CopyFrom(*registration_);
+}
+
+void TSDescriptor::GetTSInfoPB(TSInfoPB* tsinfo_pb) const {
+  shared_lock<rw_spinlock> l(lock_);
+  CHECK(registration_);
+  const auto& reg = *registration_;
+  tsinfo_pb->mutable_rpc_addresses()->CopyFrom(reg.rpc_addresses());
+  if (reg.has_unix_domain_socket_path()) {
+    tsinfo_pb->set_unix_domain_socket_path(reg.unix_domain_socket_path());
+  }
+  if (location_) {
+    tsinfo_pb->set_location(*location_);
+  }
 }
 
 void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {

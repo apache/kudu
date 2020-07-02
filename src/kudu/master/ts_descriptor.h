@@ -56,6 +56,8 @@ class TabletServerAdminServiceProxy;
 
 namespace master {
 
+class TSInfoPB;
+
 // Map of dimension -> tablets number.
 typedef std::unordered_map<std::string, int32_t> TabletNumByDimensionMap;
 
@@ -102,6 +104,8 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // A safe copy is returned because the internal Registration object
   // may be mutated at any point if the tablet server re-registers.
   void GetRegistration(ServerRegistrationPB* reg) const;
+
+  void GetTSInfoPB(TSInfoPB* tsinfo_pb) const;
 
   void GetNodeInstancePB(NodeInstancePB* instance_pb) const;
 

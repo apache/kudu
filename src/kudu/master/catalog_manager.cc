@@ -62,6 +62,7 @@
 #include <boost/optional/optional_io.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 #include <google/protobuf/stubs/common.h>
 
 #include "kudu/cfile/type_encodings.h"
@@ -86,6 +87,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -5004,6 +5006,11 @@ Status CatalogManager::BuildLocationsForTablet(
   DCHECK(l_tablet.data().pb.has_consensus_state());
 
   const ConsensusStatePB& cstate = l_tablet.data().pb.consensus_state();
+
+  if (ts_infos_dict) {
+    locs_pb->mutable_interned_replicas()->Reserve(cstate.committed_config().peers().size());
+  }
+
   for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
     DCHECK(!peer.has_health_report()); // Health report shouldn't be persisted.
     switch (filter) {
@@ -5028,20 +5035,11 @@ Status CatalogManager::BuildLocationsForTablet(
     }
 
     // Helper function to create a TSInfoPB.
-    auto make_tsinfo_pb = [this, &peer]() {
-      unique_ptr<TSInfoPB> tsinfo_pb(new TSInfoPB);
+    auto fill_tsinfo_pb = [this, &peer](TSInfoPB* tsinfo_pb) {
       tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
       shared_ptr<TSDescriptor> ts_desc;
       if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-        ServerRegistrationPB reg;
-        ts_desc->GetRegistration(&reg);
-        tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
-        if (reg.has_unix_domain_socket_path()) {
-          tsinfo_pb->set_unix_domain_socket_path(reg.unix_domain_socket_path());
-        }
-        if (ts_desc->location()) {
-          tsinfo_pb->set_location(*(ts_desc->location()));
-        }
+        ts_desc->GetTSInfoPB(tsinfo_pb);
       } else {
         // If we've never received a heartbeat from the tserver, we'll fall back
         // to the last known RPC address in the RaftPeerPB.
@@ -5049,7 +5047,6 @@ Status CatalogManager::BuildLocationsForTablet(
         // TODO(wdberkeley): We should track these RPC addresses in the master table itself.
         tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
       }
-      return tsinfo_pb;
     };
 
     const auto role = GetParticipantRole(peer, cstate);
@@ -5058,16 +5055,7 @@ Status CatalogManager::BuildLocationsForTablet(
       dimension = l_tablet.data().pb.dimension_label();
     }
     if (ts_infos_dict) {
-      const auto idx = *ComputePairIfAbsent(
-          &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
-          [&]() -> pair<StringPiece, int> {
-            auto& ts_info_pbs = ts_infos_dict->ts_info_pbs;
-            const auto ts_info_idx = ts_info_pbs.size();
-            auto new_elem = make_tsinfo_pb();
-            ts_info_pbs.emplace_back(std::move(new_elem));
-            return { ts_info_pbs.back()->permanent_uuid(), ts_info_idx };
-          });
-
+      const auto idx = ts_infos_dict->LookupOrAdd(peer.permanent_uuid(), fill_tsinfo_pb);
       auto* interned_replica_pb = locs_pb->add_interned_replicas();
       interned_replica_pb->set_ts_info_idx(idx);
       interned_replica_pb->set_role(role);
@@ -5076,7 +5064,9 @@ Status CatalogManager::BuildLocationsForTablet(
       }
     } else {
       TabletLocationsPB_DEPRECATED_ReplicaPB* replica_pb = locs_pb->add_deprecated_replicas();
-      replica_pb->set_allocated_ts_info(make_tsinfo_pb().release());
+      TSInfoPB* tsi = google::protobuf::Arena::CreateMessage<TSInfoPB>(locs_pb->GetArena());
+      fill_tsinfo_pb(tsi);
+      replica_pb->set_allocated_ts_info(tsi);
       replica_pb->set_role(role);
     }
   }
@@ -5251,7 +5241,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
     }
   }
 
-  TSInfosDict infos_dict;
+  TSInfosDict infos_dict(resp->GetArena());
   bool consistent_locations = true;
   for (const auto& tablet : tablets_in_range) {
     const auto s = BuildLocationsForTablet(
@@ -5282,9 +5272,10 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
           << s.ToString();
     }
   }
-  resp->mutable_ts_infos()->Reserve(infos_dict.ts_info_pbs.size());
-  for (auto& pb : infos_dict.ts_info_pbs) {
-    resp->mutable_ts_infos()->AddAllocated(pb.release());
+  resp->mutable_ts_infos()->Reserve(infos_dict.ts_info_pbs().size());
+  for (auto* pb : infos_dict.ts_info_pbs()) {
+    DCHECK_EQ(pb->GetArena(), resp->GetArena());
+    resp->mutable_ts_infos()->AddAllocated(pb);
   }
   resp->set_ttl_millis(FLAGS_table_locations_ttl_ms);
 
@@ -5444,6 +5435,27 @@ void CatalogManager::ResetTableLocationsCache() {
     table_locations_cache_ = std::move(new_cache);
   }
   VLOG(1) << "table locations cache has been reset";
+}
+
+////////////////////////////////////////////////////////////
+// CatalogManager::TSInfosDict
+////////////////////////////////////////////////////////////
+CatalogManager::TSInfosDict::~TSInfosDict() {
+  if (!arena_) {
+    STLDeleteElements(&ts_info_pbs_);
+  }
+}
+
+int CatalogManager::TSInfosDict::LookupOrAdd(const string& uuid,
+                                             const std::function<void(TSInfoPB*)>& creator) {
+  return *ComputePairIfAbsent(&uuid_to_idx_, uuid, [&]() -> pair<StringPiece, int> {
+    auto idx = ts_info_pbs_.size();
+    auto* pb = google::protobuf::Arena::CreateMessage<TSInfoPB>(arena_);
+    ts_info_pbs_.push_back(pb);
+    creator(pb);
+    DCHECK_EQ(pb->permanent_uuid(), uuid);
+    return {pb->permanent_uuid(), idx};
+  });
 }
 
 ////////////////////////////////////////////////////////////
