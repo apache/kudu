@@ -254,7 +254,7 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
        " being passed during bootstrap. This can create unexpected bahavior."
        " Move to boostrap_tservers as it is more capable.";
   }
-      
+
   // Give first priority to options.tserver_addresses
   // Over time applications will stop setting this and
   // pass in list of peers. Applications are expected to
@@ -288,7 +288,11 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
 
   if (FLAGS_enable_flexi_raft) {
     DCHECK(options.topology_config.has_commit_rule());
-    resolved_config.mutable_commit_rule()->CopyFrom(options.topology_config.commit_rule());
+    resolved_config.mutable_commit_rule()->CopyFrom(
+        options.topology_config.commit_rule());
+    resolved_config.mutable_voter_distribution()->insert(
+        options.topology_config.voter_distribution().begin(),
+        options.topology_config.voter_distribution().end());
   }
 
   RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config));

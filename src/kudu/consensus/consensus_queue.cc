@@ -1041,23 +1041,18 @@ void PeerMessageQueue::GetDataCommitQuorum(
       &voter_distribution);
 
   // Step 2: Compute data commit quorum from the config.
-  for (const RegionRuleSpecPB& rule_spec :
-      queue_state_.active_config->commit_rule().rule_conjunctions()) {
-    std::string region = rule_spec.region_identifier();
-    const std::string& commit_req = rule_spec.commit_requirement();
+  // TODO(ritwikyadav) : This function will be simplified (or removed) shortly
+  // with the new quorum specification modes.
+  CHECK(queue_state_.active_config->commit_rule().mode() ==
+      QuorumMode::SINGLE_REGION_DYNAMIC);
 
-    // Resolve master region.
-    if (region == "master") {
-      CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
-      region = local_peer_pb_.attrs().region();
-    }
+  // Double check that the local leader has the proper metadata.
+  CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
 
-    // TODO(ritwikyadav): It is possible that all voters in a region
-    // have left the replicaset. Handle that case gracefully in a subsequent diff.
-    int total_voters = FindOrDie(voter_distribution, region);
-    int commit_req_num = ResolveCommitRequirement(total_voters, commit_req);
-    InsertIfNotPresent(data_commit_quorum, region, commit_req_num);
-  }
+  const std::string& leader_region = local_peer_pb_.attrs().region();
+  int total_voters = FindOrDie(voter_distribution, leader_region);
+  int commit_req_num = MajoritySize(total_voters);
+  InsertIfNotPresent(data_commit_quorum, leader_region, commit_req_num);
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(

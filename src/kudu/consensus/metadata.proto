@@ -71,21 +71,30 @@ message HealthReportPB {
   optional HealthStatus overall_health = 1;
 }
 
-// The following structs `RegionRuleSpecPB`, `CommitRulePB` &
+// The following structs `CommitRulePredicatePB`, `CommitRulePB` &
 // `ReplicationTopologyPB` need to be kept in sync with the plugin.
 
-// Analogue of RegionRuleSpec on the plugin.
-message RegionRuleSpecPB {
-  // Region identifier could be a valid 3-letter region, "any" or "master"
-  required string region_identifier = 1;
-  // Commit requirement could be a positive integer (encoded as string) or
-  // "majority"
-  required string commit_requirement = 2;
+enum QuorumMode {
+  STATIC_DISJUNCTION = 0;
+  STATIC_CONJUNCTION = 1;
+  SINGLE_REGION_DYNAMIC = 2;
+}
+
+// Analogue of CommitRulePredicate on the plugin.
+// Defines a single predicate in the static quorum modes.
+// The predicates are of the form:
+// 3 out of the 5 regions in {region1, region2, ... , region5}
+// `regions` denotes the set {region1, region2, ... , region5}
+// The subset size 3 is represented by `regions_subset_size`.
+message CommitRulePredicatePB {
+  repeated string regions = 1;
+  required int32 regions_subset_size = 2;
 }
 
 // Struct specifying commit requirements. Analogue of CommitRule on the plugin.
 message CommitRulePB {
-  repeated RegionRuleSpecPB rule_conjunctions = 1;
+  required QuorumMode mode = 1;
+  repeated CommitRulePredicatePB rule_predicates = 2;
 }
 
 // Represents the arrangement of master and its slaves for a MySQL replica set.
@@ -139,6 +148,12 @@ message TopologyConfigPB {
 
   // Replicaset topology information.
   optional RaftTopologyPB raft_topology = 7;
+
+  // Voters that exist per region.
+  // This should include all voters including the LBUs.
+  // Caution: This should NOT be modified by automation when
+  // servers are being removed for maintenance.
+  map<string, int32> voter_distribution = 8;
 }
 
 // A peer in a configuration.
@@ -211,6 +226,12 @@ message RaftConfigPB {
 
   // Commit rules defined for FlexiRaft.
   optional CommitRulePB commit_rule = 7;
+
+  // Voters that exist per region.
+  // This should include all voters including the LBUs.
+  // Caution: This should NOT be modified by automation when
+  // servers are being removed for maintenance.
+  map<string, int32> voter_distribution = 8;
 }
 
 // A single directed edge on the request proxying graph.
