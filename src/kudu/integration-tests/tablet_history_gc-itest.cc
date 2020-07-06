@@ -322,8 +322,10 @@ TEST_F(TabletHistoryGcITest, TestDeletedRowsetGc) {
   }
   ASSERT_OK(session->Flush());
   uint64_t measured_size_before_gc;
-  ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
-                                                         &measured_size_before_gc));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
+                                                           &measured_size_before_gc));
+  });
   // Move forward the clock so our rowsets are all considered ancient.
   HybridClock* c = down_cast<HybridClock*>(tablet->clock());
   AddTimeToHybridClock(c, MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));

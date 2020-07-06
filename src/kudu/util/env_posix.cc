@@ -1594,24 +1594,24 @@ class PosixEnv : public Env {
     FTSENT* ent = nullptr;
     bool had_errors = false;
     while ((ent = fts_read(tree.get())) != nullptr) {
-      bool doCb = false;
+      bool do_cb = false;
       FileType type = DIRECTORY_TYPE;
       switch (ent->fts_info) {
         case FTS_D:         // Directory in pre-order
           if (order == PRE_ORDER) {
-            doCb = true;
+            do_cb = true;
           }
           break;
         case FTS_DP:        // Directory in post-order
           if (order == POST_ORDER) {
-            doCb = true;
+            do_cb = true;
           }
           break;
         case FTS_F:         // A regular file
         case FTS_SL:        // A symbolic link
         case FTS_SLNONE:    // A broken symbolic link
         case FTS_DEFAULT:   // Unknown type of file
-          doCb = true;
+          do_cb = true;
           type = FILE_TYPE;
           break;
 
@@ -1620,16 +1620,21 @@ class PosixEnv : public Env {
         case FTS_NS:
           LOG(WARNING) << "Unable to access file " << ent->fts_path
                        << " during walk: " << strerror(ent->fts_errno);
+          LOG(WARNING) << Substitute("Unable to access file $0 during walk: $1",
+                                     ent->fts_path, strerror(ent->fts_errno));
           had_errors = true;
           break;
 
         default:
-          LOG(WARNING) << "Unable to access file " << ent->fts_path
-                       << " during walk (code " << ent->fts_info << ")";
+          LOG(WARNING) << Substitute("Unable to access file $0 during walk (code $1)",
+                                     ent->fts_path, ent->fts_info);
           break;
       }
-      if (doCb) {
-        if (!cb(type, DirName(ent->fts_path), ent->fts_name).ok()) {
+      if (do_cb) {
+        Status s = cb(type, DirName(ent->fts_path), ent->fts_name);
+        if (PREDICT_FALSE(!s.ok())) {
+          LOG(WARNING) << Substitute("Error running callback with file $0 during walk: $1",
+                                     ent->fts_path, s.ToString());
           had_errors = true;
         }
       }
