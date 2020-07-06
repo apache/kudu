@@ -577,17 +577,38 @@ class PeerMessageQueue {
                              ReplicaTypes replica_types,
                              const TrackedPeer* who_caused);
 
-  // Function to compute the commit index in flexi raft. Same as
+  // Function to compute the new `watermark` in one of the static modes
+  // given a pointer to it, the voter distribution and the watermarks
+  // classified by region.
+  // This function returns the old watermark.
+  int64_t ComputeNewWatermarkStaticMode(
+    int64_t* watermark, const QuorumMode& mode,
+    const std::map<std::string, int>& voter_distribution,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
+
+  // Function to compute the new `watermark` in the single region dynamic
+  // mode given a pointer to it, the voter distribution and the watermarks
+  // classified by region.
+  // This function returns the old watermark.
+  int64_t ComputeNewWatermarkDynamicMode(
+    int64_t* watermark,
+    const std::map<std::string, int>& voter_distribution,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
+
+  // Function to compute the new `watermark` given a pointer to it and the
+  // watermarks classified by region. This function returns the old watermark.
+  int64_t ComputeNewWatermark(
+    int64_t* watermark,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
+
+  // Function to compute the commit index in FlexiRaft. Same as
   // `AdvanceQueueWatermark` except that its only used for commit index
-  // advancement and takes in `data_commit_quorum` as a parameter which is a
-  // mapping from region to number of votes required in that region for a
-  // transaction to be considered as committed.
+  // advancement.
   // Please note: `queue_lock_` is held as well as `lock_` from the associated
   // RaftConsensus instance while this function gets called.
   void AdvanceMajorityReplicatedWatermarkFlexiRaft(
       int64_t* watermark, const OpId& replicated_before,
       const OpId& replicated_after,
-      const std::map<std::string, int>& data_commit_quorum,
       ReplicaTypes replica_types, const TrackedPeer* who_caused);
 
   // Fetches the data commit quorum as a mapping from region to count of

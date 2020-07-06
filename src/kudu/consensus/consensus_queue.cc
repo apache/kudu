@@ -851,7 +851,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   // - Sort the vector
   // - Find the vector.size() - 'num_peers_required' position, this
   //   will be the new 'watermark'.
-  vector<int64_t> watermarks;
+  std::vector<int64_t> watermarks;
   for (const PeersMap::value_type& peer : peers_map_) {
     if (replica_types == VOTER_REPLICAS &&
         peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
@@ -909,10 +909,91 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
+int64_t PeerMessageQueue::ComputeNewWatermarkStaticMode(
+    int64_t* watermark, const QuorumMode& mode,
+    const std::map<std::string, int>& voter_distribution,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+  // TODO(ritwikyadav) : Implement static modes.
+  CHECK(watermark);
+  return *watermark;
+}
+
+int64_t PeerMessageQueue::ComputeNewWatermarkDynamicMode(
+    int64_t* watermark,
+    const std::map<std::string, int>& voter_distribution,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+  CHECK(watermark);
+  CHECK(queue_state_.active_config->has_commit_rule());
+  CHECK(queue_state_.active_config->commit_rule().mode() ==
+      QuorumMode::SINGLE_REGION_DYNAMIC);
+
+  // Double check that the local leader has the proper metadata.
+  CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
+
+  const std::string& leader_region = local_peer_pb_.attrs().region();
+  int total_voters = FindOrDie(voter_distribution, leader_region);
+  int commit_req = MajoritySize(total_voters);
+
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Computing new commit index in single "
+                               << "region dynamic mode.";
+
+  std::map<std::string, std::vector<int64_t> >::const_iterator it =
+      watermarks_by_region.find(leader_region);
+
+  // Return without advancing the commit watermark, if majority in leader
+  // region is not satisfied, ie. not enough number of replicas have responded
+  // from that region.
+  if (it == watermarks_by_region.end() || it->second.size() < commit_req) {
+    if (VLOG_IS_ON(3)) {
+      VLOG_WITH_PREFIX_UNLOCKED(3)
+          << "Watermarks size: "
+          << ((it == watermarks_by_region.end()) ? 0 : it->second.size())
+          << ", Num peers required: " << commit_req
+          << ", Region: " << leader_region;
+    }
+    return *watermark;
+  }
+
+  const std::vector<int64_t>& watermarks_in_leader_region = it->second;
+  int64_t old_watermark = *watermark;
+  *watermark = watermarks_in_leader_region[
+      watermarks_in_leader_region.size() - commit_req];
+  return old_watermark;
+}
+
+int64_t PeerMessageQueue::ComputeNewWatermark(
+    int64_t* watermark,
+    const std::map<std::string, std::vector<int64_t> >& watermarks_by_region) {
+  CHECK(watermark);
+  CHECK(queue_state_.active_config->has_commit_rule());
+
+  // Map to store the number of voters in each region from the active config.
+  std::map<std::string, int> voter_distribution;
+
+  // Compute total number of voters in each region.
+  // We don't need leader region because the server advancing the commit index
+  // is the leader.
+  GetRegionalCountsFromConfig(
+      *queue_state_.active_config, "" /* leader_uuid */,
+      &voter_distribution);
+
+  switch (queue_state_.active_config->commit_rule().mode()) {
+    case QuorumMode::SINGLE_REGION_DYNAMIC:
+      return ComputeNewWatermarkDynamicMode(
+          watermark, voter_distribution, watermarks_by_region);
+    case QuorumMode::STATIC_DISJUNCTION:
+    case QuorumMode::STATIC_CONJUNCTION:
+      return ComputeNewWatermarkStaticMode(
+          watermark, queue_state_.active_config->commit_rule().mode(),
+          voter_distribution, watermarks_by_region);
+    default:
+      return *watermark;
+  }
+}
+
 void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
     int64_t* watermark, const OpId& replicated_before,
     const OpId& replicated_after,
-    const std::map<std::string, int>& data_commit_quorum,
     ReplicaTypes replica_types, const TrackedPeer* who_caused) {
   CHECK(watermark);
   CHECK(who_caused);
@@ -933,7 +1014,7 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
   // replicas in prn, 3 in frc and 2 in lla. Two replicas in prn have received
   // entries until index 4, one has received until 5 and one until 7. Similarly,
   // 2 replicas in lla have received entries until index 5.
-  std::map<std::string, vector<int64_t> > watermarks_by_region;
+  std::map<std::string, std::vector<int64_t> > watermarks_by_region;
   for (const PeersMap::value_type& peer : peers_map_) {
     if (replica_types == VOTER_REPLICAS &&
         peer.second->peer_pb.member_type() != RaftPeerPB::VOTER) {
@@ -949,110 +1030,31 @@ void PeerMessageQueue::AdvanceMajorityReplicatedWatermarkFlexiRaft(
     }
   }
 
-  // Vector of maximum indexes which satisfy requirements in each region
-  // that features in the data commit quorum. For example, if the data commit
-  // requirement specifies certain number of votes from prn and frc, this vector
-  // will have the maximum indexes corresponding to prn and frc that are
-  // considered replicated by a set of servers in those respective regions such
-  // that the cardinality of those sets is greater than or equal to the number
-  // of votes required.
-  std::vector<int64_t> commit_index_regional_level;
-  for (const std::pair<std::string, int>& regional_commit_requirement :
-      data_commit_quorum) {
-    std::map<std::string, std::vector<int64_t> >::iterator it =
-        watermarks_by_region.find(regional_commit_requirement.first);
-
-    // Return without advancing the commit watermark, if any region specified in
-    // the data commit quorum is not satisfied, ie. not enough number of
-    // replicas have responded from that region.
-    if (it == watermarks_by_region.end() ||
-        it->second.size() < regional_commit_requirement.second) {
-      VLOG_WITH_PREFIX_UNLOCKED(3)
-          << "Watermarks size: "
-          << ((it == watermarks_by_region.end()) ? 0 : it->second.size())
-          << ", Num peers required: " << regional_commit_requirement.second
-          << ", Region: " << regional_commit_requirement.first;
-      return;
-    }
+  // Sort all the watermarks.
+  for (std::map<std::string, std::vector<int64_t> >::iterator it =
+      watermarks_by_region.begin(); it != watermarks_by_region.end(); it++) {
     std::sort(it->second.begin(), it->second.end());
-
-    // Let us assume the responses mentioned in the previous comment and let the
-    // data commit requirement be the following: prn = 3, frc = 2
-    // The next line would pick index 4 for prn, index 3 for frc and ignore lla.
-    // commit_index_regional_level = <4, 3>
-    commit_index_regional_level.push_back(
-        it->second[it->second.size() - regional_commit_requirement.second]);
   }
 
-  // Since `data_commit_requirement` corresponds to a conjunction (logical AND)
-  // requirement, we compute the minimum index which is considered replicated
-  // in all regions that feature in the data commit quorum requirement.
-  // Following the previous example, for any index to be considered committed,
-  // we need 3 replicas in prn to ack it *and* 2 replicas in frc.
-  // Therefore, we choose the minimum from commit_index_regional_level. We can't
-  // advance the commit index to 4 because only 1 replica in frc has
-  // acknowledged that it has received it so far whereas we need 2.
-  // Therefore, the commit index will be 3.
-  std::vector<int64_t>::iterator new_watermark_it = std::min_element(
-      commit_index_regional_level.begin(), commit_index_regional_level.end());
-  int64_t old_watermark = *watermark;
-  *watermark = *new_watermark_it;
+  // Update the watermark based on the acknowledgements so far.
+  int64_t old_watermark = ComputeNewWatermark(watermark, watermarks_by_region);
 
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Updated majority_replicated watermark "
-      << "from " << old_watermark << " to " << (*new_watermark_it);
+      << "from " << old_watermark << " to " << (*watermark);
   if (VLOG_IS_ON(3)) {
     VLOG_WITH_PREFIX_UNLOCKED(3) << "Peers: ";
     for (const PeersMap::value_type& peer : peers_map_) {
       VLOG_WITH_PREFIX_UNLOCKED(3) << "Peer: " << peer.second->ToString();
     }
-    VLOG_WITH_PREFIX_UNLOCKED(3) << "Data commit quorum: ";
-    for (const std::pair<std::string, int>& regional_commit_requirement :
-        data_commit_quorum) {
-      VLOG_WITH_PREFIX_UNLOCKED(3)
-          << "Region: " << regional_commit_requirement.first << ", "
-          << "Count: " << regional_commit_requirement.second;
-    }
     VLOG_WITH_PREFIX_UNLOCKED(3) << "Sorted watermarks:";
-    for (const std::pair<std::string, vector<int64_t> >& region_watermarks :
-        watermarks_by_region) {
+    for (const std::pair<std::string, std::vector<int64_t> >&
+         region_watermarks : watermarks_by_region) {
       VLOG_WITH_PREFIX_UNLOCKED(3) << "Region: " << region_watermarks.first;
-      for (const int64_t watermark : region_watermarks.second) {
-        VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << watermark;
+      for (const int64_t r_watermark : region_watermarks.second) {
+        VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << r_watermark;
       }
     }
   }
-}
-
-void PeerMessageQueue::GetDataCommitQuorum(
-    std::map<std::string, int>* data_commit_quorum) const {
-  CHECK(data_commit_quorum);
-  CHECK(queue_state_.active_config->has_commit_rule());
-
-  data_commit_quorum->clear();
-
-  // Map to store the number of voters in each region from the active config.
-  std::map<std::string, int> voter_distribution;
-
-  // Step 1: Compute total number of voters in each region.
-  // We don't need leader region because the server advancing the commit index
-  // is the leader.
-  GetRegionalCountsFromConfig(
-      *queue_state_.active_config, "" /* leader_uuid */,
-      &voter_distribution);
-
-  // Step 2: Compute data commit quorum from the config.
-  // TODO(ritwikyadav) : This function will be simplified (or removed) shortly
-  // with the new quorum specification modes.
-  CHECK(queue_state_.active_config->commit_rule().mode() ==
-      QuorumMode::SINGLE_REGION_DYNAMIC);
-
-  // Double check that the local leader has the proper metadata.
-  CHECK(local_peer_pb_.has_attrs() && local_peer_pb_.attrs().has_region());
-
-  const std::string& leader_region = local_peer_pb_.attrs().region();
-  int total_voters = FindOrDie(voter_distribution, leader_region);
-  int commit_req_num = MajoritySize(total_voters);
-  InsertIfNotPresent(data_commit_quorum, leader_region, commit_req_num);
 }
 
 void PeerMessageQueue::BeginWatchForSuccessor(
@@ -1455,14 +1457,10 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                               VOTER_REPLICAS,
                               peer);
       } else {
-        std::map<std::string, int> data_commit_quorum;
-        GetDataCommitQuorum(&data_commit_quorum);
-
         AdvanceMajorityReplicatedWatermarkFlexiRaft(
             &queue_state_.majority_replicated_index,
             /*replicated_before=*/ prev_peer_state.last_received,
             /*replicated_after=*/ peer->last_received,
-            /*data_commit_quorum=*/ data_commit_quorum,
             VOTER_REPLICAS,
             peer);
       }
