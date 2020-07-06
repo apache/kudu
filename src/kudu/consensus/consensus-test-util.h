@@ -672,11 +672,11 @@ class TestDriver {
   // The commit message has the exact same type of the replicate message, but
   // no content.
   void Apply() {
-    std::unique_ptr<CommitMsg> msg(new CommitMsg);
-    msg->set_op_type(round_->replicate_msg()->op_type());
-    msg->mutable_commited_op_id()->CopyFrom(round_->id());
+    CommitMsg msg;
+    msg.set_op_type(round_->replicate_msg()->op_type());
+    msg.mutable_commited_op_id()->CopyFrom(round_->id());
     CHECK_OK(log_->AsyncAppendCommit(
-        std::move(msg), [this](const Status& s) { this->CommitCallback(s); }));
+        msg, [this](const Status& s) { this->CommitCallback(s); }));
   }
 
   void CommitCallback(const Status& s) {

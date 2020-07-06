@@ -22,6 +22,7 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/schema.h"
@@ -118,13 +119,13 @@ Status AlterSchemaOp::Start() {
   return Status::OK();
 }
 
-Status AlterSchemaOp::Apply(unique_ptr<CommitMsg>* commit_msg) {
+Status AlterSchemaOp::Apply(CommitMsg** commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
   Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
 
-  commit_msg->reset(new CommitMsg());
+  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
   (*commit_msg)->set_op_type(consensus::OperationType::ALTER_SCHEMA_OP);
 
   // If there was a logical error (e.g. bad schema version) with the alter,

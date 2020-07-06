@@ -18,6 +18,7 @@
 #include "kudu/tablet/ops/write_op.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <ctime>
 #include <new>
@@ -27,6 +28,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/common/common.pb.h"
@@ -220,7 +222,7 @@ void WriteOp::UpdatePerRowErrors() {
 
 // FIXME: Since this is called as a void in a thread-pool callback,
 // it seems pointless to return a Status!
-Status WriteOp::Apply(unique_ptr<CommitMsg>* commit_msg) {
+Status WriteOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "WriteOp::Apply");
   TRACE("APPLY: Starting.");
 
@@ -238,7 +240,7 @@ Status WriteOp::Apply(unique_ptr<CommitMsg>* commit_msg) {
   UpdatePerRowErrors();
 
   // Create the Commit message
-  commit_msg->reset(new CommitMsg());
+  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
   state()->ReleaseTxResultPB((*commit_msg)->mutable_result());
   (*commit_msg)->set_op_type(consensus::OperationType::WRITE_OP);
 
@@ -354,7 +356,7 @@ void WriteOpState::SetRowOps(vector<DecodedRowOperation> decoded_ops) {
     if (authz_context_) {
       InsertIfNotPresent(&authz_context_->requested_op_types, op.type);
     }
-    row_ops_.emplace_back(arena->NewObject<RowOp>(std::move(op)));
+    row_ops_.emplace_back(arena->NewObject<RowOp>(pb_arena(), std::move(op)));
   }
 
   // Allocate the ProbeStats objects from the op's arena, so
@@ -405,7 +407,8 @@ void WriteOpState::ReleaseTxResultPB(TxResultPB* result) const {
   result->Clear();
   result->mutable_ops()->Reserve(row_ops_.size());
   for (RowOp* op : row_ops_) {
-    result->mutable_ops()->AddAllocated(CHECK_NOTNULL(op->result.release()));
+    DCHECK_EQ(op->result->GetArena(), result->GetArena());
+    result->mutable_ops()->AddAllocated(DCHECK_NOTNULL(op->result));
   }
 }
 

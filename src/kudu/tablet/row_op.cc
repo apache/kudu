@@ -22,6 +22,7 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -32,11 +33,11 @@ using kudu::pb_util::SecureDebugString;
 using std::unique_ptr;
 
 namespace kudu {
-
 namespace tablet {
 
-RowOp::RowOp(DecodedRowOperation op)
-    : decoded_op(std::move(op)) {
+RowOp::RowOp(google::protobuf::Arena* pb_arena, DecodedRowOperation op)
+    : pb_arena_(pb_arena),
+      decoded_op(std::move(op)) {
   if (!decoded_op.result.ok()) {
     SetFailed(decoded_op.result);
   }
@@ -44,25 +45,26 @@ RowOp::RowOp(DecodedRowOperation op)
 
 void RowOp::SetFailed(const Status& s) {
   DCHECK(!result) << SecureDebugString(*result);
-  result.reset(new OperationResultPB());
+  result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
   StatusToPB(s, result->mutable_failed_status());
 }
 
 void RowOp::SetInsertSucceeded(int mrs_id) {
   DCHECK(!result) << SecureDebugString(*result);
-  result.reset(new OperationResultPB());
+  result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
   result->add_mutated_stores()->set_mrs_id(mrs_id);
 }
 
 void RowOp::SetErrorIgnored() {
   DCHECK(!result) << SecureDebugString(*result);
-  result.reset(new OperationResultPB());
+  result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
   error_ignored = true;
 }
 
-void RowOp::SetMutateSucceeded(unique_ptr<OperationResultPB> result) {
+void RowOp::SetMutateSucceeded(OperationResultPB* result) {
   DCHECK(!this->result) << SecureDebugString(*result);
-  this->result = std::move(result);
+  DCHECK_EQ(result->GetArena(), pb_arena_);
+  this->result = result;
 }
 
 std::string RowOp::ToString(const Schema& schema) const {
@@ -71,7 +73,8 @@ std::string RowOp::ToString(const Schema& schema) const {
 
 void RowOp::SetSkippedResult(const OperationResultPB& result) {
   DCHECK(result.skip_on_replay());
-  this->result.reset(new OperationResultPB(result));
+  this->result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
+  this->result->CopyFrom(result);
 }
 
 } // namespace tablet

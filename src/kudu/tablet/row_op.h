@@ -22,7 +22,12 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/rowset.h"
-#include "kudu/tablet/tablet.pb.h"
+
+namespace google {
+namespace protobuf {
+class Arena;
+}
+}
 
 namespace kudu {
 
@@ -30,11 +35,12 @@ class Schema;
 class Status;
 
 namespace tablet {
+class OperationResultPB;
 
 // Structure tracking the progress of a single row operation within a WriteTransaction.
 struct RowOp {
  public:
-  explicit RowOp(DecodedRowOperation op);
+  RowOp(google::protobuf::Arena* pb_arena, DecodedRowOperation op);
   ~RowOp() = default;
 
   // Functions to set the result of the mutation.
@@ -42,7 +48,11 @@ struct RowOp {
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
   void SetErrorIgnored();
-  void SetMutateSucceeded(std::unique_ptr<OperationResultPB> result);
+
+  // REQUIRES: result must be allocated from the same protobuf::Arena associated
+  // with this RowOp.
+  void SetMutateSucceeded(OperationResultPB* result);
+
   // Sets the result of a skipped operation on bootstrap.
   // TODO(dralves) Currently this performs a copy. Might be avoided with some refactoring.
   // see TODO(dralves) in TabletBoostrap::ApplyOperations().
@@ -66,6 +76,8 @@ struct RowOp {
   }
 
   std::string ToString(const Schema& schema) const;
+
+  google::protobuf::Arena* const pb_arena_;
 
   // The original operation as decoded from the client request.
   DecodedRowOperation decoded_op;
@@ -100,8 +112,8 @@ struct RowOp {
   // checked and found not to be alive in any RowSet.
   RowSet* present_in_rowset = nullptr;
 
-  // The result of the operation.
-  std::unique_ptr<OperationResultPB> result;
+  // The result of the operation, allocated from pb_arena_
+  OperationResultPB* result = nullptr;
 };
 
 

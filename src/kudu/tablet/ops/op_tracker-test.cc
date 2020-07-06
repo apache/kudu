@@ -89,7 +89,7 @@ class OpTrackerTest : public KuduTest,
 
     Status Prepare() override { return Status::OK(); }
     Status Start() override { return Status::OK(); }
-    Status Apply(unique_ptr<consensus::CommitMsg>* /* commit_msg */) override {
+    Status Apply(consensus::CommitMsg** /* commit_msg */) override {
       return Status::OK();
     }
     std::string ToString() const override {

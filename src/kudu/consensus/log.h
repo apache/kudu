@@ -25,14 +25,12 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/schema.h"
-#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_util.h"
@@ -57,6 +55,9 @@ class CompressionCodec;
 class FileCache;
 class FsManager;
 class RWFile;
+namespace consensus {
+class CommitMsg;
+}  // namespace consensus
 
 namespace log {
 
@@ -303,7 +304,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Append the given commit message, asynchronously.
   //
   // Returns a bad status if the log is already shut down.
-  Status AsyncAppendCommit(std::unique_ptr<consensus::CommitMsg> commit_msg,
+  Status AsyncAppendCommit(const consensus::CommitMsg& commit_msg,
                            StatusCallback callback);
 
   // Blocks the current thread until all the entries in the log queue
@@ -449,7 +450,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // After the batch is appended to the log, 'cb' will be invoked with the
   // result status of the append.
   static std::unique_ptr<LogEntryBatch> CreateBatchFromPB(
-      LogEntryTypePB type, LogEntryBatchPB entry_batch_pb, StatusCallback cb);
+      LogEntryTypePB type, const LogEntryBatchPB& entry_batch_pb,
+      StatusCallback cb);
 
   // Asynchronously appends 'entry_batch' to the log.
   Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch);
@@ -563,9 +565,7 @@ class LogEntryBatch {
   friend class MultiThreadedLogTest;
   friend class SegmentAllocator;
 
-  LogEntryBatch(LogEntryTypePB type,
-                LogEntryBatchPB entry_batch_pb,
-                size_t count,
+  LogEntryBatch(LogEntryTypePB type, const LogEntryBatchPB& entry_batch_pb,
                 StatusCallback cb);
 
   // Serializes contents of the entry to an internal buffer.
@@ -584,19 +584,6 @@ class LogEntryBatch {
     return total_size_bytes_;
   }
 
-  // The highest OpId of a REPLICATE message in this batch.
-  // Requires that this be a REPLICATE batch.
-  consensus::OpId MaxReplicateOpId() const {
-    DCHECK_EQ(REPLICATE, type_);
-    int idx = entry_batch_pb_.entry_size() - 1;
-    DCHECK(entry_batch_pb_.entry(idx).replicate().IsInitialized());
-    return entry_batch_pb_.entry(idx).replicate().id();
-  }
-
-  void SetReplicates(std::vector<consensus::ReplicateRefPtr> replicates) {
-    replicates_ = std::move(replicates);
-  }
-
   void SetAppendError(const Status& s) {
     DCHECK(!s.ok());
     if (append_status_.ok()) {
@@ -611,20 +598,15 @@ class LogEntryBatch {
   // The type of entries in this batch.
   const LogEntryTypePB type_;
 
-  // Contents of the log entries that will be written to disk.
-  LogEntryBatchPB entry_batch_pb_;
-
    // Total size in bytes of all entries
   const size_t total_size_bytes_;
 
-  // Number of entries in 'entry_batch_pb_'
+  // Number of entries in the serialized batch.
   const size_t count_;
 
-  // The vector of refcounted replicates.
-  // Used only when type is REPLICATE, this makes sure there's at
-  // least a reference to each replicate message until we're finished
-  // appending.
-  std::vector<consensus::ReplicateRefPtr> replicates_;
+  // Used only when type is REPLICATE, the opids of the serialized
+  // ReplicateMsgs.
+  std::vector<consensus::OpId> replicate_op_ids_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.

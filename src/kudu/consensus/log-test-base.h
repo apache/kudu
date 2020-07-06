@@ -278,12 +278,12 @@ class LogTestBase : public KuduTest {
                       int rs_id,
                       int dms_id,
                       bool sync = APPEND_SYNC) {
-    std::unique_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
-    commit->set_op_type(consensus::WRITE_OP);
+    consensus::CommitMsg commit;
+    commit.set_op_type(consensus::WRITE_OP);
 
-    commit->mutable_commited_op_id()->CopyFrom(original_opid);
+    commit.mutable_commited_op_id()->CopyFrom(original_opid);
 
-    tablet::TxResultPB* result = commit->mutable_result();
+    tablet::TxResultPB* result = commit.mutable_result();
 
     tablet::OperationResultPB* insert = result->add_ops();
     insert->add_mutated_stores()->set_mrs_id(mrs_id);
@@ -292,35 +292,35 @@ class LogTestBase : public KuduTest {
     tablet::MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_dms_id(dms_id);
     target->set_rs_id(rs_id);
-    return AppendCommit(std::move(commit), sync);
+    return AppendCommit(commit, sync);
   }
 
   // Append a COMMIT message for 'original_opid', but with results
   // indicating that the associated writes failed due to
   // "NotFound" errors.
   Status AppendCommitWithNotFoundOpResults(const consensus::OpId& original_opid) {
-    std::unique_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
-    commit->set_op_type(consensus::WRITE_OP);
-    commit->mutable_commited_op_id()->CopyFrom(original_opid);
+    consensus::CommitMsg commit;
+    commit.set_op_type(consensus::WRITE_OP);
+    commit.mutable_commited_op_id()->CopyFrom(original_opid);
 
-    tablet::TxResultPB* result = commit->mutable_result();
+    tablet::TxResultPB* result = commit.mutable_result();
 
     tablet::OperationResultPB* insert = result->add_ops();
     StatusToPB(Status::NotFound("fake failed write"), insert->mutable_failed_status());
     tablet::OperationResultPB* mutate = result->add_ops();
     StatusToPB(Status::NotFound("fake failed write"), mutate->mutable_failed_status());
 
-    return AppendCommit(std::move(commit));
+    return AppendCommit(commit);
   }
 
-  Status AppendCommit(std::unique_ptr<consensus::CommitMsg> commit,
+  Status AppendCommit(const consensus::CommitMsg& commit,
                       bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      RETURN_NOT_OK(log_->AsyncAppendCommit(std::move(commit), s.AsStatusCallback()));
+      RETURN_NOT_OK(log_->AsyncAppendCommit(commit, s.AsStatusCallback()));
       return s.Wait();
     }
-    return log_->AsyncAppendCommit(std::move(commit),
+    return log_->AsyncAppendCommit(commit,
                                    [](const Status& s) { CheckCommitResult(s); });
   }
 

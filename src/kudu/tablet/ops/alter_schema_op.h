@@ -141,7 +141,7 @@ class AlterSchemaOp : public Op {
   Status Start() override;
 
   // Executes an Apply for the alter schema op
-  Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
+  Status Apply(consensus::CommitMsg** commit_msg) override;
 
   // Actually commits the op.
   void Finish(OpResult result) override;

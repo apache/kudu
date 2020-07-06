@@ -505,10 +505,10 @@ class WritableLogSegment {
 // Checks if 'fname' is a correctly formatted name of log segment file.
 bool IsLogFileName(const std::string& fname);
 
-// Update 'footer' to reflect the given REPLICATE message 'entry_pb'.
-// In particular, updates the min/max seen replicate OpID.
-void UpdateFooterForReplicateEntry(
-    const LogEntryPB& entry_pb, LogSegmentFooterPB* footer);
+// Update 'footer' to reflect a REPLICATE message with the given
+// op_id. In particular, updates the min/max seen replicate OpID.
+void UpdateFooterForReplicateEntry(const consensus::OpId& op_id,
+                                   LogSegmentFooterPB* footer);
 
 }  // namespace log
 }  // namespace kudu

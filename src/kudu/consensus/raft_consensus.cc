@@ -2848,12 +2848,12 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Committing " << op_type_str << " with op id "
                                << round->id();
   round_handler_->FinishConsensusOnlyRound(round);
-  unique_ptr<CommitMsg> commit_msg(new CommitMsg);
-  commit_msg->set_op_type(round->replicate_msg()->op_type());
-  *commit_msg->mutable_commited_op_id() = round->id();
+  CommitMsg commit_msg;
+  commit_msg.set_op_type(round->replicate_msg()->op_type());
+  *commit_msg.mutable_commited_op_id() = round->id();
 
   CHECK_OK(log_->AsyncAppendCommit(
-      std::move(commit_msg), [](const Status& s) {
+      commit_msg, [](const Status& s) {
         CrashIfNotOkStatusCB("Enqueued commit operation failed to write to WAL", s);
       }));
 

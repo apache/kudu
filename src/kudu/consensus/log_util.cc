@@ -392,7 +392,7 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
 
     DCHECK(entry);
     if (entry->has_replicate()) {
-      UpdateFooterForReplicateEntry(*entry, &new_footer);
+      UpdateFooterForReplicateEntry(entry->replicate().id(), &new_footer);
     }
     num_entries++;
   }
@@ -873,10 +873,9 @@ bool IsLogFileName(const string& fname) {
   return true;
 }
 
-void UpdateFooterForReplicateEntry(const LogEntryPB& entry_pb,
+void UpdateFooterForReplicateEntry(const OpId& op_id,
                                    LogSegmentFooterPB* footer) {
-  DCHECK(entry_pb.has_replicate());
-  int64_t index = entry_pb.replicate().id().index();
+  int64_t index = op_id.index();
   if (!footer->has_min_replicate_index() ||
       index < footer->min_replicate_index()) {
     footer->set_min_replicate_index(index);

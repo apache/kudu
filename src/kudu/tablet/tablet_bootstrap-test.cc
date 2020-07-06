@@ -526,25 +526,25 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
   ASSERT_OK(AppendReplicateBatch(replicate));
 
   // Now commit the mutate before the insert (in the log).
-  unique_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
-  mutate_commit->set_op_type(consensus::WRITE_OP);
-  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
-  TxResultPB* result = mutate_commit->mutable_result();
+  consensus::CommitMsg mutate_commit;
+  mutate_commit.set_op_type(consensus::WRITE_OP);
+  mutate_commit.mutable_commited_op_id()->CopyFrom(mutate_opid);
+  TxResultPB* result = mutate_commit.mutable_result();
   OperationResultPB* mutate = result->add_ops();
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  ASSERT_OK(AppendCommit(std::move(mutate_commit)));
+  ASSERT_OK(AppendCommit(mutate_commit));
 
-  unique_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
-  insert_commit->set_op_type(consensus::WRITE_OP);
-  insert_commit->mutable_commited_op_id()->CopyFrom(insert_opid);
-  result = insert_commit->mutable_result();
+  consensus::CommitMsg insert_commit;
+  insert_commit.set_op_type(consensus::WRITE_OP);
+  insert_commit.mutable_commited_op_id()->CopyFrom(insert_opid);
+  result = insert_commit.mutable_result();
   OperationResultPB* insert = result->add_ops();
   target = insert->add_mutated_stores();
   target->set_mrs_id(1);
 
-  ASSERT_OK(AppendCommit(std::move(insert_commit)));
+  ASSERT_OK(AppendCommit(insert_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
@@ -590,15 +590,15 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   ASSERT_OK(AppendReplicateBatch(replicate));
 
   // Now commit the mutate before the insert (in the log).
-  unique_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
-  mutate_commit->set_op_type(consensus::WRITE_OP);
-  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
-  TxResultPB* result = mutate_commit->mutable_result();
+  consensus::CommitMsg mutate_commit;
+  mutate_commit.set_op_type(consensus::WRITE_OP);
+  mutate_commit.mutable_commited_op_id()->CopyFrom(mutate_opid);
+  TxResultPB* result = mutate_commit.mutable_result();
   OperationResultPB* mutate = result->add_ops();
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  ASSERT_OK(AppendCommit(std::move(mutate_commit)));
+  ASSERT_OK(AppendCommit(mutate_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
@@ -642,22 +642,22 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
 
   // Now commit in OpId order.
   // NO_OP...
-  unique_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
-  mutate_commit->set_op_type(consensus::NO_OP);
-  *mutate_commit->mutable_commited_op_id() = noop_replicate->get()->id();
+  consensus::CommitMsg mutate_commit;
+  mutate_commit.set_op_type(consensus::NO_OP);
+  *mutate_commit.mutable_commited_op_id() = noop_replicate->get()->id();
 
-  ASSERT_OK(AppendCommit(std::move(mutate_commit)));
+  ASSERT_OK(AppendCommit(mutate_commit));
 
   // ...and WRITE_OP...
-  mutate_commit = unique_ptr<consensus::CommitMsg>(new consensus::CommitMsg);
-  mutate_commit->set_op_type(consensus::WRITE_OP);
-  *mutate_commit->mutable_commited_op_id() = write_replicate->get()->id();
-  TxResultPB* result = mutate_commit->mutable_result();
+  mutate_commit.Clear();
+  mutate_commit.set_op_type(consensus::WRITE_OP);
+  *mutate_commit.mutable_commited_op_id() = write_replicate->get()->id();
+  TxResultPB* result = mutate_commit.mutable_result();
   OperationResultPB* mutate = result->add_ops();
   MemStoreTargetPB* target = mutate->add_mutated_stores();
   target->set_mrs_id(1);
 
-  ASSERT_OK(AppendCommit(std::move(mutate_commit)));
+  ASSERT_OK(AppendCommit(mutate_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
@@ -717,17 +717,17 @@ TEST_F(BootstrapTest, TestKudu2509) {
   ASSERT_OK(AppendReplicateBatch(replicate));
 
   // Now commit the mutate before the insert (in the log).
-  unique_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
-  mutate_commit->set_op_type(consensus::WRITE_OP);
-  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
-  mutate_commit->mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
-  ASSERT_OK(AppendCommit(std::move(mutate_commit)));
+  consensus::CommitMsg mutate_commit;
+  mutate_commit.set_op_type(consensus::WRITE_OP);
+  mutate_commit.mutable_commited_op_id()->CopyFrom(mutate_opid);
+  mutate_commit.mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
+  ASSERT_OK(AppendCommit(mutate_commit));
 
-  unique_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
-  insert_commit->set_op_type(consensus::WRITE_OP);
-  insert_commit->mutable_commited_op_id()->CopyFrom(insert_opid);
-  insert_commit->mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
-  ASSERT_OK(AppendCommit(std::move(insert_commit)));
+  consensus::CommitMsg insert_commit;
+  insert_commit.set_op_type(consensus::WRITE_OP);
+  insert_commit.mutable_commited_op_id()->CopyFrom(insert_opid);
+  insert_commit.mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
+  ASSERT_OK(AppendCommit(insert_commit));
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;

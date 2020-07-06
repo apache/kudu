@@ -19,6 +19,8 @@
 #include <memory>
 #include <vector>
 
+#include <google/protobuf/arena.h>
+
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -108,13 +110,15 @@ class LocalTabletWriter {
     op_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
     RETURN_NOT_OK(tablet_->ApplyRowOperations(op_state_.get()));
 
-    op_state_->ReleaseTxResultPB(&result_);
+    result_ = google::protobuf::Arena::CreateMessage<TxResultPB>(
+        op_state_->pb_arena());
+    op_state_->ReleaseTxResultPB(result_);
     tablet_->mvcc_manager()->AdjustNewOpLowerBound(op_state_->timestamp());
     op_state_->CommitOrAbort(Op::COMMITTED);
 
     // Return the status of first failed op.
     int op_idx = 0;
-    for (const OperationResultPB& result : result_.ops()) {
+    for (const OperationResultPB& result : result_->ops()) {
       if (result.has_failed_status()) {
         return StatusFromPB(result.failed_status())
           .CloneAndPrepend(ops[op_idx].row->ToString());
@@ -134,15 +138,15 @@ class LocalTabletWriter {
 
   // Return the result of the last row operation run against the tablet.
   const OperationResultPB& last_op_result() {
-    CHECK_GE(result_.ops_size(), 1);
-    return result_.ops(result_.ops_size() - 1);
+    CHECK_GE(result_->ops_size(), 1);
+    return result_->ops(result_->ops_size() - 1);
   }
 
  private:
   Tablet* const tablet_;
   const Schema* client_schema_;
 
-  TxResultPB result_;
+  TxResultPB* result_ = nullptr;
   tserver::WriteRequestPB req_;
   std::unique_ptr<WriteOpState> op_state_;
 

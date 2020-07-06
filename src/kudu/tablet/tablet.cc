@@ -31,6 +31,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
@@ -702,9 +703,10 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
   // were unset (eg because the table only _has_ primary keys, or because
   // the rest are intended to be set to their defaults), we need to
   // avoid doing anything.
-  unique_ptr<OperationResultPB> result(new OperationResultPB());
+  auto* result = google::protobuf::Arena::CreateMessage<OperationResultPB>(
+      op_state->pb_arena());
   if (enc.is_empty()) {
-    upsert->SetMutateSucceeded(std::move(result));
+    upsert->SetMutateSucceeded(result);
     return Status::OK();
   }
 
@@ -716,13 +718,13 @@ Status Tablet::ApplyUpsertAsUpdate(const IOContext* io_context,
                                op_state->op_id(),
                                io_context,
                                stats,
-                               result.get());
+                               result);
   CHECK(!s.IsNotFound());
   if (s.ok()) {
     if (metrics_) {
       metrics_->upserts_as_updates->Increment();
     }
-    upsert->SetMutateSucceeded(std::move(result));
+    upsert->SetMutateSucceeded(result);
   } else {
     upsert->SetFailed(s);
   }
@@ -776,7 +778,8 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
   DCHECK(mutate->checked_present);
   DCHECK(mutate->valid);
 
-  unique_ptr<OperationResultPB> result(new OperationResultPB());
+  auto* result = google::protobuf::Arena::CreateMessage<OperationResultPB>(
+      op_state->pb_arena());
   const TabletComponents* comps = DCHECK_NOTNULL(op_state->tablet_components());
   Timestamp ts = op_state->timestamp();
 
@@ -790,9 +793,9 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
                                       op_state->op_id(),
                                       io_context,
                                       stats,
-                                      result.get());
+                                      result);
   if (PREDICT_TRUE(s.ok())) {
-    mutate->SetMutateSucceeded(std::move(result));
+    mutate->SetMutateSucceeded(result);
   } else {
     if (s.IsNotFound()) {
       // Replace internal error messages with one more suitable for users.

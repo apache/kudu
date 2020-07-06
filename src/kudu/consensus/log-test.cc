@@ -928,11 +928,11 @@ void LogTest::AppendTestSequence(const vector<TestLogSequenceElem>& seq) {
       }
       case TestLogSequenceElem::COMMIT:
       {
-        unique_ptr<CommitMsg> commit(new CommitMsg);
-        commit->set_op_type(NO_OP);
-        commit->mutable_commited_op_id()->CopyFrom(e.id);
+        CommitMsg commit;
+        commit.set_op_type(NO_OP);
+        commit.mutable_commited_op_id()->CopyFrom(e.id);
         Synchronizer s;
-        ASSERT_OK(log_->AsyncAppendCommit(std::move(commit), s.AsStatusCallback()));
+        ASSERT_OK(log_->AsyncAppendCommit(commit, s.AsStatusCallback()));
         ASSERT_OK(s.Wait());
       }
       case TestLogSequenceElem::ROLL:

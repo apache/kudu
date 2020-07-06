@@ -24,6 +24,7 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
@@ -124,7 +125,7 @@ class Op {
   // Executes the Apply() phase of the op, the actual actions of
   // this phase depend on the op type, but usually this is the
   // method where data-structures are changed.
-  virtual Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) = 0;
+  virtual Status Apply(consensus::CommitMsg** commit_msg) = 0;
 
   // Executed after the op has been applied and the commit message has
   // been appended to the log (though it might not be durable yet), or if the
@@ -221,6 +222,10 @@ class OpState {
     return &arena_;
   }
 
+  google::protobuf::Arena* pb_arena() {
+    return &pb_arena_;
+  }
+
   // Each implementation should have its own ToString() method.
   virtual std::string ToString() const = 0;
 
@@ -292,6 +297,8 @@ class OpState {
   uint64_t timestamp_error_;
 
   Arena arena_;
+
+  google::protobuf::Arena pb_arena_;
 
   // This OpId stores the canonical "anchor" OpId for this op.
   consensus::OpId op_id_;

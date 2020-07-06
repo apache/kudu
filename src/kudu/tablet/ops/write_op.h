@@ -312,7 +312,7 @@ class WriteOp : public Op {
   // are placed in the queue (but not necessarily in the same order of the
   // original requests) which is already a requirement of the consensus
   // algorithm.
-  Status Apply(std::unique_ptr<consensus::CommitMsg>* commit_msg) override;
+  Status Apply(consensus::CommitMsg** commit_msg) override;
 
   // If result == COMMITTED, commits the mvcc op and updates the metrics, if
   // result == ABORTED aborts the mvcc op.

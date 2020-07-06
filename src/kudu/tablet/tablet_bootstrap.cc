@@ -31,6 +31,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/arena.h>
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
@@ -1359,11 +1360,6 @@ Status TabletBootstrap::DetermineSkippedOpsAndBuildResponse(const TxResultPB& or
 Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
                                          ReplicateMsg* replicate_msg,
                                          const CommitMsg& commit_msg) {
-  // Prepare the commit entry for the rewritten log.
-  LogEntryPB commit_entry;
-  commit_entry.set_type(log::COMMIT);
-  CommitMsg* new_commit = commit_entry.mutable_commit();
-  new_commit->CopyFrom(commit_msg);
 
   // Set up the new op.
   // Even if we're going to ignore the op, it's important to do this so that
@@ -1374,6 +1370,13 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
   WriteOpState op_state(nullptr, write, nullptr);
   op_state.mutable_op_id()->CopyFrom(replicate_msg->id());
   op_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
+
+  // Prepare the commit entry for the rewritten log.
+  LogEntryPB& commit_entry = *google::protobuf::Arena::CreateMessage<LogEntryPB>(
+      op_state.pb_arena());
+  commit_entry.set_type(log::COMMIT);
+  CommitMsg* new_commit = commit_entry.mutable_commit();
+  new_commit->CopyFrom(commit_msg);
 
   tablet_->StartOp(&op_state);
   tablet_->StartApplying(&op_state);

@@ -510,7 +510,7 @@ void OpDriver::ApplyTask() {
   scoped_refptr<OpDriver> ref(this);
 
   {
-    unique_ptr<CommitMsg> commit_msg;
+    CommitMsg* commit_msg;
     Status s = op_->Apply(&commit_msg);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << Substitute("Did not Apply op $0: $1",
@@ -524,7 +524,7 @@ void OpDriver::ApplyTask() {
     {
       TRACE_EVENT1("op", "AsyncAppendCommit", "op", this);
       CHECK_OK(log_->AsyncAppendCommit(
-          std::move(commit_msg), [](const Status& s) {
+          *commit_msg, [](const Status& s) {
             CrashIfNotOkStatusCB("Enqueued commit operation failed to write to WAL", s);
           }));
     }

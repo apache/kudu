@@ -300,10 +300,10 @@ class RaftConsensusQuorumTest : public KuduTest {
       commit_callback = &DoNothingStatusCB;
     }
 
-    unique_ptr<CommitMsg> msg(new CommitMsg());
-    msg->set_op_type(NO_OP);
-    msg->mutable_commited_op_id()->CopyFrom(round->id());
-    CHECK_OK(logs_[peer_idx]->AsyncAppendCommit(std::move(msg), commit_callback));
+    CommitMsg msg;
+    msg.set_op_type(NO_OP);
+    msg.mutable_commited_op_id()->CopyFrom(round->id());
+    CHECK_OK(logs_[peer_idx]->AsyncAppendCommit(msg, commit_callback));
     return Status::OK();
   }
 
