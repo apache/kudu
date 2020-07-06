@@ -34,6 +34,8 @@ class OpId;
 struct ElectionResult;
 }
 
+namespace KC = kudu::consensus;
+
 namespace tserver {
 
 // Options for constructing a tablet server.
@@ -48,6 +50,10 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   std::vector<HostPort> tserver_addresses;
   std::vector<std::string> tserver_regions;
   std::vector<bool> tserver_bbd;
+
+  // bootstrap tservers can be directly passed in
+  // by application
+  std::vector<KC::RaftPeerPB> bootstrap_tservers;
 
   std::shared_ptr<kudu::log::LogFactory> log_factory;
 

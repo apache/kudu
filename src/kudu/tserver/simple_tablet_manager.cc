@@ -200,6 +200,43 @@ Status TSTabletManager::CreateNew(FsManager *fs_manager) {
   return SetupRaft();
 }
 
+Status TSTabletManager::CreateConfigFromTserverAddresses(
+    const TabletServerOptions& options,
+    KC::RaftConfigPB *new_config) {
+  size_t ts_index = 0;
+  // Build the set of followers from our server options.
+  for (const HostPort& host_port : options.tserver_addresses) {
+    KC::RaftPeerPB peer;
+    HostPortPB peer_host_port_pb;
+    RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
+    peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
+    peer.set_member_type(RaftPeerPB::VOTER);
+
+    // applications are allowed to not populate bbd
+    if (!options.tserver_bbd.empty()) {
+      peer.mutable_attrs()->set_backing_db_present(options.tserver_bbd[ts_index]);
+    }
+
+    // applications are allowed to not populate region, but
+    // region specific features like commit rules and LEADER bans
+    // will not work in that case
+    if (!options.tserver_regions.empty()) {
+      peer.mutable_attrs()->set_region(options.tserver_regions[ts_index]);
+    }
+    new_config->add_peers()->CopyFrom(peer);
+    ts_index++;
+  }
+  return Status::OK();
+}
+
+void TSTabletManager::CreateConfigFromBootstrapPeers(
+    const TabletServerOptions& options,
+    KC::RaftConfigPB *new_config) {
+  for (const RaftPeerPB& peer : options.bootstrap_tservers) {
+    new_config->add_peers()->CopyFrom(peer);
+  }
+}
+
 Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& options,
                                                 RaftConfigPB* committed_config) {
   DCHECK(options.IsDistributed());
@@ -208,22 +245,24 @@ Status TSTabletManager::CreateDistributedConfig(const TabletServerOptions& optio
   new_config.set_obsolete_local(false);
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
-  size_t ts_index = 0;
-  // Build the set of followers from our server options.
-  for (const HostPort& host_port : options.tserver_addresses) {
-    RaftPeerPB peer;
-    HostPortPB peer_host_port_pb;
-    RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
-    peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
-    peer.set_member_type(RaftPeerPB::VOTER);
-    if (!options.tserver_bbd.empty()) {
-      peer.mutable_attrs()->set_backing_db_present(options.tserver_bbd[ts_index]);
-    }
-    if (!options.tserver_regions.empty()) {
-      peer.mutable_attrs()->set_region(options.tserver_regions[ts_index]);
-    }
-    new_config.add_peers()->CopyFrom(peer);
-    ts_index++;
+  // WARN if both are set. Not failing it now, because
+  // during the rollout phase, we might be setting both by
+  // mistake.
+  if (!options.tserver_addresses.empty() &&
+      !options.bootstrap_tservers.empty()) {
+    LOG(WARNING) << "Both tserver_addresses and bootstrap_tservers is"
+       " being passed during bootstrap. This can create unexpected bahavior."
+       " Move to boostrap_tservers as it is more capable.";
+  }
+      
+  // Give first priority to options.tserver_addresses
+  // Over time applications will stop setting this and
+  // pass in list of peers. Applications are expected to
+  // not use both modes, till we remove support for tserver_addresses
+  if (!options.tserver_addresses.empty()) {
+    RETURN_NOT_OK(CreateConfigFromTserverAddresses(options, &new_config));
+  } else {
+    CreateConfigFromBootstrapPeers(options, &new_config);
   }
 
   // Now resolve UUIDs.

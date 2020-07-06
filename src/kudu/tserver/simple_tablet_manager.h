@@ -63,6 +63,8 @@ class OpId;
 struct ElectionResult;
 } // namespace consensus
 
+namespace KC = kudu::consensus;
+
 namespace tserver {
 class TabletServer;
 struct TabletServerOptions;
@@ -172,6 +174,15 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
   Status CreateDistributedConfig(const TabletServerOptions& options,
                                  consensus::RaftConfigPB* committed_config);
 
+  Status CreateConfigFromTserverAddresses(
+      const TabletServerOptions& options,
+      KC::RaftConfigPB *new_config);
+
+  void CreateConfigFromBootstrapPeers(
+      const TabletServerOptions& options,
+      KC::RaftConfigPB *new_config);
+
+ private:
   FsManager* const fs_manager_;
 
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
