@@ -582,7 +582,7 @@ class PeerMessageQueue {
   // classified by region.
   // This function returns the old watermark.
   int64_t ComputeNewWatermarkStaticMode(
-    int64_t* watermark, const QuorumMode& mode,
+    int64_t* watermark,
     const std::map<std::string, int>& voter_distribution,
     const std::map<std::string, std::vector<int64_t> >& watermarks_by_region);
 

@@ -38,6 +38,8 @@
 namespace kudu {
 namespace consensus {
 
+class FlexibleVoteCounterTest;
+
 // The vote a peer has given.
 enum ElectionVote {
   VOTE_DENIED = 0,
@@ -54,15 +56,15 @@ struct VoteInfo {
 
 // Internal structure to denote the optimizer's computation of the
 // next potential leader.
-struct PotentialNextLeaderResponse {
+struct PotentialNextLeadersResponse {
   enum Status {
     ERROR = 0,
     POTENTIAL_NEXT_LEADERS_DETECTED = 1,
     WAITING_FOR_MORE_VOTES = 2,
     ALL_INTERMEDIATE_TERMS_SCANNED = 3
   };
-  PotentialNextLeaderResponse(Status);
-  PotentialNextLeaderResponse(Status, const std::set<std::string>&, int64_t);
+  PotentialNextLeadersResponse(Status);
+  PotentialNextLeadersResponse(Status, const std::set<std::string>&, int64_t);
   Status status;
   std::set<std::string> potential_leader_regions;
   int64_t next_term;
@@ -136,6 +138,11 @@ class FlexibleVoteCounter : public VoteCounter {
   bool IsDecided() const override;
   Status GetDecision(ElectionVote* decision) const override;
  private:
+  friend class FlexibleVoteCounterTest;
+
+  // A safeguard max iteration count to prevent against future bugs.
+  static const int64_t QUORUM_OPTIMIZATION_ITERATION_COUNT_MAX = 10000;
+
   // Mapping from region to set of voter UUIDs that have responded in that
   // region.
   typedef std::map<std::string, std::set<std::string> > RegionToVoterSet;
@@ -222,7 +229,7 @@ class FlexibleVoteCounter : public VoteCounter {
   // in that term. It returns the set of potential leader regions and the next term
   // to consider. It is possible that the next possible leader regions cannot be
   // determined in which case, the situation is reflected in the status.
-  PotentialNextLeaderResponse GetPotentialNextLeader(
+  PotentialNextLeadersResponse GetPotentialNextLeaders(
       int64_t term, const std::set<std::string>& leader_regions) const;
 
   // For the dynamic mode (SINGLE_REGION_DYNAMIC), return

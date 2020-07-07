@@ -156,14 +156,14 @@ bool VoteCounter::AreAllVotesIn() const {
   return GetTotalVotesCounted() == num_voters_;
 }
 
-PotentialNextLeaderResponse::PotentialNextLeaderResponse(
-    PotentialNextLeaderResponse::Status s) {
+PotentialNextLeadersResponse::PotentialNextLeadersResponse(
+    PotentialNextLeadersResponse::Status s) {
   status = s;
   next_term = -1;
 }
 
-PotentialNextLeaderResponse::PotentialNextLeaderResponse(
-    PotentialNextLeaderResponse::Status s,
+PotentialNextLeadersResponse::PotentialNextLeadersResponse(
+    PotentialNextLeadersResponse::Status s,
     const std::set<std::string>& leader_regions,
     int64_t term) {
   status = s;
@@ -300,8 +300,61 @@ FlexibleVoteCounter::IsMajoritySatisfiedInRegions(
 }
 
 std::pair<bool, bool> FlexibleVoteCounter::IsStaticQuorumSatisfied() const {
-  // TODO(ritwikyadav) : Implement static mode quorum checks.
-  return std::make_pair<>(false, true);
+  CHECK(config_.commit_rule().mode() == QuorumMode::STATIC_DISJUNCTION ||
+      config_.commit_rule().mode() == QuorumMode::STATIC_CONJUNCTION);
+  CHECK(config_.commit_rule().rule_predicates_size() > 0);
+  const auto& rule_predicates = config_.commit_rule().rule_predicates();
+  bool quorum_satisfied = true;
+  bool quorum_satisfaction_possible = true;
+
+  VLOG_WITH_PREFIX(2)
+      << "Checking leader election quorum satisfaction in static mode. "
+      << "Number of predicates: "
+      << config_.commit_rule().rule_predicates_size();
+
+  for (const CommitRulePredicatePB& rule_predicate : rule_predicates) {
+    int regions_subset_size =
+        rule_predicate.regions_size() + 1 -
+        rule_predicate.regions_subset_size();
+
+    VLOG_WITH_PREFIX(2)
+        << "Checking satisfaction of leader election quorum predicate with "
+        << rule_predicate.regions_size() << " regions."
+        << " Number of majorities required: " << regions_subset_size;
+
+    int num_regions_satisfied = 0;
+    int num_regions_impossible_to_satisfy = 0;
+    for (const std::string& region : rule_predicate.regions()) {
+      std::pair<bool, bool> result = IsMajoritySatisfiedInRegion(region);
+      if (result.first) {
+        VLOG_WITH_PREFIX(3)
+            << "Majority satisfied in region: " << region;
+        num_regions_satisfied++;
+      }
+      if (!result.second) {
+        VLOG_WITH_PREFIX(3)
+            << "Majority cannot be satisfied in region: " << region;
+        num_regions_impossible_to_satisfy++;
+      }
+    }
+    if (num_regions_satisfied < regions_subset_size) {
+      VLOG_WITH_PREFIX(3)
+          << "Quorum not satisfied. Regions with majorities: "
+          << num_regions_satisfied << ". Number of majorities needed: "
+          << regions_subset_size;
+      quorum_satisfied = false;
+    }
+    if (rule_predicate.regions_size() - num_regions_impossible_to_satisfy <
+        regions_subset_size) {
+      VLOG_WITH_PREFIX(3)
+          << "Quorum cannot be satisfied. "
+          << "Number of regions where majority can't be achieved: "
+          << num_regions_satisfied << ". Number of majorities needed: "
+          << regions_subset_size;
+      quorum_satisfaction_possible = false;
+    }
+  }
+  return std::make_pair<>(quorum_satisfied, quorum_satisfaction_possible);
 }
 
 std::pair<bool, bool>
@@ -474,7 +527,7 @@ void FlexibleVoteCounter::ConstructRegionWiseVoteCollation(
   }
 }
 
-PotentialNextLeaderResponse FlexibleVoteCounter::GetPotentialNextLeader(
+PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
     int64_t term, const std::set<std::string>& leader_regions) const {
   // Figure out the total number of voters and votes not received so far for
   // each region. Return early if majority vote in some region is not
@@ -488,10 +541,14 @@ PotentialNextLeaderResponse FlexibleVoteCounter::GetPotentialNextLeader(
     // If we haven't received enough votes from one potential leader region,
     // there is no point proceeding. We need to wait for more votes.
     if (votes_not_received >= MajoritySize(total_voters)) {
-      return PotentialNextLeaderResponse(
-          PotentialNextLeaderResponse::WAITING_FOR_MORE_VOTES);
+      return PotentialNextLeadersResponse(
+          PotentialNextLeadersResponse::WAITING_FOR_MORE_VOTES);
     }
   }
+
+  // We limit the number of iterations performed even though the algorithm
+  // guarantees termination to prevent against any future bugs.
+  int64_t iteration_count = 0;
 
   // Iterate over the voting histories of potential leader regions.
   int64_t min_term;
@@ -509,7 +566,8 @@ PotentialNextLeaderResponse FlexibleVoteCounter::GetPotentialNextLeader(
   // compute if some server could have won an election in that term. If not,
   // we consider the next available term from the voting histories and repeat
   // until all the history is exhausted.
-  while (!vote_collation.empty() && min_term < election_term_) {
+  while (!vote_collation.empty() && min_term < election_term_ &&
+      iteration_count++ < QUORUM_OPTIMIZATION_ITERATION_COUNT_MAX) {
     std::set<std::string> potential_leader_uuids;
     for (const std::pair<UUIDTermPair, RegionToVoterSet>& collation_entry :
         vote_collation) {
@@ -540,24 +598,28 @@ PotentialNextLeaderResponse FlexibleVoteCounter::GetPotentialNextLeader(
       Status s = ExtendNextLeaderRegions(
           potential_leader_uuids, &next_leader_regions);
       if (!s.ok()) {
-        return PotentialNextLeaderResponse(
-            PotentialNextLeaderResponse::ERROR);
+        return PotentialNextLeadersResponse(
+            PotentialNextLeadersResponse::ERROR);
       }
-      return PotentialNextLeaderResponse(
-          PotentialNextLeaderResponse::POTENTIAL_NEXT_LEADERS_DETECTED,
+      return PotentialNextLeadersResponse(
+          PotentialNextLeadersResponse::POTENTIAL_NEXT_LEADERS_DETECTED,
           next_leader_regions, min_term);
     }
 
     // No UUID could have won an election in min_term, recompute vote
     // collations. This function advances the min_term.
+    int64_t old_min_term = min_term;
     ConstructRegionWiseVoteCollation(
-        min_term, leader_regions, &vote_collation, &min_term);
+        old_min_term, leader_regions, &vote_collation, &min_term);
+
+    // The next iteration should always consider a higher term.
+    DCHECK_GT(min_term, old_min_term);
   }
 
   // Voting history suggests all intervening terms between the last known
   // leader's term and the current election's terms are defunct.
-  return PotentialNextLeaderResponse(
-      PotentialNextLeaderResponse::ALL_INTERMEDIATE_TERMS_SCANNED,
+  return PotentialNextLeadersResponse(
+      PotentialNextLeadersResponse::ALL_INTERMEDIATE_TERMS_SCANNED,
       next_leader_regions, -1);
 }
 
@@ -592,18 +654,25 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
   std::set<std::string> next_leader_regions {last_known_leader_region_};
   std::set<std::string> explored_leader_regions {last_known_leader_region_};
 
-  while (explored_leader_regions.size() < voter_distribution_.size()) {
-    const PotentialNextLeaderResponse& r = GetPotentialNextLeader(
+  // We limit the number of iterations performed even though the algorithm
+  // guarantees termination to prevent against any future bugs.
+  int64_t iteration_count = 0;
+
+  while (explored_leader_regions.size() < voter_distribution_.size() &&
+      iteration_count++ < QUORUM_OPTIMIZATION_ITERATION_COUNT_MAX) {
+    const PotentialNextLeadersResponse& r = GetPotentialNextLeaders(
         term_it, next_leader_regions);
     switch (r.status) {
-      case PotentialNextLeaderResponse::POTENTIAL_NEXT_LEADERS_DETECTED: {
+      case PotentialNextLeadersResponse::POTENTIAL_NEXT_LEADERS_DETECTED: {
+        // Next term to consider should always be higher.
+        DCHECK_GT(r.next_term, term_it);
         term_it = r.next_term;
         next_leader_regions = std::move(r.potential_leader_regions);
         explored_leader_regions.insert(
             next_leader_regions.begin(), next_leader_regions.end());
         break;
       }
-      case PotentialNextLeaderResponse::ALL_INTERMEDIATE_TERMS_SCANNED:
+      case PotentialNextLeadersResponse::ALL_INTERMEDIATE_TERMS_SCANNED:
         VLOG_WITH_PREFIX(3)
             << "All intermediate terms since the last known leader: "
             << last_known_leader_.uuid << " in term: "
@@ -615,10 +684,10 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
                 explored_leader_regions.end(), ", ");
         return IsMajoritySatisfiedInPotentialLeaderRegions(
             r.potential_leader_regions);
-      case PotentialNextLeaderResponse::ERROR:
+      case PotentialNextLeadersResponse::ERROR:
         // Declare loss of election in case of an error.
         return std::make_pair<>(false, false);
-      case PotentialNextLeaderResponse::WAITING_FOR_MORE_VOTES:
+      case PotentialNextLeadersResponse::WAITING_FOR_MORE_VOTES:
       default:
         VLOG_WITH_PREFIX(3)
             << "Waiting for more votes. Election result hasn't been "
