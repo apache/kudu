@@ -17,6 +17,7 @@
 
 #include "kudu/master/master_runner.h"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -29,8 +30,9 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/version_info.h"
 
-using kudu::master::Master;
+using gflags::SET_FLAGS_DEFAULT;
 using std::string;
+using std::to_string;
 
 DECLARE_bool(evict_failed_followers);
 
@@ -58,30 +60,39 @@ static Status ValidateHiveMetastoreSaslEnabled() {
 }
 
 void SetMasterFlagDefaults() {
-  // Reset some default values before parsing gflags.
-  CHECK_NE("", google::SetCommandLineOptionWithMode("rpc_bind_addresses",
-                                                    strings::Substitute(
-                                                        "0.0.0.0:$0",
-                                                        Master::kDefaultPort).c_str(),
-                                                    google::FlagSettingMode::SET_FLAGS_DEFAULT));
-  CHECK_NE("", google::SetCommandLineOptionWithMode("webserver_port",
-                                                    std::to_string(
-                                                        Master::kDefaultWebPort).c_str(),
-                                                    google::FlagSettingMode::SET_FLAGS_DEFAULT));
+  constexpr int32_t kDefaultRpcServiceQueueLength = 100;
 
+  // Reset some default values before parsing gflags.
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "rpc_bind_addresses",
+      strings::Substitute("0.0.0.0:$0", Master::kDefaultPort).c_str(),
+      SET_FLAGS_DEFAULT));
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "webserver_port",
+      to_string(Master::kDefaultWebPort).c_str(),
+      SET_FLAGS_DEFAULT));
+  // Even in a small Kudu cluster, masters might be flooded with requests coming
+  // from many clients (those like GetTableSchema are rather small and can be
+  // processed fast, but it might be a bunch of them coming at once).
+  // In addition, TSHeartbeatRequestPB from tablet servers are put into the same
+  // RPC queue (see KUDU-2955). So, it makes sense to increase the default
+  // setting for the RPC service queue length.
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "rpc_service_queue_length",
+      to_string(kDefaultRpcServiceQueueLength).c_str(),
+      SET_FLAGS_DEFAULT));
   // Setting the default value of the 'force_block_cache_capacity' flag to
   // 'false' makes the corresponding group validator enforce proper settings
   // for the memory limit and the cfile cache capacity.
   CHECK_NE("", SetCommandLineOptionWithMode("force_block_cache_capacity",
                                             "false",
-                                            gflags::SET_FLAGS_DEFAULT));
-
+                                            SET_FLAGS_DEFAULT));
   // A multi-node Master leader should not evict failed Master followers
   // because there is no-one to assign replacement servers in order to maintain
   // the desired replication factor. (It's not turtles all the way down!)
   CHECK_NE("", SetCommandLineOptionWithMode("evict_failed_followers",
                                             "false",
-                                            gflags::SET_FLAGS_DEFAULT));
+                                            SET_FLAGS_DEFAULT));
   // SET_FLAGS_DEFAULT won't reset the flag value if it has previously been
   // set, instead it will only change the default. Because we want to ensure
   // evict_failed_followers is always false, we explicitly set the flag.

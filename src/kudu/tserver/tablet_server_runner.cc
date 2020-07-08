@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/tablet_server_runner.h"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -32,8 +33,9 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/version_info.h"
 
-using kudu::tserver::TabletServer;
+using gflags::SET_FLAGS_DEFAULT;
 using std::string;
+using std::to_string;
 
 DEFINE_double(fault_before_start, 0.0,
               "Fake fault flag that always causes a crash on startup. "
@@ -45,22 +47,28 @@ namespace kudu {
 namespace tserver {
 
 void SetTabletServerFlagDefaults() {
-  // Reset some default values before parsing gflags.
-  CHECK_NE("", google::SetCommandLineOptionWithMode("rpc_bind_addresses",
-      strings::Substitute("0.0.0.0:$0", TabletServer::kDefaultPort).c_str(),
-      google::FlagSettingMode::SET_FLAGS_DEFAULT));
-  CHECK_NE("", google::SetCommandLineOptionWithMode("rpc_num_service_threads",
-      std::to_string(TabletServer::kDefaultNumServiceThreads).c_str(),
-      google::FlagSettingMode::SET_FLAGS_DEFAULT));
-  CHECK_NE("", google::SetCommandLineOptionWithMode("webserver_port",
-      std::to_string(TabletServer::kDefaultWebPort).c_str(),
-      google::FlagSettingMode::SET_FLAGS_DEFAULT));
+  constexpr int32_t kDefaultNumServiceThreads = 20;
 
+  // Reset some default values before parsing gflags.
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "rpc_bind_addresses",
+      strings::Substitute("0.0.0.0:$0", TabletServer::kDefaultPort).c_str(),
+      SET_FLAGS_DEFAULT));
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "rpc_num_service_threads",
+      to_string(kDefaultNumServiceThreads).c_str(),
+      SET_FLAGS_DEFAULT));
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "webserver_port",
+      to_string(TabletServer::kDefaultWebPort).c_str(),
+      SET_FLAGS_DEFAULT));
   // Setting the default value of the 'force_block_cache_capacity' flag to
   // 'false' makes the corresponding group validator enforce proper settings
   // for the memory limit and the cfile cache capacity.
-  CHECK_NE("", SetCommandLineOptionWithMode("force_block_cache_capacity",
-                                            "false", gflags::SET_FLAGS_DEFAULT));
+  CHECK_NE("", SetCommandLineOptionWithMode(
+      "force_block_cache_capacity",
+      "false",
+       SET_FLAGS_DEFAULT));
 }
 
 Status RunTabletServer() {
