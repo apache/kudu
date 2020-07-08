@@ -184,4 +184,4 @@ www/bootstrap/js/bootstrap.min.js
 www/d3.v2.js
 www/epoch.0.5.2.min.css
 www/epoch.0.5.2.min.js
-www/jquery-3.2.1.min.js
+www/jquery-3.5.1.min.js

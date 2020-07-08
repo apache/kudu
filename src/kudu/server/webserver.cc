@@ -729,7 +729,7 @@ static const char* const kMainTemplate = R"(
     <meta charset='utf-8'/>
     <link href='{{base_url}}/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen'/>
     <link href='{{base_url}}/bootstrap/css/bootstrap-table.min.css' rel='stylesheet' media='screen'/>
-    <script src='{{base_url}}/jquery-3.2.1.min.js' defer></script>
+    <script src='{{base_url}}/jquery-3.5.1.min.js' defer></script>
     <script src='{{base_url}}/bootstrap/js/bootstrap.min.js' defer></script>
     <script src='{{base_url}}/bootstrap/js/bootstrap-table.min.js' defer></script>
     <script src='{{base_url}}/kudu.js' defer></script>
