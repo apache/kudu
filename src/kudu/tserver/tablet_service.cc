@@ -90,7 +90,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
@@ -2051,8 +2050,8 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   // Decode encoded key
   Arena arena(256);
   Schema tablet_schema = replica->tablet_metadata()->schema();
-  unique_ptr<EncodedKey> start;
-  unique_ptr<EncodedKey> stop;
+  EncodedKey* start = nullptr;
+  EncodedKey* stop = nullptr;
   if (req->has_start_primary_key()) {
     s = EncodedKey::DecodeEncodedString(tablet_schema, &arena, req->start_primary_key(), &start);
     if (PREDICT_FALSE(!s.ok())) {
@@ -2126,9 +2125,8 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   }
 
   vector<KeyRange> ranges;
-  tablet->SplitKeyRange(start.get(), stop.get(), column_ids,
-                        req->target_chunk_size_bytes(), &ranges);
-  for (auto range : ranges) {
+  tablet->SplitKeyRange(start, stop, column_ids, req->target_chunk_size_bytes(), &ranges);
+  for (const auto& range : ranges) {
     range.ToPB(resp->add_ranges());
   }
 
@@ -2295,8 +2293,8 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                                     const Schema& tablet_schema,
                                     const SharedScanner& scanner,
                                     ScanSpec* spec) {
-  unique_ptr<EncodedKey> start;
-  unique_ptr<EncodedKey> stop;
+  EncodedKey* start = nullptr;  // Arena allocated.
+  EncodedKey* stop = nullptr;   // Arena allocated.
   if (scan_pb.has_start_primary_key()) {
     RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
                             tablet_schema, scanner->arena(),
@@ -2325,12 +2323,10 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
   }
 
   if (start) {
-    spec->SetLowerBoundKey(start.get());
-    scanner->autorelease_pool()->Add(start.release());
+    spec->SetLowerBoundKey(start);
   }
   if (stop) {
-    spec->SetExclusiveUpperBoundKey(stop.get());
-    scanner->autorelease_pool()->Add(stop.release());
+    spec->SetExclusiveUpperBoundKey(stop);
   }
 
   return Status::OK();
@@ -2506,7 +2502,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
 
   VLOG(3) << "Before optimizing scan spec: " << spec.ToString(tablet_schema);
-  spec.OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
+  spec.OptimizeScan(tablet_schema, scanner->arena(), true);
   VLOG(3) << "After optimizing scan spec: " << spec.ToString(tablet_schema);
 
   // Missing columns will contain the columns that are not mentioned in the

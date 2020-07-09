@@ -596,7 +596,7 @@ string FormatCFileKeyMetadata(const TabletMetadata& tablet,
   }
 
   Arena arena(1024);
-  unique_ptr<EncodedKey> key;
+  EncodedKey* key;
   CHECK_OK(EncodedKey::DecodeEncodedString(tablet.schema(), &arena, value, &key));
   return key->Stringify(tablet.schema());
 }

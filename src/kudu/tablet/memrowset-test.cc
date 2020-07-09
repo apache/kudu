@@ -125,7 +125,8 @@ class TestMemRowSet : public KuduTest {
                          const string &key, bool *present) {
     RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
 
     return mrs.CheckRowPresent(probe, nullptr, present, &stats);
@@ -169,7 +170,8 @@ class TestMemRowSet : public KuduTest {
 
     RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
     Status s = mrs->MutateRow(op.timestamp(),
                               probe,
@@ -192,7 +194,8 @@ class TestMemRowSet : public KuduTest {
 
     RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
     Status s = mrs->MutateRow(op.timestamp(),
                               probe,

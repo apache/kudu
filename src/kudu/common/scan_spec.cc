@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <iterator>
-#include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_set>
@@ -38,7 +37,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/memory/arena.h"
 
 using std::any_of;
@@ -144,7 +143,6 @@ string ScanSpec::ToString(const Schema& schema) const {
 
 void ScanSpec::OptimizeScan(const Schema& schema,
                             Arena* arena,
-                            AutoReleasePool* pool,
                             bool remove_pushed_predicates) {
   // Don't bother if we can already short circuit the scan. This also lets us
   // rely on lower_bound_key_ < exclusive_upper_bound_key_ and no None
@@ -153,7 +151,7 @@ void ScanSpec::OptimizeScan(const Schema& schema,
     LiftPrimaryKeyBounds(schema, arena);
     // Predicates may be has None, after merge PrimaryKeyBounds and Predicates
     if (!CanShortCircuit()) {
-      PushPredicatesIntoPrimaryKeyBounds(schema, arena, pool, remove_pushed_predicates);
+      PushPredicatesIntoPrimaryKeyBounds(schema, arena, remove_pushed_predicates);
     }
   }
 
@@ -185,7 +183,6 @@ vector<ColumnSchema> ScanSpec::GetMissingColumns(const Schema& projection) {
 
 void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
                                                   Arena* arena,
-                                                  AutoReleasePool* pool,
                                                   bool remove_pushed_predicates) {
   // Step 1: load key column predicate values into a pair of rows.
   uint8_t* lower_buf = static_cast<uint8_t*>(
@@ -229,13 +226,11 @@ void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
 
   // Step 3: set the new bounds
   if (lower_bound_predicates_pushed > 0) {
-    EncodedKey* lower = EncodedKey::FromContiguousRow(ConstContiguousRow(lower_key)).release();
-    pool->Add(lower);
+    EncodedKey* lower = EncodedKey::FromContiguousRow(ConstContiguousRow(lower_key), arena);
     SetLowerBoundKey(lower);
   }
   if (upper_bound_predicates_pushed > 0) {
-    EncodedKey* upper = EncodedKey::FromContiguousRow(ConstContiguousRow(upper_key)).release();
-    pool->Add(upper);
+    EncodedKey* upper = EncodedKey::FromContiguousRow(ConstContiguousRow(upper_key), arena);
     SetExclusiveUpperBoundKey(upper);
   }
 }

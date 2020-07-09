@@ -24,7 +24,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -58,17 +57,6 @@ KuduWriteOperation::KuduWriteOperation(const shared_ptr<KuduTable>& table)
 
 KuduWriteOperation::~KuduWriteOperation() {}
 
-EncodedKey* KuduWriteOperation::CreateKey() const {
-  CHECK(row_.IsKeySet()) << "key must be set";
-
-  ConstContiguousRow row(row_.schema(), row_.row_data_);
-  EncodedKeyBuilder kb(row.schema());
-  for (int i = 0; i < row.schema()->num_key_columns(); i++) {
-    kb.AddColumnKey(row.cell_ptr(i));
-  }
-  unique_ptr<EncodedKey> key(kb.BuildEncodedKey());
-  return key.release();
-}
 
 int64_t KuduWriteOperation::SizeInBuffer() const {
   if (size_in_buffer_ > 0) {

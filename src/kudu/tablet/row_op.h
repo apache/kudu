@@ -16,12 +16,10 @@
 // under the License.
 #pragma once
 
-#include <memory>
 #include <string>
 
 #include "kudu/common/row_operations.h"
 #include "kudu/tablet/lock_manager.h"
-#include "kudu/tablet/rowset.h"
 
 namespace google {
 namespace protobuf {
@@ -36,6 +34,8 @@ class Status;
 
 namespace tablet {
 class OperationResultPB;
+class RowSet;
+class RowSetKeyProbe;
 
 // Structure tracking the progress of a single row operation within a WriteTransaction.
 struct RowOp {
@@ -89,7 +89,9 @@ struct RowOp {
   // The key probe structure contains the row key in both key-encoded and
   // ContiguousRow formats, bloom probe structure, etc. This is set during
   // the "prepare" phase.
-  std::unique_ptr<RowSetKeyProbe> key_probe;
+  //
+  // Allocated on the op state's Arena.
+  RowSetKeyProbe* key_probe = nullptr;
 
   // The row lock which has been acquired for this row. Set during the "prepare"
   // phase.

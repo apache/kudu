@@ -82,6 +82,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
@@ -511,7 +512,8 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
 
 Status Tablet::AcquireLockForOp(WriteOpState* op_state, RowOp* op) {
   ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
-  op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
+  Arena* arena = op_state->arena();
+  op->key_probe = arena->NewObject<RowSetKeyProbe>(row_key, arena);
   if (PREDICT_FALSE(!ValidateOpOrMarkFailed(op))) {
     return Status::OK();
   }

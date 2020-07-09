@@ -39,7 +39,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -381,9 +380,8 @@ public:
   // ScanSpec must have all desired predicates already added to it.
   void ScanWithSpec(const Schema& schema, ScanSpec spec, int* count) {
     Arena arena(1024);
-    AutoReleasePool pool;
     *count = 0;
-    spec.OptimizeScan(schema, &arena, &pool, true);
+    spec.OptimizeScan(schema, &arena, true);
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(schema, &iter));
     ASSERT_OK(iter->Init(&spec));

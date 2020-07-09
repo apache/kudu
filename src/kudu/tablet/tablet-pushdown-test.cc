@@ -40,7 +40,6 @@
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -106,8 +105,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
     Arena arena(128);
-    AutoReleasePool pool;
-    spec.OptimizeScan(schema_, &arena, &pool, true);
+    spec.OptimizeScan(schema_, &arena, true);
 
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
@@ -173,8 +171,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // should be empty.
   void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
     Arena arena(128);
-    AutoReleasePool pool;
-    spec.OptimizeScan(schema_, &arena, &pool, true);
+    spec.OptimizeScan(schema_, &arena, true);
 
     Schema empty_schema(std::vector<ColumnSchema>(), 0);
     unique_ptr<RowwiseIterator> iter;

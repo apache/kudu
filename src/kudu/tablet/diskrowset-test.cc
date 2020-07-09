@@ -64,6 +64,7 @@
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -126,6 +127,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   }
 
   // Test that CheckRowPresent returns correct results
+  Arena arena(64);
   ProbeStats stats;
 
   // 1. Check a key which comes before all keys in rowset
@@ -133,7 +135,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     Schema pk = schema_.CreateKeyProjection();
     RowBuilder rb(&pk);
     rb.AddString(Slice("h"));
-    RowSetKeyProbe probe(rb.row());
+    RowSetKeyProbe probe(rb.row(), &arena);
     bool present;
     ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
@@ -144,7 +146,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     Schema pk = schema_.CreateKeyProjection();
     RowBuilder rb(&pk);
     rb.AddString(Slice("z"));
-    RowSetKeyProbe probe(rb.row());
+    RowSetKeyProbe probe(rb.row(), &arena);
     bool present;
     ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
@@ -156,7 +158,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     Schema pk = schema_.CreateKeyProjection();
     RowBuilder rb(&pk);
     rb.AddString(Slice("hello 00000000000049x"));
-    RowSetKeyProbe probe(rb.row());
+    RowSetKeyProbe probe(rb.row(), &arena);
     bool present;
     ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
@@ -169,7 +171,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     Schema pk = schema_.CreateKeyProjection();
     RowBuilder rb(&pk);
     rb.AddString(Slice(buf));
-    RowSetKeyProbe probe(rb.row());
+    RowSetKeyProbe probe(rb.row(), &arena);
     bool present;
     ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_TRUE(present);
@@ -178,6 +180,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
 // Test writing a rowset, and then updating some rows in it.
 TEST_F(TestRowSet, TestRowSetUpdate) {
+  Arena arena(64);
+
   WriteTestRowSet();
 
   // Now open the DiskRowSet for read
@@ -202,7 +206,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   Schema proj_key = schema_.CreateKeyProjection();
   RowBuilder rb(&proj_key);
   rb.AddString(Slice("hello 00000000000049x"));
-  RowSetKeyProbe probe(rb.row());
+  RowSetKeyProbe probe(rb.row(), &arena);
 
   OperationResultPB result;
   ProbeStats stats;
@@ -216,6 +220,8 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
 }
 
 TEST_F(TestRowSet, TestErrorDuringUpdate) {
+  Arena arena(64);
+
   WriteTestRowSet();
   shared_ptr<DiskRowSet> rs;
   ASSERT_OK(OpenTestRowSet(&rs));
@@ -229,7 +235,7 @@ TEST_F(TestRowSet, TestErrorDuringUpdate) {
   Schema proj_key = schema_.CreateKeyProjection();
   RowBuilder rb(&proj_key);
   rb.AddString(Slice("hello 000000000000050"));
-  RowSetKeyProbe probe(rb.row());
+  RowSetKeyProbe probe(rb.row(), &arena);
 
   // But fail while reading it!
   FLAGS_crash_on_eio = false;
@@ -377,6 +383,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
 // Test that when a single row is updated multiple times, we can query the
 // historical values using MVCC, even after it is flushed.
 TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
+  Arena arena(64);
   const Slice key_slice("row");
 
   // Write a single row into a new DiskRowSet.
@@ -409,6 +416,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   RowChangeListEncoder update(&update_buf);
   for (uint32_t i = 2; i <= 5; i++) {
     {
+      arena.Reset();
       ScopedOp op(&mvcc_, clock_.Now());
       op.StartApplying();
       update.Reset();
@@ -416,7 +424,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       Schema proj_key = schema_.CreateKeyProjection();
       RowBuilder rb(&proj_key);
       rb.AddString(key_slice);
-      RowSetKeyProbe probe(rb.row());
+      RowSetKeyProbe probe(rb.row(), &arena);
       OperationResultPB result;
       ProbeStats stats;
       ASSERT_OK_FAST(rs->MutateRow(op.timestamp(),
@@ -844,7 +852,8 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     Schema proj_key = schema_.CreateKeyProjection();
     RowBuilder rb(&proj_key);
     rb.AddUint32(row_idx);
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
 
     // Apply the mutation.
     ScopedOp op(&mvcc_, clock_.Now());

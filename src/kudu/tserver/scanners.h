@@ -37,7 +37,6 @@
 #include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
@@ -277,13 +276,6 @@ class Scanner {
   // Add the timings in 'elapsed' to the total timings for this scanner.
   void AddTimings(const CpuTimes& elapsed);
 
-  // Return the auto-release pool which will be freed when this scanner
-  // closes. This can be used as a storage area for the ScanSpec and any
-  // associated data (eg storage for its predicates).
-  AutoReleasePool* autorelease_pool() {
-    return &autorelease_pool_;
-  }
-
   Arena* arena() {
     lock_.AssertAcquired();
     return &arena_;
@@ -402,8 +394,6 @@ class Scanner {
 
   // (Optional) scanner metrics struct, for recording scanner's duration.
   ScannerMetrics* metrics_;
-
-  AutoReleasePool autorelease_pool_;
 
   // Arena used for allocations which must last as long as the scanner
   // itself. This is _not_ used for row data, which is scoped to a single RPC

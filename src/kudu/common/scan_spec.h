@@ -30,7 +30,6 @@
 namespace kudu {
 
 class Arena;
-class AutoReleasePool;
 class ColumnSchema;
 class EncodedKey;
 class Schema;
@@ -70,7 +69,6 @@ class ScanSpec {
   // Idempotent.
   void OptimizeScan(const Schema& schema,
                     Arena* arena,
-                    AutoReleasePool* pool,
                     bool remove_pushed_predicates);
 
   // Get columns that are present in the predicates but not in the projection
@@ -162,7 +160,6 @@ class ScanSpec {
   // bound will be removed if the bound is replaced.
   void PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
                                           Arena* arena,
-                                          AutoReleasePool* pool,
                                           bool remove_pushed_predicates);
 
   std::unordered_map<std::string, ColumnPredicate> predicates_;

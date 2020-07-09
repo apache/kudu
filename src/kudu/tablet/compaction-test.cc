@@ -217,7 +217,8 @@ class TestCompaction : public KuduRowSetTest {
     Schema proj_key = schema_.CreateKeyProjection();
     RowBuilder rb(&proj_key);
     rb.AddString(Slice(keybuf));
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
     OperationResultPB result;
     ASSERT_OK(rowset->MutateRow(op.timestamp(),
@@ -258,7 +259,8 @@ class TestCompaction : public KuduRowSetTest {
     Schema proj_key = schema_.CreateKeyProjection();
     RowBuilder rb(&proj_key);
     rb.AddString(Slice(keybuf));
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
     OperationResultPB result;
     ASSERT_OK(rowset->MutateRow(op.timestamp(),

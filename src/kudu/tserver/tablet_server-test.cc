@@ -106,6 +106,7 @@
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging_test_util.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -2819,13 +2820,14 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   // using encoded keys
   int32_t start_key_int = 51;
   int32_t stop_key_int = 60;
-  EncodedKeyBuilder ekb(&schema_);
+  Arena arena(64);
+  EncodedKeyBuilder ekb(&schema_, &arena);
   ekb.AddColumnKey(&start_key_int);
-  unique_ptr<EncodedKey> start_encoded(ekb.BuildEncodedKey());
+  EncodedKey* start_encoded = ekb.BuildEncodedKey();
 
   ekb.Reset();
   ekb.AddColumnKey(&stop_key_int);
-  unique_ptr<EncodedKey> stop_encoded(ekb.BuildEncodedKey());
+  EncodedKey* stop_encoded = ekb.BuildEncodedKey();
 
   scan->mutable_start_primary_key()->assign(
     reinterpret_cast<const char*>(start_encoded->encoded_key().data()),

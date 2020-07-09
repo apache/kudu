@@ -63,27 +63,25 @@ namespace kudu {
 
 class EncodedKeyTest : public KuduTest {
  public:
-  EncodedKeyTest()
-  : schema_(CreateSchema()),
-    key_builder_(&schema_) {
-  }
+  EncodedKeyTest() : schema_(CreateSchema()), arena_(1024) {}
 
   static Schema CreateSchema() {
     return Schema({ ColumnSchema("key", UINT32) }, 1);
   }
 
-  EncodedKey* BuildEncodedKey(EncodedKeyBuilder* key_builder, int val) {
-    key_builder->Reset();
-    key_builder->AddColumnKey(&val);
-    return key_builder->BuildEncodedKey();
+  EncodedKey* BuildEncodedKey(int val) {
+    EncodedKeyBuilder ekb(&schema_, &arena_);
+    ekb.AddColumnKey(&val);
+    return ekb.BuildEncodedKey();
   }
 
   // Test whether target lies within the numerical key ranges given by
   // start and end. If -1, an empty slice is used instead.
   bool InRange(int start, int end, int target) {
-    unique_ptr<EncodedKey> start_key(BuildEncodedKey(&key_builder_, start));
-    unique_ptr<EncodedKey> end_key(BuildEncodedKey(&key_builder_, end));
-    unique_ptr<EncodedKey> target_key(BuildEncodedKey(&key_builder_, target));
+    arena_.Reset();
+    EncodedKey* start_key = BuildEncodedKey(start);
+    EncodedKey* end_key = BuildEncodedKey(end);
+    EncodedKey* target_key = BuildEncodedKey(target);
     return target_key->InRange(start != -1 ? start_key->encoded_key() : Slice(),
                                end != -1 ? end_key->encoded_key() : Slice());
   }
@@ -99,16 +97,16 @@ class EncodedKeyTest : public KuduTest {
                           const Slice& encoded_form,
                           void* val) {
     Schema schema({ ColumnSchema("key", Type) }, 1);
-    EncodedKeyBuilder builder(&schema);
+    EncodedKeyBuilder builder(&schema, &arena_);
     builder.AddColumnKey(val);
-    unique_ptr<EncodedKey> key(builder.BuildEncodedKey());
+    EncodedKey* key = builder.BuildEncodedKey();
     EXPECT_ROWKEY_EQ(schema, expected, *key);
     EXPECT_EQ(encoded_form, key->encoded_key());
   }
 
- private:
+ protected:
   Schema schema_;
-  EncodedKeyBuilder key_builder_;
+  Arena arena_;
 };
 
 TEST_F(EncodedKeyTest, TestKeyInRange) {
@@ -200,21 +198,20 @@ TEST_F(EncodedKeyTest, TestDecodeSimpleKeys) {
 }
 
 TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
-  unique_ptr<EncodedKey> key;
   {
     // Integer type compound key.
     Schema schema({ ColumnSchema("key0", UINT16),
                     ColumnSchema("key1", UINT32),
                     ColumnSchema("key2", UINT64) }, 3);
 
-    EncodedKeyBuilder builder(&schema);
+    EncodedKeyBuilder builder(&schema, &arena_);
     uint16_t key0 = 12345;
     uint32_t key1 = 123456;
     uint64_t key2 = 1234567891011121314;
     builder.AddColumnKey(&key0);
     builder.AddColumnKey(&key1);
     builder.AddColumnKey(&key2);
-    key.reset(builder.BuildEncodedKey());
+    auto* key = builder.BuildEncodedKey();
 
     EXPECT_ROWKEY_EQ(schema,
                      "(uint16 key0=12345, uint32 key1=123456, uint64 key2=1234567891011121314)",
@@ -225,12 +222,12 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
     // Mixed type compound key with STRING last.
     Schema schema({ ColumnSchema("key0", UINT16),
                     ColumnSchema("key1", STRING) }, 2);
-    EncodedKeyBuilder builder(&schema);
+    EncodedKeyBuilder builder(&schema, &arena_);
     uint16_t key0 = 12345;
     Slice key1("aKey");
     builder.AddColumnKey(&key0);
     builder.AddColumnKey(&key1);
-    key.reset(builder.BuildEncodedKey());
+    auto* key = builder.BuildEncodedKey();
 
     EXPECT_ROWKEY_EQ(schema, R"((uint16 key0=12345, string key1="aKey"))", *key);
   }
@@ -240,22 +237,21 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
     Schema schema({ ColumnSchema("key0", UINT16),
                     ColumnSchema("key1", STRING),
                     ColumnSchema("key2", UINT8) }, 3);
-    EncodedKeyBuilder builder(&schema);
+    EncodedKeyBuilder builder(&schema, &arena_);
     uint16_t key0 = 12345;
     Slice key1("aKey");
     uint8_t key2 = 123;
     builder.AddColumnKey(&key0);
     builder.AddColumnKey(&key1);
     builder.AddColumnKey(&key2);
-    key.reset(builder.BuildEncodedKey());
+    auto* key = builder.BuildEncodedKey();
 
     EXPECT_ROWKEY_EQ(schema, R"((uint16 key0=12345, string key1="aKey", uint8 key2=123))", *key);
   }
 }
 
 TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
-  unique_ptr<EncodedKey> key;
-  Arena arena(1024);
+  EncodedKey* key = nullptr;
 
   {
     // Integer type compound key.
@@ -264,12 +260,13 @@ TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
                     ColumnSchema("key2", UINT64) }, 3);
 
     // Prefix with only one full column specified
-    ASSERT_OK(EncodedKey::DecodeEncodedString(
-                schema, &arena,
-                Slice("\x00\x01"
-                      "\x00\x00\x00\x02"
-                      "\x00\x00\x00\x00\x00\x00\x00\x03", 14),
-                &key));
+    ASSERT_OK(EncodedKey::DecodeEncodedString(schema,
+                                              &arena_,
+                                              Slice("\x00\x01"
+                                                    "\x00\x00\x00\x02"
+                                                    "\x00\x00\x00\x00\x00\x00\x00\x03",
+                                                    14),
+                                              &key));
     EXPECT_ROWKEY_EQ(schema, "(uint16 key0=1, uint32 key1=2, uint64 key2=3)", *key);
   }
 }
@@ -280,10 +277,9 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
   Random r(SeedRandom());
   char buf[80];
   faststring encoded;
-  Arena arena(1024);
   for (int i = 0; i < 10000; i++) {
     encoded.clear();
-    arena.Reset();
+    arena_.Reset();
 
     int len = r.Uniform(sizeof(buf));
     RandomString(buf, len, &r);
@@ -294,12 +290,11 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
     Slice to_decode(encoded);
     Slice decoded_slice;
     // C++ does not allow commas in macro invocations without being wrapped in parenthesis.
-    ASSERT_OK((KeyEncoderTraits<BINARY,string>::DecodeKeyPortion(
-                  &to_decode, false, &arena,
-                  reinterpret_cast<uint8_t*>(&decoded_slice))));
+    ASSERT_OK((KeyEncoderTraits<BINARY, string>::DecodeKeyPortion(
+        &to_decode, false, &arena_, reinterpret_cast<uint8_t*>(&decoded_slice))));
 
     ASSERT_EQ(decoded_slice.ToDebugString(), in_slice.ToDebugString())
-      << "encoded: " << Slice(encoded).ToDebugString();
+        << "encoded: " << Slice(encoded).ToDebugString();
   }
 }
 

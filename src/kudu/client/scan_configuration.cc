@@ -114,21 +114,19 @@ Status ScanConfiguration::AddUpperBound(const KuduPartialRow& key) {
 
 Status ScanConfiguration::AddLowerBoundRaw(const Slice& key) {
   // Make a copy of the key.
-  unique_ptr<EncodedKey> enc_key;
+  EncodedKey* enc_key = nullptr;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *table_->schema().schema_, &arena_, key, &enc_key));
-  spec_.SetLowerBoundKey(enc_key.get());
-  pool_.Add(enc_key.release());
+  spec_.SetLowerBoundKey(enc_key);
   return Status::OK();
 }
 
 Status ScanConfiguration::AddUpperBoundRaw(const Slice& key) {
   // Make a copy of the key.
-  unique_ptr<EncodedKey> enc_key;
+  EncodedKey* enc_key = nullptr;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *table_->schema().schema_, &arena_, key, &enc_key));
-  spec_.SetExclusiveUpperBoundKey(enc_key.get());
-  pool_.Add(enc_key.release());
+  spec_.SetExclusiveUpperBoundKey(enc_key);
   return Status::OK();
 }
 
@@ -246,7 +244,6 @@ Status ScanConfiguration::AddIsDeletedColumn() {
 void ScanConfiguration::OptimizeScanSpec() {
   spec_.OptimizeScan(*table_->schema().schema_,
                      &arena_,
-                     &pool_,
                      /* remove_pushed_predicates */ false);
 }
 

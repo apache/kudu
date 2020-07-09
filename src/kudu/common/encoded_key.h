@@ -17,12 +17,10 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
-#include <memory>
 #include <string>
-#include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -33,37 +31,36 @@ class Arena;
 class ConstContiguousRow;
 class Schema;
 
+// Wrapper around an encoded Key as well as the component raw key columns that
+// went into encoding it.
+//
+// This is a POD object that can be safely allocated on an Arena. It assumes
+// that all of its referred-to data is also on the same Arena or otherwise has a
+// lifetime that extends longer than this object.
 class EncodedKey {
  public:
-  // Constructs a new EncodedKey.
-  // This class takes over the value of 'data' and contents of
-  // raw_keys. Note that num_key_cols is the number of key columns for
-  // the schema, but this may be different from the size of raw_keys
-  // in which case raw_keys represents the supplied prefix of a
-  // composite key.
-  EncodedKey(faststring *data,
-             std::vector<const void *> *raw_keys,
-             size_t num_key_cols);
-
-  static std::unique_ptr<EncodedKey> FromContiguousRow(const ConstContiguousRow& row);
+  // Construct an EncodedKey object in the given Arena corresponding to the
+  // given Row. The lifetime of the row must outlive the lifetime of this
+  // EncodedKey object.
+  static EncodedKey* FromContiguousRow(const ConstContiguousRow& row, Arena* arena);
 
   // Decode the encoded key specified in 'encoded', which must correspond to the
   // provided schema.
-  // The returned row data is allocated from 'arena' and returned in '*result'.
-  // If allocation fails or the encoding is invalid, returns a bad Status.
+  // The returned EncodedKey object and its referred-to row data is allocated
+  // from 'arena' and returned in '*result'. If allocation fails or the encoding
+  // is invalid, returns a bad Status.
   static Status DecodeEncodedString(const Schema& schema,
                                     Arena* arena,
                                     const Slice& encoded,
-                                    std::unique_ptr<EncodedKey> *result);
+                                    EncodedKey** result);
 
-  // Given an EncodedKey, increment it to the next lexicographically greater EncodedKey.
-  static Status IncrementEncodedKey(const Schema& tablet_schema,
-                                    std::unique_ptr<EncodedKey>* key,
-                                    Arena* arena);
+  // Given an EncodedKey, increment it to the next lexicographically greater
+  // EncodedKey. The returned key is allocated from the arena.
+  static Status IncrementEncodedKey(const Schema& tablet_schema, EncodedKey** key, Arena* arena);
 
-  const Slice &encoded_key() const { return encoded_key_; }
+  const Slice& encoded_key() const { return encoded_key_; }
 
-  const std::vector<const void *> &raw_keys() const { return raw_keys_; }
+  ArrayView<const void* const> raw_keys() const { return raw_keys_; }
 
   size_t num_key_columns() const { return num_key_cols_; }
 
@@ -85,13 +82,24 @@ class EncodedKey {
   static std::string RangeToStringWithSchema(const EncodedKey* lower,
                                              const EncodedKey* upper,
                                              const Schema& schema);
-
+  // Constructs a new EncodedKey.
+  //
+  // NOTE: External callers should prefer using EncodedKey::FromContiguousRow
+  // or EncodedKeyBuilder. This is public only to support allocation from the
+  // Arena class.
+  //
+  // NOTE: num_key_cols is the number of key columns for
+  // the schema, but this may be different from the size of raw_keys
+  // in which case raw_keys represents the supplied prefix of a
+  // composite key.
+  EncodedKey(Slice encoded_key, ArrayView<const void*> raw_keys, size_t num_key_cols);
 
  private:
+  friend class EncodedKeyBuilder;
+
+  const Slice encoded_key_;
   const int num_key_cols_;
-  Slice encoded_key_;
-  std::unique_ptr<uint8_t[]> data_;
-  std::vector<const void *> raw_keys_;
+  const ArrayView<const void*> raw_keys_;
 };
 
 // A builder for encoded key: creates an encoded key from
@@ -99,7 +107,10 @@ class EncodedKey {
 class EncodedKeyBuilder {
  public:
   // 'schema' must remain valid for the lifetime of the EncodedKeyBuilder.
-  explicit EncodedKeyBuilder(const Schema* schema);
+  //
+  // 'arena' must remain live for the lifetime of the EncodedKey objects
+  // returned by BuildEncodedKey().
+  EncodedKeyBuilder(const Schema* schema, Arena* arena);
 
   void Reset();
 
@@ -107,16 +118,16 @@ class EncodedKeyBuilder {
 
   EncodedKey *BuildEncodedKey();
 
-  void AssignCopy(const EncodedKeyBuilder &other);
-
  private:
   DISALLOW_COPY_AND_ASSIGN(EncodedKeyBuilder);
 
   const Schema* schema_;
+  Arena* const arena_;
+
   faststring encoded_key_;
   const size_t num_key_cols_;
   size_t idx_;
-  std::vector<const void *> raw_keys_;
+  const void** raw_keys_;
 };
 
-} // namespace kudu
+}  // namespace kudu

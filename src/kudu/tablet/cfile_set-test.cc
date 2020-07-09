@@ -48,7 +48,6 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/block_bloom_filter.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/hash.pb.h"
@@ -407,7 +406,6 @@ TEST_F(TestCFileSet, TestRangeScan) {
   unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
   Schema key_schema = schema_.CreateKeyProjection();
   Arena arena(1024);
-  AutoReleasePool pool;
 
   // Create a scan with a range predicate on the key column.
   ScanSpec spec;
@@ -415,7 +413,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   int32_t upper = 2010;
   auto pred1 = ColumnPredicate::Range(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred1);
-  spec.OptimizeScan(schema_, &arena, &pool, true);
+  spec.OptimizeScan(schema_, &arena, true);
   ASSERT_OK(iter->Init(&spec));
 
   // Check that the bounds got pushed as index bounds.

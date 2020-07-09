@@ -601,11 +601,13 @@ TYPED_TEST(BitShuffleTest, TestFixedSizeReadWriteBitShuffle) {
   this->TestBitShuffle();
 }
 
-void EncodeStringKey(const Schema &schema, const Slice& key,
-                     unique_ptr<EncodedKey> *encoded_key) {
-  EncodedKeyBuilder kb(&schema);
+void EncodeStringKey(const Schema& schema,
+                     const Slice& key,
+                     Arena* arena,
+                     EncodedKey** encoded_key) {
+  EncodedKeyBuilder kb(&schema, arena);
   kb.AddColumnKey(&key);
-  encoded_key->reset(kb.BuildEncodedKey());
+  *encoded_key = kb.BuildEncodedKey();
 }
 
 void TestCFile::TestReadWriteStrings(EncodingType encoding,
@@ -653,7 +655,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   // Now try some seeks by the value instead of position
   /////////
 
-  unique_ptr<EncodedKey> encoded_key;
+  EncodedKey* encoded_key = nullptr;
   bool exact;
 
   // Seek in between each key.
@@ -664,7 +666,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
     buf = formatter(i - 1);
     buf.append(".5");
     s = Slice(buf);
-    EncodeStringKey(schema, s, &encoded_key);
+    EncodeStringKey(schema, s, &arena, &encoded_key);
     ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
     ASSERT_FALSE(exact);
     ASSERT_EQ(i, iter->GetCurrentOrdinal());
@@ -678,7 +680,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
     arena.Reset();
     buf = formatter(i);
     s = Slice(buf);
-    EncodeStringKey(schema, s, &encoded_key);
+    EncodeStringKey(schema, s, &arena, &encoded_key);
     ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
     ASSERT_TRUE(exact);
     ASSERT_EQ(i, iter->GetCurrentOrdinal());
@@ -691,7 +693,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   // (seek to "hello 9999.x")
   buf = formatter(9999) + ".x";
   s = Slice(buf);
-  EncodeStringKey(schema, s, &encoded_key);
+  EncodeStringKey(schema, s, &arena, &encoded_key);
   EXPECT_TRUE(iter->SeekAtOrAfter(*encoded_key, &exact).IsNotFound());
 
   // before first entry
@@ -699,16 +701,16 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   buf = formatter(0);
   buf.resize(buf.size() - 1);
   s = Slice(buf);
-  EncodeStringKey(schema, s, &encoded_key);
+  EncodeStringKey(schema, s, &arena, &encoded_key);
   ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   EXPECT_FALSE(exact);
-  EXPECT_EQ(0u, iter->GetCurrentOrdinal());
+  EXPECT_EQ(0, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   EXPECT_EQ(formatter(0), s.ToString());
 
   // Seek to start of file by ordinal
   ASSERT_OK(iter->SeekToFirst());
-  ASSERT_EQ(0u, iter->GetCurrentOrdinal());
+  ASSERT_EQ(0, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(formatter(0), s.ToString());
 

@@ -182,7 +182,8 @@ class TestRowSet : public KuduRowSetTest {
     Schema proj_key = schema_.CreateKeyProjection();
     RowBuilder rb(&proj_key);
     BuildRowKey(&rb, row_idx);
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
 
     ProbeStats stats;
     ScopedOp op(&mvcc_, clock_.Now());
@@ -196,7 +197,8 @@ class TestRowSet : public KuduRowSetTest {
     Schema proj_key = schema_.CreateKeyProjection();
     RowBuilder rb(&proj_key);
     BuildRowKey(&rb, row_idx);
-    RowSetKeyProbe probe(rb.row());
+    Arena arena(64);
+    RowSetKeyProbe probe(rb.row(), &arena);
     ProbeStats stats;
     return rs.CheckRowPresent(probe, nullptr, present, &stats);
   }
@@ -256,11 +258,10 @@ class TestRowSet : public KuduRowSetTest {
   void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
                         const std::string& expected_val) {
     Arena arena(256);
-    AutoReleasePool pool;
     ScanSpec spec;
     auto pred = ColumnPredicate::Equality(schema_.column(0), &row_key);
     spec.AddPredicate(pred);
-    spec.OptimizeScan(schema_, &arena, &pool, true);
+    spec.OptimizeScan(schema_, &arena, true);
 
     RowIteratorOptions opts;
     opts.projection = &schema_;

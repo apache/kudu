@@ -41,7 +41,6 @@
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -160,7 +159,6 @@ public:
   void TestTimedScanWithBounds(size_t strlen, size_t lower_val,
                                size_t upper_val, int* fetched) {
     Arena arena(128);
-    AutoReleasePool pool;
     ScanSpec spec;
 
     // Generate the predicate.
@@ -172,7 +170,7 @@ public:
 
     // Prepare the scan.
     spec.AddPredicate(string_pred);
-    spec.OptimizeScan(schema_, &arena, &pool, true);
+    spec.OptimizeScan(schema_, &arena, true);
     ScanSpec orig_spec = spec;
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
@@ -228,7 +226,6 @@ public:
                               Substitute("$0", cardinality).length()});
     FillTestTablet(nrows, 10, strlen, -1);
     Arena arena(128);
-    AutoReleasePool pool;
     ScanSpec spec;
 
     // Generate the predicates [0, upper) AND [lower, cardinality).
@@ -250,7 +247,7 @@ public:
     // Prepare the scan.
     spec.AddPredicate(string_pred_a);
     spec.AddPredicate(string_pred_b);
-    spec.OptimizeScan(schema_, &arena, &pool, true);
+    spec.OptimizeScan(schema_, &arena, true);
     ScanSpec orig_spec = spec;
     unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));

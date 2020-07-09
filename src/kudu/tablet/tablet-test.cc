@@ -1319,8 +1319,8 @@ TEST_F(TestTabletStringKey, TestSplitKeyRange) {
   }
   // test split key range with bound
   {
-    unique_ptr<EncodedKey> l_enc_key;
-    unique_ptr<EncodedKey> u_enc_key;
+    EncodedKey* l_enc_key = nullptr;
+    EncodedKey* u_enc_key = nullptr;
     Arena arena(256);
     KuduPartialRow lower_bound(&this->schema_);
     CHECK_OK(lower_bound.SetString("key", "1"));
@@ -1345,7 +1345,7 @@ TEST_F(TestTabletStringKey, TestSplitKeyRange) {
       };
       vector<ColumnId> col_ids;
       vector<KeyRange> range;
-      tablet->SplitKeyRange(l_enc_key.get(), u_enc_key.get(), col_ids, 2000, &range);
+      tablet->SplitKeyRange(l_enc_key, u_enc_key, col_ids, 2000, &range);
       AssertChunks(result, range);
     }
     // split key range in [min, 4)
@@ -1356,7 +1356,7 @@ TEST_F(TestTabletStringKey, TestSplitKeyRange) {
       };
       vector<ColumnId> col_ids;
       vector<KeyRange> range;
-      tablet->SplitKeyRange(nullptr, u_enc_key.get(), col_ids, 2000, &range);
+      tablet->SplitKeyRange(nullptr, u_enc_key, col_ids, 2000, &range);
       AssertChunks(result, range);
     }
     // split key range in [4, max)
@@ -1368,7 +1368,7 @@ TEST_F(TestTabletStringKey, TestSplitKeyRange) {
       };
       vector<ColumnId> col_ids;
       vector<KeyRange> range;
-      tablet->SplitKeyRange(u_enc_key.get(), nullptr, col_ids, 2000, &range);
+      tablet->SplitKeyRange(u_enc_key, nullptr, col_ids, 2000, &range);
       AssertChunks(result, range);
     }
   }

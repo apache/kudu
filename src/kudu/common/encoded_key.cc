@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/encoded_key.h"
+
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <ostream>
@@ -22,7 +25,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/key_util.h"
 #include "kudu/common/row.h"
@@ -38,32 +40,23 @@ using std::vector;
 
 namespace kudu {
 
-EncodedKey::EncodedKey(faststring* data,
-                       vector<const void *> *raw_keys,
-                       size_t num_key_cols)
-  : num_key_cols_(num_key_cols) {
-  int len = data->size();
-  data_.reset(data->release());
-  encoded_key_ = Slice(data_.get(), len);
-
-  DCHECK_LE(raw_keys->size(), num_key_cols);
-
-  raw_keys_.swap(*raw_keys);
+EncodedKey::EncodedKey(Slice encoded_key, ArrayView<const void*> raw_keys, size_t num_key_cols)
+    : encoded_key_(encoded_key), num_key_cols_(num_key_cols), raw_keys_(raw_keys) {
+  DCHECK_LE(raw_keys.size(), num_key_cols);
 }
 
-unique_ptr<EncodedKey> EncodedKey::FromContiguousRow(const ConstContiguousRow& row) {
-  EncodedKeyBuilder kb(row.schema());
+EncodedKey* EncodedKey::FromContiguousRow(const ConstContiguousRow& row, Arena* arena) {
+  EncodedKeyBuilder kb(row.schema(), arena);
   for (int i = 0; i < row.schema()->num_key_columns(); i++) {
     kb.AddColumnKey(row.cell_ptr(i));
   }
-  return unique_ptr<EncodedKey>(kb.BuildEncodedKey());
-
+  return kb.BuildEncodedKey();
 }
 
 Status EncodedKey::DecodeEncodedString(const Schema& schema,
                                        Arena* arena,
                                        const Slice& encoded,
-                                       unique_ptr<EncodedKey>* result) {
+                                       EncodedKey** result) {
   uint8_t* raw_key_buf = static_cast<uint8_t*>(arena->AllocateBytes(schema.key_byte_size()));
   if (PREDICT_FALSE(!raw_key_buf)) {
     return Status::RuntimeError("OOM");
@@ -71,21 +64,12 @@ Status EncodedKey::DecodeEncodedString(const Schema& schema,
 
   ContiguousRow row(&schema, raw_key_buf);
   RETURN_NOT_OK(schema.DecodeRowKey(encoded, &row, arena));
-
-  vector<const void*> raw_keys(schema.num_key_columns());
-  for (int i = 0; i < schema.num_key_columns(); i++) {
-    raw_keys[i] = row.cell_ptr(i);
-  }
-
-  faststring data_copy;
-  data_copy.assign_copy(encoded.data(), encoded.size());
-
-  result->reset(new EncodedKey(&data_copy, &raw_keys, schema.num_key_columns()));
+  *result = EncodedKey::FromContiguousRow(ConstContiguousRow(row), arena);
   return Status::OK();
 }
 
 Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
-                                       unique_ptr<EncodedKey> *key,
+                                       EncodedKey** key,
                                        Arena* arena) {
   // Copy the row itself to the Arena.
   uint8_t* new_row_key = static_cast<uint8_t*>(
@@ -94,12 +78,10 @@ Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
     return Status::RuntimeError("Out of memory allocating row key");
   }
 
-  vector<const void*> new_raw_keys(tablet_schema.num_key_columns());
   for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
     int size = tablet_schema.column(i).type_info()->size();
 
     void* dst = new_row_key + tablet_schema.column_offset(i);
-    new_raw_keys[i] = dst;
     memcpy(dst,
            (*key)->raw_keys()[i],
            size);
@@ -112,10 +94,7 @@ Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
   }
 
   // Re-encode it.
-  faststring buf;
-  tablet_schema.EncodeComparableKey(new_row, &buf);
-
-  key->reset(new EncodedKey(&buf, &new_raw_keys, tablet_schema.num_key_columns()));
+  *key = EncodedKey::FromContiguousRow(ConstContiguousRow(new_row), arena);
   return Status::OK();
 }
 
@@ -144,50 +123,42 @@ string EncodedKey::Stringify(const Schema &schema) const {
 
 ////////////////////////////////////////////////////////////
 
-EncodedKeyBuilder::EncodedKeyBuilder(const Schema* schema)
- : schema_(schema),
-   encoded_key_(schema->key_byte_size()),
-   num_key_cols_(schema->num_key_columns()),
-   idx_(0) {
+EncodedKeyBuilder::EncodedKeyBuilder(const Schema* schema, Arena* arena)
+    : schema_(schema), arena_(arena), num_key_cols_(schema->num_key_columns()), idx_(0) {
+  Reset();
 }
 
 void EncodedKeyBuilder::Reset() {
   encoded_key_.clear();
-  idx_ = 0;
-  raw_keys_.clear();
   encoded_key_.reserve(schema_->key_byte_size());
+  idx_ = 0;
+  raw_keys_ = static_cast<const void**>(
+      arena_->AllocateBytesAligned(sizeof(void*) * num_key_cols_, alignof(void*)));
 }
 
 void EncodedKeyBuilder::AddColumnKey(const void *raw_key) {
   DCHECK_LT(idx_, num_key_cols_);
 
-  const ColumnSchema &col = schema_->column(idx_);
+  const ColumnSchema& col = schema_->column(idx_);
   DCHECK(!col.is_nullable());
 
   const TypeInfo* ti = col.type_info();
   bool is_last = idx_ == num_key_cols_ - 1;
   GetKeyEncoder<faststring>(ti).Encode(raw_key, is_last, &encoded_key_);
-  raw_keys_.push_back(raw_key);
-
-  ++idx_;
+  raw_keys_[idx_++] = raw_key;
 }
 
 EncodedKey *EncodedKeyBuilder::BuildEncodedKey() {
   if (idx_ == 0) {
     return nullptr;
   }
-  auto ret = new EncodedKey(&encoded_key_, &raw_keys_, num_key_cols_);
+  Slice enc_key_slice;
+  CHECK(arena_->RelocateSlice(encoded_key_, &enc_key_slice));
+
+  auto ret = arena_->NewObject<EncodedKey>(
+      enc_key_slice, ArrayView<const void*>(raw_keys_, idx_), num_key_cols_);
   idx_ = 0;
   return ret;
-}
-
-void EncodedKeyBuilder::AssignCopy(const EncodedKeyBuilder &other) {
-  DCHECK_SCHEMA_EQ(*schema_, *other.schema_);
-
-  encoded_key_.assign_copy(other.encoded_key_.data(),
-                           other.encoded_key_.length());
-  idx_ = other.idx_;
-  raw_keys_.assign(other.raw_keys_.begin(), other.raw_keys_.end());
 }
 
 string EncodedKey::RangeToString(const EncodedKey* lower, const EncodedKey* upper) {

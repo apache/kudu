@@ -38,7 +38,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -68,9 +67,8 @@ void CheckPrunedPartitions(const Schema& schema,
                            size_t pruner_ranges) {
 
   ScanSpec opt_spec(spec);
-  AutoReleasePool p;
   Arena arena(256);
-  opt_spec.OptimizeScan(schema, &arena, &p, false);
+  opt_spec.OptimizeScan(schema, &arena, false);
 
   PartitionPruner pruner;
   pruner.Init(schema, partition_schema, opt_spec);
@@ -100,6 +98,7 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
                   ColumnSchema("c", INT8) },
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
+  Arena arena(1024);
 
   PartitionSchema partition_schema;
   ASSERT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
@@ -125,24 +124,24 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    unique_ptr<EncodedKey> enc_lower_bound;
-    unique_ptr<EncodedKey> enc_upper_bound;
+    EncodedKey* enc_lower_bound = nullptr;
+    EncodedKey* enc_upper_bound = nullptr;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
       CHECK_OK(lower_bound.SetInt8("b", get<1>(*lower)));
       CHECK_OK(lower_bound.SetInt8("c", get<2>(*lower)));
       ConstContiguousRow row(lower_bound.schema(), lower_bound.row_data_);
-      enc_lower_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetLowerBoundKey(enc_lower_bound.get());
+      enc_lower_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetLowerBoundKey(enc_lower_bound);
     }
     if (upper) {
       CHECK_OK(upper_bound.SetInt8("a", get<0>(*upper)));
       CHECK_OK(upper_bound.SetInt8("b", get<1>(*upper)));
       CHECK_OK(upper_bound.SetInt8("c", get<2>(*upper)));
       ConstContiguousRow row(upper_bound.schema(), upper_bound.row_data_);
-      enc_upper_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
+      enc_upper_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
     CheckPrunedPartitions(schema, partition_schema, partitions, spec,
@@ -219,6 +218,7 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
       ColumnSchema("c", STRING) },
       { ColumnId(0), ColumnId(1), ColumnId(2) },
       3);
+  Arena arena(1024);
 
   PartitionSchema partition_schema;
   auto pb = PartitionSchemaPB();
@@ -246,24 +246,24 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    unique_ptr<EncodedKey> enc_lower_bound;
-    unique_ptr<EncodedKey> enc_upper_bound;
+    EncodedKey* enc_lower_bound = nullptr;
+    EncodedKey* enc_upper_bound = nullptr;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
       CHECK_OK(lower_bound.SetStringCopy("b", get<1>(*lower)));
       CHECK_OK(lower_bound.SetStringCopy("c", get<2>(*lower)));
       ConstContiguousRow row(lower_bound.schema(), lower_bound.row_data_);
-      enc_lower_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetLowerBoundKey(enc_lower_bound.get());
+      enc_lower_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetLowerBoundKey(enc_lower_bound);
     }
     if (upper) {
       CHECK_OK(upper_bound.SetInt8("a", get<0>(*upper)));
       CHECK_OK(upper_bound.SetStringCopy("b", get<1>(*upper)));
       CHECK_OK(upper_bound.SetStringCopy("c", get<2>(*upper)));
       ConstContiguousRow row(upper_bound.schema(), upper_bound.row_data_);
-      enc_upper_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
+      enc_upper_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
     CheckPrunedPartitions(schema, partition_schema, partitions, spec,
@@ -335,6 +335,7 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
                   ColumnSchema("c", INT8) },
                 { ColumnId(0), ColumnId(1), ColumnId(2) },
                 3);
+  Arena arena(1024);
 
   PartitionSchema partition_schema;
   auto pb = PartitionSchemaPB();
@@ -358,24 +359,24 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
     KuduPartialRow upper_bound(&schema);
-    unique_ptr<EncodedKey> enc_lower_bound;
-    unique_ptr<EncodedKey> enc_upper_bound;
+    EncodedKey* enc_lower_bound = nullptr;
+    EncodedKey* enc_upper_bound = nullptr;
 
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
       CHECK_OK(lower_bound.SetInt8("b", get<1>(*lower)));
       CHECK_OK(lower_bound.SetInt8("c", get<2>(*lower)));
       ConstContiguousRow row(lower_bound.schema(), lower_bound.row_data_);
-      enc_lower_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetLowerBoundKey(enc_lower_bound.get());
+      enc_lower_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetLowerBoundKey(enc_lower_bound);
     }
     if (upper) {
       CHECK_OK(upper_bound.SetInt8("a", get<0>(*upper)));
       CHECK_OK(upper_bound.SetInt8("b", get<1>(*upper)));
       CHECK_OK(upper_bound.SetInt8("c", get<2>(*upper)));
       ConstContiguousRow row(upper_bound.schema(), upper_bound.row_data_);
-      enc_upper_bound = EncodedKey::FromContiguousRow(row);
-      spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
+      enc_upper_bound = EncodedKey::FromContiguousRow(row, &arena);
+      spec.SetExclusiveUpperBoundKey(enc_upper_bound);
     }
     size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
     CheckPrunedPartitions(schema, partition_schema, partitions, spec,

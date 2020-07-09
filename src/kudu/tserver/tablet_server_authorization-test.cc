@@ -65,6 +65,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
@@ -458,12 +459,13 @@ Status CheckNoErrors(const Resp& resp) {
 
 // Generates an encoded key of the given value for the given schema.
 string GenerateEncodedKey(int32_t val, const Schema& schema) {
-  EncodedKeyBuilder builder(&schema);
+  Arena arena(64);
+  EncodedKeyBuilder builder(&schema, &arena);
   for (int i = 0; i < schema.num_key_columns(); i++) {
     DCHECK_EQ(INT32, schema.column(i).type_info()->physical_type());
     builder.AddColumnKey(&val);
   }
-  unique_ptr<EncodedKey> key(builder.BuildEncodedKey());
+  EncodedKey* key = builder.BuildEncodedKey();
   Slice slice = key->encoded_key();
   return slice.ToString();
 }
