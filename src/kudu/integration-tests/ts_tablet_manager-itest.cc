@@ -1080,11 +1080,12 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
   }
 
   static Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {
+    TabletServerErrorPB ts_error;
     for (const auto& txn_id_and_prt_ids : txns) {
       const auto& txn_id = txn_id_and_prt_ids.first;
-      RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner));
+      RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner, &ts_error));
       for (const auto& prt_id : txn_id_and_prt_ids.second) {
-        RETURN_NOT_OK(coordinator->RegisterParticipant(txn_id, prt_id, kOwner));
+        RETURN_NOT_OK(coordinator->RegisterParticipant(txn_id, prt_id, kOwner, &ts_error));
       }
     }
     return Status::OK();

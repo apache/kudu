@@ -51,6 +51,7 @@ class Sockaddr;
 
 namespace tserver {
 class TabletServerServiceProxy;
+class TabletServerAdminServiceProxy;
 } // namespace tserver
 
 namespace master {
@@ -100,6 +101,7 @@ class RemoteTabletServer {
   // Return the current proxy to this tablet server. Requires that InitProxy()
   // be called prior to this.
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy() const;
+  std::shared_ptr<tserver::TabletServerAdminServiceProxy> admin_proxy();
 
   std::string ToString() const;
 
@@ -133,6 +135,7 @@ class RemoteTabletServer {
   boost::optional<std::string> unix_domain_socket_path_;
 
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  std::shared_ptr<tserver::TabletServerAdminServiceProxy> admin_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTabletServer);
 };

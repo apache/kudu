@@ -103,7 +103,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/process_memory.h"
-#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -675,7 +674,6 @@ class RpcOpCompletionCallback : public OpCompletionCallback {
 
   rpc::RpcContext* context_;
   Response* response_;
-  tablet::OpState* state_;
 };
 
 // Generic interface to handle scan results.
@@ -1229,33 +1227,37 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
                          context);
     return;
   }
-  // From here on out, errors are considered application errors.
-  SCOPED_CLEANUP({
-    context->RespondSuccess();
-  });
+  // Catch any replication errors in this 'ts_error' so we can return an
+  // appropriate error to the caller if need be.
+  TabletServerErrorPB ts_error;
   const auto& user = op.user();
   const auto& txn_id = op.txn_id();
-  // TODO(awong): pass a TabletServerErrorPB pointer down in case these
-  // actually resulted in a failure to write, rather than an application error.
   switch (op.type()) {
     case CoordinatorOpPB::BEGIN_TXN:
-      s = txn_coordinator->BeginTransaction(txn_id, user);
+      s = txn_coordinator->BeginTransaction(txn_id, user, &ts_error);
       break;
     case CoordinatorOpPB::REGISTER_PARTICIPANT:
-      s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user);
+      s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user, &ts_error);
       break;
     case CoordinatorOpPB::BEGIN_COMMIT_TXN:
-      s = txn_coordinator->BeginCommitTransaction(txn_id, user);
+      s = txn_coordinator->BeginCommitTransaction(txn_id, user, &ts_error);
       break;
     case CoordinatorOpPB::ABORT_TXN:
-      s = txn_coordinator->AbortTransaction(txn_id, user);
+      s = txn_coordinator->AbortTransaction(txn_id, user, &ts_error);
       break;
     default:
       s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
   }
+  if (ts_error.has_status() && ts_error.status().code() != AppStatusPB::OK) {
+    *resp->mutable_error() = std::move(ts_error);
+    context->RespondNoCache();
+    return;
+  }
+  // From here on out, errors are considered application errors.
   if (PREDICT_FALSE(!s.ok())) {
     StatusToPB(s, resp->mutable_op_result()->mutable_op_error());
   }
+  context->RespondSuccess();
 }
 
 bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {

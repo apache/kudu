@@ -41,6 +41,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -53,8 +54,10 @@ DECLARE_bool(rpc_reopen_outbound_connections);
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::transactions::TxnSystemClient;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -447,6 +450,32 @@ TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
   // as client-side credentials.
   ASSERT_OK(InsertTestRows(client.get(), table.get(), num_tablet_servers_));
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Like the above test but testing the transaction system client and its access
+// of the transaction status table.
+TEST_F(TokenBasedConnectionITest, TxnSystemClientReacquireAuthnToken) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_client));
+  ASSERT_OK(txn_client->CreateTxnStatusTable(10));
+  ASSERT_OK(txn_client->OpenTxnStatusTable());
+
+  // Reset all connections with the cluster. Since authn token validty is
+  // checked for new connections (but not for existing non-idle connections),
+  // this will ensure our token expiration is checked below.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+
+  // Wait for the initial authn token to expire and try to access the cluster.
+  // Try making a connection to the tablet server for the first time. It should
+  // automatically fetch a new token and succeed.
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
+  ASSERT_OK(txn_client->BeginTransaction(1, "user"));
 }
 
 // Test for scenarios involving multiple masters where

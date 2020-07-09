@@ -29,12 +29,14 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/transactions/transactions.pb.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -108,7 +110,8 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
   return Status::OK();
 }
 
-Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user) {
+Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user,
+                                          TabletServerErrorPB* ts_error) {
   {
     // First, make sure the requested ID is viable.
     std::lock_guard<simple_spinlock> l(lock_);
@@ -117,6 +120,9 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user) {
           Substitute("transaction ID $0 is not higher than the highest ID so far: $1",
                      txn_id, highest_txn_id_));
     }
+    // TODO(awong): reduce the "damage" from followers getting requests by
+    // checking for leadership before doing anything. As is, if this replica
+    // isn't the leader, we may aggressively burn through transaction IDs.
     highest_txn_id_ = txn_id;
   }
 
@@ -125,7 +131,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user) {
   // that at most one call to start a given transaction ID can succeed.
 
   // Write an entry to the status tablet for this transaction.
-  RETURN_NOT_OK(status_tablet_.AddNewTransaction(txn_id, user));
+  RETURN_NOT_OK(status_tablet_.AddNewTransaction(txn_id, user, ts_error));
 
   // Now that we've successfully persisted the new transaction ID, initialize
   // the in-memory state and make it visible to clients.
@@ -141,7 +147,8 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user) {
   return Status::OK();
 }
 
-Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& user) {
+Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& user,
+                                                TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
 
@@ -158,7 +165,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
-  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb));
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
   txn_lock.Commit();
   return Status::OK();
 }
@@ -180,12 +187,14 @@ Status TxnStatusManager::FinalizeCommitTransaction(int64_t txn_id) {
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMITTED);
-  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb));
+  TabletServerErrorPB ts_error;
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, &ts_error));
   txn_lock.Commit();
   return Status::OK();
 }
 
-Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& user) {
+Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& user,
+                                          TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
 
@@ -203,13 +212,13 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& use
   }
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
-  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb));
+  RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
   txn_lock.Commit();
   return Status::OK();
 }
 
 Status TxnStatusManager::RegisterParticipant(int64_t txn_id, const string& tablet_id,
-                                             const string& user) {
+                                             const string& user, TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
 
@@ -239,7 +248,7 @@ Status TxnStatusManager::RegisterParticipant(int64_t txn_id, const string& table
   prt_lock.mutable_data()->pb.set_state(TxnStatePB::OPEN);
 
   // Write the new participant entry.
-  RETURN_NOT_OK(status_tablet_.AddNewParticipant(txn_id, tablet_id));
+  RETURN_NOT_OK(status_tablet_.AddNewParticipant(txn_id, tablet_id, ts_error));
 
   // Now that we've persisted the new participant to disk, update the in-memory
   // state to denote the participant is open.

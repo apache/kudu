@@ -38,6 +38,10 @@ namespace tablet {
 class TabletReplica;
 } // namespace tablet
 
+namespace tserver {
+class TabletServerErrorPB;
+} // namespace tserver
+
 namespace transactions {
 
 class TxnStatusEntryPB;
@@ -83,11 +87,13 @@ class TxnStatusManager : public tablet::TxnCoordinator {
   // TODO(awong): consider computing the next available transaction ID in this
   // partition and using it in case this transaction is already used, or having
   // callers forward a request for the next-highest transaction ID.
-  Status BeginTransaction(int64_t txn_id, const std::string& user) override;
+  Status BeginTransaction(int64_t txn_id, const std::string& user,
+                          tserver::TabletServerErrorPB* ts_error) override;
 
   // Begins committing the given transaction, returning an error if the
   // transaction doesn't exist, isn't open, or isn't owned by the given user.
-  Status BeginCommitTransaction(int64_t txn_id, const std::string& user) override;
+  Status BeginCommitTransaction(int64_t txn_id, const std::string& user,
+                                tserver::TabletServerErrorPB* ts_error) override;
 
   // Finalizes the commit of the transaction, returning an error if the
   // transaction isn't in an appropraite state.
@@ -101,7 +107,8 @@ class TxnStatusManager : public tablet::TxnCoordinator {
   // Aborts the given transaction, returning an error if the transaction
   // doesn't exist, is committed or not yet opened, or isn't owned by the given
   // user.
-  Status AbortTransaction(int64_t txn_id, const std::string& user) override;
+  Status AbortTransaction(int64_t txn_id, const std::string& user,
+                          tserver::TabletServerErrorPB* ts_error) override;
 
   // Creates an in-memory participant, writes an entry to the status table, and
   // attaches the in-memory participant to the transaction.
@@ -109,7 +116,8 @@ class TxnStatusManager : public tablet::TxnCoordinator {
   // If the transaction is open, it is ensured to be active for the duration of
   // this call. Returns an error if the given transaction isn't open.
   Status RegisterParticipant(int64_t txn_id, const std::string& tablet_id,
-                             const std::string& user) override;
+                             const std::string& user,
+                             tserver::TabletServerErrorPB* ts_error) override;
 
   // Populates a map from transaction ID to the sorted list of participants
   // associated with that transaction ID.

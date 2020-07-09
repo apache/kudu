@@ -32,6 +32,7 @@ class TabletReplica;
 }  // namespace tablet
 
 namespace tserver {
+class TabletServerErrorPB;
 class WriteRequestPB;
 } // namespace tserver
 
@@ -102,13 +103,19 @@ class TxnStatusTablet {
   // contents of the tablet into a more usable memory representation.
   Status VisitTransactions(TransactionsVisitor* visitor);
 
-  // Writes to the underlying storage. Returns an error if there was an error
-  // writing the new entry.
-  Status AddNewTransaction(int64_t txn_id, const std::string& user);
-  Status UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB& pb);
-  Status AddNewParticipant(int64_t txn_id, const std::string& tablet_id);
+  // Writes to the underlying storage. If there was an error replicating the
+  // request, returns the specific error via 'ts_error' and returns a non-OK
+  // error. If there was otherwise a logical error with the request (e.g. row
+  // already exists), returns an error without populating 'ts_error'.
+  Status AddNewTransaction(int64_t txn_id, const std::string& user,
+                           tserver::TabletServerErrorPB* ts_error);
+  Status UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB& pb,
+                           tserver::TabletServerErrorPB* ts_error);
+  Status AddNewParticipant(int64_t txn_id, const std::string& tablet_id,
+                           tserver::TabletServerErrorPB* ts_error);
   Status UpdateParticipant(int64_t txn_id, const std::string& tablet_id,
-                           const TxnParticipantEntryPB& pb);
+                           const TxnParticipantEntryPB& pb,
+                           tserver::TabletServerErrorPB* ts_error);
 
  private:
   friend class TxnStatusManager;
@@ -116,9 +123,10 @@ class TxnStatusTablet {
     return tablet_replica_;
   }
 
-  // Writes 'req' to the underlying tablet replica, returning an error if there
-  // was a problem replicating the request, or if there were any row errors.
-  Status SyncWrite(const tserver::WriteRequestPB& req);
+  // Writes 'req' to the underlying tablet replica, populating 'ts_error' and
+  // returning non-OK if there was a problem replicating the request, or simply
+  // returning a non-OK error if there were any row errors.
+  Status SyncWrite(const tserver::WriteRequestPB& req, tserver::TabletServerErrorPB* ts_error);
 
   // The tablet replica that backs this transaction status tablet.
   tablet::TabletReplica* tablet_replica_;

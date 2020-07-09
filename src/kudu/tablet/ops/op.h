@@ -365,6 +365,7 @@ class LatchOpCompletionCallback : public OpCompletionCallback {
   virtual void OpCompleted() OVERRIDE {
     if (!status_.ok()) {
       StatusToPB(status_, response_->mutable_error()->mutable_status());
+      response_->mutable_error()->set_code(code_);
     }
     latch_->CountDown();
   }

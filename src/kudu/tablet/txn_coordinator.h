@@ -24,6 +24,10 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+namespace tserver {
+class TabletServerErrorPB;
+} // namespace tserver
+
 namespace tablet {
 
 class TabletReplica;
@@ -40,22 +44,48 @@ class TxnCoordinator {
   virtual Status LoadFromTablet() = 0;
 
   // Starts a transaction with the given ID as the given user.
-  virtual Status BeginTransaction(int64_t txn_id, const std::string& user) = 0;
+  //
+  // Returns any replication-layer errors (e.g. not-the-leader errors) in
+  // 'ts_error'. If there was otherwise a logical error with the request (e.g.
+  // transaction already exists), returns an error without populating
+  // 'ts_error'.
+  virtual Status BeginTransaction(int64_t txn_id, const std::string& user,
+                                  tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Begins committing the given transaction as the given user.
-  virtual Status BeginCommitTransaction(int64_t txn_id, const std::string& user) = 0;
+  //
+  // Returns any replication-layer errors (e.g. not-the-leader errors) in
+  // 'ts_error'. If there was otherwise a logical error with the request (e.g.
+  // no such transaction), returns an error without populating 'ts_error'.
+  virtual Status BeginCommitTransaction(int64_t txn_id, const std::string& user,
+                                        tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Finalizes the commit of the transaction.
+  //
+  // Returns any replication-layer errors (e.g. not-the-leader errors) in
+  // 'ts_error'. If there was otherwise a logical error with the request (e.g.
+  // no such transaction), returns an error without populating 'ts_error'.
+  //
   // TODO(awong): add a commit timestamp.
   virtual Status FinalizeCommitTransaction(int64_t txn_id) = 0;
 
   // Aborts the given transaction as the given user.
-  virtual Status AbortTransaction(int64_t txn_id, const std::string& user) = 0;
+  //
+  // Returns any replication-layer errors (e.g. not-the-leader errors) in
+  // 'ts_error'. If there was otherwise a logical error with the request (e.g.
+  // no such transaction), returns an error without populating 'ts_error'.
+  virtual Status AbortTransaction(int64_t txn_id, const std::string& user,
+                                  tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Registers a participant tablet ID to the given transaction ID as the given
   // user.
+  //
+  // Returns any replication-layer errors (e.g. not-the-leader errors) in
+  // 'ts_error'. If there was otherwise a logical error with the request (e.g.
+  // no such transaction), returns an error without populating 'ts_error'.
   virtual Status RegisterParticipant(int64_t txn_id, const std::string& tablet_id,
-                                     const std::string& user) = 0;
+                                     const std::string& user,
+                                     tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Populates a map from transaction ID to the list of participants associated
   // with that transaction ID.

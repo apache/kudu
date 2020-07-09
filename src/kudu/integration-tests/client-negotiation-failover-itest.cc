@@ -34,7 +34,9 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/transactions/txn_system_client.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -53,6 +55,7 @@ using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
 using kudu::cluster::ScopedResumeExternalDaemon;
+using kudu::transactions::TxnSystemClient;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -163,17 +166,17 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
     // Resume 2 out of 3 tablet servers (i.e. the majority), so the client
     // could eventially succeed with its write operations.
     thread resume_thread([&]() {
-        const int idx0 = rand() % kNumTabletServers;
-        unique_ptr<ScopedResumeExternalDaemon> r0(resumers[idx0].release());
-        const int idx1 = (idx0 + 1) % kNumTabletServers;
-        unique_ptr<ScopedResumeExternalDaemon> r1(resumers[idx1].release());
-        SleepFor(MonoDelta::FromSeconds(1));
-      });
+      const int idx0 = rand() % kNumTabletServers;
+      unique_ptr<ScopedResumeExternalDaemon> r0(resumers[idx0].release());
+      const int idx1 = (idx0 + 1) % kNumTabletServers;
+      unique_ptr<ScopedResumeExternalDaemon> r1(resumers[idx1].release());
+      SleepFor(MonoDelta::FromSeconds(1));
+    });
     // An automatic clean-up to handle both success and failure cases
     // in the code below.
     SCOPED_CLEANUP({
-        resume_thread.join();
-      });
+      resume_thread.join();
+    });
 
     // Since the table is hash-partitioned with kNumTabletServer partitions,
     // hopefully three sequential numbers would go into different partitions.
@@ -183,6 +186,46 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
       ASSERT_OK(ins->mutable_row()->SetInt32(1, 0));
       ASSERT_OK(session->Apply(ins.release()));
     }
+  }
+}
+
+// Like the above test but testing the transaction system client.
+TEST_F(ClientFailoverOnNegotiationTimeoutITest, TestTxnSystemClientRetryOnPause) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  static const int kNumTabletServers = 3;
+  cluster_opts_.num_tablet_servers = kNumTabletServers;
+  ASSERT_OK(CreateAndStartCluster());
+
+  vector<string> master_addrs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    master_addrs.emplace_back(hp.ToString());
+  }
+  unique_ptr<TxnSystemClient> txn_client;
+  ASSERT_OK(TxnSystemClient::Create(master_addrs, &txn_client));
+  ASSERT_OK(txn_client->CreateTxnStatusTable(100, kNumTabletServers));
+  ASSERT_OK(txn_client->OpenTxnStatusTable());
+
+  vector<unique_ptr<ScopedResumeExternalDaemon>> resumers;
+  for (int i = 0; i < kNumTabletServers; i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    ASSERT_OK(cluster_->tablet_server(i)->Pause());
+    resumers.emplace_back(new ScopedResumeExternalDaemon(ts));
+  }
+
+  // Resume a random majority so the system client can proceed.
+  thread resume_thread([&]() {
+    const int idx0 = rand() % kNumTabletServers;
+    unique_ptr<ScopedResumeExternalDaemon> r0(resumers[idx0].release());
+    const int idx1 = (idx0 + 1) % kNumTabletServers;
+    unique_ptr<ScopedResumeExternalDaemon> r1(resumers[idx1].release());
+    SleepFor(MonoDelta::FromSeconds(1));
+  });
+  SCOPED_CLEANUP({
+    resume_thread.join();
+  });
+
+  for (int i = 1; i < 10; i++) {
+    ASSERT_OK(txn_client->BeginTransaction(i, "bob"));
   }
 }
 

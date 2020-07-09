@@ -36,6 +36,7 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/transactions/transactions.pb.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -43,6 +44,7 @@
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TabletReplicaTestBase;
+using kudu::tserver::TabletServerErrorPB;
 using std::ostream;
 using std::string;
 using std::thread;
@@ -135,23 +137,24 @@ class TxnStatusTabletTest : public TabletReplicaTestBase {
 };
 
 TEST_F(TxnStatusTabletTest, TestWriteTransactions) {
+  TabletServerErrorPB ts_error;
   // We can make multiple calls to add a single transaction. This will only
   // insert a single row to the table.
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner));
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
 
   // The storage abstraction doesn't prevent us from writing a new transaction
   // entry for a lower transaction ID.
-  ASSERT_OK(status_tablet_->AddNewTransaction(5, kOwner));
-  ASSERT_OK(status_tablet_->AddNewTransaction(2, kOwner));
+  ASSERT_OK(status_tablet_->AddNewTransaction(5, kOwner, &ts_error));
+  ASSERT_OK(status_tablet_->AddNewTransaction(2, kOwner, &ts_error));
 
   // Also try updating the status of one of our transaction entries.
   TxnStatusEntryPB status_entry_pb;
   status_entry_pb.set_user(kOwner);
   status_entry_pb.set_state(TxnStatePB::ABORTED);
-  ASSERT_OK(status_tablet_->UpdateTransaction(2, status_entry_pb));
+  ASSERT_OK(status_tablet_->UpdateTransaction(2, status_entry_pb, &ts_error));
   status_entry_pb.set_state(TxnStatePB::COMMITTED);
-  ASSERT_OK(status_tablet_->UpdateTransaction(2, status_entry_pb));
+  ASSERT_OK(status_tablet_->UpdateTransaction(2, status_entry_pb, &ts_error));
 
   // The stored entries should be sorted, de-duplicated, and have the latest
   // values.
@@ -169,22 +172,23 @@ TEST_F(TxnStatusTabletTest, TestWriteTransactions) {
 }
 
 TEST_F(TxnStatusTabletTest, TestWriteParticipants) {
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner));
+  TabletServerErrorPB ts_error;
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
 
   // Participants will be de-duplicated.
-  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1)));
-  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1)));
+  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1), &ts_error));
+  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1), &ts_error));
 
   // There aren't ordering constraints for registering participant IDs.
-  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(5)));
-  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(2)));
+  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(5), &ts_error));
+  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(2), &ts_error));
 
   // Try updating the status of one of our participant entries.
   TxnParticipantEntryPB prt_entry_pb;
   prt_entry_pb.set_state(TxnStatePB::ABORTED);
-  ASSERT_OK(status_tablet_->UpdateParticipant(1, ParticipantId(2), prt_entry_pb));
+  ASSERT_OK(status_tablet_->UpdateParticipant(1, ParticipantId(2), prt_entry_pb, &ts_error));
   prt_entry_pb.set_state(TxnStatePB::COMMITTED);
-  ASSERT_OK(status_tablet_->UpdateParticipant(1, ParticipantId(2), prt_entry_pb));
+  ASSERT_OK(status_tablet_->UpdateParticipant(1, ParticipantId(2), prt_entry_pb, &ts_error));
 
   const vector<SimpleEntry> kExpectedEntries({
       SimpleEntry::Create(1, kOwner, TxnStatePB::OPEN, {
@@ -202,18 +206,19 @@ TEST_F(TxnStatusTabletTest, TestWriteParticipants) {
 // Test that a participant entry can't be visited without a corresponding
 // status entry.
 TEST_F(TxnStatusTabletTest, TestFailedVisitor) {
-  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1)));
+  TabletServerErrorPB ts_error;
+  ASSERT_OK(status_tablet_->AddNewParticipant(1, ParticipantId(1), &ts_error));
   SimpleTransactionsVisitor visitor;
   Status s = status_tablet_->VisitTransactions(&visitor);
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "missing transaction status entry");
 
   // Now try again but with the transaction ID written.
-  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner));
+  ASSERT_OK(status_tablet_->AddNewTransaction(1, kOwner, &ts_error));
   ASSERT_OK(status_tablet_->VisitTransactions(&visitor));
 
   // And again with a new transaction ID.
-  ASSERT_OK(status_tablet_->AddNewParticipant(2, ParticipantId(2)));
+  ASSERT_OK(status_tablet_->AddNewParticipant(2, ParticipantId(2), &ts_error));
   s = status_tablet_->VisitTransactions(&visitor);
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "missing transaction status entry");
@@ -238,9 +243,10 @@ TEST_F(TxnStatusTabletTest, TestMultithreadedAccess) {
   // storing any errors we see.
   for (int i = 0; i < kNumThreads; i++) {
     threads.emplace_back([&, i] {
-      RET_IF_NOT_OK(status_tablet_->AddNewTransaction(i, kOwner));
+      TabletServerErrorPB ts_error;
+      RET_IF_NOT_OK(status_tablet_->AddNewTransaction(i, kOwner, &ts_error));
       for (int p = 0; p < kNumParticipantsPerTransaction; p++) {
-        RET_IF_NOT_OK(status_tablet_->AddNewParticipant(i, Substitute("prt-$0", p)));
+        RET_IF_NOT_OK(status_tablet_->AddNewParticipant(i, Substitute("prt-$0", p), &ts_error));
       }
     });
   }

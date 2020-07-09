@@ -48,6 +48,7 @@
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -66,6 +67,7 @@ using kudu::master::TabletLocationsPB;
 using kudu::master::TSInfoPB;
 using kudu::rpc::BackoffType;
 using kudu::rpc::CredentialsPolicy;
+using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
 using std::set;
 using std::shared_ptr;
@@ -117,6 +119,8 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
   {
     std::lock_guard<simple_spinlock> l(lock_);
     proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
+    admin_proxy_.reset(
+        new TabletServerAdminServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
     proxy_->set_user_credentials(client->data_->user_credentials_);
   }
   user_callback(s);
@@ -196,6 +200,12 @@ shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK(proxy_);
   return proxy_;
+}
+
+shared_ptr<TabletServerAdminServiceProxy> RemoteTabletServer::admin_proxy() {
+  std::lock_guard<simple_spinlock> l(lock_);
+  DCHECK(admin_proxy_);
+  return admin_proxy_;
 }
 
 string RemoteTabletServer::ToString() const {

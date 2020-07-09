@@ -40,6 +40,7 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/txn_coordinator.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/util/barrier.h"
@@ -55,6 +56,7 @@
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tablet::TabletReplicaTestBase;
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -101,27 +103,28 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
 
   ASSERT_TRUE(txn_manager_->GetParticipantsByTxnIdForTests().empty());
 
+  TabletServerErrorPB ts_error;
   for (const auto& txn_id_and_prts : expected_prts_by_txn_id) {
     const auto& txn_id = txn_id_and_prts.first;
-    ASSERT_OK(txn_manager_->BeginTransaction(txn_id, kOwner));
+    ASSERT_OK(txn_manager_->BeginTransaction(txn_id, kOwner, &ts_error));
     for (const auto& prt : txn_id_and_prts.second) {
-      ASSERT_OK(txn_manager_->RegisterParticipant(txn_id, prt, kOwner));
+      ASSERT_OK(txn_manager_->RegisterParticipant(txn_id, prt, kOwner, &ts_error));
     }
   }
   // Registering a participant that's already open is harmless, presuming the
   // participant is still open.
-  ASSERT_OK(txn_manager_->RegisterParticipant(3, kParticipant1, kOwner));
+  ASSERT_OK(txn_manager_->RegisterParticipant(3, kParticipant1, kOwner, &ts_error));
 
   // Starting a transaction that's already been started should result in an
   // error, even if it's not currently in flight.
-  Status s = txn_manager_->BeginTransaction(1, kOwner);
+  Status s = txn_manager_->BeginTransaction(1, kOwner, &ts_error);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  s = txn_manager_->BeginTransaction(2, kOwner);
+  s = txn_manager_->BeginTransaction(2, kOwner, &ts_error);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
   // Registering participants to transactions that don't exist should also
   // result in errors.
-  s = txn_manager_->RegisterParticipant(2, kParticipant1, kOwner);
+  s = txn_manager_->RegisterParticipant(2, kParticipant1, kOwner, &ts_error);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // The underlying participants map should only reflect the successful
@@ -183,7 +186,8 @@ TEST_F(TxnStatusManagerTest, TestStartTransactionsConcurrently) {
         // time.
         barriers[b]->Wait();
         auto txn_id = txns_to_insert[b][i];
-        Status s = txn_manager_->BeginTransaction(txn_id, kOwner);
+        TabletServerErrorPB ts_error;
+        Status s = txn_manager_->BeginTransaction(txn_id, kOwner, &ts_error);
         if (s.ok()) {
           std::lock_guard<simple_spinlock> l(lock);
           successful_txn_ids.emplace_back(txn_id);
@@ -220,7 +224,8 @@ TEST_F(TxnStatusManagerTest, TestRegisterParticipantsConcurrently) {
   CountDownLatch begun_txn(1);
   threads.reserve(1 + kParticipantsInParallel);
   threads.emplace_back([&] {
-    CHECK_OK(txn_manager_->BeginTransaction(kTxnId, kOwner));
+    TabletServerErrorPB ts_error;
+    CHECK_OK(txn_manager_->BeginTransaction(kTxnId, kOwner, &ts_error));
     begun_txn.CountDown();
   });
 
@@ -234,7 +239,8 @@ TEST_F(TxnStatusManagerTest, TestRegisterParticipantsConcurrently) {
         begun_txn.Wait();
       }
       string prt = ParticipantId(i % kUniqueParticipantIds);
-      Status s = txn_manager_->RegisterParticipant(kTxnId, prt, kOwner);
+      TabletServerErrorPB ts_error;
+      Status s = txn_manager_->RegisterParticipant(kTxnId, prt, kOwner, &ts_error);
       if (s.ok()) {
         std::lock_guard<simple_spinlock> l(lock);
         successful_participants.emplace_back(std::move(prt));
@@ -267,7 +273,8 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
   const int kNumTransactions = 10;
   const int kNumUpdatesInParallel = 20;
   for (int i = 0; i < kNumTransactions; i++) {
-    ASSERT_OK(txn_manager_->BeginTransaction(i, kOwner));
+    TabletServerErrorPB ts_error;
+    ASSERT_OK(txn_manager_->BeginTransaction(i, kOwner, &ts_error));
   }
   typedef std::pair<int64_t, TxnStatePB> IdAndUpdate;
   vector<IdAndUpdate> all_updates;
@@ -286,12 +293,13 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
   for (int i = 0; i < kNumUpdatesInParallel; i++) {
     threads.emplace_back([&, i] {
       const auto& txn_id = updates[i].first;
+      TabletServerErrorPB ts_error;
       switch (updates[i].second) {
         case TxnStatePB::ABORTED:
-          statuses[i] = txn_manager_->AbortTransaction(txn_id, kOwner);
+          statuses[i] = txn_manager_->AbortTransaction(txn_id, kOwner, &ts_error);
           break;
         case TxnStatePB::COMMIT_IN_PROGRESS:
-          statuses[i] = txn_manager_->BeginCommitTransaction(txn_id, kOwner);
+          statuses[i] = txn_manager_->BeginCommitTransaction(txn_id, kOwner, &ts_error);
           break;
         case TxnStatePB::COMMITTED:
           statuses[i] = txn_manager_->FinalizeCommitTransaction(txn_id);
@@ -345,22 +353,23 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
 // Test that performing actions as the wrong user will return errors.
 TEST_F(TxnStatusManagerTest, TestWrongUser) {
   const string kWrongUser = "stranger";
-  ASSERT_OK(txn_manager_->BeginTransaction(1, kOwner));
-  ASSERT_OK(txn_manager_->RegisterParticipant(1, ParticipantId(1), kOwner));
+  TabletServerErrorPB ts_error;
+  ASSERT_OK(txn_manager_->BeginTransaction(1, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->RegisterParticipant(1, ParticipantId(1), kOwner, &ts_error));
 
   // First, any other call to begin the transaction should be rejected,
   // regardless of user.
-  Status s = txn_manager_->BeginTransaction(1, kWrongUser);
+  Status s = txn_manager_->BeginTransaction(1, kWrongUser, &ts_error);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 
   // All actions should be rejected if performed by the wrong user.
-  s = txn_manager_->RegisterParticipant(1, ParticipantId(1), kWrongUser);
+  s = txn_manager_->RegisterParticipant(1, ParticipantId(1), kWrongUser, &ts_error);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  s = txn_manager_->RegisterParticipant(1, ParticipantId(2), kWrongUser);
+  s = txn_manager_->RegisterParticipant(1, ParticipantId(2), kWrongUser, &ts_error);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  s = txn_manager_->BeginCommitTransaction(1, kWrongUser);
+  s = txn_manager_->BeginCommitTransaction(1, kWrongUser, &ts_error);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  s = txn_manager_->AbortTransaction(1, kWrongUser);
+  s = txn_manager_->AbortTransaction(1, kWrongUser, &ts_error);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ParticipantIdsByTxnId prts_by_txn_id = txn_manager_->GetParticipantsByTxnIdForTests();
   ParticipantIdsByTxnId kExpectedPrtsByTxnId = { { 1, { ParticipantId(1) } } };
@@ -371,30 +380,31 @@ TEST_F(TxnStatusManagerTest, TestWrongUser) {
 // appropriate state.
 TEST_F(TxnStatusManagerTest, TestUpdateTransactionState) {
   const int64_t kTxnId1 = 1;
-  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId1, kOwner));
+  TabletServerErrorPB ts_error;
+  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId1, kOwner, &ts_error));
 
   // Redundant calls are benign.
-  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner));
-  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner));
-  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId1, kOwner));
-  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId1, kOwner));
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId1, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId1, kOwner, &ts_error));
 
   // We can't begin or finalize a commit if we've aborted.
-  Status s = txn_manager_->BeginCommitTransaction(kTxnId1, kOwner);
+  Status s = txn_manager_->BeginCommitTransaction(kTxnId1, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   s = txn_manager_->FinalizeCommitTransaction(kTxnId1);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't finalize a commit that hasn't begun committing.
   const int64_t kTxnId2 = 2;
-  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId2, kOwner));
+  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId2, kOwner, &ts_error));
   s = txn_manager_->FinalizeCommitTransaction(kTxnId2);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't abort a transaction that has finished committing.
-  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId2, kOwner));
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId2, kOwner, &ts_error));
   ASSERT_OK(txn_manager_->FinalizeCommitTransaction(kTxnId2));
-  s = txn_manager_->AbortTransaction(kTxnId2, kOwner);
+  s = txn_manager_->AbortTransaction(kTxnId2, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // Redundant finalize calls are also benign.
@@ -402,41 +412,42 @@ TEST_F(TxnStatusManagerTest, TestUpdateTransactionState) {
 
   // Calls to begin committing should return an error if we've already
   // finalized the commit.
-  s = txn_manager_->BeginCommitTransaction(kTxnId2, kOwner);
+  s = txn_manager_->BeginCommitTransaction(kTxnId2, kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 }
 
 // Test that we can only add participants to a transaction when it's in an
 // appropriate state.
 TEST_F(TxnStatusManagerTest, TestRegisterParticipantsWithStates) {
+  TabletServerErrorPB ts_error;
   const int64_t kTxnId1 = 1;
 
   // We can't register a participant to a transaction that hasn't started.
-  Status s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner);
+  Status s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner, &ts_error);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
-  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId1, kOwner));
-  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner));
+  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId1, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner, &ts_error));
 
   // Registering the same participant is idempotent and benign.
-  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner));
+  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(1), kOwner, &ts_error));
 
   // We can't register participants when we've already begun committing.
-  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner));
-  s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(2), kOwner);
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(kTxnId1, kOwner, &ts_error));
+  s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(2), kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't register participants when we've finished committnig.
   ASSERT_OK(txn_manager_->FinalizeCommitTransaction(kTxnId1));
-  s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(2), kOwner);
+  s = txn_manager_->RegisterParticipant(kTxnId1, ParticipantId(2), kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // We can't register participants when we've aborted the transaction.
   const int64_t kTxnId2 = 2;
-  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId2, kOwner));
-  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId2, ParticipantId(1), kOwner));
-  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId2, kOwner));
-  s = txn_manager_->RegisterParticipant(kTxnId2, ParticipantId(2), kOwner);
+  ASSERT_OK(txn_manager_->BeginTransaction(kTxnId2, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->RegisterParticipant(kTxnId2, ParticipantId(1), kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->AbortTransaction(kTxnId2, kOwner, &ts_error));
+  s = txn_manager_->RegisterParticipant(kTxnId2, ParticipantId(2), kOwner, &ts_error);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 }
 

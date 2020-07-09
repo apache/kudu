@@ -55,6 +55,7 @@
 using kudu::tablet::LatchOpCompletionCallback;
 using kudu::tablet::OpCompletionCallback;
 using kudu::tablet::WriteOpState;
+using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;;
 using std::string;
@@ -295,7 +296,8 @@ Status TxnStatusTablet::VisitTransactions(TransactionsVisitor* visitor) {
   return Status::OK();
 }
 
-Status TxnStatusTablet::AddNewTransaction(int64_t txn_id, const string& user) {
+Status TxnStatusTablet::AddNewTransaction(int64_t txn_id, const string& user,
+                                          TabletServerErrorPB* ts_error) {
   WriteRequestPB req = BuildWriteReqPB(tablet_replica_->tablet_id());
 
   TxnStatusEntryPB entry;
@@ -308,10 +310,11 @@ Status TxnStatusTablet::AddNewTransaction(int64_t txn_id, const string& user) {
   RETURN_NOT_OK(PopulateTransactionEntryRow(txn_id, metadata_buf, &row));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT_IGNORE, row);
-  return SyncWrite(req);
+  return SyncWrite(req, ts_error);
 }
 
-Status TxnStatusTablet::UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB& pb) {
+Status TxnStatusTablet::UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB& pb,
+                                          TabletServerErrorPB* ts_error) {
   WriteRequestPB req = BuildWriteReqPB(tablet_replica_->tablet_id());
 
   faststring metadata_buf;
@@ -321,10 +324,11 @@ Status TxnStatusTablet::UpdateTransaction(int64_t txn_id, const TxnStatusEntryPB
   RETURN_NOT_OK(PopulateTransactionEntryRow(txn_id, metadata_buf, &row));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::UPDATE, row);
-  return SyncWrite(req);
+  return SyncWrite(req, ts_error);
 }
 
-Status TxnStatusTablet::AddNewParticipant(int64_t txn_id, const string& tablet_id) {
+Status TxnStatusTablet::AddNewParticipant(int64_t txn_id, const string& tablet_id,
+                                          TabletServerErrorPB* ts_error) {
   WriteRequestPB req = BuildWriteReqPB(tablet_replica_->tablet_id());
 
   TxnParticipantEntryPB entry;
@@ -336,11 +340,12 @@ Status TxnStatusTablet::AddNewParticipant(int64_t txn_id, const string& tablet_i
   PopulateParticipantEntryRow(txn_id, tablet_id, metadata_buf, &row);
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT_IGNORE, row);
-  return SyncWrite(req);
+  return SyncWrite(req, ts_error);
 }
 
 Status TxnStatusTablet::UpdateParticipant(int64_t txn_id, const string& tablet_id,
-                                          const TxnParticipantEntryPB& pb) {
+                                          const TxnParticipantEntryPB& pb,
+                                          TabletServerErrorPB* ts_error) {
   WriteRequestPB req = BuildWriteReqPB(tablet_replica_->tablet_id());
 
   faststring metadata_buf;
@@ -350,10 +355,10 @@ Status TxnStatusTablet::UpdateParticipant(int64_t txn_id, const string& tablet_i
   RETURN_NOT_OK(PopulateParticipantEntryRow(txn_id, tablet_id, metadata_buf, &row));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::UPDATE, row);
-  return SyncWrite(req);
+  return SyncWrite(req, ts_error);
 }
 
-Status TxnStatusTablet::SyncWrite(const WriteRequestPB& req) {
+Status TxnStatusTablet::SyncWrite(const WriteRequestPB& req, TabletServerErrorPB* ts_error) {
   DCHECK(req.has_tablet_id());
   DCHECK(req.has_schema());
   CountDownLatch latch(1);
@@ -369,7 +374,9 @@ Status TxnStatusTablet::SyncWrite(const WriteRequestPB& req) {
   RETURN_NOT_OK(tablet_replica_->SubmitWrite(std::move(op_state)));
   latch.Wait();
   if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
+    DCHECK(ts_error);
+    *ts_error = std::move(resp.error());
+    return StatusFromPB(ts_error->status());
   }
   if (resp.per_row_errors_size() > 0) {
     for (const auto& error : resp.per_row_errors()) {
