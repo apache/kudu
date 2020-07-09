@@ -33,7 +33,7 @@ NOTE: Read more about Kubernetes here https://kubernetes.io/docs/tutorials/kuber
 
 ==== Build Kudu Docker Image
 
-    ../../docker/docker-build.sh
+    ../../docker/docker-build.py
 
 ==== Creating Namespace
 

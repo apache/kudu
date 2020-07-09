@@ -30,8 +30,11 @@ NOTE: These sample commands assume running from the project root directory.
 Build all the images for the default OS:
 [source,bash]
 ----
-$ ./docker/docker-build.sh
+$ ./docker/docker-build.py
 ----
+
+NOTE: You can pass `--help` to the build script to see usage details and
+all the available parameters.
 
 == Running an image
 
