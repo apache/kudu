@@ -96,7 +96,7 @@ struct CompileAssert {
 #ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&) = delete;      \
-  void operator=(const TypeName&) = delete
+  TypeName& operator=(const TypeName&) = delete
 #endif
 
 // An older, politically incorrect name for the above.
