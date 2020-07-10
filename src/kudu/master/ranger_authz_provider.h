@@ -81,6 +81,10 @@ class RangerAuthzProvider : public AuthzProvider {
                               const SchemaPB& schema_pb,
                               security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT;
 
+  Status AuthorizeChangeOwner(const std::string& table_name,
+                              const std::string& user,
+                              bool is_owner) override WARN_UNUSED_RESULT;
+
   Status RefreshPolicies() override WARN_UNUSED_RESULT;
 
   // Returns true if 'ranger_policy_server' flag is set indicating Ranger

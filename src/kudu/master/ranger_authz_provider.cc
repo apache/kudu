@@ -345,6 +345,30 @@ Status RangerAuthzProvider::RefreshPolicies() {
   return client_.RefreshPolicies();
 }
 
+Status RangerAuthzProvider::AuthorizeChangeOwner(const string& table_name,
+                                                 const string& user,
+                                                 bool is_owner) {
+  if (IsTrustedUser(user)) {
+    return Status::OK();
+  }
+
+  string db;
+  string tbl;
+
+  RETURN_NOT_OK(ParseTableIdentifier(table_name, &db, &tbl));
+
+  bool authorized;
+  RETURN_NOT_OK(client_.AuthorizeAction(user, ActionPB::ALL, db, tbl, is_owner,
+                                        /*requires_delegate_admin=*/true, &authorized));
+
+  if (PREDICT_FALSE(!authorized)) {
+    LOG(WARNING) << Substitute("User $0 is not authorized to change owner of $1", user, table_name);
+    return Status::NotAuthorized(kUnauthorizedAction);
+  }
+
+  return Status::OK();
+}
+
 bool RangerAuthzProvider::IsEnabled() {
   return !FLAGS_ranger_config_path.empty();
 }

@@ -190,6 +190,14 @@ class MasterAuthzITestHarness {
     return alterer->DropColumn("int32_val")->Alter();
   }
 
+  static Status ChangeOwner(const OperationParams& p,
+                            const shared_ptr<KuduClient>& client) {
+    unique_ptr<KuduTableAlterer> alterer(
+        client->NewTableAlterer(p.table_name));
+
+    return alterer->SetOwner(kTestUser)->Alter();
+  }
+
   static Status IsAlterTableDone(const OperationParams& p,
                                  const shared_ptr<KuduClient>& client) {
     bool in_progress = false;
@@ -328,6 +336,9 @@ class MasterAuthzITestHarness {
                                          const unique_ptr<ExternalMiniCluster>& cluster) = 0;
   virtual Status GrantAlterTablePrivilege(const PrivilegeParams& p,
                                           const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantAlterWithGrantTablePrivilege(
+      const PrivilegeParams& p,
+      const unique_ptr<ExternalMiniCluster>& cluster) = 0;
   virtual Status GrantRenameTablePrivilege(const PrivilegeParams& p,
                                            const unique_ptr<ExternalMiniCluster>& cluster) = 0;
   virtual Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p,
@@ -407,6 +418,17 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALTER}, false));
+    RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
+    return RefreshAuthzPolicies(cluster);
+  }
+
+  Status GrantAlterWithGrantTablePrivilege(
+      const PrivilegeParams& p,
+      const unique_ptr<ExternalMiniCluster>& cluster) override {
+    AuthorizationPolicy policy;
+    policy.databases.emplace_back(p.db_name);
+    policy.tables.emplace_back(p.table_name);
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALTER}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -604,6 +626,10 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
     return harness_->GrantGetMetadataTablePrivilege(p, cluster_);
   }
 
+  Status GrantAlterWithGrantTablePrivilege(const PrivilegeParams& p) {
+    return harness_->GrantAlterWithGrantTablePrivilege(p, cluster_);
+  }
+
   Status GrantAllTablePrivilege(const PrivilegeParams& p) {
     return harness_->GrantAllTablePrivilege(p, cluster_);
   }
@@ -642,6 +668,10 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
 
   Status IsAlterTableDone(const OperationParams& p) {
     return harness_->IsAlterTableDone(p, client_);
+  }
+
+  Status ChangeOwner(const OperationParams& p) {
+    return harness_->ChangeOwner(p, client_);
   }
 
   Status RenameTable(const OperationParams& p) {
@@ -889,6 +919,37 @@ TEST_P(MasterAuthzITest, TestAuthzGiveAwayOwnership) {
   }
 }
 
+TEST_P(MasterAuthzITest, TestChangeOwnerWithoutDelegateAdmin) {
+  this->GrantAllDatabasePrivilege({kDatabaseName, kTableName});
+  const string table_name = Substitute("$0.$1", kDatabaseName, kTableName);
+
+  unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
+  Status s = alterer->SetOwner(kSecondUser)->Alter();
+  ASSERT_TRUE(s.IsNotAuthorized());
+}
+
+TEST_P(MasterAuthzITest, TestChangeOwnerWithoutAll) {
+  this->GrantAlterWithGrantTablePrivilege({kDatabaseName, kTableName});
+  const string table_name = Substitute("$0.$1", kDatabaseName, kTableName);
+
+  unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
+  Status s = alterer->SetOwner(kSecondUser)->Alter();
+  ASSERT_TRUE(s.IsNotAuthorized());
+}
+
+TEST_P(MasterAuthzITest, TestAlterAndChangeOwner) {
+  this->GrantAlterTablePrivilege({kDatabaseName, kTableName});
+  const string table_name = Substitute("$0.$1", kDatabaseName, kTableName);
+
+  unique_ptr<KuduTableAlterer> alterer(this->client_->NewTableAlterer(table_name));
+  alterer->SetOwner(kSecondUser)->DropColumn("int8_val");
+  Status s = alterer->Alter();
+  ASSERT_TRUE(s.IsNotAuthorized());
+
+  this->GrantAllWithGrantTablePrivilege({kDatabaseName, kTableName});
+  ASSERT_OK(alterer->Alter());
+}
+
 class MasterAuthzOwnerITest : public MasterAuthzITestBase,
                               public ::testing::WithParamInterface<std::tuple<HarnessEnum,
                                                                               std::string>> {
@@ -1112,6 +1173,15 @@ static const AuthzDescriptor kAuthzCombinations[] = {
       kDatabaseName,
       kTableName,
       ""
+    },
+    {
+      {
+        &MasterAuthzITestBase::ChangeOwner,
+        &MasterAuthzITestBase::GrantAllWithGrantTablePrivilege,
+        "ChangeOwner",
+      },
+      kDatabaseName,
+      kTableName,
     },
 };
 INSTANTIATE_TEST_CASE_P(

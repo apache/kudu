@@ -78,6 +78,12 @@ class DefaultAuthzProvider : public AuthzProvider {
     return Status::OK();
   }
 
+  Status AuthorizeChangeOwner(const std::string& /*table_name*/,
+                              const std::string& /*user*/,
+                              bool /*is_owner*/) override WARN_UNUSED_RESULT {
+    return Status::OK();
+  }
+
   Status FillTablePrivilegePB(const std::string& /*table_name*/,
                               const std::string& /*user*/,
                               bool /*is_owner*/,

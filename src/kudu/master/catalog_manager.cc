@@ -2612,10 +2612,19 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                          const string& owner) {
     const string new_table = req.has_new_table_name() ?
         NormalizeTableName(req.new_table_name()) : table_name;
+    // Change owner requires higher level of privilege (ALL WITH GRANT OPTION,
+    // or ALL + delegate admin) than other types of alter operations, so if a
+    // single alter contains an owner change as well as other changes, it's
+    // sufficient to authorize only the owner change.
+    if (req.has_new_table_owner()) {
+      return SetupError(authz_provider_->AuthorizeChangeOwner(table_name, username,
+                                                              username == owner),
+                        resp, MasterErrorPB::NOT_AUTHORIZED);
+    }
+
     return SetupError(authz_provider_->AuthorizeAlterTable(table_name, new_table, username,
                                                            username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
-
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::WRITE, authz_func, user,
                                           &table, &l));
@@ -2701,7 +2710,6 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   });
 
   // 5. Alter the table owner.
-  // TODO(abukor): Only the owner (or superuser) can alter the owner?
   if (req.has_new_table_owner()) {
     RETURN_NOT_OK(SetupError(
           ValidateOwner(req.new_table_owner()).CloneAndAppend("invalid owner name"),

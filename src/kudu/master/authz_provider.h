@@ -33,7 +33,6 @@ class TablePrivilegePB;
 } // namespace security
 
 namespace master {
-
 // An interface for handling authorizations on Kudu operations.
 class AuthzProvider {
  public:
@@ -112,6 +111,15 @@ class AuthzProvider {
                                       bool is_owner,
                                       const SchemaPB& schema_pb,
                                       security::TablePrivilegePB* pb) WARN_UNUSED_RESULT = 0;
+
+  // Checks if changing the owner of the table is authorized for the given user.
+  // 'is_owner' indicates whether 'user' is the current owner of the table.
+  //
+  // If the operation is not authorized, returns Status::NotAuthorized().
+  // Otherwise, may return other Status error codes depend on actual errors.
+  virtual Status AuthorizeChangeOwner(const std::string& table_name,
+                                      const std::string& user,
+                                      bool is_owner) WARN_UNUSED_RESULT = 0;
 
   // Refreshes policies in the authorization provider plugin.
   virtual Status RefreshPolicies() WARN_UNUSED_RESULT = 0;
