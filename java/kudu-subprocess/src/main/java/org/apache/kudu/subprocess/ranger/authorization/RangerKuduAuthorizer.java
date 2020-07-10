@@ -101,7 +101,7 @@ public class RangerKuduAuthorizer {
    * @return a list of RangerAccessResult
    */
   @VisibleForTesting
-  public Ranger.RangerResponseListPB authorize(RangerRequestListPB requests) {
+  public Ranger.RangerResponseListPB.Builder authorize(RangerRequestListPB requests) {
     if (!requests.hasUser() || requests.getUser().isEmpty()) {
       Ranger.RangerResponseListPB.Builder rangerResponseListPB = Ranger.RangerResponseListPB
           .newBuilder();
@@ -112,9 +112,22 @@ public class RangerKuduAuthorizer {
             .build();
         rangerResponseListPB.addResponses(response);
       }
-      return rangerResponseListPB.build();
+      return rangerResponseListPB;
     }
     return authorizeRequests(requests);
+  }
+
+  /**
+   * Refreshes the policies cached in the authorization provider on a best-effort basis. It
+   * doesn't guarantee invalidating the cache or that the latest policies could be pulled from
+   * the server and doesn't throw exceptions even if the server couldn't be reached.
+   *
+   * TODO(abukor): Revisit if RANGER-2906 is fixed.
+   */
+  public void refreshPolicies() {
+    LOG.debug("Refreshing policies...");
+    plugin.refreshPoliciesAndTags();
+    LOG.debug("Refreshing policies... DONE");
   }
 
   /**
@@ -156,7 +169,7 @@ public class RangerKuduAuthorizer {
    * @param requests the given RangerRequestListPB
    * @return a list of RangerAccessRequest
    */
-  private Ranger.RangerResponseListPB authorizeRequests(RangerRequestListPB requests) {
+  private Ranger.RangerResponseListPB.Builder authorizeRequests(RangerRequestListPB requests) {
     Ranger.RangerResponseListPB.Builder rangerResponseList = Ranger.RangerResponseListPB
         .newBuilder();
     Preconditions.checkArgument(requests.hasUser());
@@ -193,7 +206,7 @@ public class RangerKuduAuthorizer {
 
       rangerResponseList.addResponses(rangerResponsePB);
     }
-    return rangerResponseList.build();
+    return rangerResponseList;
   }
 
   /**

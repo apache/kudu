@@ -333,6 +333,10 @@ Status RangerAuthzProvider::FillTablePrivilegePB(const string& table_name,
   return Status::OK();
 }
 
+Status RangerAuthzProvider::RefreshPolicies() {
+  return client_.RefreshPolicies();
+}
+
 bool RangerAuthzProvider::IsEnabled() {
   return !FLAGS_ranger_config_path.empty();
 }

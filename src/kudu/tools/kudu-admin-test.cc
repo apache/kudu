@@ -52,6 +52,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -2202,6 +2203,65 @@ TEST_F(AdminCliTest, TestDumpMemTrackers) {
   const string tablet_tracker_id = Substitute("tablet-$0", tablet_id);
   ASSERT_STR_CONTAINS(stdout, Substitute("\"id\":\"$0\"", tablet_tracker_id));
   ASSERT_STR_CONTAINS(stdout, Substitute("\"parent_id\":\"$0\"", tablet_tracker_id));
+}
+
+TEST_F(AdminCliTest, TestAuthzResetCacheIncorrectMasterAddressList) {
+  NO_FATALS(BuildAndStart());
+
+  const auto& master_addr = cluster_->master()->bound_rpc_hostport().ToString();
+  const vector<string> dup_master_addresses = { master_addr, master_addr, };
+  const auto& dup_master_addresses_str = JoinStrings(dup_master_addresses, ",");
+  string out;
+  string err;
+  Status s;
+
+  s = RunKuduTool({
+    "master",
+    "authz_cache",
+    "refresh",
+    dup_master_addresses_str,
+  }, &out, &err);
+  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
+
+  const auto ref_err_msg = Substitute(
+      "Invalid argument: list of master addresses provided ($0) "
+      "does not match the actual cluster configuration ($1)",
+      dup_master_addresses_str, master_addr);
+  ASSERT_STR_CONTAINS(err, ref_err_msg);
+
+  // However, the '--force' option makes it possible to run the tool even
+  // if the specified list of master addresses does not match the actual
+  // list of master addresses in the cluster.
+  out.clear();
+  err.clear();
+  ASSERT_OK(RunKuduTool({
+    "master",
+    "authz_cache",
+    "refresh",
+    "--force",
+    dup_master_addresses_str,
+  }, &out, &err));
+}
+
+TEST_F(AdminCliTest, TestAuthzResetCacheNotAuthorized) {
+  vector<string> master_flags{ "--superuser_acl=no-such-user" };
+  NO_FATALS(BuildAndStart({}, master_flags));
+
+  // The tool should report an error: it's not possible to reset the cache
+  // since the OS user under which the tools is invoked is not a superuser/admin
+  // (the --superuser_acl flag is set to contain a non-existent user only).
+  string out;
+  string err;
+  Status s = RunKuduTool({
+    "master",
+    "authz_cache",
+    "refresh",
+    cluster_->master()->bound_rpc_hostport().ToString(),
+  }, &out, &err);
+  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
+  ASSERT_STR_CONTAINS(err,
+      "Remote error: Not authorized: unauthorized access to method: "
+      "RefreshAuthzCache");
 }
 
 TEST_F(AdminCliTest, TestExtraConfig) {

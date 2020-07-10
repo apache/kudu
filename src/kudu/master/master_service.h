@@ -71,6 +71,8 @@ class PingRequestPB;
 class PingResponsePB;
 class ReplaceTabletRequestPB;
 class ReplaceTabletResponsePB;
+class RefreshAuthzCacheRequestPB;
+class RefreshAuthzCacheResponsePB;
 class TSHeartbeatRequestPB;
 class TSHeartbeatResponsePB;
 
@@ -169,6 +171,10 @@ class MasterServiceImpl : public MasterServiceIf {
   void ReplaceTablet(const ReplaceTabletRequestPB* req,
                      ReplaceTabletResponsePB* resp,
                      rpc::RpcContext* rpc) override;
+
+  void RefreshAuthzCache(const RefreshAuthzCacheRequestPB* req,
+                         RefreshAuthzCacheResponsePB* resp,
+                         rpc::RpcContext* rpc) override;
 
   bool SupportsFeature(uint32_t feature) const override;
 

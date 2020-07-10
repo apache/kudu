@@ -78,6 +78,16 @@ message RangerResponsePB {
   optional bool allowed = 1;
 }
 
+message RangerControlRequestPB {
+  optional bool refresh_policies = 1;
+}
+
+message RangerControlResponsePB {
+  optional bool success = 1;
+
+  optional string error = 2;
+}
+
 // Describes a list of authorization requests sent to the Ranger service
 // for a single user.
 message RangerRequestListPB {
@@ -85,6 +95,8 @@ message RangerRequestListPB {
 
   // User performing the action.
   optional string user = 2;
+
+  optional RangerControlRequestPB control_request = 3;
 }
 
 // Describes a list of authorization descison responded from the Ranger
@@ -92,4 +104,6 @@ message RangerRequestListPB {
 // responses is determined by the order of requests in RangerRequestListPB.
 message RangerResponseListPB {
   repeated RangerResponsePB responses = 1;
+
+  optional RangerControlResponsePB control_response = 2;
 }

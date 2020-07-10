@@ -103,11 +103,10 @@ public class TestRangerSubprocess extends SubprocessTestUtil {
     final SubprocessRequestPB subprocessRequest = createRangerSubprocessRequest(requestList);
 
     // Mock the authorization results.
-    RangerResponseListPB responseListPB = RangerResponseListPB.newBuilder()
+    RangerResponseListPB.Builder responseListPB = RangerResponseListPB.newBuilder()
         .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(true).build())
         .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(false).build())
-        .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(true).build())
-        .build();
+        .addResponses(Ranger.RangerResponsePB.newBuilder().setAllowed(true).build());
     Mockito.when(RangerProtocolHandler.authz.authorize(requestList))
            .thenReturn(responseListPB);
 

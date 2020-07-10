@@ -945,6 +945,15 @@ message ReplaceTabletResponsePB {
   optional bytes replacement_tablet_id = 2;
 }
 
+// RefreshAuthzCache{Request/Result}PB: refresh the authz privileges cache,
+// download new policies (does not guarantee the old cache is invalidated).
+message RefreshAuthzCacheRequestPB {
+}
+
+message RefreshAuthzCacheResponsePB {
+  optional MasterErrorPB error = 1;
+}
+
 enum MasterFeatures {
   UNKNOWN_FEATURE = 0;
   // The master supports creating tables with non-covering range partitions.
@@ -1030,6 +1039,9 @@ service MasterService {
     option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc ReplaceTablet(ReplaceTabletRequestPB) returns (ReplaceTabletResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
+  }
+  rpc RefreshAuthzCache(RefreshAuthzCacheRequestPB) returns (RefreshAuthzCacheResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
   }
   rpc ChangeTServerState(ChangeTServerStateRequestPB) returns

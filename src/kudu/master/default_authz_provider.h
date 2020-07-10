@@ -86,6 +86,10 @@ class DefaultAuthzProvider : public AuthzProvider {
     pb->set_update_privilege(true);
     return Status::OK();
   }
+
+  Status RefreshPolicies() override WARN_UNUSED_RESULT {
+    return Status::OK();
+  }
 };
 
 } // namespace master

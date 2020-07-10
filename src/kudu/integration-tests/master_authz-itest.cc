@@ -32,6 +32,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/table_util.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hms_client.h"
@@ -42,6 +43,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/ranger/mini_ranger.h"
 #include "kudu/ranger/ranger.pb.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/decimal_util.h"
@@ -69,12 +71,15 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::hms::HmsClient;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::GetTabletLocationsResponsePB;
+using kudu::master::RefreshAuthzCacheRequestPB;
+using kudu::master::RefreshAuthzCacheResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::VOTER_REPLICA;
 using kudu::ranger::ActionPB;
 using kudu::ranger::AuthorizationPolicy;
 using kudu::ranger::MiniRanger;
 using kudu::ranger::PolicyItem;
+using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using std::function;
 using std::move;
@@ -149,6 +154,18 @@ class MasterAuthzITestHarness {
     GetTableLocationsResponsePB table_locations;
     return itest::GetTableLocations(proxy, table_name, kTimeout, VOTER_REPLICA,
                                     table_id, &table_locations);
+  }
+
+  static Status RefreshAuthzPolicies(const unique_ptr<ExternalMiniCluster>& cluster) {
+    RefreshAuthzCacheRequestPB req;
+    RefreshAuthzCacheResponsePB resp;
+    RpcController rpc;
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+    RETURN_NOT_OK(cluster->master_proxy()->RefreshAuthzCache(req, &resp, &rpc));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+    return Status::OK();
   }
 
   static Status IsCreateTableDone(const OperationParams& p,
@@ -296,20 +313,34 @@ class MasterAuthzITestHarness {
     // authorized.
     opts.extra_master_flags.emplace_back("--trusted_user_acl=impala");
     opts.extra_master_flags.emplace_back("--user_acl=test-user,impala");
+    opts.extra_master_flags.emplace_back("--ranger_log_level=debug");
     SetUpExternalMiniServiceOpts(&opts);
     return opts;
   }
 
-  virtual Status GrantCreateTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantDropTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantAlterTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantRenameTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantAllTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantAllDatabasePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) = 0;
-  virtual Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) = 0;
+  virtual Status GrantCreateTablePrivilege(const PrivilegeParams& p,
+                                           const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantDropTablePrivilege(const PrivilegeParams& p,
+                                         const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantAlterTablePrivilege(const PrivilegeParams& p,
+                                          const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantRenameTablePrivilege(const PrivilegeParams& p,
+                                           const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p,
+                                                const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p,
+                                                   const unique_ptr<ExternalMiniCluster>& cluster)
+    = 0;
+  virtual Status GrantAllTablePrivilege(const PrivilegeParams& p,
+                                        const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantAllDatabasePrivilege(const PrivilegeParams& p,
+                                           const unique_ptr<ExternalMiniCluster>& cluster) = 0;
+  virtual Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p,
+                                                 const unique_ptr<ExternalMiniCluster>& cluster)
+    = 0;
+  virtual Status GrantAllWithGrantDatabasePrivilege(
+      const PrivilegeParams& p,
+      const unique_ptr<ExternalMiniCluster>& cluster) = 0;
   virtual Status CreateTable(const OperationParams& p,
                              const shared_ptr<KuduClient>& client) = 0;
   virtual void CheckTableDoesNotExist(const string& database_name, const string& table_name,
@@ -338,27 +369,25 @@ class RangerITestHarness : public MasterAuthzITestHarness {
  public:
   static constexpr int kSleepAfterNewPolicyMs = 1400;
 
-  Status GrantCreateTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantCreateTablePrivilege(const PrivilegeParams& p,
+                                   const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
     policy.tables.emplace_back("*");
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantDropTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantDropTablePrivilege(const PrivilegeParams& p,
+                                 const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::DROP}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
   void CheckTableDoesNotExist(const string& database_name, const string& table_name,
@@ -368,17 +397,18 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
-  Status GrantAlterTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantAlterTablePrivilege(const PrivilegeParams& p,
+                                  const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALTER}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantRenameTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantRenameTablePrivilege(const PrivilegeParams& p,
+                                   const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy_new_table;
     policy_new_table.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
@@ -391,40 +421,41 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) override {
+  Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p,
+                                           const unique_ptr<ExternalMiniCluster>& cluster)
+        override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p,
+                                        const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantAllTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantAllTablePrivilege(const PrivilegeParams& p,
+                                const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantAllDatabasePrivilege(const PrivilegeParams& p) override {
+  Status GrantAllDatabasePrivilege(const PrivilegeParams& p,
+                                   const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
     db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
@@ -434,21 +465,22 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     tbl_policy.tables.emplace_back("*");
     tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) override {
+  Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p,
+                                         const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
     policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
-  Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) override {
+  Status GrantAllWithGrantDatabasePrivilege(
+      const PrivilegeParams& p,
+      const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
     db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
@@ -458,8 +490,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     tbl_policy.tables.emplace_back("*");
     tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return RefreshAuthzPolicies(cluster);
   }
 
   Status CreateTable(const OperationParams& p,
@@ -496,9 +527,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(kDatabaseName);
     policy.tables.emplace_back("*");
     policy.items.emplace_back(PolicyItem({kAdminUser}, {ActionPB::ALL}, true));
-    RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
-    SleepFor(MonoDelta::FromMilliseconds(kSleepAfterNewPolicyMs));
-    return Status::OK();
+    return ranger_->AddPolicy(move(policy));
   }
 
  private:
@@ -532,6 +561,7 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
 
     ASSERT_OK(harness_->SetUpExternalServiceClients(cluster_));
     ASSERT_OK(harness_->SetUpCredentials());
+    ASSERT_OK(harness_->RefreshAuthzPolicies(cluster_));
     ASSERT_OK(harness_->SetUpTables(cluster_, client_));
 
     // Log in as 'test-user' and reset the client to pick up the change in user.
@@ -550,43 +580,43 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
   }
 
   Status GrantCreateTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantCreateTablePrivilege(p);
+    return harness_->GrantCreateTablePrivilege(p, cluster_);
   }
 
   Status GrantDropTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantDropTablePrivilege(p);
+    return harness_->GrantDropTablePrivilege(p, cluster_);
   }
 
   Status GrantAlterTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantAlterTablePrivilege(p);
+    return harness_->GrantAlterTablePrivilege(p, cluster_);
   }
 
   Status GrantRenameTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantRenameTablePrivilege(p);
+    return harness_->GrantRenameTablePrivilege(p, cluster_);
   }
 
   Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantGetMetadataTablePrivilege(p);
+    return harness_->GrantGetMetadataTablePrivilege(p, cluster_);
   }
 
   Status GrantAllTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantAllTablePrivilege(p);
+    return harness_->GrantAllTablePrivilege(p, cluster_);
   }
 
   Status GrantAllDatabasePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantAllDatabasePrivilege(p);
+    return harness_->GrantAllDatabasePrivilege(p, cluster_);
   }
 
   Status GrantAllWithGrantTablePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantAllWithGrantTablePrivilege(p);
+    return harness_->GrantAllWithGrantTablePrivilege(p, cluster_);
   }
 
   Status GrantAllWithGrantDatabasePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantAllWithGrantDatabasePrivilege(p);
+    return harness_->GrantAllWithGrantDatabasePrivilege(p, cluster_);
   }
 
   Status GrantGetMetadataDatabasePrivilege(const PrivilegeParams& p) {
-    return harness_->GrantGetMetadataDatabasePrivilege(p);
+    return harness_->GrantGetMetadataDatabasePrivilege(p, cluster_);
   }
 
   Status CreateTable(const OperationParams& p) {

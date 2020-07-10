@@ -107,6 +107,11 @@ class RangerClient {
                           const std::string& table,
                           std::unordered_set<ActionPB, ActionHash>* actions) WARN_UNUSED_RESULT;
 
+  // Refreshes policies in the Ranger subprocess. This does not invalidate the
+  // existing cache and doesn't fail if Ranger service is unavailable, it simply
+  // tries to refresh the policies from the server on a best effort basis.
+  Status RefreshPolicies() WARN_UNUSED_RESULT;
+
   // Replaces the subprocess server in the subprocess proxy.
   void ReplaceServerForTests(std::unique_ptr<subprocess::SubprocessServer> server) {
     // Creates a dummy RangerSubprocess if it is not initialized.

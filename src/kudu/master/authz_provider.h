@@ -107,6 +107,9 @@ class AuthzProvider {
                                       const SchemaPB& schema_pb,
                                       security::TablePrivilegePB* pb) WARN_UNUSED_RESULT = 0;
 
+  // Refreshes policies in the authorization provider plugin.
+  virtual Status RefreshPolicies() WARN_UNUSED_RESULT = 0;
+
   // Checks if the given user is trusted and thus can be exempted from
   // authorization validation.
   bool IsTrustedUser(const std::string& user) const;

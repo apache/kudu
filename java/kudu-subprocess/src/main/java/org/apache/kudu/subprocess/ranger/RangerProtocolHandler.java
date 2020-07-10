@@ -17,12 +17,12 @@
 
 package org.apache.kudu.subprocess.ranger;
 
-import com.google.common.base.Preconditions;
 import org.apache.ranger.plugin.policyengine.RangerAccessResult;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.ranger.Ranger;
 import org.apache.kudu.ranger.Ranger.RangerRequestListPB;
 import org.apache.kudu.ranger.Ranger.RangerResponseListPB;
 import org.apache.kudu.ranger.Ranger.RangerResponsePB;
@@ -47,7 +47,15 @@ class RangerProtocolHandler extends ProtocolHandler<RangerRequestListPB,
 
   @Override
   protected RangerResponseListPB executeRequest(RangerRequestListPB requests) {
-    return authz.authorize(requests);
+    RangerResponseListPB.Builder responses = authz.authorize(requests);
+    if (requests.hasControlRequest()) {
+      if (requests.getControlRequest().getRefreshPolicies()) {
+        authz.refreshPolicies();
+        responses.setControlResponse(Ranger.RangerControlResponsePB.newBuilder()
+            .setSuccess(true).build());
+      }
+    }
+    return responses.build();
   }
 
   @Override

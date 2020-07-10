@@ -528,5 +528,24 @@ Status RangerClient::AuthorizeActions(const string& user_name, const string& dat
 
   return Status::OK();
 }
+
+Status RangerClient::RefreshPolicies() {
+  DCHECK(subprocess_);
+
+  RangerRequestListPB req_list;
+  RangerResponseListPB resp_list;
+
+  req_list.mutable_control_request()->set_refresh_policies(true);
+
+  RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
+
+  if (PREDICT_TRUE(!resp_list.control_response().success())) {
+    string err = resp_list.control_response().error();
+    return Status::RemoteError(err);
+  }
+
+  return Status::OK();
+}
+
 } // namespace ranger
 } // namespace kudu

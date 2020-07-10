@@ -76,6 +76,8 @@ class RangerAuthzProvider : public AuthzProvider {
                               const SchemaPB& schema_pb,
                               security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT;
 
+  Status RefreshPolicies() override WARN_UNUSED_RESULT;
+
   // Returns true if 'ranger_policy_server' flag is set indicating Ranger
   // authorization is enabled.
   static bool IsEnabled();
