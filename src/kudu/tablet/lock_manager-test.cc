@@ -32,6 +32,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/env.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
@@ -58,56 +59,66 @@ class LockManagerTest : public KuduTest {
  public:
   void VerifyAlreadyLocked(const Slice& key) {
     LockEntry *entry;
-    ASSERT_EQ(LockManager::LOCK_BUSY,
-              lock_manager_.TryLock(key, kFakeTransaction, LockManager::LOCK_EXCLUSIVE, &entry));
+    ASSERT_FALSE(lock_manager_.TryLock(key, kFakeTransaction, &entry));
   }
 
   LockManager lock_manager_;
 };
 
 TEST_F(LockManagerTest, TestLockUnlockSingleRow) {
-  Slice key_a("a");
-  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-  ScopedRowLock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  Slice key_a[] = {"a"};
+  for (int i = 0; i < 3; i++) {
+    ScopedRowLock l(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
+  }
 }
 
 // Test if the same transaction locks the same row multiple times.
 TEST_F(LockManagerTest, TestMultipleLockSameRow) {
-  Slice key_a("a");
+  Slice key_a[] = {"a"};
   ScopedRowLock first_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-  ASSERT_EQ(LockManager::LOCK_ACQUIRED, first_lock.GetLockStatusForTests());
-  VerifyAlreadyLocked(key_a);
+  ASSERT_TRUE(first_lock.acquired());
+  VerifyAlreadyLocked(key_a[0]);
 
   {
     ScopedRowLock second_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-    ASSERT_EQ(LockManager::LOCK_ACQUIRED, second_lock.GetLockStatusForTests());
-    VerifyAlreadyLocked(key_a);
+    ASSERT_TRUE(second_lock.acquired());
+    VerifyAlreadyLocked(key_a[0]);
   }
 
-  ASSERT_EQ(LockManager::LOCK_ACQUIRED, first_lock.GetLockStatusForTests());
-  VerifyAlreadyLocked(key_a);
+  ASSERT_TRUE(first_lock.acquired());
+  VerifyAlreadyLocked(key_a[0]);
 }
 
 TEST_F(LockManagerTest, TestLockUnlockMultipleRows) {
-  Slice key_a("a"), key_b("b");
+  Slice key_a[] = {"a"};
+  Slice key_b[] = {"b"};
   for (int i = 0; i < 3; ++i) {
     ScopedRowLock l1(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
     ScopedRowLock l2(&lock_manager_, kFakeTransaction, key_b, LockManager::LOCK_EXCLUSIVE);
-    VerifyAlreadyLocked(key_a);
-    VerifyAlreadyLocked(key_b);
+    VerifyAlreadyLocked(key_a[0]);
+    VerifyAlreadyLocked(key_b[0]);
+  }
+}
+
+TEST_F(LockManagerTest, TestLockBatch) {
+  vector<Slice> keys = {"a", "b", "c"};
+  {
+    ScopedRowLock l1(&lock_manager_, kFakeTransaction, keys, LockManager::LOCK_EXCLUSIVE);
+    for (const auto& k : keys) {
+      VerifyAlreadyLocked(k);
+    }
   }
 }
 
 TEST_F(LockManagerTest, TestRelockSameRow) {
-  Slice key_a("a");
+  Slice key_a[] = {"a"};
   ScopedRowLock row_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
-  VerifyAlreadyLocked(key_a);
+  VerifyAlreadyLocked(key_a[0]);
 }
 
 TEST_F(LockManagerTest, TestMoveLock) {
   // Acquire a lock.
-  Slice key_a("a");
+  Slice key_a[] = {"a"};
   ScopedRowLock row_lock(&lock_manager_, kFakeTransaction, key_a, LockManager::LOCK_EXCLUSIVE);
   ASSERT_TRUE(row_lock.acquired());
 
@@ -119,15 +130,9 @@ TEST_F(LockManagerTest, TestMoveLock) {
 
 class LmTestResource {
  public:
-  explicit LmTestResource(const Slice* id)
-    : id_(id),
-      owner_(0),
-      is_owned_(false) {
-  }
+  explicit LmTestResource(Slice id) : id_(id), owner_(0), is_owned_(false) {}
 
-  const Slice* id() const {
-    return id_;
-  }
+  Slice id() const { return id_; }
 
   void acquire(uint64_t tid) {
     std::unique_lock<std::mutex> lock(lock_);
@@ -148,7 +153,7 @@ class LmTestResource {
  private:
   DISALLOW_COPY_AND_ASSIGN(LmTestResource);
 
-  const Slice* id_;
+  const Slice id_;
   std::mutex lock_;
   uint64_t owner_;
   bool is_owned_;
@@ -156,9 +161,8 @@ class LmTestResource {
 
 class LmTestThread {
  public:
-  LmTestThread(LockManager* manager, vector<const Slice*> keys,
-               const vector<LmTestResource*> resources)
-      : manager_(manager), keys_(std::move(keys)), resources_(resources) {}
+  LmTestThread(LockManager* manager, vector<Slice> keys, vector<LmTestResource*> resources)
+      : manager_(manager), keys_(std::move(keys)), resources_(std::move(resources)) {}
 
   void Start() {
     thread_ = thread([this]() { this->Run(); });
@@ -168,15 +172,9 @@ class LmTestThread {
     tid_ = Env::Default()->gettid();
     const OpState* my_txn = reinterpret_cast<OpState*>(tid_);
 
-    std::sort(keys_.begin(), keys_.end());
+    std::sort(keys_.begin(), keys_.end(), Slice::Comparator());
     for (int i = 0; i < FLAGS_num_iterations; i++) {
-      std::vector<shared_ptr<ScopedRowLock> > locks;
-      // TODO: We don't have an API for multi-row
-      for (const Slice* key : keys_) {
-        locks.push_back(std::make_shared<ScopedRowLock>(
-            manager_, my_txn, *key, LockManager::LOCK_EXCLUSIVE));
-      }
-
+      ScopedRowLock l(manager_, my_txn, keys_, LockManager::LOCK_EXCLUSIVE);
       for (LmTestResource* r : resources_) {
         r->acquire(tid_);
       }
@@ -193,14 +191,14 @@ class LmTestThread {
  private:
   DISALLOW_COPY_AND_ASSIGN(LmTestThread);
   LockManager* manager_;
-  vector<const Slice*> keys_;
+  vector<Slice> keys_;
   const vector<LmTestResource*> resources_;
   uint64_t tid_;
   thread thread_;
 };
 
-static void runPerformanceTest(const char *test_type,
-                               vector<shared_ptr<LmTestThread> > *threads) {
+static void RunPerformanceTest(const char* test_type,
+                               vector<shared_ptr<LmTestThread> >* threads) {
   Stopwatch sw(Stopwatch::ALL_THREADS);
   sw.start();
   for (const shared_ptr<LmTestThread>& t : *threads) {
@@ -233,12 +231,9 @@ static void runPerformanceTest(const char *test_type,
 // Test running a bunch of threads at once that want an overlapping set of
 // resources.
 TEST_F(LockManagerTest, TestContention) {
-  Slice slice_a("a");
-  LmTestResource resource_a(&slice_a);
-  Slice slice_b("b");
-  LmTestResource resource_b(&slice_b);
-  Slice slice_c("c");
-  LmTestResource resource_c(&slice_c);
+  LmTestResource resource_a("a");
+  LmTestResource resource_b("b");
+  LmTestResource resource_c("c");
   vector<shared_ptr<LmTestThread> > threads;
   for (int i = 0; i < FLAGS_num_test_threads; ++i) {
     vector<LmTestResource*> resources;
@@ -252,15 +247,14 @@ TEST_F(LockManagerTest, TestContention) {
       resources.push_back(&resource_c);
       resources.push_back(&resource_a);
     }
-    vector<const Slice*> keys;
-    for (vector<LmTestResource*>::const_iterator r = resources.begin();
-         r != resources.end(); ++r) {
-      keys.push_back((*r)->id());
+    vector<Slice> keys;
+    for (LmTestResource* r : resources) {
+      keys.push_back(r->id());
     }
     threads.push_back(std::make_shared<LmTestThread>(
         &lock_manager_, keys, resources));
   }
-  runPerformanceTest("Contended", &threads);
+  RunPerformanceTest("Contended", &threads);
 }
 
 // Test running a bunch of threads at once that want different
@@ -276,19 +270,18 @@ TEST_F(LockManagerTest, TestUncontended) {
   }
   vector<shared_ptr<LmTestResource> > resources;
   for (int i = 0; i < FLAGS_num_test_threads; i++) {
-    resources.push_back(
-        std::make_shared<LmTestResource>(&slices[i]));
+    resources.push_back(std::make_shared<LmTestResource>(slices[i]));
   }
   vector<shared_ptr<LmTestThread> > threads;
   for (int i = 0; i < FLAGS_num_test_threads; ++i) {
-    vector<const Slice*> k;
-    k.push_back(&slices[i]);
+    vector<Slice> k;
+    k.push_back(slices[i]);
     vector<LmTestResource*> r;
     r.push_back(resources[i].get());
     threads.push_back(std::make_shared<LmTestThread>(
         &lock_manager_, k, r));
   }
-  runPerformanceTest("Uncontended", &threads);
+  RunPerformanceTest("Uncontended", &threads);
 }
 
 } // namespace tablet

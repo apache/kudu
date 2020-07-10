@@ -17,15 +17,20 @@
 #ifndef KUDU_TABLET_LOCK_MANAGER_H
 #define KUDU_TABLET_LOCK_MANAGER_H
 
-#include <cstddef>
+#include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 
+namespace kudu {
+template <typename T>
+class ArrayView;
+}  // namespace kudu
+
 namespace kudu { namespace tablet {
 
-class LockTable;
 class LockEntry;
+class LockTable;
 class OpState;
 
 // Super-simple lock manager implementation. This only supports exclusive
@@ -40,11 +45,6 @@ class LockManager {
   LockManager();
   ~LockManager();
 
-  enum LockStatus {
-    LOCK_ACQUIRED = 0,
-    LOCK_BUSY = 1,
-  };
-
   enum LockMode {
     LOCK_EXCLUSIVE
   };
@@ -53,22 +53,23 @@ class LockManager {
   friend class ScopedRowLock;
   friend class LockManagerTest;
 
-  LockStatus Lock(const Slice& key, const OpState* op,
-                  LockMode mode, LockEntry **entry);
-  LockStatus TryLock(const Slice& key, const OpState* op,
-                     LockMode mode, LockEntry **entry);
-  void Release(LockEntry *lock, LockStatus ls);
+  std::vector<LockEntry*> LockBatch(ArrayView<Slice> keys, const OpState* op);
+
+  bool TryLock(const Slice& key, const OpState* op, LockEntry** entry);
+  void Release(LockEntry* lock);
+  void ReleaseBatch(ArrayView<LockEntry*> locks);
+
+  static void AcquireLockOnEntry(LockEntry* e, const OpState* op);
 
   LockTable *locks_;
 
   DISALLOW_COPY_AND_ASSIGN(LockManager);
 };
 
-
-// Hold a lock on a given row, for the scope of this object.
+// Hold a lock on a set of rows, for the scope of this object.
 // Usage:
 //   {
-//     ScopedRowLock(&manager, my_encoded_row_key, LOCK_EXCLUSIVE);
+//     ScopedRowLock(&manager, op, my_encoded_row_keys, LOCK_EXCLUSIVE);
 //     .. do stuff with the row ..
 //   }
 //   // lock is released when the object exits its scope.
@@ -92,16 +93,14 @@ class ScopedRowLock {
   //   l = ScopedRowLock(...);
   // or
   //   l = std::move(other_row_lock);
-  ScopedRowLock()
-    : manager_(NULL),
-      acquired_(false),
-      entry_(NULL) {
-  }
+  ScopedRowLock() {}
 
-  // Lock row in the given LockManager. The 'key' slice must remain
+  // Lock rows in the given LockManager. The 'key' slices must remain
   // valid and un-changed for the duration of this object's lifetime.
-  ScopedRowLock(LockManager *manager, const OpState* ctx,
-                const Slice &key, LockManager::LockMode mode);
+  ScopedRowLock(LockManager* manager,
+                const OpState* op,
+                ArrayView<Slice> keys,
+                LockManager::LockMode mode);
 
   // Move constructor and assignment.
   ScopedRowLock(ScopedRowLock&& other) noexcept;
@@ -109,20 +108,16 @@ class ScopedRowLock {
 
   void Release();
 
-  bool acquired() const { return acquired_; }
-
-  LockManager::LockStatus GetLockStatusForTests() { return ls_; }
+  bool acquired() const { return !entries_.empty(); }
 
   ~ScopedRowLock();
 
  private:
   void TakeState(ScopedRowLock* other);
 
-  LockManager *manager_;
+  LockManager* manager_ = nullptr;
 
-  bool acquired_;
-  LockEntry *entry_;
-  LockManager::LockStatus ls_;
+  std::vector<LockEntry*> entries_;
 };
 
 } // namespace tablet

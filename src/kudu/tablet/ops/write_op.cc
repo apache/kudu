@@ -25,6 +25,7 @@
 #include <ostream>
 #include <vector>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -59,6 +60,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/rw_semaphore.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
@@ -446,12 +448,21 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
   }
 }
 
-void WriteOpState::ReleaseRowLocks() {
-  // free the row locks
+void WriteOpState::AcquireRowLocks(LockManager* lock_manager) {
+  DCHECK(!rows_lock_.acquired());
+
+  boost::container::small_vector<Slice, 8> keys;
+  keys.reserve(row_ops_.size());
+
   for (RowOp* op : row_ops_) {
-    op->row_lock.Release();
+    if (op->has_result()) continue;
+    keys.push_back(op->key_probe->encoded_key_slice());
   }
+
+  rows_lock_ = ScopedRowLock(lock_manager, this, keys, LockManager::LOCK_EXCLUSIVE);
 }
+
+void WriteOpState::ReleaseRowLocks() { rows_lock_.Release(); }
 
 WriteOpState::~WriteOpState() {
   Reset();

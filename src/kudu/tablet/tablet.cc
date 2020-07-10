@@ -486,10 +486,21 @@ Status Tablet::AcquireRowLocks(WriteOpState* op_state) {
   TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
                "num_locks", op_state->row_ops().size());
   TRACE("Acquiring locks for $0 operations", op_state->row_ops().size());
+
   for (RowOp* op : op_state->row_ops()) {
     if (op->has_result()) continue;
-    RETURN_NOT_OK(AcquireLockForOp(op_state, op));
+
+    ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
+    Arena* arena = op_state->arena();
+    op->key_probe = arena->NewObject<RowSetKeyProbe>(row_key, arena);
+    if (PREDICT_FALSE(!ValidateOpOrMarkFailed(op))) {
+      continue;
+    }
+    RETURN_NOT_OK(CheckRowInTablet(row_key));
   }
+
+  op_state->AcquireRowLocks(&lock_manager_);
+
   TRACE("Locks acquired");
   return Status::OK();
 }
@@ -507,22 +518,6 @@ Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
                                                                       *schema()),
                    metadata_->partition_schema().PartitionKeyDebugString(row)));
   }
-  return Status::OK();
-}
-
-Status Tablet::AcquireLockForOp(WriteOpState* op_state, RowOp* op) {
-  ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
-  Arena* arena = op_state->arena();
-  op->key_probe = arena->NewObject<RowSetKeyProbe>(row_key, arena);
-  if (PREDICT_FALSE(!ValidateOpOrMarkFailed(op))) {
-    return Status::OK();
-  }
-  RETURN_NOT_OK(CheckRowInTablet(row_key));
-
-  op->row_lock = ScopedRowLock(&lock_manager_,
-                               op_state,
-                               op->key_probe->encoded_key_slice(),
-                               LockManager::LOCK_EXCLUSIVE);
   return Status::OK();
 }
 
@@ -998,7 +993,6 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
         Substitute("Apply of $0 exited early", op_state->ToString()));
     CHECK(s == kOpen || s == kBootstrapping);
   }
-  DCHECK(row_op->has_row_lock()) << "RowOp must hold the row lock.";
   DCHECK(op_state != nullptr) << "must have a WriteOpState";
   DCHECK(op_state->op_id().IsInitialized()) << "OpState OpId needed for anchoring";
   DCHECK_EQ(op_state->schema_at_decode_time(), schema());

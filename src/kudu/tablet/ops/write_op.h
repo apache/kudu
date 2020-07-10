@@ -32,6 +32,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/bitset.h"
@@ -161,6 +162,9 @@ class WriteOpState : public OpState {
   // the writes.
   void AcquireSchemaLock(rw_semaphore* schema_lock);
 
+  // Acquire row locks for all of the rows in this Write.
+  void AcquireRowLocks(LockManager* lock_manager);
+
   // Release the already-acquired schema lock.
   void ReleaseSchemaLock();
 
@@ -246,6 +250,9 @@ class WriteOpState : public OpState {
   // The row operations which are decoded from the request during Prepare().
   // Protected by op_state_lock_.
   std::vector<RowOp*> row_ops_;
+
+  // Holds the LockManager locks acquired for this operation.
+  ScopedRowLock rows_lock_;
 
   // Array of ProbeStats for each of the operations in 'row_ops_'.
   // Allocated from this op's arena during SetRowOps().

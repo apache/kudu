@@ -17,19 +17,22 @@
 
 #include "kudu/tablet/lock_manager.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
@@ -37,9 +40,10 @@
 #include "kudu/util/semaphore.h"
 #include "kudu/util/trace.h"
 
-using base::subtle::NoBarrier_Load;
 using std::string;
+using std::unique_lock;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {
@@ -69,6 +73,8 @@ class LockEntry {
   string ToString() const {
     return KUDU_REDACT(key_.ToDebugString());
   }
+
+  void Unlock();
 
   // Mutex used by the LockManager
   Semaphore sem;
@@ -105,7 +111,6 @@ class LockEntry {
 class LockTable {
  private:
   struct Bucket {
-    simple_spinlock lock;
     // First entry chained from this bucket, or NULL if the bucket is empty.
     LockEntry *chain_head;
     Bucket() : chain_head(nullptr) {}
@@ -118,7 +123,7 @@ class LockTable {
 
   ~LockTable() {
     // Sanity checks: The table shouldn't be destructed when there are any entries in it.
-    DCHECK_EQ(0, NoBarrier_Load(&(item_count_))) << "There are some unreleased locks";
+    DCHECK_EQ(0, item_count_) << "There are some unreleased locks";
     for (size_t i = 0; i < size_; ++i) {
       for (LockEntry *p = buckets_[i].chain_head; p != nullptr; p = p->ht_next_) {
         DCHECK(p == nullptr) << "The entry " << p->ToString() << " was not released";
@@ -126,8 +131,10 @@ class LockTable {
     }
   }
 
-  LockEntry *GetLockEntry(const Slice &key);
-  void ReleaseLockEntry(LockEntry *entry);
+  vector<LockEntry*> GetLockEntries(ArrayView<Slice> keys);
+  LockEntry* GetLockEntry(Slice key);
+
+  void ReleaseLockEntries(ArrayView<LockEntry*> entries);
 
  private:
   Bucket *FindBucket(uint64_t hash) const {
@@ -160,85 +167,123 @@ class LockTable {
   void Resize();
 
  private:
-  // table rwlock used as write on resize
-  percpu_rwlock lock_;
+  simple_spinlock lock_;
   // size - 1 used to lookup the bucket (hash & mask_)
   uint64_t mask_;
   // number of buckets in the table
   uint64_t size_;
+  // number of items in the table
+  int64_t item_count_;
   // table buckets
   unique_ptr<Bucket[]> buckets_;
-  // number of items in the table
-  base::subtle::Atomic64 item_count_;
 };
 
-LockEntry *LockTable::GetLockEntry(const Slice& key) {
-  auto new_entry = new LockEntry(key);
-  LockEntry *old_entry;
+vector<LockEntry*> LockTable::GetLockEntries(ArrayView<Slice> keys) {
+  vector<LockEntry*> entries;
+  entries.resize(keys.size());
+  for (int i = 0; i < keys.size(); i++) {
+    entries[i] = new LockEntry(keys[i]);
+  }
 
+  vector<LockEntry*> to_delete;
+
+  // TODO(todd) prefetch the hash buckets
   {
-    shared_lock<rw_spinlock> l(lock_.get_lock());
-    Bucket *bucket = FindBucket(new_entry->key_hash_);
-    {
-      std::lock_guard<simple_spinlock> bucket_lock(bucket->lock);
+    unique_lock<simple_spinlock> l(lock_);
+    for (int i = 0; i < entries.size(); i++) {
+      LockEntry* new_entry = entries[i];
+      Bucket* bucket = FindBucket(new_entry->key_hash_);
       LockEntry **node = FindSlot(bucket, new_entry->key_, new_entry->key_hash_);
-      old_entry = *node;
-      if (old_entry != nullptr) {
+      LockEntry* old_entry = *node;
+      if (PREDICT_FALSE(old_entry != nullptr)) {
         old_entry->refs_++;
+        to_delete.push_back(entries[i]);
+        entries[i] = old_entry;
       } else {
         new_entry->ht_next_ = nullptr;
         new_entry->CopyKey();
         *node = new_entry;
+        ++item_count_;
+
+        if (PREDICT_FALSE(item_count_ > size_)) {
+          Resize();
+        }
       }
     }
   }
 
-  if (old_entry != nullptr) {
-    delete new_entry;
-    return old_entry;
-  }
+  for (auto* e : to_delete) delete e;
 
-  if (base::subtle::NoBarrier_AtomicIncrement(&item_count_, 1) > size_) {
-    std::unique_lock<percpu_rwlock> table_wrlock(lock_, std::try_to_lock);
-    // if we can't take the lock, means that someone else is resizing.
-    // (The percpu_rwlock try_lock waits for readers to complete)
-    if (table_wrlock.owns_lock()) {
-      Resize();
-    }
-  }
-
-  return new_entry;
+  return entries;
 }
 
-void LockTable::ReleaseLockEntry(LockEntry *entry) {
-  bool removed = false;
-  {
-    std::lock_guard<rw_spinlock> table_rdlock(lock_.get_lock());
-    Bucket *bucket = FindBucket(entry->key_hash_);
-    {
-      std::lock_guard<simple_spinlock> bucket_lock(bucket->lock);
-      LockEntry **node = FindEntry(bucket, entry);
-      if (node != nullptr) {
-        // ASSUMPTION: There are few updates, so locking the same row at the same time is rare
-        // TODO: Move out this if we're going with the TryLock
-        if (--entry->refs_ > 0)
-          return;
+LockEntry* LockTable::GetLockEntry(Slice key) {
+  vector<LockEntry*> entries = GetLockEntries({&key, 1});
+  return entries[0];
+}
 
-        *node = entry->ht_next_;
-        removed = true;
-      }
+void LockTable::ReleaseLockEntries(ArrayView<LockEntry*> entries) {
+  // Construct a linked list co-opting the ht_next pointers of the entries
+  // to keep track of which objects need to be deleted.
+  LockEntry* removed_head = nullptr;
+
+  const auto& RemoveEntryFromBucket = [&](Bucket* bucket, LockEntry* entry) {
+    LockEntry** node = FindEntry(bucket, entry);
+    if (PREDICT_TRUE(node != nullptr)) {
+      if (--entry->refs_ > 0) return;
+
+      *node = entry->ht_next_;
+      entry->ht_next_ = removed_head;
+      removed_head = entry;
+      item_count_--;
+    } else {
+      LOG(DFATAL) << "Unable to find LockEntry on release";
     }
+  };
+
+  {
+    unique_lock<simple_spinlock> l(lock_);
+
+    auto it = entries.begin();
+    int rem = entries.size();
+
+    // Manually block the loop into a series of constant-sized batches
+    // followed by one last variable-sized batch for the remainder.
+    //
+    // The batch size was experimentally determined.
+    static constexpr int kBatchSize = 16;
+    LockEntry* batch[kBatchSize];
+    Bucket* buckets[kBatchSize];
+    const auto& ProcessBatch = [&](int n) {
+      for (int i = 0; i < n; i++) {
+        batch[i] = *it++;
+        buckets[i] = FindBucket(batch[i]->key_hash_);
+        prefetch(reinterpret_cast<const char*>(buckets[i]), PREFETCH_HINT_T0);
+      }
+      for (int i = 0; i < n; i++) {
+        RemoveEntryFromBucket(buckets[i], batch[i]);
+      }
+    };
+
+    while (rem >= kBatchSize) {
+      ProcessBatch(kBatchSize);
+      rem -= kBatchSize;
+    }
+    ProcessBatch(rem);
   }
 
-  DCHECK(removed) << "Unable to find LockEntry on release";
-  base::subtle::NoBarrier_AtomicIncrement(&item_count_, -1);
-  delete entry;
+  // Actually free the memory outside the lock.
+  while (removed_head) {
+    auto* tmp = removed_head;
+    removed_head = removed_head->ht_next_;
+    delete tmp;
+  }
 }
 
 void LockTable::Resize() {
   // Calculate a new table size
   size_t new_size = 16;
-  while (new_size < base::subtle::NoBarrier_Load(&item_count_)) {
+  while (new_size < item_count_) {
     new_size <<= 1;
   }
 
@@ -274,21 +319,13 @@ void LockTable::Resize() {
 //  ScopedRowLock
 // ============================================================================
 
-ScopedRowLock::ScopedRowLock(LockManager *manager,
+ScopedRowLock::ScopedRowLock(LockManager* manager,
                              const OpState* op,
-                             const Slice &key,
+                             ArrayView<Slice> keys,
                              LockManager::LockMode mode)
-  : manager_(DCHECK_NOTNULL(manager)),
-    acquired_(false) {
-  ls_ = manager_->Lock(key, op, mode, &entry_);
-
-  if (ls_ == LockManager::LOCK_ACQUIRED) {
-    acquired_ = true;
-  } else {
-    // the lock might already have been acquired by this op so
-    // simply check that we didn't get a LOCK_BUSY status (we should have waited)
-    CHECK_NE(ls_, LockManager::LOCK_BUSY);
-  }
+    : manager_(DCHECK_NOTNULL(manager)) {
+  DCHECK_EQ(LockManager::LOCK_EXCLUSIVE, mode);
+  entries_ = manager_->LockBatch(keys, op);
 }
 
 ScopedRowLock::ScopedRowLock(ScopedRowLock&& other) noexcept {
@@ -302,12 +339,7 @@ ScopedRowLock& ScopedRowLock::operator=(ScopedRowLock&& other) noexcept {
 
 void ScopedRowLock::TakeState(ScopedRowLock* other) {
   manager_ = other->manager_;
-  acquired_ = other->acquired_;
-  entry_ = other->entry_;
-  ls_ = other->ls_;
-
-  other->acquired_ = false;
-  other->entry_ = nullptr;
+  entries_ = std::move(other->entries_);
 }
 
 ScopedRowLock::~ScopedRowLock() {
@@ -315,11 +347,12 @@ ScopedRowLock::~ScopedRowLock() {
 }
 
 void ScopedRowLock::Release() {
-  if (entry_) {
-    manager_->Release(entry_, ls_);
-    acquired_ = false;
-    entry_ = nullptr;
+  if (entries_.empty()) return;  // Already released.
+  for (auto* entry : entries_) {
+    DCHECK_NOTNULL(entry)->Unlock();
   }
+  manager_->ReleaseBatch(entries_);
+  entries_.clear();
 }
 
 // ============================================================================
@@ -334,18 +367,24 @@ LockManager::~LockManager() {
   delete locks_;
 }
 
-LockManager::LockStatus LockManager::Lock(const Slice& key,
-                                          const OpState* op,
-                                          LockManager::LockMode mode,
-                                          LockEntry** entry) {
-  *entry = locks_->GetLockEntry(key);
+std::vector<LockEntry*> LockManager::LockBatch(ArrayView<Slice> keys, const OpState* op) {
+  vector<LockEntry*> entries = locks_->GetLockEntries(keys);
 
+  for (auto* e : entries) {
+    AcquireLockOnEntry(e, op);
+  }
+  return entries;
+}
+
+void LockManager::ReleaseBatch(ArrayView<LockEntry*> locks) { locks_->ReleaseLockEntries(locks); }
+
+void LockManager::AcquireLockOnEntry(LockEntry* entry, const OpState* op) {
   // We expect low contention, so just try to try_lock first. This is faster
   // than a timed_lock, since we don't have to do a syscall to get the current
   // time.
-  if (!(*entry)->sem.TryAcquire()) {
-    // If the current holder of this lock is the same op just return
-    // a LOCK_ALREADY_ACQUIRED status without actually acquiring the mutex.
+  if (!entry->sem.TryAcquire()) {
+    // If the current holder of this lock is the same op just increment
+    // the recursion count without acquiring the mutex.
     //
     //
     // NOTE: This is not a problem for the current way locks are managed since
@@ -353,9 +392,9 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     // obtained and released at the same time). If at any time in the future
     // we opt to perform more fine grained locking, possibly letting ops
     // release a portion of the locks they no longer need, this no longer is OK.
-    if (ANNOTATE_UNPROTECTED_READ((*entry)->holder_) == op) {
-      (*entry)->recursion_++;
-      return LOCK_ACQUIRED;
+    if (ANNOTATE_UNPROTECTED_READ(entry->holder_) == op) {
+      entry->recursion_++;
+      return;
     }
 
     // If we couldn't immediately acquire the lock, do a timed lock so we can
@@ -365,10 +404,10 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     TRACE_COUNTER_INCREMENT("row_lock_wait_count", 1);
     MicrosecondsInt64 start_wait_us = GetMonoTimeMicros();
     int waited_seconds = 0;
-    while (!(*entry)->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
-      const OpState* cur_holder = ANNOTATE_UNPROTECTED_READ((*entry)->holder_);
+    while (!entry->sem.TimedAcquire(MonoDelta::FromSeconds(1))) {
+      const OpState* cur_holder = ANNOTATE_UNPROTECTED_READ(entry->holder_);
       LOG(WARNING) << "Waited " << (++waited_seconds) << " seconds to obtain row lock on key "
-                   << KUDU_REDACT(key.ToDebugString()) << " cur holder: " << cur_holder;
+                   << entry->ToString() << " cur holder: " << cur_holder;
       // TODO(unknown): would be nice to also include some info about the blocking op,
       // but it's a bit tricky to do in a non-racy fashion (the other op may
       // complete at any point)
@@ -376,39 +415,35 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
     MicrosecondsInt64 wait_us = GetMonoTimeMicros() - start_wait_us;
     TRACE_COUNTER_INCREMENT("row_lock_wait_us", wait_us);
     if (wait_us > 100 * 1000) {
-      TRACE("Waited $0us for lock on $1", wait_us, KUDU_REDACT(key.ToDebugString()));
+      TRACE("Waited $0us for lock on $1", wait_us, KUDU_REDACT(entry->ToString()));
     }
   }
 
-  (*entry)->holder_ = op;
-  return LOCK_ACQUIRED;
+  entry->holder_ = op;
 }
 
-LockManager::LockStatus LockManager::TryLock(const Slice& key,
-                                             const OpState* op,
-                                             LockManager::LockMode mode,
-                                             LockEntry **entry) {
+bool LockManager::TryLock(const Slice& key, const OpState* op, LockEntry** entry) {
   *entry = locks_->GetLockEntry(key);
   bool locked = (*entry)->sem.TryAcquire();
   if (!locked) {
-    locks_->ReleaseLockEntry(*entry);
-    return LOCK_BUSY;
+    Release(*entry);
+    return false;
   }
   (*entry)->holder_ = op;
-  return LOCK_ACQUIRED;
+  return true;
 }
 
-void LockManager::Release(LockEntry *lock, LockStatus ls) {
-  DCHECK_NOTNULL(lock)->holder_ = nullptr;
-  if (ls == LOCK_ACQUIRED) {
-    if (lock->recursion_ > 0) {
-      lock->recursion_--;
-    } else {
-      lock->sem.Release();
-    }
+void LockEntry::Unlock() {
+  DCHECK(holder_);
+  if (recursion_ > 0) {
+    recursion_--;
+  } else {
+    holder_ = nullptr;
+    sem.Release();
   }
-  locks_->ReleaseLockEntry(lock);
 }
+
+void LockManager::Release(LockEntry* lock) { locks_->ReleaseLockEntries({&lock, 1}); }
 
 } // namespace tablet
 } // namespace kudu

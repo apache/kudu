@@ -19,7 +19,6 @@
 #include <string>
 
 #include "kudu/common/row_operations.h"
-#include "kudu/tablet/lock_manager.h"
 
 namespace google {
 namespace protobuf {
@@ -67,10 +66,6 @@ struct RowOp {
     orig_result_from_log = orig_result;
   }
 
-  bool has_row_lock() const {
-    return row_lock.acquired();
-  }
-
   bool has_result() const {
     return result != nullptr;
   }
@@ -92,10 +87,6 @@ struct RowOp {
   //
   // Allocated on the op state's Arena.
   RowSetKeyProbe* key_probe = nullptr;
-
-  // The row lock which has been acquired for this row. Set during the "prepare"
-  // phase.
-  ScopedRowLock row_lock;
 
   // Flag whether this op has already been validated as valid.
   bool valid = false;

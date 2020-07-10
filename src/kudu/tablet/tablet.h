@@ -144,10 +144,7 @@ class Tablet {
                                WriteOpState* op_state);
 
   // Acquire locks for each of the operations in the given txn.
-  //
-  // Note that, if this fails, it's still possible that the op state holds
-  // _some_ of the locks. In that case, we expect that the op will still clean
-  // them up when it is aborted (or otherwise destructed).
+  // This also sets the row op's RowSetKeyProbe.
   Status AcquireRowLocks(WriteOpState* op_state);
 
   // Starts an MVCC op which must have a pre-assigned timestamp.
@@ -159,24 +156,6 @@ class Tablet {
   // Like the above but actually assigns the timestamp. Only used for tests that
   // don't boot a tablet server.
   void AssignTimestampAndStartOpForTests(WriteOpState* op_state);
-
-  // Insert a new row into the tablet.
-  //
-  // The provided 'data' slice should have length equivalent to this
-  // tablet's Schema.byte_size().
-  //
-  // After insert, the row and any referred-to memory (eg for strings)
-  // have been copied into internal memory, and thus the provided memory
-  // buffer may safely be re-used or freed.
-  //
-  // Returns Status::AlreadyPresent() if an entry with the same key is already
-  // present in the tablet.
-  // Returns Status::OK unless allocation fails.
-  //
-  // Acquires the row lock for the given operation, setting it in the
-  // RowOp struct. This also sets the row op's RowSetKeyProbe.
-  Status AcquireLockForOp(WriteOpState* op_state,
-                          RowOp* op);
 
   // Signal that the given op is about to Apply.
   void StartApplying(WriteOpState* op_state);
