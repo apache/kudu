@@ -310,9 +310,6 @@ class OpState {
 
   // The defined consistency mode for this op.
   ExternalConsistencyMode external_consistency_mode_;
-
-  // Lock that protects access to op state.
-  mutable simple_spinlock op_state_lock_;
 };
 
 // A parent class for the callback that gets called when ops

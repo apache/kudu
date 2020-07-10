@@ -244,7 +244,7 @@ class WriteOpState : public OpState {
   boost::optional<WriteAuthorizationContext> authz_context_;
 
   // The row operations which are decoded from the request during Prepare().
-  // Protected by superclass's op_state_lock_.
+  // Protected by op_state_lock_.
   std::vector<RowOp*> row_ops_;
 
   // Array of ProbeStats for each of the operations in 'row_ops_'.
@@ -263,8 +263,11 @@ class WriteOpState : public OpState {
 
   // The Schema of the tablet when the op was first decoded. This is verified
   // at APPLY time to ensure we don't have races against schema change.
-  // Protected by superclass's op_state_lock_.
+  // Protected by op_state_lock_.
   const Schema* schema_at_decode_time_;
+
+  // Lock that protects access to various fields of WriteOpState.
+  mutable simple_spinlock op_state_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(WriteOpState);
 };
