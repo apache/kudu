@@ -355,9 +355,7 @@ class RangerClientTestBase : public KuduTest {
     // wait for a policy to appear indefinitely.
     // See KUDU-3154 and RANGER-2899 for more details.
     // TODO(awong): remove this when RANGER-2899 is fixed.
-    PolicyItem item;
-    item.first.emplace_back("user");
-    item.second.emplace_back(ActionPB::METADATA);
+    PolicyItem item({"user"}, {ActionPB::METADATA}, false);
     AuthorizationPolicy policy;
     policy.databases.emplace_back("db");
     policy.tables.emplace_back("table");
