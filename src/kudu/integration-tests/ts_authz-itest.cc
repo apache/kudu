@@ -301,7 +301,9 @@ class TSAuthzITestHarness {
   virtual Status RefreshAuthzPolicies(const unique_ptr<ExternalMiniCluster>& cluster) = 0;
 
   // Creates a table named 'table_ident' with 'kNumColsPerTable' columns.
-  Status CreateTable(const string& table_ident, const shared_ptr<KuduClient>& client) {
+  Status CreateTable(const string& table_ident,
+                     const shared_ptr<KuduClient>& client,
+                     const string& owner) {
     KuduSchema schema;
     KuduSchemaBuilder b;
     auto iter = cols_.begin();
@@ -313,8 +315,9 @@ class TSAuthzITestHarness {
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     return table_creator->table_name(table_ident)
         .schema(&schema)
-        .set_range_partition_columns({ "col0" })
+        .set_range_partition_columns({"col0"})
         .num_replicas(1)
+        .set_owner(owner)
         .Create();
   }
 
@@ -459,8 +462,8 @@ class TSAuthzITest : public ExternalMiniClusterITestBase,
     ASSERT_OK(cluster_->CreateClient(/*builder*/nullptr, &client_));
   }
 
-  Status CreateTable(const string& table_ident) {
-    return harness_->CreateTable(table_ident, client_);
+  Status CreateTable(const string& table_ident, const string& owner) {
+    return harness_->CreateTable(table_ident, client_, owner);
   }
 
   void TearDown() override {
@@ -481,7 +484,7 @@ TEST_P(TSAuthzITest, TestReadsAndWrites) {
   vector<string> tables;
   for (int i = 0; i < kNumTables; i++) {
     string table_name = Substitute("$0$1", kTablePrefix, i);
-    ASSERT_OK(CreateTable(Substitute("$0.$1", kDb, table_name)));
+    ASSERT_OK(CreateTable(Substitute("$0.$1", kDb, table_name), harness_->users_[0]));
     tables.emplace_back(std::move(table_name));
   }
 
@@ -510,18 +513,21 @@ TEST_P(TSAuthzITest, TestReadsAndWrites) {
       clients.emplace_back(std::move(client));
     }
     EmplaceOrDie(&user_to_clients, user, std::move(clients));
+    const string& user_to_grant = i ? user : "{OWNER}";
 
-    // Generate privileges for each user for every table, and grant the
-    // appropriate privileges.
+    // Generate privileges for each user for every table, and grant
+    // the appropriate privileges.
     TableNameToPrivileges table_to_privileges;
     for (const string& table_name : tables) {
       RWPrivileges granted_privileges = GeneratePrivileges(cols, &prng);
       for (const auto& wp : granted_privileges.table_write_privileges) {
-        ASSERT_OK(harness_->GrantTablePrivilege(kDb, table_name, user, WritePrivilegeToString(wp),
+        ASSERT_OK(harness_->GrantTablePrivilege(kDb, table_name, user_to_grant,
+                                                WritePrivilegeToString(wp),
                                                 /*admin=*/false, cluster_));
       }
       for (const auto& col : granted_privileges.column_scan_privileges) {
-        ASSERT_OK(harness_->GrantColumnPrivilege(kDb, table_name, col, user, "SELECT",
+        ASSERT_OK(harness_->GrantColumnPrivilege(kDb, table_name, col,
+                                                 user_to_grant, "SELECT",
                                                  /*admin=*/false, cluster_));
       }
       RWPrivileges not_granted_privileges = ComplementaryPrivileges(cols, granted_privileges);
@@ -587,11 +593,11 @@ TEST_P(TSAuthzITest, TestAlters) {
 
   static const string kTableName = "table";
   const string table_ident = Substitute("$0.$1", kDb, kTableName);
-  ASSERT_OK(CreateTable(table_ident));
-
   const string user = "user0";
   ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(user));
   ASSERT_OK(cluster_->kdc()->Kinit(user));
+
+  ASSERT_OK(CreateTable(table_ident, user));
 
   shared_ptr<KuduClient> user_client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &user_client));

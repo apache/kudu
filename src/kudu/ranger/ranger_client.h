@@ -19,6 +19,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -84,28 +85,30 @@ class RangerClient {
   // Authorizes an action on the table. Sets 'authorized' to true if it's
   // authorized, false otherwise.
   Status AuthorizeAction(const std::string& user_name, const ActionPB& action,
-                         const std::string& database, const std::string& table,
+                         const std::string& database, const std::string& table, bool is_owner,
                          bool requires_delegate_admin, bool* authorized,
                          Scope scope = Scope::TABLE) WARN_UNUSED_RESULT;
 
   // Authorizes action on multiple tables. It sets 'table_names' to the
   // tables the user is authorized to access.
   Status AuthorizeActionMultipleTables(const std::string& user_name, const ActionPB& action,
-                                       std::unordered_set<std::string>* tables)
+                                       std::unordered_map<std::string, bool>* tables)
     WARN_UNUSED_RESULT;
 
   // Authorizes action on multiple columns. It sets 'column_names' to the
   // columns the user is authorized to access.
   Status AuthorizeActionMultipleColumns(const std::string& user_name, const ActionPB& action,
                                         const std::string& database, const std::string& table,
+                                        bool is_owner,
                                         std::unordered_set<std::string>* column_names)
-      WARN_UNUSED_RESULT;
+    WARN_UNUSED_RESULT;
 
   // Authorizes multiple table-level actions on a single table. It sets
   // 'actions' to the actions the user is authorized to perform.
   Status AuthorizeActions(const std::string& user_name, const std::string& database,
-                          const std::string& table,
-                          std::unordered_set<ActionPB, ActionHash>* actions) WARN_UNUSED_RESULT;
+                          const std::string& table, bool is_owner,
+                          std::unordered_set<ActionPB, ActionHash>* actions,
+                          Scope scope = Scope::TABLE) WARN_UNUSED_RESULT;
 
   // Refreshes policies in the Ranger subprocess. This does not invalidate the
   // existing cache and doesn't fail if Ranger service is unavailable, it simply

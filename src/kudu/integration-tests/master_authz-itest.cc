@@ -94,6 +94,7 @@ using strings::Substitute;
 namespace {
 const char* const kAdminUser = "test-admin";
 const char* const kTestUser = "test-user";
+const char* const kSecondUser = "alice";
 const char* const kImpalaUser = "impala";
 const char* const kDatabaseName = "db";
 const char* const kTableName = "table";
@@ -130,12 +131,15 @@ string HarnessEnumToString(HarnessEnum h) {
 struct PrivilegeParams {
   // NOLINTNEXTLINE(google-explicit-constructor)
   PrivilegeParams(string db_name,
-                  string table_name = "")
+                  string table_name = "",
+                  string user_name = kTestUser)
       : db_name(std::move(db_name)),
-        table_name(std::move(table_name)) {
+        table_name(std::move(table_name)),
+        user_name(std::move(user_name)) {
   }
   const string db_name;
   const string table_name;
+  const string user_name;
 };
 
 class MasterAuthzITestHarness {
@@ -277,6 +281,7 @@ class MasterAuthzITestHarness {
         .schema(&schema)
         .num_replicas(1)
         .set_range_partition_columns({ "key" })
+        .set_owner(kTestUser)
         .Create();
   }
 
@@ -312,8 +317,7 @@ class MasterAuthzITestHarness {
     // Add 'impala' as trusted user who may access the cluster without being
     // authorized.
     opts.extra_master_flags.emplace_back("--trusted_user_acl=impala");
-    opts.extra_master_flags.emplace_back("--user_acl=test-user,impala");
-    opts.extra_master_flags.emplace_back("--ranger_log_level=debug");
+    opts.extra_master_flags.emplace_back("--user_acl=test-user,impala,alice");
     SetUpExternalMiniServiceOpts(&opts);
     return opts;
   }
@@ -375,7 +379,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
     policy.tables.emplace_back("*");
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::CREATE}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -385,7 +389,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::DROP}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::DROP}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -402,7 +406,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALTER}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALTER}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -413,13 +417,13 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     policy_new_table.databases.emplace_back(p.db_name);
     // IsCreateTableDone() requires METADATA on the table level.
     policy_new_table.tables.emplace_back("*");
-    policy_new_table.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::CREATE}, false));
+    policy_new_table.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::CREATE}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy_new_table)));
 
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -429,7 +433,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
         override {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -439,7 +443,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::METADATA}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::METADATA}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -449,7 +453,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -458,12 +462,12 @@ class RangerITestHarness : public MasterAuthzITestHarness {
                                    const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
-    db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    db_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(db_policy)));
     AuthorizationPolicy tbl_policy;
     tbl_policy.databases.emplace_back(p.db_name);
     tbl_policy.tables.emplace_back("*");
-    tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, false));
+    tbl_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, false));
     RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -473,7 +477,7 @@ class RangerITestHarness : public MasterAuthzITestHarness {
     AuthorizationPolicy policy;
     policy.databases.emplace_back(p.db_name);
     policy.tables.emplace_back(p.table_name);
-    policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -483,12 +487,12 @@ class RangerITestHarness : public MasterAuthzITestHarness {
       const unique_ptr<ExternalMiniCluster>& cluster) override {
     AuthorizationPolicy db_policy;
     db_policy.databases.emplace_back(p.db_name);
-    db_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    db_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(db_policy)));
     AuthorizationPolicy tbl_policy;
     tbl_policy.databases.emplace_back(p.db_name);
     tbl_policy.tables.emplace_back("*");
-    tbl_policy.items.emplace_back(PolicyItem({kTestUser}, {ActionPB::ALL}, true));
+    tbl_policy.items.emplace_back(PolicyItem({p.user_name}, {ActionPB::ALL}, true));
     RETURN_NOT_OK(ranger_->AddPolicy(move(tbl_policy)));
     return RefreshAuthzPolicies(cluster);
   }
@@ -557,6 +561,7 @@ class MasterAuthzITestBase : public ExternalMiniClusterITestBase {
     // Create principals 'impala' and 'kudu'. Configure to use the latter.
     ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(kImpalaUser));
     ASSERT_OK(cluster_->kdc()->CreateUserPrincipal("kudu"));
+    ASSERT_OK(cluster_->kdc()->CreateUserPrincipal(kSecondUser));
     ASSERT_OK(cluster_->kdc()->Kinit("kudu"));
 
     ASSERT_OK(harness_->SetUpExternalServiceClients(cluster_));
@@ -818,7 +823,8 @@ TEST_P(MasterAuthzITest, TestAuthzListTables) {
   ASSERT_EQ(vector<string>({ table_name }), tables);
 
   tables.clear();
-  ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kSecondTable }));
+  ASSERT_OK(this->GrantGetMetadataTablePrivilege(
+      {kDatabaseName, kSecondTable, "{OWNER}"}));
   ASSERT_OK(this->client_->ListTables(&tables));
   unordered_set<string> tables_set(tables.begin(), tables.end());
   ASSERT_EQ(unordered_set<string>({ table_name, sec_table_name }), tables_set);
@@ -849,13 +855,68 @@ TEST_P(MasterAuthzITest, TestAuthzListTablesConcurrentRename) {
   ASSERT_EQ(sec_table_name, tables[0]);
 }
 
+TEST_P(MasterAuthzITest, TestAuthzGiveAwayOwnership) {
+  this->GrantAllWithGrantTablePrivilege({ kDatabaseName, kTableName, "{OWNER}"});
+
+  // We need to grant metadata permissions to the user, otherwise the ownership
+  // change would time out due to lack of privileges when checking the alter
+  // table progress.
+  this->GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName, kTestUser });
+  const string table_name = Substitute("$0.$1", kDatabaseName, kTableName);
+
+  // Change table owner.
+  {
+    unique_ptr<KuduTableAlterer> alterer(
+        this->client_->NewTableAlterer(table_name));
+    ASSERT_OK(alterer->SetOwner(kSecondUser)->Alter());
+  }
+
+  // Attempt to drop a column after as a non-owner.
+  {
+    unique_ptr<KuduTableAlterer> alterer(
+        this->client_->NewTableAlterer(table_name));
+    Status s = alterer->DropColumn("int8_val")->Alter();
+    ASSERT_TRUE(s.IsNotAuthorized());
+  }
+
+  // Login as the new owner, create a new client, and alter the table.
+  {
+    ASSERT_OK(this->cluster_->kdc()->Kinit(kSecondUser));
+    ASSERT_OK(this->cluster_->CreateClient(nullptr, &this->client_));
+    unique_ptr<KuduTableAlterer> alterer(
+        this->client_->NewTableAlterer(table_name));
+    ASSERT_OK(alterer->DropColumn("int8_val")->Alter());
+  }
+}
+
+class MasterAuthzOwnerITest : public MasterAuthzITestBase,
+                              public ::testing::WithParamInterface<std::tuple<HarnessEnum,
+                                                                              std::string>> {
+ public:
+  void SetUp() override {
+    NO_FATALS(MasterAuthzITestBase::SetUp());
+    NO_FATALS(SetUpCluster(std::get<0>(GetParam())));
+  }
+};
+
+INSTANTIATE_TEST_CASE_P(
+    AuthzProvidersWithOwner, MasterAuthzOwnerITest,
+    ::testing::Combine(::testing::Values(kRanger),
+                       ::testing::Values(kTestUser, "{OWNER}")),
+    [](const testing::TestParamInfo<MasterAuthzOwnerITest::ParamType>& info) {
+      string user = std::get<1>(info.param) == "{OWNER}" ? "owner" : "nonowner";
+      return Substitute("$0_$1", HarnessEnumToString(std::get<0>(info.param)),
+                        user);
+    });
+
 // Test that when the client passes a table identifier with the table name
 // and table ID refer to different tables, the client needs permission on
 // both tables for returning TABLE_NOT_FOUND error to avoid leaking table
 // existence.
-TEST_P(MasterAuthzITest, TestMismatchedTable) {
+TEST_P(MasterAuthzOwnerITest, TestMismatchedTable) {
   const auto table_name_a = Substitute("$0.$1", kDatabaseName, kTableName);
   const auto table_name_b = Substitute("$0.$1", kDatabaseName, kSecondTable);
+  const string& kUsername = std::get<1>(GetParam());
 
   // Log in as 'test-admin' to get the tablet ID.
   ASSERT_OK(this->cluster_->kdc()->Kinit(kAdminUser));
@@ -872,12 +933,12 @@ TEST_P(MasterAuthzITest, TestMismatchedTable) {
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_MATCHES(s.ToString(), "[Uu]nauthorized action");
 
-  ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName }));
+  ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName, kUsername }));
   s = this->GetTableLocationsWithTableId(table_name_b, table_id_a);
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_MATCHES(s.ToString(), "[Uu]nauthorized action");
 
-  ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kSecondTable }));
+  ASSERT_OK(this->GrantGetMetadataTablePrivilege({ kDatabaseName, kSecondTable, kUsername }));
   s = this->GetTableLocationsWithTableId(table_name_b, table_id_a);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "the table ID refers to a different table");
@@ -920,7 +981,7 @@ ostream& operator <<(ostream& out, const AuthzDescriptor& d) {
 
 class TestAuthzTable :
     public MasterAuthzITestBase,
-    public ::testing::WithParamInterface<std::tuple<HarnessEnum, AuthzDescriptor>> {
+    public ::testing::WithParamInterface<std::tuple<HarnessEnum, AuthzDescriptor, std::string>> {
  public:
   void SetUp() override {
     NO_FATALS(MasterAuthzITestBase::SetUp());
@@ -930,11 +991,18 @@ class TestAuthzTable :
 
 TEST_P(TestAuthzTable, TestAuthorizeTable) {
   const AuthzDescriptor& desc = std::get<1>(GetParam());
+  const string& owner = std::get<2>(GetParam());
+  if (desc.funcs.description == "CreateTable" && owner == "{OWNER}") {
+    // This case doesn't make sense semantically as we don't have database
+    // owners which would be required to create a table.
+    return;
+  }
   const auto table_name = Substitute("$0.$1", desc.database, desc.table_name);
   const auto new_table_name = Substitute("$0.$1",
                                          desc.database, desc.new_table_name);
   const OperationParams action_params = { table_name, new_table_name };
-  const PrivilegeParams privilege_params = { desc.database, desc.table_name };
+  const PrivilegeParams privilege_params = { desc.database, desc.table_name,
+                                             std::get<2>(GetParam()) };
 
   // User 'test-user' attempts to operate on the table without proper privileges.
   Status s = desc.funcs.do_action(this, action_params);
@@ -1046,15 +1114,17 @@ static const AuthzDescriptor kAuthzCombinations[] = {
       ""
     },
 };
-INSTANTIATE_TEST_CASE_P(AuthzCombinations,
-                        TestAuthzTable,
-                        ::testing::Combine(
-                            ::testing::Values(kRanger),
-                            ::testing::ValuesIn(kAuthzCombinations)),
-                        [] (const testing::TestParamInfo<TestAuthzTable::ParamType>& info) {
-                          return Substitute("$0_$1", HarnessEnumToString(std::get<0>(info.param)),
-                                            std::get<1>(info.param).funcs.description);
-                        });
+INSTANTIATE_TEST_CASE_P(
+    AuthzCombinations, TestAuthzTable,
+    ::testing::Combine(::testing::Values(kRanger),
+                       ::testing::ValuesIn(kAuthzCombinations),
+                       ::testing::Values(kTestUser, "{OWNER}")),
+    [](const testing::TestParamInfo<TestAuthzTable::ParamType>& info) {
+      string user = std::get<2>(info.param) == "{OWNER}" ? "owner" : "nonowner";
+      return Substitute("$0_$1_$2",
+                        HarnessEnumToString(std::get<0>(info.param)),
+                        std::get<1>(info.param).funcs.description, user);
+    });
 
 class AuthzErrorHandlingTest :
     public MasterAuthzITestBase,

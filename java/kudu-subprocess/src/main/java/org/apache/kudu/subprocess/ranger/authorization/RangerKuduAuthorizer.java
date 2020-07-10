@@ -182,7 +182,9 @@ public class RangerKuduAuthorizer {
       String db = request.hasDatabase() ? request.getDatabase() : null;
       String table = request.hasTable() ? request.getTable() : null;
       String column = request.hasColumn() ? request.getColumn() : null;
-      boolean admin = request.hasRequiresDelegateAdmin() && request.getRequiresDelegateAdmin();
+      boolean requiresAdmin = request.hasRequiresDelegateAdmin() &&
+          request.getRequiresDelegateAdmin();
+      boolean isOwner = request.hasIsOwner() && request.getIsOwner();
       RangerAccessRequest rangerAccessRequest = createRequest(action, user, groups, db, table,
                                                               column);
       RangerAccessResult rangerAccessResult = plugin.isAccessAllowed(rangerAccessRequest);
@@ -190,13 +192,32 @@ public class RangerKuduAuthorizer {
         LOG.debug(String.format("RangerAccessRequest [%s] receives result [%s]",
             rangerAccessResult.getAccessRequest().toString(), rangerAccessResult.toString()));
       }
-      if (rangerAccessResult.getIsAllowed() && admin) {
+      if (!rangerAccessResult.getIsAllowed() && isOwner) {
+        rangerAccessRequest = createRequest(action, RangerPolicyEngine.RESOURCE_OWNER, groups,
+                                            db, table, column);
+        rangerAccessResult = plugin.isAccessAllowed(rangerAccessRequest);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug(String.format("RangerAccessRequest [%s] receives result [%s]",
+              rangerAccessResult.getAccessRequest().toString(), rangerAccessResult.toString()));
+        }
+      }
+      if (rangerAccessResult.getIsAllowed() && requiresAdmin) {
         rangerAccessRequest = createRequest(RangerPolicyEngine.ADMIN_ACCESS, user, groups, db,
                                             table, column);
         rangerAccessResult = plugin.isAccessAllowed(rangerAccessRequest);
         if (LOG.isDebugEnabled()) {
           LOG.debug(String.format("RangerAccessRequest [%s] receives result [%s]",
               rangerAccessResult.getAccessRequest().toString(), rangerAccessResult.toString()));
+        }
+        if (!rangerAccessResult.getIsAllowed() && isOwner) {
+          rangerAccessRequest = createRequest(RangerPolicyEngine.ADMIN_ACCESS,
+                                              RangerPolicyEngine.RESOURCE_OWNER,
+                                              groups, db, table, column);
+          rangerAccessResult = plugin.isAccessAllowed(rangerAccessRequest);
+          if (LOG.isDebugEnabled()) {
+            LOG.debug(String.format("RangerAccessRequest [%s] receives result [%s]",
+                rangerAccessResult.getAccessRequest().toString(), rangerAccessResult.toString()));
+          }
         }
       }
 

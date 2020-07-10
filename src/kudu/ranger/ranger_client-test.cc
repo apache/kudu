@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -63,6 +64,7 @@ using kudu::subprocess::SubprocessResponsePB;
 using kudu::subprocess::SubprocessServer;
 using std::move;
 using std::string;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::SkipEmpty;
@@ -172,7 +174,7 @@ class RangerClientTest : public KuduTest {
 
 TEST_F(RangerClientTest, TestAuthorizeCreateTableUnauthorized) {
   bool authorized;
-  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar", "baz",
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "bar", "baz", /*is_owner=*/false,
                                     /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
 }
@@ -180,41 +182,41 @@ TEST_F(RangerClientTest, TestAuthorizeCreateTableUnauthorized) {
 TEST_F(RangerClientTest, TestAuthorizeCreateTableAuthorized) {
   Allow("jdoe", ActionPB::CREATE, "foo", "bar");
   bool authorized;
-  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar",
+  ASSERT_OK(client_.AuthorizeAction("jdoe", ActionPB::CREATE, "foo", "bar", /*is_owner=*/false,
                                     /*requires_delegate_admin=*/false, &authorized));
   ASSERT_TRUE(authorized);
 }
 
 TEST_F(RangerClientTest, TestAuthorizeListNoTables) {
-  unordered_set<string> tables;
+  unordered_map<string, bool> tables;
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeListNoTablesAuthorized) {
-  unordered_set<string> tables;
-  tables.emplace("foo.bar");
-  tables.emplace("foo.baz");
+  unordered_map<string, bool> tables;
+  tables.emplace("foo.bar", false);
+  tables.emplace("foo.baz", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataSubsetOfTablesAuthorized) {
   Allow("jdoe", ActionPB::METADATA, "default", "foobar");
-  unordered_set<string> tables;
-  tables.emplace("default.foobar");
-  tables.emplace("barbaz");
+  unordered_map<string, bool> tables;
+  tables.emplace("default.foobar", false);
+  tables.emplace("barbaz", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(1, tables.size());
-  ASSERT_EQ("default.foobar", *tables.begin());
+  ASSERT_EQ("default.foobar", tables.begin()->first);
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataAllAuthorized) {
   Allow("jdoe", ActionPB::METADATA, "default", "foobar");
   Allow("jdoe", ActionPB::METADATA, "default", "barbaz");
-  unordered_set<string> tables;
-  tables.emplace("default.foobar");
-  tables.emplace("barbaz");
+  unordered_map<string, bool> tables;
+  tables.emplace("default.foobar", false);
+  tables.emplace("barbaz", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(2, tables.size());
   ASSERT_TRUE(ContainsKey(tables, "default.foobar"));
@@ -222,19 +224,19 @@ TEST_F(RangerClientTest, TestAuthorizeMetadataAllAuthorized) {
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataAllNonRanger) {
-  unordered_set<string> tables;
-  tables.emplace("foo.");
-  tables.emplace(".bar");
+  unordered_map<string, bool> tables;
+  tables.emplace("foo.", false);
+  tables.emplace(".bar", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(0, tables.size());
 }
 
 TEST_F(RangerClientTest, TestAuthorizeMetadataNoneAuthorizedContainsNonRanger) {
-  unordered_set<string> tables;
-  tables.emplace("foo.");
-  tables.emplace(".bar");
-  tables.emplace("foo.bar");
-  tables.emplace("foo.baz");
+  unordered_map<string, bool> tables;
+  tables.emplace("foo.", false);
+  tables.emplace(".bar", false);
+  tables.emplace("foo.bar", false);
+  tables.emplace("foo.baz", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(0, tables.size());
 }
@@ -242,10 +244,10 @@ TEST_F(RangerClientTest, TestAuthorizeMetadataNoneAuthorizedContainsNonRanger) {
 TEST_F(RangerClientTest, TestAuthorizeMetadataAllAuthorizedContainsNonRanger) {
   Allow("jdoe", ActionPB::METADATA, "default", "foobar");
   Allow("jdoe", ActionPB::METADATA, "default", "barbaz");
-  unordered_set<string> tables;
-  tables.emplace("default.foobar");
-  tables.emplace("barbaz");
-  tables.emplace("foo.");
+  unordered_map<string, bool> tables;
+  tables.emplace("default.foobar", false);
+  tables.emplace("barbaz", false);
+  tables.emplace("foo.", false);
   ASSERT_OK(client_.AuthorizeActionMultipleTables("jdoe", ActionPB::METADATA, &tables));
   ASSERT_EQ(2, tables.size());
   ASSERT_TRUE(ContainsKey(tables, "default.foobar"));
@@ -262,7 +264,8 @@ TEST_F(RangerClientTest, TestAuthorizeScanSubsetAuthorized) {
   columns.emplace("col3");
   columns.emplace("col4");
   ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                   "default", "foobar", &columns));
+                                                   "default", "foobar", /*is_owner=*/false,
+                                                   &columns));
   ASSERT_EQ(2, columns.size());
   ASSERT_TRUE(ContainsKey(columns, "col1"));
   ASSERT_TRUE(ContainsKey(columns, "col3"));
@@ -281,7 +284,8 @@ TEST_F(RangerClientTest, TestAuthorizeScanAllColumnsAuthorized) {
   columns.emplace("col3");
   columns.emplace("col4");
   ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                   "default", "foobar", &columns));
+                                                   "default", "foobar", /*is_owner=*/false,
+                                                   &columns));
   ASSERT_EQ(4, columns.size());
   ASSERT_TRUE(ContainsKey(columns, "col1"));
   ASSERT_TRUE(ContainsKey(columns, "col2"));
@@ -295,7 +299,8 @@ TEST_F(RangerClientTest, TestAuthorizeScanNoColumnsAuthorized) {
     columns.emplace(Substitute("col$0", i));
   }
   ASSERT_OK(client_.AuthorizeActionMultipleColumns("jdoe", ActionPB::SELECT,
-                                                   "default", "foobar", &columns));
+                                                   "default", "foobar", /*is_owner=*/false,
+                                                   &columns));
   ASSERT_EQ(0, columns.size());
 }
 
@@ -304,7 +309,7 @@ TEST_F(RangerClientTest, TestAuthorizeActionsNoneAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions));
   ASSERT_EQ(0, actions.size());
 }
 
@@ -314,7 +319,7 @@ TEST_F(RangerClientTest, TestAuthorizeActionsSomeAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions));
   ASSERT_EQ(1, actions.size());
   ASSERT_TRUE(ContainsKey(actions, ActionPB::SELECT));
 }
@@ -327,7 +332,7 @@ TEST_F(RangerClientTest, TestAuthorizeActionsAllAuthorized) {
   actions.emplace(ActionPB::DROP);
   actions.emplace(ActionPB::SELECT);
   actions.emplace(ActionPB::INSERT);
-  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", &actions));
+  ASSERT_OK(client_.AuthorizeActions("jdoe", "default", "foobar", /*is_owner=*/false, &actions));
   ASSERT_EQ(3, actions.size());
 }
 
@@ -408,7 +413,7 @@ TEST_F(RangerClientTestBase, TestLogging) {
   // Make a request. It doesn't matter whether it succeeds or not -- debug logs
   // should include info about each request.
   bool authorized;
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", /*is_owner=*/false,
                                      /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {
@@ -428,7 +433,7 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = false;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", /*is_owner=*/false,
                                      /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {
@@ -445,7 +450,7 @@ TEST_F(RangerClientTestBase, TestLogging) {
   FLAGS_ranger_overwrite_log_config = true;
   client_.reset(new RangerClient(env_, metric_entity_));
   ASSERT_OK(client_->Start());
-  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table",
+  ASSERT_OK(client_->AuthorizeAction("user", ActionPB::ALL, "db", "table", /*is_owner=*/false,
                                      /*requires_delegate_admin=*/false, &authorized));
   ASSERT_FALSE(authorized);
   {

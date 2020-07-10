@@ -18,7 +18,7 @@
 #pragma once
 
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -55,24 +55,29 @@ class RangerAuthzProvider : public AuthzProvider {
                               const std::string& owner) override WARN_UNUSED_RESULT;
 
   Status AuthorizeDropTable(const std::string& table_name,
-                            const std::string& user) override WARN_UNUSED_RESULT;
+                            const std::string& user,
+                            bool is_owner) override WARN_UNUSED_RESULT;
 
   Status AuthorizeAlterTable(const std::string& old_table,
                              const std::string& new_table,
-                             const std::string& user) override WARN_UNUSED_RESULT;
+                             const std::string& user,
+                             bool is_owner) override WARN_UNUSED_RESULT;
 
   Status AuthorizeGetTableMetadata(const std::string& table_name,
-                                   const std::string& user) override WARN_UNUSED_RESULT;
+                                   const std::string& user,
+                                   bool is_owner) override WARN_UNUSED_RESULT;
 
   Status AuthorizeListTables(const std::string& user,
-                             std::unordered_set<std::string>* table_names,
+                             std::unordered_map<std::string, bool>* is_owner_by_table_name,
                              bool* checked_table_names) override WARN_UNUSED_RESULT;
 
   Status AuthorizeGetTableStatistics(const std::string& table_name,
-                                     const std::string& user) override WARN_UNUSED_RESULT;
+                                     const std::string& user,
+                                     bool is_owner) override WARN_UNUSED_RESULT;
 
   Status FillTablePrivilegePB(const std::string& table_name,
                               const std::string& user,
+                              bool is_owner,
                               const SchemaPB& schema_pb,
                               security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT;
 

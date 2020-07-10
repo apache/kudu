@@ -70,6 +70,9 @@ message RangerRequestPB {
 
   // Whether delegate admin privilege is required to perform the action.
   optional bool requires_delegate_admin = 5;
+
+  // Whether the owner is performing the action.
+  optional bool is_owner = 6;
 }
 
 // Describes a single Ranger authorization response for a single user.

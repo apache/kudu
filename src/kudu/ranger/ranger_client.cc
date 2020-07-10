@@ -170,8 +170,10 @@ using kudu::security::GetKrb5ConfigFile;
 using kudu::subprocess::SubprocessMetrics;
 using kudu::subprocess::SubprocessServer;
 using std::move;
+using std::pair;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -394,7 +396,7 @@ Status RangerClient::Start() {
 
 // TODO(abukor): refactor to avoid code duplication
 Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& action,
-                                     const string& database, const string& table,
+                                     const string& database, const string& table, bool is_owner,
                                      bool requires_delegate_admin, bool* authorized,
                                      Scope scope) {
   DCHECK(subprocess_);
@@ -407,6 +409,7 @@ Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& ac
   req->set_action(action);
   req->set_database(database);
   req->set_requires_delegate_admin(requires_delegate_admin);
+  req->set_is_owner(is_owner);
   // Only pass the table name if this is table level request.
   if (scope == Scope::TABLE) {
     req->set_table(table);
@@ -421,6 +424,7 @@ Status RangerClient::AuthorizeAction(const string& user_name, const ActionPB& ac
 
 Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, const ActionPB& action,
                                                     const string& database, const string& table,
+                                                    bool is_owner,
                                                     unordered_set<string>* column_names) {
   DCHECK(subprocess_);
   DCHECK(!column_names->empty());
@@ -435,6 +439,7 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, con
     req->set_database(database);
     req->set_table(table);
     req->set_column(col);
+    req->set_is_owner(is_owner);
   }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));
@@ -454,20 +459,20 @@ Status RangerClient::AuthorizeActionMultipleColumns(const string& user_name, con
 }
 
 Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, const ActionPB& action,
-                                                   unordered_set<string>* tables) {
+                                                   unordered_map<string, bool>* tables) {
   DCHECK(subprocess_);
 
   RangerRequestListPB req_list;
   RangerResponseListPB resp_list;
   req_list.set_user(user_name);
 
-  vector<string> orig_table_names;
+  vector<pair<string, bool>> orig_table_names;
 
   for (const auto& table : *tables) {
     string db;
     Slice tbl;
 
-    auto s = ParseRangerTableIdentifier(table, &db, &tbl);
+    auto s = ParseRangerTableIdentifier(table.first, &db, &tbl);
     if (PREDICT_TRUE(s.ok())) {
       orig_table_names.emplace_back(table);
 
@@ -475,8 +480,9 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, cons
       req->set_action(action);
       req->set_database(db);
       req->set_table(tbl.ToString());
+      req->set_is_owner(table.second);
     } else {
-      LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table);
+      LOG(WARNING) << Substitute(kDenyNonRangerTableTemplate, table.first);
     }
   }
 
@@ -484,7 +490,7 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, cons
 
   DCHECK_EQ(orig_table_names.size(), resp_list.responses_size());
 
-  unordered_set<string> allowed_tables;
+  unordered_map<string, bool> allowed_tables;
   for (auto i = 0; i < orig_table_names.size(); ++i) {
     if (resp_list.responses(i).allowed()) {
       EmplaceOrDie(&allowed_tables, move(orig_table_names[i]));
@@ -497,8 +503,9 @@ Status RangerClient::AuthorizeActionMultipleTables(const string& user_name, cons
 }
 
 Status RangerClient::AuthorizeActions(const string& user_name, const string& database,
-                                      const string& table,
-                                      unordered_set<ActionPB, ActionHash>* actions) {
+                                      const string& table, bool is_owner,
+                                      unordered_set<ActionPB, ActionHash>* actions,
+                                      Scope scope) {
   DCHECK(subprocess_);
   DCHECK(!actions->empty());
 
@@ -510,7 +517,10 @@ Status RangerClient::AuthorizeActions(const string& user_name, const string& dat
     auto req = req_list.add_requests();
     req->set_action(action);
     req->set_database(database);
-    req->set_table(table);
+    if (scope == Scope::TABLE) {
+      req->set_table(table);
+      req->set_is_owner(is_owner);
+    }
   }
 
   RETURN_NOT_OK(subprocess_->Execute(req_list, &resp_list));

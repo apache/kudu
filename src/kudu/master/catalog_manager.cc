@@ -1856,8 +1856,9 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   //    the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  auto authz_func = [&] (const string& username, const string& table_name) {
-    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username,
+                                                                 username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
@@ -1941,9 +1942,9 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   // *----------------*--------------*---------------------*-----------------*
   // | NO             | NO           | N/A                 | InvalidArgument |
   // *----------------*--------------*---------------------*-----------------*
-  auto authorize = [&] (const string& name) {
+  auto authorize = [&] (const string& name, const string& owner) {
     if (user) {
-      return authz_func(*user, name);
+      return authz_func(*user, name, owner);
     }
     return Status::OK();
   };
@@ -1956,7 +1957,7 @@ Status CatalogManager::FindLockAndAuthorizeTable(
 
   scoped_refptr<TableInfo> table;
   // Set to true if the client-provided table name and ID refer to different tables.
-  bool mismatched_table = false;
+  scoped_refptr<TableInfo> table_with_mismatched_name;
   {
     shared_lock<LockType> l(lock_);
     if (table_identifier.has_table_id()) {
@@ -1964,10 +1965,11 @@ Status CatalogManager::FindLockAndAuthorizeTable(
 
       // If the request contains both a table ID and table name, ensure that
       // both match the same table.
+      auto table_by_name = FindPtrOrNull(normalized_table_names_map_,
+                                         NormalizeTableName(table_identifier.table_name()));
       if (table_identifier.has_table_name() &&
-          table.get() != FindPtrOrNull(normalized_table_names_map_,
-                                       NormalizeTableName(table_identifier.table_name())).get()) {
-        mismatched_table = true;
+          table.get() != table_by_name.get()) {
+        table_with_mismatched_name.swap(table_by_name);
       }
     } else if (table_identifier.has_table_name()) {
       table = FindPtrOrNull(normalized_table_names_map_,
@@ -1985,7 +1987,9 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   // NOT_AUTHORIZED error, to avoid leaking table existence.
   if (!table) {
     if (table_identifier.has_table_name()) {
-      RETURN_NOT_OK(authorize(NormalizeTableName(table_identifier.table_name())));
+      // if the table doesn't exist, we don't have ownership information to pass
+      // to authorize().
+      RETURN_NOT_OK(authorize(NormalizeTableName(table_identifier.table_name()), ""));
     }
     return tnf_error();
   }
@@ -1994,7 +1998,7 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   // found is authorized.
   TableMetadataLock lock(table.get(), lock_mode);
   string table_name = NormalizeTableName(lock.data().name());
-  RETURN_NOT_OK(authorize(table_name));
+  RETURN_NOT_OK(authorize(table_name, lock.data().owner()));
 
   // If the table name and table ID refer to different tables, for example,
   //   1. the ID maps to table A.
@@ -2002,8 +2006,10 @@ Status CatalogManager::FindLockAndAuthorizeTable(
   //
   // Authorize user against both tables, then return TABLE_NOT_FOUND error to
   // avoid leaking table existence.
-  if (mismatched_table) {
-    RETURN_NOT_OK(authorize(NormalizeTableName(table_identifier.table_name())));
+  if (table_with_mismatched_name) {
+    TableMetadataLock lock_table_by_name(table_with_mismatched_name.get(), lock_mode);
+    RETURN_NOT_OK(authorize(NormalizeTableName(lock_table_by_name.data().name()),
+                            lock_table_by_name.data().owner()));
     return SetupError(
         Status::NotFound(
             Substitute("the table ID refers to a different table '$0' than '$1'",
@@ -2050,8 +2056,9 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
     // to operate on the table.
     scoped_refptr<TableInfo> table;
     TableMetadataLock l;
-    auto authz_func = [&](const string& username, const string& table_name) {
-      return SetupError(authz_provider_->AuthorizeDropTable(table_name, username),
+    auto authz_func = [&](const string& username, const string& table_name, const string& owner) {
+      return SetupError(authz_provider_->AuthorizeDropTable(table_name, username,
+                                                            username == owner),
                         resp, MasterErrorPB::NOT_AUTHORIZED);
     };
     RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::READ, authz_func, user,
@@ -2112,8 +2119,8 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
   //    to operate on the table. Last, mark it as removed.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  auto authz_func = [&] (const string& username, const string& table_name) {
-    return SetupError(authz_provider_->AuthorizeDropTable(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+    return SetupError(authz_provider_->AuthorizeDropTable(table_name, username, username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::WRITE, authz_func, user,
@@ -2480,10 +2487,11 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     TableMetadataLock l;
     string normalized_new_table_name = NormalizeTableName(req.new_table_name());
     auto authz_func = [&](const string& username,
-                          const string& table_name) {
+                          const string& table_name,
+                          const string& owner) {
       return SetupError(authz_provider_->AuthorizeAlterTable(table_name,
                                                              normalized_new_table_name,
-                                                             username),
+                                                             username, username == owner),
                         resp, MasterErrorPB::NOT_AUTHORIZED);
     };
     RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::READ, authz_func, user,
@@ -2600,11 +2608,14 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
   auto authz_func = [&] (const string& username,
-                         const string& table_name) {
+                         const string& table_name,
+                         const string& owner) {
     const string new_table = req.has_new_table_name() ?
         NormalizeTableName(req.new_table_name()) : table_name;
-    return SetupError(authz_provider_->AuthorizeAlterTable(table_name, new_table, username),
+    return SetupError(authz_provider_->AuthorizeAlterTable(table_name, new_table, username,
+                                                           username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
+
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::WRITE, authz_func, user,
                                           &table, &l));
@@ -2903,8 +2914,9 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   //    the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  auto authz_func = [&] (const string& username, const string& table_name) {
-    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username,
+                                                                 username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
@@ -2930,8 +2942,9 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
 
-  auto authz_func = [&] (const string& username, const string& table_name) {
-    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username,
+                                                                 username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
@@ -2948,8 +2961,9 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
     TablePrivilegePB table_privilege;
     table_privilege.set_table_id(table->id());
     RETURN_NOT_OK(
-        SetupError(authz_provider_->FillTablePrivilegePB(l.data().name(), *user, schema_pb,
-                                                         &table_privilege),
+        SetupError(authz_provider_->FillTablePrivilegePB(l.data().name(), *user,
+                                                         *user == l.data().owner(),
+                                                         schema_pb, &table_privilege),
                    resp, MasterErrorPB::UNKNOWN_ERROR));
     security::SignedTokenPB authz_token;
     RETURN_NOT_OK(token_signer->GenerateAuthzToken(
@@ -2981,12 +2995,13 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
     }
   }
   unordered_map<string, scoped_refptr<TableInfo>> table_info_by_name;
-  unordered_set<string> table_names;
+  unordered_map<string, bool> table_owner_map;
   for (const auto& table_info : tables_info) {
     TableMetadataLock ltm(table_info.get(), LockMode::READ);
     if (!ltm.data().is_running()) continue; // implies !is_deleted() too
 
     const string& table_name = ltm.data().name();
+    const string& owner = ltm.data().owner();
     if (req->has_name_filter()) {
       size_t found = table_name.find(req->name_filter());
       if (found == string::npos) {
@@ -2994,20 +3009,21 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       }
     }
     InsertOrUpdate(&table_info_by_name, table_name, table_info);
-    EmplaceIfNotPresent(&table_names, table_name);
+    EmplaceIfNotPresent(&table_owner_map, table_name, owner == *user);
   }
 
   MAYBE_INJECT_FIXED_LATENCY(FLAGS_catalog_manager_inject_latency_list_authz_ms);
   bool checked_table_names = false;
   if (user) {
     RETURN_NOT_OK(authz_provider_->AuthorizeListTables(
-        *user, &table_names, &checked_table_names));
+        *user, &table_owner_map, &checked_table_names));
   }
 
   // If we checked privileges, do another pass over the tables to filter out
   // any that may have been altered while authorizing.
   if (checked_table_names) {
-    for (const auto& table_name : table_names) {
+    for (const auto& table_owner_pair : table_owner_map) {
+      const auto& table_name = table_owner_pair.first;
       const auto& table_info = FindOrDie(table_info_by_name, table_name);
       TableMetadataLock ltm(table_info.get(), LockMode::READ);
       if (!ltm.data().is_running()) continue;
@@ -3041,8 +3057,9 @@ Status CatalogManager::GetTableStatistics(const GetTableStatisticsRequestPB* req
 
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  auto authz_func = [&] (const string& username, const string& table_name) {
-      return SetupError(authz_provider_->AuthorizeGetTableStatistics(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+      return SetupError(authz_provider_->AuthorizeGetTableStatistics(table_name, username,
+                                                                     username == owner),
                         resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
@@ -5065,7 +5082,7 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
     // the table that the tablet belongs to.
     TableMetadataLock table_lock(tablet_info->table().get(), LockMode::READ);
     RETURN_NOT_OK(authz_provider_->AuthorizeGetTableMetadata(
-        NormalizeTableName(table_lock.data().name()), *user));
+        NormalizeTableName(table_lock.data().name()), *user, *user == table_lock.data().owner()));
   }
 
   return BuildLocationsForTablet(tablet_info, filter, locs_pb, ts_infos_dict);
@@ -5178,8 +5195,9 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   // the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  auto authz_func = [&] (const string& username, const string& table_name) {
-    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+  auto authz_func = [&] (const string& username, const string& table_name, const string& owner) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username,
+                                                                 username == owner),
                       resp, MasterErrorPB::NOT_AUTHORIZED);
   };
   RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
