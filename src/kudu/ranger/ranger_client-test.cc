@@ -350,6 +350,19 @@ class RangerClientTestBase : public KuduTest {
   Status InitializeRanger() {
     ranger_.reset(new MiniRanger("127.0.0.1"));
     RETURN_NOT_OK(ranger_->Start());
+    // Create a policy so the Ranger client policy refresher can pick something
+    // up. In some environments the absense of policies can cause the plugin to
+    // wait for a policy to appear indefinitely.
+    // See KUDU-3154 and RANGER-2899 for more details.
+    // TODO(awong): remove this when RANGER-2899 is fixed.
+    PolicyItem item;
+    item.first.emplace_back("user");
+    item.second.emplace_back(ActionPB::METADATA);
+    AuthorizationPolicy policy;
+    policy.databases.emplace_back("db");
+    policy.tables.emplace_back("table");
+    policy.items.emplace_back(std::move(item));
+    RETURN_NOT_OK(ranger_->AddPolicy(std::move(policy)));
     RETURN_NOT_OK(ranger_->CreateClientConfig(test_dir_));
     client_.reset(new RangerClient(env_, metric_entity_));
     return client_->Start();
