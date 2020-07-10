@@ -362,7 +362,7 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   // The error should have increased based on the clock skew.
   int64_t error_diff = max_error_usec[1] - max_error_usec[0];
   ASSERT_NEAR(error_diff, clock_.time_service()->skew_ppm() * phys_diff.ToSeconds(),
-              10);
+              20);
 
   // Now restore the ability to read the system clock, and
   // read it again.
