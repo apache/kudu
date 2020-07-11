@@ -441,6 +441,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns a copy of the current committed Raft configuration.
   RaftConfigPB CommittedConfig() const;
 
+  // Returns a copy of the current pending Raft configuration.
+  Status PendingConfig(RaftConfigPB *pendingConfig) const;
+
   void DumpStatusHtml(std::ostream& out) const;
 
   // Transition to kStopped state. See State enum definition for details.

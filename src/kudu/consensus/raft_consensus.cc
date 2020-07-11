@@ -2762,6 +2762,16 @@ RaftConfigPB RaftConsensus::CommittedConfig() const {
   return cmeta_->CommittedConfig();
 }
 
+Status RaftConsensus::PendingConfig(RaftConfigPB *pendingConfig) const {
+  ThreadRestrictions::AssertWaitAllowed();
+  LockGuard l(lock_);
+  if (cmeta_->has_pending_config()) {
+    *pendingConfig = cmeta_->PendingConfig();
+    return Status::OK();
+  }
+  return Status::NotFound("No pending config found");
+}
+
 void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   RaftPeerPB::Role role;
   {
