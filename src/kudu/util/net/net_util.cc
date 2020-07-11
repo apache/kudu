@@ -125,6 +125,14 @@ size_t HostPort::HashCode() const {
   return seed;
 }
 
+bool HostPort::IsHostIPV6Address() const {
+  if (!Initialized())
+    return false;
+
+  int num_colons = strcount(host_, ':');
+  return (num_colons > 1);
+}
+
 Status HostPort::ParseString(const string& str, uint16_t default_port) {
   /*
     The `str` param is supposed to take the following combinations:
@@ -231,7 +239,10 @@ Status HostPort::ParseStrings(const string& comma_sep_addrs,
 }
 
 string HostPort::ToString() const {
-  return Substitute("$0:$1", host_, port_);
+  // to be compatible with RFC 3986, [2001:db8:1f70::999:de8:7648:6e8]:100
+  // style of host:port
+  return IsHostIPV6Address() ? Substitute("[$0]:$1", host_, port_) :
+      Substitute("$0:$1", host_, port_);
 }
 
 string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
