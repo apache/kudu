@@ -104,7 +104,7 @@ const struct sockaddr_in6& Sockaddr::addr() const {
 }
 
 std::string Sockaddr::ToString() const {
-  return Substitute("$0:$1", host(), port());
+  return Substitute("[$0]:$1", host(), port());
 }
 
 // Return true iff two ipv6 address structs are equal.

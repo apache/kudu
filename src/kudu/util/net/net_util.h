@@ -50,6 +50,10 @@ class HostPort {
   // the host/port pair can be resolved, without returning anything.
   Status ResolveAddresses(std::vector<Sockaddr>* addresses) const;
 
+  // In the common case, hostnames are not used in fb,
+  // but ipv6 addresses
+  bool IsHostIPV6Address() const;
+
   std::string ToString() const;
 
   const std::string& host() const { return host_; }

@@ -74,13 +74,13 @@ TEST_F(NetUtilTest, TestParseAddresses) {
   ASSERT_OK(DoParseBindAddresses("[::]:12345", &ret));
   // TODO(mpercy): If this requires square brackets to parse it should generate
   // them as well. For now, it does not.
-  ASSERT_EQ(":::12345", ret);
+  ASSERT_EQ("[::]:12345", ret);
 
   ASSERT_OK(DoParseBindAddresses("[::]", &ret));
-  ASSERT_EQ(":::7150", ret);
+  ASSERT_EQ("[::]:7150", ret);
 
   ASSERT_OK(DoParseBindAddresses("[::]:12345, [::]:12346", &ret));
-  ASSERT_EQ(":::12345,:::12346", ret);
+  ASSERT_EQ("[::]:12345,[::]:12346", ret);
 
   // Test some invalid addresses.
   Status s = DoParseBindAddresses("[::]:xyz", &ret);
@@ -100,7 +100,7 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
   ASSERT_TRUE(!addrs.empty());
   for (const Sockaddr& addr : addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
-    ASSERT_STR_MATCHES(addr.ToString(), "^(127\\.|::1)");
+    ASSERT_STR_MATCHES(addr.ToString(), "^(127\\.|\\[::1])");
     ASSERT_STR_MATCHES(addr.ToString(), ":12345$");
     EXPECT_TRUE(addr.IsAnyLocalAddress());
   }
