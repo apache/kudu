@@ -20,10 +20,57 @@ package kudu.tserver;
 option java_package = "org.apache.kudu.tserver";
 
 import "kudu/common/common.proto";
+import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/tserver/tserver.proto";
+
+message CoordinatorOpPB {
+  enum CoordinatorOpType {
+    UNKNOWN = 0;
+    BEGIN_TXN = 1;
+    REGISTER_PARTICIPANT = 2;
+    BEGIN_COMMIT_TXN = 3;
+    ABORT_TXN = 4;
+  }
+  optional CoordinatorOpType type = 1;
+  optional int64 txn_id = 2;
+
+  // Only set if 'type' is REGISTER_PARTICIPANT.
+  optional string txn_participant_id = 3;
+
+  // End-user that is associated with this request.
+  optional string user = 4;
+}
+
+message CoordinatorOpResultPB {
+  optional AppStatusPB op_error = 1;
+
+  // TODO(awong): populate this with some application-level results, like the
+  // actual transaction ID assigned, the next highest transaction ID available,
+  // etc.
+}
+
+message CoordinateTransactionRequestPB {
+  // The tablet ID of the transaction status tablet associated with the given
+  // operation.
+  optional bytes txn_status_tablet_id = 1;
+
+  // TODO(awong): consider batching these ops, though we'll need to give a lot
+  // of thought to locking constraints.
+  optional CoordinatorOpPB op = 2;
+}
+
+message CoordinateTransactionResponsePB {
+  // If there was a service-level error with the request (e.g. the server was
+  // not online, the tablet was not found, etc.), the error status that caused
+  // the failure.
+  optional TabletServerErrorPB error = 1;
+
+  // The application-level result of the operation.
+  optional CoordinatorOpResultPB op_result = 2;
+}
 
 message AlterSchemaRequestPB {
   // UUID of server this request is addressed to.
@@ -151,6 +198,10 @@ service TabletServerAdminService {
 
   // Quiesce the tablet server.
   rpc Quiesce(QuiesceTabletServerRequestPB) returns (QuiesceTabletServerResponsePB);
+
+  // Coordinate the lifecycle of a transaction.
+  rpc CoordinateTransaction(CoordinateTransactionRequestPB)
+      returns (CoordinateTransactionResponsePB);
 }
 
 message QuiesceTabletServerRequestPB {

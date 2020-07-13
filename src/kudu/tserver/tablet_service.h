@@ -87,6 +87,8 @@ class AlterSchemaRequestPB;
 class AlterSchemaResponsePB;
 class ChecksumRequestPB;
 class ChecksumResponsePB;
+class CoordinateTransactionRequestPB;
+class CoordinateTransactionResponsePB;
 class CreateTabletRequestPB;
 class CreateTabletResponsePB;
 class DeleteTabletRequestPB;
@@ -215,6 +217,10 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
   void Quiesce(const QuiesceTabletServerRequestPB* req,
                QuiesceTabletServerResponsePB* resp,
                rpc::RpcContext* context) override;
+
+  void CoordinateTransaction(const CoordinateTransactionRequestPB* req,
+                             CoordinateTransactionResponsePB* resp,
+                             rpc::RpcContext* context) override;
 
   bool SupportsFeature(uint32_t feature) const override;
 

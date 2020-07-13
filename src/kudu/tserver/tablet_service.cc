@@ -83,6 +83,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tablet_server.h"
@@ -102,6 +103,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/process_memory.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -1164,12 +1166,105 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   }
 }
 
+namespace {
+// Returns an error if 'op' is missing any required fields, or if it's of an
+// unknown type.
+Status ValidateCoordinatorOpFields(const CoordinatorOpPB& op) {
+  const auto& type = op.type();
+  Status s;
+  switch (type) {
+    case CoordinatorOpPB::REGISTER_PARTICIPANT:
+      if (!op.has_txn_participant_id()) {
+        return Status::InvalidArgument(Substitute("Missing participant id: $0",
+                                                  SecureShortDebugString(op)));
+      }
+      FALLTHROUGH_INTENDED;
+    case CoordinatorOpPB::BEGIN_TXN:
+    case CoordinatorOpPB::BEGIN_COMMIT_TXN:
+    case CoordinatorOpPB::ABORT_TXN:
+      if (!op.has_txn_id()) {
+        return Status::InvalidArgument(Substitute("Missing txn id: $0",
+                                                  SecureShortDebugString(op)));
+      }
+      return Status::OK();
+    default:
+      return Status::InvalidArgument(Substitute("Unknown op type: $0", type));
+  }
+  __builtin_unreachable();
+}
+} // anonymous namespace
+
+void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRequestPB* req,
+                                                   CoordinateTransactionResponsePB* resp,
+                                                   rpc::RpcContext* context) {
+  if (PREDICT_FALSE(!req->has_txn_status_tablet_id() ||
+                    !req->has_op())) {
+    Status s = Status::InvalidArgument(
+        Substitute("Missing fields in request: $0", SecureShortDebugString(*req)));
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  const auto& op = req->op();
+  Status s = ValidateCoordinatorOpFields(op);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  scoped_refptr<TabletReplica> replica;
+  if (PREDICT_FALSE(!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(),
+                                                         req->txn_status_tablet_id(),
+                                                         resp, context, &replica))) {
+    return;
+  }
+  tablet::TxnCoordinator* txn_coordinator = replica->txn_coordinator();
+  if (PREDICT_FALSE(!txn_coordinator)) {
+    Status s = Status::InvalidArgument(
+        Substitute("Requested tablet is not a txn coordinator: $0", replica->tablet_id()));
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  // From here on out, errors are considered application errors.
+  SCOPED_CLEANUP({
+    context->RespondSuccess();
+  });
+  const auto& user = op.user();
+  const auto& txn_id = op.txn_id();
+  // TODO(awong): pass a TabletServerErrorPB pointer down in case these
+  // actually resulted in a failure to write, rather than an application error.
+  switch (op.type()) {
+    case CoordinatorOpPB::BEGIN_TXN:
+      s = txn_coordinator->BeginTransaction(txn_id, user);
+      break;
+    case CoordinatorOpPB::REGISTER_PARTICIPANT:
+      s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user);
+      break;
+    case CoordinatorOpPB::BEGIN_COMMIT_TXN:
+      s = txn_coordinator->BeginCommitTransaction(txn_id, user);
+      break;
+    case CoordinatorOpPB::ABORT_TXN:
+      s = txn_coordinator->AbortTransaction(txn_id, user);
+      break;
+    default:
+      s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
+  }
+  if (PREDICT_FALSE(!s.ok())) {
+    StatusToPB(s, resp->mutable_op_result()->mutable_op_error());
+  }
+}
+
 bool TabletServiceAdminImpl::SupportsFeature(uint32_t feature) const {
   switch (feature) {
     case TabletServerFeatures::COLUMN_PREDICATES:
     case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
     case TabletServerFeatures::QUIESCING:
     case TabletServerFeatures::BLOOM_FILTER_PREDICATE:
+    // TODO(awong): once transactions are useable, add a feature flag.
       return true;
     default:
       return false;

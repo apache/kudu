@@ -64,6 +64,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
@@ -98,6 +99,8 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(tablet_open_inject_latency_ms);
+DECLARE_string(superuser_acl);
+DECLARE_string(trusted_user_acl);
 DEFINE_int32(num_election_test_loops, 3,
              "Number of random EmulateElectionForTests() loops to execute in "
              "TestReportNewLeaderOnLeaderChange");
@@ -1030,25 +1033,31 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
 
   // Creates a request to create a transaction status tablet with the given IDs
   // and Raft config.
-  CreateTabletRequestPB CreateTxnTabletReq(const string& tablet_id, const string& replica_id,
-                                           RaftConfigPB raft_config) {
+  static CreateTabletRequestPB CreateTxnTabletReq(const string& tablet_id, const string& replica_id,
+                                                  RaftConfigPB raft_config,
+                                                  bool is_txn_status_tablet) {
     CreateTabletRequestPB req;
-    req.set_table_type(TableTypePB::TXN_STATUS_TABLE);
+    if (is_txn_status_tablet) {
+      req.set_table_type(TableTypePB::TXN_STATUS_TABLE);
+    }
     req.set_dest_uuid(replica_id);
-    req.set_table_id("txn_status_table");
-    req.set_table_name("txn_status_table");
+    req.set_table_id(Substitute("$0_table_id", tablet_id));
+    req.set_table_name(Substitute("$0_table_name", tablet_id));
     req.set_tablet_id(tablet_id);
     *req.mutable_config() = std::move(raft_config);
     CHECK_OK(SchemaToPB(TxnStatusTablet::GetSchema(), req.mutable_schema()));
     return req;
   }
 
-  // Creates a transaction status tablet at the given tablet server.
-  Status CreateTxnStatusTablet(MiniTabletServer* ts) {
+  // Creates a tablet with a fixed schema, with the given tablet ID.
+  Status CreateTablet(MiniTabletServer* ts,
+                      const string& tablet_id,
+                      bool is_txn_status_tablet) {
     CreateTabletRequestPB req = CreateTxnTabletReq(
-        kTxnStatusTabletId, ts->server()->fs_manager()->uuid(), ts->CreateLocalConfig());
+        tablet_id, ts->server()->fs_manager()->uuid(), ts->CreateLocalConfig(),
+        is_txn_status_tablet);
     CreateTabletResponsePB resp;
-    rpc::RpcController rpc;
+    RpcController rpc;
 
     // Put together a partition spec for this tablet.
     PartitionSchema partition_schema;
@@ -1061,11 +1070,16 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
                                           ts->bound_rpc_addr().host()));
     RETURN_NOT_OK(admin_proxy->CreateTablet(req, &resp, &rpc));
     scoped_refptr<TabletReplica> r;
-    CHECK(ts->server()->tablet_manager()->LookupTablet(kTxnStatusTabletId, &r));
+    CHECK(ts->server()->tablet_manager()->LookupTablet(tablet_id, &r));
     return r->consensus()->WaitUntilLeaderForTests(kTimeout);
   }
 
-  Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {
+  // Creates a transaction status tablet at the given tablet server.
+  Status CreateTxnStatusTablet(MiniTabletServer* ts) {
+    return CreateTablet(ts, kTxnStatusTabletId, /*is_txn_status_tablet*/true);
+  }
+
+  static Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {
     for (const auto& txn_id_and_prt_ids : txns) {
       const auto& txn_id = txn_id_and_prt_ids.first;
       RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner));
@@ -1074,6 +1088,20 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
       }
     }
     return Status::OK();
+  }
+
+  static CoordinateTransactionRequestPB CreateCoordinateTxnReq(
+      const string& tablet_id,
+      const string& user,
+      CoordinatorOpPB::CoordinatorOpType type,
+      int64_t txn_id) {
+    CoordinateTransactionRequestPB req;
+    req.set_txn_status_tablet_id(tablet_id);
+    auto* op = req.mutable_op();
+    op->set_user(user);
+    op->set_type(type);
+    op->set_txn_id(txn_id);
+    return req;
   }
 };
 
@@ -1157,6 +1185,154 @@ TEST_F(TxnStatusTabletManagementTest, TestCopyTransactionStatusTablet) {
     ASSERT_EVENTUALLY([&] {
       ASSERT_EQ(kExpectedTxns, coordinator->GetParticipantsByTxnIdForTests());
     });
+  }
+}
+
+TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
+  const auto& kSuperUser = "starlight";
+  const auto& kTrustedUser = "hughie";
+  const auto& kRegularUser = "butcher";
+  FLAGS_superuser_acl = kSuperUser;
+  FLAGS_trusted_user_acl = kTrustedUser;
+  NO_FATALS(StartCluster({}));
+  auto* ts = cluster_->mini_tablet_server(0);
+  ASSERT_OK(CreateTxnStatusTablet(ts));
+  // Put together a sequence of ops that should succeed.
+  const vector<CoordinatorOpPB::CoordinatorOpType> kOpSequence = {
+    CoordinatorOpPB::BEGIN_TXN,
+    CoordinatorOpPB::REGISTER_PARTICIPANT,
+    CoordinatorOpPB::BEGIN_COMMIT_TXN,
+    CoordinatorOpPB::ABORT_TXN,
+  };
+  // Perform the series of ops for the given transaction ID as the given user,
+  // erroring out if an unexpected result is received. If 'user' is empty, use
+  // the logged-in user (this user is the service user, since we just restarted
+  // the server).
+  const auto perform_ops = [&] (int64_t txn_id, const string& user, bool expect_success) {
+    unique_ptr<TabletServerAdminServiceProxy> admin_proxy(
+        new TabletServerAdminServiceProxy(client_messenger_, ts->bound_rpc_addr(),
+                                          ts->bound_rpc_addr().host()));
+    if (!user.empty()) {
+      rpc::UserCredentials user_creds;
+      user_creds.set_real_user(user);
+      admin_proxy->set_user_credentials(std::move(user_creds));
+    }
+    for (const auto& op_type : kOpSequence) {
+      CoordinateTransactionRequestPB req = CreateCoordinateTxnReq(
+          kTxnStatusTabletId, "user", op_type, txn_id);
+      if (op_type == CoordinatorOpPB::REGISTER_PARTICIPANT) {
+        req.mutable_op()->set_txn_participant_id(kParticipant);
+      }
+      CoordinateTransactionResponsePB resp;
+      RpcController rpc;
+      Status s = admin_proxy->CoordinateTransaction(req, &resp, &rpc);
+      SCOPED_TRACE(SecureDebugString(resp));
+      if (expect_success) {
+        ASSERT_FALSE(resp.has_error());
+        ASSERT_FALSE(resp.has_op_result());
+      } else {
+        ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+        ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
+      }
+    }
+  };
+  // The service user and super user should be able to perform these ops
+  // without issue.
+  NO_FATALS(perform_ops(1, /*user*/"", /*expect_success*/true));
+  NO_FATALS(perform_ops(2, kSuperUser, /*expect_success*/true));
+
+  // Anyone else should be denied.
+  NO_FATALS(perform_ops(3, kTrustedUser, /*expect_success*/false));
+  NO_FATALS(perform_ops(4, kRegularUser, /*expect_success*/false));
+}
+
+TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCallErrors) {
+  NO_FATALS(StartCluster({}));
+  auto* ts = cluster_->mini_tablet_server(0);
+  ASSERT_OK(CreateTxnStatusTablet(ts));
+  unique_ptr<TabletServerAdminServiceProxy> admin_proxy(
+      new TabletServerAdminServiceProxy(client_messenger_, ts->bound_rpc_addr(),
+                                        ts->bound_rpc_addr().host()));
+  // If the request is missing fields, it should be rejected.
+  {
+    CoordinateTransactionRequestPB req;
+    CoordinateTransactionResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Missing fields");
+  }
+  {
+    // Don't supply a participant ID -- that should net the same error.
+    CoordinateTransactionRequestPB req = CreateCoordinateTxnReq(
+        kTxnStatusTabletId, "user", CoordinatorOpPB::REGISTER_PARTICIPANT, 1);
+    CoordinateTransactionResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Missing participant id");
+  }
+  // If the request is for a tablet that isn't a transaction tablet, it should
+  // be rejected.
+  {
+    const string kOtherTablet = "22222222222222222222222222222222";
+    ASSERT_OK(CreateTablet(ts, kOtherTablet, /*is_txn_status_tablet*/false));
+
+    CoordinateTransactionRequestPB req = CreateCoordinateTxnReq(
+        kOtherTablet, "user", CoordinatorOpPB::BEGIN_TXN, 1);
+    CoordinateTransactionResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Requested tablet is not a txn coordinator");
+  }
+  // If the request is for a tablet that doesn't exist, it should be rejected.
+  {
+    CoordinateTransactionRequestPB req = CreateCoordinateTxnReq(
+        "not_a_real_tablet", "user", CoordinatorOpPB::BEGIN_TXN, 1);
+    CoordinateTransactionResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Tablet not found");
+    ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
+  }
+  // Logical errors (e.g. beginning a duplicate transaction) should result in
+  // application-level errors.
+  {
+    CoordinateTransactionRequestPB req = CreateCoordinateTxnReq(
+        kTxnStatusTabletId, "user", CoordinatorOpPB::BEGIN_TXN, 1);
+    {
+      CoordinateTransactionResponsePB resp;
+      RpcController rpc;
+      ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+      SCOPED_TRACE(SecureDebugString(resp));
+      ASSERT_FALSE(resp.has_error());
+      ASSERT_FALSE(resp.has_op_result());
+    }
+    {
+      CoordinateTransactionResponsePB resp;
+      RpcController rpc;
+      ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
+      SCOPED_TRACE(SecureDebugString(resp));
+      ASSERT_FALSE(resp.has_error());
+      ASSERT_TRUE(resp.has_op_result());
+      Status s = StatusFromPB(resp.op_result().op_error());
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID so far");
+    }
   }
 }
 
