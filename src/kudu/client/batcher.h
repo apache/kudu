@@ -33,6 +33,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -229,6 +230,8 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
 
   // The number of bytes used in the buffer for pending operations.
   AtomicInt<int64_t> buffer_bytes_used_;
+
+  Arena arena_;
 
   DISALLOW_COPY_AND_ASSIGN(Batcher);
 };

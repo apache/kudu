@@ -45,7 +45,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -395,7 +394,7 @@ WriteRpc::~WriteRpc() {
       }
     }
     if (i >= 0) {
-      delete ops_[i];
+      ops_[i]->~InFlightOp();
     }
   };
 
@@ -592,7 +591,8 @@ Batcher::Batcher(KuduClient* client,
     next_op_sequence_number_(0),
     timeout_(client->default_rpc_timeout()),
     outstanding_lookups_(0),
-    buffer_bytes_used_(0) {
+    buffer_bytes_used_(0),
+    arena_(1024) {
   ops_.set_empty_key(nullptr);
   ops_.set_deleted_key(reinterpret_cast<InFlightOp*>(-1));
 }
@@ -710,19 +710,18 @@ void Batcher::FlushAsync(KuduStatusCallback* cb) {
 Status Batcher::Add(KuduWriteOperation* write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
-  unique_ptr<InFlightOp> op(new InFlightOp());
+  InFlightOp* op = arena_.NewObject<InFlightOp>();
   string partition_key;
   RETURN_NOT_OK(write_op->table_->partition_schema().EncodeKey(write_op->row(), &partition_key));
   op->write_op.reset(write_op);
   op->state = InFlightOp::kLookingUpTablet;
 
-  AddInFlightOp(op.get());
+  AddInFlightOp(op);
   VLOG(3) << "Looking up tablet for " << op->ToString();
   // Increment our reference count for the outstanding callback.
   //
   // deadline_ is set in FlushAsync(), after all Add() calls are done, so
   // here we're forced to create a new deadline.
-  auto op_raw = op.get();
   MonoTime deadline = ComputeDeadlineUnlocked();
   base::RefCountInc(&outstanding_lookups_);
   scoped_refptr<Batcher> self(this);
@@ -732,8 +731,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
       deadline,
       MetaCache::LookupType::kPoint,
       &op->tablet,
-      [self, op_raw](const Status& s) { self->TabletLookupFinished(op_raw, s); });
-  ignore_result(op.release());
+      [self, op](const Status& s) { self->TabletLookupFinished(op, s); });
 
   buffer_bytes_used_.IncrementBy(write_op->SizeInBuffer());
 
@@ -773,7 +771,7 @@ void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
     << "Could not remove op " << op->ToString() << " from in-flight list";
   error_collector_->AddError(unique_ptr<KuduError>(new KuduError(op->write_op.release(), s)));
   had_errors_ = true;
-  delete op;
+  op->~InFlightOp();
 }
 
 void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
