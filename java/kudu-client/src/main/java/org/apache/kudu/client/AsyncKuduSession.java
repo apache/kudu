@@ -223,6 +223,11 @@ public class AsyncKuduSession implements SessionConfiguration {
     this.mutationBufferMaxOps = numOps;
   }
 
+  @Override
+  public void setErrorCollectorSpace(int size) {
+    this.errorCollector.resize(size);
+  }
+
   @Deprecated
   @Override
   public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {

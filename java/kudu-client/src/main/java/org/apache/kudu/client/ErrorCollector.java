@@ -31,7 +31,7 @@ import org.apache.yetus.audience.InterfaceStability;
 @InterfaceStability.Evolving
 public class ErrorCollector {
   private final Queue<RowError> errorQueue;
-  private final int maxCapacity;
+  private int maxCapacity;
   private boolean overflowed;
 
   /**
@@ -80,5 +80,31 @@ public class ErrorCollector {
         new RowErrorsAndOverflowStatus(returnedErrors, overflowed);
     overflowed = false;
     return returnObject;
+  }
+
+  /**
+   * Resize ErrorCollector. If size < errorQueue.size(),
+   * the oldest errors will be discarded and overflowed will be set;
+   */
+  public synchronized void resize(int size) {
+    Preconditions.checkArgument(size > 0, "Need to be able to store at least one row error");
+    if (size == maxCapacity) {
+      return;
+    }
+
+    if (size < maxCapacity) {
+      int trimmedErrors = errorQueue.size() - size;
+      if (trimmedErrors > 0) {
+        overflowed = true;
+      } else {
+        trimmedErrors = 0;
+      }
+
+      for (int i = 0; i < trimmedErrors; ++i) {
+        errorQueue.poll();
+      }
+    }
+
+    maxCapacity = size;
   }
 }

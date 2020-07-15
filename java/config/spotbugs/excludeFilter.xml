@@ -176,7 +176,10 @@
     <Match>
         <!-- The return value isn't needed. -->
         <Class name="org.apache.kudu.client.ErrorCollector"/>
-        <Method name="addError" />
+        <Or>
+            <Method name="addError" />
+            <Method name="resize" />
+        </Or>
         <Bug pattern="RV_RETURN_VALUE_IGNORED" />
     </Match>
     <Match>

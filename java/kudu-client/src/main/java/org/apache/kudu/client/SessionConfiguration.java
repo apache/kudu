@@ -186,6 +186,12 @@ public interface SessionConfiguration {
   void setIgnoreAllNotFoundRows(boolean ignoreAllNotFoundRows);
 
   /**
+   * Set the number of errors that can be collected.
+   * @param size number of errors.
+   */
+  void setErrorCollectorSpace(int size);
+
+  /**
    * Return the number of errors which are pending. Errors may accumulate when
    * using {@link FlushMode#AUTO_FLUSH_BACKGROUND AUTO_FLUSH_BACKGROUND} mode.
    * @return a count of errors

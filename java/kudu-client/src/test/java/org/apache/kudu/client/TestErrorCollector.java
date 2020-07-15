@@ -81,6 +81,53 @@ public class TestErrorCollector {
     Assert.assertTrue(reos.isOverflowed());
     Assert.assertEquals(maxErrors, reos.getRowErrors().length);
     Assert.assertEquals(countToTest - 1, reos.getRowErrors()[9].getErrorStatus().getPosixCode());
+
+    // Test enlarging non-overflown collector
+    countToTest = 10;
+    fillCollectorWith(collector, countToTest);
+    Assert.assertEquals(maxErrors, collector.countErrors());
+    collector.resize(2 * maxErrors);
+    reos = collector.getErrors();
+    Assert.assertEquals(0, collector.countErrors());
+    Assert.assertFalse(reos.isOverflowed());
+    Assert.assertEquals(maxErrors, reos.getRowErrors().length);
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[9].getErrorStatus().getPosixCode());
+
+    // Test enlarging overflown collector
+    countToTest = 11;
+    collector = new ErrorCollector(maxErrors);
+    fillCollectorWith(collector, countToTest);
+    Assert.assertEquals(maxErrors, collector.countErrors());
+    collector.resize(2 * maxErrors);
+    collector.addError(createRowError(42));
+    reos = collector.getErrors();
+    Assert.assertEquals(0, collector.countErrors());
+    Assert.assertTrue(reos.isOverflowed());
+    Assert.assertEquals(11, reos.getRowErrors().length);
+    Assert.assertEquals(42, reos.getRowErrors()[10].getErrorStatus().getPosixCode());
+
+    // Test shrinking without overflow
+    countToTest = 5;
+    fillCollectorWith(collector, countToTest);
+    Assert.assertEquals(countToTest, collector.countErrors());
+    collector.resize(maxErrors);
+    reos = collector.getErrors();
+    Assert.assertEquals(0, collector.countErrors());
+    Assert.assertFalse(reos.isOverflowed());
+    Assert.assertEquals(countToTest, reos.getRowErrors().length);
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[4].getErrorStatus().getPosixCode());
+
+    // Test shrinking with overflow
+    countToTest = 5;
+    fillCollectorWith(collector, countToTest);
+    Assert.assertEquals(countToTest, collector.countErrors());
+    collector.resize(countToTest - 1);
+    reos = collector.getErrors();
+    Assert.assertEquals(0, collector.countErrors());
+    Assert.assertTrue(reos.isOverflowed());
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors().length);
+    // the oldest error is popped
+    Assert.assertEquals(countToTest - 1, reos.getRowErrors()[3].getErrorStatus().getPosixCode());
   }
 
   private void fillCollectorWith(ErrorCollector collector, int errorsToAdd) {

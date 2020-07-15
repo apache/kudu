@@ -131,6 +131,11 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
+  public void setErrorCollectorSpace(int size) {
+    session.setErrorCollectorSpace(size);
+  }
+
+  @Override
   @Deprecated
   public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {
     LOG.warn("setMutationBufferLowWatermark is deprecated");
