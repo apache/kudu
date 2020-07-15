@@ -227,7 +227,7 @@ Status HmsNotificationLogListenerTask::Poll() {
   // This method calls the catalog manager directly, so ensure the leader lock is held.
   CatalogManager::ScopedLeaderSharedLock l(catalog_manager_);
   if (!l.first_failed_status().ok()) {
-    LOG(INFO) << "Skipping Hive Metastore notification log poll: "
+    VLOG(1) << "Skipping Hive Metastore notification log poll: "
               << l.first_failed_status().ToString();
     return Status::OK();
   }
