@@ -22,10 +22,12 @@ set(TABLET_SRCS
   tablet_mm_ops.cc
   tablet_replica_mm_ops.cc
   tablet_replica.cc
+  txn_participant.cc
   ops/op.cc
   ops/alter_schema_op.cc
   ops/op_driver.cc
   ops/op_tracker.cc
+  ops/participant_op.cc
   ops/write_op.cc
   op_order_verifier.cc
   cfile_set.cc
@@ -125,6 +127,7 @@ ADD_KUDU_TEST(tablet_mm_ops-test)
 ADD_KUDU_TEST(tablet_random_access-test)
 ADD_KUDU_TEST(tablet_replica-test)
 ADD_KUDU_TEST(tablet_throttle-test)
+ADD_KUDU_TEST(txn_participant-test)
 
 # Some tests don't have dependencies on other tablet stuff
 SET_KUDU_TEST_LINK_LIBS(kudu_util gutil)

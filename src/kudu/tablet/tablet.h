@@ -43,6 +43,7 @@
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/txn_participant.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.h"
@@ -141,7 +142,7 @@ class Tablet {
   Status DecodeWriteOperations(const Schema* client_schema,
                                WriteOpState* op_state);
 
-  // Acquire locks for each of the operations in the given txn.
+  // Acquire locks for each of the operations in the given op.
   // This also sets the row op's RowSetKeyProbe.
   Status AcquireRowLocks(WriteOpState* op_state);
 
@@ -369,8 +370,11 @@ class Tablet {
   // Return the MVCC manager for this tablet.
   MvccManager* mvcc_manager() { return &mvcc_; }
 
-  // Return the Lock Manager for this tablet
+  // Return the Lock Manager for this tablet.
   LockManager* lock_manager() { return &lock_manager_; }
+
+  // Return the transaction participant for this tablet.
+  TxnParticipant* txn_participant() { return &txn_participant_; }
 
   const TabletMetadata *metadata() const { return metadata_.get(); }
   TabletMetadata *metadata() { return metadata_.get(); }
@@ -693,6 +697,8 @@ class Tablet {
   // On an AlterSchema, this is taken in exclusive mode during Prepare() and
   // released after the schema change has been applied.
   mutable rw_semaphore schema_lock_;
+
+  TxnParticipant txn_participant_;
 
   const Schema key_schema_;
 

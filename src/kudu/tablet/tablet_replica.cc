@@ -48,6 +48,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op_driver.h"
+#include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
@@ -115,6 +116,7 @@ using consensus::RpcPeerProxyFactory;
 using consensus::ServerContext;
 using consensus::TimeManager;
 using consensus::ALTER_SCHEMA_OP;
+using consensus::PARTICIPANT_OP;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
@@ -433,11 +435,21 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
   return Status::OK();
 }
 
-Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> state) {
+Status TabletReplica::SubmitWrite(unique_ptr<WriteOpState> op_state) {
   RETURN_NOT_OK(CheckRunning());
 
-  state->SetResultTracker(result_tracker_);
-  unique_ptr<WriteOp> op(new WriteOp(std::move(state), consensus::LEADER));
+  op_state->SetResultTracker(result_tracker_);
+  unique_ptr<WriteOp> op(new WriteOp(std::move(op_state), consensus::LEADER));
+  scoped_refptr<OpDriver> driver;
+  RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
+  return driver->ExecuteAsync();
+}
+
+Status TabletReplica::SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState> op_state) {
+  RETURN_NOT_OK(CheckRunning());
+
+  op_state->SetResultTracker(result_tracker_);
+  unique_ptr<ParticipantOp> op(new ParticipantOp(std::move(op_state), consensus::LEADER));
   scoped_refptr<OpDriver> driver;
   RETURN_NOT_OK(NewLeaderOpDriver(std::move(op), &driver));
   return driver->ExecuteAsync();
@@ -534,7 +546,7 @@ string TabletReplica::HumanReadableState() const {
 }
 
 void TabletReplica::GetInFlightOps(Op::TraceType trace_type,
-                                            vector<consensus::OpStatusPB>* out) const {
+                                   vector<consensus::OpStatusPB>* out) const {
   vector<scoped_refptr<OpDriver> > pending_ops;
   op_tracker_.GetPendingOps(&pending_ops);
   for (const scoped_refptr<OpDriver>& driver : pending_ops) {
@@ -547,6 +559,9 @@ void TabletReplica::GetInFlightOps(Op::TraceType trace_type,
           break;
         case Op::ALTER_SCHEMA_OP:
           status_pb.set_op_type(consensus::ALTER_SCHEMA_OP);
+          break;
+        case Op::PARTICIPANT_OP:
+          status_pb.set_op_type(consensus::PARTICIPANT_OP);
           break;
       }
       status_pb.set_description(driver->ToString());
@@ -637,8 +652,19 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
               &replicate_msg->write_request(),
               replicate_msg->has_request_id() ? &replicate_msg->request_id() : nullptr));
       op_state->SetResultTracker(result_tracker_);
-
       op.reset(new WriteOp(std::move(op_state), consensus::REPLICA));
+      break;
+    }
+    case PARTICIPANT_OP:
+    {
+      DCHECK(replicate_msg->has_participant_request()) << "PARTICIPANT_OP replica"
+          " op must receive an ParticipantRequestPB";
+      unique_ptr<ParticipantOpState> op_state(
+          new ParticipantOpState(
+              this,
+              &replicate_msg->participant_request()));
+      op_state->SetResultTracker(result_tracker_);
+      op.reset(new ParticipantOp(std::move(op_state), consensus::REPLICA));
       break;
     }
     case ALTER_SCHEMA_OP:

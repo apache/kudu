@@ -94,6 +94,7 @@ enum OperationType {
   WRITE_OP = 3;
   ALTER_SCHEMA_OP = 4;
   CHANGE_CONFIG_OP = 5;
+  PARTICIPANT_OP = 6;
 }
 
 // The op driver type: indicates whether an op is being executed on a leader or
@@ -203,6 +204,7 @@ message ReplicateMsg {
   optional tserver.WriteRequestPB write_request = 5;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 6;
   optional ChangeConfigRecordPB change_config_record = 7;
+  optional tserver.ParticipantRequestPB participant_request = 9;
 
   // The client's request id for this message, if it is set.
   optional rpc.RequestIdPB request_id = 8;

@@ -73,6 +73,7 @@ class ResultTracker;
 namespace tablet {
 class AlterSchemaOpState;
 class OpDriver;
+class ParticipantOpState;
 class TabletStatusPB;
 class TxnCoordinator;
 class TxnCoordinatorFactory;
@@ -132,10 +133,14 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   Status WaitUntilConsensusRunning(const MonoDelta& timeout);
 
   // Submits a write to a tablet and executes it asynchronously.
-  // The caller is expected to build and pass a OpContext that points
-  // to the RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
+  // The caller is expected to build and pass a WriteOpState that points to the
+  // RPC WriteRequest, WriteResponse, RpcContext and to the tablet's
   // MvccManager.
   Status SubmitWrite(std::unique_ptr<WriteOpState> op_state);
+
+  // Submits an op to update transaction participant state, executing it
+  // asynchonously.
+  Status SubmitTxnParticipantOp(std::unique_ptr<ParticipantOpState> op_state);
 
   // Called by the tablet service to start an alter schema op.
   //

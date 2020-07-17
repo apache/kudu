@@ -194,6 +194,9 @@ void OpTracker::IncrementCounters(const OpDriver& driver) const {
     case Op::ALTER_SCHEMA_OP:
       metrics_->alter_schema_transactions_inflight->Increment();
       break;
+    case Op::PARTICIPANT_OP:
+      // TODO(awong): implement me!
+      break;
   }
 }
 
@@ -212,6 +215,9 @@ void OpTracker::DecrementCounters(const OpDriver& driver) const {
     case Op::ALTER_SCHEMA_OP:
       DCHECK_GT(metrics_->alter_schema_transactions_inflight->value(), 0);
       metrics_->alter_schema_transactions_inflight->Decrement();
+      break;
+    case Op::PARTICIPANT_OP:
+      // TODO(awong): implement me!
       break;
   }
 }

@@ -77,6 +77,7 @@ class Op {
   enum OpType {
     WRITE_OP,
     ALTER_SCHEMA_OP,
+    PARTICIPANT_OP,
   };
 
   enum TraceType {

@@ -72,6 +72,32 @@ message CoordinateTransactionResponsePB {
   optional CoordinatorOpResultPB op_result = 2;
 }
 
+message ParticipantOpPB {
+  enum ParticipantOpType {
+    UNKNOWN = 0;
+    BEGIN_TXN = 1;
+    BEGIN_COMMIT = 2;
+    FINALIZE_COMMIT = 3;
+    ABORT_TXN = 4;
+  }
+  optional ParticipantOpType type = 1;
+  optional int64 txn_id = 2;
+
+  // Only set if 'type' is FINALIZE_COMMIT.
+  optional int64 finalized_commit_timestamp = 3;
+}
+
+message ParticipantRequestPB {
+  optional ParticipantOpPB op = 1;
+}
+
+message ParticipantResponsePB {
+  optional TabletServerErrorPB error = 1;
+
+  // The timestamp chosen by the server for this participant op.
+  optional fixed64 timestamp = 2;
+}
+
 message AlterSchemaRequestPB {
   // UUID of server this request is addressed to.
   optional bytes dest_uuid = 5;
