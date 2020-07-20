@@ -280,13 +280,14 @@ public class TestEchoSubprocess extends SubprocessTestUtil {
         setUpExecutorIO(NO_ERR, /*injectIOError*/false);
     sendRequestToPipe(createEchoSubprocessRequest("a"));
     sendRequestToPipe(createEchoSubprocessRequest("b"));
-    executor.blockWriteMs(1000);
+    executor.blockWriteMs(2 * TIMEOUT_MS);
     Assert.assertThrows(TimeoutException.class,
         () -> executor.run(new SubprocessConfiguration(NO_ARGS),
                            new EchoProtocolHandler(), TIMEOUT_MS));
 
-    // We should see a single message in the outbound queue. The other one is
-    // blocked writing.
+    // The MessageWriter took the first message from the outbound queue and
+    // went to sleep for 2 * TIMEOUT_MS; the second message should still be in
+    // the queue after TIMEOUT_MS.
     BlockingQueue<OutboundResponse> outboundQueue = executor.getOutboundQueue();
     Assert.assertEquals(1, outboundQueue.size());
   }
