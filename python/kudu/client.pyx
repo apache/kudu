@@ -359,7 +359,8 @@ cdef class Client:
         """
         return from_hybridtime(self.cp.GetLatestObservedTimestamp())
 
-    def create_table(self, table_name, Schema schema, partitioning, n_replicas=None):
+    def create_table(self, table_name, Schema schema, partitioning,
+            n_replicas=None, owner=None):
         """
         Creates a new Kudu table from the passed Schema and options.
 
@@ -382,6 +383,8 @@ cdef class Client:
             self._apply_partitioning(c, partitioning, schema)
             if n_replicas:
                 c.num_replicas(n_replicas)
+            if owner:
+                c.set_owner(tobytes(owner))
             s = c.Create()
             check_status(s)
         finally:
@@ -828,6 +831,11 @@ cdef class Table:
         """Number of columns in the table's schema."""
         def __get__(self):
             return len(self.schema)
+
+    property owner:
+        """Name of the owner of the table."""
+        def __get__(self):
+            return frombytes(self.ptr().owner())
 
     def rename(self, new_name):
         raise NotImplementedError
@@ -3176,6 +3184,21 @@ cdef class TableAlterer:
             _check_convert_range_bound_type(lower_bound_type),
             _check_convert_range_bound_type(upper_bound_type)
         )
+
+    def set_owner(self, new_owner):
+        """
+        Set the owner of the table.
+
+        Parameters
+        ----------
+        new_owner : string
+
+        Returns
+        -------
+        self : TableAlterer
+        """
+        self._alterer.SetOwner(tobytes(new_owner))
+        return self
 
     def alter(self):
         """

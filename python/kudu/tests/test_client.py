@@ -35,6 +35,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
         self.assertEqual(table.name, self.ex_table)
         self.assertEqual(table.num_columns, len(self.schema))
         self.assertIsNotNone(table.id)
+        self.assertIsNotNone(table.owner)
 
     def test_table_column(self):
         table = self.client.table(self.ex_table)
@@ -146,6 +147,22 @@ class TestClient(KuduTestBase, unittest.TestCase):
                                                                 2,
                                                                 seed=342310))
             self.client.delete_table(name)
+
+        finally:
+            try:
+                self.client.delete_table(name)
+            except:
+                pass
+
+    def test_create_table_with_different_owner(self):
+        name = 'table_with_different_owner'
+        try:
+            self.client.create_table(
+                    name, self.schema,
+                    partitioning=Partitioning().add_hash_partitions(['key'], 2),
+                    owner='alice')
+
+            self.assertEqual('alice', self.client.table(name).owner)
 
         finally:
             try:
@@ -347,6 +364,21 @@ class TestClient(KuduTestBase, unittest.TestCase):
             self.assertEqual(table.name, 'alter-newname')
         finally:
             self.client.delete_table('alter-newname')
+
+    def test_alter_table_change_owner(self):
+        name = 'alter-owner'
+        try:
+            self.client.create_table(name,
+                                     self.schema,
+                                     self.partitioning)
+            table = self.client.table(name)
+            alterer = self.client.new_table_alterer(table)
+            table = alterer.set_owner('alice').alter()
+            self.assertEqual('alice', self.client.table(name).owner)
+            with self.assertRaises(TypeError):
+                alterer.set_owner(None).alter()
+        finally:
+            self.client.delete_table(name)
 
     def test_alter_column(self):
         try:
