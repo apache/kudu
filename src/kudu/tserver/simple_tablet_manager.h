@@ -204,6 +204,8 @@ class TSTabletManager : public consensus::ConsensusRoundHandler {
 
   TSTabletManagerStatePB state_;
 
+  consensus::ConsensusBootstrapInfo bootstrap_info_;
+
   // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
   //
   // Must be called whenever cluster membership or leadership changes, or when

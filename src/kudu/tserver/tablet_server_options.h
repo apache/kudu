@@ -73,6 +73,10 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
   std::function<void()> ldcb;
   bool disable_noop = false;
 
+  // This is to enable a fresh instance join the ring with logs from
+  // a certain opid and term.
+  bool log_bootstrap_on_first_run = false;
+
   consensus::TopologyConfigPB topology_config;
 
   bool IsDistributed() const;

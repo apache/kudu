@@ -180,9 +180,11 @@ Status TSTabletManager::Load(FsManager *fs_manager) {
 Status TSTabletManager::CreateNew(FsManager *fs_manager) {
   RaftConfigPB config;
   if (server_->opts().IsDistributed()) {
+    LOG(INFO) << "TSTabletManager::CreateNew - Calling CreateDistributedConfig";
     RETURN_NOT_OK_PREPEND(CreateDistributedConfig(server_->opts(), &config),
                           "Failed to create new distributed Raft config");
   } else {
+    LOG(INFO) << "TSTabletManager::CreateNew - Setting up single peer local config";
     config.set_obsolete_local(true);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
     RaftPeerPB* peer = config.add_peers();
@@ -356,10 +358,12 @@ Status TSTabletManager::Init(bool is_first_run) {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
   if (is_first_run) {
+    LOG(INFO) << "TSTabletManager::Init: is_first_run detected. Calling CreateNew";
     RETURN_NOT_OK_PREPEND(
         CreateNew(server_->fs_manager()),
         "Failed to CreateNew in TabletManager");
   } else {
+    LOG(INFO) << "TSTabletManager::Init: existing cmeta dir. Calling Load";
     RETURN_NOT_OK_PREPEND(
         Load(server_->fs_manager()),
         "Failed to Load in TabletManager");
@@ -378,21 +382,9 @@ Status TSTabletManager::Start(bool is_first_run) {
   scoped_refptr<ConsensusMetadata> cmeta;
   Status s = cmeta_manager_->LoadCMeta(kSysCatalogTabletId, &cmeta);
 
-  consensus::ConsensusBootstrapInfo bootstrap_info;
-  // Abstracted logs will do their own log recovery
-  // during Log::Init virtual call. bootstrap_info
-  // is populated during that step. Pass it to RaftConsensus::Start.
-  //
-  // Skip recovery on "is_first_run" because you are creating a
-  // fresh raft instance (the raft metadata directories are new).
-  // This would be the equivalent of what kudu has because is_first_run
-  // also implies that wal directory is empty.
-  // The existing binlog OpId's might have no bearing
-  // on the new ring. We will push the problem of figuring out catchup
-  // and joining the ring to AddInstance implementation.
-  if (!is_first_run && server_->opts().log_factory) {
-    log_->GetRecoveryInfo(&bootstrap_info);
-  }
+  // We have already captured the ConsensusBootstrapInfo in SetupRaft
+  // and saved it locally.
+  // consensus::ConsensusBootstrapInfo bootstrap_info;
 
   TRACE("Starting consensus");
   VLOG(2) << "T " << kSysCatalogTabletId << " P " << consensus_->peer_uuid() << ": Peer starting";
@@ -418,7 +410,7 @@ Status TSTabletManager::Start(bool is_first_run) {
   // causing a self-deadlock. We take a ref to members protected by 'lock_'
   // before unlocking.
   RETURN_NOT_OK(consensus_->Start(
-        bootstrap_info, std::move(peer_proxy_factory),
+        bootstrap_info_, std::move(peer_proxy_factory),
         log_, std::move(time_manager),
         round_handler, server_->metric_entity(), mark_dirty_clbk_));
 
@@ -472,8 +464,41 @@ Status TSTabletManager::SetupRaft() {
   // Factory could be empty.
   LogOptions log_options;
   log_options.log_factory = server_->opts().log_factory;
-  return Log::Open(log_options, fs_manager_, kSysCatalogTabletId,
+  Status s1 = Log::Open(log_options, fs_manager_, kSysCatalogTabletId,
       server_->metric_entity(), &log_);
+
+  // Abstracted logs will do their own log recovery
+  // during Log::Open->Log::Init (virtual call). bootstrap_info
+  // is populated during that step. Capture it so as to pass it
+  // to RaftConsensus::Start, in TSTabletManager::Start
+  //
+  // Skip recovery on "is_first_run" because you are creating a
+  // fresh raft instance (the raft metadata directories are new).
+  // This would be the equivalent of what kudu has because is_first_run
+  // also implies that wal directory is empty in kuduraft.
+  //
+  // However, for the MySQL case, we allow logs to be copied from a previous
+  // instance while this instance is still new (is_first_run) and
+  // going to be added to the ring. In that mode, the consensus-metadata filess
+  // are not copied from the previous instance (this might change in the future).
+  // The cmeta is actually built from the options parameters.
+  // Using :
+  // 1. Term = Term of the last binlog opid term
+  // 2. Config opid index, the index of last configuration passed in by
+  // bootstrapper.
+  // 3. Servers are passed in by options->bootstrap_servers/topology config
+  // Since the default term is 0, we need to adjust the term of such
+  // an instance to the term of the Last Logged OpId.
+  // In the MySQL first_run case, MySQL is expected to pass in
+  // log_bootstrap_on_first_run in options.
+  if (server_->opts().log_factory && (!server_->is_first_run_ ||
+      server_->opts().log_bootstrap_on_first_run)) {
+    log_->GetRecoveryInfo(&bootstrap_info_);
+    if (bootstrap_info_.last_id.term() > consensus_->CurrentTerm()) {
+      consensus_->SetCurrentTermBootstrap(bootstrap_info_.last_id.term());
+    }
+  }
+  return s1;
 }
 
 void TSTabletManager::Shutdown() {

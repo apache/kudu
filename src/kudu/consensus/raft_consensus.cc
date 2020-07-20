@@ -3369,6 +3369,18 @@ void RaftConsensus::DoLeaderDetectedCallback() {
   if (ldcb_) ldcb_();
 }
 
+Status RaftConsensus::SetCurrentTermBootstrap(int64_t new_term) {
+  LockGuard l(lock_);
+  if (PREDICT_FALSE(new_term <= CurrentTermUnlocked())) {
+    return Status::IllegalState(
+        Substitute("Cannot change term to a term that is lower than or equal to the current one. "
+                   "Current: $0, Proposed: $1", CurrentTermUnlocked(), new_term));
+  }
+  cmeta_->set_current_term(new_term);
+  CHECK_OK(cmeta_->Flush());
+  return Status::OK();
+}
+
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
                                             FlushToDisk flush) {
   TRACE_EVENT1("consensus", "RaftConsensus::SetCurrentTermUnlocked",
