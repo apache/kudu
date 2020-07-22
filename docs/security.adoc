@@ -198,23 +198,34 @@ tables may rely on privileges on the following actions:
 * `INSERT`
 * `UPDATE`
 * `SELECT`
+
+There are two additional access types:
+
 * `ALL`
 * `METADATA`
 
-Specifically, if a user has the `ALL` privileges on a given table, that user has
-all of the above privileges on the table. `METADATA` privilege is modeled as any
-privilege. If a user has any privilege on a given table, that user has `METADATA`
-privileges on the table, i.e. a privilege granted on any action on a table implies
-that the user has the `METADATA` privilege on that table.
+If a user has the `ALL` privilege on a resource, they implicitly have privileges
+to perform any action on that resource (except those that require users to be a
+delegated admin, see below). Also, if a user is granted any privilege, they are
+able to perform actions requiring `METADATA` (e.g. opening the table) without
+having to explicitly grant `METADATA` privilege to them.
 
-In term of privilege evaluation Ranger doesn't have the concept of hierarchical
-implication. To be more specific, if a user has `SELECT` privilege on a database,
-it does not imply that user has `SELECT` privileges on every table belonging to
-that database. On the other hand, Ranger supports privilege wildcard matching.
-For example, `db=a->table=\*` matches all the tables that belong to database `a`.
-Therefore, in Ranger users actually need the `SELECT` privilege on
-`db=a->table=*->column=*` to allow `SELECT` on every table and every column in
-database `a`.
+Finally, Ranger supports a `delegate admin` flag which is independent of the
+action types (it's not implied by `ALL` and doesn't imply `METADATA`). This is
+similar to the `GRANT OPTION` part of `ALL WITH GRANT OPTION` in SQL as it is
+required to modify privileges in Ranger and change the owner of a Kudu table.
+
+WARNING: A user with the `delegate admin` privilege on a resource can grant any
+privilege to themselves and others.
+
+While the action types are hierarchical, in terms of privilege evaluation,
+Ranger doesn't have the concept of hierarchy. For instance, if a user has
+`SELECT` privilege on a database, it does not imply that the user has `SELECT`
+privileges on every table belonging to that database. On the other hand, Ranger
+supports privilege wildcard matching. For example, `db=a->table=\*` matches all
+the tables that belong to database `a`. Therefore, in Ranger users actually need
+the `SELECT` privilege granted on `db=a->table=*->column=*` to allow `SELECT` on
+every table and every column in database `a`.
 
 Nevertheless, with Ranger integration, when a Kudu master receives a request,
 it consults Ranger to determine what privileges a user has. And the required
@@ -223,7 +234,19 @@ are enforced to determine whether the user is authorized to perform the requeste
 action or not.
 
 NOTE: Even though Kudu table names remain case sensitive with Ranger integration,
-policies authorization is considered case-insensitive.
+policy authorization is considered case-insensitive.
+
+In addition to granting privileges to a user by username, privileges can also be
+granted to table owners using the special `{OWNER}` username. These policies are
+evaluated only when a user tries to perform an action on a table that they own.
+For example, a policy can be defined for the `{OWNER}` user and `db=*->table=*`
+resource, and it will automatically be applied when any table is accessed by its
+owner. This way administrators don't need to choose between creating policies
+one by one for each table, and granting access to a wide range of users.
+
+WARNING: If a user has `ALL` and `delegate admin` privileges on a table only via
+ownership and no privileges by username, they can effectively lock themselves
+out by giving away ownership.
 
 === Authorization Tokens
 
@@ -414,9 +437,12 @@ The following authorization policy is enforced by Kudu masters.
 |===
 | Operation | Required Privilege
 | `CreateTable` | `CREATE ON DATABASE`
+| `CreateTable` with an owner different than the logged in user | `ALL ON
+DATABASE` and `delegate admin`
 | `DeleteTable` | `DROP ON TABLE`
 | `AlterTable` (with no rename) | `ALTER ON TABLE`
 | `AlterTable` (with rename) | `ALL ON TABLE <old-table>` and `CREATE ON DATABASE <new-database>`
+| `AlterTable` (with owner change) | `ALL ON TABLE` and `delegate admin`
 | `IsCreateTableDone` | `METADATA ON TABLE`
 | `IsAlterTableDone` | `METADATA ON TABLE`
 | `ListTables` | `METADATA ON TABLE`
