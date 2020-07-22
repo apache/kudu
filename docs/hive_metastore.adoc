@@ -121,11 +121,11 @@ WARNING: Before enabling the Hive Metastore integration on an existing cluster,
 make sure to upgrade any tables that may exist in Kudu's or in the HMS's
 catalog. See <<upgrading-tables>> for more details.
 
-* When the Hive Metastore is configured with fine-grained authorization
-using Apache Sentry and the Sentry HDFS Sync feature is enabled, the Kudu admin
-needs to be able to access and modify directories that are created for Kudu by
-the HMS. This can be done by adding the Kudu admin user to the group of the
-Hive service users, e.g.  by running `usermod -aG hive kudu` on the HMS nodes.
+* When the Hive Metastore is configured with fine-grained authorization, the
+Kudu admin needs to be able to access and modify directories that are created
+for Kudu by the HMS. This can be done by adding the Kudu admin user to the group
+of the Hive service users, e.g.  by running `usermod -aG hive kudu` on the HMS
+nodes.
 
 * Configure the Hive Metastore to include the notification event listener and
 the Kudu HMS plugin, to allow altering and dropping columns, and to add full
@@ -195,10 +195,10 @@ able to run the `kudu hms` tools. This can be done by configuring the user as a
 trusted user via the `--trusted_user_acl` master configuration. See
 <<security.adoc#trusted-users,here>> for more information about trusted users.
 
-NOTE: If the Hive Metastore is configured with fine-grained authorization using
-Apache Sentry, the Kudu admin user needs to have read and write privileges on
-HMS table entries. Configured this in the Hive Metastore using the
-`sentry.metastore.service.users` property.
+NOTE: If the Hive Metastore is configured with fine-grained authorization, the
+Kudu admin user needs to have read and write privileges on HMS table entries.
+Configured this in the Hive Metastore. For Apache Sentry this can be configured
+using the `sentry.metastore.service.users` property.
 
 ### `kudu hms list`
 
