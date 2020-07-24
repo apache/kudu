@@ -474,10 +474,12 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmark) {
   vector<uint64_t> err_counters(kNumThreads, 0);
   for (auto i = 0; i < kNumThreads; ++i) {
     threads.emplace_back([&, i]() {
+        GetTableLocationsRequestPB req;
+        GetTableLocationsResponsePB resp;
         while (!stop) {
-          GetTableLocationsRequestPB req;
-          GetTableLocationsResponsePB resp;
           RpcController controller;
+          req.Clear();
+          resp.Clear();
           req.mutable_table()->set_table_name(table_name);
           req.set_max_returned_locations(1000);
           req.set_intern_ts_infos_in_response(true);
@@ -543,9 +545,11 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmarkFunctionCall) {
   vector<uint64_t> err_counters(kNumThreads, 0);
   for (size_t idx = 0; idx < kNumThreads; ++idx) {
     threads.emplace_back([&, idx]() {
+      GetTableLocationsRequestPB req;
+      GetTableLocationsResponsePB resp;
       while (!stop) {
-        GetTableLocationsRequestPB req;
-        GetTableLocationsResponsePB resp;
+        req.Clear();
+        resp.Clear();
         req.mutable_table()->set_table_name(table_name);
         req.set_max_returned_locations(1000);
         req.set_intern_ts_infos_in_response(true);
