@@ -909,6 +909,14 @@ message ChangeTServerStateResponsePB {
   optional MasterErrorPB error = 1;
 }
 
+message AddMasterRequestPB {
+  optional HostPortPB rpc_addr = 1;
+}
+
+message AddMasterResponsePB {
+  optional MasterErrorPB error = 1;
+}
+
 // GetMasterRegistrationRequest/Response: get the instance id and
 // HTTP/RPC addresses for this Master server.
 message GetMasterRegistrationRequestPB {
@@ -930,6 +938,9 @@ message GetMasterRegistrationResponsePB {
 
   // The unique cluster ID of the cluster this server belongs too.
   optional string cluster_id = 5;
+
+  // This server's membership type in the consensus configuration.
+  optional consensus.RaftPeerPB.MemberType member_type = 6;
 }
 
 // ListMastersRequest/Response: get information about all of the known
@@ -986,6 +997,8 @@ enum MasterFeatures {
   REPLICA_MANAGEMENT = 4;
   // The master supports generating and dispensing authz tokens.
   GENERATE_AUTHZ_TOKEN = 5;
+  // The master supports dynamic addition/removal of masters
+  DYNAMIC_MULTI_MASTER = 6;
 }
 
 service MasterService {
@@ -1063,6 +1076,11 @@ service MasterService {
   }
   rpc ChangeTServerState(ChangeTServerStateRequestPB) returns
       (ChangeTServerStateResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
+  }
+
+  // Add a new master to existing cluster.
+  rpc AddMaster(AddMasterRequestPB) returns (AddMasterResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
   }
 

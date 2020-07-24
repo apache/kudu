@@ -36,6 +36,8 @@ class RpcContext;
 
 namespace master {
 
+class AddMasterRequestPB;
+class AddMasterResponsePB;
 class AlterTableRequestPB;
 class AlterTableResponsePB;
 class ChangeTServerStateRequestPB;
@@ -69,10 +71,10 @@ class ListTabletServersResponsePB;
 class Master;
 class PingRequestPB;
 class PingResponsePB;
-class ReplaceTabletRequestPB;
-class ReplaceTabletResponsePB;
 class RefreshAuthzCacheRequestPB;
 class RefreshAuthzCacheResponsePB;
+class ReplaceTabletRequestPB;
+class ReplaceTabletResponsePB;
 class TSHeartbeatRequestPB;
 class TSHeartbeatResponsePB;
 
@@ -103,6 +105,9 @@ class MasterServiceImpl : public MasterServiceIf {
   void ChangeTServerState(const ChangeTServerStateRequestPB* req,
                           ChangeTServerStateResponsePB* resp,
                           rpc::RpcContext* rpc) override;
+
+  void AddMaster(const AddMasterRequestPB* req,
+                 AddMasterResponsePB* resp, rpc::RpcContext* rpc) override;
 
   void Ping(const PingRequestPB* req,
             PingResponsePB* resp,

@@ -50,7 +50,6 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
@@ -89,6 +88,12 @@ DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
 TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
+DEFINE_string(master_address_add_new_master, "",
+              "Address of master to add as a NON_VOTER on creating a distributed master config.");
+TAG_FLAG(master_address_add_new_master, unsafe);
+TAG_FLAG(master_address_add_new_master, hidden);
+
+DECLARE_bool(master_support_change_config);
 DECLARE_int64(rpc_max_message_size);
 
 METRIC_DEFINE_counter(server, sys_catalog_oversized_write_requests,
@@ -266,10 +271,11 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     // Make sure the set of masters passed in at start time matches the set in
     // the on-disk cmeta.
     set<string> peer_addrs_from_opts;
-    for (const auto& hp : master_->opts().master_addresses) {
+    const auto& master_addresses = master_->opts().master_addresses();
+    for (const auto& hp : master_addresses) {
       peer_addrs_from_opts.insert(hp.ToString());
     }
-    if (peer_addrs_from_opts.size() < master_->opts().master_addresses.size()) {
+    if (peer_addrs_from_opts.size() < master_addresses.size()) {
       LOG(WARNING) << Substitute("Found duplicates in --master_addresses: "
                                  "the unique set of addresses is $0",
                                  JoinStrings(peer_addrs_from_opts, ", "));
@@ -358,11 +364,18 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
-  for (const HostPort& host_port : options.master_addresses) {
+  for (const HostPort& host_port : options.master_addresses()) {
     RaftPeerPB peer;
     HostPortPB peer_host_port_pb = HostPortToPB(host_port);
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
-    peer.set_member_type(RaftPeerPB::VOTER);
+    // Adding new master as a NON_VOTER to ensure it doesn't become a leader on creating
+    // distributed config and also helps with replacing a dead master at the same hostport.
+    if (FLAGS_master_support_change_config &&
+        FLAGS_master_address_add_new_master == host_port.ToString()) {
+      peer.set_member_type(RaftPeerPB::NON_VOTER);
+    } else {
+      peer.set_member_type(RaftPeerPB::VOTER);
+    }
     new_config.add_peers()->CopyFrom(peer);
   }
 

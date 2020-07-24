@@ -130,6 +130,10 @@ struct ExternalMiniClusterOptions {
   // Default: 1.
   int num_masters;
 
+  // Whether to supply 'master_addresses' field for single master configuration.
+  // Default: False
+  bool supply_single_master_addr;
+
   // Number of TS to start.
   //
   // Default: 1.
@@ -459,6 +463,10 @@ class ExternalMiniCluster : public MiniCluster {
   // Returns the path where 'daemon_id' is expected to store its logs, or other
   // files that reside in the log dir.
   std::string GetLogPath(const std::string& daemon_id) const;
+
+  // Adds a master to the ExternalMiniCluster when the new master has been added
+  // dynamically after bringing up the ExternalMiniCluster.
+  Status AddMaster(const scoped_refptr<ExternalMaster>& master);
 
  private:
   Status StartMasters();

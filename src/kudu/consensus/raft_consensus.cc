@@ -2460,6 +2460,23 @@ RaftPeerPB::Role RaftConsensus::role() const {
   return cmeta_->active_role();
 }
 
+RaftConsensus::RoleAndMemberType RaftConsensus::GetRoleAndMemberType() const {
+  ThreadRestrictions::AssertWaitAllowed();
+
+  auto member_type = RaftPeerPB::UNKNOWN_MEMBER_TYPE;
+  const auto& local_peer_uuid = peer_uuid();
+
+  LockGuard l(lock_);
+  for (const auto& peer : cmeta_->ActiveConfig().peers()) {
+    if (peer.permanent_uuid() == local_peer_uuid) {
+      member_type = peer.member_type();
+      break;
+    }
+  }
+
+  return std::make_pair(cmeta_->active_role(), member_type);
+}
+
 int64_t RaftConsensus::CurrentTerm() const {
   LockGuard l(lock_);
   return CurrentTermUnlocked();

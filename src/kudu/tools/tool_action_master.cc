@@ -189,6 +189,10 @@ Status ListMasters(const RunnerContext& context) {
       for (const auto& master : masters) {
         values.emplace_back(RaftPeerPB::Role_Name(master.role()));
       }
+    } else if (boost::iequals(column, "member_type")) {
+      for (const auto& master : masters) {
+        values.emplace_back(RaftPeerPB::MemberType_Name(master.member_type()));
+      }
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }

@@ -115,13 +115,17 @@ message ServerEntryPB {
   optional NodeInstancePB instance_id = 2;
   optional ServerRegistrationPB registration = 3;
 
-  // If an error has occured earlier in the RPC call, the role
+  // If an error has occurred earlier in the RPC call, the role
   // may be not be set.
   optional consensus.RaftPeerPB.Role role = 4;
 
   // The unique cluster ID of the cluster this server belongs too.
   // TODO(ghenke): Currently only set for masters.
   optional string cluster_id = 5;
+
+  // If an error has occurred earlier in the RPC call, the
+  // member_type may not be set.
+  optional consensus.RaftPeerPB.MemberType member_type = 6;
 }
 
 // A row block in which each row is stored contiguously.

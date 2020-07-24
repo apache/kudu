@@ -106,6 +106,12 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+namespace rpc {
+class RpcContext;
+}  // namespace rpc
+}  // namespace kudu
+
+namespace kudu {
 namespace master {
 
 namespace {
@@ -146,6 +152,9 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
   e->set_role(resp.role());
   if (resp.has_cluster_id()) {
     e->set_cluster_id(resp.cluster_id());
+  }
+  if (resp.has_member_type()) {
+    e->set_member_type(resp.member_type());
   }
   return Status::OK();
 }
@@ -336,23 +345,27 @@ void Master::ShutdownImpl() {
 }
 
 Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
-  if (!opts_.IsDistributed()) {
-    ServerEntryPB local_entry;
-    local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
-    RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
-    local_entry.set_role(RaftPeerPB::LEADER);
-    local_entry.set_cluster_id(cluster_id_);
-    masters->emplace_back(std::move(local_entry));
-    return Status::OK();
-  }
-
   auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
   }
   const auto config = consensus->CommittedConfig();
-
   masters->clear();
+  DCHECK_GE(config.peers_size(), 1);
+  // Optimized code path that doesn't involve reaching out to other
+  // masters over network for single master configuration.
+  if (config.peers_size() == 1) {
+    ServerEntryPB local_entry;
+    local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
+    RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
+    local_entry.set_role(RaftPeerPB::LEADER);
+    local_entry.set_cluster_id(cluster_id_);
+    local_entry.set_member_type(RaftPeerPB::VOTER);
+    masters->emplace_back(std::move(local_entry));
+    return Status::OK();
+  }
+
+  // For distributed master configuration.
   for (const auto& peer : config.peers()) {
     HostPort hp = HostPortFromPB(peer.last_known_addr());
     ServerEntryPB peer_entry;
@@ -401,6 +414,26 @@ Status Master::GetMasterHostPorts(vector<HostPort>* hostports) const {
     }
   }
   return Status::OK();
+}
+
+Status Master::AddMaster(const HostPort& hp, rpc::RpcContext* rpc) {
+  // Ensure requested master to be added is not already part of list of masters.
+  vector<HostPort> masters;
+  // Here the check is made against committed config with voters only.
+  RETURN_NOT_OK(GetMasterHostPorts(&masters));
+  if (std::find(masters.begin(), masters.end(), hp) != masters.end()) {
+    return Status::AlreadyPresent("Master already present");
+  }
+
+  // Check whether the master to be added is reachable and fetch its uuid.
+  ServerEntryPB peer_entry;
+  RETURN_NOT_OK(GetMasterEntryForHost(messenger_, hp, &peer_entry));
+  const auto& peer_uuid = peer_entry.instance_id().permanent_uuid();
+
+  // No early validation for whether a config change is in progress.
+  // If it's in progress, on initiating config change Raft will return error.
+  return catalog_manager()->InitiateMasterChangeConfig(CatalogManager::kAddMaster, hp, peer_uuid,
+                                                       rpc);
 }
 
 } // namespace master

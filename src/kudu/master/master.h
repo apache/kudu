@@ -36,6 +36,9 @@ class HostPort;
 class MaintenanceManager;
 class MonoDelta;
 class ThreadPool;
+namespace rpc {
+class RpcContext;
+}  // namespace rpc
 
 namespace master {
 class LocationCache;
@@ -104,7 +107,7 @@ class Master : public kserver::KuduServer {
   // request.
   Status ListMasters(std::vector<ServerEntryPB>* masters) const;
 
-  // Gets the HostPorts for all of the masters in the cluster.
+  // Gets the HostPorts for all of the VOTER masters in the cluster.
   // This is not as complete as ListMasters() above, but operates just
   // based on local state.
   Status GetMasterHostPorts(std::vector<HostPort>* hostports) const;
@@ -112,6 +115,11 @@ class Master : public kserver::KuduServer {
   bool IsShutdown() const {
     return state_ == kStopped;
   }
+
+  // Adds the master specified by 'hp' by initiating change config request.
+  // RpContext 'rpc' will be used to respond back to the client asynchronously.
+  // Returns the status of the master addition request.
+  Status AddMaster(const HostPort& hp, rpc::RpcContext* rpc);
 
   MaintenanceManager* maintenance_manager() {
     return maintenance_manager_.get();

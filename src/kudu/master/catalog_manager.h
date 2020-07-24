@@ -37,6 +37,7 @@
 #include <sparsehash/dense_hash_map>
 
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -48,7 +49,6 @@
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/rw_mutex.h"
@@ -65,6 +65,7 @@ namespace kudu {
 
 class AuthzTokenTest_TestSingleMasterUnavailable_Test;
 class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
+class HostPort;
 class MetricEntity;
 class MetricRegistry;
 class MonitoredTask;
@@ -82,7 +83,6 @@ class ServiceUnavailableRetryClientTest_CreateTable_Test;
 } // namespace client
 
 namespace consensus {
-class RaftConsensus;
 class StartTabletCopyRequestPB;
 } // namespace consensus
 
@@ -773,9 +773,15 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
       const consensus::StartTabletCopyRequestPB* req,
       std::function<void(const Status&, tserver::TabletServerErrorPB::Code)> cb) override;
 
-  // Returns this CatalogManager's role in a consensus configuration. CatalogManager
-  // must be initialized before calling this method.
+  // Returns this CatalogManager's role in a consensus configuration.
+  // CatalogManager is expected to be initialized before calling this method otherwise
+  // UNKNOWN_ROLE is returned.
   consensus::RaftPeerPB::Role Role() const;
+
+  // Returns this CatalogManager's role and member type in a consensus configuration.
+  // CatalogManager is expected to be initialized before calling this method otherwise
+  // <UNKNOWN_ROLE, UNKNOWN_MEMBER_TYPE> is returned.
+  consensus::RaftConsensus::RoleAndMemberType GetRoleAndMemberType() const;
 
   hms::HmsCatalog* hms_catalog() const {
     return hms_catalog_.get();
@@ -799,9 +805,15 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // name is returned.
   static std::string NormalizeTableName(const std::string& table_name);
 
-  const std::vector<HostPort>& master_addresses() const {
-    return master_addresses_;
-  }
+  enum ChangeConfigOp {
+    kAddMaster
+  };
+
+  // Add/remove a master specified by 'hp' and 'uuid' by initiating change config request.
+  // RpContext 'rpc' will be used to respond back to the client asynchronously.
+  // Returns the status of submission of the request.
+  Status InitiateMasterChangeConfig(ChangeConfigOp op, const HostPort& hp,
+                                    const std::string& uuid, rpc::RpcContext* rpc);
 
  private:
   // These tests call ElectedAsLeaderCb() directly.
@@ -1166,6 +1178,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   mutable simple_spinlock state_lock_;
   State state_;
 
+  static const char* ChangeConfigOpToString(ChangeConfigOp type);
+
   // Singleton pool that serializes invocations of ElectedAsLeaderCb().
   std::unique_ptr<ThreadPool> leader_election_pool_;
 
@@ -1194,11 +1208,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   //
   // Always acquire this lock before state_lock_.
   RWMutex leader_lock_;
-
-  // Cached information on master addresses. It's populated in Init() since the
-  // membership of masters' Raft consensus is static (i.e. no new members are
-  // added or any existing removed).
-  std::vector<HostPort> master_addresses_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

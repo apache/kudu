@@ -55,6 +55,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -94,6 +95,12 @@ DEFINE_bool(master_support_authz_tokens, true,
             "Whether the master supports generating authz tokens. Used for "
             "testing version compatibility in the client.");
 TAG_FLAG(master_support_authz_tokens, hidden);
+
+DEFINE_bool(master_support_change_config, false,
+            "Whether the master supports adding/removing master servers dynamically.");
+TAG_FLAG(master_support_change_config, hidden);
+TAG_FLAG(master_support_change_config, unsafe);
+
 
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
@@ -227,6 +234,36 @@ void MasterServiceImpl::ChangeTServerState(const ChangeTServerStateRequestPB* re
     return;
   }
   rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::AddMaster(const AddMasterRequestPB* req,
+                                  AddMasterResponsePB* resp,
+                                  rpc::RpcContext* rpc) {
+  if (!FLAGS_master_support_change_config) {
+    rpc->RespondFailure(Status::NotSupported("Adding master is not supported"));
+    return;
+  }
+
+  if (!req->has_rpc_addr()) {
+    rpc->RespondFailure(Status::InvalidArgument("RPC address of master to be added not supplied"));
+    return;
+  }
+
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+
+  Status s = server_->AddMaster(HostPortFromPB(req->rpc_addr()), rpc);
+  if (!s.ok()) {
+    LOG(ERROR) << Substitute("Failed adding master $0:$1. $2", req->rpc_addr().host(),
+                             req->rpc_addr().port(), s.ToString());
+    rpc->RespondFailure(s);
+    return;
+  }
+  // ChangeConfig request successfully submitted. Once the ChangeConfig request is complete
+  // the completion callback will respond back with the result to the RPC client.
+  // See completion_cb in CatalogManager::InitiateMasterChangeConfig().
 }
 
 void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
@@ -618,7 +655,9 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
 
   Status s = server_->GetMasterRegistration(resp->mutable_registration());
   CheckRespErrorOrSetUnknown(s, resp);
-  resp->set_role(server_->catalog_manager()->Role());
+  const auto& role_and_member = server_->catalog_manager()->GetRoleAndMemberType();
+  resp->set_role(role_and_member.first);
+  resp->set_member_type(role_and_member.second);
   resp->set_cluster_id(server_->cluster_id());
   rpc->RespondSuccess();
 }
@@ -633,7 +672,14 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
 
   // Set the info about the other masters, so that the client can verify
   // it has the full set of info.
-  const auto& addresses = server_->catalog_manager()->master_addresses();
+  vector<HostPort> addresses;
+  Status s = server_->GetMasterHostPorts(&addresses);
+  if (!s.ok()) {
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+    rpc->RespondSuccess();
+    return;
+  }
   resp->mutable_master_addrs()->Reserve(addresses.size());
   for (const auto& hp : addresses) {
     *resp->add_master_addrs() = HostPortToPB(hp);
@@ -746,6 +792,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
       return FLAGS_master_support_authz_tokens;
     case MasterFeatures::CONNECT_TO_MASTER:
       return FLAGS_master_support_connect_to_master_rpc;
+    case MasterFeatures::DYNAMIC_MULTI_MASTER:
+      return FLAGS_master_support_change_config;
     default:
       return false;
   }

@@ -112,6 +112,7 @@ static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
+      supply_single_master_addr(false),
       num_tablet_servers(1),
       bind_mode(kDefaultBindMode),
       num_data_dirs(1),
@@ -498,7 +499,7 @@ Status ExternalMiniCluster::StartMasters() {
   // Setting --master_addresses flag for a single master configuration is now supported but not
   // mandatory. Not setting the flag helps test existing kudu deployments that don't specify
   // the --master_addresses flag for single master configuration.
-  if (num_masters > 1) {
+  if (num_masters > 1 || opts_.supply_single_master_addr) {
     flags.emplace_back(Substitute("--master_addresses=$0",
                                   HostPort::ToCommaSeparatedString(master_rpc_addrs)));
   }
@@ -921,6 +922,20 @@ string ExternalMiniCluster::WalRootForTS(int ts_idx) const {
 
 string ExternalMiniCluster::UuidForTS(int ts_idx) const {
   return tablet_server(ts_idx)->uuid();
+}
+
+Status ExternalMiniCluster::AddMaster(const scoped_refptr<ExternalMaster>& new_master) {
+  const auto& new_master_uuid = new_master->instance_id().permanent_uuid();
+  for (const auto& m : masters_) {
+    if (m->instance_id().permanent_uuid() == new_master_uuid) {
+      CHECK(m->bound_rpc_hostport() == new_master->bound_rpc_hostport());
+      return Status::AlreadyPresent(Substitute(
+          "Master $0, uuid: $1 already present in ExternalMiniCluster",
+          m->bound_rpc_hostport().ToString(), new_master_uuid));
+    }
+  }
+  masters_.emplace_back(new_master);
+  return Status::OK();
 }
 
 //------------------------------------------------------------

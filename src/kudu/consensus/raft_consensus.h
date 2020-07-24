@@ -142,6 +142,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
     EXTERNAL_REQUEST
   };
 
+  typedef std::pair<RaftPeerPB::Role, RaftPeerPB::MemberType> RoleAndMemberType;
+
   ~RaftConsensus();
 
   // Factory method to construct and initialize a RaftConsensus instance.
@@ -316,6 +318,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Returns the current Raft role of this instance.
   RaftPeerPB::Role role() const;
+
+  // Returns the current Raft role and member type of this instance.
+  // May return <UNKNOWN_ROLE, UNKNOWN_MEMBER_TYPE> if the information is not available.
+  RoleAndMemberType GetRoleAndMemberType() const;
 
   // Returns the current term.
   int64_t CurrentTerm() const;

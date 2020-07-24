@@ -53,7 +53,6 @@
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master_options.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/table_metrics.h"
 #include "kudu/master/ts_descriptor.h"
@@ -831,17 +830,23 @@ pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& de
 }
 
 string MasterPathHandlers::MasterAddrsToCsv() const {
-  if (!master_->opts().master_addresses.empty()) {
+  vector<HostPort> master_addresses;
+  Status s = master_->GetMasterHostPorts(&master_addresses);
+  LOG(WARNING) << "Unable to fetch master addresses: " << s.ToString();
+  if (!s.ok()) {
+    return string();
+  }
+  if (!master_addresses.empty()) {
     vector<string> all_addresses;
-    all_addresses.reserve(master_->opts().master_addresses.size());
-    for (const HostPort& hp : master_->opts().master_addresses) {
+    all_addresses.reserve(master_addresses.size());
+    for (const HostPort& hp : master_addresses) {
       all_addresses.push_back(hp.ToString());
     }
     return JoinElements(all_addresses, ",");
   }
   Sockaddr addr = master_->first_rpc_address();
   HostPort hp;
-  Status s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
+  s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
   if (s.ok()) {
     return hp.ToString();
   }

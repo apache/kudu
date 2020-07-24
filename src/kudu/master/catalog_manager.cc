@@ -80,7 +80,6 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/basictypes.h"
@@ -139,6 +138,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -828,10 +828,11 @@ Status CatalogManager::Init(bool is_first_run) {
     auto_rebalancer_ = std::move(task);
   }
 
-  RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses_));
+  vector<HostPort> master_addresses;
+  RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addresses));
   if (hms::HmsCatalog::IsEnabled()) {
-    string master_addresses = JoinMapped(
-      master_addresses_,
+    string master_addresses_str = JoinMapped(
+      master_addresses,
       [] (const HostPort& hostport) {
         return Substitute("$0:$1", hostport.host(), hostport.port());
       },
@@ -844,7 +845,7 @@ Status CatalogManager::Init(bool is_first_run) {
     // holding leader_lock_, so this is the path of least resistance.
     std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
 
-    hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses)));
+    hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses_str)));
     RETURN_NOT_OK_PREPEND(hms_catalog_->Start(HmsClientVerifyKuduSyncConfig::VERIFY),
                           "failed to start Hive Metastore catalog");
 
@@ -1412,6 +1413,12 @@ RaftPeerPB::Role CatalogManager::Role() const {
     }
   }
   return consensus ? consensus->role() : RaftPeerPB::UNKNOWN_ROLE;
+}
+
+RaftConsensus::RoleAndMemberType CatalogManager::GetRoleAndMemberType() const {
+  return IsInitialized() ?
+      sys_catalog_->tablet_replica()->shared_consensus()->GetRoleAndMemberType() :
+      std::make_pair(RaftPeerPB::UNKNOWN_ROLE, RaftPeerPB::UNKNOWN_MEMBER_TYPE);
 }
 
 void CatalogManager::Shutdown() {
@@ -5511,6 +5518,13 @@ const char* CatalogManager::StateToString(State state) {
   __builtin_unreachable();
 }
 
+const char* CatalogManager::ChangeConfigOpToString(ChangeConfigOp type) {
+  switch (type) {
+    case CatalogManager::kAddMaster: return "add";
+  }
+  __builtin_unreachable();
+}
+
 void CatalogManager::ResetTableLocationsCache() {
   const auto cache_capacity_bytes =
       FLAGS_table_locations_cache_capacity_mb * 1024 * 1024;
@@ -5525,6 +5539,56 @@ void CatalogManager::ResetTableLocationsCache() {
     table_locations_cache_ = std::move(new_cache);
   }
   VLOG(1) << "table locations cache has been reset";
+}
+
+Status CatalogManager::InitiateMasterChangeConfig(ChangeConfigOp op, const HostPort& hp,
+                                                  const std::string& uuid, rpc::RpcContext* rpc) {
+  auto consensus = master_consensus();
+  if (!consensus) {
+    return Status::IllegalState("Consensus not running");
+  }
+
+  consensus::ChangeConfigRequestPB req;
+  // Request is targeted to itself, the leader master.
+  req.set_dest_uuid(master_->fs_manager()->uuid());
+  req.set_tablet_id(sys_catalog()->tablet_id());
+  req.set_cas_config_opid_index(consensus->CommittedConfig().opid_index());
+  RaftPeerPB* peer = req.mutable_server();
+  peer->set_permanent_uuid(uuid);
+
+  switch (op) {
+    case CatalogManager::kAddMaster:
+      req.set_type(consensus::ADD_PEER);
+      *peer->mutable_last_known_addr() = HostPortToPB(hp);
+      // Adding the new master as a NON_VOTER that'll be promoted to VOTER once the tablet
+      // copy is complete and is sufficiently caught up.
+      peer->set_member_type(RaftPeerPB::NON_VOTER);
+      peer->mutable_attrs()->set_promote(true);
+      break;
+    default:
+      LOG(FATAL) << "Unsupported ChangeConfig operation: " << op;
+  }
+
+  const string op_str = ChangeConfigOpToString(op);
+  LOG(INFO) << Substitute("Initiating ChangeConfig request to $0 master $1: $2",
+                          op_str, hp.ToString(), SecureDebugString(req));
+  auto completion_cb = [op_str, hp, rpc] (const Status& completion_status) {
+    if (completion_status.ok()) {
+      LOG(INFO) << Substitute("Successfully completed master ChangeConfig request to $0 master $1",
+                              op_str, hp.ToString());
+      rpc->RespondSuccess();
+    } else {
+      LOG(WARNING) << Substitute("ChangeConfig request failed to $0 master $1: $2 ",
+                                 op_str, hp.ToString(), completion_status.ToString());
+      rpc->RespondFailure(completion_status);
+    }
+  };
+  boost::optional<TabletServerErrorPB::Code> err_code;
+  RETURN_NOT_OK_PREPEND(
+      consensus->ChangeConfig(req, completion_cb, &err_code),
+      Substitute("Failed initiating master Raft ChangeConfig request, error: $0",
+                 err_code ? TabletServerErrorPB::Code_Name(*err_code) : "unknown"));
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////
@@ -5647,6 +5711,7 @@ bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrResp
 INITTED_OR_RESPOND(ConnectToMasterResponsePB);
 INITTED_OR_RESPOND(GetMasterRegistrationResponsePB);
 INITTED_OR_RESPOND(TSHeartbeatResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(AddMasterResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(AlterTableResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(ChangeTServerStateResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(CreateTableResponsePB);

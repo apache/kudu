@@ -78,7 +78,7 @@ MiniMaster::~MiniMaster() {
 
 void MiniMaster::SetMasterAddresses(vector<HostPort> master_addrs) {
   CHECK(!master_);
-  opts_.master_addresses = std::move(master_addrs);
+  opts_.SetMasterAddressesForTests(std::move(master_addrs));
 }
 
 Status MiniMaster::Start() {
