@@ -517,6 +517,13 @@ void TSTabletManager::InitLocalRaftPeerPB() {
   HostPort hp;
   CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
   CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
+
+  // We will make this the default soon, Flexi-raft needs regions
+  // attr. We assumed that on plugin side, topology_config->server_config
+  // is well formed. We use it directly here.
+  if (FLAGS_enable_flexi_raft && server_->opts().topology_config.has_server_config()) {
+    local_peer_pb_ = server_->opts().topology_config.server_config();
+  }
 }
 
 string TSTabletManager::LogPrefix(const string& tablet_id, FsManager *fs_manager) {
