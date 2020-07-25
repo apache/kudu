@@ -190,12 +190,14 @@ case class RestoreOptions(
     createTables: Boolean = RestoreOptions.DefaultCreateTables,
     timestampMs: Long = System.currentTimeMillis(),
     failOnFirstError: Boolean = RestoreOptions.DefaultFailOnFirstError,
-    numParallelRestores: Int = RestoreOptions.DefaultNumParallelRestores)
+    numParallelRestores: Int = RestoreOptions.DefaultNumParallelRestores,
+    restoreOwner: Boolean = RestoreOptions.DefaultRestoreOwner)
 
 object RestoreOptions {
   val DefaultCreateTables: Boolean = true
   val DefaultFailOnFirstError = false
   val DefaultNumParallelRestores = 1
+  val DefaultRestoreOwner: Boolean = true
 
   val ClassName: String = KuduRestore.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
   val ProgramName: String = "spark-submit --class " + ClassName + " [spark-options] " +
@@ -244,6 +246,14 @@ object RestoreOptions {
             "the resources of parallel jobs. Overrides --failOnFirstError. This option is " +
             "experimental. Default: " + DefaultNumParallelRestores)
         .hidden()
+        .optional()
+
+      opt[Boolean]("restoreOwner")
+        .action((v, o) => o.copy(restoreOwner = v))
+        .text(
+          "If true, it restores table ownership when creating new tables, otherwise creates " +
+            "tables as the logged in user. Only used when createTables is true. Default: " +
+            DefaultRestoreOwner)
         .optional()
 
       help("help").text("prints this usage text")

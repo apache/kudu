@@ -327,10 +327,14 @@ object TableMetadata {
     }
   }
 
-  def getCreateTableOptionsWithoutRangePartitions(metadata: TableMetadataPB): CreateTableOptions = {
+  def getCreateTableOptionsWithoutRangePartitions(
+      metadata: TableMetadataPB,
+      restoreOwner: Boolean): CreateTableOptions = {
     val schema = getKuduSchema(metadata)
     val options = new CreateTableOptions()
-    options.setOwner(metadata.getTableOwner)
+    if (restoreOwner) {
+      options.setOwner(metadata.getTableOwner)
+    }
     options.setNumReplicas(metadata.getNumReplicas)
     metadata.getPartitions.getHashPartitionsList.asScala.foreach { hp =>
       options

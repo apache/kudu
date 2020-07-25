@@ -27,6 +27,7 @@ import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
+import org.apache.kudu.client
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobDescriptionCollector
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
@@ -412,6 +413,16 @@ class TestKuduBackup extends KuduTestSuite {
   }
 
   @Test
+  def testBackupAndRestoreNoRestoreOwner(): Unit = {
+    val rowCount = 100
+    insertRows(table, rowCount)
+
+    backupAndValidateTable(tableName, rowCount, false)
+    assertTrue(runRestore(createRestoreOptions(Seq(tableName)).copy(restoreOwner = false)))
+    validateTablesMatch(tableName, s"$tableName-restore", false)
+  }
+
+  @Test
   def testColumnAlterHandling(): Unit = {
     // Create a basic table.
     val tableName = "testColumnAlterHandling"
@@ -744,10 +755,14 @@ class TestKuduBackup extends KuduTestSuite {
     KuduRestore.run(options, ss)
   }
 
-  def validateTablesMatch(tableA: String, tableB: String): Unit = {
+  def validateTablesMatch(tableA: String, tableB: String, ownersMatch: Boolean = true): Unit = {
     val tA = kuduClient.openTable(tableA)
     val tB = kuduClient.openTable(tableB)
-    assertEquals(tA.getOwner, tB.getOwner)
+    if (ownersMatch) {
+      assertEquals(tA.getOwner, tB.getOwner)
+    } else {
+      assertNotEquals(tA.getOwner, tB.getOwner)
+    }
     assertNotEquals("", tA.getOwner);
     assertEquals(tA.getNumReplicas, tB.getNumReplicas)
     assertTrue(schemasMatch(tA.getSchema, tB.getSchema))

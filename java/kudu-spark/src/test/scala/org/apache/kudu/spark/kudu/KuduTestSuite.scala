@@ -52,6 +52,7 @@ trait KuduTestSuite extends JUnitSuite {
   var kuduContext: KuduContext = _
 
   val tableName: String = "test"
+  val owner: String = "testuser"
   val simpleTableName: String = "simple-test"
 
   lazy val schema: Schema = {
@@ -115,6 +116,7 @@ trait KuduTestSuite extends JUnitSuite {
       .setRangePartitionColumns(List("key").asJava)
       .addRangePartition(bottom, middle)
       .addRangePartition(middle, top)
+      .setOwner(owner)
       .setNumReplicas(1)
   }
 

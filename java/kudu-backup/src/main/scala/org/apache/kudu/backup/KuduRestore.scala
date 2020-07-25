@@ -75,7 +75,11 @@ object KuduRestore {
           log.info(s"Creating restore table $restoreName")
           // We use the last schema in the restore path when creating the table to
           // ensure the table is created in its final state.
-          createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
+          createTableRangePartitionByRangePartition(
+            restoreName,
+            lastMetadata,
+            options.restoreOwner,
+            context)
         }
       }
       val backupSchema = BackupUtils.dataSchema(TableMetadata.getKuduSchema(metadata))
@@ -214,10 +218,11 @@ object KuduRestore {
   private def createTableRangePartitionByRangePartition(
       restoreName: String,
       metadata: TableMetadataPB,
+      restoreOwner: Boolean,
       context: KuduContext): Unit = {
     // Create the table with the first range partition (or none if there are none).
     val schema = TableMetadata.getKuduSchema(metadata)
-    val options = TableMetadata.getCreateTableOptionsWithoutRangePartitions(metadata)
+    val options = TableMetadata.getCreateTableOptionsWithoutRangePartitions(metadata, restoreOwner)
     val bounds = TableMetadata.getRangeBoundPartialRows(metadata)
     bounds.headOption.foreach(bound => {
       val (lower, upper) = bound
