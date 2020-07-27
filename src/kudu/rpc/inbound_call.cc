@@ -47,8 +47,8 @@ class FieldDescriptor;
 }
 }
 
+using google::protobuf::ArenaOptions;
 using google::protobuf::FieldDescriptor;
-using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using std::string;
 using std::unique_ptr;
@@ -58,11 +58,18 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
+static ArenaOptions MakeArenaOptions() {
+  ArenaOptions opts;
+  opts.start_block_size = 4096;
+  return opts;
+}
+
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
     trace_(new Trace),
     method_info_(nullptr),
-    deadline_(MonoTime::Max()) {
+    deadline_(MonoTime::Max()),
+    arena_(MakeArenaOptions()) {
   RecordCallReceived();
 }
 
