@@ -577,6 +577,9 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${DENSE_NODE_ITEST}_num_threads%" dense-node-bench-threads
   load_and_generate_plot "${DENSE_NODE_ITEST}_num_bytes%" dense-node-bench-bytes
 
+  load_and_generate_plot "${BLOCKING_QUEUE_SYMMETRIC_TEST}%" blocking-queue-symmetric
+  load_and_generate_plot "${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}%" blocking-queue-non-symmetric
+
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
     cat $LOGDIR/${MT_TABLET_TEST}.log | ./graph-metrics.py MultiThreadedTabletTest/$i > $OUTDIR/test$i.tsv
