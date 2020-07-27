@@ -62,6 +62,9 @@ DENSE_NODE_ITEST=DenseNodeItest
 BLOCKING_QUEUE_SYMMETRIC_TEST=BlockingQueueSymmetric
 BLOCKING_QUEUE_NON_SYMMETRIC_TEST=BlockingQueueNonSymmetric
 
+GET_TABLE_SCHEMA_RPC=GetTableSchemaTestRpc
+GET_TABLE_SCHEMA_DIRECT_CALL=GetTableSchemaTestDirectCall
+
 LOG_DIR_NAME=build/latest/bench-logs
 OUT_DIR_NAME=build/latest/bench-out
 HTML_FILE="benchmarks.html"
@@ -306,6 +309,20 @@ run_benchmarks() {
       --num_non_blocking_writers=1 \
       &> $LOGDIR/${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}$i.log
   done
+
+  # Run ConcurrentGetTableSchemaTest.RPC with and without authz.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/master-test \
+      --gtest_filter='*/ConcurrentGetTableSchemaTest.Rpc/*' \
+      &> $LOGDIR/${GET_TABLE_SCHEMA_RPC}$i.log
+  done
+
+  # Run ConcurrentGetTableSchemaTest.DirectMethodCall with and without authz.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/master-test \
+      --gtest_filter='*/ConcurrentGetTableSchemaTest.DirectMethodCall/*' \
+      &> $LOGDIR/${GET_TABLE_SCHEMA_DIRECT_CALL}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -497,6 +514,21 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}_total_call_rate $i $rate
   done
 
+  # Parse out request rate and record the results for ConcurrentGetTableSchemaTest test.
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${GET_TABLE_SCHEMA_RPC}$i.log
+    rate=$(grep -o 'GetTableSchema RPC: .* req/sec (authz disabled)' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${GET_TABLE_SCHEMA_RPC}_no_authz_req_rate $i $rate
+    rate=$(grep -o 'GetTableSchema RPC: .* req/sec (authz enabled)' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${GET_TABLE_SCHEMA_RPC}_authz_req_rate $i $rate
+
+    local log=$LOGDIR/${GET_TABLE_SCHEMA_DIRECT_CALL}$i.log
+    rate=$(grep -o 'GetTableSchema function: .* req/sec (authz disabled)' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${GET_TABLE_SCHEMA_DIRECT_CALL}_no_authz_req_rate $i $rate
+    rate=$(grep -o 'GetTableSchema function: .* req/sec (authz enabled)' $log | awk '{print $3}')
+    record_result $BUILD_IDENTIFIER ${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate $i $rate
+  done
+
   popd
   popd
   popd
@@ -579,6 +611,10 @@ load_stats_and_generate_plots() {
 
   load_and_generate_plot "${BLOCKING_QUEUE_SYMMETRIC_TEST}%" blocking-queue-symmetric
   load_and_generate_plot "${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}%" blocking-queue-non-symmetric
+
+  load_and_generate_plot "${GET_TABLE_SCHEMA_RPC}%_req_rate" get-table-schema-rpc
+  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate" get-table-schema-dc-authz
+  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_no_authz_req_rate" get-table-schema-dc-no-authz
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
