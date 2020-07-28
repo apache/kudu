@@ -1345,6 +1345,14 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   ASSERT_EQ(nrows, 6);
 }
 
+TEST_F(ClientTest, TestGetKuduTable) {
+  KuduScanner scanner(client_table_.get());
+  shared_ptr<KuduTable> table = scanner.GetKuduTable();
+  ASSERT_EQ(table->name(), client_table_->name());
+  ASSERT_EQ(table->id(), client_table_->id());
+  ASSERT_EQ(table->schema().ToString(), client_table_->schema().ToString());
+}
+
 // Test adding various sorts of invalid binary predicates.
 TEST_F(ClientTest, TestInvalidPredicates) {
   KuduScanner scanner(client_table_.get());

@@ -1574,6 +1574,10 @@ KuduSchema KuduScanner::GetProjectionSchema() const {
   return KuduSchema::FromSchema(*data_->configuration().projection());
 }
 
+shared_ptr<KuduTable> KuduScanner::GetKuduTable() {
+  return data_->table_;
+}
+
 Status KuduScanner::SetRowFormatFlags(uint64_t flags) {
   switch (flags) {
     case NO_FLAGS:

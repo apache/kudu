@@ -2426,6 +2426,9 @@ class KUDU_EXPORT KuduScanner {
   /// @return Schema of the projection being scanned.
   KuduSchema GetProjectionSchema() const;
 
+  /// @return KuduTable being scanned.
+  sp::shared_ptr<KuduTable> GetKuduTable();
+
   /// @name Advanced/Unstable API
   //
   ///@{
