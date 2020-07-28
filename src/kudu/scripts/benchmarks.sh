@@ -65,6 +65,9 @@ BLOCKING_QUEUE_NON_SYMMETRIC_TEST=BlockingQueueNonSymmetric
 GET_TABLE_SCHEMA_RPC=GetTableSchemaTestRpc
 GET_TABLE_SCHEMA_DIRECT_CALL=GetTableSchemaTestDirectCall
 
+GET_TABLE_LOCATIONS_RPC=GetTableLocationsTestRpc
+GET_TABLE_LOCATIONS_DIRECT_CALL=GetTableLocationsTestDirectCall
+
 LOG_DIR_NAME=build/latest/bench-logs
 OUT_DIR_NAME=build/latest/bench-out
 HTML_FILE="benchmarks.html"
@@ -323,6 +326,29 @@ run_benchmarks() {
       --gtest_filter='*/ConcurrentGetTableSchemaTest.DirectMethodCall/*' \
       &> $LOGDIR/${GET_TABLE_SCHEMA_DIRECT_CALL}$i.log
   done
+
+  # Run GetTableLocationsBenchmark, with and without cache.
+  for capacity_mb in 0 32 do ;
+    for i in $(seq 1 $NUM_SAMPLES) ; do
+      KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/table_locations-itest \
+        --gtest_filter=TableLocationsTest.GetTableLocationsBenchmark \
+        --rpc_num_service_threads=8 \
+        --benchmark_num_threads=12 \
+        --table_locations_cache_capacity_mb=$capacity_mb \
+        &> $LOGDIR/${GET_TABLE_LOCATIONS_RPC}_${capacity_mb}_$i.log
+    done
+  done
+
+  # Run GetTableLocationsBenchmarkFunctionCall, with and without cache.
+  for capacity_mb in 0 32 do ;
+    for i in $(seq 1 $NUM_SAMPLES) ; do
+      KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/table_locations-itest \
+        --gtest_filter=TableLocationsTest.GetTableLocationsBenchmarkFunctionCall \
+        --benchmark_num_threads=12 \
+        --table_locations_cache_capacity_mb=$capacity_mb \
+        &> $LOGDIR/${GET_TABLE_LOCATIONS_DIRECT_CALL}_${capacity_mb}_$i.log
+    done
+  done
 }
 
 parse_and_record_all_results() {
@@ -529,6 +555,19 @@ parse_and_record_all_results() {
     record_result $BUILD_IDENTIFIER ${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate $i $rate
   done
 
+  # Parse out request rate and record the results for GetTableLocationsBenchmark{FunctionCall}.
+  for capacity_mb in 0 32 ; do
+    for i in $(seq 1 $NUM_SAMPLES); do
+      local log=$LOGDIR/${GET_TABLE_LOCATIONS_RPC}_${capacity_mb}_${i}.log
+      rate=$(grep -o 'GetTableLocations RPC: .* req/sec' $log | awk '{print $3}')
+      record_result $BUILD_IDENTIFIER ${GET_TABLE_LOCATIONS_RPC}_${capacity_mb}_req_rate $i $rate
+
+      local log=$LOGDIR/${GET_TABLE_LOCATIONS_DIRECT_CALL}_${capacity_mb}_${i}.log
+      rate=$(grep -o 'GetTableLocations function call: .* req/sec' $log | awk '{print $4}')
+      record_result $BUILD_IDENTIFIER ${GET_TABLE_LOCATIONS_DIRECT_CALL}_${capacity_mb}_req_rate $i $rate
+    done
+  done
+
   popd
   popd
   popd
@@ -615,6 +654,9 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${GET_TABLE_SCHEMA_RPC}%_req_rate" get-table-schema-rpc
   load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate" get-table-schema-dc-authz
   load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_no_authz_req_rate" get-table-schema-dc-no-authz
+
+  load_and_generate_plot "${GET_TABLE_LOCATIONS_RPC}%_req_rate" get-table-locations-rpc
+  load_and_generate_plot "${GET_TABLE_LOCATIONS_DIRECT_CALL}%_req_rate" get-table-locations-dc
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
