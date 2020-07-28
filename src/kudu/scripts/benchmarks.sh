@@ -68,6 +68,8 @@ GET_TABLE_SCHEMA_DIRECT_CALL=GetTableSchemaTestDirectCall
 GET_TABLE_LOCATIONS_RPC=GetTableLocationsTestRpc
 GET_TABLE_LOCATIONS_DIRECT_CALL=GetTableLocationsTestDirectCall
 
+SAME_TABLET_CONCURRENT_WRITES=SameTabletConcurrentWrites
+
 LOG_DIR_NAME=build/latest/bench-logs
 OUT_DIR_NAME=build/latest/bench-out
 HTML_FILE="benchmarks.html"
@@ -349,6 +351,14 @@ run_benchmarks() {
         &> $LOGDIR/${GET_TABLE_LOCATIONS_DIRECT_CALL}_${capacity_mb}_$i.log
     done
   done
+
+  # Run SameTabletConcurrentWritesTest.InsertsOnly with 16 inserter threads.
+  for i in $(seq 1 $NUM_SAMPLES) ; do
+    KUDU_ALLOW_SLOW_TESTS=true ./build/latest/bin/same_tablet_concurrent_writes-itest \
+      --gtest_filter='SameTabletConcurrentWritesTest.InsertsOnly' \
+      --num_inserter_threads=16 \
+      &> $LOGDIR/${SAME_TABLET_CONCURRENT_WRITES}$i.log
+  done
 }
 
 parse_and_record_all_results() {
@@ -568,6 +578,14 @@ parse_and_record_all_results() {
     done
   done
 
+  for i in $(seq 1 $NUM_SAMPLES); do
+    local log=$LOGDIR/${SAME_TABLET_CONCURRENT_WRITES}$i.log
+    rate=$(grep -o 'write RPC request rate: .* req/sec' $log | awk '{print $5}')
+    overflows=$(grep -o 'total count of RPC queue overflows: .*' $log | awk '{print $7}')
+    record_result $BUILD_IDENTIFIER ${SAME_TABLET_CONCURRENT_WRITES}_req_rate $i $rate
+    record_result $BUILD_IDENTIFIER ${SAME_TABLET_CONCURRENT_WRITES}_overflows $i $overflows
+  done
+
   popd
   popd
   popd
@@ -657,6 +675,9 @@ load_stats_and_generate_plots() {
 
   load_and_generate_plot "${GET_TABLE_LOCATIONS_RPC}%_req_rate" get-table-locations-rpc
   load_and_generate_plot "${GET_TABLE_LOCATIONS_DIRECT_CALL}%_req_rate" get-table-locations-dc
+
+  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_req_rate" same-tablet-concurrent-writes-rate
+  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_overflows" same-tablet-concurrent-writes-overflows
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
