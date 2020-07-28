@@ -328,7 +328,7 @@ Status TwoDimensionalGreedyAlgo::GetNextMove(
 
     // Move a replica of the selected table from a most loaded server to a
     // least loaded server.
-    *move = { tbi.table_id, max_loaded_uuid, min_loaded_uuid };
+    *move = TableReplicaMove{ tbi.table_id, max_loaded_uuid, min_loaded_uuid };
     break;
   }
 
@@ -612,7 +612,7 @@ Status LocationBalancingAlgo::FindBestMove(
   const auto& src_ts_id = it_max->second;
   CHECK_NE(src_ts_id, dst_ts_id);
 
-  *move = { table_id, src_ts_id, dst_ts_id };
+  *move = TableReplicaMove{ table_id, src_ts_id, dst_ts_id };
 
   return Status::OK();
 }

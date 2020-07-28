@@ -26,11 +26,10 @@
 #include <thread>
 #include <vector>
 
-#include <boost/smart_ptr/shared_array.hpp>
+#include <boost/smart_ptr/detail/spinlock_std_atomic.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
@@ -44,15 +43,7 @@ DEFINE_int32(num_threads, 8, "Number of threads to test");
 using std::thread;
 using std::vector;
 
-class my_spinlock : public boost::detail::spinlock {
- public:
-  my_spinlock() {
-    v_ = 0;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(my_spinlock);
-};
+typedef boost::detail::spinlock my_spinlock;
 
 struct PerCpuLock {
   struct PaddedLock {

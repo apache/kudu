@@ -1214,8 +1214,10 @@ TEST_P(ConcurrentGetTableSchemaTest, DirectMethodCall) {
   CatalogManager* cm = mini_master_->master()->catalog_manager();
   const auto* token_signer = supports_authz_
       ? mini_master_->master()->token_signer() : nullptr;
-  const auto username = supports_authz_
-      ? boost::make_optional<const string&>(kUserName) : boost::none;
+  optional<const string&> username;
+  if (supports_authz_) {
+    username = kUserName;
+  }
 
   // Start many threads that hammer the master with GetTableSchema() calls
   // for various tables.

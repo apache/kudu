@@ -537,7 +537,7 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmarkFunctionCall) {
   NO_FATALS(CreateTable(table_name, kNumSplits));
 
   CatalogManager* cm = cluster_->mini_master()->master()->catalog_manager();
-  const auto username = boost::make_optional<const string&>(kUserName);
+  const boost::optional<const string&> username = kUserName;
 
   std::atomic<bool> stop(false);
   vector<thread> threads;

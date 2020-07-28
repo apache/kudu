@@ -310,12 +310,11 @@ class MasterAuthzITestHarness {
   // Creates db.table and db.second_table.
   virtual Status SetUpTables(const unique_ptr<ExternalMiniCluster>& cluster,
                              const shared_ptr<KuduClient>& client) {
+    static const string kUser = kAdminUser;
     RETURN_NOT_OK(CreateKuduTable(kDatabaseName, kTableName, client));
     RETURN_NOT_OK(CreateKuduTable(kDatabaseName, kSecondTable, client));
-    CheckTable(kDatabaseName, kTableName,
-               make_optional<const string&>(kAdminUser), cluster, client);
-    CheckTable(kDatabaseName, kSecondTable,
-               make_optional<const string&>(kAdminUser), cluster, client);
+    CheckTable(kDatabaseName, kTableName, kUser, cluster, client);
+    CheckTable(kDatabaseName, kSecondTable, kUser, cluster, client);
     return Status::OK();
   }
 
@@ -862,8 +861,8 @@ TEST_P(MasterAuthzITest, TestTrustedUserAcl) {
     .set_range_partition_columns({"key"})
     .set_owner("another_user")
     .Create());
-  NO_FATALS(this->CheckTable(kDatabaseName, "new_table",
-                             make_optional<const string&>(kImpalaUser)));
+  const string user = kImpalaUser;
+  NO_FATALS(this->CheckTable(kDatabaseName, "new_table", user));
 }
 
 TEST_P(MasterAuthzITest, TestAuthzListTables) {
@@ -1016,7 +1015,7 @@ TEST_P(MasterAuthzOwnerITest, TestMismatchedTable) {
   ASSERT_OK(this->cluster_->CreateClient(nullptr, &client));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(table_name_a, &table));
-  optional<const string&> table_id_a = make_optional<const string&>(table->id());
+  optional<const string&> table_id_a = table->id();
 
   // Log back as 'test-user'.
   ASSERT_OK(this->cluster_->kdc()->Kinit(kTestUser));

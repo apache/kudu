@@ -36,6 +36,8 @@ fun:*mersenne_twister_engine*
 src:*/boost/uuid/sha1.hpp
 # include/boost/container/detail/copy_move_algo.hpp:949:11: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned long'
 src:*/boost/container/detail/copy_move_algo.hpp
+# include/boost/container_hash/hash.hpp:343:15: runtime error: unsigned integer overflow: 2700868258 * 14313749767032793493 cannot be represented in type 'unsigned long'
+src:*/boost/container_hash/hash.hpp
 # include/boost/functional/hash/hash.hpp:212:52: runtime error: unsigned integer overflow: 18389307270159922987 + 1512985112272252029 cannot be represented in type 'unsigned long'
 src:*/boost/functional/hash/hash.hpp
 

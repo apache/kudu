@@ -30,6 +30,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -92,7 +93,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
-#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -1452,7 +1452,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
           Status::NotAuthorized("not authorized to write"));
       return;
     }
-    authz_context = { privileges, /*requested_op_types=*/{} };
+    authz_context = WriteAuthorizationContext{ privileges, /*requested_op_types=*/{} };
   }
 
   shared_ptr<Tablet> tablet;

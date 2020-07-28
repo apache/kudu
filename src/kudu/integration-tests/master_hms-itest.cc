@@ -309,18 +309,18 @@ TEST_F(MasterHmsTest, TestAlterTableOwner) {
   NO_FATALS(CheckTable("default", "userTable", /*user=*/ none));
 
   // Change the owner through the HMS, and ensure the owner is handled in Kudu.
-  const char* const user_a = "user_a";
+  const string user_a = "user_a";
   ASSERT_OK(ChangeHmsOwner("default", "userTable", user_a));
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("default", "userTable", make_optional<const string&>(user_a)));
+    NO_FATALS(CheckTable("default", "userTable", user_a));
   });
 
   // Change the owner through Kudu, and ensure the owner is reflected in HMS.
-  const char* const user_b = "user_b";
+  const string user_b = "user_b";
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.userTable"));
   ASSERT_OK(table_alterer->SetOwner(user_b)->Alter());
   ASSERT_EVENTUALLY([&] {
-    NO_FATALS(CheckTable("default", "userTable", make_optional<const string&>(user_b)));
+    NO_FATALS(CheckTable("default", "userTable", user_b));
   });
 }
 
