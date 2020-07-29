@@ -5,6 +5,10 @@ _publish
 
 .bundle/
 .gem/
+vendor/
+.jekyll-cache/
+.jekyll-metadata
 
 # htmlproof creates this tmp dir
 tmp
+

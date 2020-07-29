@@ -95,7 +95,7 @@ def setup_bundle():
   if not os.path.exists(BUNDLE_PATH):
     try:
       subprocess.check_call(
-        ["gem", "install", "--no-ri", "--no-rdoc", "-q",
+        ["gem", "install", "--no-document", "-q",
          "--install-dir", GEM_PATH, "bundler"])
     except Exception as e:
       logging.fatal("Could not install 'bundler' gem: " + str(e) + "\n" +

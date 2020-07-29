@@ -21,10 +21,7 @@ source 'https://rubygems.org'
 # the TOC generation for the FAQ doesn't work.
 gem 'kramdown'
 
-# We pin a slightly older version of jekyll which only requires
-# Ruby 1.9. Jekyll 3.0 requires Ruby 2.0 which is more painful to
-# install on some hosts.
-gem 'jekyll', '~> 2.5.3'
+gem 'jekyll'
 
 # Jekyll requires a Javascript runtime:
 # https://github.com/jekyll/jekyll/issues/2327
@@ -33,9 +30,10 @@ gem 'therubyracer' # V8 runtime installer for Jekyll
 # Produce /feed.xml for the Jekyll blog.
 gem 'jekyll-feed'
 
-# Used for 'site_tool proof'.
-# Pin to an old version which doesn't require ruby 2.0.
-gem 'html-proofer', '~> 2.6.4'
+gem 'jekyll-paginate'
 
-gem 'fileutils', '~> 1.0.2'
-gem 'date', '~> 1.0.0'
+# Used for 'site_tool proof'.
+gem 'html-proofer'
+
+gem 'fileutils'
+gem 'date'
