@@ -1160,9 +1160,10 @@ TEST_P(ConcurrentGetTableSchemaTest, Rpc) {
       auto table_name = Substitute(kTableNamePattern, idx);
       GetTableSchemaRequestPB req;
       req.mutable_table()->set_table_name(table_name);
+      GetTableSchemaResponsePB resp;
       while (!done.Load()) {
         RpcController controller;
-        GetTableSchemaResponsePB resp;
+        resp.Clear();
         CHECK_OK(proxies[idx]->GetTableSchema(req, &resp, &controller));
         ++call_counters[idx];
         if (resp.has_error()) {
