@@ -355,9 +355,18 @@ DEFINE_int32(table_num_replicas, 1,
              "The number of replicas for the auto-created table; "
              "0 means 'use server-side default'.");
 DEFINE_bool(use_random, false,
-            "Whether to use random numbers instead of sequential ones. "
-            "In case of using random numbers collisions are possible over "
-            "the data for columns with unique constraint (e.g. primary key).");
+            "Whether to use random numbers instead of sequential ones for both primary keys and "
+            "non-primary key columns. In case of using random numbers collisions are "
+            "possible over the data for columns with unique constraint (e.g. primary key). "
+            "This option has been deprecated, use '--use_random_pk' and/or '--use_random_non_pk' "
+            "instead. If either '--use_random_pk' or '--use_random_non_pk' is specified with "
+            "'--use_random' then this option will be ignored.");
+DEFINE_bool(use_random_pk, false,
+            "Whether to use random numbers instead of sequential ones for primary key "
+            "columns. Using random numbers may cause collisions over primary key columns.");
+DEFINE_bool(use_random_non_pk, false,
+            "Whether to use random numbers instead of sequential ones for non-primary key "
+            "columns.");
 
 namespace kudu {
 namespace tools {
@@ -549,8 +558,21 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
                              const string& table_name,
                              size_t gen_idx,
                              KuduWriteOperation::Type op_type) {
-  const Generator::Mode gen_mode = FLAGS_use_random ? Generator::MODE_RAND
-                                                    : Generator::MODE_SEQ;
+  Generator::Mode key_gen_mode = Generator::MODE_SEQ;
+  Generator::Mode value_gen_mode = Generator::MODE_SEQ;
+
+  if (FLAGS_use_random_pk || FLAGS_use_random_non_pk) {
+    // Honor the non-default values for new flags ignoring the old deprecated FLAGS_use_random.
+    if (FLAGS_use_random_pk) {
+      key_gen_mode = Generator::MODE_RAND;
+    }
+    if (FLAGS_use_random_non_pk) {
+      value_gen_mode = Generator::MODE_RAND;
+    }
+  } else if (FLAGS_use_random) {
+    key_gen_mode = value_gen_mode = Generator::MODE_RAND;
+  }
+
   const size_t flush_per_n_rows = FLAGS_flush_per_n_rows;
   const uint64_t gen_seq_start = FLAGS_seq_start;
   client::sp::shared_ptr<KuduSession> session(client->NewSession());
@@ -578,8 +600,8 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
     // in sequential generation mode.
     const int64_t gen_span = SpanPerThread(KuduSchema::ToSchema(table->schema()).num_key_columns());
     const int64_t gen_seed = gen_idx * gen_span + gen_seq_start;
-    Generator key_gen(gen_mode, gen_seed, FLAGS_string_len);
-    Generator value_gen(gen_mode, gen_seed, FLAGS_string_len);
+    Generator key_gen(key_gen_mode, gen_seed, FLAGS_string_len);
+    Generator value_gen(value_gen_mode, gen_seed, FLAGS_string_len);
     for (; num_rows_per_gen < 0 || idx < num_rows_per_gen; ++idx) {
       switch (op_type) {
         case KuduWriteOperation::Type::INSERT: {
@@ -924,6 +946,8 @@ unique_ptr<Mode> BuildPerfMode() {
           .AddOptionalParameter("table_num_replicas")
           .AddOptionalParameter("use_client_per_thread")
           .AddOptionalParameter("use_random")
+          .AddOptionalParameter("use_random_pk")
+          .AddOptionalParameter("use_random_non_pk")
           .Build();
 
   unique_ptr<Action> table_scan =

@@ -638,6 +638,8 @@ class ToolTest : public KuduTest {
   }
 
  protected:
+  // Note: Each test case must have a single invocation of RunLoadgen() otherwise it leads to
+  //       memory leaks.
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
                   const string& table_name = "",
@@ -2225,21 +2227,73 @@ TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundSequential) {
       "bench_auto_flush_background_sequential"));
 }
 
-// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode, randomized values.
-TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandom) {
-  NO_FATALS(RunLoadgen(5,
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode with randomized keys and values
+// using the deprecated --use_random option.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandomKeysValuesDeprecated) {
+  NO_FATALS(RunLoadgen(
+      5,
       {
-        "--buffer_flush_watermark_pct=0.125",
-        "--buffer_size_bytes=65536",
-        "--buffers_num=8",
-        // small number of rows to avoid collisions: it's random generation mode
-        "--num_rows_per_thread=16",
-        "--num_threads=1",
-        "--run_scan",
-        "--string_len=8",
-        "--use_random",
+          // Small number of rows to avoid collisions: it's random generation mode
+          "--num_rows_per_thread=16",
+          "--num_threads=1",
+          "--run_scan",
+          "--string_len=8",
+          "--use_random",
       },
-      "bench_auto_flush_background_random"));
+      "bench_auto_flush_background_random_keys_values_deprecated"));
+}
+
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode with randomized keys
+// using the --use_random_pk option.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandomKeys) {
+  NO_FATALS(RunLoadgen(
+      5,
+      {
+          // Small number of rows to avoid collisions: it's random generation mode
+          "--num_rows_per_thread=16",
+          "--num_threads=1",
+          "--run_scan",
+          "--string_len=8",
+          "--use_random_pk",
+      },
+      "bench_auto_flush_background_random_keys"));
+}
+
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode with randomized values
+// using the --use_random_non_pk option.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandomValues) {
+  NO_FATALS(RunLoadgen(
+      5,
+      {
+          // Large number of rows are okay since only non-pk columns will use random values.
+          "--num_rows_per_thread=4096",
+          "--num_threads=2",
+          "--run_scan",
+          "--string_len=8",
+          "--use_random_non_pk",
+      },
+      "bench_auto_flush_background_random_values"));
+}
+
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode with randomized values
+// using the --use_random_non_pk option combined with the deprecated --use_random option.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandomValuesIgnoreDeprecated) {
+  // Test to ensure if both '--use_random' and '--use_random_non_pk'/'--use_random_pk' are
+  // specified then '--use_random' is ignored.
+  NO_FATALS(RunLoadgen(
+      5,
+      {
+          // Large number of rows are okay since only non-pk columns will use random values and
+          // the deprecated '--use_random' will be ignored when used with '--use_random_non_pk'.
+          "--num_rows_per_thread=4096",
+          "--num_threads=2",
+          "--run_scan",
+          "--string_len=8",
+          // Combining deprecated --use_random option with new --use_random_non_pk option.
+          "--use_random",
+          "--use_random_non_pk",
+      },
+      "bench_auto_flush_background_random_values_ignore_deprecated"));
 }
 
 // Run the loadgen benchmark in MANUAL_FLUSH mode.
