@@ -599,6 +599,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // enum documents legal state transitions.
   void SetStateUnlocked(State new_state);
 
+  // To be only called during bootstrap, by simple_tablet_manager to
+  // make sure that the term of the instance is atleast as high as the
+  // term of its last logged entry.
+  //
+  // Just like SetCurrentTermUnlocked, this function does not let the
+  // term to reduce, and will return IlegalState for that case. So should
+  // be called only if LogTerm is higher.
+  Status SetCurrentTermBootstrap(int64_t new_term);
+
   // Returns string description for State enum value.
   static const char* State_Name(State state);
 

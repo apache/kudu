@@ -99,6 +99,7 @@ class TabletServer : public kserver::KuduServer {
 
  private:
   friend class TabletServerTestBase;
+  friend class TSTabletManager;
 
 #ifdef FB_DO_NOT_REMOVE
   Status ValidateMasterAddressResolution() const;
