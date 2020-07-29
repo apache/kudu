@@ -32,9 +32,12 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/proxy.h"
 #include "kudu/rpc/rpc-test-base.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_service.h"
+#include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -44,6 +47,8 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
+METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Add);
+METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_counter(rpc_connections_accepted);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 
@@ -261,6 +266,77 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   Counter *rpcs_queue_overflow =
     METRIC_rpcs_queue_overflow.Instantiate(server_messenger_->metric_entity()).get();
   ASSERT_EQ(1, rpcs_queue_overflow->value());
+}
+
+TEST_F(MultiThreadedRpcTest, PerMethodQueueOverflowRejectionCounter) {
+  n_acceptor_pool_threads_ = 1;
+  n_server_reactor_threads_ = 1;
+  n_worker_threads_ = 1;
+  service_queue_length_ = 1;
+
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServerWithGeneratedCode(&server_addr, false /*enable_ssl*/));
+
+  auto* rpcs_queue_overflow = METRIC_rpcs_queue_overflow.Instantiate(
+      server_messenger_->metric_entity()).get();
+  ASSERT_EQ(0, rpcs_queue_overflow->value());
+
+  auto* queue_overflow_rejections_add =
+      METRIC_queue_overflow_rejections_kudu_rpc_test_CalculatorService_Add.Instantiate(
+          server_messenger_->metric_entity()).get();
+  ASSERT_EQ(0, queue_overflow_rejections_add->value());
+
+  auto* queue_overflow_rejections_sleep =
+      METRIC_queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep.Instantiate(
+          server_messenger_->metric_entity()).get();
+  ASSERT_EQ(0, queue_overflow_rejections_sleep->value());
+
+  // It seems that even in case of scheduling anomalies, 16 concurrent
+  // requests should be enough to overflow the RPC service queue of size 1,
+  // where the queue is served by a single worker thread and it takes at least
+  // 100ms for a request to complete.
+  constexpr size_t kNumThreads = 16;
+  vector<thread> threads;
+  threads.reserve(kNumThreads);
+  vector<Status> status(kNumThreads);
+  Barrier barrier(kNumThreads);
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    const size_t idx = i;
+    threads.emplace_back([&, idx]() {
+      shared_ptr<Messenger> client_messenger;
+      CHECK_OK(CreateMessenger("ClientMessenger", &client_messenger));
+      Proxy p(client_messenger, server_addr, server_addr.host(),
+              CalculatorService::static_service_name());
+      SleepRequestPB req;
+      req.set_sleep_micros(100 * 1000); // 100ms
+      SleepResponsePB resp;
+      RpcController controller;
+      controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+      barrier.Wait();
+      status[idx] = p.SyncRequest(
+          GenericCalculatorService::kSleepMethodName, req, &resp, &controller);
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  size_t num_errors = 0;
+  for (const auto& s : status) {
+    if (!s.ok()) {
+      ++num_errors;
+    }
+  }
+
+  // Check that there were some RPC queue overflows.
+  const auto queue_overflow_num = rpcs_queue_overflow->value();
+  ASSERT_GT(num_errors, 0);
+  ASSERT_EQ(num_errors, queue_overflow_num);
+
+  // Check corresponding per-method rejection counters.
+  ASSERT_EQ(0, queue_overflow_rejections_add->value());
+  ASSERT_EQ(queue_overflow_num, queue_overflow_rejections_sleep->value());
 }
 
 static void HammerServerWithTCPConns(const Sockaddr& addr) {

@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_queue.h"
@@ -43,7 +42,6 @@ namespace rpc {
 class InboundCall;
 class RemoteMethod;
 class ServiceIf;
-
 struct RpcMethodInfo;
 
 // A pool of threads that handle new incoming RPC calls.
@@ -74,7 +72,7 @@ class ServicePool : public RpcService {
 
   RpcMethodInfo* LookupMethod(const RemoteMethod& method) override;
 
-  virtual Status QueueInboundCall(std::unique_ptr<InboundCall> call) OVERRIDE;
+  Status QueueInboundCall(std::unique_ptr<InboundCall> call) override;
 
   const Counter* RpcsTimedOutInQueueMetricForTests() const {
     return rpcs_timed_out_in_queue_.get();

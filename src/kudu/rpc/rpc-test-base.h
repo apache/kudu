@@ -415,11 +415,12 @@ const char *GenericCalculatorService::kSecondString =
 class RpcTestBase : public KuduTest {
  public:
   RpcTestBase()
-    : n_worker_threads_(3),
-      service_queue_length_(200),
-      n_server_reactor_threads_(3),
-      keepalive_time_ms_(1000),
-      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
+      : n_acceptor_pool_threads_(2),
+        n_server_reactor_threads_(3),
+        n_worker_threads_(3),
+        keepalive_time_ms_(1000),
+        service_queue_length_(200),
+        metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
   }
 
   void TearDown() override {
@@ -624,7 +625,7 @@ class RpcTestBase : public KuduTest {
   }
 
   template<class ServiceClass>
-  Status DoStartTestServer(Sockaddr *server_addr,
+  Status DoStartTestServer(Sockaddr* server_addr,
                            bool enable_ssl = false,
                            const std::string& rpc_certificate_file = "",
                            const std::string& rpc_private_key_file = "",
@@ -645,7 +646,7 @@ class RpcTestBase : public KuduTest {
     }
     std::shared_ptr<AcceptorPool> pool;
     RETURN_NOT_OK(server_messenger_->AddAcceptorPool(*server_addr, &pool));
-    RETURN_NOT_OK(pool->Start(2));
+    RETURN_NOT_OK(pool->Start(n_acceptor_pool_threads_));
     *server_addr = pool->bind_address();
     mem_tracker_ = MemTracker::CreateTracker(-1, "result_tracker");
     result_tracker_.reset(new ResultTracker(mem_tracker_));
@@ -654,22 +655,22 @@ class RpcTestBase : public KuduTest {
     service_name_ = service->service_name();
     scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
     service_pool_ = new ServicePool(std::move(service), metric_entity, service_queue_length_);
-    server_messenger_->RegisterService(service_name_, service_pool_);
-    RETURN_NOT_OK(service_pool_->Init(n_worker_threads_));
-
-    return Status::OK();
+    RETURN_NOT_OK(server_messenger_->RegisterService(service_name_, service_pool_));
+    return service_pool_->Init(n_worker_threads_);
   }
 
  protected:
+  int n_acceptor_pool_threads_;
+  int n_server_reactor_threads_;
+  int n_worker_threads_;
+  int keepalive_time_ms_;
+  int service_queue_length_;
+
   std::string service_name_;
   std::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
   std::shared_ptr<kudu::MemTracker> mem_tracker_;
   scoped_refptr<ResultTracker> result_tracker_;
-  int n_worker_threads_;
-  int service_queue_length_;
-  int n_server_reactor_threads_;
-  int keepalive_time_ms_;
 
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;

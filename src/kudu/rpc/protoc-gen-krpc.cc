@@ -268,7 +268,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         const string&/* parameter */,
         google::protobuf::compiler::GeneratorContext* gen_context,
         string* error) const override {
-    unique_ptr<FileSubstitutions> name_info(new FileSubstitutions());
+    unique_ptr<FileSubstitutions> name_info(new FileSubstitutions);
     bool ret = name_info->Init(file, error);
     if (!ret) {
       return false;
@@ -439,6 +439,13 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
           "  kudu::MetricLevel::kInfo,\n"
           "  60000000LU, 2);\n"
           "\n");
+        Print(printer, *subs,
+          "METRIC_DEFINE_counter(server, queue_overflow_rejections_$rpc_full_name_plainchars$,\n"
+          "  \"$rpc_full_name$ RPC Rejections\",\n"
+          "  kudu::MetricUnit::kRequests,\n"
+          "  \"Number of rejected $rpc_full_name$() requests due to RPC queue overflow\",\n"
+          "  kudu::MetricLevel::kInfo);\n"
+          "\n");
         subs->Pop(); // method
       }
 
@@ -473,9 +480,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
 
         Print(printer, *subs,
               "  {\n"
-              "    scoped_refptr<RpcMethodInfo> mi(new RpcMethodInfo());\n"
-              "    mi->req_prototype.reset(new $request$());\n"
-              "    mi->resp_prototype.reset(new $response$());\n"
+              "    scoped_refptr<RpcMethodInfo> mi(new RpcMethodInfo);\n"
+              "    mi->req_prototype.reset(new $request$);\n"
+              "    mi->resp_prototype.reset(new $response$);\n"
               "    mi->authz_method = [this](const Message* req, Message* resp,\n"
               "                              RpcContext* ctx) {\n"
               "      return this->$authz_method$(static_cast<const $request$*>(req),\n"
@@ -485,6 +492,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
               "    mi->track_result = $track_result$;\n"
               "    mi->handler_latency_histogram =\n"
               "        METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
+              "    mi->queue_overflow_rejections =\n"
+              "        METRIC_queue_overflow_rejections_$rpc_full_name_plainchars$.Instantiate(\n"
+              "            entity);\n"
               "    mi->func = [this](const Message* req, Message* resp, RpcContext* ctx) {\n"
               "      this->$rpc_name$(static_cast<const $request$*>(req),\n"
               "                       static_cast<$response$*>(resp),\n"

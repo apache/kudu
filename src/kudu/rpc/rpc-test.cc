@@ -71,6 +71,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+METRIC_DECLARE_counter(queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
@@ -1154,8 +1155,7 @@ TEST_P(TestRpc, TestServerShutsDown) {
 
 // Test handler latency metric.
 TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
-
-  const uint64_t sleep_micros = 20 * 1000;
+  constexpr uint64_t sleep_micros = 20 * 1000;
 
   // Set up server.
   Sockaddr server_addr = bind_addr();
@@ -1177,9 +1177,12 @@ TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
   const unordered_map<const MetricPrototype*, scoped_refptr<Metric> > metric_map =
     server_messenger_->metric_entity()->UnsafeMetricsMapForTests();
 
-  scoped_refptr<Histogram> latency_histogram = down_cast<Histogram *>(
+  scoped_refptr<Histogram> latency_histogram = down_cast<Histogram*>(
       FindOrDie(metric_map,
                 &METRIC_handler_latency_kudu_rpc_test_CalculatorService_Sleep).get());
+  scoped_refptr<Counter> queue_overflow_rejections = down_cast<Counter*>(
+      FindOrDie(metric_map,
+                &METRIC_queue_overflow_rejections_kudu_rpc_test_CalculatorService_Sleep).get());
 
   LOG(INFO) << "Sleep() min lat: " << latency_histogram->MinValueForTests();
   LOG(INFO) << "Sleep() mean lat: " << latency_histogram->MeanValueForTests();
@@ -1187,6 +1190,7 @@ TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
   LOG(INFO) << "Sleep() #calls: " << latency_histogram->TotalCount();
 
   ASSERT_EQ(1, latency_histogram->TotalCount());
+  ASSERT_EQ(0, queue_overflow_rejections->value());
   ASSERT_GE(latency_histogram->MaxValueForTests(), sleep_micros);
   ASSERT_TRUE(latency_histogram->MinValueForTests() == latency_histogram->MaxValueForTests());
 

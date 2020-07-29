@@ -47,6 +47,7 @@ struct RpcMethodInfo : public RefCountedThreadSafe<RpcMethodInfo> {
   std::unique_ptr<google::protobuf::Message> resp_prototype;
 
   scoped_refptr<Histogram> handler_latency_histogram;
+  scoped_refptr<Counter> queue_overflow_rejections;
 
   // Whether we should track this method's result, using ResultTracker.
   bool track_result;
@@ -80,7 +81,7 @@ class ServiceIf {
   //
   // If this returns nullptr, then certain functionality like
   // metrics collection will not be performed for this call.
-  virtual RpcMethodInfo* LookupMethod(const RemoteMethod& method) {
+  virtual RpcMethodInfo* LookupMethod(const RemoteMethod& /*method*/) {
     return nullptr;
   }
 

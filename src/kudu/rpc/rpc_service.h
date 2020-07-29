@@ -37,9 +37,11 @@ class RpcService : public RefCountedThreadSafe<RpcService> {
   // responsible for responding to the client with a failure message.
   virtual Status QueueInboundCall(std::unique_ptr<InboundCall> call) = 0;
 
-  virtual RpcMethodInfo* LookupMethod(const RemoteMethod& /*method*/) {
-    return nullptr;
-  }
+  // Look up RPC method information.
+  //
+  // If this returns nullptr, then certain functionality like
+  // metrics collection will not be performed for this call.
+  virtual RpcMethodInfo* LookupMethod(const RemoteMethod& method) = 0;
 };
 
 } // namespace rpc
