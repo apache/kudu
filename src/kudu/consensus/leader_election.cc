@@ -50,6 +50,10 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
+DEFINE_bool(crowdsource_last_known_leader, true,
+            "Whether to use last known leader information from the "
+            "responding voters");
+
 namespace kudu {
 namespace consensus {
 namespace {
@@ -175,11 +179,10 @@ PotentialNextLeadersResponse::PotentialNextLeadersResponse(
 void FlexibleVoteCounter::FetchTopologyInfo() {
   CHECK(config_.has_commit_rule());
 
-  // Step 1: Compute number of voters in each region.
-  // Also, computes the leader's region from its UUID.
-  GetRegionalCountsFromConfig(
-      config_, last_known_leader_.uuid, &voter_distribution_,
-      &last_known_leader_region_);
+  // Step 1: Populate number of voters in each region.
+  voter_distribution_.insert(
+      config_.voter_distribution().begin(),
+      config_.voter_distribution().end());
 
   // Step 2: Populate mapping from UUID to region.
   for (const RaftPeerPB& peer : config_.peers()) {
@@ -190,7 +193,7 @@ void FlexibleVoteCounter::FetchTopologyInfo() {
 }
 
 FlexibleVoteCounter::FlexibleVoteCounter(
-    int64_t election_term, const LastKnownLeader& last_known_leader,
+    int64_t election_term, const LastKnownLeaderPB& last_known_leader,
     RaftConfigPB config)
   : VoteCounter(1, 1),
     election_term_(election_term),
@@ -239,7 +242,8 @@ Status FlexibleVoteCounter::RegisterVote(
       no_vote_count_[region]++;
       break;
   }
-
+  InsertOrUpdate(
+      &uuid_to_last_term_pruned_, voter_uuid, vote_info.last_pruned_term);
   return s;
 }
 
@@ -251,6 +255,53 @@ int FlexibleVoteCounter::FetchVotesRemainingInRegion(
   int regional_no_count = FindOrDie(no_vote_count_, region);
   int total_region_count = FindOrDie(voter_distribution_, region);
   return total_region_count - regional_yes_count - regional_no_count;
+}
+
+void FlexibleVoteCounter::FetchRegionalPrunedCounts(
+    int64_t term,
+    std::map<std::string, int32_t>* region_pruned_counts) const {
+  CHECK(region_pruned_counts);
+  region_pruned_counts->clear();
+  for (const std::pair<std::string, int64_t>& uuid_pruned_term_pair :
+      uuid_to_last_term_pruned_) {
+    const std::string& uuid = uuid_pruned_term_pair.first;
+    int64_t lpt = uuid_pruned_term_pair.second;
+    if (lpt > term) {
+      const std::string& region = uuid_to_region_.at(uuid);
+      int32_t& region_count = LookupOrInsert(
+          region_pruned_counts, region, 0);
+      region_count++;
+    }
+  }
+}
+
+void FlexibleVoteCounter::FetchRegionalUnprunedCounts(
+    int64_t term,
+    std::map<std::string, int32_t>* region_unpruned_counts) const {
+  CHECK(region_unpruned_counts);
+  region_unpruned_counts->clear();
+  for (const std::pair<std::string, int64_t>& uuid_pruned_term_pair :
+      uuid_to_last_term_pruned_) {
+    const std::string& uuid = uuid_pruned_term_pair.first;
+    int64_t lpt = uuid_pruned_term_pair.second;
+    if (lpt <= term) {
+      const std::string& region = uuid_to_region_.at(uuid);
+      int32_t& region_count = LookupOrInsert(
+          region_unpruned_counts, region, 0);
+      region_count++;
+    }
+  }
+}
+
+std::string FlexibleVoteCounter::DetermineRegionForUUID(
+    const std::string& uuid) const {
+  std::map<std::string, std::string>::const_iterator reg_it =
+      uuid_to_region_.find(uuid);
+  if (reg_it == uuid_to_region_.end()) {
+    return "";
+  } else {
+    return reg_it->second;
+  }
 }
 
 std::vector<std::pair<bool, bool> >
@@ -421,10 +472,8 @@ Status FlexibleVoteCounter::ExtendNextLeaderRegions(
   for (const std::string& leader_uuid : next_leader_uuids) {
     // Check next leader region to explore is within the list of regions
     // voters are present in for this replicaset.
-    const std::map<std::string, std::string>::const_iterator
-    uuid_to_region_it =
-        uuid_to_region_.find(leader_uuid);
-    if (uuid_to_region_it == uuid_to_region_.end()) {
+    std::string leader_region = DetermineRegionForUUID(leader_uuid);
+    if (leader_region.empty()) {
       // This should never happen, i.e. we are exploring a region which
       // is not in our configuration. In such a case, we return loss of
       // election.
@@ -434,11 +483,10 @@ Status FlexibleVoteCounter::ExtendNextLeaderRegions(
       return Status::IllegalState(
           "Potential next leader not in configuration");
     }
-    next_leader_regions->insert(uuid_to_region_it->second);
+    next_leader_regions->insert(leader_region);
     VLOG_WITH_PREFIX(3)
-        << "Potential next leader: "
-        << leader_uuid << " in region:  "
-        << uuid_to_region_it->second;
+        << "Potential next leader: " << leader_uuid
+        << " in region:  " << leader_region;
   }
   return Status::OK();
 }
@@ -446,7 +494,7 @@ Status FlexibleVoteCounter::ExtendNextLeaderRegions(
 std::pair<bool, bool>
 FlexibleVoteCounter::FetchQuorumSatisfactionInfoFromVoteHistory(
     const std::string& leader_region,
-    const RegionToVoterSet& region_to_voter_set) const {
+    const RegionToVoterSet& region_to_voter_set, int32_t pruned_count) const {
   VLOG_WITH_PREFIX(1) << "Fetching quorum satisfaction info from "
                       << "vote history. Leader region: " << leader_region;
   bool quorum_satisfied = true;
@@ -462,14 +510,15 @@ FlexibleVoteCounter::FetchQuorumSatisfactionInfoFromVoteHistory(
   if (rtvs_it != region_to_voter_set.end()) {
     votes_received = rtvs_it->second.size();
   }
-  VLOG_WITH_PREFIX(3) << "Region: " << leader_region << " , Votes granted: "
-                      << votes_received << " , Votes remaining: "
-                      << votes_remaining << " , Commit Requirement: "
-                      << commit_requirement;
+  VLOG_WITH_PREFIX(3) << "Region: " << leader_region
+                      << " , Votes granted: " << votes_received
+                      << " , Votes remaining: " << votes_remaining
+                      << " , Voters with pruned history: " << pruned_count
+                      << " , Commit Requirement: " << commit_requirement;
   if (votes_received < commit_requirement) {
     quorum_satisfied = false;
   }
-  if (votes_received + votes_remaining < commit_requirement) {
+  if (votes_received + votes_remaining + pruned_count < commit_requirement) {
     quorum_satisfaction_possible = false;
   }
 
@@ -494,13 +543,11 @@ void FlexibleVoteCounter::ConstructRegionWiseVoteCollation(
 
     // Skip servers that are not in the region of the potential leaders in
     // the preceding term.
-    std::map<std::string, std::string>::const_iterator reg_it =
-        uuid_to_region_.find(uuid);
-    if (reg_it == uuid_to_region_.end() ||
-        leader_regions.find(reg_it->second) == leader_regions.end()) {
+    const std::string region = DetermineRegionForUUID(uuid);
+    if (region.empty() ||
+        leader_regions.find(region) == leader_regions.end()) {
       continue;
     }
-    const std::string& region = reg_it->second;
 
     // Find the voting record immediately after the term of the last known
     // leader. Skip if there is no history beyond the last known leader.
@@ -527,7 +574,7 @@ void FlexibleVoteCounter::ConstructRegionWiseVoteCollation(
   }
 }
 
-PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
+bool FlexibleVoteCounter::EnoughVotesWithSufficientHistories(
     int64_t term, const std::set<std::string>& leader_regions) const {
   // Figure out the total number of voters and votes not received so far for
   // each region. Return early if majority vote in some region is not
@@ -541,9 +588,48 @@ PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
     // If we haven't received enough votes from one potential leader region,
     // there is no point proceeding. We need to wait for more votes.
     if (votes_not_received >= MajoritySize(total_voters)) {
-      return PotentialNextLeadersResponse(
-          PotentialNextLeadersResponse::WAITING_FOR_MORE_VOTES);
+      VLOG_WITH_PREFIX(3)
+          << "Not enough votes have arrived in region: "
+          << leader_region << ". Votes not received: "
+          << votes_not_received << ". Total number of voters in the region: "
+          << total_voters;
+      return false;
     }
+  }
+
+  std::map<std::string, int32_t> region_unpruned_counts;
+  FetchRegionalUnprunedCounts(term, &region_unpruned_counts);
+
+  for (const std::string& leader_region : leader_regions) {
+    int total_voters =
+        FindOrDie(voter_distribution_, leader_region);
+    int unpruned_count =
+        FindWithDefault(region_unpruned_counts, leader_region, 0);
+
+    // There is no point in proceeding if voting history is not available
+    // on majority of the servers in one of the possible leader regions.
+    if (unpruned_count < MajoritySize(total_voters)) {
+      VLOG_WITH_PREFIX(3)
+          << "Not enough voters have sufficient voting history in region: "
+          << leader_region << ". Unpruned count: " << unpruned_count
+          << ". Total number of voters in the region: "
+          << total_voters;
+      return false;
+    }
+  }
+  return true;
+}
+
+PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
+    int64_t term, const std::set<std::string>& leader_regions) const {
+  // Return waiting for more votes if there aren't enough votes or if a
+  // majority isn't available with sufficient voting histories.
+  if (!EnoughVotesWithSufficientHistories(term, leader_regions)) {
+    VLOG_WITH_PREFIX(3)
+        << "Either not enough votes have arrived or a majority do not "
+        << "have sufficient vote histories yet.";
+    return PotentialNextLeadersResponse(
+        PotentialNextLeadersResponse::WAITING_FOR_MORE_VOTES);
   }
 
   // We limit the number of iterations performed even though the algorithm
@@ -568,6 +654,10 @@ PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
   // until all the history is exhausted.
   while (!vote_collation.empty() && min_term < election_term_ &&
       iteration_count++ < QUORUM_OPTIMIZATION_ITERATION_COUNT_MAX) {
+
+    std::map<std::string, int32_t> region_pruned_counts;
+    FetchRegionalPrunedCounts(min_term, &region_pruned_counts);
+
     std::set<std::string> potential_leader_uuids;
     for (const std::pair<UUIDTermPair, RegionToVoterSet>& collation_entry :
         vote_collation) {
@@ -582,9 +672,11 @@ PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
       }
 
       for (const std::string& leader_region : leader_regions) {
+        int32_t pruned_count =
+            FindWithDefault(region_pruned_counts, leader_region, 0);
         std::pair<bool, bool> quorum_satisfaction_info =
             FetchQuorumSatisfactionInfoFromVoteHistory(
-                leader_region, region_to_voter_set);
+                leader_region, region_to_voter_set, pruned_count);
         if (quorum_satisfaction_info.first) {
           next_leader_regions.erase(leader_region);
           potential_leader_uuids.insert(uuid);
@@ -623,36 +715,74 @@ PotentialNextLeadersResponse FlexibleVoteCounter::GetPotentialNextLeaders(
       next_leader_regions, -1);
 }
 
+void FlexibleVoteCounter::CrowdsourceLastKnownLeader(
+    LastKnownLeaderPB* last_known_leader) const {
+  CHECK(last_known_leader);
+
+  for (const std::pair<std::string, VoteInfo>& it : votes_) {
+    const VoteInfo& vote_info = it.second;
+    const LastKnownLeaderPB& lkl = vote_info.last_known_leader;
+
+    if (lkl.election_term() <= last_known_leader->election_term()) {
+      continue;
+    }
+    VLOG_WITH_PREFIX(1)
+        << "Found new last known leader. Term: " << lkl.election_term()
+        << " UUID: " << lkl.uuid();
+    last_known_leader->CopyFrom(lkl);
+  }
+}
+
 std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
   CHECK(config_.commit_rule().mode() == QuorumMode::SINGLE_REGION_DYNAMIC);
 
   // Step 1: Check if pessimistic quorum is satisfied.
   std::pair<bool, bool> presult = IsPessimisticQuorumSatisfied();
 
+  LastKnownLeaderPB last_known_leader;
+  last_known_leader.CopyFrom(last_known_leader_);
+
+  // Step 2: Crowdsource last known leader information from the responding
+  // voters.
+  if (FLAGS_crowdsource_last_known_leader) {
+    CrowdsourceLastKnownLeader(&last_known_leader);
+
+    // Declare loss early upon discovering leader in higher term.
+    if (election_term_ <= last_known_leader.election_term()) {
+      VLOG_WITH_PREFIX(1)
+          << "Declaring election loss because a new leader "
+          << "has been found in the crowd sourcing phase.";
+      return std::make_pair<>(false, false);
+    }
+  }
+
+  std::string last_known_leader_region(
+      DetermineRegionForUUID(last_known_leader.uuid()));
+
   // Return pessimistic quorum result if the pessimistic quorum is satisfied or
   // if the pessimistic quorum cannot be satisfied and we depend on the
   // knowledge of the last leader without having it (eg. during bootstrap), we
   // should declare having lost the election or having insufficient votes to make
   // a decision.
-  if (presult.first || last_known_leader_region_.empty()) {
+  if (presult.first || last_known_leader_region.empty()) {
     return presult;
   }
 
-  // Step 2: Check if last known leader's quorum is satisfied and we directly
+  // Step 3: Check if last known leader's quorum is satisfied and we directly
   // succeed term.
-  if (election_term_ == last_known_leader_.election_term + 1) {
-    CHECK(!last_known_leader_.uuid.empty());
-    CHECK(!last_known_leader_region_.empty());
-    return IsMajoritySatisfiedInRegion(last_known_leader_region_);
+  if (election_term_ == last_known_leader.election_term() + 1) {
+    CHECK(!last_known_leader.uuid().empty());
+    CHECK(!last_known_leader_region.empty());
+    return IsMajoritySatisfiedInRegion(last_known_leader_region);
   }
 
-  // Step 3: Find possible leader regions at every term greater than last
+  // Step 4: Find possible leader regions at every term greater than last
   // known leader's term. Returns possible successor regions and next term
   // to consider. Repeat step 3 until next term is the current election's
   // term or the quorum converges to pessimistic quorum.
-  int64_t term_it = last_known_leader_.election_term;
-  std::set<std::string> next_leader_regions {last_known_leader_region_};
-  std::set<std::string> explored_leader_regions {last_known_leader_region_};
+  int64_t term_it = last_known_leader.election_term();
+  std::set<std::string> next_leader_regions {last_known_leader_region};
+  std::set<std::string> explored_leader_regions {last_known_leader_region};
 
   // We limit the number of iterations performed even though the algorithm
   // guarantees termination to prevent against any future bugs.
@@ -675,8 +805,8 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
       case PotentialNextLeadersResponse::ALL_INTERMEDIATE_TERMS_SCANNED:
         VLOG_WITH_PREFIX(3)
             << "All intermediate terms since the last known leader: "
-            << last_known_leader_.uuid << " in term: "
-            << last_known_leader_.election_term << " were explored. "
+            << last_known_leader.uuid() << " in term: "
+            << last_known_leader.election_term() << " were explored. "
             << "Current election term: " << election_term_
             << "Potential leader regions: "
             << JoinStringsIterator(
@@ -696,7 +826,7 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
     }
   }
 
-  // Step 4: We have converged to the most pessimistic quorum which hasn't
+  // Step 5: We have converged to the most pessimistic quorum which hasn't
   // been satisfied yet.
   return std::make_pair<>(false, true);
 }
@@ -731,9 +861,7 @@ Status FlexibleVoteCounter::GetDecision(ElectionVote* decision) const {
 
 std::string FlexibleVoteCounter::LogPrefix() const {
   return Substitute(
-      "[Flexible Vote Counter] Election term: $0 "
-      "Last known leader region: $1 ",
-      election_term_, last_known_leader_region_);
+      "[Flexible Vote Counter] Election term: $0 ", election_term_);
 }
 
 ///////////////////////////////////////////////////
@@ -954,6 +1082,8 @@ void LeaderElection::RecordVoteUnlocked(
   // Construct vote information struct.
   VoteInfo vote_info;
   vote_info.vote = vote;
+  vote_info.last_known_leader = state.response.last_known_leader();
+  vote_info.last_pruned_term = state.response.last_pruned_term();
   for (int i = 0; i < state.response.previous_vote_history_size(); i++) {
     vote_info.previous_vote_history.push_back(
         state.response.previous_vote_history(i));

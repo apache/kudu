@@ -1119,11 +1119,9 @@ int64_t PeerMessageQueue::ComputeNewWatermark(
   std::map<std::string, int> voter_distribution;
 
   // Compute total number of voters in each region.
-  // We don't need leader region because the server advancing the commit index
-  // is the leader.
-  GetRegionalCountsFromConfig(
-      *queue_state_.active_config, "" /* leader_uuid */,
-      &voter_distribution);
+  voter_distribution.insert(
+      queue_state_.active_config->voter_distribution().begin(),
+      queue_state_.active_config->voter_distribution().end());
 
   switch (queue_state_.active_config->commit_rule().mode()) {
     case QuorumMode::SINGLE_REGION_DYNAMIC:

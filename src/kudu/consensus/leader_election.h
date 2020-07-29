@@ -52,6 +52,10 @@ struct VoteInfo {
 
   // Previous voting history of this voter.
   std::vector<PreviousVotePB> previous_vote_history;
+  int64_t last_pruned_term;
+
+  // Term and UUID of the last known leader as per the responding voter.
+  LastKnownLeaderPB last_known_leader;
 };
 
 // Internal structure to denote the optimizer's computation of the
@@ -126,7 +130,7 @@ class VoteCounter {
 class FlexibleVoteCounter : public VoteCounter {
  public:
   FlexibleVoteCounter(
-      int64_t election_term, const LastKnownLeader& last_known_leader,
+      int64_t election_term, const LastKnownLeaderPB& last_known_leader,
       RaftConfigPB config);
 
   // Synchronization is done by the LeaderElection class. Therefore, VoteCounter
@@ -161,6 +165,21 @@ class FlexibleVoteCounter : public VoteCounter {
   // cycle from the given `region`.
   int FetchVotesRemainingInRegion(const std::string& region) const;
 
+  // Populates the number of servers per region that have pruned voting
+  // history beyond `term`.
+  void FetchRegionalPrunedCounts(
+    int64_t term,
+    std::map<std::string, int32_t>* region_pruned_counts) const;
+
+  // Populates the number of servers per region that have not pruned voting
+  // history beyond `term`.
+  void FetchRegionalUnprunedCounts(
+    int64_t term,
+    std::map<std::string, int32_t>* region_unpruned_counts) const;
+
+  // Fetch the region corresponding to server UUID.
+  std::string DetermineRegionForUUID(const std::string& uuid) const;
+
   // Given a set of regions, returns a pair of booleans for each region
   // representing:
   // 1. if the quorum is satisfied in the current state
@@ -179,6 +198,11 @@ class FlexibleVoteCounter : public VoteCounter {
   // 1. if the quorum is satisfied in the current state
   // 2. if the quorum can still be satisfied in the current state
   std::pair<bool, bool> IsPessimisticQuorumSatisfied() const;
+
+  // Crowdsource last known leader regions from the votes that have been
+  // received so far. This is used as an optimization.
+  void CrowdsourceLastKnownLeader(
+      LastKnownLeaderPB* last_known_leader) const;
 
   // For the region provided, returns a pair of booleans representing:
   // 1. if the majority in region is satisfied in the current state
@@ -208,9 +232,13 @@ class FlexibleVoteCounter : public VoteCounter {
   // 2. if the quorum can still be satisfied in the current state
   // Please note the underlying assumption that the configuration for
   // leader election quorum remains immutable.
+  // `pruned_count` is the number of voters in the `leader_region` which
+  // have pruned their voting histories beyond the last known leader's
+  // election term.
   std::pair<bool, bool> FetchQuorumSatisfactionInfoFromVoteHistory(
       const std::string& leader_region,
-      const RegionToVoterSet& region_to_voter_set) const;
+      const RegionToVoterSet& region_to_voter_set,
+      int32_t pruned_count) const;
 
   // Iterates over all the votes that have come in so far and collates them
   // corresponding to each UUID term pair for the purpose of determining if
@@ -223,6 +251,12 @@ class FlexibleVoteCounter : public VoteCounter {
       const std::set<std::string>& leader_regions,
       VoteHistoryCollation* vote_collation,
       int64_t* min_term) const;
+
+  // Helper function which determines if there are enough votes from each
+  // potential leader region and if the majority has prior voting history
+  // available. Returns true if both conditions are met and false otherwise.
+  bool EnoughVotesWithSufficientHistories(
+    int64_t term, const std::set<std::string>& leader_regions) const;
 
   // Optimizer function which tries to recursively figure out the next leader
   // regions since the last term provided and the potential set of leaders regions
@@ -255,14 +289,16 @@ class FlexibleVoteCounter : public VoteCounter {
   std::map<std::string, int> yes_vote_count_, no_vote_count_;
 
   // Last known leader properties.
-  const LastKnownLeader last_known_leader_;
-  std::string last_known_leader_region_;
+  const LastKnownLeaderPB last_known_leader_;
 
   // Config at the beginning of the leader election.
   const RaftConfigPB config_;
 
-  // UUID to region map derived from RaftConfigPB
+  // UUID to region map derived from RaftConfigPB.
   std::map<std::string, std::string> uuid_to_region_;
+
+  // UUID to last term pruned mapping.
+  std::map<std::string, int64_t> uuid_to_last_term_pruned_;
 
   DISALLOW_COPY_AND_ASSIGN(FlexibleVoteCounter);
 };

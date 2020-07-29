@@ -701,6 +701,14 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Return header string for RequestVote log messages. 'lock_' must be held.
   std::string GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const;
 
+  // Helper function to fill in the previous vote history and last pruned term
+  // from the vote history.
+  void FillVoteResponsePreviousVoteHistory(VoteResponsePB* response);
+
+  // Helper function to populate last known leader information in the
+  // vote response.
+  void FillVoteResponseLastKnownLeader(VoteResponsePB* response);
+
   // Fills the response with the current status, if an update was successful.
   void FillConsensusResponseOKUnlocked(ConsensusResponsePB* response);
 

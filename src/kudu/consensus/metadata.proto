@@ -310,3 +310,9 @@ message PreviousVotePB {
   required string candidate_uuid = 1;
   required int64 election_term = 2;
 }
+
+// Information about the last known leader.
+message LastKnownLeaderPB {
+  required string uuid = 1;
+  required int64 election_term = 2;
+}

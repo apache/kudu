@@ -43,15 +43,6 @@ enum class ConsensusMetadataCreateMode {
   NO_FLUSH_ON_CREATE,
 };
 
-// Last known leader information.
-struct LastKnownLeader {
-  // UUID of the last known leader
-  std::string uuid;
-
-  // Election term of the last known leader.
-  int64_t election_term;
-};
-
 // Provides methods to read, write, and persist consensus-related metadata.
 // This partly corresponds to Raft Figure 2's "Persistent state on all servers".
 //
@@ -133,11 +124,15 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
   // Accessor for last known leader. It's not necessarily an active leader.
   // Used for computation of quorums for flexiraft leader elections.
-  LastKnownLeader last_known_leader() const;
+  LastKnownLeaderPB last_known_leader() const;
 
   // Getter for PreviousVote.
   // TODO(ritwikyadav) : Persist previous vote history.
   std::map<int64_t, PreviousVotePB> previous_vote_history() const;
+
+  // Getter for the last term that was pruned from the voting history.
+  // Returns -1 if no term was pruned.
+  int64_t last_pruned_term() const;
 
   std::pair<std::string, unsigned int> leader_hostport() const;
 
@@ -193,6 +188,8 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   FRIEND_TEST(ConsensusMetadataTest, TestToConsensusStatePB);
   FRIEND_TEST(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB);
 
+  static const int32_t VOTE_HISTORY_MAX_SIZE = 10000;
+
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
 
@@ -225,6 +222,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   // Return the specified config.
   const RaftConfigPB& GetConfig(RaftConfigState type) const;
 
+  // Helper function to extend previous_vote_history_
+  void populate_previous_vote_history(const PreviousVotePB& prev_vote);
+
   std::string LogPrefix() const;
 
   // Updates the cached active role.
@@ -244,10 +244,13 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
 
   // Flexible quorums artifacts.
-  LastKnownLeader last_known_leader_;  // Last known leader
+  LastKnownLeaderPB last_known_leader_;  // Last known leader
 
   // Previous granted vote
   std::map<int64_t, PreviousVotePB> previous_vote_history_;
+
+  // Greatest term that was pruned from previous_vote_history_
+  int64_t last_pruned_term_;
 
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
                             // configuration change pending.

@@ -2455,9 +2455,31 @@ std::string RaftConsensus::GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& 
                     request.is_pre_election() ? "pre-" : "");
 }
 
+void RaftConsensus::FillVoteResponsePreviousVoteHistory(VoteResponsePB* response) {
+  CHECK(response);
+
+  // Populate previous vote history and last pruned term.
+  const std::map<int64_t, PreviousVotePB>& previous_vote_history =
+      cmeta_->previous_vote_history();
+  std::map<int64_t, PreviousVotePB>::const_iterator it =
+      previous_vote_history.begin();
+  while (it != previous_vote_history.end()) {
+    response->add_previous_vote_history()->CopyFrom(it->second);
+    it++;
+  }
+  response->set_last_pruned_term(cmeta_->last_pruned_term());
+}
+
+void RaftConsensus::FillVoteResponseLastKnownLeader(VoteResponsePB* response) {
+  CHECK(response);
+  response->mutable_last_known_leader()->CopyFrom(cmeta_->last_known_leader());
+}
+
 void RaftConsensus::FillVoteResponseVoteGranted(VoteResponsePB* response) {
   response->set_responder_term(CurrentTermUnlocked());
   response->set_vote_granted(true);
+  FillVoteResponsePreviousVoteHistory(response);
+  FillVoteResponseLastKnownLeader(response);
 }
 
 void RaftConsensus::FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code,
@@ -2465,6 +2487,8 @@ void RaftConsensus::FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code
   response->set_responder_term(CurrentTermUnlocked());
   response->set_vote_granted(false);
   response->mutable_consensus_error()->set_code(error_code);
+  FillVoteResponsePreviousVoteHistory(response);
+  FillVoteResponseLastKnownLeader(response);
 }
 
 Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request,
@@ -2561,25 +2585,12 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   MonoDelta backoff = LeaderElectionExpBackoffDeltaUnlocked();
   SnoozeFailureDetector(string("vote granted"), backoff);
 
-  // Get previous vote history here since it gets updated
-  // by `SetVotedForCurrentTermUnlocked`.
-  const std::map<int64_t, PreviousVotePB>& previous_vote_history =
-      cmeta_->previous_vote_history();
-
   if (!request->is_pre_election()) {
     // Persist our vote to disk.
     RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
   }
 
   FillVoteResponseVoteGranted(response);
-
-  // Populate previous vote history.
-  std::map<int64_t, PreviousVotePB>::const_iterator it =
-      previous_vote_history.begin();
-  while (it != previous_vote_history.end()) {
-    response->add_previous_vote_history()->CopyFrom(it->second);
-    it++;
-  }
 
   // Give peer time to become leader. Snooze one more time after persisting our
   // vote. When disk latency is high, this should help reduce churn.

@@ -838,38 +838,5 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   return should_evict;
 }
 
-void GetRegionalCountsFromConfig(
-    const RaftConfigPB& config, const std::string& leader_uuid,
-    std::map<std::string, int>* regional_count, std::string* leader_region) {
-  CHECK(regional_count);
-  CHECK(leader_uuid.empty() || leader_region != nullptr);
-
-  // Populate regional_count from voter distribution.
-  regional_count->clear();
-  regional_count->insert(
-      config.voter_distribution().begin(),
-      config.voter_distribution().end());
-
-  // Populate leader_region.
-  std::set<std::string> unique_uuids;
-  for (const RaftPeerPB& peer : config.peers()) {
-    // Only consider peers that are voters.
-    if (!peer.has_member_type() ||
-        peer.member_type() != RaftPeerPB::VOTER) {
-      continue;
-    }
-    CHECK(peer.has_permanent_uuid() && peer.has_attrs() &&
-        peer.attrs().has_region());
-    const std::string& region = peer.attrs().region();
-    if (unique_uuids.find(peer.permanent_uuid()) == unique_uuids.end()) {
-      unique_uuids.insert(peer.permanent_uuid());
-      if (!leader_uuid.empty() &&
-          peer.permanent_uuid() == leader_uuid) {
-        *leader_region = region;
-      }
-    }
-  }
-}
-
 }  // namespace consensus
 }  // namespace kudu

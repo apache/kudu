@@ -81,6 +81,23 @@ void ConsensusMetadata::clear_voted_for() {
   pb_.clear_voted_for();
 }
 
+void ConsensusMetadata::populate_previous_vote_history(
+    const PreviousVotePB& prev_vote) {
+  previous_vote_history_.emplace(prev_vote.election_term(), prev_vote);
+
+  // Prune vote history, if necessary. It is done only when the vote history
+  // size goes beyond a certain limit and the oldest term being pruned is
+  // older than the last known leader by this node.
+  const std::map<int64_t, PreviousVotePB>::const_iterator it =
+      previous_vote_history_.begin();
+  if (previous_vote_history_.size() > VOTE_HISTORY_MAX_SIZE &&
+      last_known_leader_.election_term() > it->first) {
+    last_pruned_term_ = it->first;
+    VLOG_WITH_PREFIX(2) << "Pruning history older than: " << last_pruned_term_;
+    previous_vote_history_.erase(it);
+  }
+}
+
 void ConsensusMetadata::set_voted_for(const string& uuid) {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   DCHECK(!uuid.empty());
@@ -91,9 +108,7 @@ void ConsensusMetadata::set_voted_for(const string& uuid) {
   PreviousVotePB prev_vote;
   prev_vote.set_candidate_uuid(uuid);
   prev_vote.set_election_term(pb_.current_term());
-
-  // TODO(ritwikyadav) : Put an upper bound on the memory utilized.
-  previous_vote_history_.emplace(prev_vote.election_term(), prev_vote);
+  populate_previous_vote_history(prev_vote);
 }
 
 bool ConsensusMetadata::IsVoterInConfig(const string& uuid,
@@ -183,7 +198,7 @@ const string& ConsensusMetadata::leader_uuid() const {
   return leader_uuid_;
 }
 
-LastKnownLeader ConsensusMetadata::last_known_leader() const {
+LastKnownLeaderPB ConsensusMetadata::last_known_leader() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return last_known_leader_;
 }
@@ -192,6 +207,11 @@ std::map<int64_t, PreviousVotePB>
 ConsensusMetadata::previous_vote_history() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
   return previous_vote_history_;
+}
+
+int64_t ConsensusMetadata::last_pruned_term() const {
+  DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
+  return last_pruned_term_;
 }
 
 void ConsensusMetadata::set_leader_uuid(string uuid) {
@@ -203,8 +223,8 @@ void ConsensusMetadata::set_leader_uuid(string uuid) {
   // 2) receives AppendEntries from a legitimate leader (FOLLOWER)
   if (!leader_uuid_.empty()) {
     DCHECK(pb_.has_current_term());
-    last_known_leader_.uuid = leader_uuid_;
-    last_known_leader_.election_term = pb_.current_term();
+    last_known_leader_.set_uuid(leader_uuid_);
+    last_known_leader_.set_election_term(pb_.current_term());
   }
   UpdateActiveRole();
 }
@@ -295,9 +315,14 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
     : fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_id_(std::move(tablet_id)),
       peer_uuid_(std::move(peer_uuid)),
+      last_pruned_term_(-1),
       has_pending_config_(false),
       flush_count_for_tests_(0),
       on_disk_size_(0) {
+  // This is not really required as default values but specifying explicitly
+  // since correctness is dependent on it.
+  last_known_leader_.set_uuid("");
+  last_known_leader_.set_election_term(0);
 }
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
