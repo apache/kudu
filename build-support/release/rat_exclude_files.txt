@@ -62,7 +62,6 @@ src/kudu/gutil/cpu.cc
 src/kudu/gutil/cpu.h
 src/kudu/gutil/dynamic_annotations.c
 src/kudu/gutil/dynamic_annotations.h
-src/kudu/gutil/gscoped_ptr.h
 src/kudu/gutil/int128.cc
 src/kudu/gutil/int128.h
 src/kudu/gutil/integral_types.h

@@ -934,30 +934,4 @@ bool SortedRangesHaveIntersection(InputIterator1 begin1, InputIterator1 end1,
   return false;
 }
 
-// release_ptr is intended to help remove systematic use of gscoped_ptr
-// in cases like:
-//
-// vector<Foo *> v;
-// ElementDeleter d(&v);
-// ... {
-//   int remove_idx = f(v);
-//   gscoped_ptr<Foo> t(v[remove_idx]);
-//   v[remove_idx] = NULL;  // Save from deleter.
-//   return t.release();
-// }
-//
-// This would be replaced by:
-// ... {
-//   int remove_idx = f(v);
-//   return release_ptr(&v[remove_idx]);
-// }
-template<typename T> T* release_ptr(T **ptr) MUST_USE_RESULT;
-template<typename T> T* release_ptr(T **ptr) {
-  assert(ptr);
-  T *tmp = *ptr;
-  *ptr = NULL;
-  return tmp;
-}
-
-
 #endif  // UTIL_GTL_STL_UTIL_H_

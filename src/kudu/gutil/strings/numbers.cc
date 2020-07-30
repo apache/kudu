@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -24,13 +25,13 @@
 
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 
 using std::numeric_limits;
 using std::string;
+using std::unique_ptr;
 
 // Reads a <double> in *text, which may not be whitespace-initiated.
 // *len is the length, or -1 if text is '\0'-terminated, which is more
@@ -82,7 +83,7 @@ static inline bool EatADouble(const char** text, int* len, bool allow_question,
     retval = strtod(pos, &end_nonconst);
   } else {
     // not '\0'-terminated & no obvious terminator found. must copy.
-    gscoped_array<char> buf(new char[rem + 1]);
+    unique_ptr<char[]> buf(new char[rem + 1]);
     memcpy(buf.get(), pos, rem);
     buf[rem] = '\0';
     retval = strtod(buf.get(), &end_nonconst);

@@ -247,12 +247,6 @@ as in the following example.
   }
 ----
 
-NOTE: Older parts of the Kudu code base use `gscoped_ptr` instead of
-`unique_ptr`. These are hold-overs from before Kudu adopted {cpp}11.
-New code should not use `gscoped_ptr` except when necessary to interface
-with existing code. Alternatively, consider updating usages as you come
-across them.
-
 WARNING: Using `std::auto_ptr` is strictly disallowed because of its difficult and
 bug-prone semantics. Besides, `std::auto_ptr` is declared deprecated
 since {cpp}11.
