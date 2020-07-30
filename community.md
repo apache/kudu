@@ -9,42 +9,41 @@ single_col_extra_classes: community
 
 Get help using Kudu or contribute to the project on our mailing lists or our chat room:
 
-* **[user@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-user/)**
+* **[user@kudu.apache.org](https://lists.apache.org/list.html?user@kudu.apache.org)**
   ([subscribe](mailto:user-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:user-unsubscribe@kudu.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-user/)) -
   for usage questions, help, and announcements.
 * **<a class="icon slack" href="https://getkudu-slack.herokuapp.com/">Kudu Slack channel</a>** -
   where many Kudu developers and users hang out to answer questions and chat.
 
 **Developer mailing lists**
 
-* **[dev@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-dev/)**
+* **[dev@kudu.apache.org](https://lists.apache.org/list.html?dev@kudu.apache.org)**
   ([subscribe](mailto:dev-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:dev-unsubscribe@kudu.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-dev/)) -
   for people who want to contribute code to Kudu.
-* **[issues@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-issues/)**
+* **[builds@kudu.apache.org](https://lists.apache.org/list.html?builds@kudu.apache.org)**
+  ([subscribe](mailto:builds-subscribe@kudu.apache.org))
+  ([unsubscribe](mailto:builds-unsubscribe@kudu.apache.org))
+  for discussions and notifications surrounding build infrastructure.
+* **[issues@kudu.apache.org](https://lists.apache.org/list.html?issues@kudu.apache.org)**
   ([subscribe](mailto:issues-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:issues-unsubscribe@kudu.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-issues/)) -
   receives an email notification for all ticket updates made in the [Kudu JIRA issue tracker](https://issues.apache.org/jira/browse/KUDU).
-* **[reviews@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-reviews/)**
+* **[reviews@kudu.apache.org](https://lists.apache.org/list.html?reviews@kudu.apache.org)**
   ([subscribe](mailto:reviews-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:reviews-unsubscribe@kudu.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-reviews/)) -
   receives an email notification for all code review requests and responses on the
   [Kudu Gerrit](http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu).
-* **[commits@kudu.apache.org](http://mail-archives.apache.org/mod_mbox/kudu-commits/)**
+* **[commits@kudu.apache.org](https://lists.apache.org/list.html?commits@kudu.apache.org)**
   ([subscribe](mailto:commits-subscribe@kudu.apache.org))
   ([unsubscribe](mailto:commits-unsubscribe@kudu.apache.org))
-  ([archives](http://mail-archives.apache.org/mod_mbox/kudu-commits/)) -
   receives an email notification of all code changes to the
-  [Kudu Git repository](https://github.com/apache/incubator-kudu/).
+  [Kudu Git repository](https://github.com/apache/kudu/).
 
 **Other developer resources**
 
-* **<a class="icon github" href="https://github.com/apache/incubator-kudu">GitHub</a>**
+* **<a class="icon github" href="https://github.com/apache/kudu">GitHub</a>**
 * **<a class="icon gerrit" href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Gerrit Code Review</a>**
 * **<a class="icon jira" href="https://issues.apache.org/jira/browse/KUDU">JIRA Issue Tracker</a>**
 
