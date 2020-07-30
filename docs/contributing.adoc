@@ -191,8 +191,24 @@ Get familiar with these guidelines so that your contributions can be reviewed an
 integrated quickly and easily.
 
 In general, Kudu follows the
-link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide],
-with the following exceptions:
+link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide].
+
+A `clang-format` file is provided in `src/kudu/.clang-format` which allows
+automatic formatting of source code whitespacing, indentation, etc. Not all
+existing code conforms to this automatic formatting, so prefer using
+`clang-format-diff` to format only the lines changed by your patch. For example,
+after making a commit, run the following from the root of your checked out
+source:
++
+[source,bash]
+----
+git show -U0 | build-support/clang_format_diff.sh -i -p1
+git commit -a --amend
+----
+
+=== Exceptions from Google Style Guide
+Kudu's code base makes the following notable exceptions from the Google Style Guide
+referenced above:
 
 ==== Notes on {cpp} 11
 
