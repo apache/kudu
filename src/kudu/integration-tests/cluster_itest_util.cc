@@ -302,11 +302,11 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
 Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
                              const shared_ptr<Messenger>& messenger,
                              unordered_map<string, TServerDetails*>* ts_map) {
+  CHECK(ts_map->empty());
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   vector<ListTabletServersResponsePB_Entry> tservers;
   RETURN_NOT_OK(ListTabletServers(master_proxy, kTimeout, &tservers));
 
-  ts_map->clear();
   for (const auto& entry : tservers) {
     HostPort host_port = HostPortFromPB(entry.registration().rpc_addresses(0));
     vector<Sockaddr> addresses;

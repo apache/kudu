@@ -912,6 +912,7 @@ void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new MiniClusterFsInspector(cluster_.get()));
+  STLDeleteValues(&ts_map_);
   ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(0),
                                   cluster_->messenger(), &ts_map_));
 }
