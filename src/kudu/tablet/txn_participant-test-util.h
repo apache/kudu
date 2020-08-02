@@ -49,6 +49,7 @@ Status CallParticipantOp(TabletReplica* replica,
   }
   std::unique_ptr<ParticipantOpState> op_state(new ParticipantOpState(
       replica,
+      replica->tablet()->txn_participant(),
       &req,
       resp));
   CountDownLatch latch(1);

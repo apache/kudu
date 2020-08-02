@@ -287,5 +287,20 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
   }
 }
 
+TEST_F(TxnParticipantTest, TestReplayParticipantOps) {
+  constexpr const int64_t kTxnId = 1;
+  for (const auto& type : kCommitSequence) {
+    ParticipantResponsePB resp;
+    ASSERT_OK(CallParticipantOp(
+        tablet_replica_.get(), kTxnId, type, kDummyCommitTimestamp, &resp));
+    SCOPED_TRACE(SecureShortDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_TRUE(resp.has_timestamp());
+  }
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+  }), txn_participant()->GetTxnsForTests());
+}
+
 } // namespace tablet
 } // namespace kudu

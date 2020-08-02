@@ -31,8 +31,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/ops/op.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/pb_util.h"
@@ -55,15 +53,19 @@ class rw_semaphore;
 namespace tablet {
 
 ParticipantOpState::ParticipantOpState(TabletReplica* tablet_replica,
+                                       TxnParticipant* txn_participant,
                                        const tserver::ParticipantRequestPB* request,
                                        tserver::ParticipantResponsePB* response)
     : OpState(tablet_replica),
+      txn_participant_(txn_participant),
       request_(DCHECK_NOTNULL(request)),
       response_(response) {}
 
 void ParticipantOpState::AcquireTxnAndLock() {
+  DCHECK(!txn_lock_);
+  DCHECK(!txn_);
   int64_t txn_id = request_->op().txn_id();
-  txn_ = tablet_replica()->tablet()->txn_participant()->GetOrCreateTransaction(txn_id);
+  txn_ = txn_participant_->GetOrCreateTransaction(txn_id);
   txn_->AcquireWriteLock(&txn_lock_);
 }
 
@@ -83,60 +85,27 @@ string ParticipantOpState::ToString() const {
       ParticipantOpPB::ParticipantOpType_Name(request_->op().type()));
 }
 
-void ParticipantOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
-  replicate_msg->reset(new ReplicateMsg);
-  (*replicate_msg)->set_op_type(OperationType::PARTICIPANT_OP);
-  (*replicate_msg)->mutable_participant_request()->CopyFrom(*state()->request());
-  if (state()->are_results_tracked()) {
-    (*replicate_msg)->mutable_request_id()->CopyFrom(state()->request_id());
-  }
-}
-
-Status ParticipantOp::Prepare() {
-  TRACE_EVENT0("op", "ParticipantOp::Prepare");
-  TRACE("PREPARE: Starting.");
-  state_->AcquireTxnAndLock();
-  const auto& op = state_->request()->op();
-  Txn* txn = state_->txn_.get();
-  DCHECK(txn);
+Status ParticipantOpState::ValidateOp() const {
+  const auto& op = request()->op();
+  DCHECK(txn_);
   switch (op.type()) {
-    case ParticipantOpPB::BEGIN_TXN: {
-      RETURN_NOT_OK(txn->ValidateBeginTransaction());
-      break;
-    }
-    case ParticipantOpPB::BEGIN_COMMIT: {
-      RETURN_NOT_OK(txn->ValidateBeginCommit());
-      break;
-    }
-    case ParticipantOpPB::FINALIZE_COMMIT: {
-      RETURN_NOT_OK(txn->ValidateFinalize());
-      break;
-    }
-    case ParticipantOpPB::ABORT_TXN: {
-      RETURN_NOT_OK(txn->ValidateAbort());
-      break;
-    }
-    case ParticipantOpPB::UNKNOWN: {
+    case ParticipantOpPB::BEGIN_TXN:
+      return txn_->ValidateBeginTransaction();
+    case ParticipantOpPB::BEGIN_COMMIT:
+      return txn_->ValidateBeginCommit();
+    case ParticipantOpPB::FINALIZE_COMMIT:
+      return txn_->ValidateFinalize();
+    case ParticipantOpPB::ABORT_TXN:
+      return txn_->ValidateAbort();
+    case ParticipantOpPB::UNKNOWN:
       return Status::InvalidArgument("unknown op type");
-    }
   }
-  TRACE("PREPARE: Finished.");
   return Status::OK();
 }
 
-Status ParticipantOp::Start() {
-  DCHECK(!state_->has_timestamp());
-  DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
-  state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
-  TRACE("START. Timestamp: $0", clock::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
-  return Status::OK();
-}
-
-Status ParticipantOp::Apply(CommitMsg** commit_msg) {
-  TRACE_EVENT0("op", "ParticipantOp::Apply");
-  TRACE("APPLY: Starting.");
-  const auto& op = state_->request()->op();
-  Txn* txn = state_->txn_.get();
+Status ParticipantOpState::PerformOp() {
+  const auto& op = request()->op();
+  Txn* txn = txn_.get();
   Status s;
   switch (op.type()) {
     // NOTE: these can currently never fail because we are only updating
@@ -162,6 +131,39 @@ Status ParticipantOp::Apply(CommitMsg** commit_msg) {
       return Status::InvalidArgument("unknown op type");
     }
   }
+  return Status::OK();
+}
+
+void ParticipantOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
+  replicate_msg->reset(new ReplicateMsg);
+  (*replicate_msg)->set_op_type(OperationType::PARTICIPANT_OP);
+  (*replicate_msg)->mutable_participant_request()->CopyFrom(*state()->request());
+  if (state()->are_results_tracked()) {
+    (*replicate_msg)->mutable_request_id()->CopyFrom(state()->request_id());
+  }
+}
+
+Status ParticipantOp::Prepare() {
+  TRACE_EVENT0("op", "ParticipantOp::Prepare");
+  TRACE("PREPARE: Starting.");
+  state_->AcquireTxnAndLock();
+  RETURN_NOT_OK(state_->ValidateOp());
+  TRACE("PREPARE: Finished.");
+  return Status::OK();
+}
+
+Status ParticipantOp::Start() {
+  DCHECK(!state_->has_timestamp());
+  DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
+  state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
+  TRACE("START. Timestamp: $0", clock::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
+  return Status::OK();
+}
+
+Status ParticipantOp::Apply(CommitMsg** commit_msg) {
+  TRACE_EVENT0("op", "ParticipantOp::Apply");
+  TRACE("APPLY: Starting.");
+  CHECK_OK(state_->PerformOp());
   *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
   (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
   TRACE("APPLY: Finished.");
@@ -171,7 +173,7 @@ Status ParticipantOp::Apply(CommitMsg** commit_msg) {
 void ParticipantOp::Finish(OpResult result) {
   auto txn_id = state_->request()->op().txn_id();
   state_->ReleaseTxn();
-  TxnParticipant* txn_participant = state_->tablet_replica()->tablet()->txn_participant();
+  TxnParticipant* txn_participant = state_->txn_participant_;
   if (PREDICT_FALSE(result == Op::ABORTED)) {
     txn_participant->ClearIfInitFailed(txn_id);
     TRACE("FINISH: Op aborted");

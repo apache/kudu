@@ -68,6 +68,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/rowset.h"
@@ -113,6 +114,7 @@ using kudu::consensus::OpIdEquals;
 using kudu::consensus::OpIdToString;
 using kudu::consensus::OperationType;
 using kudu::consensus::OperationType_Name;
+using kudu::consensus::PARTICIPANT_OP;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::WRITE_OP;
@@ -271,6 +273,9 @@ class TabletBootstrap {
 
   Status PlayChangeConfigRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                                  const CommitMsg& commit_msg);
+
+  Status PlayTxnParticipantOpRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
+                                     const CommitMsg& commit_msg);
 
   Status PlayNoOpRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                          const CommitMsg& commit_msg);
@@ -1084,6 +1089,10 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
       RETURN_NOT_OK_REPLAY(PlayChangeConfigRequest, io_context, replicate, commit);
       break;
 
+    case PARTICIPANT_OP:
+      RETURN_NOT_OK_REPLAY(PlayTxnParticipantOpRequest, io_context, replicate, commit);
+      break;
+
     case NO_OP:
       RETURN_NOT_OK_REPLAY(PlayNoOpRequest, io_context, replicate, commit);
       break;
@@ -1513,6 +1522,22 @@ Status TabletBootstrap::PlayChangeConfigRequest(const IOContext* /*io_context*/,
     LOG_WITH_PREFIX(DFATAL) << msg;
     return Status::Corruption(msg);
   }
+  return AppendCommitMsg(commit_msg);
+}
+
+Status TabletBootstrap::PlayTxnParticipantOpRequest(const IOContext* /*io_context*/,
+                                                    ReplicateMsg* replicate_msg,
+                                                    const CommitMsg& commit_msg) {
+  ParticipantOpState op_state(tablet_replica_.get(),
+                              tablet_->txn_participant(),
+                              &replicate_msg->participant_request());
+  op_state.AcquireTxnAndLock();
+  SCOPED_CLEANUP({
+    op_state.ReleaseTxn();
+  });
+  // NOTE: don't bother validating the current state of the op. Presumably that
+  // happened the first time this op was written.
+  RETURN_NOT_OK(op_state.PerformOp());
   return AppendCommitMsg(commit_msg);
 }
 

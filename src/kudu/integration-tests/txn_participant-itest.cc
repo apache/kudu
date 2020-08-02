@@ -51,6 +51,7 @@
 DECLARE_bool(raft_enable_pre_election);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
+DECLARE_int32(follower_unavailable_considered_failed_sec);
 DECLARE_int32(raft_heartbeat_interval_ms);
 
 using kudu::cluster::InternalMiniCluster;
@@ -116,6 +117,24 @@ class TxnParticipantITest : public KuduTest {
     w.StopAndJoin();
   }
 
+  // Quiesces servers such that the tablet server at index 'ts_idx' is set up
+  // to become leader. Returns a list of all TabletReplicas.
+  vector<TabletReplica*> SetUpLeaderGetReplicas(int ts_idx) {
+    vector<TabletReplica*> replicas;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      auto* ts = cluster_->mini_tablet_server(i);
+      const auto& tablets = ts->ListTablets();
+      CHECK_EQ(1, tablets.size());
+      scoped_refptr<TabletReplica> r;
+      CHECK(ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
+      replicas.emplace_back(r.get());
+      if (i != ts_idx) {
+        *ts->server()->mutable_quiescing() = true;
+      }
+    }
+    return replicas;
+  }
+
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
 };
@@ -126,18 +145,7 @@ TEST_F(TxnParticipantITest, TestReplicateParticipantOps) {
   // Keep track of all the participant replicas, and quiesce all but one
   // tserver so we can ensure a specific leader.
   const int kLeaderIdx = 0;
-  vector<TabletReplica*> replicas;
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    auto* ts = cluster_->mini_tablet_server(i);
-    const auto& tablets = ts->ListTablets();
-    ASSERT_EQ(1, tablets.size());
-    scoped_refptr<TabletReplica> r;
-    ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
-    replicas.emplace_back(r.get());
-    if (i != kLeaderIdx) {
-      *ts->server()->mutable_quiescing() = true;
-    }
-  }
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
   ASSERT_OK(replicas[kLeaderIdx]->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   // Try submitting the ops on all replicas. They should succeed on the leaders
   // and fail on followers.
@@ -180,6 +188,56 @@ TEST_F(TxnParticipantITest, TestReplicateParticipantOps) {
     ASSERT_EQ(1, statuses.size());
     ASSERT_OK(statuses[0]);
   }
+}
+
+// Test that participant ops are copied when performing a tablet copy,
+// resulting in identical transaction states on the new copy.
+TEST_F(TxnParticipantITest, TestCopyParticipantOps) {
+  NO_FATALS(SetUpTable());
+
+  constexpr const int kNumTxns = 10;
+  constexpr const int kLeaderIdx = 0;
+  constexpr const int kDeadServerIdx = kLeaderIdx + 1;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(kTimeout));
+
+  // Apply some operations.
+  vector<TxnParticipant::TxnEntry> expected_txns;
+  for (int i = 0; i < kNumTxns; i++) {
+    for (const auto& op : kCommitSequence) {
+      vector<Status> statuses = RunOnReplicas({ leader_replica }, i, op);
+      for (const auto& s : statuses) {
+        SCOPED_TRACE(Substitute("Transaction $0, Op $1", i,
+                                ParticipantOpPB::ParticipantOpType_Name(op)));
+        ASSERT_OK(s);
+      }
+    }
+    expected_txns.emplace_back(
+        TxnParticipant::TxnEntry({ i, Txn::kCommitted, kDummyCommitTimestamp }));
+  }
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_EQ(expected_txns, replicas[i]->tablet()->txn_participant()->GetTxnsForTests());
+    });
+  }
+
+  // Set ourselves up to make a copy.
+  cluster_->mini_tablet_server(kDeadServerIdx)->Shutdown();
+  ASSERT_OK(cluster_->AddTabletServer());
+  FLAGS_follower_unavailable_considered_failed_sec = 1;
+
+  // Eventually, a copy should be made on the new server.
+  ASSERT_EVENTUALLY([&] {
+    auto* new_ts = cluster_->mini_tablet_server(cluster_->num_tablet_servers() - 1);
+    const auto& tablets = new_ts->ListTablets();
+    ASSERT_EQ(1, tablets.size());
+    scoped_refptr<TabletReplica> r;
+    ASSERT_TRUE(new_ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
+    ASSERT_OK(r->WaitUntilConsensusRunning(kTimeout));
+    ASSERT_EQ(expected_txns, r->tablet()->txn_participant()->GetTxnsForTests());
+  });
 }
 
 class TxnParticipantElectionStormITest : public TxnParticipantITest {
@@ -278,6 +336,17 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
     ASSERT_EVENTUALLY([&] {
       ASSERT_EQ(expected_txns, replicas[i]->tablet()->txn_participant()->GetTxnsForTests());
     });
+  }
+
+  // Now restart the cluster and ensure the transaction state is restored.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->StartSync());
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    auto* ts = cluster_->mini_tablet_server(i);
+    const auto& tablets = ts->ListTablets();
+    scoped_refptr<TabletReplica> r;
+    ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
+    ASSERT_EQ(expected_txns, r->tablet()->txn_participant()->GetTxnsForTests());
   }
 }
 

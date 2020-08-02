@@ -662,6 +662,7 @@ Status TabletReplica::StartFollowerOp(const scoped_refptr<ConsensusRound>& round
       unique_ptr<ParticipantOpState> op_state(
           new ParticipantOpState(
               this,
+              tablet_->txn_participant(),
               &replicate_msg->participant_request()));
       op_state->SetResultTracker(result_tracker_);
       op.reset(new ParticipantOp(std::move(op_state), consensus::REPLICA));

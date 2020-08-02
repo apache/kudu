@@ -42,6 +42,7 @@ class ParticipantOpState : public OpState {
   // response.
   // TODO(awong): track this on the RPC results tracker.
   ParticipantOpState(TabletReplica* tablet_replica,
+                     TxnParticipant* txn_participant,
                      const tserver::ParticipantRequestPB* request,
                      tserver::ParticipantResponsePB* response = nullptr);
   const tserver::ParticipantRequestPB* request() const override {
@@ -57,6 +58,11 @@ class ParticipantOpState : public OpState {
   // it doesn't already exist. Locks the transaction for writes.
   void AcquireTxnAndLock();
 
+  // Performs the transaction state change requested by this op. Must be called
+  // while the transaction lock is held, i.e. between the calls to
+  // AcquireTxnAndLock() and ReleaseTxn().
+  Status PerformOp();
+
   // Releases the transaction and its lock.
   void ReleaseTxn();
 
@@ -66,6 +72,15 @@ class ParticipantOpState : public OpState {
   }
  private:
   friend class ParticipantOp;
+
+  // Returns an error if the transaction is not in an appropriate state for
+  // the state change requested by this op.
+  Status ValidateOp() const;
+
+  // The particpant being mutated. This may differ from the one we'd get from
+  // TabletReplica if, for instance, we're bootstrapping a new Tablet.
+  TxnParticipant* txn_participant_;
+
   const tserver::ParticipantRequestPB* request_;
   tserver::ParticipantResponsePB* response_;
 
