@@ -68,8 +68,13 @@ class KuduRDD private[kudu] (
     // case, to ensure the consistency of such scan, we use READ_AT_SNAPSHOT
     // read mode without setting a timestamp.
     builder.replicaSelection(options.scanLocality)
-    if (options.scanLocality == ReplicaSelection.CLOSEST_REPLICA) {
+    if (options.scanLocality == ReplicaSelection.CLOSEST_REPLICA ||
+      options.snapshotTimestampMs.isDefined) {
       builder.readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+    }
+
+    options.snapshotTimestampMs.foreach { timestamp =>
+      builder.snapshotTimestampMicros(timestamp * 1000)
     }
 
     options.scanRequestTimeoutMs.foreach { timeout =>

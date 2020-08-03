@@ -18,6 +18,7 @@
 package org.apache.kudu.spark.kudu
 
 import java.nio.charset.StandardCharsets
+import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
@@ -747,6 +748,82 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.readOptions.scanRequestTimeoutMs.contains(66666))
+  }
+
+  @Test
+  def testSnapshotTimestampMsPropagation() {
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.snapshotTimestampMs" -> "86400000000")
+    val dataFrameSnapshotTimestamp = sqlContext.read.options(kuduOptions).format("kudu").load
+    val kuduRelationSnapshotTimestamp = kuduRelationFromDataFrame(dataFrameSnapshotTimestamp)
+
+    kuduOptions =
+      Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
+    val dataFrameNoneSnapshotTimestamp = sqlContext.read.options(kuduOptions).format("kudu").load
+    val kuduRelationNoneSnapshotTimestamp = kuduRelationFromDataFrame(
+      dataFrameNoneSnapshotTimestamp)
+    assert(kuduRelationSnapshotTimestamp.readOptions.snapshotTimestampMs.contains(86400000000L))
+    assert(kuduRelationNoneSnapshotTimestamp.readOptions.snapshotTimestampMs.isEmpty)
+  }
+
+  @Test
+  def testReadDataFrameAtSnapshot() {
+    insertRows(table, 100, 1)
+    val timestamp = getLastPropagatedTimestampMs()
+    insertRows(table, 100, 100)
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.snapshotTimestampMs" -> s"$timestamp")
+    val dataFrameWithSnapshotTimestamp = sqlContext.read.options(kuduOptions).format("kudu").load
+    kuduOptions =
+      Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
+    val dataFrameWithoutSnapshotTimestamp = sqlContext.read.options(kuduOptions).format("kudu").load
+    assertEquals(100, dataFrameWithSnapshotTimestamp.collect().length)
+    assertEquals(200, dataFrameWithoutSnapshotTimestamp.collect().length)
+  }
+
+  @Test
+  def testSnapshotTimestampBeyondMaxAge(): Unit = {
+    val extraConfigs = new util.HashMap[String, String]()
+    val tableName = "snapshot_test"
+    extraConfigs.put("kudu.table.history_max_age_sec", "1");
+    kuduClient.createTable(
+      tableName,
+      schema,
+      tableOptions.setExtraConfigs(extraConfigs)
+    )
+    val timestamp = getLastPropagatedTimestampMs()
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.snapshotTimestampMs" -> s"$timestamp")
+    insertRows(table, 100, 1)
+    Thread.sleep(2000)
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    val exception = intercept[Exception] {
+      df.count()
+    }
+    assertTrue(
+      exception.getMessage.contains(
+        "snapshot scan end timestamp is earlier than the ancient history mark")
+    )
+  }
+
+  @Test
+  def testSnapshotTimestampBeyondCurrentTimestamp(): Unit = {
+    val timestamp = getLastPropagatedTimestampMs() + 100000
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.snapshotTimestampMs" -> s"$timestamp")
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    val exception = intercept[Exception] {
+      df.count()
+    }
+    assertTrue(exception.getMessage.contains("cannot verify timestamp"))
   }
 
   @Test

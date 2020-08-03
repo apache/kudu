@@ -35,6 +35,7 @@ import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.util.CharUtil
 import org.apache.kudu.util.DateUtil
 import org.apache.kudu.util.DecimalUtil
+import org.apache.kudu.util.HybridTimeUtil
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
@@ -205,6 +206,12 @@ trait KuduTestSuite extends JUnitSuite {
       (i, i, s, ts)
     }
     rows
+  }
+
+  def getLastPropagatedTimestampMs(): Long = {
+    HybridTimeUtil
+      .HTTimestampToPhysicalAndLogical(kuduClient.getLastPropagatedTimestamp)
+      .head / 1000
   }
 
   def upsertRowsWithRowDataSize(

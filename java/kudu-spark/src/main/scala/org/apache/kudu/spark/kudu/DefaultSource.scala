@@ -71,6 +71,7 @@ class DefaultSource
   val SPLIT_SIZE_BYTES = "kudu.splitSizeBytes"
   val HANDLE_SCHEMA_DRIFT = "kudu.handleSchemaDrift"
   val USE_DRIVER_METADATA = "kudu.useDriverMetadata"
+  val SNAPSHOT_TIMESTAMP_MS = "kudu.snapshotTimestampMs"
 
   /**
    * A nice alias for the data source so that when specifying the format
@@ -186,6 +187,7 @@ class DefaultSource
     val splitSizeBytes = parameters.get(SPLIT_SIZE_BYTES).map(_.toLong)
     val useDriverMetadata =
       parameters.get(USE_DRIVER_METADATA).map(_.toBoolean).getOrElse(defaultUseDriverMetadata)
+    val snapshotTimestampMs = parameters.get(SNAPSHOT_TIMESTAMP_MS).map(_.toLong)
     KuduReadOptions(
       batchSize,
       scanLocality,
@@ -194,7 +196,9 @@ class DefaultSource
       scanRequestTimeoutMs,
       /* socketReadTimeoutMs= */ None,
       splitSizeBytes,
-      useDriverMetadata)
+      useDriverMetadata,
+      snapshotTimestampMs
+    )
   }
 
   private def getWriteOptions(parameters: Map[String, String]): KuduWriteOptions = {
