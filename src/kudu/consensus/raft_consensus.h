@@ -613,7 +613,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
-  void SetLeaderUuidUnlocked(const std::string& uuid);
+  Status SetLeaderUuidUnlocked(const std::string& uuid);
 
   // Utility function to get a replicated message
   // from a old_config -> new_config config change proposal

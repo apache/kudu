@@ -177,7 +177,9 @@ class FlexibleVoteCounter : public VoteCounter {
     int64_t term,
     std::map<std::string, int32_t>* region_unpruned_counts) const;
 
-  // Fetch the region corresponding to server UUID.
+  // Fetch the region corresponding to server UUID. Returns an empty string
+  // if UUID is not found. This could happen during a configuration change,
+  // if a server was removed from the configuration.
   std::string DetermineRegionForUUID(const std::string& uuid) const;
 
   // Given a set of regions, returns a pair of booleans for each region
@@ -186,6 +188,12 @@ class FlexibleVoteCounter : public VoteCounter {
   // 2. if the quorum can still be satisfied in the current state
   std::vector<std::pair<bool, bool> > IsMajoritySatisfiedInRegions(
       const std::vector<std::string>& regions) const;
+
+  // For the region provided, returns a pair of booleans representing:
+  // 1. if the majority in region is satisfied in the current state
+  // 2. if the majority in region can still be satisfied in the current state
+  std::pair<bool, bool> IsMajoritySatisfiedInRegion(
+      const std::string& region) const;
 
   // For the static modes (STATIC_DISJUNCTION & STATIC_CONJUNCTION), return
   // a pair of booleans representing:
@@ -199,16 +207,10 @@ class FlexibleVoteCounter : public VoteCounter {
   // 2. if the quorum can still be satisfied in the current state
   std::pair<bool, bool> IsPessimisticQuorumSatisfied() const;
 
-  // Crowdsource last known leader regions from the votes that have been
-  // received so far. This is used as an optimization.
-  void CrowdsourceLastKnownLeader(
-      LastKnownLeaderPB* last_known_leader) const;
-
-  // For the region provided, returns a pair of booleans representing:
-  // 1. if the majority in region is satisfied in the current state
-  // 2. if the majority in region can still be satisfied in the current state
-  std::pair<bool, bool> IsMajoritySatisfiedInRegion(
-      const std::string& region) const;
+  // Returns a pair of booleans:
+  // 1. if the majority is satisfied in a majority of regions
+  // 2. if the majority can be satisfied in a majority of regions
+  std::pair<bool, bool> IsMajoritySatisfiedInMajorityOfRegions() const;
 
   // Given a set of potential leader regions, returns a pair of booleans:
   // 1. if the majority is satisfied in all regions
@@ -217,28 +219,41 @@ class FlexibleVoteCounter : public VoteCounter {
   IsMajoritySatisfiedInPotentialLeaderRegions(
       const std::set<std::string>& leader_regions) const;
 
+  // Figure out if `vote_count` satisfies the majority
+  // in `region`.
+  // `vote_count` is computed from the voting history.
+  // Returns a pair of booleans representing:
+  // 1. if the quorum is satisfied in the current state
+  // 2. if the quorum can still be satisfied in the current state
+  // Please note the underlying assumption that the configuration for
+  // leader election quorum remains immutable.
+  // `pruned_count` is the number of voters in the `region` which
+  // have pruned their voting histories beyond the last known leader's
+  // election term.
+  std::pair<bool, bool> DoHistoricalVotesSatisfyMajorityInRegion(
+      const std::string& region, int32_t vote_count,
+      int32_t pruned_count) const;
+
+  // Given the `region_to_voter_set` for specific candidate in a historical
+  // term, this function returns if the historical votes amount to a majority
+  // in majority of the regions. The `region_pruned_counts` represents number
+  // of servers per region which have pruned voting history.
+  std::pair<bool, bool>
+  DoHistoricalVotesSatisfyMajorityInMajorityOfRegions(
+      const RegionToVoterSet& region_to_voter_set,
+      const std::map<std::string, int32_t>& region_pruned_counts) const;
+
+  // Crowdsource last known leader regions from the votes that have been
+  // received so far. This is used as an optimization.
+  void CrowdsourceLastKnownLeader(
+      LastKnownLeaderPB* last_known_leader) const;
+
   // Extends the `next_leader_regions` set to include the regions of the UUIDs
   // in `next_leader_uuids`. Returns an error status if the UUID does not
   // belong to the configuration.
   Status ExtendNextLeaderRegions(
       const std::set<std::string>& next_leader_uuids,
       std::set<std::string>* next_leader_regions) const;
-
-  // Figure out if `region_to_voter_set` satisfies the majority
-  // in `leader_region`.
-  // `region_to_voter_set` is constructed from the voting history.
-  // Returns a pair of booleans representing:
-  // 1. if the quorum is satisfied in the current state
-  // 2. if the quorum can still be satisfied in the current state
-  // Please note the underlying assumption that the configuration for
-  // leader election quorum remains immutable.
-  // `pruned_count` is the number of voters in the `leader_region` which
-  // have pruned their voting histories beyond the last known leader's
-  // election term.
-  std::pair<bool, bool> FetchQuorumSatisfactionInfoFromVoteHistory(
-      const std::string& leader_region,
-      const RegionToVoterSet& region_to_voter_set,
-      int32_t pruned_count) const;
 
   // Iterates over all the votes that have come in so far and collates them
   // corresponding to each UUID term pair for the purpose of determining if
@@ -258,6 +273,22 @@ class FlexibleVoteCounter : public VoteCounter {
   bool EnoughVotesWithSufficientHistories(
     int64_t term, const std::set<std::string>& leader_regions) const;
 
+  // Helper function to go over all the `leader_regions` and see if the
+  // `region_to_voter_set` representing the historical votes that a
+  // `candidate_uuid` got in the past was enough for it to have won an
+  // election in that term. The side effects of this function include updating
+  // `potential_leader_uuids` to include `candidate_uuid` if it could have won
+  // an election in the past and removing regions from `next_leader_regions`
+  // which conclusively transferred leadership to some UUID in an
+  // intermediary term.
+  void AppendPotentialLeaderUUID(
+    const std::string& candidate_uuid,
+    const std::set<std::string>& leader_regions,
+    const RegionToVoterSet& region_to_voter_set,
+    const std::map<std::string, int32_t>& region_pruned_counts,
+    std::set<std::string>* potential_leader_uuids,
+    std::set<std::string>* next_leader_regions) const;
+
   // Optimizer function which tries to recursively figure out the next leader
   // regions since the last term provided and the potential set of leaders regions
   // in that term. It returns the set of potential leader regions and the next term
@@ -265,6 +296,14 @@ class FlexibleVoteCounter : public VoteCounter {
   // determined in which case, the situation is reflected in the status.
   PotentialNextLeadersResponse GetPotentialNextLeaders(
       int64_t term, const std::set<std::string>& leader_regions) const;
+
+  // Given information about the last known leader, this helper function utilizes
+  // the voting histories sent by the voters to determine the outcome of the
+  // leader election. History is used to determine a list of regions which could
+  // potentially have the current leader.
+  std::pair<bool, bool> ComputeElectionResultFromVotingHistory(
+      const LastKnownLeaderPB& last_known_leader,
+      const std::string& last_known_leader_region) const;
 
   // For the dynamic mode (SINGLE_REGION_DYNAMIC), return
   // a pair of booleans representing:

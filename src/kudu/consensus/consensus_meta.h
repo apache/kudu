@@ -120,14 +120,13 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
   // Accessors for setting the active leader.
   const std::string& leader_uuid() const;
-  void set_leader_uuid(std::string uuid);
+  Status set_leader_uuid(std::string uuid);
 
   // Accessor for last known leader. It's not necessarily an active leader.
   // Used for computation of quorums for flexiraft leader elections.
   LastKnownLeaderPB last_known_leader() const;
 
   // Getter for PreviousVote.
-  // TODO(ritwikyadav) : Persist previous vote history.
   std::map<int64_t, PreviousVotePB> previous_vote_history() const;
 
   // Getter for the last term that was pruned from the voting history.
@@ -188,7 +187,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   FRIEND_TEST(ConsensusMetadataTest, TestToConsensusStatePB);
   FRIEND_TEST(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB);
 
-  static const int32_t VOTE_HISTORY_MAX_SIZE = 10000;
+  static const int32_t VOTE_HISTORY_MAX_SIZE = 100;
 
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
@@ -242,15 +241,6 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   DFAKE_MUTEX(fake_lock_);
 
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
-
-  // Flexible quorums artifacts.
-  LastKnownLeaderPB last_known_leader_;  // Last known leader
-
-  // Previous granted vote
-  std::map<int64_t, PreviousVotePB> previous_vote_history_;
-
-  // Greatest term that was pruned from previous_vote_history_
-  int64_t last_pruned_term_;
 
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
                             // configuration change pending.

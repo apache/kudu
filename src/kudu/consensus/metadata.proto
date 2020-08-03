@@ -303,6 +303,16 @@ message ConsensusMetadataPB {
   // Permanent UUID of the candidate voted for in 'current_term', or not present
   // if no vote was made in the current term.
   optional string voted_for = 3;
+
+  // Persistence of the following metadata is NOT strictly necessary
+  // but is done as an optimization.
+
+  // Last known leader of the server.
+  optional LastKnownLeaderPB last_known_leader = 9;
+
+  // Voting history of the server.
+  optional int64 last_pruned_term = 10;
+  map<int64, PreviousVotePB> previous_vote_history = 11;
 }
 
 // Information about previously granted vote.

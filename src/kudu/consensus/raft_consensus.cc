@@ -498,7 +498,7 @@ Status RaftConsensus::EmulateElection() {
 
   // Assume leadership of new term.
   RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1));
-  SetLeaderUuidUnlocked(peer_uuid());
+  RETURN_NOT_OK(SetLeaderUuidUnlocked(peer_uuid()));
   return BecomeLeaderUnlocked();
 }
 
@@ -1431,7 +1431,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
         << "new leader UUID: " << caller_uuid;
   }
   if (PREDICT_FALSE(!HasLeaderUnlocked())) {
-    SetLeaderUuidUnlocked(request->caller_uuid());
+    RETURN_NOT_OK(SetLeaderUuidUnlocked(request->caller_uuid()));
     new_leader_detected_failsafe_ = true;
   }
 
@@ -2669,13 +2669,14 @@ const char* RaftConsensus::State_Name(State state) {
   }
 }
 
-void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
+Status RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   DCHECK(lock_.is_locked());
   failed_elections_since_stable_leader_ = 0;
   num_failed_elections_metric_->set_value(failed_elections_since_stable_leader_);
-  cmeta_->set_leader_uuid(uuid);
+  Status s = cmeta_->set_leader_uuid(uuid);
   routing_table_->UpdateLeader(uuid);
   MarkDirty(Substitute("New leader $0", uuid));
+  return s;
 }
 
 Status RaftConsensus::ReplicateConfigChangeUnlocked(
@@ -2941,7 +2942,8 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
                 "Couldn't start leader election after successful pre-election");
   } else {
     // We won a real election. Convert role to LEADER.
-    SetLeaderUuidUnlocked(peer_uuid());
+    // This can fail while persisting last known leader.
+    CHECK_OK(SetLeaderUuidUnlocked(peer_uuid()));
 
     // TODO(todd): BecomeLeaderUnlocked() can fail due to state checks during shutdown.
     // It races with the above state check.
