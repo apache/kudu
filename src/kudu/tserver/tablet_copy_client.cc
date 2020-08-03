@@ -18,7 +18,9 @@
 #include "kudu/tserver/tablet_copy_client.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <utility>
 
@@ -68,6 +70,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 30000,
@@ -100,6 +103,11 @@ DEFINE_double(tablet_copy_fault_crash_before_write_cmeta, 0.0,
 TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, unsafe);
 TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, runtime);
 
+DEFINE_int32(tablet_copy_download_threads_nums_per_session, 4,
+             "Number of threads per tablet copy session for downloading tablet data blocks.");
+DEFINE_validator(tablet_copy_download_threads_nums_per_session,
+     [](const char* /*n*/, int32_t v) { return v > 0; });
+
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 
 METRIC_DEFINE_counter(server, tablet_copy_bytes_fetched,
@@ -130,10 +138,10 @@ using fs::BlockManager;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using rpc::Messenger;
+using std::atomic;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
-using std::vector;
 using strings::Substitute;
 using tablet::ColumnDataPB;
 using tablet::DeltaDataPB;
@@ -170,6 +178,10 @@ TabletCopyClient::TabletCopyClient(
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->Increment();
   }
+  ThreadPoolBuilder("blocks-download-pool-" + tablet_id)
+    .set_max_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
+    .set_min_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
+    .Build(&blocks_download_pool_);
 }
 
 TabletCopyClient::~TabletCopyClient() {
@@ -178,6 +190,7 @@ TabletCopyClient::~TabletCopyClient() {
                                              LogPrefix()));
   WARN_NOT_OK(Abort(), Substitute("$0Failed to fully clean up tablet after aborted copy",
                                   LogPrefix()));
+  blocks_download_pool_->Shutdown();
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->IncrementBy(-1);
   }
@@ -400,7 +413,9 @@ Status TabletCopyClient::FetchAll(const scoped_refptr<TabletReplica>& tablet_rep
 
   tablet_replica_ = tablet_replica;
 
-  // Download all the files (serially, for now, but in parallel in the future).
+  // Download all the tablet's files.
+  // Data blocks are downloaded in parallel, where the concurrency is
+  // controlled by the --tablet_copy_download_threads_num_per_session flag.
   RETURN_NOT_OK(DownloadBlocks());
   RETURN_NOT_OK(DownloadWALs());
 
@@ -572,72 +587,109 @@ int TabletCopyClient::CountRemoteBlocks() const {
   return num_blocks;
 }
 
+void TabletCopyClient::DownloadRowset(const RowSetDataPB& src_rowset,
+                                      int num_remote_blocks,
+                                      atomic<int>* block_count,
+                                      Status* end_status) {
+  RowSetDataPB* dst_rowset;
+  {
+    std::lock_guard<simple_spinlock> l(simple_lock_);
+    if (!end_status->ok()) {
+      return;
+    }
+    // Create rowset.
+    dst_rowset = superblock_->add_rowsets();
+  }
+  *dst_rowset = src_rowset;
+  // Clear the data in the rowset so that we don't end up deleting the wrong
+  // blocks (using the ids of the remote blocks) if we fail.
+  // TODO(mpercy): This is pretty fragile. Consider building a class
+  // structure on top of SuperBlockPB to abstract copying details.
+  dst_rowset->clear_columns();
+  dst_rowset->clear_redo_deltas();
+  dst_rowset->clear_undo_deltas();
+  dst_rowset->clear_bloom_block();
+  dst_rowset->clear_adhoc_index_block();
+
+  // We can't leave superblock_ unserializable with unset required field
+  // values in child elements, so we must download and rewrite each block
+  // before referencing it in the rowset.
+  Status s;
+  for (const ColumnDataPB& src_col : src_rowset.columns()) {
+    BlockIdPB new_block_id;
+    s = DownloadAndRewriteBlockIfEndStatusOK(src_col.block(), num_remote_blocks,
+                                             block_count, &new_block_id, end_status);
+    if (!s.ok()) {
+      return;
+    }
+    ColumnDataPB* dst_col = dst_rowset->add_columns();
+    *dst_col = src_col;
+    *dst_col->mutable_block() = new_block_id;
+  }
+  for (const DeltaDataPB& src_redo : src_rowset.redo_deltas()) {
+    BlockIdPB new_block_id;
+    s = DownloadAndRewriteBlockIfEndStatusOK(src_redo.block(), num_remote_blocks,
+                                             block_count, &new_block_id, end_status);
+    if (!s.ok()) {
+      return;
+    }
+    DeltaDataPB* dst_redo = dst_rowset->add_redo_deltas();
+    *dst_redo = src_redo;
+    *dst_redo->mutable_block() = new_block_id;
+  }
+  for (const DeltaDataPB& src_undo : src_rowset.undo_deltas()) {
+    BlockIdPB new_block_id;
+    s = DownloadAndRewriteBlockIfEndStatusOK(src_undo.block(), num_remote_blocks,
+                                             block_count, &new_block_id, end_status);
+    if (!s.ok()) {
+      return;
+    }
+    DeltaDataPB* dst_undo = dst_rowset->add_undo_deltas();
+    *dst_undo = src_undo;
+    *dst_undo->mutable_block() = new_block_id;
+  }
+  if (src_rowset.has_bloom_block()) {
+    BlockIdPB new_block_id;
+    s = DownloadAndRewriteBlockIfEndStatusOK(src_rowset.bloom_block(), num_remote_blocks,
+                                             block_count, &new_block_id, end_status);
+    if (!s.ok()) {
+      return;
+    }
+    *dst_rowset->mutable_bloom_block() = new_block_id;
+  }
+  if (src_rowset.has_adhoc_index_block()) {
+    BlockIdPB new_block_id;
+    s = DownloadAndRewriteBlockIfEndStatusOK(src_rowset.adhoc_index_block(), num_remote_blocks,
+                                             block_count, &new_block_id, end_status);
+    if (!s.ok()) {
+      return;
+    }
+    *dst_rowset->mutable_adhoc_index_block() = new_block_id;
+  }
+}
+
 Status TabletCopyClient::DownloadBlocks() {
   CHECK_EQ(kStarted, state_);
 
   // Count up the total number of blocks to download.
-  int num_remote_blocks = CountRemoteBlocks();
+  const int num_remote_blocks = CountRemoteBlocks();
 
   // Download each block, writing the new block IDs into the new superblock
   // as each block downloads.
-  int block_count = 0;
+  atomic<int32_t> block_count(0);
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_remote_blocks << " data blocks...";
+
+  Status end_status = Status::OK();
+  // Download rowsets in parallel.
+  // Each task downloads the blocks of the corresponding rowset sequentially.
   for (const RowSetDataPB& src_rowset : remote_superblock_->rowsets()) {
-    // Create rowset.
-    RowSetDataPB* dst_rowset = superblock_->add_rowsets();
-    *dst_rowset = src_rowset;
-    // Clear the data in the rowset so that we don't end up deleting the wrong
-    // blocks (using the ids of the remote blocks) if we fail.
-    // TODO(mpercy): This is pretty fragile. Consider building a class
-    // structure on top of SuperBlockPB to abstract copying details.
-    dst_rowset->clear_columns();
-    dst_rowset->clear_redo_deltas();
-    dst_rowset->clear_undo_deltas();
-    dst_rowset->clear_bloom_block();
-    dst_rowset->clear_adhoc_index_block();
-
-    // We can't leave superblock_ unserializable with unset required field
-    // values in child elements, so we must download and rewrite each block
-    // before referencing it in the rowset.
-    for (const ColumnDataPB& src_col : src_rowset.columns()) {
-      BlockIdPB new_block_id;
-      RETURN_NOT_OK(DownloadAndRewriteBlock(src_col.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
-      ColumnDataPB* dst_col = dst_rowset->add_columns();
-      *dst_col = src_col;
-      *dst_col->mutable_block() = new_block_id;
-    }
-    for (const DeltaDataPB& src_redo : src_rowset.redo_deltas()) {
-      BlockIdPB new_block_id;
-      RETURN_NOT_OK(DownloadAndRewriteBlock(src_redo.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
-      DeltaDataPB* dst_redo = dst_rowset->add_redo_deltas();
-      *dst_redo = src_redo;
-      *dst_redo->mutable_block() = new_block_id;
-    }
-    for (const DeltaDataPB& src_undo : src_rowset.undo_deltas()) {
-      BlockIdPB new_block_id;
-      RETURN_NOT_OK(DownloadAndRewriteBlock(src_undo.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
-      DeltaDataPB* dst_undo = dst_rowset->add_undo_deltas();
-      *dst_undo = src_undo;
-      *dst_undo->mutable_block() = new_block_id;
-    }
-    if (src_rowset.has_bloom_block()) {
-      BlockIdPB new_block_id;
-      RETURN_NOT_OK(DownloadAndRewriteBlock(src_rowset.bloom_block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
-      *dst_rowset->mutable_bloom_block() = new_block_id;
-    }
-    if (src_rowset.has_adhoc_index_block()) {
-      BlockIdPB new_block_id;
-      RETURN_NOT_OK(DownloadAndRewriteBlock(src_rowset.adhoc_index_block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
-      *dst_rowset->mutable_adhoc_index_block() = new_block_id;
-    }
+    RETURN_NOT_OK(blocks_download_pool_->Submit([&]() mutable {
+      DownloadRowset(src_rowset, num_remote_blocks, &block_count, &end_status);
+    }));
   }
+  blocks_download_pool_->Wait();
 
-  return Status::OK();
+  return end_status;
 }
 
 Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
@@ -688,12 +740,12 @@ Status TabletCopyClient::WriteConsensusMetadata() {
 
 Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                                  int num_blocks,
-                                                 int* block_count,
+                                                 atomic<int32_t>* block_count,
                                                  BlockIdPB* dest_block_id) {
   BlockId old_block_id(BlockId::FromPB(src_block_id));
   SetStatusMessage(Substitute("Downloading block $0 ($1/$2)",
                               old_block_id.ToString(),
-                              *block_count + 1, num_blocks));
+                              block_count->load() + 1 , num_blocks));
   BlockId new_block_id;
   RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id),
       "Unable to download block with id " + old_block_id.ToString());
@@ -703,12 +755,32 @@ Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
   return Status::OK();
 }
 
+Status TabletCopyClient::DownloadAndRewriteBlockIfEndStatusOK(const BlockIdPB& src_block_id,
+                                                              int num_blocks,
+                                                              atomic<int32_t>* block_count,
+                                                              BlockIdPB* dest_block_id,
+                                                              Status* end_status) {
+  {
+    std::lock_guard<simple_spinlock> l(simple_lock_);
+    RETURN_NOT_OK(*end_status);
+  }
+  Status s = DownloadAndRewriteBlock(src_block_id, num_blocks, block_count, dest_block_id);
+  if (!s.ok()) {
+    std::lock_guard<simple_spinlock> l(simple_lock_);
+    if (!s.ok() && end_status->ok()) {
+      *end_status = s;
+    }
+  }
+  return s;
+}
+
 Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
                                        BlockId* new_block_id) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
   RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(), "Not downloading block for replica");
 
   unique_ptr<WritableBlock> block;
+  // log_block_manager uses a lock to guarantee the block_id is unique.
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(CreateBlockOptions({ tablet_id_ }), &block),
                         "Unable to create new block");
 
@@ -721,7 +793,10 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
 
   *new_block_id = block->id();
   RETURN_NOT_OK_PREPEND(block->Finalize(), "Unable to finalize block");
-  transaction_->AddCreatedBlock(std::move(block));
+  {
+    std::lock_guard<simple_spinlock> l(simple_lock_);
+    transaction_->AddCreatedBlock(std::move(block));
+  }
   return Status::OK();
 }
 

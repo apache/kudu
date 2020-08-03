@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -25,6 +26,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -35,6 +37,7 @@ class BlockId;
 class BlockIdPB;
 class FsManager;
 class HostPort;
+class ThreadPool;
 
 namespace consensus {
 class ConsensusMetadata;
@@ -52,14 +55,15 @@ class RpcController;
 } // namespace rpc
 
 namespace tablet {
+class RowSetDataPB;
 class TabletMetadata;
 class TabletReplica;
 class TabletSuperBlockPB;
 } // namespace tablet
 
 namespace tserver {
-class DataIdPB;
 class DataChunkPB;
+class DataIdPB;
 class TabletCopyServiceProxy;
 
 // Server-wide tablet copy metrics.
@@ -193,6 +197,15 @@ class TabletCopyClient {
   // Count the number of blocks on the remote (from 'remote_superblock_').
   int CountRemoteBlocks() const;
 
+  // A task do download blocks of the specified rowset.
+  // In case of a failure, a thread notifies others via 'end_status',
+  // so they can abort downloading of their rowsets' blocks.
+  // If all threads succeed, 'end_status' is set to Status::OK().
+  void DownloadRowset(const tablet::RowSetDataPB& src_rowset,
+                      int num_remote_blocks,
+                      std::atomic<int>* block_count,
+                      Status* end_status);
+
   // Download all blocks belonging to a tablet sequentially. Add all
   // downloaded blocks to the tablet copy's transaction.
   //
@@ -210,8 +223,19 @@ class TabletCopyClient {
   // - 'block_count' is incremented by 1.
   Status DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                  int num_blocks,
-                                 int* block_count,
+                                 std::atomic<int32_t>* block_count,
                                  BlockIdPB* dest_block_id);
+
+  // Download and rewrite remote block if end_status it hasn't been set as failed.
+  // This method calls DownloadAndRewriteBlock and return its' status.
+  // This method is thread-safe.
+  //
+  // On failure, end_status is set as error status of DownloadAndRewriteBlock.
+  Status DownloadAndRewriteBlockIfEndStatusOK(const BlockIdPB& src_block_id,
+                                              int num_blocks,
+                                              std::atomic<int32_t>* block_count,
+                                              BlockIdPB* dest_block_id,
+                                              Status* end_status);
 
   // Download a single block.
   // Data block is opened with new ID. After downloading, the block is finalized
@@ -277,6 +301,13 @@ class TabletCopyClient {
 
   // Block transaction for the tablet copy.
   std::unique_ptr<fs::BlockCreationTransaction> transaction_;
+
+  // Thread pool for downloading all data blocks in parallel.
+  std::unique_ptr<ThreadPool> blocks_download_pool_;
+
+  // Protects adding/creating blocks, adding a rowset,
+  // reading/updating rowset download status.
+  simple_spinlock simple_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };

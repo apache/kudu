@@ -75,6 +75,7 @@ using std::thread;
 using std::vector;
 
 DECLARE_double(env_inject_eio);
+DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 
@@ -205,6 +206,19 @@ TEST_F(TabletCopyClientTest, TestLifeCycle) {
   {
     google::FlagSaver fs;
     FLAGS_env_inject_eio = 1.0;
+    s = StartCopy();
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Failed to write tablet metadata");
+    ASSERT_EQ(TabletCopyClient::State::kInitialized, client_->state_);
+    ASSERT_FALSE(meta_);
+  }
+
+  // Rowset are download by multithreads, the error status can be corretly
+  // collected among all threads.
+  {
+    google::FlagSaver fs;
+    FLAGS_env_inject_eio = 0.5;
+    FLAGS_tablet_copy_download_threads_nums_per_session = 16;
     s = StartCopy();
     ASSERT_TRUE(s.IsIOError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Failed to write tablet metadata");
@@ -360,7 +374,7 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // test is to exemplify the difference in syncs between the log and file
   // block managers, but it would be nice to formulate a bound here.
   if (FLAGS_block_manager == "log") {
-    ASSERT_GE(9, down_cast<Counter*>(
+    ASSERT_GE(15, down_cast<Counter*>(
         metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
   } else {
     ASSERT_GE(22, down_cast<Counter*>(
