@@ -121,7 +121,7 @@ before you get started.
 
 #### Request and review examples.
 
-The [kudu-examples](https://github.com/cloudera/kudu-examples) repository
+The [examples](https://github.com/apache/kudu/tree/master/examples) directory
 includes working code examples. As more examples are requested and added, they
 will need review and clean-up. This is another way you can get involved.
 
