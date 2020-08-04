@@ -201,6 +201,43 @@ def build_args(base, version, vcs_ref, cache_from):
     args += ' --cache-from %s' % cache_from
   return args
 
+def build_tags(opts, base, version, vcs_ref, target):
+  os_tag = get_os_tag(base)
+  version_tag = get_version_tag(version, vcs_ref)
+
+  tags = []
+  full_tag = get_full_tag(opts.repository, target, version_tag, os_tag)
+  # Don't tag hash versions unless tag_hash is true.
+  if is_release_version(version) or opts.tag_hash:
+    tags.append(full_tag)
+  # If this is the default OS, also tag it without the OS-specific tag.
+  if base == DEFAULT_OS:
+    default_os_tag = get_full_tag(opts.repository, target, version_tag, '')
+    # Don't tag hash versions unless tag_hash is true.
+    if is_release_version(version) or opts.tag_hash:
+      tags.append(default_os_tag)
+
+  # Add the minor version tag if this is a release version.
+  if is_release_version(version):
+    minor_version = get_minor_version(version)
+    minor_tag = get_full_tag(opts.repository, target, minor_version, os_tag)
+    tags.append(minor_tag)
+    # Add the default OS tag.
+    if base == DEFAULT_OS:
+      minor_default_os_tag = get_full_tag(opts.repository, target, minor_version, '')
+      tags.append(minor_default_os_tag)
+
+  # Add the latest version tags.
+  if not opts.skip_latest:
+    latest_tag = get_full_tag(opts.repository, target, 'latest', os_tag)
+    tags.append(latest_tag)
+    # Add the default OS tag.
+    if base == DEFAULT_OS:
+      latest_default_os_tag = get_full_tag(opts.repository, target, 'latest', '')
+      tags.append(latest_default_os_tag)
+
+  return tags
+
 def verify_docker_resources(opts):
   cpus = int(subprocess.check_output(['docker', 'system', 'info',
                                       '--format', '{{.NCPU}}'])
@@ -238,7 +275,6 @@ def main():
   version = read_version()
   vcs_ref = read_vcs_ref()
   print('Version: %s (%s)' % (version, vcs_ref))
-  version_tag = get_version_tag(version, vcs_ref)
 
   bases = unique_bases(opts)
   targets = unique_targets(opts)
@@ -248,65 +284,19 @@ def main():
   tags = [] # Keep track of the tags for publishing at the end.
   for base in bases:
     print('Building targets for %s...' % base)
-    os_tag = get_os_tag(base)
 
     for target in targets:
+      target_tags = build_tags(opts, base, version, vcs_ref, target)
+      # Build the target.
       print('Building %s target...' % target)
-      full_tag = get_full_tag(opts.repository, target, version_tag, os_tag)
-      print(full_tag)
-
-      # Build the target and tag with the full tag.
       docker_build_cmd = 'docker build'
       docker_build_cmd += build_args(base, version, vcs_ref, opts.cache_from)
       docker_build_cmd += ' --file %s' % os.path.join(ROOT, 'docker', 'Dockerfile')
-      docker_build_cmd += ' --target %s --tag %s' % (target, full_tag)
+      docker_build_cmd += ' --target %s' % target
+      docker_build_cmd += ''.join(' --tag %s' % tag for tag in target_tags)
       docker_build_cmd += ' %s' % ROOT
       run_command(docker_build_cmd, opts)
-      tags.append(full_tag)
-
-      # If this is the default OS, also tag it without the OS-specific tag.
-      if base == DEFAULT_OS:
-        default_os_tag = get_full_tag(opts.repository, target, version_tag, '')
-        default_os_cmd = 'docker tag %s %s' % (full_tag, default_os_tag)
-        run_command(default_os_cmd, opts)
-        tags.append(default_os_tag)
-
-      # Add the minor version tag if this is a release version.
-      if is_release_version(version):
-        minor_version = get_minor_version(version)
-        minor_tag = get_full_tag(opts.repository, target, minor_version, os_tag)
-        minor_cmd = 'docker tag %s %s' % (full_tag, minor_tag)
-        run_command(minor_cmd, opts)
-        tags.append(minor_tag)
-
-        # Add the default OS tag.
-        if base == DEFAULT_OS:
-          minor_default_os_tag = get_full_tag(opts.repository, target, minor_version, '')
-          minor_default_os_cmd = 'docker tag %s %s' % (full_tag, minor_default_os_tag)
-          run_command(minor_default_os_cmd, opts)
-          tags.append(minor_default_os_tag)
-
-      # Add the latest version tags.
-      if not opts.skip_latest:
-        latest_tag = get_full_tag(opts.repository, target, 'latest', os_tag)
-        latest_cmd = 'docker tag %s %s' % (full_tag, latest_tag)
-        run_command(latest_cmd, opts)
-        tags.append(latest_tag)
-
-        # Add the default OS tag.
-        if base == DEFAULT_OS:
-          latest_default_os_tag = get_full_tag(opts.repository, target, 'latest', '')
-          latest_default_os_cmd = 'docker tag %s %s' % (full_tag, latest_default_os_tag)
-          run_command(latest_default_os_cmd, opts)
-          tags.append(latest_default_os_tag)
-
-      # Remove the hash tags if the aren't wanted.
-      if not opts.tag_hash and not is_release_version(version):
-        print('Removing hash based Docker tags...')
-        hash_tag_pattern = '%s:*%s*' % (opts.repository, vcs_ref)
-        rmi_command = 'docker rmi $(docker images -q "%s" --format "{{.Repository}}:{{.Tag}}")'\
-                      % (hash_tag_pattern, )
-        run_command(rmi_command, opts)
+      tags.extend(target_tags)
 
   if opts.publish:
     print('Publishing Docker images...')
