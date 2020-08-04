@@ -1019,7 +1019,7 @@ public final class AsyncKuduScanner {
    */
   final class ScanRequest extends KuduRpc<Response> {
 
-    State state;
+    private final State state;
 
     /** The token with which to authorize this RPC. */
     private Token.SignedTokenPB authzToken;
@@ -1217,6 +1217,7 @@ public final class AsyncKuduScanner {
     @Override
     public String toString() {
       return "ScanRequest(scannerId=" + Bytes.pretty(scannerId) +
+          ", state=" + state +
           (tablet != null ? ", tablet=" + tablet.getTabletId() : "") +
           ", attempt=" + attempt + ", " + super.toString() + ")";
     }
