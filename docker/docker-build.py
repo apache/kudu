@@ -67,6 +67,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
 DEFAULT_OS = 'ubuntu:xenial'
 DEFAULT_TARGETS = ['kudu','kudu-python']
 DEFAULT_REPOSITORY = 'apache/kudu'
+DEFAULT_ACTION = 'load'
 
 REQUIRED_CPUS = 4
 REQUIRED_MEMORY_GIB = 4
@@ -75,6 +76,10 @@ def parse_args():
   """ Parses the command-line arguments """
   parser = argparse.ArgumentParser(description='Build the Apache Kudu Docker images',
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser.add_argument('--platforms', nargs='+', choices=[
+                      'linux/amd64', 'linux/arm64', ],
+                      help='The platforms to build with. If unspecified, the platform of your '
+                           'build machine will be used.')
   parser.add_argument('--bases', nargs='+', default=DEFAULT_OS, choices=[
                       'centos:6', 'centos:7', 'centos:8',
                       'debian:jessie', 'debian:stretch',
@@ -90,8 +95,11 @@ def parse_args():
   parser.add_argument('--repository', default=DEFAULT_REPOSITORY,
                       help='The repository string to use when tagging the image')
 
-  parser.add_argument('--publish', action='store_true',
-                      help='If passed, the tagged images will be pushed to the Docker repository')
+  parser.add_argument('--action', default=DEFAULT_ACTION, choices=['load', 'push'],
+                      help='The action to take with the built images. "load" will export the '
+                           'images to docker so they can be used locally. "push" will push the '
+                           'images to the registry.')
+
   parser.add_argument('--skip-latest', action='store_true',
                       help='If passed, skips adding a tag using `-latest` along with the '
                       'versioned tag')
@@ -118,6 +126,11 @@ def run_command(cmd, opts):
   print('Running: %s' % cmd)
   if not opts.dry_run:
     subprocess.check_output(cmd, shell=True)
+
+def use_buildx_builder():
+  ret = subprocess.call(['docker', 'buildx', 'use', 'kudu-builder'])
+  if ret != 0:
+    subprocess.check_output(['docker', 'buildx', 'create', '--name', 'kudu-builder', '--use'])
 
 def read_version():
   with open(os.path.join(ROOT, 'version.txt'), 'r') as vfile:
@@ -173,6 +186,12 @@ def get_full_tag(repository, target, version_tag, os_tag):
   # Remove the last character to eliminate the extra '-'.
   full_tag = full_tag[:-1]
   return "%s:%s" % (repository, full_tag)
+
+def platforms_csv(opts):
+  if type(opts.platforms) is list:
+    return ",".join(list(dict.fromkeys(opts.platforms)))
+  else:
+    return opts.platforms
 
 def unique_bases(opts):
   if type(opts.bases) is list:
@@ -271,6 +290,10 @@ def main():
   # performance, storage management, feature functionality, and security.
   # https://docs.docker.com/develop/develop-images/build_enhancements/
   os.environ['DOCKER_BUILDKIT'] = '1'
+  # Enable the experimental CLI so we can use `docker buildx` commands.
+  os.environ['DOCKER_CLI_EXPERIMENTAL'] = 'enabled'
+  # Create/Use a buildx builder to support pushing multi-platform builds.
+  use_buildx_builder()
 
   version = read_version()
   vcs_ref = read_vcs_ref()
@@ -281,7 +304,11 @@ def main():
   print('Bases: %s' % bases)
   print('Targets: %s' % targets)
 
-  tags = [] # Keep track of the tags for publishing at the end.
+  if opts.action == 'push' and not is_release_version(version):
+    print('ERROR: Only release versions can be pushed. Found version %s (%s)'
+          % (version, vcs_ref))
+    sys.exit(1)
+
   for base in bases:
     print('Building targets for %s...' % base)
 
@@ -289,24 +316,20 @@ def main():
       target_tags = build_tags(opts, base, version, vcs_ref, target)
       # Build the target.
       print('Building %s target...' % target)
-      docker_build_cmd = 'docker build'
+      # Note: It isn't currently possible to load multi-arch images into docker,
+      # they can only be pushed to docker hub. This isn't expected to be a long
+      # lived limitation.
+      # https://github.com/docker/buildx/issues/59
+      # https://github.com/moby/moby/pull/38738
+      docker_build_cmd = 'docker buildx build --%s' % opts.action
+      if opts.platforms:
+        docker_build_cmd += ' --platform %s' % platforms_csv(opts)
       docker_build_cmd += build_args(base, version, vcs_ref, opts.cache_from)
       docker_build_cmd += ' --file %s' % os.path.join(ROOT, 'docker', 'Dockerfile')
       docker_build_cmd += ' --target %s' % target
       docker_build_cmd += ''.join(' --tag %s' % tag for tag in target_tags)
       docker_build_cmd += ' %s' % ROOT
       run_command(docker_build_cmd, opts)
-      tags.extend(target_tags)
-
-  if opts.publish:
-    print('Publishing Docker images...')
-    if not is_release_version(version):
-      print('ERROR: Only release versions can be published. Found version %s (%s)'
-            % (version, vcs_ref))
-      sys.exit(1)
-    for tag in tags:
-      push_cmd = "docker push %s" % tag
-      run_command(push_cmd, opts)
 
   end_time = datetime.datetime.now()
   runtime = end_time - start_time
