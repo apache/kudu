@@ -32,17 +32,25 @@ newpng <- function(filename = "img.png", width = 1500, height = 500) {
 }
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 2) {
-  stop("usage: jobs_runtime.R <filename> <testname>")
+if (length(args) < 2 || length(args) > 3) {
+  stop("usage: jobs_runtime.R <filename> <testname> [y-axis-label]")
 }
 filename = args[1]
 testname = args[2]
+ylabel="runtime"
+if (length(args) == 3) {
+  ylabel=args[3]
+}
 
 newpng(paste(testname, "-jobs-runtime.png", sep = ""))
 
 d <- read.table(file=filename, header=T)
 
 print(ggplot(d, aes(x = build_number, y = runtime, color = workload)) +
+             ylab(ylabel) +
              stat_summary(aes(group = workload), fun.y=median, geom = "line") +
-             geom_boxplot(aes(group = interaction(workload, build_number)), position = "identity", outlier.size = 1.7, outlier.colour = "gray32") +
+             geom_boxplot(aes(group = interaction(workload, build_number)),
+                          position = "identity",
+                          outlier.size = 1.7,
+                          outlier.colour = "gray32") +
              ggtitle(testname))
