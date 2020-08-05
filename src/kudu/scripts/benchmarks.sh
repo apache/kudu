@@ -138,11 +138,12 @@ load_stats() {
 }
 
 write_img_plot() {
-  local INPUT_FILE=$1
-  local TEST_NAME=$2
+  local input_file="$1"
+  local test_name="$2"
+  local y_axis_label="$3"
   # Rscript fails when there's only a header, so just skip
-  if [ `wc -l $INPUT_FILE | cut -d ' ' -f1` -gt 1 ]; then
-    Rscript jobs_runtime.R $INPUT_FILE $TEST_NAME
+  if [ `wc -l $input_file | cut -d ' ' -f1` -gt 1 ]; then
+    Rscript jobs_runtime.R $input_file $test_name "$y_axis_label"
   fi
 }
 
@@ -473,9 +474,9 @@ parse_and_record_all_results() {
       record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_${metric}_latency $i $val
     done
     rate=$(grep -o 'Throughput.*' $log | awk '{print $2}')
-    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput_wall $i $rate
+    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput $i $rate
     rate=$(grep -o 'CPU efficiency.*' $log | awk '{print $3}')
-    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_throughput_cpu $i $rate
+    record_result $BUILD_IDENTIFIER ${TS_8THREAD_BENCH}_cpu_efficiency $i $rate
   done
 
   # parse scan timings for scans and inserts with MRS only
@@ -622,10 +623,15 @@ generate_ycsb_plots() {
 }
 
 load_and_generate_plot() {
-  local TEST_NAME=$1
-  local PLOT_NAME=$2
-  load_stats "$TEST_NAME" > $OUTDIR/$PLOT_NAME.tsv
-  write_img_plot $OUTDIR/$PLOT_NAME.tsv $PLOT_NAME
+  local test_name=$1
+  local plot_name=$2
+  local y_axis_label=$3
+  if [ -z "$y_axis_label" ]; then
+    local y_axis_label="runtime (sec)"
+  fi
+  local fpath=${OUTDIR}/${plot_name}.tsv
+  load_stats "$test_name" > $fpath
+  write_img_plot $fpath $plot_name "$y_axis_label"
 }
 
 load_stats_and_generate_plots() {
@@ -647,15 +653,16 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "$BLOOM_TEST" bloom-test
   load_and_generate_plot "$MT_BLOOM_TEST" mt-bloom-test
 
-  load_and_generate_plot "${WIRE_PROTOCOL_TEST}" wire-protocol-test
-  load_and_generate_plot "${WIRE_PROTOCOL_TEST}_columnar" wire-protocol-test-columnar
+  load_and_generate_plot "${WIRE_PROTOCOL_TEST}" wire-protocol-test "conversion rate (cycle/cell)"
+  load_and_generate_plot "${WIRE_PROTOCOL_TEST}_columnar" wire-protocol-test-columnar "conversion rate (cycle/cell)"
 
-  load_and_generate_plot "$RPC_BENCH_TEST" rpc-bench-test
+  load_and_generate_plot "$RPC_BENCH_TEST" rpc-bench-test "request rate (RPC/sec)"
 
-  load_and_generate_plot "${TS_INSERT_LATENCY}%" ts-insert-latency
+  load_and_generate_plot "${TS_INSERT_LATENCY}%" ts-insert-latency "latency (usec)"
 
-  load_and_generate_plot "${TS_8THREAD_BENCH}%_latency" ts-8thread-insert-latency
-  load_and_generate_plot "${TS_8THREAD_BENCH}%_throughput_%" ts-8thread-insert-throughput
+  load_and_generate_plot "${TS_8THREAD_BENCH}%_latency" ts-8thread-insert-latency "latency (usec)"
+  load_and_generate_plot "${TS_8THREAD_BENCH}_throughput" ts-8thread-insert-throughput "throughput (row/sec)"
+  load_and_generate_plot "${TS_8THREAD_BENCH}_cpu_efficiency" ts-8thread-insert-cpu-efficiency "CPU efficiency (row/cpu-sec)"
 
   load_and_generate_plot "${FS_SCANINSERT_MRS}%_insert" fs-mrsonly-insert
   load_and_generate_plot "${FS_SCANINSERT_MRS}%_scan%" fs-mrsonly-scan
@@ -668,18 +675,18 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${DENSE_NODE_ITEST}_num_threads%" dense-node-bench-threads
   load_and_generate_plot "${DENSE_NODE_ITEST}_num_bytes%" dense-node-bench-bytes
 
-  load_and_generate_plot "${BLOCKING_QUEUE_SYMMETRIC_TEST}%" blocking-queue-symmetric
-  load_and_generate_plot "${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}%" blocking-queue-non-symmetric
+  load_and_generate_plot "${BLOCKING_QUEUE_SYMMETRIC_TEST}%" blocking-queue-symmetric "function call rate (req/sec)"
+  load_and_generate_plot "${BLOCKING_QUEUE_NON_SYMMETRIC_TEST}%" blocking-queue-non-symmetric "function call rate (req/sec)"
 
-  load_and_generate_plot "${GET_TABLE_SCHEMA_RPC}%_req_rate" get-table-schema-rpc
-  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate" get-table-schema-dc-authz
-  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_no_authz_req_rate" get-table-schema-dc-no-authz
+  load_and_generate_plot "${GET_TABLE_SCHEMA_RPC}%_req_rate" get-table-schema-rpc "RPC rate (req/sec)"
+  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_authz_req_rate" get-table-schema-dc-authz "function call rate (req/sec)"
+  load_and_generate_plot "${GET_TABLE_SCHEMA_DIRECT_CALL}_no_authz_req_rate" get-table-schema-dc-no-authz "function call rate (req/sec)"
 
-  load_and_generate_plot "${GET_TABLE_LOCATIONS_RPC}%_req_rate" get-table-locations-rpc
-  load_and_generate_plot "${GET_TABLE_LOCATIONS_DIRECT_CALL}%_req_rate" get-table-locations-dc
+  load_and_generate_plot "${GET_TABLE_LOCATIONS_RPC}%_req_rate" get-table-locations-rpc "RPC rate (req/sec)"
+  load_and_generate_plot "${GET_TABLE_LOCATIONS_DIRECT_CALL}%_req_rate" get-table-locations-dc "function call rate (req/sec)"
 
-  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_req_rate" same-tablet-concurrent-writes-rate
-  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_overflows" same-tablet-concurrent-writes-overflows
+  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_req_rate" same-tablet-concurrent-writes-rate "RPC rate (req/sec)"
+  load_and_generate_plot "${SAME_TABLET_CONCURRENT_WRITES}_overflows" same-tablet-concurrent-writes-overflows "RPC queue overflows (total count)"
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
