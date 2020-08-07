@@ -63,11 +63,11 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
-DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
+DEFINE_int32(tablet_inject_latency_on_apply_write_op_ms, 0,
              "How much latency to inject when a write op is applied. "
              "For testing only!");
-TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, unsafe);
-TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, runtime);
+TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, unsafe);
+TAG_FLAG(tablet_inject_latency_on_apply_write_op_ms, runtime);
 
 using std::string;
 using std::unique_ptr;
@@ -228,11 +228,11 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "WriteOp::Apply");
   TRACE("APPLY: Starting.");
 
-  if (PREDICT_FALSE(
-          ANNOTATE_UNPROTECTED_READ(FLAGS_tablet_inject_latency_on_apply_write_txn_ms) > 0)) {
-    TRACE("Injecting $0ms of latency due to --tablet_inject_latency_on_apply_write_txn_ms",
-          FLAGS_tablet_inject_latency_on_apply_write_txn_ms);
-    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_inject_latency_on_apply_write_txn_ms));
+  if (PREDICT_FALSE(ANNOTATE_UNPROTECTED_READ(
+      FLAGS_tablet_inject_latency_on_apply_write_op_ms) > 0)) {
+    TRACE("Injecting $0ms of latency due to --tablet_inject_latency_on_apply_write_op_ms",
+          FLAGS_tablet_inject_latency_on_apply_write_op_ms);
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_inject_latency_on_apply_write_op_ms));
   }
 
   Tablet* tablet = state()->tablet_replica()->tablet();
