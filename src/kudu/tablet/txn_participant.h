@@ -24,6 +24,8 @@
 
 #include <glog/logging.h>
 
+#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -79,7 +81,22 @@ class Txn : public RefCountedThreadSafe<Txn> {
     __builtin_unreachable();
   }
 
-  Txn() : state_(kInitializing), commit_timestamp_(-1) {}
+  // Constructs a transaction instance with the given transaction ID and WAL
+  // anchor registry.
+  //
+  // The WAL anchor registry is used to ensure that the WAL segment that
+  // contains the participant op that replays to the transaction's current
+  // in-memory state is not GCed, allowing us to rebuild this transaction's
+  // in-memory state upon rebooting a server.
+  Txn(int64_t txn_id, log::LogAnchorRegistry* log_anchor_registry)
+      : txn_id_(txn_id),
+        log_anchor_registry_(log_anchor_registry),
+        state_(kInitializing),
+        commit_timestamp_(-1) {}
+
+  ~Txn() {
+    CHECK_OK(log_anchor_registry_->UnregisterIfAnchored(&log_anchor_));
+  }
 
   // Takes the state lock in write mode and returns it. As transaction state is
   // meant to be driven via an op driver, lock acquisition is expected to be
@@ -132,17 +149,25 @@ class Txn : public RefCountedThreadSafe<Txn> {
 
   // Applies the given state transitions. Should be called while holding the
   // state lock in write mode after successfully replicating a participant op.
-  void BeginTransaction() {
+  void BeginTransaction(const consensus::OpId& op_id) {
+    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
+        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
     SetState(kOpen);
   }
-  void BeginCommit() {
+  void BeginCommit(const consensus::OpId& op_id) {
+    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
+        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
     SetState(kCommitInProgress);
   }
-  void FinalizeCommit(int64_t finalized_commit_timestamp) {
+  void FinalizeCommit(const consensus::OpId& op_id, int64_t finalized_commit_timestamp) {
+    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
+        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
     SetState(kCommitted);
     commit_timestamp_ = finalized_commit_timestamp;
   }
-  void AbortTransaction() {
+  void AbortTransaction(const consensus::OpId& op_id) {
+    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
+        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
     SetState(kAborted);
   }
 
@@ -171,6 +196,14 @@ class Txn : public RefCountedThreadSafe<Txn> {
     return Status::OK();
   }
 
+  // Transaction ID for this transaction.
+  const int64_t txn_id_;
+
+  // Log anchor registry with which to anchor WAL segments, and an anchor to
+  // update upon applying a state change.
+  log::LogAnchorRegistry* log_anchor_registry_;
+  log::LogAnchor log_anchor_;
+
   // Lock protecting access to 'state_' and 'commit_timestamp'. Ops that intend
   // on mutating 'state_' must take this lock in write mode. Ops that intend on
   // reading 'state_' and relying on it remaining constant must take this lock
@@ -198,7 +231,8 @@ class TxnParticipant {
 
   // Gets the transaction state for the given transaction ID, creating it in
   // the kInitializing state if one doesn't already exist.
-  scoped_refptr<Txn> GetOrCreateTransaction(int64_t txn_id);
+  scoped_refptr<Txn> GetOrCreateTransaction(int64_t txn_id,
+                                            log::LogAnchorRegistry* log_anchor_registry);
 
   // Removes the given transaction if it failed to initialize, e.g. the op that
   // created it failed to replicate, leaving it in the kInitializing state but
@@ -208,6 +242,15 @@ class TxnParticipant {
   // references before calling this, ensuring that when we check the state of
   // the Txn, we can thread-safely determine whether it has been abandoned.
   void ClearIfInitFailed(int64_t txn_id);
+
+  // Removes the given transaction if it is in a terminal state, i.e. it is
+  // either kAborted or kCommitted, freeing any WAL anchors it may have held.
+  // Assumes there are no active op drivers updating state (i.e. that the
+  // transaction reference in our map is the only one).
+  //
+  // Returns whether or not this call actually cleared the transaction (i.e.
+  // returns 'false' if the transaction was not found)..
+  bool ClearIfCompleteForTests(int64_t txn_id);
 
   // Returns the transactions, sorted by transaction ID.
   std::vector<TxnEntry> GetTxnsForTests() const;

@@ -31,6 +31,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/pb_util.h"
@@ -40,6 +41,7 @@
 using kudu::consensus::CommitMsg;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::OperationType;
+using kudu::consensus::OpId;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::ParticipantOpPB;
@@ -65,7 +67,8 @@ void ParticipantOpState::AcquireTxnAndLock() {
   DCHECK(!txn_lock_);
   DCHECK(!txn_);
   int64_t txn_id = request_->op().txn_id();
-  txn_ = txn_participant_->GetOrCreateTransaction(txn_id);
+  txn_ = txn_participant_->GetOrCreateTransaction(txn_id,
+                                                  tablet_replica_->log_anchor_registry().get());
   txn_->AcquireWriteLock(&txn_lock_);
 }
 
@@ -103,7 +106,7 @@ Status ParticipantOpState::ValidateOp() const {
   return Status::OK();
 }
 
-Status ParticipantOpState::PerformOp() {
+Status ParticipantOpState::PerformOp(const OpId& op_id) {
   const auto& op = request()->op();
   Txn* txn = txn_.get();
   Status s;
@@ -112,19 +115,19 @@ Status ParticipantOpState::PerformOp() {
     // metadata. When we begin validating write ops before committing, we'll
     // need to populate the response with errors.
     case ParticipantOpPB::BEGIN_TXN: {
-      txn->BeginTransaction();
+      txn->BeginTransaction(op_id);
       break;
     }
     case ParticipantOpPB::BEGIN_COMMIT: {
-      txn->BeginCommit();
+      txn->BeginCommit(op_id);
       break;
     }
     case ParticipantOpPB::FINALIZE_COMMIT: {
-      txn->FinalizeCommit(op.finalized_commit_timestamp());
+      txn->FinalizeCommit(op_id, op.finalized_commit_timestamp());
       break;
     }
     case ParticipantOpPB::ABORT_TXN: {
-      txn->AbortTransaction();
+      txn->AbortTransaction(op_id);
       break;
     }
     case ParticipantOpPB::UNKNOWN: {
@@ -163,7 +166,7 @@ Status ParticipantOp::Start() {
 Status ParticipantOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "ParticipantOp::Apply");
   TRACE("APPLY: Starting.");
-  CHECK_OK(state_->PerformOp());
+  CHECK_OK(state_->PerformOp(state()->op_id()));
   *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
   (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
   TRACE("APPLY: Finished.");

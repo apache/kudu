@@ -616,22 +616,22 @@ LookupOrInsertNewSharedPtr(
 }
 
 // A variant of LookupOrInsertNewSharedPtr where the value is constructed using
-// a single-parameter constructor.  Note: the constructor argument is computed
-// even if it will not be used, so only values cheap to compute should be passed
-// here.  On the other hand it does not matter how expensive the construction of
-// the actual stored value is, as that only occurs if necessary.
-template <class Collection, class Arg>
+// constructor arguments.  Note: the constructor arguments are computed even if
+// they will not be used, so only values cheap to compute should be passed
+// here.  On the other hand it does not matter how expensive the construction
+// of the actual stored value is, as that only occurs if necessary.
+template <class Collection, class... Args>
 typename Collection::mapped_type&
 LookupOrInsertNewSharedPtr(
     Collection* const collection,
     const typename Collection::key_type& key,
-    const Arg& arg) {
+    const Args&... args) {
   typedef typename Collection::mapped_type SharedPtr;
   typedef typename Collection::mapped_type::element_type Element;
   std::pair<typename Collection::iterator, bool> ret =
       collection->insert(typename Collection::value_type(key, SharedPtr()));
   if (ret.second) {
-    ret.first->second.reset(new Element(arg));
+    ret.first->second.reset(new Element(args...));
   }
   return ret.first->second;
 }

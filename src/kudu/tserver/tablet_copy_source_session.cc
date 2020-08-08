@@ -198,7 +198,7 @@ Status TabletCopySourceSession::InitOnce() {
   // tablet copy loop due to a follower falling too far behind the
   // leader's log when tablet copy is slow. The remote controls when
   // this anchor is released by ending the tablet copy session.
-  RETURN_NOT_OK(tablet_replica_->log_anchor_registry()->UpdateRegistration(
+  RETURN_NOT_OK(tablet_replica_->log_anchor_registry()->RegisterOrUpdate(
       last_logged_opid->index(), anchor_owner_token, &log_anchor_));
 
   LOG(INFO) << Substitute(

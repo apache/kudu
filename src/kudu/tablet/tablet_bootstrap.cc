@@ -1537,7 +1537,7 @@ Status TabletBootstrap::PlayTxnParticipantOpRequest(const IOContext* /*io_contex
   });
   // NOTE: don't bother validating the current state of the op. Presumably that
   // happened the first time this op was written.
-  RETURN_NOT_OK(op_state.PerformOp());
+  RETURN_NOT_OK(op_state.PerformOp(replicate_msg->id()));
   return AppendCommitMsg(commit_msg);
 }
 

@@ -39,6 +39,10 @@ namespace rpc {
 class Messenger;
 }  // namespace rpc
 
+namespace tserver {
+class WriteRequestPB;
+}  // namespace tserver
+
 namespace tablet {
 
 class TabletReplicaTestBase : public KuduTabletTest {
@@ -46,6 +50,11 @@ class TabletReplicaTestBase : public KuduTabletTest {
   explicit TabletReplicaTestBase(const Schema& schema)
       : KuduTabletTest(schema, TabletHarness::Options::ClockType::HYBRID_CLOCK),
         dns_resolver_(new DnsResolver) {}
+
+  // Submits the given request to the given replica, waiting for the request to
+  // complete before returning.
+  static Status ExecuteWrite(TabletReplica* replica, const tserver::WriteRequestPB& req);
+
   void SetUp() override;
   void TearDown() override;
 
@@ -58,7 +67,12 @@ class TabletReplicaTestBase : public KuduTabletTest {
 
   // Shuts down and restarts the tablet replica, bootstrapping it from its
   // on-disk stores and WALs.
-  Status RestartReplica();
+  //
+  // If 'reset_tablet' is set to true, resets the underlying tablet harness'
+  // Tablet instance. The 'false' default is for cases in which the tablet may
+  // have persisted a schema change; otherwise rebuilding the tablet may crash
+  // with a schema mismatch.
+  Status RestartReplica(bool reset_tablet = false);
 
   const scoped_refptr<TabletReplica>& tablet_replica() const { return tablet_replica_; }
 

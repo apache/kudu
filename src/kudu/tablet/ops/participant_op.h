@@ -32,6 +32,10 @@
 namespace kudu {
 class rw_semaphore;
 
+namespace consensus {
+class OpId;
+} // namespace consensus
+
 namespace tablet {
 class TabletReplica;
 
@@ -61,7 +65,10 @@ class ParticipantOpState : public OpState {
   // Performs the transaction state change requested by this op. Must be called
   // while the transaction lock is held, i.e. between the calls to
   // AcquireTxnAndLock() and ReleaseTxn().
-  Status PerformOp();
+  //
+  // Anchors the given 'op_id' in the WAL, ensuring that subsequent bootstraps
+  // of the tablet's WAL will leave the transaction in the appropriate state.
+  Status PerformOp(const consensus::OpId& op_id);
 
   // Releases the transaction and its lock.
   void ReleaseTxn();

@@ -27,6 +27,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 
+using kudu::log::LogAnchorRegistry;
 using std::vector;
 using strings::Substitute;
 
@@ -38,10 +39,11 @@ void Txn::AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock) {
   *txn_lock = std::move(l);
 }
 
-scoped_refptr<Txn> TxnParticipant::GetOrCreateTransaction(int64_t txn_id) {
+scoped_refptr<Txn> TxnParticipant::GetOrCreateTransaction(int64_t txn_id,
+                                                          LogAnchorRegistry* log_anchor_registry) {
   // TODO(awong): add a 'user' field to these transactions.
   std::lock_guard<simple_spinlock> l(lock_);
-  return LookupOrInsertNewSharedPtr(&txns_, txn_id);
+  return LookupOrInsertNewSharedPtr(&txns_, txn_id, txn_id, log_anchor_registry);
 }
 
 void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {
@@ -52,6 +54,20 @@ void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {
   if (txn && txn->HasOneRef() && txn->state() == Txn::kInitializing) {
     txns_.erase(txn_id);
   }
+}
+
+bool TxnParticipant::ClearIfCompleteForTests(int64_t txn_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  Txn* txn = FindPointeeOrNull(txns_, txn_id);
+  // NOTE: If this is the only reference to the transaction, we can forego
+  // locking the state.
+  if (txn && txn->HasOneRef() &&
+      (txn->state() == Txn::kAborted ||
+       txn->state() == Txn::kCommitted)) {
+    txns_.erase(txn_id);
+    return true;
+  }
+  return false;
 }
 
 vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {

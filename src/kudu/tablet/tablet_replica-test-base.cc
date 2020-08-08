@@ -20,11 +20,13 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
@@ -38,12 +40,17 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/result_tracker.h"
+#include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 
 using kudu::consensus::ConsensusBootstrapInfo;
@@ -53,11 +60,14 @@ using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
 using kudu::log::LogOptions;
+using kudu::pb_util::SecureDebugString;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::ResultTracker;
 using kudu::tablet::KuduTabletTest;
-using kudu::tablet::TabletReplica;
+using kudu::tserver::WriteRequestPB;
+using kudu::tserver::WriteResponsePB;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::string;
 
 METRIC_DECLARE_entity(tablet);
@@ -68,6 +78,25 @@ namespace tablet {
 namespace {
 const MonoDelta kLeadershipTimeout = MonoDelta::FromSeconds(10);
 } // anonymous namespace
+
+Status TabletReplicaTestBase::ExecuteWrite(TabletReplica* replica, const WriteRequestPB& req) {
+  WriteResponsePB resp;
+  unique_ptr<WriteOpState> op_state(new WriteOpState(replica,
+                                                     &req,
+                                                     nullptr, // No RequestIdPB
+                                                     &resp));
+
+  CountDownLatch rpc_latch(1);
+  op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
+      new LatchOpCompletionCallback<WriteResponsePB>(&rpc_latch, &resp)));
+
+  RETURN_NOT_OK(replica->SubmitWrite(std::move(op_state)));
+  rpc_latch.Wait();
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
 
 void TabletReplicaTestBase::SetUp() {
   KuduTabletTest::SetUp();
@@ -154,9 +183,16 @@ Status TabletReplicaTestBase::StartReplicaAndWaitUntilLeader(const ConsensusBoot
   return tablet_replica_->consensus()->WaitUntilLeaderForTests(kLeadershipTimeout);
 }
 
-Status TabletReplicaTestBase::RestartReplica() {
+Status TabletReplicaTestBase::RestartReplica(bool reset_tablet) {
   tablet_replica_->Shutdown();
   tablet_replica_.reset();
+  // Reset the underlying harness's tablet if requested.
+  if (reset_tablet) {
+    CreateTestTablet();
+    // NOTE: the FsManager is owned by the harness, so refreshing the harness
+    // means we have to refresh anything that depends on its FsManager.
+    cmeta_manager_.reset(new ConsensusMetadataManager(fs_manager()));
+  }
   RETURN_NOT_OK(SetUpReplica(/*new_replica=*/ false));
   scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(cmeta_manager_->Load(tablet_replica_->tablet_id(), &cmeta));

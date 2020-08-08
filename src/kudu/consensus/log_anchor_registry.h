@@ -51,13 +51,11 @@ class LogAnchorRegistry : public RefCountedThreadSafe<LogAnchorRegistry> {
   // anchor: Pointer to LogAnchor structure that will be populated on registration.
   void Register(int64_t log_index, const std::string& owner, LogAnchor* anchor);
 
-  // Atomically update the registration of an anchor to a new log index.
-  // Before: anchor must be registered with some log index.
-  // After: anchor is now registered using index 'log_index'.
-  // See Register().
-  Status UpdateRegistration(int64_t log_index,
-                            const std::string& owner,
-                            LogAnchor* anchor);
+  // Register interest for a particular log index, or update an anchor if it
+  // already exists.
+  Status RegisterOrUpdate(int64_t log_index,
+                          const std::string& owner,
+                          LogAnchor* anchor);
 
   // Release the anchor on a log index.
   // Note: anchor must be the original pointer passed to Register().

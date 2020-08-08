@@ -35,13 +35,14 @@ const std::vector<tserver::ParticipantOpPB::ParticipantOpType> kCommitSequence =
   tserver::ParticipantOpPB::FINALIZE_COMMIT,
 };
 
-Status CallParticipantOp(TabletReplica* replica,
-                         int64_t txn_id,
-                         tserver::ParticipantOpPB::ParticipantOpType type,
-                         int64_t finalized_commit_timestamp,
-                         tserver::ParticipantResponsePB* resp) {
-  tserver::ParticipantRequestPB req;
-  auto* op = req.mutable_op();
+std::unique_ptr<ParticipantOpState> NewParticipantOp(
+    TabletReplica* replica,
+    int64_t txn_id,
+    tserver::ParticipantOpPB::ParticipantOpType type,
+    int64_t finalized_commit_timestamp,
+    tserver::ParticipantRequestPB* req,
+    tserver::ParticipantResponsePB* resp) {
+  auto* op = req->mutable_op();
   op->set_txn_id(txn_id);
   op->set_type(type);
   if (type == tserver::ParticipantOpPB::FINALIZE_COMMIT) {
@@ -50,8 +51,19 @@ Status CallParticipantOp(TabletReplica* replica,
   std::unique_ptr<ParticipantOpState> op_state(new ParticipantOpState(
       replica,
       replica->tablet()->txn_participant(),
-      &req,
+      req,
       resp));
+  return op_state;
+}
+
+Status CallParticipantOp(TabletReplica* replica,
+                         int64_t txn_id,
+                         tserver::ParticipantOpPB::ParticipantOpType type,
+                         int64_t finalized_commit_timestamp,
+                         tserver::ParticipantResponsePB* resp) {
+  tserver::ParticipantRequestPB req;
+  std::unique_ptr<ParticipantOpState> op_state =
+    NewParticipantOp(replica, txn_id, type, finalized_commit_timestamp, &req, resp);
   CountDownLatch latch(1);
   op_state->set_completion_callback(std::unique_ptr<OpCompletionCallback>(
       new LatchOpCompletionCallback<tserver::ParticipantResponsePB>(&latch, resp)));

@@ -140,24 +140,6 @@ class TabletReplicaTest : public TabletReplicaTestBase {
     return Status::OK();
   }
 
-  Status ExecuteWrite(TabletReplica* replica, const WriteRequestPB& req) {
-    unique_ptr<WriteResponsePB> resp(new WriteResponsePB());
-    unique_ptr<WriteOpState> op_state(new WriteOpState(replica,
-                                                       &req,
-                                                       nullptr, // No RequestIdPB
-                                                       resp.get()));
-
-    CountDownLatch rpc_latch(1);
-    op_state->set_completion_callback(unique_ptr<OpCompletionCallback>(
-        new LatchOpCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
-
-    RETURN_NOT_OK(replica->SubmitWrite(std::move(op_state)));
-    rpc_latch.Wait();
-    CHECK(!resp->has_error())
-        << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
-    return Status::OK();
-  }
-
   Status UpdateSchema(const SchemaPB& schema, int schema_version) {
     AlterSchemaRequestPB alter;
     alter.set_dest_uuid(tablet()->metadata()->fs_manager()->uuid());

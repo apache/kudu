@@ -25,6 +25,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -48,10 +49,24 @@ TEST_F(LogAnchorRegistryTest, TestUpdateRegistration) {
   ASSERT_FALSE(anchor.is_registered);
   ASSERT_FALSE(anchor.when_registered.Initialized());
   reg->Register(kInitialIndex, test_name, &anchor);
+  SCOPED_CLEANUP({
+    ASSERT_OK(reg->Unregister(&anchor));
+    ASSERT_FALSE(anchor.is_registered);
+  });
   ASSERT_TRUE(anchor.is_registered);
   ASSERT_TRUE(anchor.when_registered.Initialized());
-  ASSERT_OK(reg->UpdateRegistration(kInitialIndex + 1, test_name, &anchor));
+  ASSERT_OK(reg->RegisterOrUpdate(kInitialIndex + 1, test_name, &anchor));
+  ASSERT_EQ(kInitialIndex + 1, anchor.log_index);
   ASSERT_OK(reg->Unregister(&anchor));
+  ASSERT_FALSE(anchor.is_registered);
+
+  ASSERT_OK(reg->RegisterOrUpdate(kInitialIndex + 2, test_name, &anchor));
+  ASSERT_TRUE(anchor.is_registered);
+  ASSERT_EQ(kInitialIndex + 2, anchor.log_index);
+
+  ASSERT_OK(reg->RegisterOrUpdate(kInitialIndex + 3, test_name, &anchor));
+  ASSERT_TRUE(anchor.is_registered);
+  ASSERT_EQ(kInitialIndex + 3, anchor.log_index);
 }
 
 TEST_F(LogAnchorRegistryTest, TestDuplicateInserts) {

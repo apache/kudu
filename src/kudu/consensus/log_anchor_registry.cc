@@ -50,12 +50,13 @@ void LogAnchorRegistry::Register(int64_t log_index,
   RegisterUnlocked(log_index, owner, anchor);
 }
 
-Status LogAnchorRegistry::UpdateRegistration(int64_t log_index,
-                                             const std::string& owner,
-                                             LogAnchor* anchor) {
+Status LogAnchorRegistry::RegisterOrUpdate(int64_t log_index,
+                                           const std::string& owner,
+                                           LogAnchor* anchor) {
   std::lock_guard<simple_spinlock> l(lock_);
-  RETURN_NOT_OK_PREPEND(UnregisterUnlocked(anchor),
-                        "Unable to swap registration, anchor not registered");
+  if (anchor->is_registered) {
+    RETURN_NOT_OK(UnregisterUnlocked(anchor));
+  }
   RegisterUnlocked(log_index, owner, anchor);
   return Status::OK();
 }
@@ -157,12 +158,10 @@ MinLogIndexAnchorer::~MinLogIndexAnchorer() {
 
 void MinLogIndexAnchorer::AnchorIfMinimum(int64_t log_index) {
   std::lock_guard<simple_spinlock> l(lock_);
-  if (PREDICT_FALSE(minimum_log_index_ == kInvalidOpIdIndex)) {
+  if (log_index < minimum_log_index_ ||
+      PREDICT_FALSE(minimum_log_index_ == kInvalidOpIdIndex)) {
     minimum_log_index_ = log_index;
-    registry_->Register(minimum_log_index_, owner_, &anchor_);
-  } else if (log_index < minimum_log_index_) {
-    minimum_log_index_ = log_index;
-    CHECK_OK(registry_->UpdateRegistration(minimum_log_index_, owner_, &anchor_));
+    registry_->RegisterOrUpdate(minimum_log_index_, owner_, &anchor_);
   }
 }
 

@@ -698,8 +698,6 @@ class Tablet {
   // released after the schema change has been applied.
   mutable rw_semaphore schema_lock_;
 
-  TxnParticipant txn_participant_;
-
   const Schema key_schema_;
 
   scoped_refptr<TabletMetadata> metadata_;
@@ -728,6 +726,10 @@ class Tablet {
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   TabletMemTrackers mem_trackers_;
+
+  // Maintains the set of in-flight transactions, and any WAL anchors
+  // associated with them.
+  TxnParticipant txn_participant_;
 
   scoped_refptr<MetricEntity> metric_entity_;
   std::unique_ptr<TabletMetrics> metrics_;
