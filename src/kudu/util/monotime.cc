@@ -63,7 +63,7 @@ MonoDelta MonoDelta::FromNanoseconds(int64_t ns) {
 }
 
 MonoDelta::MonoDelta()
-  : nano_delta_(kUninitialized) {
+    : nano_delta_(kUninitialized) {
 }
 
 bool MonoDelta::Initialized() const {
@@ -145,6 +145,10 @@ void MonoDelta::ToTimeVal(struct timeval *tv) const {
   }
 }
 
+void MonoDelta::ToTimeSpec(struct timespec* ts) const {
+  DCHECK(Initialized());
+  NanosToTimeSpec(nano_delta_, ts);
+}
 
 void MonoDelta::NanosToTimeSpec(int64_t nanos, struct timespec* ts) {
   ts->tv_sec = nanos / MonoTime::kNanosecondsPerSecond;
@@ -158,9 +162,14 @@ void MonoDelta::NanosToTimeSpec(int64_t nanos, struct timespec* ts) {
   }
 }
 
-void MonoDelta::ToTimeSpec(struct timespec *ts) const {
-  DCHECK(Initialized());
-  NanosToTimeSpec(nano_delta_, ts);
+MonoDelta& MonoDelta::operator+=(const MonoDelta& delta) {
+  nano_delta_ += delta.nano_delta_;
+  return *this;
+}
+
+MonoDelta& MonoDelta::operator-=(const MonoDelta& delta) {
+  nano_delta_ -= delta.nano_delta_;
+  return *this;
 }
 
 ///
@@ -238,7 +247,7 @@ MonoTime& MonoTime::operator-=(const MonoDelta& delta) {
   return *this;
 }
 
-MonoTime::MonoTime(const struct timespec &ts) KUDU_MONOTIME_NOEXCEPT {
+MonoTime::MonoTime(const struct timespec& ts) KUDU_MONOTIME_NOEXCEPT {
   // Monotonic time resets when the machine reboots.  The 64-bit limitation
   // means that we can't represent times larger than 292 years, which should be
   // adequate.

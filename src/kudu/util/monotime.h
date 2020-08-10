@@ -130,7 +130,7 @@ class KUDU_EXPORT MonoDelta {
   ///
   /// @param [out] ts
   ///   Placeholder for the result value.
-  void ToTimeSpec(struct timespec *ts) const;
+  void ToTimeSpec(struct timespec* ts) const;
 
   /// Convert a nanosecond value to a timespec.
   ///
@@ -139,6 +139,24 @@ class KUDU_EXPORT MonoDelta {
   /// @param [out] ts
   ///   Placeholder for the resulting timespec representation.
   static void NanosToTimeSpec(int64_t nanos, struct timespec* ts);
+
+  /// @name Syntactic sugar: increment/decrement operators for MonoDelta.
+  ///@{
+  ///
+  /// Add a delta to current time interval.
+  ///
+  /// @param [in] delta
+  ///   The delta to add.
+  /// @return Reference to the modified object.
+  MonoDelta& operator+=(const MonoDelta& delta);
+
+  /// Substract a delta from current time interval.
+  ///
+  /// @param [in] delta
+  ///   The delta to substract.
+  /// @return Reference to the modified object.
+  MonoDelta& operator-=(const MonoDelta& delta);
+  ///@}
 
  private:
   static const int64_t kUninitialized;
@@ -270,7 +288,7 @@ class KUDU_EXPORT MonoTime {
   FRIEND_TEST(TestMonoTime, TestTimeSpec);
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
 
-  explicit MonoTime(const struct timespec &ts) KUDU_MONOTIME_NOEXCEPT;
+  explicit MonoTime(const struct timespec& ts) KUDU_MONOTIME_NOEXCEPT;
   explicit MonoTime(int64_t nanos) KUDU_MONOTIME_NOEXCEPT;
   double ToSeconds() const;
   int64_t nanos_;

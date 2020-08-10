@@ -215,6 +215,45 @@ TEST(TestMonoTime, TestOperators) {
     EXPECT_TRUE(m_end.Equals(o_end));
   }
 
+  // MonoDelta& MonoDelta::operator+=(const MonoDelta& delta);
+  {
+    MonoDelta d0 = MonoDelta::FromNanoseconds(0);
+    MonoDelta d1 = MonoDelta::FromNanoseconds(1);
+    MonoDelta d1_prev = d1;
+    d1 += d0;
+    ASSERT_EQ(d1_prev, d1);
+    ASSERT_EQ(1, d1.ToNanoseconds());
+    d0 += d1;
+    ASSERT_EQ(d1, d0);
+    ASSERT_EQ(1, d0.ToNanoseconds());
+    d1 += d1_prev;
+    ASSERT_EQ(2, d1.ToNanoseconds());
+
+    MonoDelta d2 = MonoDelta::FromNanoseconds(-1);
+    d1 += d2;
+    ASSERT_EQ(1, d1.ToNanoseconds());
+    d2 += d1;
+    ASSERT_EQ(0, d2.ToNanoseconds());
+  }
+
+  // MonoDelta& MonoDelta::operator-=(const MonoDelta& delta);
+  {
+    MonoDelta d0 = MonoDelta::FromNanoseconds(0);
+    MonoDelta d1 = MonoDelta::FromNanoseconds(1);
+    MonoDelta d1_prev = d1;
+    d1 -= d0;
+    ASSERT_EQ(d1_prev, d1);
+    ASSERT_EQ(1, d1.ToNanoseconds());
+    d0 -= d1;
+    ASSERT_EQ(-1, d0.ToNanoseconds());
+
+    MonoDelta d2 = MonoDelta::FromNanoseconds(-2);
+    d0 -= d2;
+    ASSERT_EQ(1, d0.ToNanoseconds());
+    d2 -= d0;
+    ASSERT_EQ(-3, d2.ToNanoseconds());
+  }
+
   // bool operator==(const MonoDelta& lhs, const MonoDelta& rhs);
   {
     MonoDelta dn = MonoDelta::FromNanoseconds(0);
