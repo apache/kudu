@@ -59,13 +59,12 @@ class KuduServer : public server::ServerBase {
   // Shuts down a KuduServer instance.
   void Shutdown() override;
 
-  ThreadPool* tablet_prepare_pool() const { return tablet_prepare_pool_.get(); }
-  ThreadPool* tablet_apply_pool() const { return tablet_apply_pool_.get(); }
-  ThreadPool* raft_pool() const { return raft_pool_.get(); }
-  scoped_refptr<AtomicGauge<int32_t>> num_raft_leaders() const { return num_raft_leaders_; }
+  ThreadPool* tablet_prepare_pool() { return tablet_prepare_pool_.get(); }
+  ThreadPool* tablet_apply_pool() { return tablet_apply_pool_.get(); }
+  ThreadPool* raft_pool() { return raft_pool_.get(); }
+  scoped_refptr<AtomicGauge<int32_t>> num_raft_leaders() { return num_raft_leaders_; }
 
  private:
-
   // Thread pool for preparing ops, shared between all tablets.
   std::unique_ptr<ThreadPool> tablet_prepare_pool_;
 
