@@ -517,16 +517,18 @@ TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
 
   MaintenanceOpStats stats;
 
-  // Just on the threshold and not enough time has passed for a time-based flush.
+  // Just on the threshold and not enough time has passed for a time-based flush,
+  // we'll expect improvement equal to '1'.
   stats.set_ram_anchored(64 * 1024 * 1024);
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1);
-  ASSERT_EQ(0.0, stats.perf_improvement());
+  ASSERT_EQ(1.0, stats.perf_improvement());
   stats.Clear();
 
-  // Just on the threshold and enough time has passed, we'll have a low improvement.
-  stats.set_ram_anchored(64 * 1024 * 1024);
+  // Below the threshold and enough time has passed, we'll have a low improvement.
+  stats.set_ram_anchored(2 * 1024 * 1024);
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 3 * 60 * 1000);
-  ASSERT_GT(stats.perf_improvement(), 0.01);
+  ASSERT_LT(0.01, stats.perf_improvement());
+  ASSERT_GT(0.1, stats.perf_improvement());
   stats.Clear();
 
   // Over the threshold, we expect improvement equal to the excess MB.
@@ -536,9 +538,17 @@ TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
   stats.Clear();
 
   // Below the threshold but have been there a long time, closing in to 1.0.
-  stats.set_ram_anchored(30 * 1024 * 1024);
+  stats.set_ram_anchored(1);
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 60 * 50 * 1000);
   ASSERT_LT(0.7, stats.perf_improvement());
+  ASSERT_GT(1.0, stats.perf_improvement());
+  stats.Clear();
+
+  // Approaching threshold, enough time has passed but haven't been there a long time,
+  // closing in to 1.0.
+  stats.set_ram_anchored(63 * 1024 * 1024);
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 3 * 60 * 1000);
+  ASSERT_LT(0.9, stats.perf_improvement());
   ASSERT_GT(1.0, stats.perf_improvement());
   stats.Clear();
 }

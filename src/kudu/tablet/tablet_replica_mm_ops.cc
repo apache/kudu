@@ -17,11 +17,11 @@
 
 #include "kudu/tablet/tablet_replica_mm_ops.h"
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <ostream>
 #include <string>
-#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -30,7 +30,6 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
@@ -63,17 +62,24 @@ TAG_FLAG(enable_log_gc, runtime);
 TAG_FLAG(enable_log_gc, unsafe);
 
 DEFINE_int32(flush_threshold_mb, 1024,
-             "Size at which MemRowSet flushes are triggered. "
+             "Size at which MRS/DMS flushes are triggered. "
              "A MRS can still flush below this threshold if it hasn't flushed in a while, "
              "or if the server-wide memory limit has been reached.");
 TAG_FLAG(flush_threshold_mb, experimental);
 TAG_FLAG(flush_threshold_mb, runtime);
 
 DEFINE_int32(flush_threshold_secs, 2 * 60,
-             "Number of seconds after which a non-empty MemRowSet will become flushable "
+             "Number of seconds after which a non-empty MRS/DMS will become flushable "
              "even if it is not large.");
 TAG_FLAG(flush_threshold_secs, experimental);
 TAG_FLAG(flush_threshold_secs, runtime);
+
+DEFINE_int32(flush_upper_bound_ms, 60 * 60 * 1000,
+             "Number of milliseconds after which the time-based performance improvement "
+             "score of a non-empty MRS/DMS flush op will reach its maximum value. "
+             "The score may further increase as the MRS/DMS grows in size.");
+TAG_FLAG(flush_upper_bound_ms, experimental);
+TAG_FLAG(flush_upper_bound_ms, runtime);
 
 DECLARE_bool(enable_workload_score_for_perf_improvement_ops);
 
@@ -93,10 +99,6 @@ namespace kudu {
 namespace tablet {
 
 using std::map;
-using strings::Substitute;
-
-// Upper bound for how long it takes to reach "full perf improvement" in time-based flushing.
-const double kFlushUpperBoundMs = 60 * 60 * 1000;
 
 //
 // FlushOpPerfImprovementPolicy.
@@ -106,27 +108,25 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
                                                               double elapsed_ms) {
   double anchored_mb = static_cast<double>(stats->ram_anchored()) / (1024 * 1024);
   const double threshold_mb = FLAGS_flush_threshold_mb;
-  if (anchored_mb > threshold_mb) {
+  const double upper_bound_ms = FLAGS_flush_upper_bound_ms;
+  if (anchored_mb >= threshold_mb) {
     // If we're over the user-specified flush threshold, then consider the perf
-    // improvement to be 1 for every extra MB.  This produces perf_improvement results
-    // which are much higher than most compactions would produce, and means that, when
-    // there is an MRS over threshold, a flush will almost always be selected instead of
-    // a compaction.  That's not necessarily a good thing, but in the absence of better
+    // improvement to be 1 for every extra MB (at least 1). This produces perf_improvement
+    // results which are much higher than most compactions would produce, and means that,
+    // when there is an MRS over threshold, a flush will almost always be selected instead of
+    // a compaction. That's not necessarily a good thing, but in the absence of better
     // heuristics, it will do for now.
     double extra_mb = anchored_mb - threshold_mb;
     DCHECK_GE(extra_mb, 0);
-    stats->set_perf_improvement(extra_mb);
+    stats->set_perf_improvement(std::max(1.0, extra_mb));
   } else if (elapsed_ms > FLAGS_flush_threshold_secs * 1000) {
     // Even if we aren't over the threshold, consider flushing if we haven't flushed
     // in a long time. But, don't give it a large perf_improvement score. We should
     // only do this if we really don't have much else to do, and if we've already waited a bit.
-    // The following will give an improvement that's between 0.0 and 1.0, gradually growing
-    // as 'elapsed_ms' approaches 'kFlushUpperBoundMs'.
-    double perf = elapsed_ms / kFlushUpperBoundMs;
-    if (perf > 1.0) {
-      perf = 1.0;
-    }
-    stats->set_perf_improvement(perf);
+    // The following will give an improvement that's between 0.0 and 1.0, gradually growing as
+    // 'elapsed_ms' approaches 'upper_bound_ms' or 'anchored_mb' approaches 'threshold_mb'.
+    double perf = std::max(elapsed_ms / upper_bound_ms, anchored_mb / threshold_mb);
+    stats->set_perf_improvement(std::min(1.0, perf));
   }
 }
 
