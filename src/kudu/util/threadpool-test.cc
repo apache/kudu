@@ -162,10 +162,12 @@ TEST_F(ThreadPoolTest, TestSubmitAfterShutdown) {
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
-  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
-                                   .set_min_threads(0)
-                                   .set_max_threads(3)
-                                   .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
+  constexpr int kIdleTimeoutMs = 1;
+  ASSERT_OK(RebuildPoolWithBuilder(
+      ThreadPoolBuilder(kDefaultPoolName)
+      .set_min_threads(0)
+      .set_max_threads(3)
+      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleTimeoutMs))));
 
   // There are no threads to start with.
   ASSERT_TRUE(pool_->num_threads() == 0);
@@ -185,6 +187,11 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
   // Finish all work
   latch.CountDown();
   pool_->Wait();
+  ASSERT_EQ(0, pool_->active_threads_);
+  // Wait for more than idle timeout: so threads should be gone since
+  // min_threads is set to 0.
+  SleepFor(MonoDelta::FromMilliseconds(10 * kIdleTimeoutMs));
+  ASSERT_EQ(0, pool_->num_threads());
   ASSERT_EQ(0, pool_->active_threads_);
   pool_->Shutdown();
   ASSERT_EQ(0, pool_->num_threads());
@@ -252,10 +259,12 @@ TEST_F(ThreadPoolTest, TestRace) {
 }
 
 TEST_F(ThreadPoolTest, TestVariableSizeThreadPool) {
-  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
-                                   .set_min_threads(1)
-                                   .set_max_threads(4)
-                                   .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
+  constexpr int kIdleTimeoutMs = 1;
+  ASSERT_OK(RebuildPoolWithBuilder(
+      ThreadPoolBuilder(kDefaultPoolName)
+      .set_min_threads(1)
+      .set_max_threads(4)
+      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleTimeoutMs))));
 
   // There is 1 thread to start with.
   ASSERT_EQ(1, pool_->num_threads());
@@ -276,6 +285,9 @@ TEST_F(ThreadPoolTest, TestVariableSizeThreadPool) {
   latch.CountDown();
   pool_->Wait();
   ASSERT_EQ(0, pool_->active_threads_);
+  SleepFor(MonoDelta::FromMilliseconds(10 * kIdleTimeoutMs));
+  ASSERT_EQ(0, pool_->active_threads_);
+  ASSERT_EQ(1, pool_->num_threads());
   pool_->Shutdown();
   ASSERT_EQ(0, pool_->num_threads());
 }
@@ -446,6 +458,252 @@ TEST_F(ThreadPoolTest, TestMetrics) {
   ASSERT_EQ(6, all_metrics[0].queue_length_histogram->TotalCount());
   ASSERT_EQ(6, all_metrics[0].queue_time_us_histogram->TotalCount());
   ASSERT_EQ(6, all_metrics[0].run_time_us_histogram->TotalCount());
+}
+
+// Test scenario to verify the functionality of the QueueLoadMeter.
+TEST_F(ThreadPoolTest, QueueLoadMeter) {
+  const auto kQueueTimeThresholdMs = 100;
+  const auto kIdleThreadTimeoutMs = 200;
+  constexpr auto kMaxThreads = 3;
+  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
+      .set_min_threads(0)
+      .set_max_threads(kMaxThreads)
+      .set_queue_overload_threshold(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs))
+      .set_idle_timeout(MonoDelta::FromMilliseconds(kIdleThreadTimeoutMs))));
+  // An idle pool must not have its queue overloaded.
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  // One instant tasks cannot make pool's queue overloaded.
+  ASSERT_OK(pool_->Submit([](){}));
+  ASSERT_FALSE(pool_->QueueOverloaded());
+  pool_->Wait();
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  for (auto i = 0; i < kMaxThreads; ++i) {
+    ASSERT_OK(pool_->Submit([](){
+      SleepFor(MonoDelta::FromMilliseconds(2 * kQueueTimeThresholdMs));
+    }));
+  }
+  ASSERT_FALSE(pool_->QueueOverloaded());
+  pool_->Wait();
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  for (auto i = 0; i < 2 * kMaxThreads; ++i) {
+    ASSERT_OK(pool_->Submit([](){
+      SleepFor(MonoDelta::FromMilliseconds(2 * kQueueTimeThresholdMs));
+    }));
+  }
+  ASSERT_FALSE(pool_->QueueOverloaded());
+  SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs + 10));
+  ASSERT_TRUE(pool_->QueueOverloaded());
+  // Should still be overloaded after first kMaxThreads tasks are processed.
+  SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs + 10));
+  ASSERT_TRUE(pool_->QueueOverloaded());
+  pool_->Wait();
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  // Many instant tasks cannot make pool overloaded.
+  for (auto i = 0; i < kMaxThreads; ++i) {
+    ASSERT_OK(pool_->Submit([](){}));
+  }
+  ASSERT_FALSE(pool_->QueueOverloaded());
+  pool_->Wait();
+  // For for the threads to be shutdown due to inactivity.
+  SleepFor(MonoDelta::FromMilliseconds(2 * kIdleThreadTimeoutMs));
+  // Even if all threads are shutdown, an idle pool with empty queue should not
+  // be overloaded.
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  // Shovel some light tasks once again: this should not overload the queue.
+  for (auto i = 0; i < 10 * kMaxThreads; ++i) {
+    ASSERT_OK(pool_->Submit([](){
+      SleepFor(MonoDelta::FromMilliseconds(1));
+    }));
+  }
+  ASSERT_FALSE(pool_->QueueOverloaded());
+  pool_->Wait();
+  ASSERT_FALSE(pool_->QueueOverloaded());
+
+  // Submit a bunch of instant tasks via a single token: the queue should not
+  // become overloaded.
+  {
+    unique_ptr<ThreadPoolToken> t = pool_->NewToken(
+        ThreadPool::ExecutionMode::SERIAL);
+    ASSERT_OK(t->Submit([](){}));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+
+    for (auto i = 0; i < 100; ++i) {
+      ASSERT_OK(t->Submit([](){}));
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
+
+  // Submit many instant tasks via multiple tokens (more than the maximum
+  // number of worker threads in a pool) and many lightweight tasks which can
+  // run concurrently: the queue should not become overloaded.
+  {
+    constexpr auto kNumTokens = 2 * kMaxThreads;
+    vector<unique_ptr<ThreadPoolToken>> tokens;
+    tokens.reserve(kNumTokens);
+    for (auto i = 0; i < kNumTokens; ++i) {
+      tokens.emplace_back(pool_->NewToken(ThreadPool::ExecutionMode::SERIAL));
+    }
+
+    for (auto& t : tokens) {
+      for (auto i = 0; i < 50; ++i) {
+        ASSERT_OK(t->Submit([](){}));
+      }
+      for (auto i = 0; i < 10; ++i) {
+        ASSERT_OK(pool_->Submit([](){}));
+      }
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
+
+  // Submit many long running tasks via serial tokens where the number of tokens
+  // is less than the maximum number of worker threads in the pool. The queue
+  // of the pool should not become overloaded since the pool has one spare
+  // thread to spawn.
+  {
+    constexpr auto kNumTokens = kMaxThreads - 1;
+    ASSERT_GT(kNumTokens, 0);
+    vector<unique_ptr<ThreadPoolToken>> tokens;
+    tokens.reserve(kNumTokens);
+    for (auto i = 0; i < kNumTokens; ++i) {
+      tokens.emplace_back(pool_->NewToken(ThreadPool::ExecutionMode::SERIAL));
+    }
+
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    for (auto& t : tokens) {
+      for (auto i = 0; i < kMaxThreads; ++i) {
+        ASSERT_OK(t->Submit([](){
+          SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+        }));
+      }
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
+
+  // Submit many long running tasks via serial tokens where the number of tokens
+  // is greater or equal to the maximum number of worker threads in the pool.
+  // The queue of the pool should become overloaded since the pool is running
+  // at its capacity and queue times are over the threshold.
+  {
+    constexpr auto kNumTokens = kMaxThreads;
+    vector<unique_ptr<ThreadPoolToken>> tokens;
+    tokens.reserve(kNumTokens);
+    for (auto i = 0; i < kNumTokens; ++i) {
+      tokens.emplace_back(pool_->NewToken(ThreadPool::ExecutionMode::SERIAL));
+    }
+
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    for (auto& t : tokens) {
+      for (auto i = 0; i < kMaxThreads; ++i) {
+        ASSERT_OK(t->Submit([](){
+          SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+        }));
+      }
+    }
+    // Since there is exactly kMaxThreads serial pool tokens with tasks,
+    // the queue is empty most of the time. This is because active serial tokens
+    // are not kept in the queue. So, the status of the queue cannot be reliably
+    // determined by peeking at the submission times of the elements in the
+    // queue. Then the only way to detect overload of the queue is the history
+    // of queue times. The latter will reflect long queue times only after
+    // processing two tasks in each of the serial tokens. So, it's expected
+    // to get a stable report on the queue status only after two
+    // kQueueTimeThresholdMs time intervals.
+    SleepFor(MonoDelta::FromMilliseconds(2 * kQueueTimeThresholdMs));
+    ASSERT_TRUE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
+
+  // A mixed case: submit many long running tasks via serial tokens where the
+  // number of tokens is less than the maximum number of worker threads in the
+  // pool and submit many instant tasks that can run concurrently.
+  {
+    constexpr auto kNumTokens = kMaxThreads - 1;
+    ASSERT_GT(kNumTokens, 0);
+    vector<unique_ptr<ThreadPoolToken>> tokens;
+    tokens.reserve(kNumTokens);
+    for (auto i = 0; i < kNumTokens; ++i) {
+      tokens.emplace_back(pool_->NewToken(ThreadPool::ExecutionMode::SERIAL));
+    }
+
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    for (auto& t : tokens) {
+      for (auto i = 0; i < kMaxThreads; ++i) {
+        ASSERT_OK(t->Submit([](){
+          SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+        }));
+      }
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+
+    // Add several light tasks in addition to the scheduled serial ones. This
+    // should not overload the queue.
+    for (auto i = 0; i < 10; ++i) {
+      ASSERT_OK(pool_->Submit([](){
+        SleepFor(MonoDelta::FromMilliseconds(1));
+      }));
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    SleepFor(MonoDelta::FromMilliseconds(1));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
+
+  // Another mixed case: submit many long running tasks via a serial token
+  // and many long running tasks that can run concurrently. The queue should
+  // become overloaded.
+  {
+    constexpr auto kNumTokens = 1;
+    vector<unique_ptr<ThreadPoolToken>> tokens;
+    tokens.reserve(kNumTokens);
+    for (auto i = 0; i < kNumTokens; ++i) {
+      tokens.emplace_back(pool_->NewToken(ThreadPool::ExecutionMode::SERIAL));
+    }
+
+    ASSERT_FALSE(pool_->QueueOverloaded());
+    for (auto& t : tokens) {
+      for (auto i = 0; i < kMaxThreads; ++i) {
+        ASSERT_OK(t->Submit([](){
+          SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+        }));
+      }
+    }
+    ASSERT_FALSE(pool_->QueueOverloaded());
+
+    // Add several light tasks in addition to the scheduled serial ones. This
+    // should not overload the queue.
+    for (auto i = 0; i < 2 * kMaxThreads; ++i) {
+      ASSERT_OK(pool_->Submit([](){
+        SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+      }));
+    }
+    SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
+    ASSERT_TRUE(pool_->QueueOverloaded());
+    pool_->Wait();
+    ASSERT_FALSE(pool_->QueueOverloaded());
+  }
 }
 
 // Test that a thread pool will crash if asked to run its own blocking
