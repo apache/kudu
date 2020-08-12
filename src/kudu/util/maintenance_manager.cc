@@ -32,6 +32,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -62,6 +63,8 @@ DEFINE_int32(maintenance_manager_num_threads, 1,
              "For spinning disks, the number of threads should "
              "not be above the number of devices.");
 TAG_FLAG(maintenance_manager_num_threads, stable);
+DEFINE_validator(maintenance_manager_num_threads,
+                 [](const char* /*n*/, int32 v) { return v > 0; });
 
 DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
              "Polling interval for the maintenance manager scheduler, "
