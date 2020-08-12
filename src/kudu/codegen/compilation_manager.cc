@@ -35,6 +35,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
@@ -54,6 +55,10 @@ TAG_FLAG(codegen_time_compilation, runtime);
 DEFINE_int32(codegen_cache_capacity, 100, "Number of entries which may be stored in the "
              "code generation cache.");
 TAG_FLAG(codegen_cache_capacity, experimental);
+
+DEFINE_int32(codegen_queue_capacity, 100, "Number of tasks which may be put in the code "
+             "generation task queue.");
+TAG_FLAG(codegen_queue_capacity, experimental);
 
 METRIC_DEFINE_gauge_int64(server, code_cache_hits, "Codegen Cache Hits",
                           kudu::MetricUnit::kCacheHits,
@@ -132,6 +137,7 @@ CompilationManager::CompilationManager()
   CHECK_OK(ThreadPoolBuilder("compiler_manager_pool")
            .set_min_threads(0)
            .set_max_threads(1)
+           .set_max_queue_size(FLAGS_codegen_queue_capacity)
            .set_idle_timeout(MonoDelta::FromMilliseconds(kThreadTimeoutMs))
            .Build(&pool_));
   // We call std::atexit after the implicit default construction of
@@ -174,7 +180,7 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
                                              unique_ptr<RowProjector>* out) {
   faststring key;
   Status s = RowProjectorFunctions::EncodeKey(*base_schema, *projection, &key);
-  WARN_NOT_OK(s, "RowProjector compilation request failed");
+  WARN_NOT_OK(s, "RowProjector compilation request encode key failed");
   if (!s.ok()) return false;
   query_counter_.Increment();
 
@@ -185,8 +191,8 @@ bool CompilationManager::RequestRowProjector(const Schema* base_schema,
   if (!cached) {
     shared_ptr<CompilationTask> task(make_shared<CompilationTask>(
         *base_schema, *projection, &cache_, &generator_));
-    WARN_NOT_OK(pool_->Submit([task]() { task->Run(); }),
-                "RowProjector compilation request failed");
+    WARN_NOT_OK_EVERY_N_SECS(pool_->Submit([task]() { task->Run(); }),
+                    "RowProjector compilation request submit failed", 10);
     return false;
   }
 
