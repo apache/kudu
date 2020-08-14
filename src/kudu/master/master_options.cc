@@ -32,7 +32,8 @@
 DEFINE_string(master_addresses, "",
               "Comma-separated list of the RPC addresses belonging to all "
               "Masters in this cluster. "
-              "NOTE: if not specified, configures a non-replicated Master.");
+              "NOTE: if not specified or a single address is specified, "
+              "configures a non-replicated Master.");
 TAG_FLAG(master_addresses, stable);
 
 namespace kudu {
@@ -48,11 +49,6 @@ MasterOptions::MasterOptions() {
       LOG(FATAL) << "Couldn't parse the master_addresses flag('" << FLAGS_master_addresses << "'): "
                  << s.ToString();
     }
-    if (master_addresses.size() < 2) {
-      LOG(FATAL) << "At least 2 masters are required for a distributed config, but "
-          "master_addresses flag ('" << FLAGS_master_addresses << "') only specifies "
-                 << master_addresses.size() << " masters.";
-    }
     // TODO(wdberkeley): Un-actionable warning. Link to docs, once they exist.
     if (master_addresses.size() == 2) {
       LOG(WARNING) << "Only 2 masters are specified by master_addresses_flag ('" <<
@@ -63,7 +59,18 @@ MasterOptions::MasterOptions() {
 }
 
 bool MasterOptions::IsDistributed() const {
-  return !master_addresses.empty();
+  return master_addresses.size() > 1;
+}
+
+Status MasterOptions::GetTheOnlyMasterAddress(HostPort* hp) const {
+  if (IsDistributed()) {
+    return Status::IllegalState("Not a single master configuration");
+  }
+  if (master_addresses.empty()) {
+    return Status::NotFound("Master address not specified");
+  }
+  *hp = master_addresses.front();
+  return Status::OK();
 }
 
 } // namespace master

@@ -73,6 +73,7 @@ using tserver::TabletServerServiceProxy;
 
 InternalMiniClusterOptions::InternalMiniClusterOptions()
   : num_masters(1),
+    supply_single_master_addr(false),
     num_tablet_servers(1),
     num_data_dirs(1),
     bind_mode(kDefaultBindMode) {
@@ -152,7 +153,7 @@ Status InternalMiniCluster::StartMasters() {
     for (int i = 0; i < num_masters; i++) {
       auto mini_master(std::make_shared<MiniMaster>(
           GetMasterFsRoot(i), master_rpc_addrs[i]));
-      if (num_masters > 1) {
+      if (num_masters > 1 || opts_.supply_single_master_addr) {
         mini_master->SetMasterAddresses(master_rpc_addrs);
       }
       mini_masters_.emplace_back(std::move(mini_master));

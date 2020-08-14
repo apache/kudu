@@ -194,6 +194,50 @@ void SysCatalogTable::Shutdown() {
   }
 }
 
+Status SysCatalogTable::VerifyAndPopulateSingleMasterConfig(ConsensusMetadata* cmeta) {
+  RaftConfigPB config = cmeta->CommittedConfig();
+  // Manual single to multi-master migration relies on starting up a single master with multiple
+  // masters specified in the on-disk Raft config, so log a warning instead of a strict check.
+  // No further validations or populating 'last_known_addr' in such a case.
+  if (config.peers_size() > 1) {
+    LOG(WARNING) << "For a single master config, multiple peers found in on-disk Raft config! "
+                    "Supply correct list of masters in --master_addresses flag.";
+    return Status::OK();
+  }
+
+  CHECK_EQ(1, config.peers_size()) << "No Raft peer found for single master configuration!";
+  const auto& peer = config.peers(0);
+  HostPort master_addr;
+  bool master_addr_specified = master_->opts().GetTheOnlyMasterAddress(&master_addr).ok();
+  if (master_addr_specified) {
+    if (peer.has_last_known_addr()) {
+      // Verify the supplied master address matches with the on-disk Raft config.
+      auto raft_master_addr = HostPortFromPB(peer.last_known_addr());
+      if (raft_master_addr != master_addr) {
+        return Status::InvalidArgument(
+            Substitute("Single master Raft config error. On-disk master: $0 and "
+                       "supplied master: $1 are different", raft_master_addr.ToString(),
+                       master_addr.ToString()));
+      }
+    } else {
+      // Set the 'last_known_addr' in Raft config for single master configuration.
+      *config.mutable_peers(0)->mutable_last_known_addr() = HostPortToPB(master_addr);
+      cmeta->set_committed_config(config);
+      ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
+      RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config()));
+      RETURN_NOT_OK_PREPEND(cmeta->Flush(),
+                            "Failed to flush consensus metadata on populating "
+                            "'last_known_addr' field in consensus metadata");
+    }
+  } else if (peer.has_last_known_addr()) {
+    LOG(WARNING) << Substitute("For a single master config, on-disk Raft master: $0 exists but "
+                               "no master address supplied!",
+                               HostPortFromPB(peer.last_known_addr()).ToString());
+  }
+
+  return Status::OK();
+}
+
 Status SysCatalogTable::Load(FsManager *fs_manager) {
   // Load Metadata Information from disk
   scoped_refptr<tablet::TabletMetadata> metadata;
@@ -205,12 +249,14 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
-  if (master_->opts().IsDistributed()) {
-    LOG(INFO) << "Verifying existing consensus state";
-    string tablet_id = metadata->tablet_id();
-    scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta),
-                          "Unable to load consensus metadata for tablet " + tablet_id);
+  LOG(INFO) << "Verifying existing consensus state";
+  const string tablet_id = metadata->tablet_id();
+  scoped_refptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta),
+                        "Unable to load consensus metadata for tablet " + tablet_id);
+  if (!master_->opts().IsDistributed()) {
+    RETURN_NOT_OK(VerifyAndPopulateSingleMasterConfig(cmeta.get()));
+  } else {
     ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
     RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config()));
     CHECK(!cstate.has_pending_config());
@@ -286,6 +332,12 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
     RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
     peer->set_member_type(RaftPeerPB::VOTER);
+    // Set 'last_known_addr' if master address is specified for a single master configuration.
+    // This helps in migrating to multiple masters.
+    HostPort hp;
+    if (master_->opts().GetTheOnlyMasterAddress(&hp).ok()) {
+      *peer->mutable_last_known_addr() = HostPortToPB(hp);
+    }
   }
 
   string tablet_id = metadata->tablet_id();

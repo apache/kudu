@@ -830,7 +830,7 @@ pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& de
 }
 
 string MasterPathHandlers::MasterAddrsToCsv() const {
-  if (master_->opts().IsDistributed()) {
+  if (!master_->opts().master_addresses.empty()) {
     vector<string> all_addresses;
     all_addresses.reserve(master_->opts().master_addresses.size());
     for (const HostPort& hp : master_->opts().master_addresses) {

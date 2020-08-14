@@ -83,7 +83,7 @@ void MiniMaster::SetMasterAddresses(vector<HostPort> master_addrs) {
 
 Status MiniMaster::Start() {
   CHECK(!master_);
-  if (opts_.master_addresses.empty()) {
+  if (!opts_.IsDistributed()) {
     FLAGS_rpc_server_allow_ephemeral_ports = true;
   }
   // In case the wal dir and data dirs are subdirectories of the root directory,
@@ -95,7 +95,7 @@ Status MiniMaster::Start() {
   master_.swap(master);
 
   // Wait for the catalog manager to be ready if we only have a single master.
-  if (opts_.master_addresses.empty()) {
+  if (!opts_.IsDistributed()) {
     return master_->WaitForCatalogManagerInit();
   }
   return Status::OK();

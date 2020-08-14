@@ -376,7 +376,7 @@ Status Master::GetMasterHostPorts(vector<HostPort>* hostports) const {
   consensus::RaftConfigPB config = consensus->CommittedConfig();
   for (const auto& peer : *config.mutable_peers()) {
     if (peer.member_type() == consensus::RaftPeerPB::VOTER) {
-      // In non-distributed master configurations, we don't store our own
+      // In non-distributed master configurations, we may not store our own
       // last known address in the Raft config. So, we'll fill it in from
       // the server Registration instead.
       if (!peer.has_last_known_addr()) {

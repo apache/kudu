@@ -63,6 +63,10 @@ struct InternalMiniClusterOptions {
   // Default: 1
   int num_masters;
 
+  // Whether to supply 'master_addresses' field for single master configuration.
+  // Default: False
+  bool supply_single_master_addr;
+
   // Number of TS to start.
   // Default: 1
   int num_tablet_servers;

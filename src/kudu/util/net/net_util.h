@@ -104,6 +104,9 @@ class HostPort {
 };
 
 bool operator==(const HostPort& hp1, const HostPort& hp2);
+inline bool operator!=(const HostPort& hp1, const HostPort& hp2) {
+  return !(hp1 == hp2);
+}
 
 // Hasher of HostPort objects for UnorderedAssociativeContainers.
 struct HostPortHasher {

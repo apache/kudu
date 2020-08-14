@@ -43,6 +43,7 @@ class MetricRegistry;
 class RowBlockRow;
 
 namespace consensus {
+class ConsensusMetadata;
 class ConsensusMetadataManager;
 }
 
@@ -355,6 +356,11 @@ class SysCatalogTable {
   static std::string TskSeqNumberToEntryId(int64_t seq_number);
 
   static int64_t TskEntryIdToSeqNumber(const std::string& entry_id);
+
+  // For a single master config, verifies the on-disk Raft config and populates the
+  // 'last_known_addr' in the on-disk Raft config, if master address is specified.
+  // Pointer 'cmeta' must outlive the call to this function.
+  Status VerifyAndPopulateSingleMasterConfig(consensus::ConsensusMetadata* cmeta);
 
   // Special string injected into SyncWrite() random failures (if enabled).
   //
