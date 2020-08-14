@@ -23,16 +23,13 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/kserver/kserver_options.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
 class Status;
-
-namespace server {
-struct ServerBaseOptions;
-}
 
 namespace kserver {
 
@@ -46,7 +43,7 @@ class KuduServer : public server::ServerBase {
   // Constructs a new KuduServer instance and performs all no-fail member
   // initializations.
   KuduServer(std::string name,
-             const server::ServerBaseOptions& options,
+             const KuduServerOptions& opts,
              const std::string& metric_namespace);
 
   // Finalizes the initialization of a KuduServer by performing any member
@@ -65,6 +62,9 @@ class KuduServer : public server::ServerBase {
   scoped_refptr<AtomicGauge<int32_t>> num_raft_leaders() { return num_raft_leaders_; }
 
  private:
+  // The options that this server was created with.
+  const KuduServerOptions opts_;
+
   // Thread pool for preparing ops, shared between all tablets.
   std::unique_ptr<ThreadPool> tablet_prepare_pool_;
 

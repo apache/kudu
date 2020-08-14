@@ -40,6 +40,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -63,7 +64,10 @@ DECLARE_int32(log_segment_size_mb);
 DECLARE_int32(max_num_columns);
 DECLARE_int32(rpc_num_service_threads);
 DECLARE_int32(rpc_service_queue_length);
+DECLARE_int32(tablet_inject_latency_on_apply_write_op_ms);
+DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 
+METRIC_DECLARE_counter(op_apply_queue_overload_rejections);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_counter(rpcs_timed_out_in_queue);
 METRIC_DECLARE_gauge_uint64(spinlock_contention_time);
@@ -101,13 +105,10 @@ namespace itest {
 // are involved in the process of pushing Raft consensus updates corresponding
 // to the incoming write requests, and the test pinpoints the contention among
 // various threads involved.
-class SameTabletConcurrentWritesTest : public KuduTest {
+class SameTabletConcurrentWritesBaseTest: public KuduTest {
  public:
-  static constexpr int kNumColumns = 250;
-
-  SameTabletConcurrentWritesTest()
-      : num_inserter_threads_(FLAGS_num_inserter_threads),
-        runtime_(MonoDelta::FromSeconds(FLAGS_runtime_sec)),
+  explicit SameTabletConcurrentWritesBaseTest(int num_columns)
+      : num_columns_(num_columns),
         do_run_(true) {
   }
 
@@ -118,11 +119,46 @@ class SameTabletConcurrentWritesTest : public KuduTest {
     KuduSchemaBuilder schema_builder;
     schema_builder.AddColumn("key")->Type(client::KuduColumnSchema::INT64)->
         NotNull()->PrimaryKey();
-    for (auto i = 1; i < kNumColumns; ++i) {
+    for (auto i = 1; i < num_columns_; ++i) {
       schema_builder.AddColumn(Substitute("col$0", i))->
           Type(client::KuduColumnSchema::STRING)->NotNull();
     }
     ASSERT_OK(schema_builder.Build(&schema_));
+  }
+
+  Status Prepare(int num_tablet_servers) {
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = num_tablet_servers;
+    cluster_.reset(new InternalMiniCluster(env_, opts));
+    RETURN_NOT_OK(cluster_->Start());
+    return CreateTestTable(num_tablet_servers);
+  }
+
+  void Run(size_t num_inserter_threads,
+           const MonoDelta& runtime,
+           vector<thread>* threads,
+           vector<size_t>* counters) {
+    ASSERT_TRUE(threads->empty());
+    threads->reserve(num_inserter_threads);
+    ASSERT_EQ(num_inserter_threads, counters->size());
+    vector<Status> statuses(num_inserter_threads);
+    for (auto idx = 0; idx < num_inserter_threads; ++idx) {
+      threads->emplace_back(&SameTabletConcurrentWritesBaseTest::InserterTask,
+                            this,
+                            idx,
+                            num_inserter_threads,
+                            &(statuses[idx]),
+                            &((*counters)[idx]));
+    }
+
+    SleepFor(runtime);
+
+    do_run_ = false;
+    for_each(threads->begin(), threads->end(), [](thread& t) { t.join(); });
+
+    for (const auto& s : statuses) {
+      EXPECT_OK(s);
+    }
   }
 
   Status CreateTestTable(int num_replicas) {
@@ -136,7 +172,10 @@ class SameTabletConcurrentWritesTest : public KuduTest {
         .Create();
   }
 
-  void InserterTask(size_t task_idx, Status* result_status, size_t* counter) {
+  void InserterTask(size_t task_idx,
+                    int64_t key_increment,
+                    Status* result_status,
+                    size_t* counter) {
     using client::sp::shared_ptr;
     static constexpr const char kValPattern[] =
         "$0.00000000000000000000000000000000000000000000000000000000000000000"
@@ -191,13 +230,13 @@ class SameTabletConcurrentWritesTest : public KuduTest {
 
     shared_ptr<KuduTable> table;
     RET_IF_NOT_OK(client->OpenTable(kTableName, &table), session);
-    size_t i = task_idx;
+    int64_t i = task_idx;
     while (do_run_) {
       unique_ptr<KuduInsert> insert(table->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       RET_IF_NOT_OK(row->SetInt64(0, i), session);
-      i += num_inserter_threads_;
-      for (auto idx = 1; idx < kNumColumns; ++idx) {
+      i += key_increment;
+      for (auto idx = 1; idx < num_columns_; ++idx) {
         RET_IF_NOT_OK(row->SetString(idx, Substitute(kValPattern, i)), session);
       }
       RET_IF_NOT_OK(session->Apply(insert.release()), session);
@@ -211,12 +250,18 @@ class SameTabletConcurrentWritesTest : public KuduTest {
  protected:
   static constexpr const char* const kTableName = "test";
 
-  const int num_inserter_threads_;
-  const MonoDelta runtime_;
+  const int num_columns_;
   InternalMiniClusterOptions opts_;
   std::unique_ptr<InternalMiniCluster> cluster_;
   KuduSchema schema_;
   std::atomic<bool> do_run_;
+};
+
+class SameTabletConcurrentWritesTest: public SameTabletConcurrentWritesBaseTest {
+ public:
+  SameTabletConcurrentWritesTest()
+      : SameTabletConcurrentWritesBaseTest(250/*num_columns*/) {
+  }
 };
 
 // Run many inserters into the same tablet when WAL sync calls are slow due to
@@ -226,12 +271,6 @@ TEST_F(SameTabletConcurrentWritesTest, InsertsOnly) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr int kNumTabletServers = 3;
-
-  // Custom settings for kudu-master's flags.
-  //
-  // Increase number of columns in the table to make every write operation
-  // heavier.
-  FLAGS_max_num_columns = kNumColumns;
 
   // Custom settings for kudu-tserver's flags.
   //
@@ -259,29 +298,14 @@ TEST_F(SameTabletConcurrentWritesTest, InsertsOnly) {
   FLAGS_rpc_num_service_threads = 2;
   FLAGS_rpc_service_queue_length = 3;
 
-  InternalMiniClusterOptions opts;
-  opts.num_tablet_servers = kNumTabletServers;
-  cluster_.reset(new InternalMiniCluster(env_, opts));
-  ASSERT_OK(cluster_->Start());
-  ASSERT_OK(CreateTestTable(kNumTabletServers));
+  ASSERT_OK(Prepare(kNumTabletServers));
 
+  const auto runtime = MonoDelta::FromSeconds(FLAGS_runtime_sec);
+  const size_t num_inserter_threads = FLAGS_num_inserter_threads;
   vector<thread> threads;
-  threads.reserve(num_inserter_threads_);
-  vector<Status> statuses(num_inserter_threads_);
-  vector<size_t> counters(num_inserter_threads_, 0);
-  for (auto idx = 0; idx < num_inserter_threads_; idx++) {
-    threads.emplace_back(&SameTabletConcurrentWritesTest::InserterTask, this,
-                         idx, &statuses[idx], &counters[idx]);
-  }
-
-  SleepFor(runtime_);
-
-  do_run_ = false;
-  for_each(threads.begin(), threads.end(), [](thread& t) { t.join(); });
-
-  for (const auto& s : statuses) {
-    EXPECT_OK(s);
-  }
+  threads.reserve(num_inserter_threads);
+  vector<size_t> counters(num_inserter_threads, 0);
+  NO_FATALS(Run(num_inserter_threads, runtime, &threads, &counters));
 
   int64_t num_queue_overflows = 0;
   for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
@@ -326,9 +350,114 @@ TEST_F(SameTabletConcurrentWritesTest, InsertsOnly) {
   const double total = accumulate(counters.begin(), counters.end(), 0UL);
   LOG(INFO) << Substitute(
       "write RPC request rate: $0 req/sec",
-      total / runtime_.ToSeconds());
+      total / runtime.ToSeconds());
   LOG(INFO) << Substitute(
       "total count of RPC queue overflows: $0", num_queue_overflows);
+}
+
+class OpApplyQueueOverloadedTest: public SameTabletConcurrentWritesBaseTest {
+ public:
+  OpApplyQueueOverloadedTest()
+      : SameTabletConcurrentWritesBaseTest(1/*num_columns*/) {
+  }
+};
+
+// The essence of this test scenario is to make sure that a tablet server
+// responds with appropriate error status if rejecting a write operation when
+// its op apply queue is overloaded. A client should automatically retry
+// the rejected operations and eventually succeed with its workload (of course,
+// the latter depends on the configured session timeout).
+//
+// This scenario injects a delay into the apply phase of every write operation
+// and runs many clients which insert data into the same tablet. The overload
+// threshold for the apply queue is set very close to the injected delay,
+// so many write operations are rejected due to the op apply queue being
+// overloaded. Nevertheless, every client eventually succeeds with its workload
+// because the rejected write operations are automatically retried.
+TEST_F(OpApplyQueueOverloadedTest, ClientRetriesOperations) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr int kNumTabletServers = 3;
+
+  // A couple of settings below might be overriden from the command line by
+  // specifying corresponding flags. This scenarios set reasonable defaults.
+
+  // The op apply threadpool's max_threads is set to base::NumCPUs(), but we
+  // want to have much more inserters to induce the overload of the op apply
+  // queue faster.
+  const int num_cpus = 3 * base::NumCPUs();
+  ASSERT_NE("", SetCommandLineOptionWithMode("num_inserter_threads",
+                                             std::to_string(num_cpus).c_str(),
+                                             google::SET_FLAG_IF_DEFAULT));
+  // The workload should run for long enough time to allow the apply queue
+  // detecting the overload condition. Once the queue overload condition is
+  // detected, tablet server starts rejecting incoming write requests.
+  ASSERT_NE("", SetCommandLineOptionWithMode("runtime_sec",
+                                             "3",
+                                             google::SET_FLAG_IF_DEFAULT));
+
+  // Custom settings for kudu-tserver's flags.
+  //
+  // Inject latency into the op 'apply' phase and make the apply queue's
+  // overload threshold to the same value. This is to make tablet servers
+  // rejecting many write operations due to overload of the op apply queue.
+  FLAGS_tablet_apply_pool_overload_threshold_ms = 100;
+  FLAGS_tablet_inject_latency_on_apply_write_op_ms = 100;
+  // Also, set the RPC queue length very high to avoid queue overflows. The
+  // idea is to put as much pressure pressure on the apply queue as possible.
+  FLAGS_rpc_service_queue_length = 1000;
+
+  // Custom settings for kudu-master's flags.
+  //
+  // Set the RPC queue length very high to avoid queue overflows: the number
+  // of clients working concurrently might be too high for the default settings
+  // of the master's RPC queue length.
+  FLAGS_rpc_service_queue_length = 1000;
+
+  ASSERT_OK(Prepare(kNumTabletServers));
+
+  const auto runtime = MonoDelta::FromSeconds(FLAGS_runtime_sec);
+  const size_t num_inserter_threads = FLAGS_num_inserter_threads;
+  vector<thread> threads;
+  threads.reserve(num_inserter_threads);
+  vector<size_t> counters(num_inserter_threads, 0);
+  NO_FATALS(Run(num_inserter_threads, runtime, &threads, &counters));
+
+  int64_t num_rejections = 0;
+  for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    const auto& ent = cluster_->mini_tablet_server(i)->server()->metric_entity();
+
+    for (auto* elem : {
+        &METRIC_op_apply_queue_overload_rejections,
+    }) {
+      auto counter = elem->Instantiate(ent);
+      const char* const name = counter->prototype()->name();
+      LOG(INFO) << "Counter value for tserver " << i
+                << " on " << name << ": " << counter->value();
+      num_rejections += counter->value();
+    }
+
+    for (auto* elem : {
+        &METRIC_op_apply_queue_time,
+        &METRIC_op_apply_run_time,
+    }) {
+      auto hist = elem->Instantiate(ent);
+      ostringstream ostr;
+      ostr << "Stats for tserver " << i << " on " << elem->name() << ":" << endl;
+      hist->histogram()->DumpHumanReadable(&ostr);
+      LOG(INFO) << ostr.str();
+    }
+  }
+
+  // Just for information, print out the resulting request rate.
+  const double total = accumulate(counters.begin(), counters.end(), 0UL);
+  LOG(INFO) << Substitute(
+      "write RPC request rate: $0 req/sec",
+      total / runtime.ToSeconds());
+
+  // At least few write operations should be rejected due to overloaded apply
+  // queue.
+  ASSERT_GT(num_rejections, 0);
 }
 
 } // namespace itest

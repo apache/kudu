@@ -27,6 +27,7 @@
 #include "kudu/server/rpc_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 DEFINE_string(tserver_master_addrs, "127.0.0.1:7051",
@@ -36,12 +37,29 @@ DEFINE_string(tserver_master_addrs, "127.0.0.1:7051",
               "using 'rpc_bind_addresses'.");
 TAG_FLAG(tserver_master_addrs, stable);
 
+DEFINE_uint32(tablet_apply_pool_overload_threshold_ms, 0,
+              "The threshold for the queue time of the 'apply' thread pool "
+              "to enter and exit overloaded state. Once the queue stalls and "
+              "its queue times become longer than the specified threshold, it "
+              "enters the overloaded state. Tablet server rejects incoming "
+              "write requests with some probability when its apply queue is "
+              "overloaded. The longer the apply queue stays overloaded, the "
+              "greater the probability of the rejection. In addition, the more "
+              "row operations a write request has, the greater the probablity "
+              "of the rejection. The apply queue exits the overloaded state "
+              "when queue times drop below the specified threshold. Set this "
+              "flag to 0 to disable the behavior described above.");
+TAG_FLAG(tablet_apply_pool_overload_threshold_ms, advanced);
+
 namespace kudu {
 namespace tserver {
 
 TabletServerOptions::TabletServerOptions() {
   rpc_opts.default_port = TabletServer::kDefaultPort;
-
+  if (FLAGS_tablet_apply_pool_overload_threshold_ms > 0) {
+    apply_queue_overload_threshold = MonoDelta::FromMilliseconds(
+        FLAGS_tablet_apply_pool_overload_threshold_ms);
+  }
   Status s = HostPort::ParseStrings(FLAGS_tserver_master_addrs,
                                     master::Master::kDefaultPort,
                                     &master_addresses);

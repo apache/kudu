@@ -52,14 +52,14 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-  : KuduServer("TabletServer", opts, "kudu.tabletserver"),
-    state_(kStopped),
-    quiescing_(false),
-    fail_heartbeats_for_tests_(false),
-    opts_(opts),
-    tablet_manager_(new TSTabletManager(this)),
-    scanner_manager_(new ScannerManager(metric_entity())),
-    path_handlers_(new TabletServerPathHandlers(this)) {
+    : KuduServer("TabletServer", opts, "kudu.tabletserver"),
+      state_(kStopped),
+      quiescing_(false),
+      fail_heartbeats_for_tests_(false),
+      opts_(opts),
+      tablet_manager_(new TSTabletManager(this)),
+      scanner_manager_(new ScannerManager(metric_entity())),
+      path_handlers_(new TabletServerPathHandlers(this)) {
 }
 
 TabletServer::~TabletServer() {

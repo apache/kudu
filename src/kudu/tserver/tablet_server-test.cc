@@ -197,6 +197,7 @@ DECLARE_int32(workload_stats_metric_collection_interval_ms);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(env_inject_full_globs);
+DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
@@ -4365,9 +4366,18 @@ class OpApplyQueueTest : public TabletServerTestBase {
  public:
   // Starts the tablet server, override to start it later.
   void SetUp() override {
+
     // Since scenarios of this test make bursts of requests, set the maximum
     // length of the service queue to accomodate many requests.
     FLAGS_rpc_service_queue_length = 1000;
+
+    // Set the overload threshold for the op apply queue. Since the threshold
+    // is two-fold of the injected latency and number of operations submitted
+    // at once much higher than the number of worker threads in the apply thread
+    // pool, the queue will gradually accumulate operations until becoming
+    // overloaded.
+    FLAGS_tablet_apply_pool_overload_threshold_ms = kInjectedLatencyMs;
+
     NO_FATALS(TabletServerTestBase::SetUp());
     NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
   }
@@ -4376,8 +4386,7 @@ class OpApplyQueueTest : public TabletServerTestBase {
 };
 
 // This is a regression test for KUDU-1587.
-// TODO(aserbin): enable the test once KUDU-1587 is addressed.
-TEST_F(OpApplyQueueTest, DISABLED_ApplyQueueBackpressure) {
+TEST_F(OpApplyQueueTest, ApplyQueueBackpressure) {
   SKIP_IF_SLOW_NOT_ALLOWED();
 
   constexpr size_t kNumCalls = 1000;

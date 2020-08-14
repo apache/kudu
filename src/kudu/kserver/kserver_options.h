@@ -16,24 +16,21 @@
 // under the License.
 #pragma once
 
-#include <vector>
+#include <cstdint>
+#include <memory>
+#include <string>
 
-#include "kudu/kserver/kserver_options.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/server/server_base_options.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
-namespace master {
+namespace kserver {
 
-// Options for constructing the master.
-// These are filled in by gflags by default -- see the .cc file for
-// the list of options and corresponding flags.
-struct MasterOptions : public kserver::KuduServerOptions {
-  MasterOptions();
+struct KuduServerOptions : public server::ServerBaseOptions {
+  KuduServerOptions() = default;
 
-  std::vector<HostPort> master_addresses;
-
-  bool IsDistributed() const;
+  MonoDelta apply_queue_overload_threshold;
 };
 
-} // namespace master
+} // namespace kserver
 } // namespace kudu

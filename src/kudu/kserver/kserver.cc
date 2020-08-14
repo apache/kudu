@@ -36,6 +36,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 
@@ -55,7 +56,6 @@ static bool ValidateThreadPoolThreadLimit(const char* /*flagname*/, int32_t valu
 }
 DEFINE_validator(server_thread_pool_max_thread_count, &ValidateThreadPoolThreadLimit);
 
-using kudu::server::ServerBaseOptions;
 using std::string;
 using strings::Substitute;
 
@@ -134,22 +134,28 @@ int GetThreadPoolThreadLimit(Env* env) {
 } // anonymous namespace
 
 KuduServer::KuduServer(string name,
-                       const ServerBaseOptions& options,
+                       const KuduServerOptions& opts,
                        const string& metric_namespace)
-    : ServerBase(std::move(name), options, metric_namespace) {
+    : ServerBase(std::move(name), opts, metric_namespace),
+      opts_(opts) {
 }
 
 Status KuduServer::Init() {
   RETURN_NOT_OK(ServerBase::Init());
 
-  ThreadPoolMetrics metrics = {
-      METRIC_op_apply_queue_length.Instantiate(metric_entity_),
-      METRIC_op_apply_queue_time.Instantiate(metric_entity_),
-      METRIC_op_apply_run_time.Instantiate(metric_entity_)
-  };
-  RETURN_NOT_OK(ThreadPoolBuilder("apply")
-                .set_metrics(std::move(metrics))
-                .Build(&tablet_apply_pool_));
+  {
+    ThreadPoolMetrics metrics{
+        METRIC_op_apply_queue_length.Instantiate(metric_entity_),
+        METRIC_op_apply_queue_time.Instantiate(metric_entity_),
+        METRIC_op_apply_run_time.Instantiate(metric_entity_),
+    };
+    ThreadPoolBuilder builder("apply");
+    builder.set_metrics(std::move(metrics));
+    if (opts_.apply_queue_overload_threshold.Initialized()) {
+      builder.set_queue_overload_threshold(opts_.apply_queue_overload_threshold);
+    }
+    RETURN_NOT_OK(builder.Build(&tablet_apply_pool_));
+  }
 
   // These pools are shared by all replicas hosted by this server, and thus
   // are capped at a portion of the overall per-euid thread resource limit.

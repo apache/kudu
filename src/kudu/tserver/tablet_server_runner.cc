@@ -33,15 +33,17 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/version_info.h"
 
-using gflags::SET_FLAGS_DEFAULT;
-using std::string;
-using std::to_string;
-
 DEFINE_double(fault_before_start, 0.0,
               "Fake fault flag that always causes a crash on startup. "
               "Used to test the test infrastructure. Should never be set outside of tests.");
 TAG_FLAG(fault_before_start, hidden);
 TAG_FLAG(fault_before_start, unsafe);
+
+DECLARE_uint32(tablet_apply_pool_overload_threshold_ms);
+
+using gflags::SET_FLAGS_DEFAULT;
+using std::string;
+using std::to_string;
 
 namespace kudu {
 namespace tserver {

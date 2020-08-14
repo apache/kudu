@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_SERVER_OPTIONS_H
-#define KUDU_TSERVER_TABLET_SERVER_OPTIONS_H
+
+#pragma once
 
 #include <vector>
 
-#include "kudu/server/server_base_options.h"
+#include "kudu/kserver/kserver_options.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
@@ -31,7 +31,7 @@ namespace tserver {
 //
 // This allows tests to easily start miniclusters with different
 // tablet servers having different options.
-struct TabletServerOptions : public kudu::server::ServerBaseOptions {
+struct TabletServerOptions : public kserver::KuduServerOptions {
   TabletServerOptions();
 
   std::vector<HostPort> master_addresses;
@@ -39,4 +39,3 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
 
 } // namespace tserver
 } // namespace kudu
-#endif /* KUDU_TSERVER_TABLET_SERVER_OPTIONS_H */

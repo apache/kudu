@@ -100,35 +100,35 @@ METRIC_DEFINE_gauge_uint64(tablet, live_row_count, "Tablet Live Row Count",
                            "Number of live rows in this tablet, excludes deleted rows.",
                            kudu::MetricLevel::kInfo);
 
-namespace kudu {
-namespace tablet {
-
-using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusOptions;
-using consensus::ConsensusRound;
-using consensus::MarkDirtyCallback;
-using consensus::OpId;
-using consensus::PeerProxyFactory;
-using consensus::RaftConfigPB;
-using consensus::RaftPeerPB;
-using consensus::RaftConsensus;
-using consensus::RpcPeerProxyFactory;
-using consensus::ServerContext;
-using consensus::TimeManager;
-using consensus::ALTER_SCHEMA_OP;
-using consensus::PARTICIPANT_OP;
-using consensus::WRITE_OP;
-using log::Log;
-using log::LogAnchorRegistry;
-using pb_util::SecureDebugString;
-using rpc::Messenger;
-using rpc::ResultTracker;
+using kudu::consensus::ALTER_SCHEMA_OP;
+using kudu::consensus::ConsensusBootstrapInfo;
+using kudu::consensus::ConsensusOptions;
+using kudu::consensus::ConsensusRound;
+using kudu::consensus::MarkDirtyCallback;
+using kudu::consensus::OpId;
+using kudu::consensus::PARTICIPANT_OP;
+using kudu::consensus::PeerProxyFactory;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::RpcPeerProxyFactory;
+using kudu::consensus::ServerContext;
+using kudu::consensus::TimeManager;
+using kudu::consensus::WRITE_OP;
+using kudu::log::Log;
+using kudu::log::LogAnchorRegistry;
+using kudu::pb_util::SecureDebugString;
+using kudu::rpc::Messenger;
+using kudu::rpc::ResultTracker;
 using std::map;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tablet {
 
 TabletReplica::TabletReplica(
     scoped_refptr<TabletMetadata> meta,

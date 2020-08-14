@@ -104,9 +104,11 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/process_memory.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/trace_metrics.h"
 
@@ -168,6 +170,14 @@ TAG_FLAG(tserver_inject_invalid_authz_token_ratio, hidden);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
+
+METRIC_DEFINE_counter(
+    server,
+    op_apply_queue_overload_rejections,
+    "Number of Rejected Write Requests Due to Queue Overloaded Error",
+    kudu::MetricUnit::kRequests,
+    "Number of rejected write requests due to overloaded op apply queue",
+    kudu::MetricLevel::kWarn);
 
 using google::protobuf::RepeatedPtrField;
 using kudu::consensus::BulkChangeConfigRequestPB;
@@ -1050,8 +1060,11 @@ static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
 }
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
-  : TabletServerServiceIf(server->metric_entity(), server->result_tracker()),
-    server_(server) {
+    : TabletServerServiceIf(server->metric_entity(), server->result_tracker()),
+      server_(server),
+      rng_(GetRandomSeed32()) {
+  num_op_apply_queue_rejections_ = server_->metric_entity()->FindOrCreateCounter(
+      &METRIC_op_apply_queue_overload_rejections);
 }
 
 bool TabletServiceImpl::AuthorizeClientOrServiceUser(const google::protobuf::Message* /*req*/,
@@ -1484,6 +1497,30 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
     return;
+  }
+
+  // If the apply queue is overloaded, the write request might be rejected.
+  // The longer the queue was in overloaded state, the higher the probability
+  // of rejecting the request.
+  MonoDelta queue_otime;
+  MonoDelta threshold;
+  if (server_->tablet_apply_pool()->QueueOverloaded(&queue_otime, &threshold)) {
+    DCHECK(threshold.Initialized());
+    DCHECK_GT(threshold.ToMilliseconds(), 0);
+    auto overload_threshold_ms = threshold.ToMilliseconds();
+    // The longer the queue has been in the overloaded state, the higher the
+    // probability of an op to be rejected.
+    auto time_factor = queue_otime.ToMilliseconds() / overload_threshold_ms + 1;
+    if (!rng_.OneIn(time_factor * time_factor + 1)) {
+      static const Status kStatus = Status::ServiceUnavailable(
+          "op apply queue is overloaded");
+      num_op_apply_queue_rejections_->Increment();
+      SetupErrorAndRespond(resp->mutable_error(),
+                           kStatus,
+                           TabletServerErrorPB::THROTTLED,
+                           context);
+      return;
+    }
   }
 
   unique_ptr<WriteOpState> op_state(new WriteOpState(

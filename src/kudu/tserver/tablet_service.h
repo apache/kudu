@@ -22,9 +22,12 @@
 
 #include "kudu/consensus/consensus.service.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.service.h"
 #include "kudu/tserver/tserver_service.service.h"
+#include "kudu/util/metrics.h"
+#include "kudu/util/random.h"
 
 namespace boost {
 template <class T> class optional;
@@ -192,6 +195,14 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                 Timestamp* snap_timestamp);
 
   TabletServer* server_;
+
+  // Random generator used to make a decision on the admission of write
+  // operations when the apply queue is overloaded.
+  ThreadSafeRandom rng_;
+
+  // Counter to track number of rejected write requests while op apply queue
+  // was overloaded.
+  scoped_refptr<Counter> num_op_apply_queue_rejections_;
 };
 
 class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
