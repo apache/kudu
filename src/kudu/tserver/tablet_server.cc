@@ -204,6 +204,7 @@ void TabletServer::Shutdown() {
     // 3. Shut down generic subsystems.
     KuduServer::Shutdown();
     LOG(INFO) << name << " shutdown complete.";
+    initted_ = false;
   }
 }
 
