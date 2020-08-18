@@ -744,6 +744,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                                           const VoteRequestPB* request,
                                           VoteResponsePB* response);
 
+  // Respond to VoteRequest with a denial because votes are being witheld
+  // for testing.
+  Status RequestVoteRespondVoteWitheld(
+      const VoteRequestPB* request, VoteResponsePB* response);
+
   // Respond to VoteRequest that the vote was not granted because we believe
   // the leader to be alive.
   Status RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,

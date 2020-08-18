@@ -426,6 +426,8 @@ std::pair<bool, bool> FlexibleVoteCounter::IsStaticQuorumSatisfied() const {
 
 std::pair<bool, bool>
 FlexibleVoteCounter::IsPessimisticQuorumSatisfied() const {
+  VLOG_WITH_PREFIX(3) << "Checking if pessimistic quorum is satisfied.";
+
   // Fetching all regions.
   std::vector<std::string> regions;
   for (const std::pair<std::string, int>& region_count_pair :
@@ -961,7 +963,7 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
   if (election_term_ == last_known_leader.election_term() + 1) {
     CHECK(!last_known_leader.uuid().empty());
     CHECK(!last_known_leader_region.empty());
-    VLOG_WITH_PREFIX(2)
+    LOG(INFO)
         << "Election term immediately succeeds term of the last known leader."
         << " Election term: " << election_term_;
     std::pair<bool, bool> result =

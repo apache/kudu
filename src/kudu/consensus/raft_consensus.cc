@@ -181,6 +181,9 @@ DEFINE_bool(enable_flexi_raft, false,
             "Enables flexi raft mode. All the configurations need to be already"
             " present and setup before the flag can be enabled.");
 
+DEFINE_bool(withold_votes_for_tests, false,
+            "Withholds votes during leader election for testing.");
+
 // Metrics
 // ---------
 METRIC_DEFINE_counter(server, follower_memory_pressure_rejections,
@@ -1885,6 +1888,14 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   //
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
+
+  if (FLAGS_withold_votes_for_tests) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting vote request from peer "
+                                   << request->candidate_uuid()
+                                   << " for testing.";
+    return RequestVoteRespondVoteWitheld(request, response);
+  }
+
   if (!request->ignore_live_leader() && MonoTime::Now() < withhold_votes_until_) {
     return RequestVoteRespondLeaderIsAlive(request, response);
   }
@@ -2542,6 +2553,19 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
                           request->candidate_term(),
                           SecureShortDebugString(local_last_logged_opid),
                           SecureShortDebugString(request->candidate_status().last_received()));
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondVoteWitheld(
+    const VoteRequestPB* request, VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::UNKNOWN, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
+                          "votes are being witheld for testing.",
+                          GetRequestVoteLogPrefixUnlocked(*request),
+                          request->candidate_uuid(),
+                          request->candidate_term());
   LOG(INFO) << msg;
   StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
   return Status::OK();
