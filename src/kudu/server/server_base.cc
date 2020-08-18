@@ -664,11 +664,15 @@ Status ServerBase::StartMetricsLogging() {
   if (options_.metrics_log_interval_ms <= 0) {
     return Status::OK();
   }
-  if (FLAGS_log_dir.empty()) {
+  std::string& log_dir = FLAGS_log_dir;
+  if (!options_.metrics_log_dir.empty()) {
+    log_dir = options_.metrics_log_dir;
+  }
+  if (log_dir.empty()) {
     LOG(INFO) << "Not starting metrics log since no log directory was specified.";
     return Status::OK();
   }
-  unique_ptr<DiagnosticsLog> l(new DiagnosticsLog(FLAGS_log_dir, metric_registry_.get()));
+  unique_ptr<DiagnosticsLog> l(new DiagnosticsLog(log_dir, metric_registry_.get()));
   l->SetMetricsLogInterval(MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms));
   RETURN_NOT_OK(l->Start());
   diag_log_ = std::move(l);
