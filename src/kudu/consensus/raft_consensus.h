@@ -201,7 +201,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void DisableFailureDetector();
 
   // Pauses outgoing votes from this server during elections, if set to true.
-  void SetWitholdVotesForTests(bool withold_votes);
+  void SetWithholdVotesForTests(bool withhold_votes);
 
   // Rejects AppendEntries RPCs, if set to true.
   void SetRejectAppendEntriesForTests(bool reject_append_entries);
@@ -1027,6 +1027,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // This is used in tests to reject AppendEntries RPC requests.
   bool reject_append_entries_;
+
+  // This is used in tests to reject RequestVote RPC requests.
+  bool withhold_votes_;
 
   // The last OpId received from the current leader. This is updated whenever the follower
   // accepts operations from a leader, and passed back so that the leader knows from what

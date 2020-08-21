@@ -181,9 +181,6 @@ DEFINE_bool(enable_flexi_raft, false,
             "Enables flexi raft mode. All the configurations need to be already"
             " present and setup before the flag can be enabled.");
 
-DEFINE_bool(withold_votes_for_tests, false,
-            "Withholds votes during leader election for testing.");
-
 // Metrics
 // ---------
 METRIC_DEFINE_counter(server, follower_memory_pressure_rejections,
@@ -269,6 +266,7 @@ RaftConsensus::RaftConsensus(
       leader_transfer_in_progress_(false),
       withhold_votes_until_(MonoTime::Min()),
       reject_append_entries_(false),
+      withhold_votes_(false),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
       disable_noop_(false),
@@ -1889,7 +1887,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
 
-  if (FLAGS_withold_votes_for_tests) {
+  if (withhold_votes_) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting vote request from peer "
                                    << request->candidate_uuid()
                                    << " for testing.";
@@ -2389,7 +2387,7 @@ void RaftConsensus::Stop() {
       ClearLeaderUnlocked();
     }
 
-    // If we were the leader, stop witholding votes.
+    // If we were the leader, stop withholding votes.
     if (withhold_votes_until_ == MonoTime::Max()) {
       withhold_votes_until_ = MonoTime::Min();
     }
@@ -3162,12 +3160,8 @@ void RaftConsensus::DisableFailureDetector() {
   }
 }
 
-void RaftConsensus::SetWitholdVotesForTests(bool withold_votes) {
-  if (withold_votes) {
-    withhold_votes_until_ = MonoTime::Max();
-  } else {
-    withhold_votes_until_ = MonoTime::Min();
-  }
+void RaftConsensus::SetWithholdVotesForTests(bool withhold_votes) {
+  withhold_votes_ = withhold_votes;
 }
 
 void RaftConsensus::SetRejectAppendEntriesForTests(bool reject_append_entries) {
