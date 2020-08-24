@@ -16,7 +16,22 @@
 # under the License.
 
 # This file list the locations to look for java candidates in priority order.
+# The priority order is newer to older versions and specific to generic versions.
 # Note: Trailing comments are not allowed.
+
+# Oracle JDK 11 Candidates
+/usr/java/jdk-11
+/usr/lib/jvm/jdk-11
+/usr/lib/jvm/java-11-oracle
+
+# OpenJDK 11 Candidates
+/usr/lib/jvm/java-11-openjdk-arm64
+/usr/lib/jvm/java-11-openjdk-amd64
+/usr/lib/jvm/java-11-openjdk-ppc64el
+/usr/lib/jvm/java-11
+/usr/java/jdk-11
+/usr/lib/jvm/jdk-11
+/usr/lib64/jvm/jdk-11
 
 # Oracle JDK 8 Candidates
 /usr/java/jdk1.8
@@ -27,28 +42,19 @@
 /usr/lib/jdk8-latest
 
 # OpenJDK 8 Candidates
+/usr/lib/jvm/java-8-openjdk-arm64
 /usr/lib/jvm/java-1.8.0-openjdk-amd64
 /usr/lib/jvm/java-1.8.0-openjdk-ppc64el
 /usr/lib/jvm/java-1.8.0-openjdk
 /usr/lib64/jvm/java-1.8.0-openjdk-1.8.0
 
-# Oracle JDK 7 Candidates
-/usr/java/jdk1.7
-/usr/java/jre1.7
-/usr/lib/jvm/j2sdk1.7-oracle
-/usr/lib/jvm/j2sdk1.7-oracle/jre
-/usr/lib/jvm/java-7-oracle
-/usr/lib/jdk7-latest
-
-# OpenJDK 7 Candidates
-/usr/lib/jvm/java-1.7.0-openjdk
-/usr/lib/jvm/java-7-openjdk-amd64
-/usr/lib/jvm/java-7-openjdk
-
 # Misc. Candidates
+/Library/Java/Home
+/usr/bin/java
 /usr/java/default
 /usr/lib/jvm/java
 /usr/lib/jvm/jre
 /usr/lib/jvm/default-java
 /usr/lib/jvm/java-openjdk
 /usr/lib/jvm/jre-openjdk
+/usr/lib/jvm/java-oracle
