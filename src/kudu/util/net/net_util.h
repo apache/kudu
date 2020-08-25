@@ -175,6 +175,7 @@ Status GetHostname(std::string* hostname);
 Status GetLocalNetworks(std::vector<Network>* net);
 
 // Return the local machine's FQDN.
+// If domain name is not available, FQDN returns hostname.
 Status GetFQDN(std::string* hostname);
 
 // Returns a single socket address from a HostPort.
