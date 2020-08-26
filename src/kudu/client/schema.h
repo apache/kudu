@@ -91,12 +91,15 @@ class KUDU_EXPORT KuduColumnTypeAttributes {
   ~KuduColumnTypeAttributes();
 
   /// @name Assign/copy KuduColumnTypeAttributes.
-  ///
+  ///@{
+
   /// @param [in] other
   ///   The source KuduColumnTypeAttributes object to use as a reference.
-  ///
-  ///@{
+  /// @return Copy of 'other'
   KuduColumnTypeAttributes& operator=(const KuduColumnTypeAttributes& other);
+
+  /// @param [in] other
+  ///   The source KuduColumnTypeAttributes object to use as a reference.
   void CopyFrom(const KuduColumnTypeAttributes& other);
   ///@}
 
@@ -388,7 +391,7 @@ class KUDU_EXPORT KuduColumnSpec {
   KuduColumnSpec* BlockSize(int32_t block_size);
 
   /// @name Operations only relevant for decimal columns.
-  ///
+
   ///@{
   /// Set the precision for the column.
   ///
@@ -426,7 +429,7 @@ class KUDU_EXPORT KuduColumnSpec {
   ///@}
 
   /// @name Operation only relevant for VARCHAR columns.
-  ///
+
   ///@{
   /// Set the length for a column.
   ///
@@ -444,7 +447,7 @@ class KUDU_EXPORT KuduColumnSpec {
   ///@}
 
   /// @name Operations only relevant for Create Table
-  ///
+
   ///@{
   /// Set the column to be the primary key of the table.
   ///
@@ -482,7 +485,7 @@ class KUDU_EXPORT KuduColumnSpec {
   ///@}
 
   /// @name Operations only relevant for Alter Table
-  ///
+
   ///@{
   /// Remove the default value for the column.
   ///
@@ -603,12 +606,15 @@ class KUDU_EXPORT KuduSchema {
   ~KuduSchema();
 
   /// @name Assign/copy the schema
-  ///
+  ///@{
+
   /// @param [in] other
   ///   The source KuduSchema object to use as a reference.
-  ///
-  ///@{
+  /// @return Copy of 'other'
   KuduSchema& operator=(const KuduSchema& other);
+
+  /// @param [in] other
+  ///   The source KuduSchema object to use as a reference.
   void CopyFrom(const KuduSchema& other);
   ///@}
 

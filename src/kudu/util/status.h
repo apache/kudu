@@ -229,9 +229,9 @@ class KUDU_EXPORT Status {
   /// @return A success status.
   static Status OK() { return Status(); }
 
-
   /// @name Methods to build status objects for various types of errors.
-  ///
+  ///@{
+
   /// @param [in] msg
   ///   The informational message on the error.
   /// @param [in] msg2
@@ -239,8 +239,6 @@ class KUDU_EXPORT Status {
   /// @param [in] posix_code
   ///   POSIX error code, if applicable (optional).
   /// @return The error status of an appropriate type.
-  ///
-  ///@{
   static Status NotFound(const Slice& msg, const Slice& msg2 = Slice(),
                          int16_t posix_code = -1) {
     return Status(kNotFound, msg, msg2, posix_code);

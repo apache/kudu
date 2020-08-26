@@ -38,18 +38,17 @@ class KUDU_EXPORT KuduValue {
   KuduValue* Clone() const;
 
   /// @name Builders from integral types.
-  ///
+  ///@{
+
   /// Construct a KuduValue object from the given value of integral type.
   ///
   /// @param [in] val
   ///   The value to build the KuduValue from.
   /// @return A new KuduValue object.
-  ///
-  ///@{
   static KuduValue* FromInt(int64_t val);
-  static KuduValue* FromFloat(float f);
-  static KuduValue* FromDouble(double d);
-  static KuduValue* FromBool(bool b);
+  static KuduValue* FromFloat(float val);
+  static KuduValue* FromDouble(double val);
+  static KuduValue* FromBool(bool val);
   ///@}
 
 #if KUDU_INT128_SUPPORTED

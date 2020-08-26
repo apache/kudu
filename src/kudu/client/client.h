@@ -1111,10 +1111,16 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
+  /// @name Advanced/Unstable API
+  ///
+  /// There are no guarantees on the stability of this client API.
+  ///
+  ///@{
+
   /// Create a new IN Bloom filter predicate which can be used for scanners on
   /// this table.
   ///
-  /// @note This method is experimental and may change or disappear in future.
+  /// @warning This method is experimental and may change or disappear in future.
   ///
   /// A Bloom filter is a space-efficient probabilistic data structure used to
   /// test set membership with a possibility of false positive matches.
@@ -1147,11 +1153,6 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
                                            std::vector<KuduBloomFilter*>* bloom_filters);
 
-  /// @name Advanced/Unstable API
-  ///
-  /// There are no guarantees on the stability of this client API.
-  ///
-  ///@{
   /// Create a new IN Bloom filter predicate using direct BlockBloomFilter
   /// pointers which can be used for scanners on this table.
   ///
@@ -1168,6 +1169,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// Users are expected to perform further filtering to guard against false
   /// positives and automatic disablement of an ineffective Bloom filter
   /// predicate to get precise set membership information.
+  ///
+  /// @warning This method is experimental and may change or disappear in future.
   ///
   /// @param [in] col_name
   ///   Name of the column to which the predicate applies.
@@ -2433,14 +2436,15 @@ class KUDU_EXPORT KuduScanner {
   sp::shared_ptr<KuduTable> GetKuduTable();
 
   /// @name Advanced/Unstable API
-  //
-  ///@{
+  ///
   /// Modifier flags for the row format returned from the server.
   ///
   /// @note Each flag corresponds to a bit that gets set on a bitset that is sent
   ///   to the server. See SetRowFormatFlags() for example usage.
+  ///@{
+
+  /// No flags set.
   static const uint64_t NO_FLAGS = 0;
-  /// Makes the server pad UNIXTIME_MICROS slots to 16 bytes.
   /// @note This flag actually wastes throughput by making messages larger than they need to
   ///   be. It exists merely for compatibility reasons and requires the user to know the row
   ///   format in order to decode the data. That is, if this flag is enabled, the user _must_

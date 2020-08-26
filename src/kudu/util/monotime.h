@@ -57,16 +57,30 @@ namespace kudu {
 class KUDU_EXPORT MonoDelta {
  public:
   /// @name Converters from seconds representation (and ubiquitous SI prefixes).
-  ///
-  /// @param [in] seconds/ms/us/ns
+  ///@{
+
+  /// @param [in] seconds
   ///   Time interval representation in seconds (with ubiquitous SI prefixes).
   /// @return The resulting MonoDelta object initialized in accordance with
   ///   the specified parameter.
-  ///
-  ///@{
   static MonoDelta FromSeconds(double seconds);
+
+  /// @param [in] ms
+  ///   Time interval representation in seconds (with ubiquitous SI prefixes).
+  /// @return The resulting MonoDelta object initialized in accordance with
+  ///   the specified parameter.
   static MonoDelta FromMilliseconds(int64_t ms);
+
+  /// @param [in] us
+  ///   Time interval representation in seconds (with ubiquitous SI prefixes).
+  /// @return The resulting MonoDelta object initialized in accordance with
+  ///   the specified parameter.
   static MonoDelta FromMicroseconds(int64_t us);
+
+  /// @param [in] ns
+  ///   Time interval representation in seconds (with ubiquitous SI prefixes).
+  /// @return The resulting MonoDelta object initialized in accordance with
+  ///   the specified parameter.
   static MonoDelta FromNanoseconds(int64_t ns);
   ///@}
 
@@ -108,10 +122,9 @@ class KUDU_EXPORT MonoDelta {
   std::string ToString() const;
 
   /// @name Converters into seconds representation (and ubiquitous SI prefixes).
-  ///
-  /// @return Representation of the time interval in appropriate SI units.
-  ///
   ///@{
+
+  /// @return Representation of the time interval in appropriate SI units.
   double ToSeconds() const;
   int64_t ToMilliseconds() const;
   int64_t ToMicroseconds() const;
@@ -142,7 +155,7 @@ class KUDU_EXPORT MonoDelta {
 
   /// @name Syntactic sugar: increment/decrement operators for MonoDelta.
   ///@{
-  ///
+
   /// Add a delta to current time interval.
   ///
   /// @param [in] delta
@@ -183,12 +196,18 @@ class KUDU_EXPORT MonoDelta {
 class KUDU_EXPORT MonoTime {
  public:
   /// @name Conversion constants for ubiquitous time units.
-  ///
   ///@{
+
+  /// Nanoseconds per second
   static const int64_t kNanosecondsPerSecond = 1000000000L;
+
+  /// Nanoseconds per millisecond
   static const int64_t kNanosecondsPerMillisecond = 1000000L;
+
+  /// Nanoseconds per microseconds
   static const int64_t kNanosecondsPerMicrosecond = 1000L;
 
+  /// Microseconds per second
   static const int64_t kMicrosecondsPerSecond = 1000000L;
   ///@}
 
@@ -270,7 +289,7 @@ class KUDU_EXPORT MonoTime {
 
   /// @name Syntactic sugar: increment/decrement operators for MonoTime.
   ///@{
-  ///
+
   /// Add a delta to the point in time represented by the object.
   ///
   /// @param [in] delta
@@ -312,7 +331,7 @@ void KUDU_EXPORT SleepFor(const MonoDelta& delta);
 
 /// @name Syntactic sugar: binary operators for MonoDelta.
 ///@{
-///
+
 /// @param [in] lhs
 ///   A time interval for comparison: the left-hand operand.
 /// @param [in] rhs
@@ -378,7 +397,7 @@ MonoDelta KUDU_EXPORT operator+(const MonoDelta& lhs, const MonoDelta& rhs);
 
 /// @name Syntactic sugar: binary operators for MonoTime.
 ///@{
-///
+
 /// Check if the specified objects represent the same point in time.
 ///
 /// This is a handy operator which is semantically equivalent to
@@ -439,7 +458,7 @@ bool KUDU_EXPORT operator>=(const MonoTime& lhs, const MonoTime& rhs);
 
 /// @name Syntactic sugar: mixed binary operators for MonoTime/MonoDelta.
 ///@{
-///
+
 /// Add the specified time interval to the given point in time.
 ///
 /// @param [in] t

@@ -92,7 +92,8 @@ class KUDU_EXPORT KuduPartialRow {
   KuduPartialRow& operator=(KuduPartialRow other);
 
   /// @name Setters for integral type columns by name.
-  ///
+  ///@{
+
   /// Set value for a column by name.
   ///
   /// @param [in] col_name
@@ -100,19 +101,28 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBool(const Slice& col_name, bool val) WARN_UNUSED_RESULT;
-
   Status SetInt8(const Slice& col_name, int8_t val) WARN_UNUSED_RESULT;
   Status SetInt16(const Slice& col_name, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(const Slice& col_name, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(const Slice& col_name, int64_t val) WARN_UNUSED_RESULT;
+  /// Set value for a column by name.
+  ///
+  /// @param [in] col_name
+  ///   Name of the target column.
+  /// @param [in] micros_since_utc_epoch
+  ///   The value to set.
+  /// @return Operation result status.
   Status SetUnixTimeMicros(const Slice& col_name,
                            int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
-  Status SetDate(const Slice& col_name,
-                 int32_t days_since_unix_epoch) WARN_UNUSED_RESULT;
-
+  /// Set value for a column by name.
+  ///
+  /// @param [in] col_name
+  ///   Name of the target column.
+  /// @param [in] days_since_unix_epoch
+  ///   The value to set.
+  /// @return Operation result status.
+  Status SetDate(const Slice& col_name, int32_t days_since_unix_epoch) WARN_UNUSED_RESULT;
   Status SetFloat(const Slice& col_name, float val) WARN_UNUSED_RESULT;
   Status SetDouble(const Slice& col_name, double val) WARN_UNUSED_RESULT;
 #if KUDU_INT128_SUPPORTED
@@ -122,27 +132,36 @@ class KUDU_EXPORT KuduPartialRow {
 
   /// @name Setters for integral type columns by index.
   ///
-  /// Set value for a column by index.
-  ///
   /// These setters are the same as corresponding column-name-based setters,
   /// but with numeric column indexes. These are faster since they avoid
   /// hashmap lookups, so should be preferred in performance-sensitive code
   /// (e.g. bulk loaders).
-  ///
+  ///@{
+
   /// @param [in] col_idx
   ///   The index of the target column.
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBool(int col_idx, bool val) WARN_UNUSED_RESULT;
 
   Status SetInt8(int col_idx, int8_t val) WARN_UNUSED_RESULT;
   Status SetInt16(int col_idx, int16_t val) WARN_UNUSED_RESULT;
   Status SetInt32(int col_idx, int32_t val) WARN_UNUSED_RESULT;
   Status SetInt64(int col_idx, int64_t val) WARN_UNUSED_RESULT;
+
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] micros_since_utc_epoch
+  ///   The value to set.
+  /// @return Operation result status.
   Status SetUnixTimeMicros(int col_idx, int64_t micros_since_utc_epoch) WARN_UNUSED_RESULT;
+
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] days_since_unix_epoch
+  ///   The value to set.
+  /// @return Operation result status.
   Status SetDate(int col_idx, int32_t days_since_unix_epoch) WARN_UNUSED_RESULT;
 
   Status SetFloat(int col_idx, float val) WARN_UNUSED_RESULT;
@@ -153,7 +172,8 @@ class KUDU_EXPORT KuduPartialRow {
   ///@}
 
   /// @name Setters for binary/string columns by name (copying).
-  ///
+  ///@{
+
   /// Set the binary/string value for a column by name, copying the specified
   /// data immediately.
   ///
@@ -167,14 +187,10 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBinary(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setters for varchar columns by name (copying).
-  ///
   /// Set the varchar value for a column by name, copying the
   /// specified data immediately.
   ///
@@ -187,7 +203,8 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetVarchar(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
 
   /// @name Setters for binary/string columns by index (copying).
-  ///
+  ///@{
+
   /// Set the binary/string value for a column by index, copying
   /// the specified data immediately.
   ///
@@ -206,14 +223,10 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBinary(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetString(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name Setter for varchar columns by index (copying).
-  ///
   /// Set the varchar value for a column by index, copying
   /// the specified data immediately.
   ///
@@ -227,11 +240,11 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
   Status SetVarchar(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   /// @name Setters for binary/string columns by name (copying).
-  ///
+  ///@{
+
   /// Set the binary/string value for a column by name, copying the specified
   /// data immediately.
   ///
@@ -240,14 +253,13 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBinaryCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetStringCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Setters for binary/string columns by index (copying).
-  ///
+  ///@{
+
   /// Set the binary/string value for a column by index, copying the specified
   /// data immediately.
   ///
@@ -261,14 +273,13 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetStringCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetBinaryCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Setters for binary/string columns by name (non-copying).
-  ///
+  ///@{
+
   /// Set the binary/string value for a column by name, not copying the
   /// specified data.
   ///
@@ -282,17 +293,16 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBinaryNoCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetStringNoCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
 
-  /// @name [Advanced][Unstable] Setter for varchar columns by name (non-copying).
+  /// @name Advanced/Unstable API
   ///
-  /// Set the varchar value for a column by name, not copying the
-  /// specified data.
-  ///
+  /// There are no guarantees that the validation performed by these methods for
+  /// 'val' will not change.
+  ///@{
+
   /// This method expects the values to be truncated already and they only do a
   /// basic validation that the data is not larger than the maximum column
   /// length (as indicated by the schema) multiplied by 4, as that's the upper
@@ -304,16 +314,44 @@ class KUDU_EXPORT KuduPartialRow {
   ///   if any errors happened (the errors can be fetched using the
   ///   KuduSession::GetPendingErrors() method).
   ///
+  /// @warning Unstable API
+  ///
   /// @param [in] col_name
   ///   Name of the target column.
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
   Status SetVarcharNoCopyUnsafe(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
 
-  /// @name Setters for binary/string columns by index (non-copying).
+  /// This method expects the values to be truncated already and they only do a
+  /// basic validation that the data is not larger than the maximum column
+  /// length (as indicated by the schema) multiplied by 4, as that's the upper
+  /// limit if only 4-byte UTF8 characters are used. This is subject to change in
+  /// the future.
   ///
+  /// This setter is the same as the corresponding column-name-based setter,
+  /// but with numeric column indexes. This is faster since it avoids
+  /// hashmap lookups, so should be preferred in performance-sensitive code
+  /// (e.g. bulk loaders).
+  ///
+  /// @note The specified data must remain valid until the corresponding
+  ///   RPC calls are completed to be able to access error buffers,
+  ///   if any errors happened (the errors can be fetched using the
+  ///   KuduSession::GetPendingErrors() method).
+  ///
+  /// @warning Unstable API
+  ///
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [in] val
+  ///   The value to set.
+  /// @return Operation result status.
+  Status SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
+  ///@}
+
+  /// @name Setters for binary/string columns by index (non-copying).
+  ///@{
+
   /// Set the binary/string value for a column by index, not copying the
   /// specified data.
   ///
@@ -332,39 +370,9 @@ class KUDU_EXPORT KuduPartialRow {
   /// @param [in] val
   ///   The value to set.
   /// @return Operation result status.
-  ///
-  ///@{
   Status SetBinaryNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   Status SetStringNoCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
   ///@}
-
-  /// @name [Advanced][Unstable] Setter for varchar columns by index (non-copying).
-  ///
-  /// Set the varchar value for a column by index, not copying the specified data.
-  ///
-  /// This method expects the values to be truncated already and they only do a
-  /// basic validation that the data is not larger than the maximum column
-  /// length (as indicated by the schema) multiplied by 4, as that's the upper
-  /// limit if only 4-byte UTF8 characters are used. This is subject to change in
-  /// the future.
-  ///
-  /// This setter is the same as the corresponding column-name-based setter,
-  /// but with numeric column indexes. This is faster since it avoids
-  /// hashmap lookups, so should be preferred in performance-sensitive code
-  /// (e.g. bulk loaders).
-  ///
-  /// @note The specified data must remain valid until the corresponding
-  ///   RPC calls are completed to be able to access error buffers,
-  ///   if any errors happened (the errors can be fetched using the
-  ///   KuduSession::GetPendingErrors() method).
-  ///
-  /// @param [in] col_idx
-  ///   The index of the target column.
-  /// @param [in] val
-  ///   The value to set.
-  /// @return Operation result status.
-  ///
-  Status SetVarcharNoCopyUnsafe(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   /// Set column value to @c NULL; the column is identified by its name.
   ///
@@ -433,24 +441,47 @@ class KUDU_EXPORT KuduPartialRow {
   bool IsNull(int col_idx) const;
 
   /// @name Getters for integral type columns by column name.
-  ///
+  ///@{
+
   /// Get value of the column specified by name.
   ///
+  /// @param [in] col_name
+  ///   The name of the column.
+  /// @param [out] val
+  ///   The value of the column.
   /// @return Operation result status. Return a bad Status if at least one
   ///   of the following is @c true:
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetBool(const Slice& col_name, bool* val) const WARN_UNUSED_RESULT;
 
   Status GetInt8(const Slice& col_name, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
-  Status GetUnixTimeMicros(const Slice& col_name, int64_t* micros_since_utc_epoch)
-    const WARN_UNUSED_RESULT;
+
+  /// @param [in] col_name
+  ///   The name of the column.
+  /// @param [out] micros_since_utc_epoch
+  ///   The value of the column.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  Status GetUnixTimeMicros(const Slice& col_name,
+                           int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
+
+  /// @param [in] col_name
+  ///   The name of the column.
+  /// @param [out] days_since_unix_epoch
+  ///   The value of the column.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
   Status GetDate(const Slice& col_name, int32_t* days_since_unix_epoch) const WARN_UNUSED_RESULT;
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
@@ -463,31 +494,50 @@ class KUDU_EXPORT KuduPartialRow {
 
   /// @name Getters for column of integral type by column index.
   ///
-  /// Get value of a column of integral type by column index.
-  ///
   /// These getters are the same as the corresponding column-name-based getters,
   /// but with numeric column indexes. These are faster since they avoid
   /// hashmap lookups, so should be preferred in performance-sensitive code
   /// (e.g. bulk loaders).
+  ///@{
+
+  /// Get value of a column of integral type by column index.
   ///
   /// @param [in] col_idx
   ///   The index of the target column.
+  /// @param [out] val
+  ///   The value of the target column.
   /// @return Operation result status. Return a bad Status if at least one
   ///   of the following is @c true:
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetBool(int col_idx, bool* val) const WARN_UNUSED_RESULT;
-
   Status GetInt8(int col_idx, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
-  Status GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
-  Status GetDate(int col_idx, int32_t* days_since_unix_epoch) const WARN_UNUSED_RESULT;
 
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [out] micros_since_utc_epoch
+  ///   The value of the target column.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  Status GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
+
+  /// @param [in] col_idx
+  ///   The index of the target column.
+  /// @param [out] days_since_unix_epoch
+  ///   The value of the target column.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  Status GetDate(int col_idx, int32_t* days_since_unix_epoch) const WARN_UNUSED_RESULT;
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
 #if KUDU_INT128_SUPPORTED
@@ -498,7 +548,8 @@ class KUDU_EXPORT KuduPartialRow {
   ///@}
 
   /// @name Getters for string/binary/varchar column by column name.
-  ///
+  ///@{
+
   /// Get the string/binary/varchar value for a column by its name.
   ///
   /// @param [in] col_name
@@ -512,22 +563,21 @@ class KUDU_EXPORT KuduPartialRow {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetVarchar(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Getters for string/binary/varchar column by column index.
-  ///
+  ///@{
+
   /// Get the string/binary/varchar value for a column by its index.
   ///
   /// These methods are faster than their name-based counterparts
   /// since they use indices to avoid hashmap lookups, so index-based getters
   /// should be preferred in performance-sensitive code.
   ///
-  /// @param [in] col_index
+  /// @param [in] col_idx
   ///   The index of the column.
   /// @param [out] val
   ///   Pointer to the placeholder to put the resulting value.
@@ -538,8 +588,6 @@ class KUDU_EXPORT KuduPartialRow {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetVarchar(int col_idx, Slice* val) const WARN_UNUSED_RESULT;

@@ -132,16 +132,20 @@ class KUDU_EXPORT KuduScanBatch {
   ///
   /// @note The Slices returned by both direct_data() and indirect_data()
   ///   are only valid for the lifetime of the KuduScanBatch.
-  //
   ///@{
+
   /// Return a slice that points to the direct row data received from the
   /// server. Users of this API must have knowledge of the data format in
   /// order to decode the data.
+  ///
+  /// @warning Unstable API
   ///
   /// @return a Slice that points to the raw direct row data.
   Slice direct_data() const;
 
   /// Like the method above, but for indirect data.
+  ///
+  /// @warning Unstable API
   ///
   /// @return a Slice that points to the raw indirect row data.
   Slice indirect_data() const;
@@ -188,7 +192,8 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   Status IsDeleted(bool* val) const WARN_UNUSED_RESULT KUDU_NO_EXPORT;
 
   /// @name Getters for integral type columns by column name.
-  ///
+  ///@{
+
   /// @param [in] col_name
   ///   The name of the target column.
   /// @param [out] val
@@ -198,21 +203,34 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetBool(const Slice& col_name, bool* val) const WARN_UNUSED_RESULT;
-
   Status GetInt8(const Slice& col_name, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
-  Status GetUnixTimeMicros(const Slice& col_name, int64_t* micros_since_utc_epoch)
-      const WARN_UNUSED_RESULT;
+  /// @param [in] col_name
+  ///   The name of the target column.
+  /// @param [out] micros_since_utc_epoch
+  ///   Placeholder for the result value.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
+  Status GetUnixTimeMicros(const Slice& col_name,
+                           int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
+  /// @param [in] col_name
+  ///   The name of the target column.
+  /// @param [out] days_since_unix_epoch
+  ///   Placeholder for the result value.
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
   Status GetDate(const Slice& col_name, int32_t* days_since_unix_epoch) const WARN_UNUSED_RESULT;
-
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
-
 #if KUDU_INT128_SUPPORTED
   Status GetUnscaledDecimal(const Slice& col_name, int128_t* val) const WARN_UNUSED_RESULT;
 #endif
@@ -223,8 +241,9 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   /// These methods are faster than their name-based counterparts
   /// since using indices avoids a hashmap lookup, so index-based getters
   /// should be preferred in performance-sensitive code.
-  ///
-  /// @param [in] col_index
+  ///@{
+
+  /// @param [in] col_idx
   ///   The index of the column.
   /// @param [out] val
   ///   Pointer to the placeholder to put the resulting value.
@@ -234,27 +253,43 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetBool(int col_idx, bool* val) const WARN_UNUSED_RESULT;
-
   Status GetInt8(int col_idx, int8_t* val) const WARN_UNUSED_RESULT;
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
+  /// @param [in] col_idx
+  ///   The index of the column.
+  /// @param [out] micros_since_utc_epoch
+  ///   Pointer to the placeholder to put the resulting value.
+  ///
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
   Status GetUnixTimeMicros(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
+  /// @param [in] col_idx
+  ///   The index of the column.
+  /// @param [out] days_since_unix_epoch
+  ///   Pointer to the placeholder to put the resulting value.
+  ///
+  /// @return Operation result status. Return a bad Status if at least one
+  ///   of the following is @c true:
+  ///     @li The type does not match.
+  ///     @li The value is unset.
+  ///     @li The value is @c NULL.
   Status GetDate(int col_idx, int32_t* days_since_unix_epoch) const WARN_UNUSED_RESULT;
-
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
-
 #if KUDU_INT128_SUPPORTED
   Status GetUnscaledDecimal(int col_idx, int128_t* val) const WARN_UNUSED_RESULT;
 #endif
   ///@}
 
   /// @name Getters for string/binary/varchar column by column name.
-  ///
+  ///@{
+
   /// Get the string/binary/varchar value for a column by its name.
   ///
   /// @param [in] col_name
@@ -268,22 +303,21 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetVarchar(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Getters for string/binary/varchar column by column index.
-  ///
+  ///@{
+
   /// Get the string/binary/varchar value for a column by its index.
   ///
   /// These methods are faster than their name-based counterparts
   /// since using indices avoids a hashmap lookup, so index-based getters
   /// should be preferred in performance-sensitive code.
   ///
-  /// @param [in] col_index
+  /// @param [in] col_idx
   ///   The index of the column.
   /// @param [out] val
   ///   Pointer to the placeholder to put the resulting value.
@@ -294,8 +328,6 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   ///     @li The type does not match.
   ///     @li The value is unset.
   ///     @li The value is @c NULL.
-  ///
-  ///@{
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
   Status GetVarchar(int col_idx, Slice* val) const WARN_UNUSED_RESULT;

@@ -146,8 +146,9 @@ Status KuduScanBatch::RowPtr::GetInt64(const Slice& col_name, int64_t* val) cons
   return Get<TypeTraits<INT64> >(col_name, val);
 }
 
-Status KuduScanBatch::RowPtr::GetUnixTimeMicros(const Slice& col_name, int64_t* val) const {
-  return Get<TypeTraits<UNIXTIME_MICROS> >(col_name, val);
+Status KuduScanBatch::RowPtr::GetUnixTimeMicros(const Slice& col_name,
+                                                int64_t* micros_since_utc_epoch) const {
+  return Get<TypeTraits<UNIXTIME_MICROS> >(col_name, micros_since_utc_epoch);
 }
 
 Status KuduScanBatch::RowPtr::GetDate(const Slice& col_name, int32_t* days_since_unix_epoch) const {
@@ -200,8 +201,9 @@ Status KuduScanBatch::RowPtr::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
 }
 
-Status KuduScanBatch::RowPtr::GetUnixTimeMicros(int col_idx, int64_t* val) const {
-  return Get<TypeTraits<UNIXTIME_MICROS> >(col_idx, val);
+Status KuduScanBatch::RowPtr::GetUnixTimeMicros(int col_idx,
+                                                int64_t* micros_since_utc_epoch) const {
+  return Get<TypeTraits<UNIXTIME_MICROS> >(col_idx, micros_since_utc_epoch);
 }
 
 Status KuduScanBatch::RowPtr::GetDate(int col_idx, int32_t* days_since_unix_epoch) const {
