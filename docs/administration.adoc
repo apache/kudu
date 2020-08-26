@@ -1774,7 +1774,7 @@ clusters_info:
   Example::
 +
 ----
-$ sudo -u kudu kudu ksck @cluster_name1
+$ sudo -u kudu kudu cluster ksck @cluster_name1
 ----
 +
 
