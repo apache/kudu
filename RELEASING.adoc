@@ -332,8 +332,13 @@ Note: You can upload to the test PyPi by adding
 . Add the previous release notes to the `prior_release_notes.adoc` and submit the changes.
 
 . Generate the version-specific documentation from that branch following these
-  link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
+  <<README.adoc#updating-the-site,instructions>>.
++
 
+WARNING: The site *MUST NOT* be built on Mac. See the
+<<README.adoc#building-docs,documentation building instructions>> for details.
+
++
 . Update the `index.md` file in the `releases` directory. Add a line about
   the newly released version into the `Latest release` section, move line
   about the previous one into the `Previous releases`. Overall, update
@@ -368,7 +373,7 @@ Note: You can upload to the test PyPi by adding
 . Submit these changes to the `gh-pages` Gerrit branch and get them reviewed.
 
 . Once the review is finished and the commit is pushed, update the website following
-  these link:https://github.com/apache/kudu/#deploying-changes-to-the-apache-kudu-web-site[instructions].
+  these <<README.adoc#deploying-changes-to-the-apache-kudu-web-site,instructions>>.
 
 . Add a release blog post about the new release, similar to
   link:https://kudu.apache.org/2019/07/09/apache-kudu-1-10-0-release.html[this].

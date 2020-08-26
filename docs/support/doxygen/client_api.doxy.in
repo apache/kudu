@@ -67,3 +67,7 @@ GENERATE_LATEX         = NO
 
 # Do not output warnings on undocumented friend classes/structs/unions.
 HIDE_FRIEND_COMPOUNDS  = YES
+
+# Copy the first member's documentation to the rest in the group if they aren't
+# documented.
+DISTRIBUTE_GROUP_DOC   = YES

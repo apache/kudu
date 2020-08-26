@@ -34,6 +34,21 @@ usage() {
   echo usage: "$0 --build_root <path> --output_subdir <relative path> [--site <path to gh-pages checkout>]"
 }
 
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  SED="sed -i -e"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "WARNING: The docs MUST NOT be built on Mac for publishing purposes.
+  Press 'y' to continue"
+  read -n 1
+  if [[ "$REPLY" != "y" ]]; then
+    exit 1;
+  fi
+  SED="sed -i~ -e"
+else
+  echo "Unsupported OS"
+  exit 1
+fi
+
 while [[ $# > 0 ]] ; do
     arg=$1
     case $arg in
@@ -113,10 +128,7 @@ BUNDLE="$GEM_PATH/bin/bundle"
 echo "Locally installing ruby gems needed to build docs."
 if [ ! -x "$BUNDLE" ]; then
   set -x
-  # The bundler install is pinned to an explicit version because versions after
-  # 2.0.0 require ruby >= 2.3.0 which is not available on many supported
-  # operating systems.
-  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler -v '1.17.3'
+  gem install --no-document  -q --install-dir "$GEM_PATH" bundler
   set +x
 fi
 
@@ -163,7 +175,7 @@ for binary in ${binaries[@]}; do
     -o $GEN_DOC_DIR/${binary}_configuration_reference.adoc \
       $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
     ${GEN_DOC_DIR}/$binary.xml
-  INCLUSIONS_SUPPORTED+="include::${binary}_configuration_reference.adoc[leveloffset=+1]\n"
+  INCLUSIONS_SUPPORTED+="include::${binary}_configuration_reference.adoc[leveloffset=+1]\\"$'\n'
 
   # Create the unsupported config reference
   xsltproc \
@@ -172,13 +184,13 @@ for binary in ${binaries[@]}; do
     -o $GEN_DOC_DIR/${binary}_configuration_reference_unsupported.adoc \
       $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
     ${GEN_DOC_DIR}/$binary.xml
-  INCLUSIONS_UNSUPPORTED+="include::${binary}_configuration_reference_unsupported.adoc[leveloffset=+1]\n"
+  INCLUSIONS_UNSUPPORTED+="include::${binary}_configuration_reference_unsupported.adoc[leveloffset=+1]\\"$'\n'
 done
 
 # Add the includes to the configuration reference files, replacing the template lines
 cp $SOURCE_ROOT/docs/configuration_reference* $GEN_DOC_DIR/
-sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference.adoc
-sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference_unsupported.adoc
+$SED "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference.adoc
+$SED "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference_unsupported.adoc
 
 # Create tool references
 echo "Running kudu --helpxml"
@@ -202,7 +214,7 @@ ${GEN_DOC_DIR}/kudu.xml
 
 # Add the includes to the cli tools reference files, replacing the template lines
 cp $SOURCE_ROOT/docs/command_line_tools_reference.adoc $GEN_DOC_DIR/
-sed -i "s#@@TOOLS_REFERENCE@@#include::command_line_tools.adoc[leveloffset=+1]\n#" ${GEN_DOC_DIR}/command_line_tools_reference.adoc
+$SED "s#@@TOOLS_REFERENCE@@#include::command_line_tools.adoc[leveloffset=+1]\\"$'\n#' ${GEN_DOC_DIR}/command_line_tools_reference.adoc
 
 # If we're generating the web site, pass the template which causes us
 # to generate Jekyll templates instead of full HTML.
