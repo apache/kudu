@@ -23,7 +23,11 @@ namespace debug {
 //
 // It's almost always safe unless we are in a signal handler context
 // inside a call into libdl.
-bool SafeToUnwindStack();
+// TODO - for now, its not clear which one is more safe.
+// so due to the dlopen, issue turning this whole functionality off.
+// We can revisit this soon. But reimplementing dlopen does not seem
+// like something that will work when kuduraft is a library
+bool SafeToUnwindStack() { return false; }
 
 } // namespace debug
 } // namespace kudu
