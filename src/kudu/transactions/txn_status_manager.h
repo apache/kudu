@@ -84,7 +84,9 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // (even if that attempt failed), which helps ensure that at most one call to
   // this method will succeed for a given transaction ID. The
   // 'highest_seen_txn_id' output parameter, if not null, is populated in both
-  // success and failure cases.
+  // success and failure cases, except for the case when returning
+  // Status::ServiceUnavailable() due to not-yet-loaded data from the
+  // backing transaction status tablet.
   //
   // TODO(awong): consider computing the next available transaction ID in this
   // partition and using it in case this transaction is already used, or having

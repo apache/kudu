@@ -59,6 +59,7 @@ namespace transactions {
 
 Status TxnSystemClient::Create(const vector<string>& master_addrs,
                                unique_ptr<TxnSystemClient>* sys_client) {
+  DCHECK(!master_addrs.empty());
   KuduClientBuilder builder;
   builder.master_server_addrs(master_addrs);
   client::sp::shared_ptr<KuduClient> client;
@@ -220,6 +221,7 @@ Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_tx
                                                    const MonoDelta& timeout,
                                                    const StatusCallback& cb,
                                                    CoordinatorOpResultPB* result) {
+  DCHECK(txn_status_table_);
   const MonoTime deadline = MonoTime::Now() + timeout;
   unique_ptr<TxnStatusTabletContext> ctx(
       new TxnStatusTabletContext({

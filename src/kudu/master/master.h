@@ -48,6 +48,10 @@ namespace security {
 class TokenSigner;
 } // namespace security
 
+namespace transactions {
+class TxnManager;
+} // namespace transactions
+
 namespace master {
 
 class CatalogManager;
@@ -71,6 +75,7 @@ class Master : public kserver::KuduServer {
 
   Status StartAsync();
   Status WaitForCatalogManagerInit() const;
+  Status WaitForTxnManagerInit(const MonoDelta& timeout = {}) const;
 
   // Wait until this Master's catalog manager instance is the leader and is ready.
   // This method is intended for use by unit tests.
@@ -85,6 +90,8 @@ class Master : public kserver::KuduServer {
   TSManager* ts_manager() { return ts_manager_.get(); }
 
   CatalogManager* catalog_manager() { return catalog_manager_.get(); }
+
+  transactions::TxnManager* txn_manager() { return txn_manager_.get(); }
 
   const MasterOptions& opts() { return opts_; }
 
@@ -126,9 +133,14 @@ class Master : public kserver::KuduServer {
  private:
   friend class MasterTest;
   friend class CatalogManager;
+  friend class transactions::TxnManager;
 
   void InitCatalogManagerTask();
   Status InitCatalogManager();
+
+  void InitTxnManagerTask();
+  Status InitTxnManager();
+  Status ScheduleTxnManagerInit();
 
   // Initialize registration_.
   // Requires that the web server and RPC server have been started.
@@ -142,7 +154,8 @@ class Master : public kserver::KuduServer {
   enum MasterState {
     kStopped,
     kInitialized,
-    kRunning
+    kRunning,
+    kStopping,
   };
 
   MasterState state_;
@@ -150,13 +163,20 @@ class Master : public kserver::KuduServer {
   std::unique_ptr<MasterCertAuthority> cert_authority_;
   std::unique_ptr<security::TokenSigner> token_signer_;
   std::unique_ptr<CatalogManager> catalog_manager_;
+  std::unique_ptr<transactions::TxnManager> txn_manager_;
   std::unique_ptr<MasterPathHandlers> path_handlers_;
 
-  // The status of the master initialization. This is set
+  // The status of the catalog manager initialization. This is set
   // by the async initialization task.
-  Promise<Status> init_status_;
+  Promise<Status> catalog_manager_init_status_;
 
-  // For initializing the catalog manager.
+  // The status of the TxnManager initialization. This is set by an asynchronous
+  // initialization task. The task to initialize TxnManager can be scheduled
+  // either by master upon its start or from within TxnManager itself while
+  // processing the very first RPC after start.
+  Promise<Status> txn_manager_init_status_;
+
+  // For initializing the catalog manager and TxnManager.
   std::unique_ptr<ThreadPool> init_pool_;
 
   MasterOptions opts_;

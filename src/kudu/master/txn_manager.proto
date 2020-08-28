@@ -1,0 +1,146 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+syntax = "proto2";
+package kudu.transactions;
+
+option java_package = "org.apache.kudu.transactions";
+
+import "kudu/common/wire_protocol.proto";
+import "kudu/rpc/rpc_header.proto";
+import "kudu/transactions/transactions.proto";
+
+// TxnManager specific errors.
+message TxnManagerErrorPB {
+  enum Code {
+    // An error which has no more specific error code.
+    // The code and message in 'status' may reveal more details.
+    //
+    // RPCs should avoid returning this, since callers will not be
+    // able to easily parse the error.
+    UNKNOWN_ERROR = 1;
+
+    // TODO(aserbin): introduce specific error codes, if necessary
+  }
+
+  // The error code.
+  required Code code = 1;
+
+  // The Status object for the error. This includes a text message that may be
+  // more useful to present in log messages, though its error code is less
+  // specific.
+  required AppStatusPB status = 2;
+}
+
+////////////////////////////////////////////////////////////
+// RPCs
+////////////////////////////////////////////////////////////
+
+message BeginTransactionRequestPB {
+}
+
+message BeginTransactionResponsePB {
+  // Information on error, if any occurred.
+  optional TxnManagerErrorPB error = 1;
+
+  // Assigned transaction identifier.
+  optional int64 txn_id = 2;
+
+  // The keep-alive interval (in milliseconds) to keep the transaction alive.
+  // TxnManager expects the client to send keep-alive heartbeats spaced by
+  // keepalive_millis interval.
+  optional uint32 keepalive_millis = 3;
+}
+
+message CommitTransactionRequestPB {
+  optional int64 txn_id = 1;
+}
+
+message CommitTransactionResponsePB {
+  // Information on error, if any occurred.
+  optional TxnManagerErrorPB error = 1;
+}
+
+message AbortTransactionRequestPB {
+  optional int64 txn_id = 1;
+}
+
+message AbortTransactionResponsePB {
+  // Information on error, if any occurred.
+  optional TxnManagerErrorPB error = 1;
+}
+
+message GetTransactionStateRequestPB {
+  optional int64 txn_id = 1;
+}
+
+message GetTransactionStateResponsePB {
+  // Information on error, if any occurred.
+  optional TxnManagerErrorPB error = 1;
+
+  // The transaction state at the time of processing the request.
+  optional TxnStatePB state = 2;
+}
+
+
+message KeepTransactionAliveRequestPB {
+  optional int64 txn_id = 1;
+}
+
+message KeepTransactionAliveResponsePB {
+  // Information on error, if any occurred.
+  optional TxnManagerErrorPB error = 1;
+}
+
+// Feature flags to detect incompatibilities between newer and older versions.
+enum TxnManagerFeatures {
+  UNKNOWN_FEATURE = 0;
+}
+
+// By design, TxnManager is a stateless proxy for TxnStatusTablet to serve
+// as a convenient facade for Kudu clients to work with. TxnManagerService
+// provides RPC interface to access TxnManager's functionality.
+service TxnManagerService {
+  // Set the default authz method to something invalid, so that if
+  // we forget to set the option on a new RPC call, we'll get a build
+  // failure.
+  option (kudu.rpc.default_authz_method) = "MUST_SET_AUTHZ_PER_RPC";
+
+  rpc BeginTransaction(BeginTransactionRequestPB)
+      returns (BeginTransactionResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
+  rpc CommitTransaction(CommitTransactionRequestPB)
+      returns (CommitTransactionResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
+  rpc AbortTransaction(AbortTransactionRequestPB)
+      returns (AbortTransactionResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
+  rpc GetTransactionState(GetTransactionStateRequestPB)
+      returns (GetTransactionStateResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+
+  rpc KeepTransactionAlive(KeepTransactionAliveRequestPB)
+      returns (KeepTransactionAliveResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+}

@@ -44,6 +44,8 @@
 #include "kudu/master/master_path_handlers.h"
 #include "kudu/master/master_service.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/master/txn_manager.h"
+#include "kudu/master/txn_manager_service.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/service_if.h"
@@ -53,6 +55,7 @@
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -91,11 +94,15 @@ DEFINE_string(location_mapping_cmd, "",
               "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
               "using location awareness features this flag should not be set.");
 
+DECLARE_bool(txn_manager_lazily_initialized);
+DECLARE_bool(txn_manager_enabled);
 
 using kudu::consensus::RaftPeerPB;
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 using kudu::security::TokenSigner;
+using kudu::transactions::TxnManager;
+using kudu::transactions::TxnManagerServiceImpl;
 using kudu::tserver::ConsensusServiceImpl;
 using kudu::tserver::TabletCopyServiceImpl;
 using std::min;
@@ -161,12 +168,13 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
 } // anonymous namespace
 
 Master::Master(const MasterOptions& opts)
-  : KuduServer("Master", opts, "kudu.master"),
-    state_(kStopped),
-    catalog_manager_(new CatalogManager(this)),
-    path_handlers_(new MasterPathHandlers(this)),
-    opts_(opts),
-    registration_initialized_(false) {
+    : KuduServer("Master", opts, "kudu.master"),
+      state_(kStopped),
+      catalog_manager_(new CatalogManager(this)),
+      txn_manager_(FLAGS_txn_manager_enabled ? new TxnManager(this) : nullptr),
+      path_handlers_(new MasterPathHandlers(this)),
+      opts_(opts),
+      registration_initialized_(false) {
   const auto& location_cmd = FLAGS_location_mapping_cmd;
   if (!location_cmd.empty()) {
     location_cache_.reset(new LocationCache(location_cmd, metric_entity_.get()));
@@ -232,17 +240,30 @@ Status Master::StartAsync() {
       new ConsensusServiceImpl(this, catalog_manager_.get()));
   unique_ptr<ServiceIf> tablet_copy_service(
       new TabletCopyServiceImpl(this, catalog_manager_.get()));
+  unique_ptr<ServiceIf> txn_manager_service(
+      txn_manager_ ? new TxnManagerServiceImpl(this) : nullptr);
 
   RETURN_NOT_OK(RegisterService(std::move(impl)));
   RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
   RETURN_NOT_OK(RegisterService(std::move(tablet_copy_service)));
+  if (txn_manager_service) {
+    RETURN_NOT_OK(RegisterService(std::move(txn_manager_service)));
+  }
   RETURN_NOT_OK(KuduServer::Start());
 
   // Now that we've bound, construct our ServerRegistrationPB.
   RETURN_NOT_OK(InitMasterRegistration());
 
   // Start initializing the catalog manager.
-  RETURN_NOT_OK(init_pool_->Submit([this]() { this->InitCatalogManagerTask(); }));
+  RETURN_NOT_OK(init_pool_->Submit([this]() {
+    this->InitCatalogManagerTask();
+  }));
+
+  if (txn_manager_ && !FLAGS_txn_manager_lazily_initialized) {
+    // Start initializing the TxnManager.
+    RETURN_NOT_OK(ScheduleTxnManagerInit());
+  }
+
   state_ = kRunning;
 
   return Status::OK();
@@ -253,7 +274,7 @@ void Master::InitCatalogManagerTask() {
   if (!s.ok()) {
     LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
   }
-  init_status_.Set(s);
+  catalog_manager_init_status_.Set(s);
 }
 
 Status Master::InitCatalogManager() {
@@ -267,8 +288,62 @@ Status Master::InitCatalogManager() {
 
 Status Master::WaitForCatalogManagerInit() const {
   CHECK_EQ(state_, kRunning);
+  return catalog_manager_init_status_.Get();
+}
 
-  return init_status_.Get();
+Status Master::ScheduleTxnManagerInit() {
+  DCHECK(txn_manager_);
+  return init_pool_->Submit([this]() { this->InitTxnManagerTask(); });
+}
+
+void Master::InitTxnManagerTask() {
+  DCHECK(txn_manager_);
+  // For successful TxnManager's initialization it's necessary to have enough
+  // tablet servers running in a Kudu cluster. Since Kudu master can be started
+  // up in environments where tablet servers start long after the master's
+  // startup, this task retries indefinitely to initialize TxnManager and
+  // make it ready to handle requests in case of non-lazy initialization mode
+  // (the latter is controlled by the --txn_manager_lazily_initialized flag).
+  Status s;
+  while (true) {
+    if (state_ == kStopping || state_ == kStopped) {
+      s = Status::Incomplete("shut down while trying to initialize TxnManager");
+      break;
+    }
+    s = InitTxnManager();
+    if (s.ok()) {
+      break;
+    }
+    // TODO(aserbin): if retrying every second looks too often, consider adding
+    //                exponential back-off and adding condition variables to
+    //                wake up a long-awaiting task and retry initialization
+    //                right away when TxnManager receives a call.
+    static const MonoDelta kRetryInterval = MonoDelta::FromSeconds(1);
+    KLOG_EVERY_N_SECS(WARNING, 60) << Substitute(
+        "$0: unable to init TxnManager, will retry in $1",
+        s.ToString(), kRetryInterval.ToString());
+    SleepFor(kRetryInterval);
+  }
+  txn_manager_init_status_.Set(s);
+}
+
+Status Master::InitTxnManager() {
+  if (!txn_manager_) {
+    return Status::IllegalState("TxnManager is not enabled");
+  }
+  RETURN_NOT_OK_PREPEND(txn_manager_->Init(), "unable to initialize TxnManager");
+  return Status::OK();
+}
+
+Status Master::WaitForTxnManagerInit(const MonoDelta& timeout) const {
+  CHECK_EQ(state_, kRunning);
+  if (timeout.Initialized()) {
+    const Status* s = txn_manager_init_status_.WaitFor(timeout);
+    if (!s) {
+      return Status::TimedOut("timed out waiting for TxnManager to initialize");
+    }
+  }
+  return txn_manager_init_status_.Get();
 }
 
 Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout) {
@@ -326,6 +401,7 @@ void Master::ShutdownImpl() {
   if (kInitialized == state_ || kRunning == state_) {
     const string name = rpc_server_->ToString();
     LOG(INFO) << "Master@" << name << " shutting down...";
+    state_ = kStopping;
 
     // 1. Stop accepting new RPCs.
     UnregisterAllServices();

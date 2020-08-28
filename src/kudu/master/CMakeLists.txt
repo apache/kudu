@@ -32,6 +32,22 @@ ADD_EXPORTABLE_LIBRARY(master_proto
   DEPS ${MASTER_KRPC_LIBS}
   NONLINK_DEPS ${MASTER_KRPC_TGTS})
 
+KRPC_GENERATE(
+  TXN_MANAGER_KRPC_SRCS TXN_MANAGER_KRPC_HDRS TXN_MANAGER_KRPC_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES txn_manager.proto)
+set(TXN_MANAGER_KRPC_LIBS
+  consensus_metadata_proto
+  krpc
+  protobuf
+  transactions_proto
+  wire_protocol_proto)
+ADD_EXPORTABLE_LIBRARY(txn_manager_proto
+  SRCS ${TXN_MANAGER_KRPC_SRCS}
+  DEPS ${TXN_MANAGER_KRPC_LIBS}
+  NONLINK_DEPS ${TXN_MANAGER_KRPC_TGTS})
+
 set(MASTER_SRCS
   authz_provider.cc
   auto_rebalancer.cc
@@ -52,7 +68,9 @@ set(MASTER_SRCS
   table_locations_cache_metrics.cc
   table_metrics.cc
   ts_descriptor.cc
-  ts_manager.cc)
+  ts_manager.cc
+  txn_manager.cc
+  txn_manager_service.cc)
 
 add_library(master ${MASTER_SRCS})
 target_link_libraries(master
@@ -73,6 +91,7 @@ target_link_libraries(master
   server_process
   tablet
   token_proto
+  txn_manager_proto
   transactions
   tserver)
 
@@ -100,6 +119,7 @@ ADD_KUDU_TEST(placement_policy-test)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(ts_state-test)
+ADD_KUDU_TEST(txn_manager-test RESOURCE_LOCK "master-web-port")
 
 #########################################
 # kudu-master
