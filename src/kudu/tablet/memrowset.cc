@@ -518,10 +518,10 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
     // insert was "excluded"). However, subsequent mutations may be inside the
     // time range, so we must still project the row and walk its mutation list.
     bool insert_excluded = opts_.snap_to_exclude &&
-                           opts_.snap_to_exclude->IsCommitted(row.insertion_timestamp());
+                           opts_.snap_to_exclude->IsApplied(row.insertion_timestamp());
     bool unset_in_sel_vector;
     ApplyStatus apply_status;
-    if (insert_excluded || opts_.snap_to_include.IsCommitted(row.insertion_timestamp())) {
+    if (insert_excluded || opts_.snap_to_include.IsApplied(row.insertion_timestamp())) {
       RETURN_NOT_OK(projector_->ProjectRowForRead(row, &dst_row, dst->arena()));
 
       // Roll-forward MVCC for committed updates.
@@ -592,7 +592,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
   for (const Mutation *mut = mutation_head;
        mut != nullptr;
        mut = mut->acquire_next()) {
-    if (!opts_.snap_to_include.IsCommitted(mut->timestamp_)) {
+    if (!opts_.snap_to_include.IsApplied(mut->timestamp_)) {
       // This mutation is too new and should be omitted.
       //
       // All subsequent mutations are also too new because their timestamps are
@@ -604,7 +604,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     // values are correct if we see a relevant mutation later), but it doesn't
     // count towards the overall "application status".
     if (!opts_.snap_to_exclude ||
-        !opts_.snap_to_exclude->IsCommitted(mut->timestamp_)) {
+        !opts_.snap_to_exclude->IsApplied(mut->timestamp_)) {
 
       // This is the first mutation within the time range, so we may use it to
       // initialize 'is_deleted_start'.

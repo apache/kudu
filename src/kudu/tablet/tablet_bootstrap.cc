@@ -1434,7 +1434,7 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
   Status play_status;
   if (!all_flushed && write->has_row_operations()) {
     // Rather than RETURN_NOT_OK() here, we need to just save the status and do the
-    // RETURN_NOT_OK() down below the Commit() call below. Even though it seems wrong
+    // RETURN_NOT_OK() down below the FinishApplying() call below. Even though it seems wrong
     // to commit the op when in fact it failed to apply, we would throw a CHECK
     // failure if we attempted to 'Abort()' after entering the applying stage. Allowing it to
     // Commit isn't problematic because we don't expose the results anyway, and the bad
@@ -1447,7 +1447,7 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
     }
   }
 
-  op_state.CommitOrAbort(Op::COMMITTED);
+  op_state.FinishApplyingOrAbort(Op::APPLIED);
 
   // If we failed to apply the operations, fail bootstrap before we write anything incorrect
   // to the recovery log.

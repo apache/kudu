@@ -53,7 +53,7 @@ class MvccTest : public KuduTest {
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
     MvccSnapshot s;
-    CHECK_OK(mgr->WaitForSnapshotWithAllCommitted(ts, &s, MonoTime::Max()));
+    CHECK_OK(mgr->WaitForSnapshotWithAllApplied(ts, &s, MonoTime::Max()));
     CHECK(s.is_clean()) << "verifying postcondition";
     std::lock_guard<simple_spinlock> lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
@@ -74,37 +74,37 @@ TEST_F(MvccTest, TestMvccBasic) {
   MvccManager mgr;
   MvccSnapshot snap;
 
-  // Initial state should not have any committed ops.
+  // Initial state should not have any applied ops.
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
+  ASSERT_EQ("MvccSnapshot[applied={T|T < 1}]", snap.ToString());
+  ASSERT_FALSE(snap.IsApplied(Timestamp(1)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(2)));
 
   // Start timestamp 1
   Timestamp t = clock_.Now();
   ASSERT_EQ(1, t.value());
   ScopedOp op(&mgr, t);
 
-  // State should still have no committed ops, since 1 is in-flight.
+  // State should still have no applied ops, since 1 is in-flight.
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
+  ASSERT_EQ("MvccSnapshot[applied={T|T < 1}]", snap.ToString());
+  ASSERT_FALSE(snap.IsApplied(Timestamp(1)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(2)));
 
   // Mark timestamp 1 as "applying"
   op.StartApplying();
 
-  // This should not change the set of committed ops.
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
+  // This should not change the set of applied ops.
+  ASSERT_FALSE(snap.IsApplied(Timestamp(1)));
 
-  // Commit timestamp 1
-  op.Commit();
+  // Apply timestamp 1
+  op.FinishApplying();
 
-  // State should show 0 as committed, 1 as uncommitted.
+  // State should show 0 as applied, 1 as nonapplied.
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1 or (T in {1})}]", snap.ToString());
-  ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
+  ASSERT_EQ("MvccSnapshot[applied={T|T < 1 or (T in {1})}]", snap.ToString());
+  ASSERT_TRUE(snap.IsApplied(Timestamp(1)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(2)));
 }
 
 TEST_F(MvccTest, TestMvccMultipleInFlight) {
@@ -118,68 +118,68 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_EQ(2, t2.value());
   ScopedOp op2(&mgr, t2);
 
-  // State should still have no committed ops, since both are in-flight.
+  // State should still have no applied ops, since both are in-flight.
 
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 1}]", snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(t1));
-  ASSERT_FALSE(snap.IsCommitted(t2));
+  ASSERT_EQ("MvccSnapshot[applied={T|T < 1}]", snap.ToString());
+  ASSERT_FALSE(snap.IsApplied(t1));
+  ASSERT_FALSE(snap.IsApplied(t2));
 
-  // Commit timestamp 2
+  // Apply timestamp 2
   op2.StartApplying();
-  op2.Commit();
+  op2.FinishApplying();
 
-  // State should show 2 as committed, 1 as uncommitted.
+  // State should show 2 as applied, 1 as nonapplied.
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed="
+  ASSERT_EQ("MvccSnapshot[applied="
             "{T|T < 1 or (T in {2})}]",
             snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(t1));
-  ASSERT_TRUE(snap.IsCommitted(t2));
+  ASSERT_FALSE(snap.IsApplied(t1));
+  ASSERT_TRUE(snap.IsApplied(t2));
 
   // Start another ops. This gets timestamp 3
   Timestamp t3 = clock_.Now();
   ASSERT_EQ(3, t3.value());
   ScopedOp op3(&mgr, t3);
 
-  // State should show 2 as committed, 1 and 4 as uncommitted.
+  // State should show 2 as applied, 1 and 4 as nonapplied.
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed="
+  ASSERT_EQ("MvccSnapshot[applied="
             "{T|T < 1 or (T in {2})}]",
             snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(t1));
-  ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_FALSE(snap.IsCommitted(t3));
+  ASSERT_FALSE(snap.IsApplied(t1));
+  ASSERT_TRUE(snap.IsApplied(t2));
+  ASSERT_FALSE(snap.IsApplied(t3));
 
-  // Commit 3
+  // Apply 3
   op3.StartApplying();
-  op3.Commit();
+  op3.FinishApplying();
 
-  // 2 and 3 committed
+  // 2 and 3 applied
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed="
+  ASSERT_EQ("MvccSnapshot[applied="
             "{T|T < 1 or (T in {2,3})}]",
             snap.ToString());
-  ASSERT_FALSE(snap.IsCommitted(t1));
-  ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t3));
+  ASSERT_FALSE(snap.IsApplied(t1));
+  ASSERT_TRUE(snap.IsApplied(t2));
+  ASSERT_TRUE(snap.IsApplied(t3));
 
-  // Commit 1
+  // Apply 1
   op1.StartApplying();
-  op1.Commit();
+  op1.FinishApplying();
 
-  // All ops are committed, adjust the new op lower bound.
+  // All ops are applied, adjust the new op lower bound.
   mgr.AdjustNewOpLowerBound(t3);
 
-  // all committed
+  // all applied
   snap = MvccSnapshot(mgr);
-  ASSERT_EQ("MvccSnapshot[committed={T|T < 3 or (T in {3})}]", snap.ToString());
-  ASSERT_TRUE(snap.IsCommitted(t1));
-  ASSERT_TRUE(snap.IsCommitted(t2));
-  ASSERT_TRUE(snap.IsCommitted(t3));
+  ASSERT_EQ("MvccSnapshot[applied={T|T < 3 or (T in {3})}]", snap.ToString());
+  ASSERT_TRUE(snap.IsApplied(t1));
+  ASSERT_TRUE(snap.IsApplied(t2));
+  ASSERT_TRUE(snap.IsApplied(t3));
 }
 
-TEST_F(MvccTest, TestOutOfOrderTxns) {
+TEST_F(MvccTest, TestOutOfOrderOps) {
   MetricRegistry metric_registry;
   auto metric_entity(METRIC_ENTITY_server.Instantiate(&metric_registry, "mvcc-test"));
   clock::HybridClock hybrid_clock(metric_entity);
@@ -191,40 +191,40 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   ScopedOp first_op(&mgr, first_ts);
 
   // Take a snapshot that con
-  MvccSnapshot snap_with_nothing_committed(mgr);
+  MvccSnapshot snap_with_nothing_applied(mgr);
 
   // Start an op as if it were using commit-wait (i.e. started in future)
   Timestamp cw_ts = hybrid_clock.NowLatest();
   ScopedOp cw_op(&mgr, cw_ts);
 
-  // Commit the original op
+  // Apply the original op
   first_op.StartApplying();
-  first_op.Commit();
+  first_op.FinishApplying();
 
   // Start a new op
   Timestamp second_ts = hybrid_clock.Now();
   ScopedOp second_op(&mgr, second_ts);
 
   // The old snapshot should not have either op
-  EXPECT_FALSE(snap_with_nothing_committed.IsCommitted(first_ts));
-  EXPECT_FALSE(snap_with_nothing_committed.IsCommitted(second_ts));
+  EXPECT_FALSE(snap_with_nothing_applied.IsApplied(first_ts));
+  EXPECT_FALSE(snap_with_nothing_applied.IsApplied(second_ts));
 
   // A new snapshot should have only the first op
-  MvccSnapshot snap_with_first_committed(mgr);
-  EXPECT_TRUE(snap_with_first_committed.IsCommitted(first_ts));
-  EXPECT_FALSE(snap_with_first_committed.IsCommitted(second_ts));
+  MvccSnapshot snap_with_first_applied(mgr);
+  EXPECT_TRUE(snap_with_first_applied.IsApplied(first_ts));
+  EXPECT_FALSE(snap_with_first_applied.IsApplied(second_ts));
 
-  // Commit the commit-wait one once it is time.
+  // Apply the commit-wait one once it is time.
   ASSERT_OK(hybrid_clock.WaitUntilAfter(cw_ts, MonoTime::Max()));
   cw_op.StartApplying();
-  cw_op.Commit();
+  cw_op.FinishApplying();
 
-  // A new snapshot at this point should still think that normal_op_2 is uncommitted
-  MvccSnapshot snap_with_all_committed(mgr);
-  EXPECT_FALSE(snap_with_all_committed.IsCommitted(second_ts));
+  // A new snapshot at this point should still think that normal_op_2 is nonapplied
+  MvccSnapshot snap_with_all_applied(mgr);
+  EXPECT_FALSE(snap_with_all_applied.IsApplied(second_ts));
 }
 
-// Tests starting ops at a point-in-time in the past and committing them while
+// Tests starting ops at a point-in-time in the past and applying them while
 // adjusting the new op timestamp lower bound.
 TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
   MvccManager mgr;
@@ -239,27 +239,27 @@ TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
 
   ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
 
-  // Committing 'op_in_the_past' should not advance the new op lower
+  // Applying 'op_in_the_past' should not advance the new op lower
   // bound or the clean time.
-  op_in_the_past.Commit();
+  op_in_the_past.FinishApplying();
 
   // Now take a snapshot.
   MvccSnapshot snap_with_first_op(mgr);
 
   // Because we did not advance the the new op lower bound or clean time, even
-  // though the only in-flight op was committed at time 50, an op at time 40
-  // should still be considered uncommitted.
-  ASSERT_FALSE(snap_with_first_op.IsCommitted(Timestamp(40)));
+  // though the only in-flight op was applied at time 50, an op at time 40
+  // should still be considered nonapplied.
+  ASSERT_FALSE(snap_with_first_op.IsApplied(Timestamp(40)));
 
   // Now advance the both clean and new op lower bound watermarks to the last
-  // committed op.
+  // applied op.
   mgr.AdjustNewOpLowerBound(Timestamp(50));
 
   ASSERT_EQ(ts_in_the_past, mgr.GetCleanTimestamp());
 
   MvccSnapshot snap_with_adjusted_clean_time(mgr);
 
-  ASSERT_TRUE(snap_with_adjusted_clean_time.IsCommitted(Timestamp(40)));
+  ASSERT_TRUE(snap_with_adjusted_clean_time.IsApplied(Timestamp(40)));
 }
 
 TEST_F(MvccTest, TestScopedOp) {
@@ -274,17 +274,17 @@ TEST_F(MvccTest, TestScopedOp) {
     ASSERT_EQ(2, t2.timestamp().value());
 
     t1.StartApplying();
-    t1.Commit();
+    t1.FinishApplying();
 
     snap = MvccSnapshot(mgr);
-    ASSERT_TRUE(snap.IsCommitted(t1.timestamp()));
-    ASSERT_FALSE(snap.IsCommitted(t2.timestamp()));
+    ASSERT_TRUE(snap.IsApplied(t1.timestamp()));
+    ASSERT_FALSE(snap.IsApplied(t2.timestamp()));
   }
 
   // t2 going out of scope aborts it.
   snap = MvccSnapshot(mgr);
-  ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
+  ASSERT_TRUE(snap.IsApplied(Timestamp(1)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(2)));
 
   // Test that an applying scoped op does not crash if it goes out of
   // scope while the MvccManager is closed.
@@ -298,97 +298,97 @@ TEST_F(MvccTest, TestScopedOp) {
 TEST_F(MvccTest, TestPointInTimeSnapshot) {
   MvccSnapshot snap(Timestamp(10));
 
-  ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_TRUE(snap.IsCommitted(Timestamp(9)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(10)));
-  ASSERT_FALSE(snap.IsCommitted(Timestamp(11)));
+  ASSERT_TRUE(snap.IsApplied(Timestamp(1)));
+  ASSERT_TRUE(snap.IsApplied(Timestamp(9)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(10)));
+  ASSERT_FALSE(snap.IsApplied(Timestamp(11)));
 }
 
-TEST_F(MvccTest, TestMayHaveCommittedOpsAtOrAfter) {
+TEST_F(MvccTest, TestMayHaveAppliedOpsAtOrAfter) {
   MvccSnapshot snap;
-  snap.all_committed_before_ = Timestamp(10);
-  snap.committed_timestamps_.push_back(11);
-  snap.committed_timestamps_.push_back(13);
-  snap.none_committed_at_or_after_ = Timestamp(14);
+  snap.all_applied_before_ = Timestamp(10);
+  snap.applied_timestamps_.push_back(11);
+  snap.applied_timestamps_.push_back(13);
+  snap.none_applied_at_or_after_ = Timestamp(14);
 
-  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(9)));
-  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
-  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(12)));
-  ASSERT_TRUE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(13)));
-  ASSERT_FALSE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(14)));
-  ASSERT_FALSE(snap.MayHaveCommittedOpsAtOrAfter(Timestamp(15)));
+  ASSERT_TRUE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(9)));
+  ASSERT_TRUE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(10)));
+  ASSERT_TRUE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(12)));
+  ASSERT_TRUE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(13)));
+  ASSERT_FALSE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(14)));
+  ASSERT_FALSE(snap.MayHaveAppliedOpsAtOrAfter(Timestamp(15)));
 
-  // Test for "all committed" snapshot
-  MvccSnapshot all_committed =
+  // Test for "all applied" snapshot
+  MvccSnapshot all_applied =
       MvccSnapshot::CreateSnapshotIncludingAllOps();
   ASSERT_TRUE(
-      all_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(1)));
+      all_applied.MayHaveAppliedOpsAtOrAfter(Timestamp(1)));
   ASSERT_TRUE(
-      all_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(12345)));
+      all_applied.MayHaveAppliedOpsAtOrAfter(Timestamp(12345)));
 
-  // And "none committed" snapshot
-  MvccSnapshot none_committed =
+  // And "none applied" snapshot
+  MvccSnapshot none_applied =
       MvccSnapshot::CreateSnapshotIncludingNoOps();
   ASSERT_FALSE(
-      none_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(1)));
+      none_applied.MayHaveAppliedOpsAtOrAfter(Timestamp(1)));
   ASSERT_FALSE(
-      none_committed.MayHaveCommittedOpsAtOrAfter(Timestamp(12345)));
+      none_applied.MayHaveAppliedOpsAtOrAfter(Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_TRUE(clean_snap.MayHaveCommittedOpsAtOrAfter(Timestamp(9)));
-  ASSERT_FALSE(clean_snap.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
+  ASSERT_TRUE(clean_snap.MayHaveAppliedOpsAtOrAfter(Timestamp(9)));
+  ASSERT_FALSE(clean_snap.MayHaveAppliedOpsAtOrAfter(Timestamp(10)));
 }
 
-TEST_F(MvccTest, TestMayHaveUncommittedOpsBefore) {
+TEST_F(MvccTest, TestMayHaveNonAppliedOpsBefore) {
   MvccSnapshot snap;
-  snap.all_committed_before_ = Timestamp(10);
-  snap.committed_timestamps_.push_back(11);
-  snap.committed_timestamps_.push_back(13);
-  snap.none_committed_at_or_after_ = Timestamp(14);
+  snap.all_applied_before_ = Timestamp(10);
+  snap.applied_timestamps_.push_back(11);
+  snap.applied_timestamps_.push_back(13);
+  snap.none_applied_at_or_after_ = Timestamp(14);
 
-  ASSERT_FALSE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
-  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(11)));
-  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(13)));
-  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(14)));
-  ASSERT_TRUE(snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(15)));
+  ASSERT_FALSE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(10)));
+  ASSERT_TRUE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(11)));
+  ASSERT_TRUE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(13)));
+  ASSERT_TRUE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(14)));
+  ASSERT_TRUE(snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(15)));
 
-  // Test for "all committed" snapshot
-  MvccSnapshot all_committed =
+  // Test for "all applied" snapshot
+  MvccSnapshot all_applied =
       MvccSnapshot::CreateSnapshotIncludingAllOps();
   ASSERT_FALSE(
-      all_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(1)));
+      all_applied.MayHaveNonAppliedOpsAtOrBefore(Timestamp(1)));
   ASSERT_FALSE(
-      all_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(12345)));
+      all_applied.MayHaveNonAppliedOpsAtOrBefore(Timestamp(12345)));
 
-  // And "none committed" snapshot
-  MvccSnapshot none_committed =
+  // And "none applied" snapshot
+  MvccSnapshot none_applied =
       MvccSnapshot::CreateSnapshotIncludingNoOps();
   ASSERT_TRUE(
-      none_committed.MayHaveUncommittedOpsAtOrBefore(Timestamp(1)));
+      none_applied.MayHaveNonAppliedOpsAtOrBefore(Timestamp(1)));
   ASSERT_TRUE(
-      none_committed.MayHaveUncommittedOpsAtOrBefore(
+      none_applied.MayHaveNonAppliedOpsAtOrBefore(
           Timestamp(12345)));
 
   // Test for a "clean" snapshot
   MvccSnapshot clean_snap(Timestamp(10));
-  ASSERT_FALSE(clean_snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(9)));
-  ASSERT_TRUE(clean_snap.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(clean_snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(9)));
+  ASSERT_TRUE(clean_snap.MayHaveNonAppliedOpsAtOrBefore(Timestamp(10)));
 
   // Test for the case where we have a single op in flight. Since this is also
-  // the earliest op, all_committed_before_ is equal to the op's ts, but when
-  // it gets committed we can't advance all_committed_before_ past it because
+  // the earliest op, all_applied_before_ is equal to the op's ts, but when
+  // it gets applied we can't advance all_applied_before_ past it because
   // there is no other op to advance it to. In this case we should still report
-  // that there can't be any uncommitted ops before.
+  // that there can't be any nonapplied ops before.
   MvccSnapshot snap2;
-  snap2.all_committed_before_ = Timestamp(10);
-  snap2.committed_timestamps_.push_back(10);
+  snap2.all_applied_before_ = Timestamp(10);
+  snap2.applied_timestamps_.push_back(10);
 
-  ASSERT_FALSE(snap2.MayHaveUncommittedOpsAtOrBefore(Timestamp(10)));
+  ASSERT_FALSE(snap2.MayHaveNonAppliedOpsAtOrBefore(Timestamp(10)));
 }
 
-TEST_F(MvccTest, TestAreAllOpsCommittedForTests) {
+TEST_F(MvccTest, TestAreAllOpsAppliedForTests) {
   MvccManager mgr;
 
   // start several ops and take snapshots along the way
@@ -400,31 +400,31 @@ TEST_F(MvccTest, TestAreAllOpsCommittedForTests) {
   ScopedOp op3(&mgr, ts3);
   mgr.AdjustNewOpLowerBound(clock_.Now());
 
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(3)));
 
-  // commit op3, should all still report as having as having uncommitted ops.
+  // Apply op3, should all still report as having as having nonapplied ops.
   op3.StartApplying();
-  op3.Commit();
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
+  op3.FinishApplying();
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(3)));
 
-  // commit op1, first snap with in-flights should now report as all committed
-  // and remaining snaps as still having uncommitted ops
+  // Apply op1, first snap with in-flights should now report as all applied
+  // and remaining snaps as still having nonapplied ops
   op1.StartApplying();
-  op1.Commit();
-  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
-  ASSERT_FALSE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
+  op1.FinishApplying();
+  ASSERT_TRUE(mgr.AreAllOpsAppliedForTests(Timestamp(1)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(2)));
+  ASSERT_FALSE(mgr.AreAllOpsAppliedForTests(Timestamp(3)));
 
-  // Now they should all report as all committed.
+  // Now they should all report as all applied.
   op2.StartApplying();
-  op2.Commit();
-  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(1)));
-  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(2)));
-  ASSERT_TRUE(mgr.AreAllOpsCommittedForTests(Timestamp(3)));
+  op2.FinishApplying();
+  ASSERT_TRUE(mgr.AreAllOpsAppliedForTests(Timestamp(1)));
+  ASSERT_TRUE(mgr.AreAllOpsAppliedForTests(Timestamp(2)));
+  ASSERT_TRUE(mgr.AreAllOpsAppliedForTests(Timestamp(3)));
 }
 
 TEST_F(MvccTest, WaitForCleanSnapshotSnapWithNoInflights) {
@@ -450,7 +450,7 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapBeforeSafeTimeWithInFlights) {
 
   // Select a new op timestamp lower bound that is after all ops and after the
   // the timestamp we'll wait for.  This will cause "clean time" to move when
-  // op1 and op2 commit.
+  // op1 and op2 finish applying.
   Timestamp future_ts = clock_.Now();
   mgr.AdjustNewOpLowerBound(future_ts);
 
@@ -458,10 +458,10 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapBeforeSafeTimeWithInFlights) {
 
   ASSERT_FALSE(HasResultSnapshot());
   op1.StartApplying();
-  op1.Commit();
+  op1.FinishApplying();
   ASSERT_FALSE(HasResultSnapshot());
   op2.StartApplying();
-  op2.Commit();
+  op2.FinishApplying();
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
 }
@@ -475,13 +475,13 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights) {
   mgr.AdjustNewOpLowerBound(ts2);
 
   // Wait should return immediately, since we have no ops "applying" yet.
-  ASSERT_OK(mgr.WaitForApplyingOpsToCommit());
+  ASSERT_OK(mgr.WaitForApplyingOpsToApply());
 
   op1.StartApplying();
 
   Status s;
   thread waiting_thread = thread([&] {
-    s = mgr.WaitForApplyingOpsToCommit();
+    s = mgr.WaitForApplyingOpsToApply();
   });
   while (mgr.GetNumWaitersForTests() == 0) {
     SleepFor(MonoDelta::FromMilliseconds(5));
@@ -492,8 +492,8 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAfterSafeTimeWithInFlights) {
   op2.Abort();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Committing our op should wake the waiter.
-  op1.Commit();
+  // Applying our op should wake the waiter.
+  op1.FinishApplying();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
   waiting_thread.join();
   ASSERT_OK(s);
@@ -510,25 +510,25 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAtTimestampWithInFlights) {
   Timestamp ts3 = clock_.Now();
   ScopedOp op3(&mgr, ts3);
 
-  // Start a thread waiting for ops with ts <= 2 to commit
+  // Start a thread waiting for ops with ts <= 2 to finish applying
   thread waiting_thread = thread(&MvccTest::WaitForSnapshotAtTSThread, this, &mgr, ts2);
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit op 1 - thread should still wait.
+  // Apply op 1 - thread should still wait.
   op1.StartApplying();
-  op1.Commit();
+  op1.FinishApplying();
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit op 3 - thread should still wait.
+  // Apply op 3 - thread should still wait.
   op3.StartApplying();
-  op3.Commit();
+  op3.FinishApplying();
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
-  // Commit op 2 - thread should still wait.
+  // Apply op 2 - thread should still wait.
   op2.StartApplying();
-  op2.Commit();
+  op2.FinishApplying();
   ASSERT_FALSE(HasResultSnapshot());
 
   // Advance new op lower bound and the clean time, thread should continue.
@@ -537,7 +537,7 @@ TEST_F(MvccTest, WaitForCleanSnapshotSnapAtTimestampWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitForApplyingOpsToCommit) {
+TEST_F(MvccTest, TestWaitForApplyingOpsToApply) {
   MvccManager mgr;
 
   Timestamp ts1 = clock_.Now();
@@ -547,11 +547,11 @@ TEST_F(MvccTest, TestWaitForApplyingOpsToCommit) {
   mgr.AdjustNewOpLowerBound(ts2);
 
   // Wait should return immediately, since we have no ops "applying" yet.
-  ASSERT_OK(mgr.WaitForApplyingOpsToCommit());
+  ASSERT_OK(mgr.WaitForApplyingOpsToApply());
 
   op1.StartApplying();
 
-  thread waiting_thread = thread(&MvccManager::WaitForApplyingOpsToCommit, &mgr);
+  thread waiting_thread = thread(&MvccManager::WaitForApplyingOpsToApply, &mgr);
   while (mgr.GetNumWaitersForTests() == 0) {
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
@@ -561,8 +561,8 @@ TEST_F(MvccTest, TestWaitForApplyingOpsToCommit) {
   op2.Abort();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
 
-  // Committing our op should wake the waiter.
-  op1.Commit();
+  // Applying our op should wake the waiter.
+  op1.FinishApplying();
   ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
   waiting_thread.join();
 }
@@ -584,7 +584,7 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   simple_spinlock status_lock;
   thread waiting_thread = thread([&] {
     std::lock_guard<simple_spinlock> l(status_lock);
-    s = mgr.WaitForApplyingOpsToCommit();
+    s = mgr.WaitForApplyingOpsToApply();
   });
 
   // Wait until the waiter actually gets registered.
@@ -599,13 +599,13 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
   ASSERT_TRUE(s.IsAborted());
 
   // New waiters should abort immediately.
-  s = mgr.WaitForApplyingOpsToCommit();
+  s = mgr.WaitForApplyingOpsToApply();
   ASSERT_STR_CONTAINS(s.ToString(), "closed");
   ASSERT_TRUE(s.IsAborted());
 }
 
 // Test that if we abort an op we don't advance the new op lower bound and
-// don't add the op to the committed set.
+// don't add the op to the applied set.
 TEST_F(MvccTest, TestTxnAbort) {
 
   MvccManager mgr;
@@ -620,28 +620,28 @@ TEST_F(MvccTest, TestTxnAbort) {
   mgr.AdjustNewOpLowerBound(ts3);
 
   // Now abort op1, this shouldn't move the clean time and the op shouldn't be
-  // reported as committed.
+  // reported as applied.
   op1.Abort();
   ASSERT_EQ(Timestamp::kInitialTimestamp, mgr.GetCleanTimestamp());
-  ASSERT_FALSE(mgr.cur_snap_.IsCommitted(ts1));
+  ASSERT_FALSE(mgr.cur_snap_.IsApplied(ts1));
 
-  // Committing op3 shouldn't advance the clean time since it is not the earliest
+  // Applying op3 shouldn't advance the clean time since it is not the earliest
   // in-flight, but it should advance 'new_op_timestamp_exc_lower_bound_' to 3.
   op3.StartApplying();
-  op3.Commit();
-  ASSERT_TRUE(mgr.cur_snap_.IsCommitted(ts3));
+  op3.FinishApplying();
+  ASSERT_TRUE(mgr.cur_snap_.IsApplied(ts3));
   ASSERT_EQ(ts3, mgr.new_op_timestamp_exc_lower_bound_);
 
-  // Committing op2 should advance the clean time to 3.
+  // Applying op2 should advance the clean time to 3.
   op2.StartApplying();
-  op2.Commit();
-  ASSERT_TRUE(mgr.cur_snap_.IsCommitted(ts2));
+  op2.FinishApplying();
+  ASSERT_TRUE(mgr.cur_snap_.IsApplied(ts2));
   ASSERT_EQ(ts3, mgr.GetCleanTimestamp());
 }
 
 // This tests for a bug we were observing, where a clean snapshot would not
 // coalesce to the latest timestamp.
-TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
+TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnApply) {
   MvccManager mgr;
   clock_.Update(Timestamp(20));
 
@@ -650,17 +650,17 @@ TEST_F(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit) {
   mgr.AdjustNewOpLowerBound(Timestamp(15));
 
   op2.StartApplying();
-  op2.Commit();
+  op2.FinishApplying();
 
   op1.StartApplying();
-  op1.Commit();
-  ASSERT_EQ(mgr.cur_snap_.ToString(), "MvccSnapshot[committed={T|T < 15 or (T in {15})}]");
+  op1.FinishApplying();
+  ASSERT_EQ(mgr.cur_snap_.ToString(), "MvccSnapshot[applied={T|T < 15 or (T in {15})}]");
 }
 
 // Various death tests which ensure that we can only transition in one of the following
 // valid ways:
 //
-// - Start() -> StartApplying() -> Commit()
+// - Start() -> StartApplying() -> FinishApplying()
 // - Start() -> Abort()
 //
 // Any other transition should fire a CHECK failure.
@@ -676,24 +676,24 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
   // could be different for this case -- the "future timestamp" check is only
   // run in DEBUG builds.
   EXPECT_DEATH({
-      mgr.CommitOp(Timestamp(1));
+      mgr.FinishApplyingOp(Timestamp(1));
     },
-    "Trying to commit an op with a future timestamp|"
+    "Trying to apply an op with a future timestamp|"
     "Trying to remove timestamp which isn't in the in-flight set: 1");
 
   clock_.Update(Timestamp(20));
 
   EXPECT_DEATH({
-      mgr.CommitOp(Timestamp(1));
+      mgr.FinishApplyingOp(Timestamp(1));
     }, "Trying to remove timestamp which isn't in the in-flight set: 1");
 
-  // Start an op, and try committing it without having moved to "Applying"
+  // Start an op, and try applying it without having moved to "Applying"
   // state.
   Timestamp t = clock_.Now();
   mgr.StartOp(t);
   EXPECT_DEATH({
-      mgr.CommitOp(t);
-    }, "Trying to commit an op which never entered APPLYING state");
+      mgr.FinishApplyingOp(t);
+    }, "Trying to apply an op which never entered APPLYING state");
 
   // Aborting should succeed, since we never moved to Applying.
   mgr.AbortOp(t);
@@ -719,8 +719,8 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
       mgr.AbortOp(t);
     }, "op with timestamp 22 cannot be aborted in state 1");
 
-  // We can commit it successfully.
-  mgr.CommitOp(t);
+  // We can apply it successfully.
+  mgr.FinishApplyingOp(t);
 }
 
 TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
@@ -731,10 +731,10 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
   ScopedOp op1(&mgr, ts1);
 
   // Wait until the 'op1' timestamp is clean -- this won't happen because the
-  // op isn't committed yet.
+  // op isn't applied yet.
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(10);
   MvccSnapshot snap;
-  Status s = mgr.WaitForSnapshotWithAllCommitted(ts1, &snap, deadline);
+  Status s = mgr.WaitForSnapshotWithAllApplied(ts1, &snap, deadline);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
@@ -743,18 +743,18 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
 // AdjustNewOpLowerBound().
 //
 // Prior to the fix we would advance clean time but not the
-// 'none_committed_at_or_after_' watermark, meaning the latter would become lower
+// 'none_applied_at_or_after_' watermark, meaning the latter would become lower
 // than clean time. This had the effect on compaction of culling delta files
 // even though they shouldn't be culled.
 // This test makes sure that watermarks are advanced correctly and that delta
 // files are culled correctly.
-TEST_F(MvccTest, TestCorrectInitWithNoTxns) {
+TEST_F(MvccTest, TestCorrectInitWithNoOps) {
   MvccManager mgr;
 
   MvccSnapshot snap(mgr);
-  EXPECT_EQ(snap.all_committed_before_, Timestamp::kInitialTimestamp);
-  EXPECT_EQ(snap.none_committed_at_or_after_, Timestamp::kInitialTimestamp);
-  EXPECT_EQ(snap.committed_timestamps_.size(), 0);
+  EXPECT_EQ(snap.all_applied_before_, Timestamp::kInitialTimestamp);
+  EXPECT_EQ(snap.none_applied_at_or_after_, Timestamp::kInitialTimestamp);
+  EXPECT_EQ(snap.applied_timestamps_.size(), 0);
 
   // Read the clock a few times to advance the timestamp
   for (int i = 0; i < 10; i++) {
@@ -766,19 +766,19 @@ TEST_F(MvccTest, TestCorrectInitWithNoTxns) {
   mgr.AdjustNewOpLowerBound(new_ts_lower_bound);
 
   // Test that the snapshot reports that a timestamp lower than the new op
-  // lower bound may have committed ops after that timestamp. Conversely, test
-  // that the snapshot reports that there are no committed ops at or after the
+  // lower bound may have applied ops after that timestamp. Conversely, test
+  // that the snapshot reports that there are no applied ops at or after the
   // new lower bound.
   MvccSnapshot snap2;
   snap2 = MvccSnapshot(mgr);
   Timestamp before_lb(new_ts_lower_bound.value() - 1);
   Timestamp after_lb(new_ts_lower_bound.value() + 1);
-  EXPECT_TRUE(snap2.MayHaveCommittedOpsAtOrAfter(before_lb));
-  EXPECT_FALSE(snap2.MayHaveCommittedOpsAtOrAfter(after_lb));
+  EXPECT_TRUE(snap2.MayHaveAppliedOpsAtOrAfter(before_lb));
+  EXPECT_FALSE(snap2.MayHaveAppliedOpsAtOrAfter(after_lb));
 
-  EXPECT_EQ(snap2.all_committed_before_, new_ts_lower_bound);
-  EXPECT_EQ(snap2.none_committed_at_or_after_, new_ts_lower_bound);
-  EXPECT_EQ(snap2.committed_timestamps_.size(), 0);
+  EXPECT_EQ(snap2.all_applied_before_, new_ts_lower_bound);
+  EXPECT_EQ(snap2.none_applied_at_or_after_, new_ts_lower_bound);
+  EXPECT_EQ(snap2.applied_timestamps_.size(), 0);
 }
 
 } // namespace tablet

@@ -185,7 +185,7 @@ class WriteOpState : public OpState {
   }
 
   // Notifies the MVCC manager that this operation is about to start applying
-  // its in-memory edits. After this method is called, the op _must_ Commit()
+  // its in-memory edits. After this method is called, the op _must_ FinishApplying()
   // within a bounded amount of time (there may be other threads blocked on
   // it).
   void StartApplying();
@@ -199,7 +199,7 @@ class WriteOpState : public OpState {
   // REQUIRES: StartApplying() was called.
   //
   // Note: request_ and response_ are set to NULL after this method returns.
-  void CommitOrAbort(Op::OpResult result);
+  void FinishApplyingOrAbort(Op::OpResult result);
 
   // Returns all the prepared row writes for this op. Usually called on the
   // apply phase to actually make changes to the tablet.

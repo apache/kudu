@@ -100,7 +100,7 @@ class CompactionInput {
   // NOTE: For efficiency, this doesn't currently filter the mutations to only
   // include those committed in the given snapshot. It does, however, filter out
   // rows that weren't inserted prior to this snapshot. Users of this input still
-  // need to call snap.IsCommitted() on each mutation.
+  // need to call snap.IsApplied() on each mutation.
   //
   // TODO: can we make the above less messy?
   static Status Create(const DiskRowSet &rowset,

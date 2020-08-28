@@ -160,7 +160,7 @@ void AlterSchemaOp::Finish(OpResult result) {
   // Tablet::AlterSchema().
   state()->ReleaseSchemaLock();
 
-  DCHECK_EQ(result, Op::COMMITTED);
+  DCHECK_EQ(result, Op::APPLIED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.
   TRACE("AlterSchemaCommitCallback: making alter schema visible");

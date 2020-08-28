@@ -36,6 +36,7 @@
 
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/columnblock-test-util.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
@@ -121,7 +122,7 @@ class TestDeltaMemStore : public KuduTest {
                              schema_.column_id(kIntColumn), &new_val);
 
       CHECK_OK(dms_->Update(op.timestamp(), idx_to_update, RowChangeList(buf), op_id_));
-      op.Commit();
+      op.FinishApplying();
     }
   }
 
@@ -197,7 +198,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
       update.AddColumnUpdate(schema_.column(kIntColumn),
                              schema_.column_id(kIntColumn), &new_val);
       ASSERT_OK_FAST(dms_->Update(op.timestamp(), idx, RowChangeList(update_buf), op_id_));
-      op.Commit();
+      op.FinishApplying();
     }
   }
 
@@ -272,7 +273,7 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     CHECK_OK(dms_->Update(op.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
-    op.Commit();
+    op.FinishApplying();
   }
   mvcc_.AdjustNewOpLowerBound(clock_.Now());
 
@@ -396,7 +397,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
                            schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(op.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
-    op.Commit();
+    op.FinishApplying();
   }
   MvccSnapshot snapshot_after_first_update(mvcc_);
 
@@ -411,7 +412,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
                            schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(op.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
-    op.Commit();
+    op.FinishApplying();
   }
   MvccSnapshot snapshot_after_second_update(mvcc_);
 
@@ -447,7 +448,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderOps) {
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(op2.timestamp(), 123, RowChangeList(update_buf), op_id_));
-    op2.Commit();
+    op2.FinishApplying();
 
 
     op1.StartApplying();
@@ -456,7 +457,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderOps) {
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(op1.timestamp(), 123, RowChangeList(update_buf), op_id_));
-    op1.Commit();
+    op1.FinishApplying();
   }
 
   // Ensure we end up two entries for the cell.
@@ -488,7 +489,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
                            schema_.column_id(kStringColumn), &s);
 
     ASSERT_OK_FAST(dms_->Update(op.timestamp(), i, RowChangeList(update_buf), op_id_));
-    op.Commit();
+    op.FinishApplying();
   }
 
   ASSERT_EQ(1000, dms_->Count());
@@ -526,7 +527,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     update.AddColumnUpdate(schema_.column(kIntColumn),
                            schema_.column_id(kIntColumn), &val);
     ASSERT_OK_FAST(dms_->Update(op.timestamp(), i, RowChangeList(update_buf), op_id_));
-    op.Commit();
+    op.FinishApplying();
   }
 
   ASSERT_EQ(2000, dms_->Count());

@@ -114,7 +114,7 @@ class LocalTabletWriter {
         op_state_->pb_arena());
     op_state_->ReleaseTxResultPB(result_);
     tablet_->mvcc_manager()->AdjustNewOpLowerBound(op_state_->timestamp());
-    op_state_->CommitOrAbort(Op::COMMITTED);
+    op_state_->FinishApplyingOrAbort(Op::APPLIED);
 
     // Return the status of first failed op.
     int op_idx = 0;

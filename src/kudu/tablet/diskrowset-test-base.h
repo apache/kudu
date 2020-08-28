@@ -189,7 +189,7 @@ class TestRowSet : public KuduRowSetTest {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     Status s = rs->MutateRow(op.timestamp(), probe, mutation, op_id_, nullptr, &stats, result);
-    op.Commit();
+    op.FinishApplying();
     return s;
   }
 

@@ -931,10 +931,10 @@ Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
   //
   // So, to enforce this property, we do two steps:
   //
-  // 1) Wait for any operations which are already mid-Apply() to Commit() in MVCC.
+  // 1) Wait for any operations which are already mid-Apply() to FinishApplying() in MVCC.
   //
   // Because the operations always enqueue their COMMIT message to the log
-  // before calling Commit(), this ensures that any in-flight operations have
+  // before calling FinishApplying(), this ensures that any in-flight operations have
   // their commit messages "en route".
   //
   // NOTE: we only wait for those operations that have started their Apply() phase.
@@ -957,7 +957,7 @@ Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       <<  ": Waiting for in-flight ops to commit.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
-    RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingOpsToCommit());
+    RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingOpsToApply());
   }
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       << ": Waiting for the log queue to be flushed.";

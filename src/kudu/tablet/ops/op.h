@@ -86,7 +86,7 @@ class Op {
   };
 
   enum OpResult {
-    COMMITTED,
+    APPLIED,
     ABORTED
   };
 
@@ -128,12 +128,12 @@ class Op {
   // method where data-structures are changed.
   virtual Status Apply(consensus::CommitMsg** commit_msg) = 0;
 
-  // Executed after the op has been applied and the commit message has
+  // Executed after the op has been applied and the Raft commit message has
   // been appended to the log (though it might not be durable yet), or if the
   // op was aborted.
   // Implementations are expected to perform cleanup on this method, the driver
   // will reply to the client after this method call returns.
-  // 'result' will be either COMMITTED or ABORTED, letting implementations
+  // 'result' will be either APPLIED or ABORTED, letting implementations
   // know what was the final status of the op.
   virtual void Finish(OpResult result) {}
 

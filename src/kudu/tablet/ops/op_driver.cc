@@ -507,7 +507,7 @@ void OpDriver::ApplyTask() {
   }
 #endif // #if DCHECK_IS_ON() ...
 
-  // We need to ref-count ourself, since Commit() may run very quickly
+  // We need to ref-count ourself, since FinishApplying() may run very quickly
   // and end up calling Finalize() while we're still in this code.
   scoped_refptr<OpDriver> ref(this);
 
@@ -574,7 +574,7 @@ void OpDriver::Finalize() {
   // object while we still hold the lock.
   scoped_refptr<OpDriver> ref(this);
   std::lock_guard<simple_spinlock> lock(lock_);
-  op_->Finish(Op::COMMITTED);
+  op_->Finish(Op::APPLIED);
   mutable_state()->completion_callback()->OpCompleted();
   op_tracker_->Release(this);
 }

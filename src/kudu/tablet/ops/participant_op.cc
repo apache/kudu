@@ -179,10 +179,10 @@ void ParticipantOp::Finish(OpResult result) {
     TRACE("FINISH: Op aborted");
     return;
   }
-  DCHECK_EQ(result, Op::COMMITTED);
+  DCHECK_EQ(result, Op::APPLIED);
   // TODO(awong): when implementing transaction cleanup on participants, clean
   // up finalized and aborted transactions here.
-  TRACE("FINISH: Op committed");
+  TRACE("FINISH: Op applied");
 }
 
 string ParticipantOp::ToString() const {

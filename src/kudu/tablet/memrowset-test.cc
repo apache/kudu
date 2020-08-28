@@ -154,7 +154,7 @@ class TestMemRowSet : public KuduTest {
     rb.AddUint32(val);
     op.StartApplying();
     Status s = mrs->Insert(op.timestamp(), rb.row(), op_id_);
-    op.Commit();
+    op.FinishApplying();
     return s;
   }
 
@@ -181,7 +181,7 @@ class TestMemRowSet : public KuduTest {
                               nullptr,
                               &stats,
                               result);
-    op.Commit();
+    op.FinishApplying();
     return s;
   }
 
@@ -205,7 +205,7 @@ class TestMemRowSet : public KuduTest {
                               nullptr,
                               &stats,
                               result);
-    op.Commit();
+    op.FinishApplying();
     return s;
   }
 
@@ -319,7 +319,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddUint32(12345);
     Status row1 = mrs->Insert(op.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row1);
-    op.Commit();
+    op.FinishApplying();
   }
 
   {
@@ -331,7 +331,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddUint32(54321);
     Status row2 = mrs->Insert(op2.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row2);
-    op2.Commit();
+    op2.FinishApplying();
   }
 
   {
@@ -343,7 +343,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddUint32(12345);
     Status row3 = mrs->Insert(op3.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row3);
-    op3.Commit();
+    op3.FinishApplying();
   }
 
   ASSERT_EQ(3, mrs->entry_count());
@@ -561,7 +561,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
       ASSERT_OK_FAST(mrs->Insert(op.timestamp(), rb.row(), op_id_));
-      op.Commit();
+      op.FinishApplying();
     }
 
     // Op is committed. Save the snapshot after this commit.

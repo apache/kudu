@@ -1188,7 +1188,7 @@ Status Tablet::FlushUnlocked() {
   // it.
   //
   // This may fail if the tablet has been stopped.
-  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToCommit());
+  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToApply());
 
   // Note: "input" should only contain old_mrs.
   return FlushInternal(input, old_mrs);
@@ -1718,11 +1718,11 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // for those ops in 'applying_during_swap', but MVCC doesn't implement the
   // ability to wait for a specific set. So instead we wait for all currently
   // applying -- a bit more than we need, but still correct.
-  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToCommit());
+  RETURN_NOT_OK(mvcc_.WaitForApplyingOpsToApply());
 
   // Then we want to consider all those ops that were in-flight when we did the
   // swap as committed in 'non_duplicated_ops_snap'.
-  non_duplicated_ops_snap.AddCommittedTimestamps(applying_during_swap);
+  non_duplicated_ops_snap.AddAppliedTimestamps(applying_during_swap);
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),

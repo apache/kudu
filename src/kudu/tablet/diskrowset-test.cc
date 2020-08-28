@@ -437,7 +437,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       ASSERT_EQ(1, result.mutated_stores_size());
       ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
       ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
-      op.Commit();
+      op.FinishApplying();
     }
     snaps.emplace_back(mvcc_);
   }
@@ -862,7 +862,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     OperationResultPB result;
     ASSERT_OK(rs->MutateRow(op.timestamp(), probe, enc.as_changelist(), op_id_,
                             &test_context, &stats, &result));
-    op.Commit();
+    op.FinishApplying();
   };
 
   Random prng(SeedRandom());

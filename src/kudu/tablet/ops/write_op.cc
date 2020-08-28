@@ -252,14 +252,14 @@ Status WriteOp::Apply(CommitMsg** commit_msg) {
 void WriteOp::Finish(OpResult result) {
   TRACE_EVENT0("op", "WriteOp::Finish");
 
-  state()->CommitOrAbort(result);
+  state()->FinishApplyingOrAbort(result);
 
   if (PREDICT_FALSE(result == Op::ABORTED)) {
     TRACE("FINISH: Op aborted.");
     return;
   }
 
-  DCHECK_EQ(result, Op::COMMITTED);
+  DCHECK_EQ(result, Op::APPLIED);
 
   TRACE("FINISH: Updating metrics.");
 
@@ -377,7 +377,7 @@ void WriteOpState::StartApplying() {
   CHECK_NOTNULL(mvcc_op_.get())->StartApplying();
 }
 
-void WriteOpState::CommitOrAbort(Op::OpResult result) {
+void WriteOpState::FinishApplyingOrAbort(Op::OpResult result) {
   ReleaseMvccTxn(result);
 
   TRACE("Releasing row and schema locks");
@@ -394,8 +394,8 @@ void WriteOpState::ReleaseMvccTxn(Op::OpResult result) {
   if (mvcc_op_) {
     // Commit the op.
     switch (result) {
-      case Op::COMMITTED:
-        mvcc_op_->Commit();
+      case Op::APPLIED:
+        mvcc_op_->FinishApplying();
         break;
       case Op::ABORTED:
         mvcc_op_->Abort();
@@ -469,7 +469,7 @@ WriteOpState::~WriteOpState() {
 }
 
 void WriteOpState::Reset() {
-  CommitOrAbort(Op::ABORTED);
+  FinishApplyingOrAbort(Op::ABORTED);
   op_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;
   tablet_components_ = nullptr;

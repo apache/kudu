@@ -3058,7 +3058,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   if (PREDICT_TRUE(s.ok())) {
     // Wait for the in-flights in the snapshot to be finished.
     TRACE("Waiting for operations to commit");
-    s = tablet->mvcc_manager()->WaitForSnapshotWithAllCommitted(
+    s = tablet->mvcc_manager()->WaitForSnapshotWithAllApplied(
           tmp_snap_timestamp, &snap, client_deadline);
   }
 

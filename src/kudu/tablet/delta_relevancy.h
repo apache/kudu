@@ -76,10 +76,10 @@ inline bool IsDeltaRelevantForApply<REDO>(const MvccSnapshot& snap,
                                           const Timestamp& delta_ts,
                                           bool* finished_row) {
   *finished_row = false;
-  if (snap.IsCommitted(delta_ts)) {
+  if (snap.IsApplied(delta_ts)) {
     return true;
   }
-  if (!snap.MayHaveCommittedOpsAtOrAfter(delta_ts)) {
+  if (!snap.MayHaveAppliedOpsAtOrAfter(delta_ts)) {
     // REDO deltas are sorted first in ascending row ordinal order, then in
     // ascending timestamp order. Thus, if we know that there are no more
     // committed ops whose timestamps are >= 'delta_ts', we know that
@@ -96,10 +96,10 @@ inline bool IsDeltaRelevantForApply<UNDO>(const MvccSnapshot& snap,
                                           const Timestamp& delta_ts,
                                           bool* finished_row) {
   *finished_row = false;
-  if (!snap.IsCommitted(delta_ts)) {
+  if (!snap.IsApplied(delta_ts)) {
     return true;
   }
-  if (!snap.MayHaveUncommittedOpsAtOrBefore(delta_ts)) {
+  if (!snap.MayHaveNonAppliedOpsAtOrBefore(delta_ts)) {
     // UNDO deltas are sorted first in ascending row ordinal order, then in
     // descending timestamp order. Thus, if we know that there are no more
     // uncommitted ops whose timestamps are <= 'delta_ts', we know that
@@ -117,8 +117,8 @@ inline bool IsDeltaRelevantForSelect(const MvccSnapshot& snap_start,
                                      const MvccSnapshot& snap_end,
                                      const Timestamp& delta_ts_start,
                                      const Timestamp& delta_ts_end) {
-  return !snap_start.IsCommitted(delta_ts_end) &&
-      snap_end.IsCommitted(delta_ts_start);
+  return !snap_start.IsApplied(delta_ts_end) &&
+      snap_end.IsApplied(delta_ts_start);
 }
 
 // A variant of IsDeltaRelevantForSelect that operates on a single delta's
@@ -137,14 +137,14 @@ inline bool IsDeltaRelevantForSelect<REDO>(const MvccSnapshot& snap_start,
                                            const Timestamp& delta_ts,
                                            bool* finished_row) {
   *finished_row = false;
-  if (snap_start.IsCommitted(delta_ts)) {
+  if (snap_start.IsApplied(delta_ts)) {
     // No short-circuit available here; because REDO deltas for a given row are
     // sorted in ascending timestamp order, the next REDO may be uncommitted in
     // 'snap_start'.
     return false;
   }
-  if (!snap_end.IsCommitted(delta_ts)) {
-    if (!snap_end.MayHaveCommittedOpsAtOrAfter(delta_ts)) {
+  if (!snap_end.IsApplied(delta_ts)) {
+    if (!snap_end.MayHaveAppliedOpsAtOrAfter(delta_ts)) {
       // But if 'delta_ts' is not committed in 'snap_end', all future REDOs may
       // also be uncommitted in 'snap_end'.
       *finished_row = true;
@@ -160,14 +160,14 @@ inline bool IsDeltaRelevantForSelect<UNDO>(const MvccSnapshot& snap_start,
                                            const Timestamp& delta_ts,
                                            bool* finished_row) {
   *finished_row = false;
-  if (!snap_end.IsCommitted(delta_ts)) {
+  if (!snap_end.IsApplied(delta_ts)) {
     // No short-circuit available here; because UNDO deltas for a given row are
     // sorted in descending timestamp order, the next UNDO may be committed in
     // 'snap_end'.
     return false;
   }
-  if (snap_start.IsCommitted(delta_ts)) {
-    if (!snap_start.MayHaveUncommittedOpsAtOrBefore(delta_ts)) {
+  if (snap_start.IsApplied(delta_ts)) {
+    if (!snap_start.MayHaveNonAppliedOpsAtOrBefore(delta_ts)) {
       // But if 'delta_ts' is committed in 'snap_start', all future UNDOs may
       // also be committed in 'snap_start'.
       *finished_row = true;

@@ -347,7 +347,7 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
 
   // should skip
   opts.snap_to_include = MvccSnapshot(Timestamp(9));
-  ASSERT_FALSE(opts.snap_to_include.MayHaveCommittedOpsAtOrAfter(Timestamp(10)));
+  ASSERT_FALSE(opts.snap_to_include.MayHaveAppliedOpsAtOrAfter(Timestamp(10)));
   unique_ptr<DeltaIterator> iter;
   Status s = reader->NewDeltaIterator(opts, &iter);
   ASSERT_TRUE(s.IsNotFound());

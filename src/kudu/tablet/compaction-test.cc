@@ -139,7 +139,7 @@ class TestCompaction : public KuduRowSetTest {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     InsertRowInOp(mrs, op, row_key, val);
-    op.Commit();
+    op.FinishApplying();
   }
 
   void BuildRow(int row_key, int32_t val) {
@@ -190,7 +190,7 @@ class TestCompaction : public KuduRowSetTest {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     UpdateRowInOp(rowset, op, row_key, new_val);
-    op.Commit();
+    op.FinishApplying();
   }
 
   void UpdateRowInOp(RowSet *rowset,
@@ -246,7 +246,7 @@ class TestCompaction : public KuduRowSetTest {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     DeleteRowInOp(rowset, op, row_key);
-    op.Commit();
+    op.FinishApplying();
   }
 
   void DeleteRowInOp(RowSet *rowset, const ScopedOp& op, int row_key) {
@@ -868,7 +868,7 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
     DeleteRowInOp(mrs.get(), op, 1);
 
     InsertRowInOp(mrs.get(), op, 2, 0);
-    op.Commit();
+    op.FinishApplying();
     FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2);
     NO_FATALS();
   }

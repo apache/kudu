@@ -997,7 +997,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
        redo_mut = redo_mut->acquire_next()) {
 
     // Skip anything not committed.
-    if (!snap.IsCommitted(redo_mut->timestamp())) {
+    if (!snap.IsApplied(redo_mut->timestamp())) {
       break;
     }
 
@@ -1240,7 +1240,7 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
         RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
 
-        if (snap_to_exclude.IsCommitted(mut->timestamp())) {
+        if (snap_to_exclude.IsApplied(mut->timestamp())) {
           // This update was already taken into account in the first phase of the
           // compaction. We don't need to reapply it.
 
@@ -1278,7 +1278,7 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
           << " row=" << schema->DebugRow(row.row)
           << " mutations=" << Mutation::StringifyMutationList(*schema, row.redo_head);
 
-        if (!snap_to_include.IsCommitted(mut->timestamp())) {
+        if (!snap_to_include.IsApplied(mut->timestamp())) {
           // The mutation was inserted after the DuplicatingRowSet was swapped in.
           // Therefore, it's already present in the output rowset, and we don't need
           // to copy it in.
