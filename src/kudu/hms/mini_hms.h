@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -48,6 +49,9 @@ class MiniHms {
 
   // Configures the mini HMS to enable or disable the Kudu plugin.
   void EnableKuduPlugin(bool enable);
+
+  // Add extra environment variables to the HMS environment.
+  void AddEnvVar(const std::string& key, const std::string& value);
 
   // Configures the mini HMS to store its data in the provided path. If not set,
   // it uses a test-only temporary directory.
@@ -85,6 +89,9 @@ class MiniHms {
 
  private:
 
+  // Creates a security.properties file for use via `-Djava.security.properties` in the mini HMS.
+  Status CreateSecurityProperties() const WARN_UNUSED_RESULT;
+
   // Creates a hive-site.xml for the mini HMS.
   Status CreateHiveSite() const WARN_UNUSED_RESULT;
 
@@ -110,6 +117,8 @@ class MiniHms {
 
   // Whether to enable the Kudu listener plugin.
   bool enable_kudu_plugin_ = true;
+
+  std::map<std::string, std::string> extra_env_vars_ = {};
 };
 
 } // namespace hms

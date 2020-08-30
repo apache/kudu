@@ -14,11 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  // NOTE: The build currently expects all dependencies will be available
-  // via the hive-metastore classpath. Therefore, all dependencies should
-  // be provided scope.
+  compile project(path: ":kudu-client", configuration: "shadow")
+
   provided libs.hiveMetastore
   provided libs.slf4jApi
   // Transitively required through hive-metastore,

@@ -38,34 +38,27 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
-import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.utils.MetaStoreUtils;
 import org.apache.thrift.TException;
-import org.hamcrest.CoreMatchers;
 import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
 
 public class TestKuduMetastorePlugin {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduMetastorePlugin.class);
 
   private HiveConf clientConf;
   private HiveMetaStoreClient client;
+  private MiniKuduCluster miniCluster;
 
   private EnvironmentContext masterContext() {
     return new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true"));
   }
 
-  @Rule
-  public RetryRule retryRule = new RetryRule();
-
-  @Before
-  public void setUp() throws Exception {
+  public void startCluster(boolean syncEnabled) throws Exception {
     HiveConf metastoreConf = new HiveConf();
     // Avoids a dependency on the default partition expression class, which is
     // contained in the hive-exec jar.
@@ -116,12 +109,26 @@ public class TestKuduMetastorePlugin {
     clientConf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + msPort);
 
     client = new HiveMetaStoreClient(clientConf);
+
+    MiniKuduCluster.MiniKuduClusterBuilder mcb = new MiniKuduCluster.MiniKuduClusterBuilder();
+    if (syncEnabled) {
+      mcb.addMasterServerFlag("--hive_metastore_uris=thrift://localhost:" + msPort);
+    }
+    miniCluster = mcb.numMasterServers(3)
+        .numTabletServers(0)
+        .build();
   }
 
   @After
   public void tearDown() {
-    if (client != null) {
-      client.close();
+    try {
+      if (client != null) {
+        client.close();
+      }
+    } finally {
+      if (miniCluster != null) {
+        miniCluster.shutdown();
+      }
     }
   }
 
@@ -141,7 +148,7 @@ public class TestKuduMetastorePlugin {
       table.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
                             UUID.randomUUID().toString());
       table.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
-                           "localhost");
+                           miniCluster.getMasterAddressesAsString());
     }
 
     // The HMS will NPE if the storage descriptor and partition keys aren't set...
@@ -172,6 +179,7 @@ public class TestKuduMetastorePlugin {
 
   @Test
   public void testCreateTableHandler() throws Exception {
+    startCluster(/* syncEnabled */ true);
     // A non-Kudu table with a Kudu table ID should be rejected.
     try {
       Table table = newTable("table");
@@ -240,6 +248,7 @@ public class TestKuduMetastorePlugin {
 
   @Test
   public void testAlterTableHandler() throws Exception {
+    startCluster(/* syncEnabled */ true);
     // Test altering a Kudu (or a legacy) table.
     Table initTable = newTable("table");
     client.createTable(initTable, masterContext());
@@ -401,7 +410,7 @@ public class TestKuduMetastorePlugin {
         alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_NAME,
             "legacy_table");
         alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
-            "localhost");
+            miniCluster.getMasterAddressesAsString());
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
       }
     } finally {
@@ -455,7 +464,7 @@ public class TestKuduMetastorePlugin {
           alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
                                        UUID.randomUUID().toString());
           alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
-                                      "localhost");
+              miniCluster.getMasterAddressesAsString());
           client.alter_table(legacyTable.getDbName(), legacyTable.getTableName(),
                              alteredTable);
         }
@@ -482,6 +491,7 @@ public class TestKuduMetastorePlugin {
 
   @Test
   public void testLegacyTableHandler() throws Exception {
+    startCluster(/* syncEnabled */ true);
     // Test creating a legacy Kudu table without context succeeds.
     Table table = newLegacyTable("legacy_table");
     client.createTable(table);
@@ -508,6 +518,7 @@ public class TestKuduMetastorePlugin {
 
   @Test
   public void testDropTableHandler() throws Exception {
+    startCluster(/* syncEnabled */ true);
     // Test dropping a Kudu table.
     Table table = newTable("table");
     client.createTable(table, masterContext());
@@ -587,5 +598,27 @@ public class TestKuduMetastorePlugin {
       client.createTable(table);
       client.dropTable(table.getDbName(), table.getTableName());
     }
+  }
+
+  @Test
+  public void testSyncDisabled() throws Exception {
+    startCluster(/* syncEnabled */ false);
+
+    // A Kudu table should should be allowed to be created via Hive.
+    Table table = newTable("table");
+    client.createTable(table);
+
+    // A Kudu table should should be allowed to be altered via Hive.
+    // Add a column to the original table.
+    table.getSd().addToCols(new FieldSchema("b", "int", ""));
+    // Also change the location to avoid MetastoreDefaultTransformer validation
+    // that exists in some Hive versions.
+    table.getSd().setLocation(String.format("%s/%s/%s",
+        clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+        table.getDbName(), table.getTableName()));
+    client.alter_table(table.getDbName(), table.getTableName(), table);
+
+    // A Kudu table should should be allowed to be dropped via Hive.
+    client.dropTable(table.getDbName(), table.getTableName());
   }
 }

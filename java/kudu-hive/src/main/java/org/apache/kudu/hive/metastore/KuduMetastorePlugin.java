@@ -17,8 +17,11 @@
 
 package org.apache.kudu.hive.metastore;
 
+import java.io.IOException;
+import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
@@ -32,6 +35,11 @@ import org.apache.hadoop.hive.metastore.events.AlterTableEvent;
 import org.apache.hadoop.hive.metastore.events.CreateTableEvent;
 import org.apache.hadoop.hive.metastore.events.DropTableEvent;
 import org.apache.hadoop.hive.metastore.events.ListenerEvent;
+import org.apache.hadoop.security.UserGroupInformation;
+
+import org.apache.kudu.client.HiveMetastoreConfig;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduException;
 
 /**
  * The {@code KuduMetastorePlugin} intercepts DDL operations on Kudu table entries
@@ -91,6 +99,15 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   // System env to track if the HMS plugin validation should be skipped.
   static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
 
+  // System env to force sync enabled/disabled without a call to the master.
+  // This is useful for testing and could be useful as an escape hatch if there
+  // are too many requests to the master.
+  static final String SYNC_ENABLED_ENV = "KUDU_HMS_SYNC_ENABLED";
+
+  // Maps lists of master addresses to KuduClients to cache clients.
+  private static final Map<String, KuduClient> KUDU_CLIENTS =
+      new ConcurrentHashMap<String, KuduClient>();
+
   public KuduMetastorePlugin(Configuration config) {
     super(config);
   }
@@ -117,21 +134,33 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return;
     }
 
-    if (!isKuduMasterAction(tableEvent)) {
-      throw new MetaException("Kudu tables may not be created through Hive");
+    // In the case of table creation all Kudu tables must have
+    // the master addresses property. We explicitly check for it here
+    // so that `kuduSyncEnabled` below doesn't return false for Kudu
+    // tables that are missing the master addresses property.
+    checkMasterAddrsProperty(table);
+
+    // Only validate tables for clusters with HMS sync enabled.
+    if (!kuduSyncEnabled(tableEvent, table)) {
+      return;
     }
 
     checkKuduProperties(table);
+
+    if (!isKuduMasterAction(tableEvent)) {
+      throw new MetaException("Kudu tables may not be created through Hive");
+    }
   }
 
   @Override
   public void onDropTable(DropTableEvent tableEvent) throws MetaException {
     super.onDropTable(tableEvent);
-    Table table = tableEvent.getTable();
 
     if (skipsValidation()) {
       return;
     }
+
+    Table table = tableEvent.getTable();
 
     // Only validate synchronized tables.
     if (!isSynchronizedTable(table)) {
@@ -142,18 +171,31 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     String targetTableId = environmentContext == null ? null :
         environmentContext.getProperties().get(KUDU_TABLE_ID_KEY);
 
+    // Allow non-Kudu tables to be dropped.
+    if (!isKuduTable(table)) {
+      // However, make sure it doesn't have a table id from the context.
+      // The table id is only meant for Kudu tables and set by the Kudu master.
+      if (targetTableId != null) {
+        throw new MetaException("Kudu table ID does not match the non-Kudu HMS entry");
+      }
+      return;
+    }
+
+    // Only validate tables for clusters with HMS sync enabled.
+    if (!kuduSyncEnabled(tableEvent, table)) {
+      return;
+    }
+
     // If this request doesn't specify a Kudu table ID then allow it to proceed.
+    // Drop table requests that don't come from the Kudu master may not set the table ID,
+    // e.g. when dropping tables via Hive, or dropping orphaned HMS entries.
+    // Such tables are dropped in Kudu by name via the notification listener.
     if (targetTableId == null) {
       return;
     }
 
     // The kudu.master_event property isn't checked, because the kudu.table_id
     // property already implies this event is coming from a Kudu Master.
-
-    // Check that the table being dropped is a Kudu table.
-    if (!isKuduTable(table)) {
-      throw new MetaException("Kudu table ID does not match the non-Kudu HMS entry");
-    }
 
     // Check that the table's ID matches the request's table ID.
     if (!targetTableId.equals(table.getParameters().get(KUDU_TABLE_ID_KEY))) {
@@ -172,11 +214,22 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     Table oldTable = tableEvent.getOldTable();
     Table newTable = tableEvent.getNewTable();
 
+    // Allow non-Kudu tables to be altered.
+    if (!isKuduTable(oldTable) && !isLegacyKuduTable(oldTable)) {
+      // Allow non-Kudu tables to be altered without introducing Kudu-specific
+      // properties.
+      checkNoKuduProperties(newTable);
+      return;
+    }
+
+    // Only validate tables for clusters with HMS sync enabled.
+    if (!kuduSyncEnabled(tableEvent, oldTable)) {
+      return;
+    }
+
     // Prevent altering the table type (managed/external) of Kudu tables (or via
     // altering table properties 'EXTERNAL' or `external.table.purge`).
-    // This can cause orphaned tables and the Sentry integration depends on having a
-    // synchronized table for each Kudu table to prevent security issues due to overlapping
-    // names with Kudu tables and tables in the HMS.
+    // This can cause orphaned tables.
     // Note: This doesn't prevent altering the table type for legacy tables
     // because they should continue to work as they always have primarily for
     // migration purposes.
@@ -228,10 +281,6 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
           throw new MetaException("Kudu table ID does not match the existing HMS entry");
         }
       }
-    } else {
-      // Allow non-Kudu tables to be altered without introducing Kudu-specific
-      // properties.
-      checkNoKuduProperties(newTable);
     }
   }
 
@@ -240,7 +289,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @param table the table to check
    * @return {@code true} if the table is a Kudu table, otherwise {@code false}
    */
-  private boolean isKuduTable(Table table) {
+  private static boolean isKuduTable(Table table) {
     String storageHandler = table.getParameters().get(hive_metastoreConstants.META_TABLE_STORAGE);
     return KUDU_STORAGE_HANDLER.equals(storageHandler);
   }
@@ -253,7 +302,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @return {@code true} if the table is a legacy Kudu table,
    *         otherwise {@code false}
    */
-  private boolean isLegacyKuduTable(Table table) {
+  private static boolean isLegacyKuduTable(Table table) {
     return LEGACY_KUDU_STORAGE_HANDLER.equals(table.getParameters()
         .get(hive_metastoreConstants.META_TABLE_STORAGE));
   }
@@ -265,7 +314,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @return {@code true} if the table is an external table,
    *         otherwise {@code false}
    */
-  private boolean isExternalTable(Table table) {
+  private static boolean isExternalTable(Table table) {
     String isExternal = table.getParameters().get(EXTERNAL_TABLE_KEY);
     if (isExternal == null) {
       return false;
@@ -282,7 +331,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @return {@code true} if the table is a managed table or has external.table.purge = true,
    *         otherwise {@code false}
    */
-  private boolean isPurgeTable(Table table) {
+  private static boolean isPurgeTable(Table table) {
     boolean externalPurge =
         Boolean.parseBoolean(table.getParameters().getOrDefault(EXTERNAL_PURGE_KEY, "false"));
     return TableType.MANAGED_TABLE.name().equals(table.getTableType()) || externalPurge;
@@ -295,7 +344,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @return {@code true} if the table is a managed table or an external table with
    *         `external.table.purge = true`, otherwise {@code false}
    */
-  private boolean isSynchronizedTable(Table table) {
+  private static boolean isSynchronizedTable(Table table) {
     return TableType.MANAGED_TABLE.name().equals(table.getTableType()) ||
         (isExternalTable(table) && isPurgeTable(table));
   }
@@ -304,7 +353,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * Checks that the Kudu table entry contains the required Kudu table properties.
    * @param table the table to check
    */
-  private void checkKuduProperties(Table table) throws MetaException {
+  private static void checkKuduProperties(Table table) throws MetaException {
     if (!isKuduTable(table)) {
       throw new MetaException(String.format(
           "Kudu table entry must contain a Kudu storage handler property (%s=%s)",
@@ -316,6 +365,14 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       throw new MetaException(String.format(
           "Kudu table entry must contain a table ID property (%s)", KUDU_TABLE_ID_KEY));
     }
+    checkMasterAddrsProperty(table);
+  }
+
+  /**
+   * Checks that the Kudu table entry contains the `kudu.master_addresses` property.
+   * @param table the table to check
+   */
+  private static void checkMasterAddrsProperty(Table table) throws MetaException {
     String masterAddresses = table.getParameters().get(KUDU_MASTER_ADDRS_KEY);
     if (masterAddresses == null || masterAddresses.isEmpty()) {
       throw new MetaException(String.format(
@@ -327,7 +384,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * Checks that the non-Kudu table entry does not contain Kudu-specific table properties.
    * @param table the table to check
    */
-  private void checkNoKuduProperties(Table table) throws MetaException {
+  private static void checkNoKuduProperties(Table table) throws MetaException {
     if (isKuduTable(table)) {
       throw new MetaException(String.format(
           "non-Kudu table entry must not contain the Kudu storage handler (%s=%s)",
@@ -347,7 +404,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * @param oldTable the table to be altered
    * @param newTable the new altered table
    */
-  private void checkOnlyKuduMasterCanAlterSchema(AlterTableEvent tableEvent,
+  private static void checkOnlyKuduMasterCanAlterSchema(AlterTableEvent tableEvent,
       Table oldTable, Table newTable) throws MetaException {
     if (!isKuduMasterAction(tableEvent) &&
         !oldTable.getSd().getCols().equals(newTable.getSd().getCols())) {
@@ -358,7 +415,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   /**
    * Returns true if the event is from the Kudu Master.
    */
-  private boolean isKuduMasterAction(ListenerEvent event) {
+  private static boolean isKuduMasterAction(ListenerEvent event) {
     EnvironmentContext environmentContext = event.getEnvironmentContext();
     if (environmentContext == null) {
       return false;
@@ -380,7 +437,7 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
    * Returns true if the table ID should be verified on an event.
    * Defaults to true.
    */
-  private boolean checkTableID(ListenerEvent event) {
+  private static boolean checkTableID(ListenerEvent event) {
     EnvironmentContext environmentContext = event.getEnvironmentContext();
     if (environmentContext == null) {
       return true;
@@ -408,5 +465,60 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Returns true if HMS synchronization is configured on the Kudu cluster
+   * backing the HMS table.
+   */
+  private static boolean kuduSyncEnabled(ListenerEvent event, Table table) throws MetaException {
+    // If SYNC_ENABLED_ENV is set, use it instead of contacting the Kudu master.
+    String envEnabled = System.getenv(SYNC_ENABLED_ENV);
+    if (envEnabled != null && !envEnabled.isEmpty()) {
+      return Integer.parseInt(envEnabled) == 1;
+    }
+
+    // If the request is from the Kudu Master, we know HMS sync is enabled
+    // and can avoid another request.
+    if (isKuduMasterAction(event)) {
+      return true;
+    }
+
+    String masterAddresses = table.getParameters().get(KUDU_MASTER_ADDRS_KEY);
+    if (masterAddresses == null || masterAddresses.isEmpty()) {
+      // A table without master addresses is not synchronized,
+      // it may not even be a Kudu table.
+      return false;
+    }
+
+    KuduClient kuduClient = getKuduClient(masterAddresses);
+    HiveMetastoreConfig hmsConfig;
+    try {
+      hmsConfig = kuduClient.getHiveMetastoreConfig();
+    } catch (KuduException e) {
+      throw new MetaException(
+          String.format("Error determining if Kudu's integration with " +
+              "the Hive Metastore is enabled: %s", e.getMessage()));
+    }
+
+    // If the HiveMetastoreConfig is not null, then the HMS synchronization
+    // is enabled in the Kudu cluster.
+    return hmsConfig != null;
+  }
+
+  private static KuduClient getKuduClient(String kuduMasters) {
+    KuduClient client = KUDU_CLIENTS.get(kuduMasters);
+    if (client == null) {
+      try {
+        client = UserGroupInformation.getLoginUser().doAs(
+            (PrivilegedExceptionAction<KuduClient>) () ->
+                new KuduClient.KuduClientBuilder(kuduMasters).build()
+        );
+      } catch (IOException | InterruptedException e) {
+        throw new RuntimeException("Failed to create the Kudu client");
+      }
+      KUDU_CLIENTS.put(kuduMasters, client);
+    }
+    return client;
   }
 }

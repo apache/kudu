@@ -131,6 +131,11 @@ TEST_P(HmsClientTest, TestHmsOperations) {
     hms_client_opts.service_principal = "hive";
   }
 
+  // Set the `KUDU_HMS_SYNC_ENABLED` environment variable in the
+  // HMS environment to manually enable HMS synchronization checks.
+  // This means we don't need to stand up a Kudu Cluster for this test.
+  hms.AddEnvVar("KUDU_HMS_SYNC_ENABLED", "1");
+
   ASSERT_OK(hms.Start());
 
   HmsClient client(hms.address(), hms_client_opts);
@@ -449,6 +454,12 @@ TEST_F(HmsClientTest, TestDeserializeJsonTable) {
 TEST_F(HmsClientTest, TestCaseSensitivity) {
   MiniKdc kdc;
   MiniHms hms;
+
+  // Set the `KUDU_HMS_SYNC_ENABLED` environment variable in the
+  // HMS environment to manually enable HMS synchronization checks.
+  // This means we don't need to stand up a Kudu Cluster for this test.
+  hms.AddEnvVar("KUDU_HMS_SYNC_ENABLED", "1");
+
   ASSERT_OK(hms.Start());
 
   HmsClient client(hms.address(), thrift::ClientOptions());
