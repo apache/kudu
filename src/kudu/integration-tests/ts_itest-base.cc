@@ -22,7 +22,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -534,10 +533,11 @@ void TabletServerIntegrationTestBase::CreateTable(const string& table_id) {
   client::KuduSchema client_schema(client::KuduSchema::FromSchema(schema_));
   unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_id)
-           .schema(&client_schema)
-           .set_range_partition_columns({ "key" })
-           .num_replicas(FLAGS_num_replicas)
-           .Create());
+                .schema(&client_schema)
+                .set_range_partition_columns({"key"})
+                .num_replicas(FLAGS_num_replicas)
+                .set_owner("alice")
+                .Create());
   ASSERT_OK(client_->OpenTable(table_id, &table_));
 }
 

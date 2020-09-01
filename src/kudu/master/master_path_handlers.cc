@@ -261,6 +261,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     EasyJson table_json = tables_json.PushBack(EasyJson::kObject);
     table_json["name"] = EscapeForHtmlToString(l.data().name());
     table_json["id"] = EscapeForHtmlToString(table->id());
+    table_json["owner"] = EscapeForHtmlToString(l.data().owner());
     table_json["state"] = state;
     table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
     table_json["tablet_count"] = HumanReadableInt::ToString(table->num_tablets());
@@ -356,6 +357,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   {
     TableMetadataLock l(table.get(), LockMode::READ);
     (*output)["name"] = l.data().name();
+    (*output)["owner"] = l.data().owner();
 
     // Not all Kudu tablenames are also valid Impala identifiers. We need to
     // replace such names with a placeholder when they are used as Impala

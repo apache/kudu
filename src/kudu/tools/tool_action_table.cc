@@ -233,6 +233,9 @@ Status DescribeTable(const RunnerContext& context) {
   cout << partition_schema.DisplayString(schema_internal, partition_strs)
        << endl;
 
+  // The owner.
+  cout << "OWNER " << table->owner() << endl;
+
   // Finally, the replication factor.
   cout << "REPLICAS " << table->num_replicas() << endl;
 

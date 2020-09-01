@@ -1744,19 +1744,19 @@ TEST_F(AdminCliTest, TestDescribeTable) {
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
-  ASSERT_STR_CONTAINS(
-      stdout,
-      "(\n"
-      "    key INT32 NOT NULL,\n"
-      "    int_val INT32 NOT NULL,\n"
-      "    string_val STRING NULLABLE,\n"
-      "    PRIMARY KEY (key)\n"
-      ")\n"
-      "RANGE (key) (\n"
-      "    PARTITION UNBOUNDED"
-      "\n"
-      ")\n"
-      "REPLICAS 1");
+  ASSERT_STR_CONTAINS(stdout,
+                      "(\n"
+                      "    key INT32 NOT NULL,\n"
+                      "    int_val INT32 NOT NULL,\n"
+                      "    string_val STRING NULLABLE,\n"
+                      "    PRIMARY KEY (key)\n"
+                      ")\n"
+                      "RANGE (key) (\n"
+                      "    PARTITION UNBOUNDED"
+                      "\n"
+                      ")\n"
+                      "OWNER alice\n"
+                      "REPLICAS 1");
 
   // Test a table with all types in its schema, multiple hash partitioning
   // levels, multiple range partitions, and non-covered ranges.
@@ -1813,14 +1813,15 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     ASSERT_OK(upper_bound1->SetInt32("key_range", 3));
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kAnotherTableId)
-             .schema(&schema)
-             .add_hash_partitions({ "key_hash0" }, 2)
-             .add_hash_partitions({ "key_hash1", "key_hash2" }, 3)
-             .set_range_partition_columns({ "key_range" })
-             .add_range_partition(lower_bound0.release(), upper_bound0.release())
-             .add_range_partition(lower_bound1.release(), upper_bound1.release())
-             .num_replicas(FLAGS_num_replicas)
-             .Create());
+                  .schema(&schema)
+                  .add_hash_partitions({"key_hash0"}, 2)
+                  .add_hash_partitions({"key_hash1", "key_hash2"}, 3)
+                  .set_range_partition_columns({"key_range"})
+                  .add_range_partition(lower_bound0.release(), upper_bound0.release())
+                  .add_range_partition(lower_bound1.release(), upper_bound1.release())
+                  .num_replicas(FLAGS_num_replicas)
+                  .set_owner("alice")
+                  .Create());
   }
 
   // OK, all that busywork is done. Test the describe output.
@@ -1834,34 +1835,34 @@ TEST_F(AdminCliTest, TestDescribeTable) {
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
-  ASSERT_STR_CONTAINS(
-      stdout,
-      "(\n"
-      "    key_hash0 INT32 NOT NULL,\n"
-      "    key_hash1 INT32 NOT NULL,\n"
-      "    key_hash2 INT32 NOT NULL,\n"
-      "    key_range INT32 NOT NULL,\n"
-      "    int8_val INT8 NULLABLE,\n"
-      "    int16_val INT16 NULLABLE,\n"
-      "    int32_val INT32 NULLABLE,\n"
-      "    int64_val INT64 NULLABLE,\n"
-      "    timestamp_val UNIXTIME_MICROS NULLABLE,\n"
-      "    date_val DATE NULLABLE,\n"
-      "    string_val STRING NULLABLE,\n"
-      "    bool_val BOOL NULLABLE,\n"
-      "    float_val FLOAT NULLABLE,\n"
-      "    double_val DOUBLE NULLABLE,\n"
-      "    binary_val BINARY NULLABLE,\n"
-      "    decimal_val DECIMAL(30, 4) NULLABLE,\n"
-      "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
-      ")\n"
-      "HASH (key_hash0) PARTITIONS 2,\n"
-      "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
-      "RANGE (key_range) (\n"
-      "    PARTITION 0 <= VALUES < 1,\n"
-      "    PARTITION 2 <= VALUES < 3\n"
-      ")\n"
-      "REPLICAS 1");
+  ASSERT_STR_CONTAINS(stdout,
+                      "(\n"
+                      "    key_hash0 INT32 NOT NULL,\n"
+                      "    key_hash1 INT32 NOT NULL,\n"
+                      "    key_hash2 INT32 NOT NULL,\n"
+                      "    key_range INT32 NOT NULL,\n"
+                      "    int8_val INT8 NULLABLE,\n"
+                      "    int16_val INT16 NULLABLE,\n"
+                      "    int32_val INT32 NULLABLE,\n"
+                      "    int64_val INT64 NULLABLE,\n"
+                      "    timestamp_val UNIXTIME_MICROS NULLABLE,\n"
+                      "    date_val DATE NULLABLE,\n"
+                      "    string_val STRING NULLABLE,\n"
+                      "    bool_val BOOL NULLABLE,\n"
+                      "    float_val FLOAT NULLABLE,\n"
+                      "    double_val DOUBLE NULLABLE,\n"
+                      "    binary_val BINARY NULLABLE,\n"
+                      "    decimal_val DECIMAL(30, 4) NULLABLE,\n"
+                      "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
+                      ")\n"
+                      "HASH (key_hash0) PARTITIONS 2,\n"
+                      "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
+                      "RANGE (key_range) (\n"
+                      "    PARTITION 0 <= VALUES < 1,\n"
+                      "    PARTITION 2 <= VALUES < 3\n"
+                      ")\n"
+                      "OWNER alice\n"
+                      "REPLICAS 1");
 
   // Test the describe output with `-show_attributes=true`.
   stdout.clear();
@@ -1902,7 +1903,37 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       "    PARTITION 0 <= VALUES < 1,\n"
       "    PARTITION 2 <= VALUES < 3\n"
       ")\n"
+      "OWNER alice\n"
       "REPLICAS 1");
+}
+
+TEST_F(AdminCliTest, TestDescribeTableNoOwner) {
+  NO_FATALS(BuildAndStart({}, {"--allow_empty_owner=true"}));
+  KuduSchema schema;
+  KuduSchemaBuilder builder;
+  builder.AddColumn("foo")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  ASSERT_OK(builder.Build(&schema));
+
+  const string kTableName = "table_without_owner";
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                .schema(&schema)
+                .set_range_partition_columns({"foo"})
+                .num_replicas(1)
+                .set_owner("")
+                .Create());
+
+  string stdout;
+  ASSERT_OK(RunKuduTool(
+      {
+          "table",
+          "describe",
+          cluster_->master()->bound_rpc_addr().ToString(),
+          kTableName,
+      },
+      &stdout));
+  ASSERT_STR_CONTAINS(stdout, "OWNER \n");
 }
 
 TEST_F(AdminCliTest, TestLocateRow) {

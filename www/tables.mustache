@@ -32,6 +32,7 @@ There are {{num_tables}} tables.
   <thead><tr>
     <th data-sorter="stringsSorter" data-sortable="true">Table Name</th>
     <th>Table Id</th>
+    <th data-sorter="stringsSorter" data-sortable="true">Owner</th>
     <th>State</th>
     <th>State Message</th>
     <th data-sorter="numericStringsSorter" data-sortable="true">Tablet Count</th>
@@ -44,6 +45,7 @@ There are {{num_tables}} tables.
     <tr>
       <td>{{name}}</td>
       <td><a href="{{base_url}}/table?id={{id}}">{{id}}</a></td>
+      <td>{{owner}}</td>
       <td>{{state}}</td>
       <td>{{message}}</td>
       <td>{{tablet_count}}</td>
