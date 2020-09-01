@@ -75,6 +75,8 @@ class Master : public kserver::KuduServer {
   Status WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout)
       WARN_UNUSED_RESULT;
 
+  const std::string& cluster_id() const { return cluster_id_; }
+
   MasterCertAuthority* cert_authority() { return cert_authority_.get(); }
 
   security::TokenSigner* token_signer() { return token_signer_.get(); }
@@ -123,6 +125,7 @@ class Master : public kserver::KuduServer {
 
  private:
   friend class MasterTest;
+  friend class CatalogManager;
 
   void InitCatalogManagerTask();
   Status InitCatalogManager();
@@ -136,6 +139,9 @@ class Master : public kserver::KuduServer {
   // safe in a particular case.
   void ShutdownImpl();
 
+  // Set the cluster ID on this master for fast lookup.
+  void set_cluster_id(const std::string& cluster_id) { cluster_id_ = cluster_id; }
+
   enum MasterState {
     kStopped,
     kInitialized,
@@ -143,6 +149,8 @@ class Master : public kserver::KuduServer {
   };
 
   MasterState state_;
+
+  std::string cluster_id_ = "";
 
   std::unique_ptr<MasterCertAuthority> cert_authority_;
   std::unique_ptr<security::TokenSigner> token_signer_;

@@ -872,6 +872,9 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Currently, it's about having a means to authenticate clients by authn tokens.
   Status PrepareFollower(MonoTime* last_tspk_run);
 
+  // Load the cluster ID for the follower catalog manager.
+  Status PrepareFollowerClusterId();
+
   // Prepare CA-related information for the follower catalog manager. Currently,
   // this includes reading the CA information from the system table, creating
   // TLS server certificate request, signing it with the CA key, and installing
@@ -897,6 +900,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // This method is thread-safe.
   Status InitSysCatalogAsync(bool is_first_run);
 
+  // Initialize the cluster ID: load the cluster ID record
+  // from the system table. If a cluster ID record is not present in the
+  // table, generate and store a new one.
+  Status InitClusterId();
+
   // Initialize the IPKI certificate authority: load the CA information record
   // from the system table. If the CA information record is not present in the
   // table, generate and store a new one.
@@ -907,11 +915,18 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status InitCertAuthorityWith(std::unique_ptr<security::PrivateKey> key,
                                std::unique_ptr<security::Cert> cert);
 
+  // Load the cluster ID from the system table.
+  // If the cluster ID is not found in the table, return Status::NotFound.
+  Status LoadClusterId(std::string* cluster_id);
+
   // Load the IPKI certficate authority information from the system
   // table: the private key and the certificate. If the CA info entry is not
   // found in the table, return Status::NotFound.
   Status LoadCertAuthorityInfo(std::unique_ptr<security::PrivateKey>* key,
                                std::unique_ptr<security::Cert>* cert);
+
+  // Store cluster ID into the system table.
+  Status StoreClusterId(const std::string& cluster_id);
 
   // Store the IPKI certificate authority information into the system table.
   Status StoreCertAuthorityInfo(const security::PrivateKey& key,

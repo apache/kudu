@@ -31,6 +31,7 @@ under the License.
   <table class='table table-striped'>
     <thead><tr>
       <th>UUID</th>
+      <th>Cluster ID</th>
       <th>Role</th>
       <th>Start time</th>
       <th>Registration</th>
@@ -39,6 +40,7 @@ under the License.
     {{#masters}}
       <tr>
           <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
+          <td>{{cluster_id}}</td>
           <td>{{role}}</td>
           <td>{{start_time}}</td>
           <td><pre><code>{{registration}}</code></pre></td>

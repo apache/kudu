@@ -886,6 +886,34 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   return Status::OK();
 }
 
+Status CatalogManager::InitClusterId() {
+  leader_lock_.AssertAcquiredForWriting();
+
+  string cluster_id;
+  Status s = LoadClusterId(&cluster_id);
+  if (s.IsNotFound()) {
+    // Status::NotFound is returned if no cluster ID record is
+    // found in the system catalog table. It can happen on the very first run
+    // of a Kudu cluster or on upgrade from an older version that did not have
+    // cluster IDs. If so, it's necessary to create and persist
+    // a new cluster ID record which, if persisted, will be used for this and next runs.
+
+    // Generate new cluster ID.
+    cluster_id = GenerateId();
+
+    // If the leadership was lost, writing into the system table fails.
+    s = StoreClusterId(cluster_id);
+  }
+
+  // Once the cluster ID is loaded or stored, store it in a variable for
+  // fast lookup.
+  if (s.ok()) {
+     master_->set_cluster_id(cluster_id);
+  }
+
+  return s;
+}
+
 Status CatalogManager::InitCertAuthority() {
   leader_lock_.AssertAcquiredForWriting();
 
@@ -1005,6 +1033,17 @@ Status CatalogManager::InitCertAuthorityWith(
   return Status::OK();
 }
 
+Status CatalogManager::LoadClusterId(string* cluster_id) {
+  leader_lock_.AssertAcquired();
+
+  SysClusterIdEntryPB entry;
+  RETURN_NOT_OK(sys_catalog_->GetClusterIdEntry(&entry));
+  *cluster_id = entry.cluster_id();
+  LOG(INFO) << "Loaded cluster ID: " << *cluster_id;
+
+  return Status::OK();
+}
+
 Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
                                              unique_ptr<Cert>* cert) {
   leader_lock_.AssertAcquired();
@@ -1025,6 +1064,18 @@ Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
 
   key->swap(ca_private_key);
   cert->swap(ca_cert);
+
+  return Status::OK();
+}
+
+// Store cluster ID into the system table.
+Status CatalogManager::StoreClusterId(const string& cluster_id) {
+  leader_lock_.AssertAcquiredForWriting();
+
+  SysClusterIdEntryPB entry;
+  entry.set_cluster_id(cluster_id);
+  RETURN_NOT_OK(sys_catalog_->AddClusterIdEntry(entry));
+  LOG(INFO) << "Generated new cluster ID: " << cluster_id;
 
   return Status::OK();
 }
@@ -1151,6 +1202,15 @@ void CatalogManager::PrepareForLeadershipTask() {
       }
     }
 
+    static const char* const kClustIdInitOpDescription = "Initializing Kudu cluster ID";
+    LOG(INFO) << kClustIdInitOpDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kClustIdInitOpDescription) {
+      if (!check([this]() { return this->InitClusterId(); },
+                 *consensus, term, kClustIdInitOpDescription).ok()) {
+        return;
+      }
+    }
+
     // TODO(KUDU-1920): update this once "BYO PKI" feature is supported.
     static const char* const kCaInitOpDescription =
         "Initializing Kudu internal certificate authority";
@@ -1203,6 +1263,24 @@ void CatalogManager::PrepareForLeadershipTask() {
   leader_ready_term_ = term;
 }
 
+Status CatalogManager::PrepareFollowerClusterId() {
+  static const char* const kDescription =
+      "loading cluster ID for follower catalog manager";
+
+  // Load the cluster ID.
+  string cluster_id;
+  Status s = LoadClusterId(&cluster_id);
+  if (s.ok()) {
+    LOG_WITH_PREFIX(INFO) << kDescription << ": success";
+    // Once the cluster ID is loaded or stored, store it in a variable for
+    // fast lookup.
+    master_->set_cluster_id(cluster_id);
+  } else {
+    LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
+  }
+  return s;
+}
+
 Status CatalogManager::PrepareFollowerCaInfo() {
   static const char* const kDescription =
       "acquiring CA information for follower catalog manager";
@@ -1250,6 +1328,10 @@ Status CatalogManager::PrepareFollowerTokenVerifier() {
 
 Status CatalogManager::PrepareFollower(MonoTime* last_tspk_run) {
   leader_lock_.AssertAcquiredForReading();
+  // Load the cluster ID.
+  if (master_->cluster_id().empty()) {
+    RETURN_NOT_OK(PrepareFollowerClusterId());
+  }
   // Load the CA certificate and CA private key.
   if (!master_->tls_context().has_signed_cert()) {
     RETURN_NOT_OK(PrepareFollowerCaInfo());

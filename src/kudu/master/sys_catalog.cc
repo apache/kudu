@@ -155,6 +155,8 @@ const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
 const char* const SysCatalogTable::kLatestNotificationLogEntryIdRowId =
     "latest_notification_log_entry_id";
+const char* const SysCatalogTable::kClusterIdRowId =
+    "cluster_id";
 
 namespace {
 
@@ -790,6 +792,29 @@ Status SysCatalogTable::GetLatestNotificationLogEventId(int64_t* event_id) {
   return ProcessRows<SysNotificationLogEventIdPB, HMS_NOTIFICATION_LOG>(processor);
 }
 
+Status SysCatalogTable::GetClusterIdEntry(SysClusterIdEntryPB* entry) {
+  CHECK(entry);
+  vector<SysClusterIdEntryPB> entries;
+  auto processor = [&](
+      const string& entry_id,
+      const SysClusterIdEntryPB& entry_data) {
+    CHECK_EQ(entry_id, kClusterIdRowId);
+    DCHECK(entry_data.has_cluster_id());
+    DCHECK(!entry_data.cluster_id().empty());
+    entries.push_back(entry_data);
+    return Status::OK();
+  };
+  RETURN_NOT_OK((ProcessRows<SysClusterIdEntryPB, CLUSTER_ID>(processor)));
+  // There should be no more than one cluster ID entry in the system table.
+  CHECK_LE(entries.size(), 1);
+  if (entries.empty()) {
+    return Status::NotFound("cluster ID entry not found");
+  }
+  *entry = std::move(entries.front());
+
+  return Status::OK();
+}
+
 Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
   CHECK(entry);
   vector<SysCertAuthorityEntryPB> entries;
@@ -807,9 +832,31 @@ Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
   if (entries.empty()) {
     return Status::NotFound("root CA entry not found");
   }
-  entries.front().Swap(entry);
+  *entry = std::move(entries.front());
 
   return Status::OK();
+}
+
+Status SysCatalogTable::AddClusterIdEntry(
+    const SysClusterIdEntryPB& entry) {
+  WriteRequestPB req;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  CHECK(entry.has_cluster_id());
+  CHECK(!entry.cluster_id().empty());
+
+  faststring metadata_buf;
+  pb_util::SerializeToString(entry, &metadata_buf);
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, CLUSTER_ID));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, kClusterIdRowId));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::INSERT, row);
+
+  return SyncWrite(req);
 }
 
 Status SysCatalogTable::AddCertAuthorityEntry(

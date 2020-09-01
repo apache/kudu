@@ -118,6 +118,10 @@ message ServerEntryPB {
   // If an error has occured earlier in the RPC call, the role
   // may be not be set.
   optional consensus.RaftPeerPB.Role role = 4;
+
+  // The unique cluster ID of the cluster this server belongs too.
+  // TODO(ghenke): Currently only set for masters.
+  optional string cluster_id = 5;
 }
 
 // A row block in which each row is stored contiguously.

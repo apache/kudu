@@ -625,6 +625,7 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
   Status s = server_->GetMasterRegistration(resp->mutable_registration());
   CheckRespErrorOrSetUnknown(s, resp);
   resp->set_role(server_->catalog_manager()->Role());
+  resp->set_cluster_id(server_->cluster_id());
   rpc->RespondSuccess();
 }
 

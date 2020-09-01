@@ -455,6 +455,11 @@ Status GetTsCounterValue(cluster::ExternalTabletServer* ets,
                          MetricPrototype* metric,
                          int64_t* value);
 
+// Get the registration from the Master.
+Status GetMasterRegistration(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                             const MonoDelta& timeout,
+                             master::GetMasterRegistrationResponsePB* registration);
+
 // Alter the table name.
 Status AlterTableName(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                       const std::string& table_id,

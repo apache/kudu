@@ -1316,6 +1316,19 @@ Status GetInt64Metric(const HostPort& http_hp,
   return Status::NotFound(msg);
 }
 
+Status GetMasterRegistration(const shared_ptr<MasterServiceProxy>& master_proxy,
+                             const MonoDelta& timeout,
+                             master::GetMasterRegistrationResponsePB* registration) {
+  master::GetMasterRegistrationRequestPB req;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(master_proxy->GetMasterRegistration(req, registration, &rpc));
+  if (registration->has_error()) {
+    return StatusFromPB(registration->error().status());
+  }
+  return Status::OK();
+}
+
 Status GetTsCounterValue(ExternalTabletServer* ets,
                          MetricPrototype* metric,
                          int64_t* value) {

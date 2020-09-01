@@ -427,5 +427,35 @@ TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
   ASSERT_EQ("Corruption: failed to write one or more rows", s.ToString());
 }
 
+// Check loading the auto-generated cluster ID upon startup.
+TEST_F(SysCatalogTest, LoadClusterID) {
+  // The system catalog should already contain a generated cluster ID:
+  // The SetUp() method awaits for the catalog manager becoming leader master,
+  // and by that time the cluster ID should be loaded.
+  SysClusterIdEntryPB cluster_id_entry;
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->
+      GetClusterIdEntry(&cluster_id_entry));
+
+  ASSERT_TRUE(cluster_id_entry.has_cluster_id());
+  ASSERT_TRUE(!cluster_id_entry.cluster_id().empty());
+
+  ASSERT_EQ(cluster_id_entry.cluster_id(), master_->cluster_id());
+  const string init_id = master_->cluster_id();
+
+  // Check that if a cluster ID is already present,
+  // it cannot be overwritten using SysCatalogTable::AddClusterIdEntry().
+  const Status s = master_->catalog_manager()->sys_catalog()->
+      AddClusterIdEntry(cluster_id_entry);
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+  ASSERT_EQ("Corruption: failed to write one or more rows", s.ToString());
+
+  // Restart the master and ensure the generated cluster ID is the same.
+  mini_master_->Shutdown();
+  mini_master_->Restart();
+  ASSERT_OK(mini_master_->master()->catalog_manager()->sys_catalog()->
+          GetClusterIdEntry(&cluster_id_entry));
+  ASSERT_EQ(init_id, cluster_id_entry.cluster_id());
+}
+
 } // namespace master
 } // namespace kudu

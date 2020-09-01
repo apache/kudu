@@ -231,6 +231,12 @@ message SysNotificationLogEventIdPB {
   optional int64 latest_notification_log_event_id = 1;
 }
 
+// The on-disk entry in the sys.catalog table ("metadata" column) to represent
+// the cluster ID.
+message SysClusterIdEntryPB {
+  optional string cluster_id = 1;
+}
+
 // The on-disk entry in the sys.catalog table to represent the existence of
 // on-going tserver state (e.g. maintenance mode).
 message SysTServerStateEntryPB {
@@ -921,6 +927,9 @@ message GetMasterRegistrationResponsePB {
 
   // Set if there an error retrieving the registration information.
   optional MasterErrorPB error = 4;
+
+  // The unique cluster ID of the cluster this server belongs too.
+  optional string cluster_id = 5;
 }
 
 // ListMastersRequest/Response: get information about all of the known

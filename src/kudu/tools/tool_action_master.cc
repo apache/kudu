@@ -157,6 +157,10 @@ Status ListMasters(const RunnerContext& context) {
       for (const auto& master : masters) {
         values.push_back(master.instance_id().permanent_uuid());
       }
+    } else if (boost::iequals(column, "cluster_id")) {
+      for (const auto& master : masters) {
+        values.emplace_back(master.has_cluster_id() ? master.cluster_id() : "");
+      }
     } else if (boost::iequals(column, "seqno")) {
       for (const auto& master : masters) {
         values.push_back(std::to_string(master.instance_id().instance_seqno()));
@@ -418,7 +422,7 @@ unique_ptr<Mode> BuildMasterMode() {
             "columns",
             string("uuid,rpc-addresses,role"),
             string("Comma-separated list of master info fields to "
-                   "include in output.\nPossible values: uuid, "
+                   "include in output.\nPossible values: uuid, cluster_id"
                    "rpc-addresses, http-addresses, version, seqno, "
                    "start_time and role"))
         .AddOptionalParameter("format")
