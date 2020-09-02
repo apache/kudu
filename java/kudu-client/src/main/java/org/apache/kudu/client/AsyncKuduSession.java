@@ -46,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.client.AsyncKuduClient.LookupType;
 import org.apache.kudu.util.AsyncUtil;
+import org.apache.kudu.util.LogThrottler;
 import org.apache.kudu.util.Slice;
 
 /**
@@ -114,6 +115,10 @@ import org.apache.kudu.util.Slice;
 public class AsyncKuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduSession.class);
+  /**
+   * Instance of LogThrottler isn't static so we can throttle messages per session
+   */
+  private final LogThrottler throttleClosedLog = new LogThrottler(LOG);
 
   private final AsyncKuduClient client;
   private final Random randomizer = new Random();
@@ -549,7 +554,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     if (closed) {
       // Ideally this would be a precondition, but that may break existing
       // clients who have grown to rely on this unsafe behavior.
-      LOG.warn("Applying an operation in a closed session; this is unsafe");
+      throttleClosedLog.warn(60L, "Applying an operation in a closed session; this is unsafe");
     }
 
     // Freeze the row so that the client cannot concurrently modify it while it is in flight.
