@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -29,7 +30,6 @@
 #include <ostream>
 #include <string>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include <boost/smart_ptr/shared_ptr.hpp>
@@ -50,6 +50,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
@@ -673,7 +674,8 @@ TEST_F(ThreadPoolTest, QueueLoadMeter) {
 
   // Another mixed case: submit many long running tasks via a serial token
   // and many long running tasks that can run concurrently. The queue should
-  // become overloaded.
+  // become overloaded once the tasks in the head of the queue is kept there
+  // for longer than kQueueTimeThresholdMs time interval.
   {
     constexpr auto kNumTokens = 1;
     vector<unique_ptr<ThreadPoolToken>> tokens;
@@ -692,8 +694,8 @@ TEST_F(ThreadPoolTest, QueueLoadMeter) {
     }
     ASSERT_FALSE(pool_->QueueOverloaded());
 
-    // Add several light tasks in addition to the scheduled serial ones. This
-    // should not overload the queue.
+    // Add the heavy tasks in addition to the scheduled serial ones. The queue
+    // should become overloaded after kQueueTimeThresholdMs time interval.
     for (auto i = 0; i < 2 * kMaxThreads; ++i) {
       ASSERT_OK(pool_->Submit([](){
         SleepFor(MonoDelta::FromMilliseconds(kQueueTimeThresholdMs));
@@ -704,6 +706,84 @@ TEST_F(ThreadPoolTest, QueueLoadMeter) {
     pool_->Wait();
     ASSERT_FALSE(pool_->QueueOverloaded());
   }
+}
+
+// A test for various scenarios to assess ThreadPool's performance.
+class ThreadPoolPerformanceTest :
+    public ThreadPoolTest,
+    public testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_CASE_P(LoadMeterPresence, ThreadPoolPerformanceTest,
+                        ::testing::Values(false, true));
+
+// A scenario to assess ThreadPool's performance in the absence/presence
+// of the QueueLoadMeter. The scenario uses a mix of serial and concurrent
+// task tokens.
+TEST_P(ThreadPoolPerformanceTest, ConcurrentAndSerialTasksMix) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  constexpr auto kNumTasksPerSchedulerThread = 25000;
+  const auto kNumCPUs = base::NumCPUs();
+  const auto kMaxThreads = std::max(1, kNumCPUs / 2);
+  const auto kNumSchedulerThreads = std::max(2, kNumCPUs / 2);
+  const auto kNumSerialTokens = kNumSchedulerThreads / 4;
+  const auto load_meter_enabled = GetParam();
+
+  ThreadPoolBuilder builder(kDefaultPoolName);
+  builder.set_min_threads(kMaxThreads);
+  builder.set_max_threads(kMaxThreads);
+  if (load_meter_enabled) {
+    // The exact value of the queue overload threshold isn't important in this
+    // test scenario. With low enough setting and huge number of scheduled
+    // tasks, this guarantees that the queue becomes overloaded and all code
+    // paths in QueueLoadMeter are covered.
+    builder.set_queue_overload_threshold(MonoDelta::FromMilliseconds(1));
+  }
+  ASSERT_OK(RebuildPoolWithBuilder(builder));
+
+  vector<unique_ptr<ThreadPoolToken>> tokens;
+  tokens.reserve(kNumSchedulerThreads);
+  for (auto i = 0; i < kNumSchedulerThreads; ++i) {
+    tokens.emplace_back(pool_->NewToken(
+        i < kNumSerialTokens ? ThreadPool::ExecutionMode::SERIAL
+                             : ThreadPool::ExecutionMode::CONCURRENT));
+  }
+
+  vector<thread> threads;
+  threads.reserve(kNumSchedulerThreads);
+  Barrier b(kNumSchedulerThreads + 1);
+
+  for (auto si = 0; si < kNumSchedulerThreads; ++si) {
+    threads.emplace_back([&, si]() {
+      unique_ptr<ThreadPoolToken> token(pool_->NewToken(
+          (si < kNumSerialTokens) ? ThreadPool::ExecutionMode::SERIAL
+                                  : ThreadPool::ExecutionMode::CONCURRENT));
+      b.Wait();
+      for (auto i = 0; i < kNumTasksPerSchedulerThread; ++i) {
+        CHECK_OK(token->Submit([](){}));
+      }
+    });
+  }
+
+  Stopwatch sw(Stopwatch::ALL_THREADS);
+  b.Wait();
+  sw.start();
+  pool_->Wait();
+  sw.stop();
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  const auto time_elapsed = sw.elapsed();
+  LOG(INFO) << Substitute("Processed $0 tasks in $1",
+                          kNumSchedulerThreads * kNumTasksPerSchedulerThread,
+                          time_elapsed.ToString());
+  LOG(INFO) << Substitute(
+      "Processing rate (QueueLoadMeter $0): $1 tasks/sec",
+      load_meter_enabled ? " enabled" : "disabled",
+      static_cast<double>(kNumSchedulerThreads * kNumTasksPerSchedulerThread) /
+          time_elapsed.wall_seconds());
 }
 
 // Test that a thread pool will crash if asked to run its own blocking
