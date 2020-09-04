@@ -25,6 +25,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -47,6 +48,7 @@
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -614,7 +616,15 @@ Status FixHmsMetadata(const RunnerContext& context) {
     for (hive::Table& hms_table : report.orphan_hms_tables) {
       string table_name = Substitute("$0.$1", hms_table.dbName, hms_table.tableName);
       const string& master_addrs_param = hms_table.parameters[HmsClient::kKuduMasterAddrsKey];
-      if (master_addrs_param != master_addrs && !FLAGS_force) {
+
+      // Normalize the master addresses to allow for an equality check that ignores
+      // missing default ports, duplicate addresses, and address order.
+      UnorderedHostPortSet param_set;
+      MasterAddressesToSet(master_addrs_param, &param_set);
+      UnorderedHostPortSet cluster_set;
+      MasterAddressesToSet(master_addrs, &cluster_set);
+
+      if (param_set != cluster_set && !FLAGS_force) {
         LOG(INFO) << "Skipping drop of orphan HMS table " << table_name
                   << " with master addresses parameter " << master_addrs_param
                   << " because it does not match the --" << kMasterAddressesArg << " argument"

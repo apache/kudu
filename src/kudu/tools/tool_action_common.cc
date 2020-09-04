@@ -28,6 +28,7 @@
 #include <numeric>
 #include <stack>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -59,6 +60,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
@@ -564,6 +566,25 @@ Status ParseMasterAddresses(
     vector<string>* master_addresses) {
   CHECK(master_addresses);
   return ParseMasterAddresses(context, kMasterAddressesArg, master_addresses);
+}
+
+Status MasterAddressesToSet(
+    const string& master_addresses_arg,
+    UnorderedHostPortSet* res) {
+  res->clear();
+  vector<HostPort> hp_vector;
+  RETURN_NOT_OK(HostPort::ParseStrings(master_addresses_arg, master::Master::kDefaultPort,
+      &hp_vector));
+  *res = UnorderedHostPortSet(hp_vector.begin(), hp_vector.end());
+
+  // If we deduplicated some masters addresses, log something about it.
+  if (res->size() < hp_vector.size()) {
+    vector<HostPort> addr_list(res->begin(), res->end());
+    LOG(INFO) << "deduplicated master addresses: "
+              << HostPort::ToCommaSeparatedString(addr_list);
+  }
+
+  return Status::OK();
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {

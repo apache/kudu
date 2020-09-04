@@ -27,6 +27,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -186,6 +187,13 @@ Status ParseMasterAddresses(
 Status ParseMasterAddresses(
     const RunnerContext& context,
     std::vector<std::string>* master_addresses);
+
+// Parses a comma separated list of "host:port" pairs into an unordered set of
+// HostPort objects. If no port is specified for an entry in the comma separated list,
+// the default master port is used for that entry's pair.
+Status MasterAddressesToSet(
+    const std::string& master_addresses_arg,
+    kudu::UnorderedHostPortSet* res);
 
 // A table of data to present to the user.
 //
