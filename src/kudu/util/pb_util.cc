@@ -315,7 +315,7 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version,
     // the file is all 0's, then it's an incomplete record, not corruption.
     // This can happen e.g. on ext4 in the default data=ordered mode, when the
     // filesize metadata is updated but the new data is not persisted.
-    // See https://plus.google.com/+KentonVarda/posts/JDwHfAiLGNQ.
+    // See https://news.ycombinator.com/item?id=11512006
     if (IsAllZeros(length_and_cksum_buf)) {
       bool all_zeros = false;
       RETURN_NOT_OK(RestOfFileIsAllZeros(reader, file_size, tmp_offset, &all_zeros));
