@@ -202,6 +202,8 @@ message RaftPeerPB {
   // Replica's health report, as seen by the leader. This is a run-time
   // only field, it should not be persisted or read from the persistent storage.
   optional HealthReportPB health_report = 5;
+
+  optional string hostname = 6;
 }
 
 // A set of peers, serving a single tablet.
