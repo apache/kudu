@@ -16,13 +16,14 @@
 // under the License.
 #pragma once
 
+#include <sys/types.h>
+
 #include <atomic>
 #include <cstddef>
 #include <deque>
 #include <functional>
 #include <iosfwd>
 #include <memory>
-#include <set>
 #include <string>
 #include <unordered_set>
 
@@ -340,11 +341,15 @@ class ThreadPool {
     // to the parameter 'N' in the description of the algorithm above.
     const size_t queue_time_history_length_;
 
+    // Number of elements in the queue history measurement window which are
+    // over the threshold specified by 'queue_time_threshold_'. Using the
+    // terminology from above, (min(QT_historic(M) > T_overload) iff
+    // (over_queue_threshold_num_ == M).
+    ssize_t over_queue_threshold_num_;
+
     // Queue timings of the most recent samples. The size of these containers
     // is kept under queue_time_history_length_ limit.
     std::deque<MonoDelta> queue_times_;
-    std::multiset<MonoDelta> queue_times_ordered_;
-    MonoDelta min_queue_time_;
 
     // Below fields are to store the latest snapshot of the information about
     // the task queue of the pool the meter is attached to.

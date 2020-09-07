@@ -771,6 +771,7 @@ ThreadPool::QueueLoadMeter::QueueLoadMeter(
     : tpool_(tpool),
       queue_time_threshold_(queue_time_threshold),
       queue_time_history_length_(queue_time_history_length),
+      over_queue_threshold_num_(0),
       queue_head_submit_time_(MonoTime()),
       overloaded_since_(MonoTime()),
       has_spare_thread_(true) {
@@ -826,18 +827,23 @@ void ThreadPool::QueueLoadMeter::UpdateQueueInfoUnlocked(
     const MonoTime& queue_head_submit_time,
     bool has_spare_thread) {
   tpool_.lock_.AssertAcquired();
+
   if (task_queue_time.Initialized()) {
-    // TODO(aserbin): any better way of tracking the running minimum of N numbers?
     queue_times_.emplace_back(task_queue_time);
-    queue_times_ordered_.insert(task_queue_time);
+    // Given the criterion to detect whether the queue is overloaded, it's not
+    // exactly necessary to track the running minimum of queue times for the
+    // specified history window. It's enough just to keep an eye on whether the
+    // window contains at least one element that's not over the threshold.
+    if (task_queue_time > queue_time_threshold_) {
+      ++over_queue_threshold_num_;
+    }
     if (queue_times_.size() > queue_time_history_length_) {
       const auto& elem = queue_times_.front();
-      auto it = queue_times_ordered_.find(elem);
-      DCHECK(it != queue_times_ordered_.end());
-      queue_times_ordered_.erase(it);
+      if (elem > queue_time_threshold_) {
+        --over_queue_threshold_num_;
+      }
       queue_times_.pop_front();
     }
-    min_queue_time_ = *queue_times_.begin();
   }
   queue_head_submit_time_.store(queue_head_submit_time);
   has_spare_thread_.store(has_spare_thread);
@@ -848,11 +854,10 @@ void ThreadPool::QueueLoadMeter::UpdateQueueInfoUnlocked(
   const bool queue_empty = !queue_head_submit_time.Initialized();
   const auto queue_time = queue_empty
       ? MonoDelta::FromSeconds(0) : now - queue_head_submit_time;
-  const auto min_queue_time = min_queue_time_.Initialized()
-      ? min_queue_time_ : MonoDelta::FromSeconds(0);
   const bool was_overloaded = overloaded_since_.load().Initialized();
   const bool overloaded = !has_spare_thread &&
-      std::max(min_queue_time, queue_time) > queue_time_threshold_;
+      (over_queue_threshold_num_ == queue_time_history_length_ ||
+       queue_time > queue_time_threshold_);
   // Track the state transitions and update overloaded_since_.
   if (!was_overloaded && overloaded) {
     VLOG(3) << Substitute("state transition: normal --> overloaded");
@@ -863,13 +868,12 @@ void ThreadPool::QueueLoadMeter::UpdateQueueInfoUnlocked(
   }
   VLOG(4) << Substitute("state refreshed: overloaded since $0, queue $1, "
                         "has $2 thread, queue head submit time $3, "
-                        "queue time $4, min queue time $5",
+                        "queue time $4",
                         overloaded_since_.load().ToString(),
                         queue_empty ? "empty" : "not empty",
                         has_spare_thread ? "spare" : "no spare",
                         queue_head_submit_time.ToString(),
-                        queue_time.ToString(),
-                        min_queue_time.ToString());
+                        queue_time.ToString());
 }
 
 std::ostream& operator<<(std::ostream& o, ThreadPoolToken::State s) {
