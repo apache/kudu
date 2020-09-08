@@ -95,8 +95,6 @@
   the `--tablet_apply_pool_overload_threshold_ms` Tablet Server’s flag to
   appropriate value, e.g. 250 (see
   link:https://issues.apache.org/jira/browse/KUDU-1587[KUDU-1587]).
-* Operation accumulators in Spark KuduContext are now tracked on a per-table
-  basis.
 * Java client’s error collector can be resized (see
   link:https://issues.apache.org/jira/browse/KUDU-1422[KUDU-1422]).
 * Calls to the Kudu master server are now drastically reduced when using scan
