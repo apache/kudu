@@ -1111,16 +1111,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
                                         KuduPredicate::ComparisonOp op,
                                         KuduValue* value);
 
-  /// @name Advanced/Unstable API
-  ///
-  /// There are no guarantees on the stability of this client API.
-  ///
-  ///@{
-
   /// Create a new IN Bloom filter predicate which can be used for scanners on
   /// this table.
-  ///
-  /// @warning This method is experimental and may change or disappear in future.
   ///
   /// A Bloom filter is a space-efficient probabilistic data structure used to
   /// test set membership with a possibility of false positive matches.
@@ -1153,6 +1145,11 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   KuduPredicate* NewInBloomFilterPredicate(const Slice& col_name,
                                            std::vector<KuduBloomFilter*>* bloom_filters);
 
+  /// @name Advanced/Unstable API
+  ///
+  /// There are no guarantees on the stability of this client API.
+  ///
+  ///@{
   /// Create a new IN Bloom filter predicate using direct BlockBloomFilter
   /// pointers which can be used for scanners on this table.
   ///
