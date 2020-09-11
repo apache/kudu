@@ -546,11 +546,6 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
   }
 
   CheckRespErrorOrSetUnknown(s, resp);
-  if (resp->has_error()) {
-    // If there was an application error, respond to the RPC.
-    rpc->RespondSuccess();
-    return;
-  }
   rpc->RespondSuccess();
 }
 
