@@ -70,22 +70,32 @@ class TxnSystemClient {
     return AddTxnStatusTableRangeWithClient(lower_bound, upper_bound, client_.get());
   }
 
+  // TODO(awong): in the methods below with 'timeout' parameter,
+  //              pass a deadline instead of a timeout so we can more easily
+  //              associate it with potential user-specified deadlines.
+
   // Attempts to create a transaction with the given 'txn_id'.
   // Returns an error if the transaction ID has already been taken, or if there
   // was an error writing to the transaction status table.
-  // TODO(awong): pass a deadline instead of a timeout so we can more easily
-  // associate it with potential user-specified deadlines.
   Status BeginTransaction(int64_t txn_id, const std::string& user,
                           MonoDelta timeout = MonoDelta::FromSeconds(10));
 
   // Attempts to register the given participant with the given transaction.
   // Returns an error if the transaction hasn't yet been started, or if the
   // 'user' isn't permitted to modify the transaction.
-  // TODO(awong): pass a deadline instead of a timeout so we can more easily
-  // associate it with potential user-specified deadlines.
   Status RegisterParticipant(int64_t txn_id, const std::string& participant_id,
                              const std::string& user,
                              MonoDelta timeout = MonoDelta::FromSeconds(10));
+
+  // Initiates committing a transaction with the given identifier.
+  Status BeginCommitTransaction(int64_t txn_id,
+                                const std::string& user,
+                                MonoDelta timeout = MonoDelta::FromSeconds(10));
+
+  // Aborts a transaction with the given identifier.
+  Status AbortTransaction(int64_t txn_id,
+                          const std::string& user,
+                          MonoDelta timeout = MonoDelta::FromSeconds(10));
 
   // Opens the transaction status table, refreshing metadata with that from the
   // masters.

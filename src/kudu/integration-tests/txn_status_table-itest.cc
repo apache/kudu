@@ -351,14 +351,27 @@ TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
   ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
   ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
+  ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
 
   // If we write out of range, we should see an error.
-  Status s = txn_sys_client_->BeginTransaction(100, kUser);
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  {
+    auto s = txn_sys_client_->BeginTransaction(100, kUser);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+  {
+    auto s = txn_sys_client_->BeginCommitTransaction(100, kUser);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+  {
+    auto s = txn_sys_client_->AbortTransaction(100, kUser);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
 
   // Once we add a new range, we should be able to leverage it.
   ASSERT_OK(txn_sys_client_->AddTxnStatusTableRange(100, 200));
   ASSERT_OK(txn_sys_client_->BeginTransaction(100, kUser));
+  ASSERT_OK(txn_sys_client_->BeginCommitTransaction(100, kUser));
+  ASSERT_OK(txn_sys_client_->AbortTransaction(100, kUser));
 }
 
 TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
@@ -415,6 +428,64 @@ TEST_F(TxnStatusTableITest, TestSystemClientRegisterParticipantErrors) {
   // request should be rejected.
   s = txn_sys_client_->RegisterParticipant(1, ParticipantId(2), "stranger");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+}
+
+TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
+  ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
+
+  ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
+  ASSERT_OK(txn_sys_client_->BeginCommitTransaction(1, kUser));
+  // Calling BeginCommitTransaction() on already committing transaction is OK.
+  ASSERT_OK(txn_sys_client_->BeginCommitTransaction(1, kUser));
+  // It's completely legal to abort a transaction that has entered the commit
+  // phase but hasn't finalized yet.
+  ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
+  // Aborting already aborted transaction is fine (aborting is idempotent).
+  ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
+
+  // Even if the transaction is aborted, an attempt to start another transaction
+  // with already used ID should yield an error.
+  {
+    auto s = txn_sys_client_->BeginTransaction(1, kUser);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID");
+  }
+
+  // An attempt to start committing a non-existent transaction should report
+  // an error.
+  {
+    auto s = txn_sys_client_->BeginCommitTransaction(2, kUser);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 2 not found");
+  }
+
+  // An attempt to abort a non-existent transaction should report an error.
+  {
+    auto s = txn_sys_client_->AbortTransaction(2, kUser);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 2 not found");
+  }
+
+  // An attempt to commit already aborted transaction should fail with an error.
+  {
+    ASSERT_OK(txn_sys_client_->BeginTransaction(2, kUser));
+    ASSERT_OK(txn_sys_client_->AbortTransaction(2, kUser));
+    auto s = txn_sys_client_->BeginCommitTransaction(2, kUser);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 2 is not open");
+  }
+
+  // Commit/Abort transaction should be called as of the transaction's owner.
+  {
+    ASSERT_OK(txn_sys_client_->BeginTransaction(3, kUser));
+    auto s = txn_sys_client_->BeginCommitTransaction(3, "stranger");
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 3 not owned by stranger");
+    s = txn_sys_client_->AbortTransaction(3, "stranger");
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 3 not owned by stranger");
+  }
 }
 
 // Test that a transaction system client can make concurrent calls to multiple

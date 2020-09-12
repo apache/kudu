@@ -146,6 +146,34 @@ Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& partic
   return s.Wait();
 }
 
+Status TxnSystemClient::BeginCommitTransaction(int64_t txn_id,
+                                               const string& user,
+                                               MonoDelta timeout) {
+  CoordinatorOpPB coordinate_txn_op;
+  coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_COMMIT_TXN);
+  coordinate_txn_op.set_txn_id(txn_id);
+  coordinate_txn_op.set_user(user);
+  Synchronizer s;
+  RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
+                                           timeout,
+                                           s.AsStatusCallback()));
+  return s.Wait();
+}
+
+Status TxnSystemClient::AbortTransaction(int64_t txn_id,
+                                         const string& user,
+                                         MonoDelta timeout) {
+  CoordinatorOpPB coordinate_txn_op;
+  coordinate_txn_op.set_type(CoordinatorOpPB::ABORT_TXN);
+  coordinate_txn_op.set_txn_id(txn_id);
+  coordinate_txn_op.set_user(user);
+  Synchronizer s;
+  RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
+                                           timeout,
+                                           s.AsStatusCallback()));
+  return s.Wait();
+}
+
 Status TxnSystemClient::CoordinateTransactionAsync(CoordinatorOpPB coordinate_txn_op,
                                                    const MonoDelta& timeout,
                                                    const StatusCallback& cb) {
