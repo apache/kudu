@@ -172,7 +172,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -232,14 +231,13 @@ using kudu::TypeInfo;
 using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduError;
-using kudu::client::KuduInsert;
-using kudu::client::KuduDelete;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduWriteOperation;
 using kudu::clock::LogicalClock;
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::consensus::ConsensusMetadata;
@@ -249,8 +247,6 @@ using kudu::log::LogAnchorRegistry;
 using kudu::tablet::RowIteratorOptions;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletMetadata;
-using kudu::client::KuduWriteOperation;
-using std::accumulate;
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -367,6 +363,9 @@ DEFINE_bool(use_random_pk, false,
 DEFINE_bool(use_random_non_pk, false,
             "Whether to use random numbers instead of sequential ones for non-primary key "
             "columns.");
+DEFINE_bool(use_upsert, false,
+            "Whether to use UPSERT instead of INSERT to store the generated "
+            "data into the table");
 
 namespace kudu {
 namespace tools {
@@ -387,6 +386,19 @@ bool ValidatePartitionFlags() {
   return true;
 }
 GROUP_FLAG_VALIDATOR(partition_flags, &ValidatePartitionFlags);
+
+const char* OpTypeToString(KuduWriteOperation::Type op_type) {
+  switch (op_type) {
+    case KuduWriteOperation::INSERT:
+      return "INSERT";
+    case KuduWriteOperation::DELETE:
+      return "DELETE";
+    case KuduWriteOperation::UPSERT:
+      return "UPSERT";
+    default:
+      LOG(FATAL) << Substitute("unsupported op_type $0", op_type);
+  }
+}
 
 class Generator {
  public:
@@ -465,10 +477,12 @@ int64_t SpanPerThread(int num_key_columns) {
 Status GenerateRowData(Generator* key_gen, Generator* value_gen, KuduPartialRow* row,
                        const string& fixed_string, KuduWriteOperation::Type op_type) {
   const vector<ColumnSchema>& columns(row->schema()->columns());
-  DCHECK(op_type == KuduWriteOperation::Type::INSERT ||
-      op_type == KuduWriteOperation::Type::DELETE);
-  size_t gen_column_count = op_type == KuduWriteOperation::Type::INSERT ?
-      columns.size() : row->schema()->num_key_columns();
+  DCHECK(op_type == KuduWriteOperation::INSERT ||
+         op_type == KuduWriteOperation::DELETE ||
+         op_type == KuduWriteOperation::UPSERT);
+  const size_t gen_column_count = op_type == KuduWriteOperation::DELETE
+      ? row->schema()->num_key_columns()
+      : columns.size();
   // Seperate key Generator and value Generator, so we can generate the same primary keys
   // when perform DELETE operations.
   Generator* gen = key_gen;
@@ -598,36 +612,38 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
 
     // Planning for non-intersecting ranges for different generator threads
     // in sequential generation mode.
-    const int64_t gen_span = SpanPerThread(KuduSchema::ToSchema(table->schema()).num_key_columns());
+    const int64_t gen_span = SpanPerThread(KuduSchema::ToSchema(
+        table->schema()).num_key_columns());
     const int64_t gen_seed = gen_idx * gen_span + gen_seq_start;
     Generator key_gen(key_gen_mode, gen_seed, FLAGS_string_len);
     Generator value_gen(value_gen_mode, gen_seed, FLAGS_string_len);
+    unique_ptr<KuduWriteOperation> op;
     for (; num_rows_per_gen < 0 || idx < num_rows_per_gen; ++idx) {
       switch (op_type) {
-        case KuduWriteOperation::Type::INSERT: {
-          unique_ptr<KuduInsert> insert_op(table->NewInsert());
-          RETURN_NOT_OK(GenerateRowData(&key_gen, &value_gen, insert_op->mutable_row(),
-                                        FLAGS_string_fixed, op_type));
-          RETURN_NOT_OK(session->Apply(insert_op.release()));
+        case KuduWriteOperation::INSERT:
+          op.reset(table->NewInsert());
           break;
-        }
-        case KuduWriteOperation::Type::DELETE: {
-          unique_ptr<KuduDelete> delete_op(table->NewDelete());
-          RETURN_NOT_OK(GenerateRowData(&key_gen, nullptr, delete_op->mutable_row(),
-                                        FLAGS_string_fixed, op_type));
-          RETURN_NOT_OK(session->Apply(delete_op.release()));
+        case KuduWriteOperation::DELETE:
+          op.reset(table->NewDelete());
           break;
-        }
+        case KuduWriteOperation::UPSERT:
+          op.reset(table->NewUpsert());
+          break;
         default:
-          LOG(FATAL) << "Unknown op_type=" << op_type;
+          LOG(FATAL) << Substitute("unknown op_type $0", op_type);
       }
+      RETURN_NOT_OK(GenerateRowData(
+          &key_gen,
+          op_type == KuduWriteOperation::DELETE ? nullptr : &value_gen,
+          op->mutable_row(),
+          FLAGS_string_fixed,
+          op_type));
+      RETURN_NOT_OK(session->Apply(op.release()));
       if (flush_per_n_rows != 0 && idx != 0 && idx % flush_per_n_rows == 0) {
         session->FlushAsync(nullptr);
       }
     }
-    RETURN_NOT_OK(session->Flush());
-
-    return Status::OK();
+    return session->Flush();
   };
 
   WriteResults results;
@@ -658,8 +674,9 @@ WriteResults GeneratorThread(const client::sp::shared_ptr<KuduClient>& client,
 WriteResults GenerateWriteRows(const ClientFactory& client_factory,
                                const string& table_name,
                                KuduWriteOperation::Type op_type) {
-  DCHECK(op_type == KuduWriteOperation::Type::INSERT ||
-         op_type == KuduWriteOperation::Type::DELETE);
+  DCHECK(op_type == KuduWriteOperation::INSERT ||
+         op_type == KuduWriteOperation::DELETE ||
+         op_type == KuduWriteOperation::UPSERT);
 
   const size_t gen_num = FLAGS_num_threads;
   vector<WriteResults> results(gen_num);
@@ -685,7 +702,7 @@ WriteResults GenerateWriteRows(const ClientFactory& client_factory,
         std::max(combined.latest_observed_timestamp, r.latest_observed_timestamp);
   }
   cout << endl
-       << (op_type == KuduWriteOperation::Type::INSERT ? "INSERT" : "DELETE") << " report" << endl
+       << OpTypeToString(op_type) << " report" << endl
        << "    rows total: " << combined.row_count << endl
        << "    time total: " << time_total_ms << " ms" << endl;
   if (combined.row_count != 0 && combined.err_count == 0) {
@@ -788,8 +805,10 @@ Status TestLoadGenerator(const RunnerContext& context) {
     CHECK_OK(CreateKuduClient(context, &client));
     return client;
   };
-  WriteResults write_results =
-      GenerateWriteRows(client_factory, table_name, KuduWriteOperation::Type::INSERT);
+  WriteResults write_results = GenerateWriteRows(
+      client_factory,
+      table_name,
+      FLAGS_use_upsert ? KuduWriteOperation::UPSERT : KuduWriteOperation::INSERT);
   RETURN_NOT_OK(write_results.status);
   client->SetLatestObservedTimestamp(write_results.latest_observed_timestamp);
   if (FLAGS_run_scan) {
@@ -808,8 +827,8 @@ Status TestLoadGenerator(const RunnerContext& context) {
   }
 
   if (FLAGS_run_cleanup) {
-    RETURN_NOT_OK(
-        GenerateWriteRows(client_factory, table_name, KuduWriteOperation::Type::DELETE).status);
+    RETURN_NOT_OK(GenerateWriteRows(
+        client_factory, table_name, KuduWriteOperation::DELETE).status);
   }
 
   if (is_auto_table && !FLAGS_keep_auto_table) {
@@ -948,6 +967,7 @@ unique_ptr<Mode> BuildPerfMode() {
           .AddOptionalParameter("use_random")
           .AddOptionalParameter("use_random_pk")
           .AddOptionalParameter("use_random_non_pk")
+          .AddOptionalParameter("use_upsert")
           .Build();
 
   unique_ptr<Action> table_scan =

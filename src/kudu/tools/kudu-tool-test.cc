@@ -2297,6 +2297,27 @@ TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundRandomValuesIgnoreDeprecated) {
       "bench_auto_flush_background_random_values_ignore_deprecated"));
 }
 
+// Run loadgen benchmark in AUTO_FLUSH_BACKGROUND mode, writing the generated
+// data using UPSERT instead of INSERT.
+TEST_F(ToolTest, TestLoadgenAutoFlushBackgroundUseUpsert) {
+  NO_FATALS(RunLoadgen(
+      1 /* num_tservers */,
+      {
+        "--num_rows_per_thread=4096",
+        "--num_threads=8",
+        "--run_scan",
+        "--string_len=8",
+        // Use UPSERT (default is to use INSERT) operations for writing rows.
+        "--use_upsert",
+        // Use random values: even if there are many threads writing many
+        // rows, no errors are expected because of using UPSERT instead of
+        // INSERT.
+        "--use_random_pk",
+        "--use_random_non_pk",
+      },
+      "bench_auto_flush_background_use_upsert"));
+}
+
 // Run the loadgen benchmark in MANUAL_FLUSH mode.
 TEST_F(ToolTest, TestLoadgenManualFlush) {
   NO_FATALS(RunLoadgen(3,
