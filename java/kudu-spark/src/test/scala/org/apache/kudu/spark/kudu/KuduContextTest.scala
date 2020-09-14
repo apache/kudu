@@ -30,7 +30,7 @@ import org.apache.kudu.util.DateUtil
 import org.apache.kudu.util.TimestampUtil
 import org.apache.spark.sql.functions.decode
 import org.junit.Test
-import org.scalatest.Matchers
+import org.scalatest.matchers.should.Matchers
 
 class KuduContextTest extends KuduTestSuite with Matchers {
   val rowCount = 10

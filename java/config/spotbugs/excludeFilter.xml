@@ -256,6 +256,12 @@
             <Bug pattern="SF_SWITCH_NO_DEFAULT" />
         </Or>
     </Match>
+    <Match>
+        <!-- Null pointer dereference isn't possible given we check for existence. -->
+        <Class name="org.apache.kudu.client.RpcTraceFrame"/>
+        <Method name="getHumanReadableSummaryStringForTraces" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
 
     <!-- kudu-client-tools exclusions -->
     <Match>

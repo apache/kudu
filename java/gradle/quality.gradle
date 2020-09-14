@@ -117,7 +117,7 @@ task animalsniffer(dependsOn: [animalsnifferMain, animalsnifferTest], group: "Ve
 dependencyUpdates {
   gradleReleaseChannel = "current"
   revision = "release"
-  resolutionStrategy = {
+  resolutionStrategy {
     componentSelection { rules ->
       rules.all { ComponentSelection selection ->
         boolean rejected = ["snap", "alpha", "beta", "rc", "cr", "m"].any { qualifier ->

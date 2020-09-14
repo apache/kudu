@@ -27,7 +27,6 @@ import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
-import org.apache.kudu.client
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobDescriptionCollector
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
@@ -40,7 +39,11 @@ import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
 import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.scheduler.SparkListenerJobEnd
-import org.junit.Assert._
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -301,10 +304,10 @@ class TestKuduBackup extends KuduTestSuite {
     assertTrue(runRestore(createRestoreOptions(Seq(table1Name, table2Name))))
 
     val rdd1 = kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
-    assertResult(numRows)(rdd1.count())
+    assertEquals(numRows, rdd1.count())
 
     val rdd2 = kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
-    assertResult(numRows)(rdd2.count())
+    assertEquals(numRows, rdd2.count())
   }
 
   @Test
@@ -320,9 +323,9 @@ class TestKuduBackup extends KuduTestSuite {
     assertTrue(runBackup(createBackupOptions(tableNames).copy(numParallelBackups = 3)))
     assertTrue(runRestore(createRestoreOptions(tableNames).copy(numParallelRestores = 4)))
 
-    tableNames.map { tableName =>
+    tableNames.foreach { tableName =>
       val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
-      assertResult(numRows)(rdd.count())
+      assertEquals(numRows, rdd.count())
     }
   }
 

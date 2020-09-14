@@ -40,7 +40,8 @@ dependencies {
   }
 
   // Needed for CapturingLogAppender. Optional otherwise.
-  optional libs.log4j
+  optional libs.log4jApi
+  optional libs.log4jCore
   optional libs.log4jSlf4jImpl
 
   optional libs.jsr305

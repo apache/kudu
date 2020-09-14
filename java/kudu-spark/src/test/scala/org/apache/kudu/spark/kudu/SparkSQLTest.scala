@@ -22,7 +22,6 @@ import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 import org.apache.spark.sql.SQLContext
 import org.junit.Assert._
-import org.scalatest.Matchers
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.Schema
@@ -33,6 +32,7 @@ import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.junit.Before
 import org.junit.Test
+import org.scalatest.matchers.should.Matchers
 
 class SparkSQLTest extends KuduTestSuite with Matchers {
   val rowCount = 10

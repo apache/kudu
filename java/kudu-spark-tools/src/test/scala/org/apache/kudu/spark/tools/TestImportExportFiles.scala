@@ -28,7 +28,7 @@ import org.apache.kudu.Type
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
 import org.apache.kudu.spark.kudu._
-import org.junit.Assert._
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
@@ -145,6 +145,6 @@ class TestImportExportFiles extends KuduTestSuite {
     // TODO(KUDU-2454): Verify every value to ensure all values round trip.
     val rdd1 = kuduContext.kuduRDD(ss.sparkContext, fromTable, List("key"))
     val rdd2 = kuduContext.kuduRDD(ss.sparkContext, toTable, List("key"))
-    assertResult(rdd1.count())(rdd2.count())
+    assertEquals(rdd1.count(), rdd2.count())
   }
 }

@@ -42,11 +42,10 @@ import org.apache.spark.sql.SparkSession
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
-import org.scalatestplus.junit.JUnitSuite
 
 import scala.annotation.meta.getter
 
-trait KuduTestSuite extends JUnitSuite {
+trait KuduTestSuite {
   var ss: SparkSession = _
   var kuduClient: KuduClient = _
   var table: KuduTable = _

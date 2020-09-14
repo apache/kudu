@@ -39,7 +39,8 @@ dependencies {
 
   testCompile project(":kudu-test-utils")
   testCompile libs.junit
-  testCompile libs.log4j
+  testCompile libs.log4jApi
+  testCompile libs.log4jCore
   testCompile libs.log4jSlf4jImpl
   testCompile libs.mockitoCore
 }

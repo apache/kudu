@@ -32,6 +32,7 @@ dependencies {
   testCompile project(path: ":kudu-mapreduce", configuration: "test")
   testCompile libs.commonsIo
   testCompile libs.junit
-  testCompile libs.log4j
+  testCompile libs.log4jApi
+  testCompile libs.log4jCore
   testCompile libs.log4jSlf4jImpl
 }

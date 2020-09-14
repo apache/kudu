@@ -31,13 +31,13 @@ import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.StructField
 import org.apache.spark.sql.types.StructType
 import org.junit.Assert._
-import org.scalatest.Matchers
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
 import org.junit.Before
 import org.junit.Test
+import org.scalatest.matchers.should.Matchers
 
 import scala.util.Random
 

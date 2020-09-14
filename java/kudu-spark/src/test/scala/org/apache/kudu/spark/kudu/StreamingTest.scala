@@ -20,6 +20,7 @@ package org.apache.kudu.spark.kudu
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.streaming.OutputMode
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
@@ -61,7 +62,7 @@ class StreamingTest extends KuduTestSuite {
         }
         .collect()
         .toSet
-      assert(actual === expectedData.toSet)
+      assertEquals(actual, expectedData.toSet)
     }
     input.addData(1, 2, 3)
     query.processAllAvailable()
