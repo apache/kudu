@@ -17,6 +17,8 @@
 syntax = "proto2";
 package kudu.transactions;
 
+option java_package = "org.apache.kudu.transactions";
+
 enum TxnStatePB {
   UNKNOWN = 0;
   OPEN = 1;
