@@ -18,6 +18,9 @@
 apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
+// Explicitly allow slf4j to be included in this jar.
+shadowIncludeSlf4j = true
+
 dependencies {
   compile(libs.hadoopCommon) {
     // hadoopCommon and rangerPlugin use different versions of jersey.

@@ -26,6 +26,11 @@ knows.enabled = false // Disable the "easter egg" knows task.
 knows.group = "" // Hide the "easter egg" knows task.
 shadowJar.group = "" // Hide shadowJar task since it's used by the default build.
 
+// Add a property to explicitly allow slf4j shading.
+ext {
+  shadowIncludeSlf4j = false
+}
+
 // Configure a shaded jar to replace the default jar
 shadowJar.classifier = null // Configure shadow jar to have the default classifier.
 jar.finalizedBy(shadowJar)  // Generate the shaded jar anytime the jar task is run.
@@ -94,6 +99,18 @@ afterEvaluate {
       }
     }
   }
+
+  // Ensure we never shade SLF4J unless we explicitly specify it.
+  // This is a workaround because in the shadow plugin exclusions from
+  // parent modules are not respected in modules that use them.
+  if (!shadowIncludeSlf4j) {
+    shadowJar {
+      dependencies {
+        exclude(dependency("org.slf4j:slf4j-api:.*"))
+      }
+    }
+  }
+
   // Ensure compileUnshaded dependencies are not compiled into shadowJar.
   project.configurations.compileUnshaded.dependencies.each { dep ->
     def depStr = "${dep.group}:${dep.name}:${dep.version}"
