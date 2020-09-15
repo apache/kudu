@@ -42,6 +42,8 @@ my $pat_allow_kudu_shaded =
            org/apache/(?:commons|http)|
            org/checkerframework|
            org/HdrHistogram|
+           org/LatencyUtils|
+           io/micrometer|
            io/netty|
            scopt)
       }x;

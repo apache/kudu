@@ -58,6 +58,9 @@ shadowJar {
   relocate "org.checkerframework", "org.apache.kudu.shaded.org.checkerframework"
   relocate "org.hamcrest", "org.apache.kudu.shaded.org.hamcrest"
   relocate "org.HdrHistogram", "org.apache.kudu.shaded.org.HdrHistogram"
+  // Pulled in via Micrometer.
+  relocate "org.LatencyUtils", "org.apache.kudu.shaded.org.LatencyUtils"
+  relocate "io.micrometer", "org.apache.kudu.shaded.io.micrometer"
   relocate "io.netty", "org.apache.kudu.shaded.io.netty"
   relocate "scopt", "org.apache.kudu.shaded.scopt"
 }
