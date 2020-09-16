@@ -112,6 +112,13 @@ int SeedRandom();
 // if a KuduTest instance is available.
 std::string GetTestDataDirectory();
 
+// Returns a unique socket path for use in tests in the form of:
+//   <test-dir>/<name>-<uuid>.sock
+//
+// The path is in the base test directory because the path to Unix domain
+// socket file cannot be longer than ~100 bytes.
+std::string GetTestSocketPath(const std::string& name);
+
 // Return the directory which contains the test's executable.
 std::string GetTestExecutableDirectory();
 

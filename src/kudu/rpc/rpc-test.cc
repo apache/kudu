@@ -112,9 +112,11 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<b
   }
   Sockaddr bind_addr() const {
     if (use_unix_socket()) {
+      // Ensure multiple calls to bind_addr work by unlinking the socket file.
+      // The only way to reuse a socket file is to remove it with unlink().
+      unlink(socket_path_.c_str());
       Sockaddr addr;
-      string path = Substitute("@kudu-test-$0", getpid());
-      CHECK_OK(addr.ParseUnixDomainPath(path));
+      CHECK_OK(addr.ParseUnixDomainPath(socket_path_));
       return addr;
     }
     return Sockaddr::Wildcard();
@@ -125,6 +127,13 @@ class TestRpc : public RpcTestBase, public ::testing::WithParamInterface<tuple<b
     }
     return bound_addr.ToString();
   }
+  void TearDown() override {
+    RpcTestBase::TearDown();
+    // Ensure we cleanup the socket file on teardown.
+    unlink(socket_path_.c_str());
+  }
+
+  std::string socket_path_ = GetTestSocketPath("rpc-test");
 };
 
 // This is used to run all parameterized tests with and without SSL, on Unix sockets

@@ -29,6 +29,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -112,8 +113,7 @@ class SocketTest : public KuduTest {
           // Test GetPeerAddress from server side.
           Sockaddr peer_addr;
           CHECK_OK(sock.GetPeerAddress(&peer_addr));
-          CHECK_EQ("unix:<unnamed>", peer_addr.ToString());
-
+          CHECK(HasPrefixString(peer_addr.ToString(), "unix:"));
           size_t n_written;
           CHECK_OK(sock.BlockingWrite(
               reinterpret_cast<const uint8_t*>(kData.data()), kData.size(), &n_written,
@@ -149,17 +149,18 @@ TEST_F(SocketTest, TestRecvEOF) {
   DoTestServerDisconnects(true, "recv got EOF from 127.0.0.1:[0-9]+");
 }
 
+// Apple does not support abstract namespaces in sockets.
+#if !defined(__APPLE__)
 TEST_F(SocketTest, TestUnixSocketAbstractNamespace) {
   DoUnixSocketTest(strings::Substitute("@kudu-test-pid-$0", getpid()));
 }
+#endif
+
 TEST_F(SocketTest, TestUnixSocketFilesystemPath) {
-  // Use a path in /tmp/ instead of the normal GetTestPath approach because
-  // unix domain socket paths are limited in length. The test directory
-  // may be too long.
-  string path = strings::Substitute("/tmp/kudu-test-pid-$0", getpid());
+  string path = GetTestSocketPath("socket-test");
   SCOPED_CLEANUP({
-      unlink(path.c_str());
-    });
+    unlink(path.c_str());
+  });
   DoUnixSocketTest(path);
 }
 

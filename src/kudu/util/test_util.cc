@@ -51,6 +51,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
@@ -278,6 +279,14 @@ string GetTestDataDirectory() {
                                Substitute("$0/test_metadata", dir)));
   }
   return dir;
+}
+
+string GetTestSocketPath(const string& name) {
+  string dir;
+  CHECK_OK(Env::Default()->GetTestDirectory(&dir));
+  ObjectIdGenerator generator;
+  string uuid = generator.Next();
+  return JoinPathSegments(dir, Substitute("$0-$1.sock", name, uuid));
 }
 
 string GetTestExecutableDirectory() {
