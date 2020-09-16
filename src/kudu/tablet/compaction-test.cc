@@ -729,7 +729,11 @@ void TestCompaction::AddUpdateAndDelete(RowSet* rs, CompactionInputRow* row, int
 // The verification is performed against a vector of expected CompactionInputRow that we build
 // as we insert/update/delete.
 TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
-  const int kBaseNumRowSets = 10;
+  // NOTE: this test may generate a lot of rowsets; be mindful that some
+  // environments default to a low number of max open files (e.g. 256 on macOS
+  // 10.15.4), and that if we're using the file block manager, each rowset will
+  // use several files.
+  const int kBaseNumRowSets = 5;
   const int kNumRowsPerRowSet = 10;
 
   int total_num_rows = kBaseNumRowSets * kNumRowsPerRowSet;
