@@ -628,9 +628,9 @@ TEST_P(TServerQuiescingParamITest, TestScansRetry) {
   // This should result in a failure to start scanning anything.
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(table_name, &table));
-  KuduScanner scanner(table.get());
-  ASSERT_OK(scanner.SetTimeoutMillis(1000));
   {
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetTimeoutMillis(1000));
     Status s = scanner.Open();
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "exceeded configured scan timeout");
@@ -645,14 +645,19 @@ TEST_P(TServerQuiescingParamITest, TestScansRetry) {
   auto* ts = cluster_->mini_tablet_server(0)->server();
   *ts->mutable_quiescing() = false;
   KuduScanBatch batch;
+  KuduScanner scanner(table.get());
   ASSERT_OK(scanner.Open());
   ASSERT_OK(scanner.NextBatch(&batch));
 
   // Keep the scanner alive, even as we're quiescing.
   const auto past_original_expiration =
       MonoTime::Now() + MonoDelta::FromMilliseconds(2 * FLAGS_scanner_ttl_ms);
+  *ts->mutable_quiescing() = true;
   while (MonoTime::Now() < past_original_expiration) {
-    ASSERT_EQ(1, ts->scanner_manager()->CountActiveScanners());
+    // NOTE: despite destructing the first KuduScanner, the first Open() call
+    // may still have in-flight scans running that may yield an active scanner
+    // on the tserver, so we can only check that at least one scanner exists.
+    ASSERT_LE(1, ts->scanner_manager()->CountActiveScanners());
     ASSERT_OK(scanner.KeepAlive());
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
