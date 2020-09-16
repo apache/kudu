@@ -92,21 +92,20 @@ class LocationAssignmentRule(object):
     else:
       return ""
 
-
 def acquire_advisory_lock(fpath):
   """
   Acquire a lock on a special .lock file. Don't block while trying: return
   if failed to acquire a lock in 30 seconds.
   """
   timeout_seconds = 30
-  now = time.clock()
+  now = time.time()
   deadline = now + timeout_seconds
   random.seed(int(now))
   fpath_lock_file = fpath + ".lock"
   # Open the lock file; create the file if doesn't exist.
   lock_file = open(fpath_lock_file, 'w+')
   got_lock = False
-  while time.clock() < deadline:
+  while time.time() < deadline:
     try:
       fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
       got_lock = True
