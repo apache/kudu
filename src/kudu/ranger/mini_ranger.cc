@@ -46,7 +46,7 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-static constexpr int kRangerStartTimeoutMs = 60000;
+static constexpr int kRangerStartTimeoutMs = 90000;
 
 namespace kudu {
 namespace ranger {
