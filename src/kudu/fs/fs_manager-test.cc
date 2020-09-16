@@ -46,7 +46,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -83,14 +82,16 @@ DECLARE_string(umask);
 namespace kudu {
 namespace fs {
 
-class FsManagerTestBase : public KuduTest {
+class FsManagerTestBase : public KuduTest,
+                          public testing::WithParamInterface<string> {
  public:
   FsManagerTestBase()
      : fs_root_(GetTestPath("fs_root")) {
   }
 
-  void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
+    FLAGS_block_manager = GetParam();
 
     // Initialize File-System Layout
     ReinitFsManager();
@@ -139,8 +140,10 @@ class FsManagerTestBase : public KuduTest {
  private:
   unique_ptr<FsManager> fs_manager_;
 };
+INSTANTIATE_TEST_CASE_P(BlockManagerTypes, FsManagerTestBase,
+    ::testing::ValuesIn(BlockManager::block_manager_types()));
 
-TEST_F(FsManagerTestBase, TestBaseOperations) {
+TEST_P(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout);
 
   TestReadWriteDataFile(Slice("test0"));
@@ -149,7 +152,7 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
   fs_manager()->DumpFileSystemTree(std::cout);
 }
 
-TEST_F(FsManagerTestBase, TestIllegalPaths) {
+TEST_P(FsManagerTestBase, TestIllegalPaths) {
   vector<string> illegal = { "", "asdf", "/foo\n\t" };
   for (const string& path : illegal) {
     ReinitFsManagerWithPaths(path, { path });
@@ -157,7 +160,7 @@ TEST_F(FsManagerTestBase, TestIllegalPaths) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestMultiplePaths) {
+TEST_P(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
   vector<string> data_paths = { GetTestPath("a"), GetTestPath("b"), GetTestPath("c") };
   ReinitFsManagerWithPaths(wal_path, data_paths);
@@ -165,14 +168,14 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
   ASSERT_OK(fs_manager()->Open());
 }
 
-TEST_F(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
+TEST_P(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
   string wal_path = GetTestPath("foo");
   vector<string> data_paths = { wal_path + "/" };
   ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 }
 
-TEST_F(FsManagerTestBase, TestDuplicatePaths) {
+TEST_P(FsManagerTestBase, TestDuplicatePaths) {
   string path = GetTestPath("foo");
   ReinitFsManagerWithPaths(path, { path, path, path });
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
@@ -180,7 +183,7 @@ TEST_F(FsManagerTestBase, TestDuplicatePaths) {
             fs_manager()->GetDataRootDirs());
 }
 
-TEST_F(FsManagerTestBase, TestListTablets) {
+TEST_P(FsManagerTestBase, TestListTablets) {
   vector<string> tablet_ids;
   ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
   ASSERT_EQ(0, tablet_ids.size());
@@ -208,7 +211,7 @@ TEST_F(FsManagerTestBase, TestListTablets) {
   ASSERT_EQ(1, tablet_ids.size()) << tablet_ids;
 }
 
-TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
+TEST_P(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   string path = GetTestPath("new_fs_root");
   ASSERT_OK(env_->CreateDir(path));
   {
@@ -222,14 +225,14 @@ TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsAlreadyPresent());
 }
 
-TEST_F(FsManagerTestBase, TestEmptyWALPath) {
+TEST_P(FsManagerTestBase, TestEmptyWALPath) {
   ReinitFsManagerWithPaths("", {});
   Status s = fs_manager()->CreateInitialFileSystemLayout();
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "directory (fs_wal_dir) not provided");
 }
 
-TEST_F(FsManagerTestBase, TestOnlyWALPath) {
+TEST_P(FsManagerTestBase, TestOnlyWALPath) {
   string path = GetTestPath("new_fs_root");
   ASSERT_OK(env_->CreateDir(path));
 
@@ -243,7 +246,7 @@ TEST_F(FsManagerTestBase, TestOnlyWALPath) {
   ASSERT_TRUE(HasPrefixString(data_dirs[0], path));
 }
 
-TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
+TEST_P(FsManagerTestBase, TestFormatWithSpecificUUID) {
   string path = GetTestPath("new_fs_root");
   ReinitFsManagerWithPaths(path, {});
 
@@ -261,7 +264,7 @@ TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
   ASSERT_EQ(uuid, fs_manager()->uuid());
 }
 
-TEST_F(FsManagerTestBase, TestMetadataDirInWALRoot) {
+TEST_P(FsManagerTestBase, TestMetadataDirInWALRoot) {
   // By default, the FsManager should put metadata in the wal root.
   FsManagerOpts opts;
   opts.wal_root = GetTestPath("wal");
@@ -292,7 +295,7 @@ TEST_F(FsManagerTestBase, TestMetadataDirInWALRoot) {
   ASSERT_OK(fs_manager()->Open());
 }
 
-TEST_F(FsManagerTestBase, TestMetadataDirInDataRoot) {
+TEST_P(FsManagerTestBase, TestMetadataDirInDataRoot) {
   FsManagerOpts opts;
   opts.wal_root = GetTestPath("wal");
   opts.data_roots = { GetTestPath("data1") };
@@ -337,7 +340,7 @@ TEST_F(FsManagerTestBase, TestMetadataDirInDataRoot) {
   ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(), meta_root_suffix);
 }
 
-TEST_F(FsManagerTestBase, TestIsolatedMetadataDir) {
+TEST_P(FsManagerTestBase, TestIsolatedMetadataDir) {
   FsManagerOpts opts;
   opts.wal_root = GetTestPath("wal");
   opts.data_roots = { GetTestPath("data") };
@@ -404,7 +407,7 @@ Status CountTmpFiles(Env* env, const vector<string>& roots, int* count) {
   return Status::OK();
 }
 
-TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
+TEST_P(FsManagerTestBase, TestCreateWithFailedDirs) {
   string wal_path = GetTestPath("wals");
   // Create some top-level paths to place roots in.
   vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
@@ -430,7 +433,7 @@ TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
 
 // Test that if an operator tries to copy an instance file, Kudu will refuse to
 // start up.
-TEST_F(FsManagerTestBase, TestOpenWithDuplicateInstanceFiles) {
+TEST_P(FsManagerTestBase, TestOpenWithDuplicateInstanceFiles) {
   // First, make a copy of some instance files.
   WritableFileOptions wr_opts;
   wr_opts.mode = Env::MUST_CREATE;
@@ -451,13 +454,16 @@ TEST_F(FsManagerTestBase, TestOpenWithDuplicateInstanceFiles) {
         duplicate_dir_instance, wr_opts));
 
   // This is disallowed, as each directory should have its own unique UUID.
+  // NOTE: the failure case looks slightly different depending on the block
+  // manager type, so just check there is an error, rather than the specific
+  // error type.
   ReinitFsManagerWithPaths(fs_root_, { fs_root_, duplicate_test_root });
   Status s = fs_manager()->Open();
-  ASSERT_STR_CONTAINS(s.ToString(), "instance files contain duplicate UUIDs") << s.ToString();
-  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "instance files contain duplicate UUIDs");
 }
 
-TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
+TEST_P(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
   // Open a healthy FS layout, sharing the WAL directory with a data directory.
   const string wal_path = GetTestPath("wals");
   FsManagerOpts opts;
@@ -485,11 +491,9 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
     new_opts.data_roots.emplace_back(wal_path);
     ReinitFsManagerWithOpts(std::move(new_opts));
     s = fs_manager()->Open();
-    if (block_manager_type == "file" &&
-        check_behavior == UpdateInstanceBehavior::UPDATE_AND_IGNORE_FAILURES) {
-      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-      ASSERT_STR_CONTAINS(s.ToString(),
-          "file block manager may not add or remove data directories");
+    if (block_manager_type == "file") {
+      ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "2 unique UUIDs expected, got 1");
     } else {
       ASSERT_OK(s);
     }
@@ -499,7 +503,7 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
 // Test the behavior when we fail to open a data directory for some reason (its
 // mountpoint failed, it's missing, etc). Kudu should allow this and open up
 // with failed data directories listed.
-TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
+TEST_P(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   // Successfully create a multi-directory FS layout.
   const string new_root = GetTestPath("new_root");
   FsManagerOpts opts;
@@ -509,9 +513,8 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   string new_root_uuid;
   auto s = fs_manager()->Open();
   if (opts.block_manager_type == "file") {
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(),
-        "file block manager may not add or remove data directories");
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "2 unique UUIDs expected, got 1");
   } else {
     ASSERT_OK(s);
     ASSERT_TRUE(fs_manager()->dd_manager()->FindUuidByRoot(new_root,
@@ -525,8 +528,8 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   ReinitFsManagerWithOpts(opts);
   s = fs_manager()->Open();
   if (opts.block_manager_type == "file") {
-    ASSERT_TRUE(s.IsIOError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "2 unique UUIDs expected, got 1");
     LOG(INFO) << "Skipping the rest of test, file block manager not supported";
     return;
   }
@@ -582,7 +585,7 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
 // parent directory; as such, canonicalization can fail if the parent directory
 // can't be read (e.g. due to a disk error or because it's flat out missing).
 // In such cases, we should still be able to open the FS layout.
-TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
+TEST_P(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   // Create some parent directories and subdirectories.
   const string dir1 = GetTestPath("test1");
   const string dir2 = GetTestPath("test2");
@@ -609,15 +612,12 @@ TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   ASSERT_OK(env_->DeleteRecursively(dir2));
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
+  ASSERT_OK(s);
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
   if (opts.block_manager_type == "file") {
-    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(),
-        "file block manager may not add or remove data directories");
     LOG(INFO) << "Skipping the rest of test, file block manager not supported";
     return;
   }
-  ASSERT_OK(s);
-  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 
   // Let's try that again, but with the appropriate mountpoint/directory.
   ASSERT_OK(env_->CreateDir(dir2));
@@ -626,7 +626,7 @@ TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDirs().size());
 }
 
-TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
+TEST_P(FsManagerTestBase, TestTmpFilesCleanup) {
   string wal_path = GetTestPath("wals");
   vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
   ReinitFsManagerWithPaths(wal_path, data_paths);
@@ -704,7 +704,7 @@ string FilePermsAsString(const string& path) {
 
 } // anonymous namespace
 
-TEST_F(FsManagerTestBase, TestUmask) {
+TEST_P(FsManagerTestBase, TestUmask) {
   // With the default umask, we should create files with permissions 600
   // and directories with permissions 700.
   ASSERT_EQ(077, g_parsed_umask) << "unexpected default value";
@@ -735,7 +735,7 @@ TEST_F(FsManagerTestBase, TestUmask) {
   EXPECT_EQ("700", FilePermsAsString(root));
 }
 
-TEST_F(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
+TEST_P(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
   const string kWalRoot = fs_manager()->GetWalsRootDir();
 
   ASSERT_OK(env_->DeleteDir(kWalRoot));
@@ -752,7 +752,7 @@ TEST_F(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
 }
 
 
-TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
+TEST_P(FsManagerTestBase, TestAddRemoveDataDirs) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";
     return;
@@ -794,7 +794,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDirs().size());
 }
 
-TEST_F(FsManagerTestBase, TestEIOWhileChangingDirs) {
+TEST_P(FsManagerTestBase, TestEIOWhileChangingDirs) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "The file block manager doesn't support updating directories";
     return;
@@ -829,7 +829,7 @@ TEST_F(FsManagerTestBase, TestEIOWhileChangingDirs) {
 // running the update_dirs tool (i.e. UPDATE_AND_ERROR_ON_FAILURE mode), Kudu
 // should fail and return an error in the event of a disk failure. When that
 // happens, we should ensure that the our failures to update get rolled back.
-TEST_F(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
+TEST_P(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "The file block manager doesn't support updating directories";
     return;
@@ -919,7 +919,7 @@ TEST_F(FsManagerTestBase, TestEIOWhileRunningUpdateDirsTool) {
   ASSERT_EQ(instance_files_before_update, instance_files_after_update);
 }
 
-TEST_F(FsManagerTestBase, TestReAddRemovedDataDir) {
+TEST_P(FsManagerTestBase, TestReAddRemovedDataDir) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";
     return;
@@ -956,7 +956,7 @@ TEST_F(FsManagerTestBase, TestReAddRemovedDataDir) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
+TEST_P(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";
     return;
@@ -992,7 +992,7 @@ TEST_F(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
 }
 
-TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
+TEST_P(FsManagerTestBase, TestAddRemoveSpeculative) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";
     return;
@@ -1055,7 +1055,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
+TEST_P(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
 
   if (FLAGS_block_manager == "file") {
@@ -1179,7 +1179,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestAncillaryDirsReported) {
+TEST_P(FsManagerTestBase, TestAncillaryDirsReported) {
   FsManagerOpts opts;
   opts.wal_root = GetTestPath("wal");
   opts.data_roots = { GetTestPath("data") };

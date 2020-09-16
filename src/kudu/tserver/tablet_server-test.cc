@@ -904,6 +904,10 @@ TEST_F(TabletServerTest, TestEIODuringDelete) {
 // directories, and that removing directories fails tablets that are striped
 // across the removed directories.
 TEST_F(TabletServerTest, TestAddRemoveDirectory) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test since the file block manager does not support updating directories";
+    return;
+  }
   // Start with multiple data dirs so the dirs are suffixed with numbers, and
   // so when we remove a data dirs, we'll be using the same set of dirs.
   NO_FATALS(ShutdownAndRebuildTablet(/*num_data_dirs*/2));

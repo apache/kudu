@@ -301,7 +301,7 @@ Status DataDirManager::PopulateDirectoryMaps(const vector<unique_ptr<Dir>>& dirs
   // We should have the same number of UUID assignments as directories.
   if (dirs.size() != uuid_to_idx.size()) {
     return Status::Corruption(
-        Substitute("instance file is corrupted: $0 unique UUIDs expected, got $1",
+        Substitute("instance files contain duplicate UUIDs: $0 unique UUIDs expected, got $1",
                     dirs.size(), uuid_to_idx.size()));
   }
   // Keep track of any dirs that were not referenced in the dir set. These
