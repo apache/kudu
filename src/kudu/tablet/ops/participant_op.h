@@ -22,8 +22,12 @@
 #include <string>
 #include <utility>
 
+#include <glog/logging.h>
+
+#include "kudu/common/timestamp.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/tserver/tserver_admin.pb.h"
@@ -68,7 +72,9 @@ class ParticipantOpState : public OpState {
   //
   // Anchors the given 'op_id' in the WAL, ensuring that subsequent bootstraps
   // of the tablet's WAL will leave the transaction in the appropriate state.
-  Status PerformOp(const consensus::OpId& op_id);
+  // Updates 'commit_msg' to include a commit message appropriate for this op
+  // using this op's arena.
+  Status PerformOp(const consensus::OpId& op_id, consensus::CommitMsg** commit_msg);
 
   // Releases the transaction and its lock.
   void ReleaseTxn();
@@ -76,6 +82,22 @@ class ParticipantOpState : public OpState {
   // Returns the transaction ID for this op.
   int64_t txn_id() {
     return request_->op().txn_id();
+  }
+
+  Txn* txn() {
+    return txn_.get();
+  }
+
+  // Takes ownership of the scoped op, using it to track the commit op.
+  void SetMvccOp(std::unique_ptr<ScopedOp> mvcc_op);
+
+  // Releases the commit op to the Txn; it is expected that the Txn will
+  // finish the MVCC op once FINALIZE_COMMIT or ABORT_TXN are called.
+  void ReleaseMvccOpToTxn();
+
+  Timestamp commit_timestamp() const {
+    CHECK(request()->op().has_finalized_commit_timestamp());
+    return Timestamp(request()->op().finalized_commit_timestamp());
   }
  private:
   friend class ParticipantOp;
@@ -88,6 +110,12 @@ class ParticipantOpState : public OpState {
   // TabletReplica if, for instance, we're bootstrapping a new Tablet.
   TxnParticipant* txn_participant_;
 
+  // MVCC op used to track the commit process of a transaction. This should be
+  // created only when starting a BEGIN_COMMIT op, and it should be released to
+  // the underlying Txn to track the commit's progress to its eventual
+  // FINALIZE_COMMIT or ABORT_TXN call.
+  std::unique_ptr<ScopedOp> begin_commit_mvcc_op_;
+
   const tserver::ParticipantRequestPB* request_;
   tserver::ParticipantResponsePB* response_;
 
@@ -96,6 +124,9 @@ class ParticipantOpState : public OpState {
 };
 
 // Op that executes a transaction state change in the transaction participant.
+// This op is used to orchestrate the transaction commit in such a way that it
+// guarantees repeatable reads. See the block comment in time_manager.h for
+// details on how this dance is performed.
 class ParticipantOp : public Op {
  public:
   ParticipantOp(std::unique_ptr<ParticipantOpState> state,

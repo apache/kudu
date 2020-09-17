@@ -28,13 +28,17 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant-test-util.h"
@@ -77,7 +81,8 @@ namespace itest {
 namespace {
 vector<Status> RunOnReplicas(const vector<TabletReplica*>& replicas,
                              int64_t txn_id,
-                             ParticipantOpPB::ParticipantOpType type) {
+                             ParticipantOpPB::ParticipantOpType type,
+                             int64_t commit_timestamp = kDummyCommitTimestamp) {
   vector<Status> statuses(replicas.size(), Status::Incomplete(""));
   vector<thread> threads;
   for (int i = 0; i < replicas.size(); i++) {
@@ -95,6 +100,7 @@ vector<Status> RunOnReplicas(const vector<TabletReplica*>& replicas,
   }
   return statuses;
 }
+
 string TxnsAsString(const vector<TxnParticipant::TxnEntry>& txns) {
   return JoinMapped(txns,
       [](const TxnParticipant::TxnEntry& txn) {
@@ -102,6 +108,25 @@ string TxnsAsString(const vector<TxnParticipant::TxnEntry>& txns) {
             txn.txn_id, Txn::StateToString(txn.state), txn.commit_timestamp);
       },
       ",");
+}
+
+Status RunOnReplica(TabletReplica* replica, int64_t txn_id,
+                    ParticipantOpPB::ParticipantOpType type,
+                    int64_t commit_timestamp = kDummyCommitTimestamp) {
+  return RunOnReplicas({ replica }, txn_id, type, commit_timestamp)[0];
+}
+
+// Emulate a snapshot scan by waiting for the safe time to be advanced past 't'
+// and for all ops before 't' to complete.
+Status WaitForCompletedOps(TabletReplica* replica, Timestamp t, MonoDelta timeout) {
+  const auto deadline = MonoTime::Now() + timeout;
+  RETURN_NOT_OK_PREPEND(
+      replica->time_manager()->WaitUntilSafe(t, deadline), "Failed to wait for safe time");
+  tablet::MvccSnapshot snap;
+  RETURN_NOT_OK_PREPEND(
+      replica->tablet()->mvcc_manager()->WaitForSnapshotWithAllApplied(t, &snap, deadline),
+      "Failed to wait for ops to complete");
+  return Status::OK();
 }
 } // anonymous namespace
 
@@ -248,6 +273,100 @@ TEST_F(TxnParticipantITest, TestCopyParticipantOps) {
     ASSERT_OK(r->WaitUntilConsensusRunning(kTimeout));
     ASSERT_EQ(expected_txns, r->tablet()->txn_participant()->GetTxnsForTests());
   });
+}
+
+// Test to ensure that the mechanisms built to allow snapshot scans to wait for
+// safe time advancement will actually wait for transactions to commit.
+TEST_F(TxnParticipantITest, TestWaitOnFinalizeCommit) {
+  const int kLeaderIdx = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  auto* follower_replica = replicas[kLeaderIdx + 1];
+  auto* clock = leader_replica->clock();
+  const int64_t kTxnId = 1;
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
+
+  // We should consistently be able to scan a bit in the future just by
+  // waiting on leaders. Leader safe times move forward with its clock, while
+  // followers need to wait to be heartbeated to. Wait on heartbeats (wait 2x
+  // the heartbeat time to avoid flakiness).
+  const auto kShortTimeout = MonoDelta::FromMilliseconds(10);
+  const auto before_commit_ts = clock->Now();
+  ASSERT_OK(WaitForCompletedOps(leader_replica, before_commit_ts, kShortTimeout));
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, before_commit_ts, kShortTimeout));
+
+  // Once we begin committing, safe time will be pinned. To ensure repeatable
+  // reads, scans asking for a timestamp higher than the BEGIN_COMMIT op's
+  // timestamp should wait.
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
+  const auto before_finalize_ts = clock->Now();
+  Status s;
+  s = WaitForCompletedOps(leader_replica, before_finalize_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  s = WaitForCompletedOps(follower_replica, before_finalize_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+  // Even if we wait for heartbeats to happen, safe time will not be advanced
+  // until the commit is finalized.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
+  s = WaitForCompletedOps(leader_replica, before_finalize_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  s = WaitForCompletedOps(follower_replica, before_finalize_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+  // Just because safe time is pinned doesn't mean we can't scan anything. We
+  // should still be able to wait for older timestamps.
+  ASSERT_OK(WaitForCompletedOps(leader_replica, before_commit_ts, kShortTimeout));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, before_commit_ts, kShortTimeout));
+
+  // Once we finalize the commit, safe time will continue forward.
+  const auto commit_ts_val = clock->Now().value() + 10000;
+  const auto commit_ts = Timestamp(commit_ts_val);
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, commit_ts_val));
+  ASSERT_OK(WaitForCompletedOps(leader_replica, before_finalize_ts, kShortTimeout));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, before_finalize_ts, kShortTimeout));
+  ASSERT_OK(WaitForCompletedOps(leader_replica, commit_ts, kShortTimeout));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, commit_ts, kShortTimeout));
+}
+
+// Like the above test, but ensures we can wait properly even if the
+// transaction is aborted.
+TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
+  const int kLeaderIdx = 0;
+  vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+  auto* leader_replica = replicas[kLeaderIdx];
+  auto* follower_replica = replicas[kLeaderIdx + 1];
+  auto* clock = leader_replica->clock();
+  const int64_t kTxnId = 1;
+  ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
+
+  const auto kShortTimeout = MonoDelta::FromMilliseconds(10);
+  const auto before_commit_ts = clock->Now();
+  // Once we begin committing, safe time will be pinned. To ensure repeatable
+  // reads, scans asking for a timestamp higher than the BEGIN_COMMIT op's
+  // timestamp should wait.
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
+  const auto before_abort_ts = clock->Now();
+  Status s = WaitForCompletedOps(leader_replica, before_abort_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  s = WaitForCompletedOps(follower_replica, before_abort_ts, kShortTimeout);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+  // Just because safe time is pinned doesn't mean we can't scan anything. We
+  // should still be able to wait for older timestamps.
+  ASSERT_OK(WaitForCompletedOps(leader_replica, before_commit_ts, kShortTimeout));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, before_commit_ts, kShortTimeout));
+
+  // When we abort the transaction, safe time should continue to move forward.
+  // On followers, this will happen via heartbeats, so we need to wait to
+  // heartbeat (wait 2x the heartbeat time to avoid flakiness).
+  ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::ABORT_TXN));
+  ASSERT_OK(WaitForCompletedOps(leader_replica, before_abort_ts, kShortTimeout));
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
+  ASSERT_OK(WaitForCompletedOps(follower_replica, before_abort_ts, kShortTimeout));
 }
 
 class TxnParticipantElectionStormITest : public TxnParticipantITest {

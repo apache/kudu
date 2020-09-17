@@ -411,8 +411,9 @@ Status PeerMessageQueue::AppendOperations(vector<ReplicateRefPtr> msgs,
   }
 
   // Update safe time in the TimeManager if we're leader.
-  // This will 'unpin' safe time advancement, which had stopped since we assigned a timestamp to
-  // the message.
+  // This will 'unpin' safe time advancement, which had stopped since we
+  // assigned a timestamp to the message.
+  //
   // Until we have leader leases, replicas only call this when the message is committed.
   if (queue_state_.mode == LEADER) {
     time_manager_->AdvanceSafeTimeWithMessage(*msgs.back()->get());

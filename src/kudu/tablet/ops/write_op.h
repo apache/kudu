@@ -149,7 +149,7 @@ class WriteOpState : public OpState {
   // This must be called exactly once, after the timestamp was acquired.
   // This also copies the timestamp from the MVCC op into the
   // WriteOpState object.
-  void SetMvccTx(std::unique_ptr<ScopedOp> mvcc_op);
+  void SetMvccOp(std::unique_ptr<ScopedOp> mvcc_op);
 
   // Set the Tablet components that this op will write into.
   // Called exactly once at the beginning of Apply, before applying its

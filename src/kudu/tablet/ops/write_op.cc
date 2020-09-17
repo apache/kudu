@@ -323,7 +323,7 @@ WriteOpState::WriteOpState(TabletReplica* tablet_replica,
   }
 }
 
-void WriteOpState::SetMvccTx(unique_ptr<ScopedOp> mvcc_op) {
+void WriteOpState::SetMvccOp(unique_ptr<ScopedOp> mvcc_op) {
   DCHECK(!mvcc_op_) << "Mvcc op already started/set.";
   mvcc_op_ = std::move(mvcc_op);
 }

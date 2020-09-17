@@ -18,8 +18,10 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -30,6 +32,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_semaphore.h"
 #include "kudu/util/status.h"
@@ -93,10 +96,7 @@ class Txn : public RefCountedThreadSafe<Txn> {
         log_anchor_registry_(log_anchor_registry),
         state_(kInitializing),
         commit_timestamp_(-1) {}
-
-  ~Txn() {
-    CHECK_OK(log_anchor_registry_->UnregisterIfAnchored(&log_anchor_));
-  }
+  ~Txn();
 
   // Takes the state lock in write mode and returns it. As transaction state is
   // meant to be driven via an op driver, lock acquisition is expected to be
@@ -179,6 +179,15 @@ class Txn : public RefCountedThreadSafe<Txn> {
     return commit_timestamp_;
   }
 
+  void SetCommitOp(std::unique_ptr<ScopedOp> commit_op) {
+    DCHECK(nullptr == commit_op_.get());
+    commit_op_ = std::move(commit_op);
+  }
+
+  ScopedOp* commit_op() {
+    return commit_op_.get();
+  }
+
  private:
   friend class RefCountedThreadSafe<Txn>;
 
@@ -214,6 +223,13 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // If this transaction was successfully committed, the timestamp at which the
   // transaction should be applied, and -1 otherwise.
   std::atomic<int64_t> commit_timestamp_;
+
+  // Scoped op with a lifecycle that spans between the BEGIN_COMMIT op and
+  // corresponding FINALIZE_COMMIT or ABORT_TXN op, used to ensure that
+  // scanners wait until we finish the transaction if we've begun committing,
+  // before proceeding with a scan. This ensures scans on this participant are
+  // repeatable.
+  std::unique_ptr<ScopedOp> commit_op_;
 
   DISALLOW_COPY_AND_ASSIGN(Txn);
 };

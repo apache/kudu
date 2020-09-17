@@ -39,35 +39,79 @@ class ReplicateMsg;
 
 // Manages timestamp assignment to consensus rounds and safe time advancement.
 //
-// Safe time corresponds to a timestamp before which all ops have been applied to the
-// tablet or are in-flight and is a monotonically increasing timestamp (see note at the end
-// of this class comment).
+// The TimeManager is used in conjunction with the MvccManager to define and
+// uphold the safe time, i.e. a timestamp before which all ops have been
+// applied to the tablet or are in-flight, which is useful for enabling
+// repeatable reads.
 //
-// Snapshot scans can use WaitUntilSafe() to wait for a timestamp to be safe. After this method
-// returns an OK status, all the ops whose timestamps fall before the scan's timestamp
-// will be either committed or in-flight. If the scanner additionally uses the MvccManager to wait
-// until the given timestamp is clean, then the read will be repeatable.
+// Example of a leader TimeManager updating the safe time:
+// - TimeManager::AssignTimestamp() returns a timestamp T that is higher than
+//   any other replicated by a leader.
+// - An op is registered with the MvccManager with the timestamp T.
+//   Conceptually, T is thusly considered safe. Since all future ops will be
+//   assigned higher timestamps, all ops that would have assigned a lower
+//   timestamps are already complete or in-flight.
+// - The op is written to the WAL via the ConsensusQueue, and then replicated;
+//   TimeManger::AdvanceSafeTimeWithMessage() is called with the replicate
+//   message of the op with timestamp T, signifying the new safe time.
+//   - Until this step completes, snapshot scans, which call WaitUntilSafe(t)
+//     where t >= T, will block.
 //
-// In leader mode the TimeManager is responsible for assigning timestamps to ops
-// and for moving the leader's safe time, which in turn may be sent to replicas on heartbeats
-// moving their safe time. The leader's safe time moves with the clock unless there has been a
-// op that was assigned a timestamp that is not yet known by the queue
-// (i.e. AdvanceSafeTimeWithMessage() hasn't been called on the corresponding message).
-// In this case the TimeManager returns the last known safe time.
+// On followers, safe time is advanced via the following methods, called from
+// the Raft threads:
+// - MessageReceivedFromLeader() is used by followers on replicate messages
+//   received by the leader to ensure that, if the follower were to become
+//   leader, any timestamps assigned would be higher than any previously
+//   replicated timestamps. This does not bump safe time, but it does ensure
+//   that, were this node to become leader, any later assigned timestamp will
+//   be higher than T.
+// - AdvanceSafeTime() is used by followers using the safe timestamps that are
+//   heartbeated from leader, used for the sake of snapshot scans.
 //
-// On non-leader mode this class tracks the safe time sent by the leader and updates waiters
-// when it advances.
+// The leader's safe time moves with its clock unless there has been a op that
+// was assigned a timestamp that is not yet known by the queue (i.e.
+// AdvanceSafeTimeWithMessage() hasn't been called on the corresponding
+// message). In this case the TimeManager returns the last known safe time.
 //
-// This class's leadership status is meant to be in tune with the queue's as the queue
-// is responsible for broadcasting safe time from a leader (and will eventually be responsible
-// for calculating that leader's lease).
+// This class's leadership status is meant to be in tune with the queue's as
+// the queue is responsible for broadcasting safe time from a leader (and will
+// eventually be responsible for calculating that leader's lease).
 //
-// NOTE: Until leader leases are implemented the cluster's safe time can occasionally move back.
-//       This does not mean, however, that the timestamp returned by GetSafeTime() can move back.
-//       GetSafeTime will still return monotonically increasing timestamps, it's just
-//       that, in certain corner cases, the timestamp returned by GetSafeTime() can't be trusted
-//       to mean that all future messages will be assigned future timestamps.
-//       This anomaly can cause non-repeatable reads in certain conditions.
+// NOTE: Until leader leases are implemented the cluster's safe time can
+// occasionally move back.  This does not mean, however, that the timestamp
+// returned by GetSafeTime() can move back.  GetSafeTime will still return
+// monotonically increasing timestamps, it's just that, in certain corner
+// cases, the timestamp returned by GetSafeTime() can't be trusted to mean that
+// all future messages will be assigned future timestamps.  This anomaly can
+// cause non-repeatable reads in certain conditions.
+//
+// Multi-op transactions
+// ---------------------
+// Transaction participant leaders also help orchestrate the assignment of its
+// commit timestamp. Below is an example of how the TimeManager and MvccManager
+// can be used to handle assignment of a commit timestamp:
+// - The BEGIN_COMMIT op is assigned a timestamp T_bc by the participant
+//   leader via the above steps, denoting T_bc as safe.
+// - Unlike a regular (e.g. write) op, the MVCC op registered for BEGIN_COMMIT
+//   is not finished when the op is applied -- instead, the MVCC op is
+//   maintained in memory for the time being.
+//   - Until the MVCC op is completed below, further snapshot scans at t where
+//     t > T_bc will block.
+// - T_bc is sent to the transaction coordinator, and a commit timestamp
+//   T_commit is determined that is higher than all timestamps that were
+//   returned by the participants.
+// - The coordinator effects a FINALIZE_COMMIT op on participants; the request
+//   contains T_commit.
+// - Before starting the FINALIZE_COMMIT op, the leader updates its clock using
+//   TimeManager::UpdateClockAndLastAssignedTimestamp(), guaranteeing the next
+//   timestamp assigned will be higher than T_commit.
+// - The FINALIZE_COMMIT op is assigned a timestamp T_fc > T_commit by the
+//   participant leader via the above steps, denoting T_fc as safe.
+// - The MVCC op from earlier is used in lieu of a new MVCC op; since this op
+//   has been in-flight for the duration of the commit process, any scans at
+//   time t >= T_commit must have called WaitUntilSafe(t), followed by
+//   MvccManager::WaitForSnapshotWithAllCommitted(t), thereby waiting for all
+//   ops below t to complete.
 //
 // This class is thread safe.
 class TimeManager {
@@ -82,24 +126,39 @@ class TimeManager {
   // Sets this TimeManager to non-leader mode.
   void SetNonLeaderMode();
 
-  // Assigns a timestamp to 'message' according to the message's ExternalConsistencyMode and/or
-  // message type.
+  // Assigns a timestamp to 'message' according to the message's
+  // ExternalConsistencyMode and/or message type.
   //
-  // Note that the timestamp in 'message' is not considered safe until the message has
-  // been appended to the queue. Until then safe time is pinned to the last known value.
-  // When the message is appended later on, AdvanceSafeTimeWithMessage() is called and safe time
-  // is advanced.
+  // The timestamp in 'message' is not considered safe until the message has
+  // been written to the WAL and begun replicating to followers.  Until then,
+  // safe time is pinned to the last known value.  When the message is appended
+  // later on, AdvanceSafeTimeWithMessage() is called and safe time is
+  // advanced.
   //
   // Requires Leader mode (non-OK status otherwise).
   Status AssignTimestamp(ReplicateMsg* message);
 
-  // Updates the internal state based on 'message' received from a leader replica.
-  // Replicas are expected to call this for every message received from a valid leader.
+  // Updates the internal state based on 'message' received from a leader
+  // replica.  Replicas are expected to call this for every message received
+  // from a valid leader.
   //
-  // Returns Status::OK if the message/leader is valid and the clock was correctly updated.
+  // Returns Status::OK if the message/leader is valid and the clock was
+  // correctly updated.
   //
   // Requires non-leader mode (CHECK failure if it isn't).
   Status MessageReceivedFromLeader(const ReplicateMsg& message);
+
+  // Updates the clock to move forward to 'timestamp' if it is in the future,
+  // and updates internal state to indicate that all further timestamps
+  // assigned should be higher than 'timestamp'.
+  //
+  // It is expected that leader participants of a transaction call this before
+  // assigning a timestamp to the op that finalizes the commit, ensuring that
+  // the finalizing op will be assigned a later timestamp.
+  //
+  // Returns a not-OK status if called while not the leader or if there is an
+  // error updating the clock ('timestamp' was too far in the future).
+  Status UpdateClockAndLastAssignedTimestamp(const Timestamp& timestamp);
 
   // Advances safe time based on the timestamp and type of 'message'.
   //
@@ -198,8 +257,8 @@ class TimeManager {
   // The last serial timestamp that was assigned.
   Timestamp last_serial_ts_assigned_;
 
-  // On replicas this is the latest safe time received from the leader, on the leader this is
-  // the last serial timestamp appended to the queue.
+  // On followers this is the latest safe time received from the leader, on the
+  // leader this is the last serial timestamp appended to the queue.
   Timestamp last_safe_ts_;
 
   // The last time we advanced safe time.

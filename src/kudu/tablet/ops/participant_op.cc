@@ -27,10 +27,13 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/ops/op.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant.h"
 #include "kudu/util/debug/trace_event.h"
@@ -106,35 +109,16 @@ Status ParticipantOpState::ValidateOp() const {
   return Status::OK();
 }
 
-Status ParticipantOpState::PerformOp(const OpId& op_id) {
-  const auto& op = request()->op();
-  Txn* txn = txn_.get();
-  Status s;
-  switch (op.type()) {
-    // NOTE: these can currently never fail because we are only updating
-    // metadata. When we begin validating write ops before committing, we'll
-    // need to populate the response with errors.
-    case ParticipantOpPB::BEGIN_TXN: {
-      txn->BeginTransaction(op_id);
-      break;
-    }
-    case ParticipantOpPB::BEGIN_COMMIT: {
-      txn->BeginCommit(op_id);
-      break;
-    }
-    case ParticipantOpPB::FINALIZE_COMMIT: {
-      txn->FinalizeCommit(op_id, op.finalized_commit_timestamp());
-      break;
-    }
-    case ParticipantOpPB::ABORT_TXN: {
-      txn->AbortTransaction(op_id);
-      break;
-    }
-    case ParticipantOpPB::UNKNOWN: {
-      return Status::InvalidArgument("unknown op type");
-    }
-  }
-  return Status::OK();
+void ParticipantOpState::SetMvccOp(unique_ptr<ScopedOp> mvcc_op) {
+  DCHECK_EQ(ParticipantOpPB::BEGIN_COMMIT, request()->op().type());
+  DCHECK(nullptr == begin_commit_mvcc_op_);
+  begin_commit_mvcc_op_ = std::move(mvcc_op);
+}
+
+void ParticipantOpState::ReleaseMvccOpToTxn() {
+  DCHECK_EQ(ParticipantOpPB::BEGIN_COMMIT, request()->op().type());
+  DCHECK(begin_commit_mvcc_op_);
+  txn_->SetCommitOp(std::move(begin_commit_mvcc_op_));
 }
 
 void ParticipantOp::NewReplicateMsg(unique_ptr<ReplicateMsg>* replicate_msg) {
@@ -151,6 +135,15 @@ Status ParticipantOp::Prepare() {
   TRACE("PREPARE: Starting.");
   state_->AcquireTxnAndLock();
   RETURN_NOT_OK(state_->ValidateOp());
+
+  // Before we assign a timestamp, bump the clock so further ops get assigned
+  // higher timestamps (including this one).
+  if (state_->request()->op().type() == ParticipantOpPB::FINALIZE_COMMIT &&
+      type() == consensus::LEADER) {
+    DCHECK(!state_->consensus_round()->replicate_msg()->has_timestamp());
+    RETURN_NOT_OK(state_->tablet_replica()->time_manager()->UpdateClockAndLastAssignedTimestamp(
+        state_->commit_timestamp()));
+  }
   TRACE("PREPARE: Finished.");
   return Status::OK();
 }
@@ -159,16 +152,68 @@ Status ParticipantOp::Start() {
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
+  if (state_->request()->op().type() == ParticipantOpPB::BEGIN_COMMIT) {
+    // When beginning to commit, register an MVCC op so scanners at later
+    // timestamps wait for the commit to complete.
+    state_->tablet_replica()->tablet()->StartOp(state_.get());
+  }
   TRACE("START. Timestamp: $0", clock::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
+  return Status::OK();
+}
+
+Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, CommitMsg** commit_msg) {
+  const auto& op = request()->op();
+  const auto& op_type = request()->op().type();
+  Status s;
+  switch (op_type) {
+    // NOTE: these can currently never fail because we are only updating
+    // metadata. When we begin validating write ops before committing, we'll
+    // need to populate the response with errors.
+    case ParticipantOpPB::BEGIN_TXN: {
+      txn_->BeginTransaction(op_id);
+      break;
+    }
+    case ParticipantOpPB::BEGIN_COMMIT: {
+      // TODO(awong): Wait for all ops below this timestamp to complete.
+      txn_->BeginCommit(op_id);
+      break;
+    }
+    case ParticipantOpPB::FINALIZE_COMMIT: {
+      txn_->FinalizeCommit(op_id, op.finalized_commit_timestamp());
+      // NOTE: we may not have a commit op if we are bootstrapping.
+      // TODO(awong): consider not replaying the FINALIZE_COMMIT unless the
+      // BEGIN_COMMIT also needs to be replayed.
+      if (txn_->commit_op()) {
+        txn_->commit_op()->FinishApplying();
+      }
+      break;
+    }
+    case ParticipantOpPB::ABORT_TXN: {
+      txn_->AbortTransaction(op_id);
+      if (txn_->commit_op()) {
+        txn_->commit_op()->Abort();
+      }
+      break;
+    }
+    case ParticipantOpPB::UNKNOWN: {
+      return Status::InvalidArgument("unknown op type");
+    }
+  }
+  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(pb_arena());
+  (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
   return Status::OK();
 }
 
 Status ParticipantOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "ParticipantOp::Apply");
   TRACE("APPLY: Starting.");
-  CHECK_OK(state_->PerformOp(state()->op_id()));
-  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
-  (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
+  state_->tablet_replica()->tablet()->StartApplying(state_.get());
+  CHECK_OK(state_->PerformOp(state()->op_id(), commit_msg));
+  // If this is a BEGIN_COMMIT op, pass the commit's MVCC op to the
+  // transaction, keeping it open until the commit is finalized or aborted.
+  if (state_->request()->op().type() == ParticipantOpPB::BEGIN_COMMIT) {
+    state_->ReleaseMvccOpToTxn();
+  }
   TRACE("APPLY: Finished.");
   return Status::OK();
 }
@@ -182,6 +227,7 @@ void ParticipantOp::Finish(OpResult result) {
     TRACE("FINISH: Op aborted");
     return;
   }
+
   DCHECK_EQ(result, Op::APPLIED);
   // TODO(awong): when implementing transaction cleanup on participants, clean
   // up finalized and aborted transactions here.

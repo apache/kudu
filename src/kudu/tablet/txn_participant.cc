@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ostream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -33,6 +34,17 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
+
+Txn::~Txn() {
+  CHECK_OK(log_anchor_registry_->UnregisterIfAnchored(&log_anchor_));
+  // As a sanity check, make sure our state makes sense: if we have an MVCC op
+  // for commit, we should have started to commit.
+  if (commit_op_) {
+    DCHECK(state_ == kCommitInProgress ||
+           state_ == kCommitted ||
+           state_ == kAborted) << StateToString(state_);
+  }
+}
 
 void Txn::AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock) {
   std::unique_lock<rw_semaphore> l(state_lock_);

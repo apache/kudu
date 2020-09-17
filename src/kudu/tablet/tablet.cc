@@ -64,6 +64,7 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/ops/alter_schema_op.h"
+#include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/ops/write_op.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/rowset_info.h"
@@ -74,6 +75,7 @@
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_mm_ops.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/debug/trace_event.h"
@@ -577,7 +579,15 @@ void Tablet::StartOp(WriteOpState* op_state) {
   unique_ptr<ScopedOp> mvcc_op;
   DCHECK(op_state->has_timestamp());
   mvcc_op.reset(new ScopedOp(&mvcc_, op_state->timestamp()));
-  op_state->SetMvccTx(std::move(mvcc_op));
+  op_state->SetMvccOp(std::move(mvcc_op));
+}
+
+void Tablet::StartOp(ParticipantOpState* op_state) {
+  if (op_state->request()->op().type() == tserver::ParticipantOpPB::BEGIN_COMMIT) {
+    DCHECK(op_state->has_timestamp());
+    unique_ptr<ScopedOp> mvcc_op(new ScopedOp(&mvcc_, op_state->timestamp()));
+    op_state->SetMvccOp(std::move(mvcc_op));
+  }
 }
 
 bool Tablet::ValidateOpOrMarkFailed(RowOp* op) {
@@ -840,6 +850,17 @@ void Tablet::StartApplying(WriteOpState* op_state) {
   shared_lock<rw_spinlock> l(component_lock_);
   op_state->StartApplying();
   op_state->set_tablet_components(components_);
+}
+
+void Tablet::StartApplying(ParticipantOpState* op_state) {
+  const auto& op_type = op_state->request()->op().type();
+  if (op_type == tserver::ParticipantOpPB::FINALIZE_COMMIT) {
+    // NOTE: we may not have an MVCC op if we are bootstrapping and did not
+    // replay a BEGIN_COMMIT op.
+    if (op_state->txn()->commit_op()) {
+      op_state->txn()->commit_op()->StartApplying();
+    }
+  }
 }
 
 Status Tablet::BulkCheckPresence(const IOContext* io_context, WriteOpState* op_state) {

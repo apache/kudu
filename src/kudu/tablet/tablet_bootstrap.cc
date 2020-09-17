@@ -1552,9 +1552,15 @@ Status TabletBootstrap::PlayTxnParticipantOpRequest(const IOContext* /*io_contex
   SCOPED_CLEANUP({
     op_state.ReleaseTxn();
   });
+  LogEntryPB& commit_entry = *google::protobuf::Arena::CreateMessage<LogEntryPB>(
+      op_state.pb_arena());
+  commit_entry.set_type(log::COMMIT);
+  CommitMsg* new_commit = commit_entry.mutable_commit();
+  new_commit->CopyFrom(commit_msg);
   // NOTE: don't bother validating the current state of the op. Presumably that
   // happened the first time this op was written.
-  RETURN_NOT_OK(op_state.PerformOp(replicate_msg->id()));
+  tablet_->StartApplying(&op_state);
+  RETURN_NOT_OK(op_state.PerformOp(replicate_msg->id(), &new_commit));
   return AppendCommitMsg(commit_msg);
 }
 

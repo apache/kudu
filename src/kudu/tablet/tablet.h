@@ -80,6 +80,7 @@ class AlterSchemaOpState;
 class CompactionPolicy;
 class HistoryGcOpts;
 class MemRowSet;
+class ParticipantOpState;
 class RowSetTree;
 class RowSetsInCompaction;
 class WriteOpState;
@@ -151,6 +152,7 @@ class Tablet {
   // TODO(todd): rename this to something like "FinishPrepare" or "StartApply", since
   // it's not the first thing in an op!
   void StartOp(WriteOpState* op_state);
+  void StartOp(ParticipantOpState* op_state);
 
   // Like the above but actually assigns the timestamp. Only used for tests that
   // don't boot a tablet server.
@@ -158,6 +160,7 @@ class Tablet {
 
   // Signal that the given op is about to Apply.
   void StartApplying(WriteOpState* op_state);
+  void StartApplying(ParticipantOpState* op_state);
 
   // Apply all of the row operations associated with this op.
   Status ApplyRowOperations(WriteOpState* op_state) WARN_UNUSED_RESULT;
@@ -727,10 +730,6 @@ class Tablet {
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   TabletMemTrackers mem_trackers_;
 
-  // Maintains the set of in-flight transactions, and any WAL anchors
-  // associated with them.
-  TxnParticipant txn_participant_;
-
   scoped_refptr<MetricEntity> metric_entity_;
   std::unique_ptr<TabletMetrics> metrics_;
 
@@ -742,6 +741,13 @@ class Tablet {
   clock::Clock* clock_;
 
   MvccManager mvcc_;
+
+  // Maintains the set of in-flight transactions, and any WAL anchors
+  // associated with them.
+  // NOTE: the participant may retain MVCC ops, so define it after the
+  // MvccManager, to ensure those ops get destructed before the MvccManager.
+  TxnParticipant txn_participant_;
+
   LockManager lock_manager_;
 
   std::unique_ptr<CompactionPolicy> compaction_policy_;

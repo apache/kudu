@@ -139,6 +139,19 @@ Status TimeManager::MessageReceivedFromLeader(const ReplicateMsg& message) {
   return Status::OK();
 }
 
+Status TimeManager::UpdateClockAndLastAssignedTimestamp(const Timestamp& timestamp) {
+  RETURN_NOT_OK(clock_->Update(timestamp));
+  Lock l(lock_);
+  if (PREDICT_FALSE(mode_ == NON_LEADER)) {
+    return Status::IllegalState(Substitute(
+        "Cannot bump the last assigned timestamp. Tablet is not "
+        "in leader mode. Last heard from a leader: $0 ago.",
+        (MonoTime::Now() - last_advanced_safe_time_).ToString()));
+  }
+  last_serial_ts_assigned_ = std::max(timestamp, last_serial_ts_assigned_);
+  return Status::OK();
+}
+
 void TimeManager::AdvanceSafeTimeWithMessage(const ReplicateMsg& message) {
   Lock l(lock_);
   if (GetMessageConsistencyMode(message) == CLIENT_PROPAGATED) {

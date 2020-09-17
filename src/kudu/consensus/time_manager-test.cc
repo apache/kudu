@@ -18,6 +18,7 @@
 #include "kudu/consensus/time_manager.h"
 
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -213,6 +214,79 @@ TEST_F(TimeManagerTest, TestTimeManagerLeaderMode) {
   ASSERT_OK(time_manager_->MessageReceivedFromLeader(message));
   time_manager_->AdvanceSafeTimeWithMessage(message);
   after_latch->Wait();
+}
+
+// Test simulating safe time advancement as should be performed by an op that
+// finalizes a transaction's commit timestamp. The commit timestamp should be
+// used as a lower bound on new op timestamps.
+TEST_F(TimeManagerTest, TestUpdateClockWithCommitTimestamp) {
+  Timestamp init = clock_.Now();
+  InitTimeManager(init);
+  time_manager_->SetLeaderMode();
+  const auto kShortTimeout = MonoDelta::FromMilliseconds(10);
+  {
+    // Operate on a commit timestamp a while (five seconds) in the future.
+    Timestamp txn1_commit_ts(init.value() + 5000000000);
+    const auto safe_time_before_update = time_manager_->GetSafeTime();
+    ASSERT_OK(time_manager_->UpdateClockAndLastAssignedTimestamp(txn1_commit_ts));
+
+    // The serial timestamp should have been bumped forward, but not the safe
+    // time, which is pinned until the call to AdvanceSafeTimeWithMessage().
+    // Thus, the next timestamp assigned should be higher than the commit
+    // timestamp, but the safe time should still not have moved.
+    ASSERT_EQ(safe_time_before_update, time_manager_->GetSafeTime());
+    ReplicateMsg txn1_commit_replicate;
+    ASSERT_OK(time_manager_->AssignTimestamp(&txn1_commit_replicate));
+    ASSERT_GT(txn1_commit_replicate.timestamp(), txn1_commit_ts.value());
+    ASSERT_EQ(safe_time_before_update, time_manager_->GetSafeTime());
+    Status s = time_manager_->WaitUntilSafe(txn1_commit_ts, MonoTime::Now() + kShortTimeout);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+    // Once the safe time is advanced, we should readily be able to wait for
+    // the safe time to pass.
+    time_manager_->AdvanceSafeTimeWithMessage(txn1_commit_replicate);
+    ASSERT_GT(time_manager_->GetSafeTime(), safe_time_before_update);
+    ASSERT_OK(time_manager_->WaitUntilSafe(txn1_commit_ts, MonoTime::Now() + kShortTimeout));
+  }
+
+  // If we update the clock with a timestamp in the past (e.g. if the commit
+  // timestamp assigned for a transaction is in the past), the last assigned
+  // timestamp should remain where it was, and since no ops are otherwise known
+  // to be in-flight, safe time should march forward.
+  {
+    Timestamp txn2_commit_ts(init);
+    const auto safe_time_before_update = time_manager_->GetSafeTime();
+    ASSERT_OK(time_manager_->UpdateClockAndLastAssignedTimestamp(txn2_commit_ts));
+
+    // Safe time should move forward.
+    ASSERT_LT(safe_time_before_update, time_manager_->GetSafeTime());
+
+    // The next timestamp assigned should be higher than the commit timestamp,
+    // and safe time should be pinned until explicitly advanced.
+    ReplicateMsg txn2_commit_replicate;
+    ASSERT_OK(time_manager_->AssignTimestamp(&txn2_commit_replicate));
+    const auto commit_op_ts = Timestamp(txn2_commit_replicate.timestamp());
+    ASSERT_GT(commit_op_ts, txn2_commit_ts);
+    ASSERT_GT(commit_op_ts, safe_time_before_update);
+    ASSERT_GT(commit_op_ts, time_manager_->GetSafeTime());
+    ASSERT_OK(time_manager_->WaitUntilSafe(txn2_commit_ts, MonoTime::Now() + kShortTimeout));
+    Status s = time_manager_->WaitUntilSafe(commit_op_ts, MonoTime::Now() + kShortTimeout);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+    // Once the safe time is bumped, it should be unpinned and return a value
+    // higher than any timestamp we've previously assigned.
+    time_manager_->AdvanceSafeTimeWithMessage(txn2_commit_replicate);
+    ASSERT_LT(txn2_commit_replicate.timestamp(), time_manager_->GetSafeTime().value());
+    ASSERT_OK(time_manager_->WaitUntilSafe(txn2_commit_ts, MonoTime::Now() + kShortTimeout));
+    ASSERT_OK(time_manager_->WaitUntilSafe(commit_op_ts, MonoTime::Now() + kShortTimeout));
+  }
+
+  // Finally, when in non-leader mode, bumping the last assigned timestamp is
+  // disallowed.
+  time_manager_->SetNonLeaderMode();
+  const auto& now = clock_.Now();
+  Status s = time_manager_->UpdateClockAndLastAssignedTimestamp(now);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 }
 
 } // namespace consensus
