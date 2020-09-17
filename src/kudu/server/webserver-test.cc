@@ -221,7 +221,21 @@ TEST_F(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
   Status s = DoSpnegoCurl();
   EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
   EXPECT_EQ(kNotAuthn, last_authenticated_spn_);
-  EXPECT_STR_CONTAINS(buf_.ToString(), "GSS failure");
+  // The essence here is to get HTTP 401 error status in the server's response.
+  // There might be different messages returned from webserver because of
+  //   * different messages from GSSAPI on Linux and macOS (actually depends
+  //     on the version of SASL library, see kGssapiPattern in CleanSaslError())
+  //   * different GSSAPI failure paths depending on libkrb5 and libcurl
+  //     libraries: with the randomized keytab, the server fails with SASL step
+  //     with Status::Incomplete() on macOS. On Linux, the server fails the
+  //     SASL step with Status::NotAuthorized(). Instead of finding some
+  //     universal way of screwing up the keytab to get the same behavior on
+  //     both macOS and Linux, it's easier to rely on the fact that the required
+  //     HTTP error code is received and acknowledge for various error messages.
+  ASSERT_STR_MATCHES(buf_.ToString(),
+                     "(Unspecified GSS failure|"
+                     "GSSAPI Error: Miscellaneous failure|"
+                     "Must authenticate with SPNEGO)");
 }
 
 TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
