@@ -30,6 +30,7 @@
 #include <ostream>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <gflags/gflags.h>
 
@@ -1007,6 +1008,7 @@ Status Log::ReadReplicatesInRange(
     int64_t starting_at,
     int64_t up_to,
     int64_t max_bytes_to_read,
+    const boost::optional<std::string>& /* for_peer_uuid */,
     std::vector<consensus::ReplicateMsg*>* replicates) const {
   return reader()->ReadReplicatesInRange(
       starting_at, up_to, max_bytes_to_read, replicates);

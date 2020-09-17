@@ -704,6 +704,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     // We try to get the follower's next_index from our log.
     Status s = log_cache_.ReadOps(peer_copy.next_index - 1,
                                   max_batch_size,
+                                  uuid,
                                   &messages,
                                   &preceding_id);
     if (PREDICT_FALSE(!s.ok())) {

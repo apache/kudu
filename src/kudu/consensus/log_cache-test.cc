@@ -147,20 +147,35 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
 
   vector<ReplicateRefPtr> messages;
   OpId preceding;
-  ASSERT_OK(cache_->ReadOps(0, 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        0,
+        8 * 1024 * 1024,
+        /*for_peer_uuid=*/boost::none,
+        &messages,
+        &preceding));
   EXPECT_EQ(100, messages.size());
   EXPECT_EQ("0.0", OpIdToString(preceding));
 
   // Get starting in the middle of the cache.
   messages.clear();
-  ASSERT_OK(cache_->ReadOps(70, 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        70,
+        8 * 1024 * 1024,
+        /*for_peer_uuid=*/boost::none,
+        &messages,
+        &preceding));
   EXPECT_EQ(30, messages.size());
   EXPECT_EQ("10.70", OpIdToString(preceding));
   EXPECT_EQ("10.71", OpIdToString(messages[0]->get()->id()));
 
   // Get at the end of the cache
   messages.clear();
-  ASSERT_OK(cache_->ReadOps(100, 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        100,
+        8 * 1024 * 1024,
+        /*for_peer_uuid=*/boost::none,
+        &messages,
+        &preceding));
   EXPECT_EQ(0, messages.size());
   EXPECT_EQ("14.100", OpIdToString(preceding));
 
@@ -170,7 +185,12 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
 
   // Can still read data that was evicted, since it got written through.
   messages.clear();
-  ASSERT_OK(cache_->ReadOps(20, 8 * 1024 * 1024, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        20,
+        8 * 1024 * 1024,
+        /*for_peer_uuid=*/boost::none,
+        &messages,
+        &preceding));
   EXPECT_EQ(80, messages.size());
   EXPECT_EQ("2.20", OpIdToString(preceding));
   EXPECT_EQ("3.21", OpIdToString(messages[0]->get()->id()));
@@ -192,13 +212,15 @@ TEST_F(LogCacheTest, TestAlwaysYieldsAtLeastOneMessage) {
   // We should get one of them, even though we only ask for 100 bytes
   vector<ReplicateRefPtr> messages;
   OpId preceding;
-  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        0, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
 
   // Should yield one op also in the 'cache miss' case.
   messages.clear();
   cache_->EvictThroughOp(50);
-  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        0, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
 }
 
@@ -214,14 +236,16 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   OpId preceding;
 
   // Test when the searched index is MinimumOpId().index().
-  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        0, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
   ASSERT_OPID_EQ(MakeOpId(0, 0), preceding);
 
   messages.clear();
   preceding.Clear();
   // Test when 'after_op_index' is the last index in the cache.
-  ASSERT_OK(cache_->ReadOps(1, 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        1, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding));
   ASSERT_EQ(0, messages.size());
   ASSERT_OPID_EQ(MakeOpId(0, 1), preceding);
 
@@ -229,7 +253,8 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   preceding.Clear();
   // Now test the case when 'after_op_index' is after the last index
   // in the cache.
-  Status s = cache_->ReadOps(2, 100, &messages, &preceding);
+  Status s = cache_->ReadOps(
+      2, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding);
   ASSERT_TRUE(s.IsIncomplete()) << "unexpected status: " << s.ToString();
   ASSERT_EQ(0, messages.size());
   ASSERT_FALSE(preceding.IsInitialized());
@@ -240,7 +265,8 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Evict entries from the cache, and ensure that we can still read
   // entries at the beginning of the log.
   cache_->EvictThroughOp(50);
-  ASSERT_OK(cache_->ReadOps(0, 100, &messages, &preceding));
+  ASSERT_OK(cache_->ReadOps(
+        0, 100, /*for_peer_uuid=*/boost::none, &messages, &preceding));
   ASSERT_EQ(1, messages.size());
   ASSERT_OPID_EQ(MakeOpId(0, 0), preceding);
 }
@@ -402,7 +428,12 @@ TEST_F(LogCacheTest, TestMTReadAndWrite) {
       while (!stop) {
         vector<ReplicateRefPtr> messages;
         OpId preceding;
-        CHECK_OK(cache_->ReadOps(index, 1024 * 1024, &messages, &preceding));
+        CHECK_OK(cache_->ReadOps(
+              index,
+              1024 * 1024,
+              /*for_peer_uuid=*/boost::none,
+              &messages,
+              &preceding));
         index += messages.size();
       }
     });

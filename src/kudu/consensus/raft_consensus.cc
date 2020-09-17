@@ -3739,10 +3739,12 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
       // TODO(mpercy): Add an API for ReadOps() to take number of ops we want,
       // instead of the max batch size.
       if (request->ops_size() > 0) {
-        RET_RESPOND_ERROR_NOT_OK(queue_->log_cache()->ReadOps(first_op_index - 1,
-                                                              max_batch_size,
-                                                              &messages,
-                                                              &preceding_id));
+        RET_RESPOND_ERROR_NOT_OK(queue_->log_cache()->ReadOps(
+              first_op_index - 1,
+              max_batch_size,
+              request->dest_uuid(),
+              &messages,
+              &preceding_id));
       }
 
       // Exit retry loop if we managed to get what we wanted.
