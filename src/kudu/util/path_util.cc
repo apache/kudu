@@ -17,7 +17,7 @@
 
 #include "kudu/util/path_util.h"
 
-// Use the POSIX version of dirname(3).
+// Use the POSIX version of basename(3)/dirname(3).
 #include <libgen.h>
 
 #if defined(__APPLE__)
@@ -32,7 +32,6 @@
 
 #if defined(__APPLE__)
 #include <cerrno>
-#include <mutex>
 #endif // defined(__APPLE__)
 
 #include <glog/logging.h>
@@ -103,12 +102,19 @@ vector<string> SplitPath(const string& path) {
 }
 
 string DirName(const string& path) {
-  unique_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
 #if defined(__APPLE__)
-  static std::mutex lock;
-  std::lock_guard<std::mutex> l(lock);
-#endif // defined(__APPLE__)
-  return ::dirname(path_copy.get());
+  char buf[MAXPATHLEN];
+  auto* ret = dirname_r(path.c_str(), buf);
+  if (PREDICT_FALSE(ret == nullptr)) {
+    int err = errno;
+    LOG(FATAL) << strings::Substitute("dirname_r() failed: $0",
+                                      ErrnoToString(err));
+  }
+  return ret;
+#else
+  unique_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
+  return dirname(path_copy.get());
+#endif // #if defined(__APPLE__) ... #else
 }
 
 string BaseName(const string& path) {
