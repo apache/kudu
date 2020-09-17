@@ -184,6 +184,23 @@ class FlushedStoresSnapshot {
 // rest of the consensus configuration, or it can start serving the data itself, after it
 // has been appointed LEADER of that particular consensus configuration.
 //
+// The high-level steps to replay the WAL are as follows:
+//  for each segment in the WAL:
+//    for each entry in the segment:
+//      - If the entry is a replicate message, keep track of it and write it to
+//        the new WAL, since we may find a corresponding commit message later.
+//      - If the entry is a commit message, determine whether or not we have a
+//        corresponding replicate message in the WAL, and if so, replay the op,
+//        skipping operations whose mem-stores have been persisted to disk. If
+//        no replicate message is found, we can skip replaying the op since its
+//        mutation has been persisted to disk.
+//  for each commit message with no corresponding replicate message:
+//    - Validate that the mutated stores are non-active.
+//  for each replicate message with no corresponding commit message:
+//    - Return the replicate message as an "orphaned replicate".
+//    - When the RaftConsensus instance starts up, orphaned replicates are
+//      initialized as follower ops.
+//
 // NOTE: this does not handle pulling data from other replicas in the cluster. That
 // is handled by the 'TabletCopy' classes, which copy blocks and metadata locally
 // before invoking this local bootstrap functionality to start the tablet.
