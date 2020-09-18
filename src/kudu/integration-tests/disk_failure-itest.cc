@@ -30,6 +30,8 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -38,6 +40,7 @@
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -46,15 +49,24 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+METRIC_DECLARE_entity(tablet);
+METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 METRIC_DECLARE_gauge_uint32(tablets_num_failed);
 
+using kudu::client::sp::shared_ptr;
+using kudu::client::KuduDelete;
+using kudu::client::KuduInsert;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
 using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
 using kudu::fs::BlockManager;
+using kudu::KuduPartialRow;
 using std::pair;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -158,6 +170,7 @@ INSTANTIATE_TEST_CASE_P(DiskFailure, DiskFailureITest,
 enum class ErrorType {
   CFILE_CORRUPTION,
   DISK_FAILURE,
+  KUDU_2233_CORRUPTION,
 };
 
 class DiskErrorITestBase : public ExternalMiniClusterITestBase,
@@ -189,6 +202,9 @@ class DiskErrorITestBase : public ExternalMiniClusterITestBase,
       }
       case ErrorType::CFILE_CORRUPTION:
         injection_flags.emplace_back("cfile_inject_corruption", "1.0");
+        break;
+      case ErrorType::KUDU_2233_CORRUPTION:
+        injection_flags.emplace_back("tablet_inject_kudu_2233", "1.0");
         break;
     }
     return injection_flags;
@@ -252,6 +268,7 @@ class TabletServerDiskErrorITest : public DiskErrorITestBase {
         // First, stop injecting errors.
         { "env_inject_eio", "0.0" },
         { "cfile_inject_corruption", "0.0" },
+        { "tablet_inject_kudu_2233", "0.0" },
 
         // Then allow for recovery.
         { "enable_tablet_copy", "true" },
@@ -318,6 +335,94 @@ TEST_P(TabletServerDiskErrorITest, TestFailDuringScanWorkload) {
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
 }
+
+// Test targeting KUDU-2233, though reused for additional coverage of CFile
+// checksum failures and disk errors.
+class CompactionsAndDeletionsFailureITest : public TabletServerDiskErrorITest {
+ public:
+  void SetUp() override {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 3;
+    opts.num_data_dirs = kNumDataDirs;
+    opts.extra_tserver_flags = {
+      // Flush frequently so we actually get some data blocks.
+      "--flush_threshold_secs=1",
+      "--flush_threshold_mb=1",
+      // Prevent compactions so we can explicitly enable them later.
+      "--enable_rowset_compaction=false",
+      // Prevent tablet copies so we can explicitly enable and monitor them.
+      "--enable_tablet_copy=false",
+    };
+    NO_FATALS(StartClusterWithOpts(std::move(opts)));
+    workload_.reset(new TestWorkload(cluster_.get()));
+    workload_->set_num_tablets(1);
+    workload_->Setup();
+  }
+ protected:
+  unique_ptr<TestWorkload> workload_;
+};
+
+TEST_P(CompactionsAndDeletionsFailureITest, TestRecovery) {
+  constexpr const int kKeyMax = 10;
+
+  // Insert and delete rows, and continue to insert until we get multiple
+  // rowsets.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(workload_->table_name(), &table));
+  const auto insert_row = [&] (int key) {
+    std::unique_ptr<KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    RETURN_NOT_OK(row->SetInt32("key", key));
+    RETURN_NOT_OK(row->SetInt32("int_val", key));
+    RETURN_NOT_OK(session->Apply(insert.release()));
+    return session->Flush();
+  };
+  const auto delete_row = [&] (int key) {
+    std::unique_ptr<KuduDelete> del(table->NewDelete());
+    KuduPartialRow* row = del->mutable_row();
+    RETURN_NOT_OK(row->SetInt32("key", key));
+    RETURN_NOT_OK(session->Apply(del.release()));
+    return session->Flush();
+  };
+  const auto get_num_diskrowsets = [&] (const ExternalTabletServer* ets,
+                                        const char* tablet_id) {
+    int64_t num_drss = 0;
+    CHECK_OK(itest::GetInt64Metric(ets->bound_http_hostport(),
+        &METRIC_ENTITY_tablet, tablet_id, &METRIC_num_rowsets_on_disk, "value", &num_drss));
+    return num_drss;
+  };
+  ExternalTabletServer* error_ts = cluster_->tablet_server(0);
+  itest::TServerDetails* ts = ts_map_[error_ts->uuid()];
+  vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 1, MonoDelta::FromSeconds(32), &tablets));
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+  int num_inserts = 0;
+  while (get_num_diskrowsets(error_ts, tablet_id.c_str()) < 2) {
+    auto key = num_inserts++ % kKeyMax;
+    ASSERT_OK(insert_row(key));
+    ASSERT_OK(delete_row(key));
+  }
+  // Enable compactions, which will trigger KUDU-2233 codepaths.
+  auto flag_list = InjectionFlags(GetParam(), error_ts);
+  flag_list.emplace_back("enable_rowset_compaction", "true");
+  ASSERT_OK(SetFlags(error_ts, flag_list));
+
+  // The tablet replica should fail and be re-replicated back up to full
+  // health once allowed.
+  NO_FATALS(WaitForFailedTablets(error_ts, 1));
+  ASSERT_OK(AllowRecovery());
+
+  // Wait for the cluster to return to a healthy state.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+}
+
+INSTANTIATE_TEST_CASE_P(ErrorType, CompactionsAndDeletionsFailureITest,
+                        ::testing::Values(ErrorType::CFILE_CORRUPTION, ErrorType::DISK_FAILURE,
+                                          ErrorType::KUDU_2233_CORRUPTION));
 
 class MasterDiskErrorITest : public DiskErrorITestBase {
 };

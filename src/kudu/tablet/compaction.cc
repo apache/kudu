@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/hybrid_clock.h"
@@ -39,6 +40,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -55,10 +57,15 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
 using kudu::clock::HybridClock;
+using kudu::fault_injection::MaybeTrue;
 using kudu::fs::IOContext;
+using kudu::fs::FsErrorManager;
+using kudu::fs::KUDU_2233_CORRUPTION;
 using std::deque;
 using std::shared_ptr;
 using std::string;
@@ -66,6 +73,12 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DEFINE_double(tablet_inject_kudu_2233, 0,
+              "Fraction of the time that compactions that merge the history "
+              "of a single row spread across multiple rowsets will return "
+              "with a corruption status");
+TAG_FLAG(tablet_inject_kudu_2233, hidden);
 
 namespace kudu {
 namespace tablet {
@@ -755,7 +768,9 @@ Mutation* MergeUndoHistories(Mutation* left, Mutation* right) {
 
 // If 'old_row' has previous versions, this transforms prior version in undos and adds them
 // to 'new_undo_head'.
-Status MergeDuplicatedRowHistory(CompactionInputRow* old_row,
+Status MergeDuplicatedRowHistory(const string& tablet_id,
+                                 const FsErrorManager* error_manager,
+                                 CompactionInputRow* old_row,
                                  Mutation** new_undo_head,
                                  Arena* arena) {
   if (PREDICT_TRUE(old_row->previous_ghost == nullptr)) return Status::OK();
@@ -786,9 +801,17 @@ Status MergeDuplicatedRowHistory(CompactionInputRow* old_row,
                                                  &previous_ghost->row));
 
     // We should be left with only one redo, the delete.
-    CHECK(pv_delete_redo != nullptr);
-    CHECK(pv_delete_redo->changelist().is_delete());
-    CHECK(pv_delete_redo->next() == nullptr);
+    DCHECK(pv_delete_redo != nullptr);
+    DCHECK(pv_delete_redo->changelist().is_delete());
+    DCHECK(pv_delete_redo->next() == nullptr);
+    if (PREDICT_FALSE(
+        pv_delete_redo == nullptr ||
+        !pv_delete_redo->changelist().is_delete() ||
+        pv_delete_redo->next() ||
+        MaybeTrue(FLAGS_tablet_inject_kudu_2233))) {
+      error_manager->RunErrorNotificationCb(KUDU_2233_CORRUPTION, tablet_id);
+      return Status::Corruption("data was corrupted in a version prior to Kudu 1.7.0");
+    }
 
     // Now transform the redo delete into an undo (reinsert), which will contain the previous
     // ghost. The reinsert will have the timestamp of the delete.
@@ -1094,7 +1117,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   #undef ERROR_LOG_CONTEXT
 }
 
-Status FlushCompactionInput(CompactionInput* input,
+Status FlushCompactionInput(const string& tablet_id,
+                            const FsErrorManager* error_manager,
+                            CompactionInput* input,
                             const MvccSnapshot& snap,
                             const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter* out) {
@@ -1135,7 +1160,9 @@ Status FlushCompactionInput(CompactionInput* input,
                                                    &dst_row));
 
       // Merge the histories of 'input_row' with previous ghosts, if there are any.
-      RETURN_NOT_OK(MergeDuplicatedRowHistory(input_row,
+      RETURN_NOT_OK(MergeDuplicatedRowHistory(tablet_id,
+                                              error_manager,
+                                              input_row,
                                               &new_undos_head,
                                               input->PreparedBlockArena()));
 

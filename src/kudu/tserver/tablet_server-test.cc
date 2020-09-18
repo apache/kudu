@@ -177,6 +177,7 @@ DECLARE_bool(scanner_unregister_on_invalid_seq_id);
 DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_double(env_inject_full);
+DECLARE_double(tablet_inject_kudu_2233);
 DECLARE_double(workload_score_upper_bound);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
@@ -753,7 +754,8 @@ INSTANTIATE_TEST_CASE_P(BlockManager, TabletServerDiskSpaceTest,
 
 enum class ErrorType {
   DISK_FAILURE,
-  CFILE_CORRUPTION
+  CFILE_CORRUPTION,
+  KUDU_2233_CORRUPTION,
 };
 
 class TabletServerDiskErrorTest : public TabletServerTestBase,
@@ -775,32 +777,38 @@ class TabletServerDiskErrorTest : public TabletServerTestBase,
 };
 
 INSTANTIATE_TEST_CASE_P(ErrorType, TabletServerDiskErrorTest, ::testing::Values(
-    ErrorType::DISK_FAILURE, ErrorType::CFILE_CORRUPTION));
+    ErrorType::DISK_FAILURE, ErrorType::CFILE_CORRUPTION, ErrorType::KUDU_2233_CORRUPTION));
 
 // Test that applies random write operations to a tablet with a high
 // maintenance manager load and a non-zero error injection rate.
 TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
-  if (!AllowSlowTests()) {
-    LOG(INFO) << "Not running slow test. To run, use KUDU_ALLOW_SLOW_TESTS=1";
-    return;
-  }
+  SKIP_IF_SLOW_NOT_ALLOWED();
   typedef vector<RowOperationsPB::Type> OpTypeList;
   const OpTypeList kOpsIfKeyNotPresent = { RowOperationsPB::INSERT, RowOperationsPB::UPSERT };
-  const OpTypeList kOpsIfKeyPresent = { RowOperationsPB::UPSERT, RowOperationsPB::UPDATE,
-                                        RowOperationsPB::DELETE };
-  const int kMaxKey = 100000;
 
+  // If testing KUDU-2233 corruption, reduce the key-space significantly to
+  // make it more likely that rows will have history to merge, and delete more
+  // frequently to ensure a row's history is strewn across multiple rowsets.
+  const bool is_kudu_2233 = GetParam() == ErrorType::KUDU_2233_CORRUPTION;
+  const OpTypeList kOpsIfKeyPresent = is_kudu_2233 ?
+      OpTypeList{ RowOperationsPB::DELETE } :
+      OpTypeList{ RowOperationsPB::UPSERT, RowOperationsPB::UPDATE, RowOperationsPB::DELETE };
+  const int kMaxKey = is_kudu_2233 ? 10 : 100000;
+  if (is_kudu_2233) {
+    // Failures from KUDU-2233 are only caught during compactions; disable them
+    // for now so we can start them only after we begin injecting errors.
+    FLAGS_enable_rowset_compaction = false;
+ }
   if (GetParam() == ErrorType::DISK_FAILURE) {
     // Set these way up-front so we can change a single value to actually start
     // injecting errors. Inject errors into all data dirs but one.
-    FLAGS_crash_on_eio = false;
     const vector<string> failed_dirs = { mini_server_->options()->fs_opts.data_roots.begin() + 1,
                                          mini_server_->options()->fs_opts.data_roots.end() };
     FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(failed_dirs, "**"), ",");
   }
 
   set<int> keys;
-  const auto GetRandomString = [] {
+  const auto GetRandomString = [&] {
     return StringPrintf("%d", rand() % kMaxKey);
   };
 
@@ -816,13 +824,12 @@ TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
     RpcController controller;
     RowOperationsPB::Type op_type;
     int key = rand() % kMaxKey;
-    auto key_iter = keys.find(key);
-    if (key_iter == keys.end()) {
-      // If the key already exists, insert or upsert.
-      op_type = kOpsIfKeyNotPresent[rand() % kOpsIfKeyNotPresent.size()];
-    } else {
-      // ... else we can do anything but insert.
+    if (ContainsKey(keys, key)) {
+      // If the key already exists, update, upsert, or delete it.
       op_type = kOpsIfKeyPresent[rand() % kOpsIfKeyPresent.size()];
+    } else {
+      // ... otherwise, insert or upsert.
+      op_type = kOpsIfKeyNotPresent[rand() % kOpsIfKeyNotPresent.size()];
     }
 
     // Add the op to the request.
@@ -832,7 +839,7 @@ TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
       keys.insert(key);
     } else {
       AddTestKeyToPB(RowOperationsPB::DELETE, schema_, key, req.mutable_row_operations());
-      keys.erase(key_iter);
+      keys.erase(key);
     }
 
     // Finally, write to the server and log the response.
@@ -841,7 +848,8 @@ TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
     return resp.has_error() ?  StatusFromPB(resp.error().status()) : Status::OK();
   };
 
-  // Perform some arbitrarily large number of ops, with some pauses to encourage flushes.
+  // Perform some arbitrarily large number of ops, with some pauses to
+  // encourage flushes.
   for (int i = 0; i < 500; i++) {
     if (i % 10) {
       SleepFor(MonoDelta::FromMilliseconds(100));
@@ -856,6 +864,12 @@ TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
       break;
     case ErrorType::CFILE_CORRUPTION:
       FLAGS_cfile_inject_corruption = 0.01;
+      break;
+    case ErrorType::KUDU_2233_CORRUPTION:
+      // KUDU-2233 errors only get triggered with very specific compactions, so
+      // bump the failure rate all the way up.
+      FLAGS_tablet_inject_kudu_2233 = 1.0;
+      FLAGS_enable_rowset_compaction = true;
       break;
   }
 
@@ -934,6 +948,23 @@ TEST_F(TabletServerTest, TestAddRemoveDirectory) {
     scoped_refptr<TabletReplica> replica2;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kFooTablet2, &replica2));
     ASSERT_EQ(TabletStatePB::FAILED, replica2->state());
+  });
+}
+
+TEST_F(TabletServerTest, TestFailReplicaOnKUDU2233Corruption) {
+  FLAGS_tablet_inject_kudu_2233 = 1;
+  // Trigger the code paths that crash a server in the case of KUDU-2233
+  // compactions, i.e. where a compaction needs to merge the history of a
+  // single row across multiple rowsets.
+  NO_FATALS(InsertTestRowsRemote(1, 1));
+  NO_FATALS(DeleteTestRowsRemote(1, 1));
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  NO_FATALS(InsertTestRowsRemote(1, 1));
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  Status s = tablet_replica_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL);
+  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(tablet::FAILED, tablet_replica_->state());
   });
 }
 

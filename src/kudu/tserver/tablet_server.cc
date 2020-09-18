@@ -129,6 +129,10 @@ Status TabletServer::Start() {
       ErrorHandlerType::CFILE_CORRUPTION, [this](const string& uuid) {
         this->tablet_manager_->FailTabletAndScheduleShutdown(uuid);
       });
+  fs_manager_->SetErrorNotificationCb(
+      ErrorHandlerType::KUDU_2233_CORRUPTION, [this](const string& uuid) {
+        this->tablet_manager_->FailTabletAndScheduleShutdown(uuid);
+      });
 
   unique_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   unique_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));

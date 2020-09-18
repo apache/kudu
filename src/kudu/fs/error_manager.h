@@ -115,6 +115,9 @@ enum ErrorHandlerType {
 
   // For CFile corruptions.
   CFILE_CORRUPTION,
+
+  // For broken invariants caused by KUDU-2233.
+  KUDU_2233_CORRUPTION,
 };
 
 // When certain operations fail, the side effects of the error can span multiple

@@ -109,12 +109,6 @@ class Master : public kserver::KuduServer {
   // based on local state.
   Status GetMasterHostPorts(std::vector<HostPort>* hostports) const;
 
-  // Crash the master on disk error.
-  static void CrashMasterOnDiskError(const std::string& uuid);
-
-  // Crash the master on CFile corruption.
-  static void CrashMasterOnCFileCorruption(const std::string& tablet_id);
-
   bool IsShutdown() const {
     return state_ == kStopped;
   }

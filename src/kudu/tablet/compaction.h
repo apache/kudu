@@ -36,6 +36,7 @@ class Arena;
 class Schema;
 
 namespace fs {
+class FsErrorManager;
 struct IOContext;
 }  // namespace fs
 
@@ -226,7 +227,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // no longer be useful.
-Status FlushCompactionInput(CompactionInput *input,
+Status FlushCompactionInput(const std::string& tablet_id,
+                            const fs::FsErrorManager* error_manager,
+                            CompactionInput* input,
                             const MvccSnapshot &snap,
                             const HistoryGcOpts& history_gc_opts,
                             RollingDiskRowSetWriter *out);

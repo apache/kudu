@@ -291,7 +291,9 @@ class TestCompaction : public KuduRowSetTest {
                                 Tablet::DefaultBloomSizing(),
                                 roll_threshold);
     ASSERT_OK(rsw.Open());
-    ASSERT_OK(FlushCompactionInput(input, snap, HistoryGcOpts::Disabled(), &rsw));
+    ASSERT_OK(FlushCompactionInput(tablet()->metadata()->tablet_id(),
+                                   fs_manager()->block_manager()->error_manager(),
+                                   input, snap, HistoryGcOpts::Disabled(), &rsw));
     ASSERT_OK(rsw.Finish());
 
     vector<shared_ptr<RowSetMetadata> > metas;
@@ -467,7 +469,9 @@ class TestCompaction : public KuduRowSetTest {
                                     Tablet::DefaultBloomSizing(),
                                     1024 * 1024); // 1 MB
       ASSERT_OK(rdrsw.Open());
-      ASSERT_OK(FlushCompactionInput(compact_input.get(), merge_snap, HistoryGcOpts::Disabled(),
+      ASSERT_OK(FlushCompactionInput(tablet()->metadata()->tablet_id(),
+                                     fs_manager()->block_manager()->error_manager(),
+                                     compact_input.get(), merge_snap, HistoryGcOpts::Disabled(),
                                      &rdrsw));
       ASSERT_OK(rdrsw.Finish());
     }

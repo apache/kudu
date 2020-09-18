@@ -108,6 +108,49 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
+namespace {
+constexpr const char* kReplaceMasterMessage =
+    "this master may return incorrect results and should be replaced";
+void CrashMasterOnDiskError(const string& uuid) {
+  LOG(FATAL) << Substitute("Disk error detected on data directory $0: $1",
+                           uuid, kReplaceMasterMessage);
+}
+void CrashMasterOnCFileCorruption(const string& tablet_id) {
+  LOG(FATAL) << Substitute("CFile corruption detected on system catalog $0: $1",
+                           tablet_id, kReplaceMasterMessage);
+}
+void CrashMasterOnKudu2233Corruption(const string& tablet_id) {
+  LOG(FATAL) << Substitute("KUDU-2233 corruption detected on system catalog $0: $1 ",
+                           tablet_id, kReplaceMasterMessage);
+}
+
+// TODO(Alex Feinberg) this method should be moved to a separate class (along with
+// ListMasters), so that it can also be used in TS and client when
+// bootstrapping.
+Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
+                             const HostPort& hostport,
+                             ServerEntryPB* e) {
+  Sockaddr sockaddr;
+  RETURN_NOT_OK(SockaddrFromHostPort(hostport, &sockaddr));
+  MasterServiceProxy proxy(messenger, sockaddr, hostport.host());
+  GetMasterRegistrationRequestPB req;
+  GetMasterRegistrationResponsePB resp;
+  rpc::RpcController controller;
+  controller.set_timeout(MonoDelta::FromMilliseconds(FLAGS_master_registration_rpc_timeout_ms));
+  RETURN_NOT_OK(proxy.GetMasterRegistration(req, &resp, &controller));
+  e->mutable_instance_id()->CopyFrom(resp.instance_id());
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  e->mutable_registration()->CopyFrom(resp.registration());
+  e->set_role(resp.role());
+  if (resp.has_cluster_id()) {
+    e->set_cluster_id(resp.cluster_id());
+  }
+  return Status::OK();
+}
+} // anonymous namespace
+
 Master::Master(const MasterOptions& opts)
   : KuduServer("Master", opts, "kudu.master"),
     state_(kStopped),
@@ -170,6 +213,8 @@ Status Master::StartAsync() {
                                       &CrashMasterOnDiskError);
   fs_manager_->SetErrorNotificationCb(ErrorHandlerType::CFILE_CORRUPTION,
                                       &CrashMasterOnCFileCorruption);
+  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::KUDU_2233_CORRUPTION,
+                                      &CrashMasterOnKudu2233Corruption);
 
   RETURN_NOT_OK(maintenance_manager_->Start());
 
@@ -289,44 +334,6 @@ void Master::ShutdownImpl() {
   }
   state_ = kStopped;
 }
-
-void Master::CrashMasterOnDiskError(const string& uuid) {
-  LOG(FATAL) << Substitute("Disk error detected on data directory $0", uuid);
-}
-
-void Master::CrashMasterOnCFileCorruption(const string& tablet_id) {
-  LOG(FATAL) << Substitute("CFile corruption detected on system catalog $0", tablet_id);
-}
-
-namespace {
-
-// TODO(Alex Feinberg) this method should be moved to a separate class (along with
-// ListMasters), so that it can also be used in TS and client when
-// bootstrapping.
-Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
-                             const HostPort& hostport,
-                             ServerEntryPB* e) {
-  Sockaddr sockaddr;
-  RETURN_NOT_OK(SockaddrFromHostPort(hostport, &sockaddr));
-  MasterServiceProxy proxy(messenger, sockaddr, hostport.host());
-  GetMasterRegistrationRequestPB req;
-  GetMasterRegistrationResponsePB resp;
-  rpc::RpcController controller;
-  controller.set_timeout(MonoDelta::FromMilliseconds(FLAGS_master_registration_rpc_timeout_ms));
-  RETURN_NOT_OK(proxy.GetMasterRegistration(req, &resp, &controller));
-  e->mutable_instance_id()->CopyFrom(resp.instance_id());
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  e->mutable_registration()->CopyFrom(resp.registration());
-  e->set_role(resp.role());
-  if (resp.has_cluster_id()) {
-    e->set_cluster_id(resp.cluster_id());
-  }
-  return Status::OK();
-}
-
-} // anonymous namespace
 
 Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   if (!opts_.IsDistributed()) {

@@ -50,6 +50,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/casts.h"
@@ -1583,7 +1584,8 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                "tablet_id", tablet_id(),
                "op", op_name);
 
-  const IOContext io_context({ tablet_id() });
+  const auto& tid = tablet_id();
+  const IOContext io_context({ tid });
 
   MvccSnapshot flush_snap(mvcc_);
   VLOG_WITH_PREFIX(1) << Substitute("$0: entering phase 1 (flushing snapshot). "
@@ -1603,8 +1605,11 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
 
   HistoryGcOpts history_gc_opts = GetHistoryGcOpts();
-  RETURN_NOT_OK_PREPEND(FlushCompactionInput(merge.get(), flush_snap, history_gc_opts, &drsw),
-                        "Flush to disk failed");
+  RETURN_NOT_OK_PREPEND(
+      FlushCompactionInput(
+          tid, metadata_->fs_manager()->block_manager()->error_manager(),
+          merge.get(), flush_snap, history_gc_opts, &drsw),
+      "Flush to disk failed");
   RETURN_NOT_OK_PREPEND(drsw.Finish(), "Failed to finish DRS writer");
 
   if (common_hooks_) {
