@@ -103,7 +103,6 @@ TAG_FLAG(max_negotiation_threads, advanced);
 DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
              "Timeout for negotiating an RPC connection.");
 TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
-TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
 
 DEFINE_bool(webserver_enabled, true, "Whether to enable the web server on this daemon. "
             "NOTE: disabling the web server is also likely to prevent monitoring systems "
