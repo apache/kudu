@@ -466,7 +466,8 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
     int32_t num_to_write = buflen - tot_written;
     MonoDelta timeout = deadline - MonoTime::Now();
     if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
-      return Status::TimedOut("BlockingWrite timed out");
+      return Status::TimedOut(Substitute("sent $0 of $1 requested bytes",
+                                         tot_written, buflen));
     }
     RETURN_NOT_OK(SetSendTimeout(timeout));
     Status s = Write(buf, num_to_write, &inc_num_written);
@@ -480,7 +481,8 @@ Status Socket::BlockingWrite(const uint8_t *buf, size_t buflen, size_t *nwritten
         continue;
       }
       if (s.posix_code() == EAGAIN) {
-        return Status::TimedOut("");
+        return Status::TimedOut(Substitute("sent $0 of $1 requested bytes",
+                                           tot_written, buflen));
       }
       return s.CloneAndPrepend("BlockingWrite error");
     }
@@ -542,7 +544,8 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoT
     int32_t num_to_read = amt - tot_read;
     MonoDelta timeout = deadline - MonoTime::Now();
     if (PREDICT_FALSE(timeout.ToNanoseconds() <= 0)) {
-      return Status::TimedOut("");
+      return Status::TimedOut(Substitute("received $0 of $1 requested bytes",
+                                         tot_read, amt));
     }
     RETURN_NOT_OK(SetRecvTimeout(timeout));
     Status s = Recv(buf, num_to_read, &inc_num_read);
@@ -556,7 +559,8 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoT
         continue;
       }
       if (s.posix_code() == EAGAIN) {
-        return Status::TimedOut("");
+        return Status::TimedOut(Substitute("received $0 of $1 requested bytes",
+                                           tot_read, amt));
       }
       return s.CloneAndPrepend("BlockingRecv error");
     }
