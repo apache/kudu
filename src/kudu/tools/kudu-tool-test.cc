@@ -5745,7 +5745,7 @@ TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
   NO_FATALS(CheckCorruptClusterInfoConfigFile(
               Substitute(R"*($0:)*""\n"
                          R"*(  master_addresses: $1)*", kClusterName, master_addrs_str),
-              Substitute("Not found: parse field clusters_info error: invalid node; ")));
+              "Not found: parse field clusters_info error: invalid node; "));
 
   // Missing specified cluster name.
   NO_FATALS(CheckCorruptClusterInfoConfigFile(
@@ -5760,20 +5760,15 @@ TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
               Substitute(R"*(clusters_info:)*""\n"
                          R"*(  $0:)*""\n"
                          R"*(    master_addresses_some_suffix: $1)*", kClusterName, master_addrs_str),
-              Substitute("Not found: parse field master_addresses error: invalid node; ")));
+              "Not found: parse field master_addresses error: invalid node; "));
 
   // Invalid 'master_addresses' value.
   NO_FATALS(CheckCorruptClusterInfoConfigFile(
               Substitute(R"*(clusters_info:)*""\n"
                          R"*(  $0:)*""\n"
                          R"*(    master_addresses: bad,masters,addresses)*", kClusterName),
-#ifdef __APPLE__
-              Substitute("Network error: Could not connect to the cluster: unable to resolve "
-                         "address for bad: nodename nor servname provided, or not known")));
-#else
-              Substitute("Network error: Could not connect to the cluster: unable to resolve "
-                         "address for bad: Name or service not known")));
-#endif
+              "Network error: Could not connect to the cluster: unable to resolve "
+              "address for bad: "));
 }
 
 TEST_F(ToolTest, ClusterNameResolverNormal) {
