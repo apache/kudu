@@ -339,7 +339,7 @@ class MvccManager {
   // been achieved.
   bool IsDoneWaitingUnlocked(const WaitingState& waiter) const;
 
-  // Commits the given op.
+  // Applies the given op.
   // Sets *was_earliest to true if this was the earliest in-flight op.
   void ApplyOpUnlocked(Timestamp timestamp,
                         bool* was_earliest_in_flight);
@@ -400,7 +400,7 @@ class ScopedOp {
   // When this op is applied it will use MvccManager::FinishApplyingOp().
   ScopedOp(MvccManager* manager, Timestamp timestamp);
 
-  // Commit the op referenced by this scoped object, if it hasn't
+  // Finish applying the op referenced by this scoped object, if it hasn't
   // already been applied.
   ~ScopedOp();
 
@@ -415,7 +415,7 @@ class ScopedOp {
   // method.
   void StartApplying();
 
-  // Commit the in-flight op.
+  // Finish applying the in-flight op.
   //
   // Requires that StartApplying() has been called.
   void FinishApplying();

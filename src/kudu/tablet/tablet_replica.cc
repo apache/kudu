@@ -955,13 +955,13 @@ Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
   // This ensures that the above-mentioned commit messages are not just enqueued
   // to the log, but also on disk.
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
-      <<  ": Waiting for in-flight ops to commit.";
-  LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
+      <<  ": waiting for in-flight ops to apply";
+  LOG_SLOW_EXECUTION(WARNING, 200, "applying in-flights took a long time") {
     RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingOpsToApply());
   }
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
-      << ": Waiting for the log queue to be flushed.";
-  LOG_SLOW_EXECUTION(WARNING, 200, "Flushing the Log queue took a long time.") {
+      << ": waiting for the log queue to be flushed";
+  LOG_SLOW_EXECUTION(WARNING, 200, "flushing the Log queue took a long time") {
     RETURN_NOT_OK(log_->WaitUntilAllFlushed());
   }
   return Status::OK();

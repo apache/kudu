@@ -136,7 +136,7 @@ void MvccManager::AbortOp(Timestamp timestamp) {
 void MvccManager::FinishApplyingOp(Timestamp timestamp) {
   std::lock_guard<LockType> l(lock_);
 
-  // Commit the op, but do not adjust 'all_applied_before_', that will
+  // Apply the op, but do not adjust 'all_applied_before_', that will
   // be done with a separate OfflineAdjustCurSnap() call.
   bool was_earliest = false;
   ApplyOpUnlocked(timestamp, &was_earliest);
@@ -144,7 +144,6 @@ void MvccManager::FinishApplyingOp(Timestamp timestamp) {
   // NOTE: we should have pushed the lower bound forward before applying, but
   // we may not have in tests.
   if (was_earliest && new_op_timestamp_exc_lower_bound_ >= timestamp) {
-
     // If this op was the earliest in-flight, we might have to adjust
     // the "clean" timestamp.
     AdjustCleanTimeUnlocked();
@@ -386,7 +385,7 @@ Status MvccManager::WaitForSnapshotWithAllApplied(Timestamp timestamp,
 }
 
 Status MvccManager::WaitForApplyingOpsToApply() const {
-  TRACE_EVENT0("tablet", "MvccManager::WaitForApplyingOpsToCommit");
+  TRACE_EVENT0("tablet", "MvccManager::WaitForApplyingOpsToApply");
   RETURN_NOT_OK(CheckOpen());
 
   // Find the highest timestamp of an APPLYING op.
