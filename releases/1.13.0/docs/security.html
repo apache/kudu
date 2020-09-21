@@ -1,0 +1,1085 @@
+---
+title: Apache Kudu Security
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2020-08-25 11:20:42 +0200'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Security</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu includes security features which allow Kudu clusters to be hardened against
+access from unauthorized users. This guide describes the security features
+provided by Kudu. <a href="#configuration">Configuring a Secure Kudu Cluster</a> lists essential configuration options when
+deploying a secure Kudu cluster. <a href="#known-limitations">Known Limitations</a> contains a list of
+known deficiencies in Kudu&#8217;s security capabilities.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_authentication"><a class="link" href="#_authentication">Authentication</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu can be configured to enforce secure authentication among servers, and
+between clients and servers. Authentication prevents untrusted actors from
+gaining access to Kudu, and securely identifies the connecting user or services
+for authorization checks. Authentication in Kudu is designed to interoperate
+with other secure Hadoop components by utilizing Kerberos.</p>
+</div>
+<div class="paragraph">
+<p>Authentication can be configured on Kudu servers using the
+<code>--rpc_authentication</code> flag, which can be set to <code>required</code>, <code>optional</code>, or
+<code>disabled</code>. By default, the flag is set to <code>optional</code>. When <code>required</code>, Kudu
+will reject connections from clients and servers who lack authentication
+credentials. When <code>optional</code>, Kudu will attempt to use strong authentication.
+When <code>disabled</code> or strong authentication fails for 'optional', by default Kudu
+will only allow unauthenticated connections from trusted subnets, which are
+private networks (127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,
+169.254.0.0/16) and local subnets of all local network interfaces. Unauthenticated
+connections from publicly routable IPs will be rejected.</p>
+</div>
+<div class="paragraph">
+<p>The trusted subnets can be configured using the <code>--trusted_subnets</code> flag,
+which can be set to IP blocks in CIDR notation separated by comma. Set it to
+'0.0.0.0/0' to allow unauthenticated connections from all remote IP addresses.
+However, if network access is not otherwise restricted by a firewall,
+malicious users may be able to gain unauthorized access. This can be mitigated
+if authentication is configured to be required.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+When the <code>--rpc_authentication</code> flag is set to <code>optional</code>,
+the cluster does not prevent access from unauthenticated users. To secure a
+cluster, use <code>--rpc_authentication=required</code>.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_internal_pki"><a class="link" href="#_internal_pki">Internal PKI</a></h3>
+<div class="paragraph">
+<p>Kudu uses an internal PKI system to issue X.509 certificates to servers in
+the cluster. Connections between peers who have both obtained certificates will
+use TLS for authentication, which doesn&#8217;t require contacting the Kerberos KDC.
+These certificates are <em>only</em> used for internal communication among Kudu
+servers, and between Kudu clients and servers. The certificates are never
+presented in a public facing protocol.</p>
+</div>
+<div class="paragraph">
+<p>By using internally-issued certificates, Kudu offers strong authentication which
+scales to huge clusters, and allows TLS encryption to be used without requiring
+you to manually deploy certificates on every node.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_authentication_tokens"><a class="link" href="#_authentication_tokens">Authentication Tokens</a></h3>
+<div class="paragraph">
+<p>After authenticating to a secure cluster, the Kudu client will automatically
+request an authentication token from the Kudu master. An authentication token
+encapsulates the identity of the authenticated user and carries the master&#8217;s
+RSA signature so that its authenticity can be verified.</p>
+</div>
+<div class="paragraph">
+<p>This token will be used to authenticate subsequent connections. By default,
+authentication tokens are only valid for seven days, so that even if a token
+were compromised, it could not be used indefinitely. For the most part,
+authentication tokens should be completely transparent to users. By using
+authentication tokens, Kudu takes advantage of strong authentication without
+paying the scalability cost of communicating with a central authority for every
+connection.</p>
+</div>
+<div class="paragraph">
+<p>When used with distributed compute frameworks such as Spark, authentication
+tokens can simplify configuration and improve security. For example, the Kudu
+Spark connector will automatically retrieve an authentication token during the
+planning stage, and distribute the token to tasks. This allows Spark to work
+against a secured Kudu cluster where only the planner node has Kerberos
+credentials.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_client_authentication_to_secure_kudu_clusters"><a class="link" href="#_client_authentication_to_secure_kudu_clusters">Client Authentication to Secure Kudu Clusters</a></h3>
+<div class="paragraph">
+<p>Users running client Kudu applications must first run the <code>kinit</code> command to
+obtain a Kerberos ticket-granting ticket. For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ kinit admin@EXAMPLE-REALM.COM</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Once authenticated, you use the same client code to read from and write to Kudu
+servers with and without Kerberos configuration.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_scalability"><a class="link" href="#_scalability">Scalability</a></h3>
+<div class="paragraph">
+<p>Kudu authentication is designed to scale to thousands of nodes, which requires
+avoiding unnecessary coordination with a central authentication authority (such
+as the Kerberos KDC). Instead, Kudu servers and clients will use Kerberos to
+establish initial trust with the Kudu master, and then use alternate credentials
+for subsequent connections. In particular, the master will issue internal
+X.509 certificates to servers, and temporary authentication tokens to clients.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_coarse_grained_authorization"><a class="link" href="#_coarse_grained_authorization">Coarse-Grained Authorization</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu supports coarse-grained authorization of client requests based on the
+authenticated client Kerberos principal (i.e. user or service). The two levels
+of access which can be configured are:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Superuser</strong> - principals authorized as a superuser are able to perform
+certain administrative functionality such as using the <code>kudu</code> command line tool
+to diagnose or repair cluster issues.</p>
+</li>
+<li>
+<p><strong>User</strong> - principals authorized as a user are able to access and modify all
+data in the Kudu cluster. This includes the ability to create, drop, and alter
+tables as well as read, insert, update, and delete data.</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Internally, Kudu has a third access level for the daemons themselves.
+This ensures that users cannot connect to the cluster and pose as tablet
+servers.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Access levels are granted using whitelist-style Access Control Lists (ACLs), one
+for each of the two levels. Each access control list either specifies a
+comma-separated list of users, or may be set to <code>*</code> to indicate that all
+authenticated users are able to gain access at the specified level. See
+<a href="#configuration">Configuring a Secure Kudu Cluster</a> below for examples.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The default value for the User ACL is <code>*</code>, which allows all users access
+to the cluster. However, if authentication is enabled, this still restricts access
+to only those users who are able to successfully authenticate via Kerberos.
+Unauthenticated users on the same network as the Kudu servers will be unable
+to access the cluster.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="fine_grained_authz"><a class="link" href="#fine_grained_authz">Fine-Grained Authorization</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>As of Kudu 1.12.0, Kudu can be configured to enforce fine-grained authorization
+across servers. This ensures that users can see only the data they are
+explicitly authorized to see. Kudu supports this by leveraging policies defined
+in Apache Ranger 2.1 and later.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Fine-grained authorization policies are not enforced when accessing
+the web UI. User data may appear on various pages of the web UI (e.g. in logs,
+metrics, scans, etc.). As such, it is recommended to either limit access to the
+web UI ports, or redact or disable the web UI entirely, as desired. See the
+<a href="#web-ui">instructions for securing the web UI</a> for more details.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_apache_ranger"><a class="link" href="#_apache_ranger">Apache Ranger</a></h3>
+<div class="paragraph">
+<p>Apache Ranger models tabular objects stored in a Kudu cluster in the following
+hierarchy:</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Ranger allows you to add separate service repositories to manage privileges
+for different Kudu clusters. Depending on the value of the <code>ranger.plugin.kudu.service.name</code>
+configuration in Ranger client, Kudu knows which service repository to connect
+to. For more details about Ranger service repository, see the Apache Ranger
+<a href="https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=57901344">documentation</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Database</strong> - Kudu does not have the concept of a database. Therefore, a database
+is indicated as a prefix of table names with the format <code>&lt;database&gt;.&lt;table&gt;</code>.
+Since Kudu&#8217;s only restriction on table names is that they be valid UTF-8 encoded
+strings, Kudu considers special characters to be valid parts of database or table
+names. For example, if a managed Kudu table created from Impala (see Kudu Impala
+integration <a href="kudu_impala_integration.html#managed_tables">documentation</a>) is named
+<code>impala::bar.foo</code>, its database will be <code>impala::bar</code>.</p>
+</li>
+<li>
+<p><strong>Table</strong> - a single Kudu table.</p>
+</li>
+<li>
+<p><strong>Column</strong> - a column within a Kudu table.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>In Ranger, privileges are also associated with specific actions. Access to Kudu
+tables may rely on privileges on the following actions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ALTER</code></p>
+</li>
+<li>
+<p><code>CREATE</code></p>
+</li>
+<li>
+<p><code>DELETE</code></p>
+</li>
+<li>
+<p><code>DROP</code></p>
+</li>
+<li>
+<p><code>INSERT</code></p>
+</li>
+<li>
+<p><code>UPDATE</code></p>
+</li>
+<li>
+<p><code>SELECT</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>There are two additional access types:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>ALL</code></p>
+</li>
+<li>
+<p><code>METADATA</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>If a user has the <code>ALL</code> privilege on a resource, they implicitly have privileges
+to perform any action on that resource (except those that require users to be a
+delegated admin, see below). Also, if a user is granted any privilege, they are
+able to perform actions requiring <code>METADATA</code> (e.g. opening the table) without
+having to explicitly grant <code>METADATA</code> privilege to them.</p>
+</div>
+<div class="paragraph">
+<p>Finally, Ranger supports a <code>delegate admin</code> flag which is independent of the
+action types (it&#8217;s not implied by <code>ALL</code> and doesn&#8217;t imply <code>METADATA</code>). This is
+similar to the <code>GRANT OPTION</code> part of <code>ALL WITH GRANT OPTION</code> in SQL as it is
+required to modify privileges in Ranger and change the owner of a Kudu table.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+A user with the <code>delegate admin</code> privilege on a resource can grant any
+privilege to themselves and others.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>While the action types are hierarchical, in terms of privilege evaluation,
+Ranger doesn&#8217;t have the concept of hierarchy. For instance, if a user has
+<code>SELECT</code> privilege on a database, it does not imply that the user has <code>SELECT</code>
+privileges on every table belonging to that database. On the other hand, Ranger
+supports privilege wildcard matching. For example, <code>db=a&#8594;table=*</code> matches all
+the tables that belong to database <code>a</code>. Therefore, in Ranger users actually need
+the <code>SELECT</code> privilege granted on <code>db=a&#8594;table=*&#8594;column=*</code> to allow <code>SELECT</code> on
+every table and every column in database <code>a</code>.</p>
+</div>
+<div class="paragraph">
+<p>Nevertheless, with Ranger integration, when a Kudu master receives a request,
+it consults Ranger to determine what privileges a user has. And the required
+policies documented in the <a href="#policy-for-kudu-masters">policy section</a>
+are enforced to determine whether the user is authorized to perform the requested
+action or not.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Even though Kudu table names remain case sensitive with Ranger integration,
+policy authorization is considered case-insensitive.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>In addition to granting privileges to a user by username, privileges can also be
+granted to table owners using the special <code>{OWNER}</code> username. These policies are
+evaluated only when a user tries to perform an action on a table that they own.
+For example, a policy can be defined for the <code>{OWNER}</code> user and <code>db=<strong>&#8594;table=</strong></code>
+resource, and it will automatically be applied when any table is accessed by its
+owner. This way administrators don&#8217;t need to choose between creating policies
+one by one for each table, and granting access to a wide range of users.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+If a user has <code>ALL</code> and <code>delegate admin</code> privileges on a table only via
+ownership and no privileges by username, they can effectively lock themselves
+out by giving away ownership.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_authorization_tokens"><a class="link" href="#_authorization_tokens">Authorization Tokens</a></h3>
+<div class="paragraph">
+<p>Rather than having every tablet server communicate directly with the underlying
+authorization service (Ranger), privileges are propagated and checked via
+<strong>authorization tokens</strong>. These tokens encapsulate what privileges a user has on a
+given table. Tokens are generated by the master and returned to Kudu clients
+upon opening a Kudu table. Kudu clients automatically attach authorization
+tokens when sending requests to tablet servers.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Authorization tokens are a means to limiting the number of nodes directly
+accessing the authorization service to retrieve privileges. As such, since the
+expected number of tablet servers in a cluster is much higher than the number of
+Kudu masters, they are only used to authorize requests sent to tablet servers.
+Kudu masters fetch privileges directly from the authorization service or cache.
+See <a href="#privilege-caching">Ranger Client Caching</a> for more details of Kudu&#8217;s privilege cache.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Similar to the validity interval for authentication tokens, to limit the
+window of potential unwanted access if a token becomes compromised,
+authorization tokens are valid for five minutes by default. The acquisition and
+renewal of a token is hidden from the user, as Kudu clients automatically
+retrieve new tokens when existing tokens expire.</p>
+</div>
+<div class="paragraph">
+<p>When a tablet server that has been configured to enforce fine-grained access
+control receives a request, it checks the privileges in the attached token,
+rejecting it if the privileges are not sufficient to perform the requested
+operation, or if it is invalid (e.g. expired).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="trusted-users"><a class="link" href="#trusted-users">Trusted Users</a></h3>
+<div class="paragraph">
+<p>It may be desirable to allow certain users to view and modify any data stored
+in Kudu. Such users can be specified via the <code>--trusted_user_acl</code> master
+configuration. Trusted users can perform any operation that would otherwise
+require fine-grained privileges, without Kudu consulting the authorization service.</p>
+</div>
+<div class="paragraph">
+<p>Additionally, some services that interact with Kudu may authorize requests on
+behalf of their end users. For example, Apache Impala authorizes queries on
+behalf of its users, and sends requests to Kudu as the Impala service user,
+commonly "impala". Since Impala authorizes requests on its own, to avoid
+extraneous communication between the authorization service and Kudu, the
+Impala service user should be listed as a trusted user.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+When accessing Kudu through Impala, Impala enforces its own fine-grained
+authorization policy. This policy is similar to Kudu&#8217;s and can be found in
+Impala&#8217;s
+<a href="https://impala.apache.org/docs/build/html/topics/impala_authorization.html#authorization">authorization
+documentation</a>.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ranger-configuration"><a class="link" href="#ranger-configuration">Configuring the Integration with Apache Ranger</a></h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Ranger is often configured with Kerberos authentication. See
+<a href="#configuration">Configuring a Secure Kudu Cluster</a> for how to configure Kudu to authenticate via Kerberos.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>After building Kudu from source, find the <code>kudu-subprocess.jar</code> under the build
+directory (e.g. <code>build/release/bin</code>). Note its path, as it is the one to the
+JAR file containing the Ranger subprocess, which houses the Ranger client that
+Kudu will use to communicate with the Ranger server.</p>
+</li>
+<li>
+<p>Use the <code>kudu table list</code> tool to find any table names in the cluster that are
+not Ranger-compatible, which are names that begin or end with a period. Also check
+that there are no two table names that only differ by case, since authorization
+is case-insensitive. For those tables that don&#8217;t comply with the requirements,
+use the <code>kudu table rename_table</code> tool to rename the tables.</p>
+</li>
+<li>
+<p>Create Ranger client <code>ranger-kudu-security.xml</code> configuration file, and note down
+the directory containing this file.</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.cache.dir&lt;/name&gt;
+  &lt;value&gt;policycache&lt;/value&gt;
+  &lt;description&gt;Directory where Ranger policies are cached after successful retrieval from the Ranger service&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.service.name&lt;/name&gt;
+  &lt;value&gt;kudu&lt;/value&gt;
+  &lt;description&gt;Name of the Ranger service repository storing policies for this Kudu cluster&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.rest.url&lt;/name&gt;
+  &lt;value&gt;http://host:port&lt;/value&gt;
+  &lt;description&gt;Ranger Admin URL&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.source.impl&lt;/name&gt;
+  &lt;value&gt;org.apache.ranger.admin.client.RangerAdminRESTClient&lt;/value&gt;
+  &lt;description&gt;Ranger client implementation to retrieve policies from the Ranger service&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.rest.ssl.config.file&lt;/name&gt;
+  &lt;value&gt;ranger-kudu-policymgr-ssl.xml&lt;/value&gt;
+  &lt;description&gt;Path to the file containing SSL details to connect Ranger Admin&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;ranger.plugin.kudu.policy.pollIntervalMs&lt;/name&gt;
+  &lt;value&gt;30000&lt;/value&gt;
+  &lt;description&gt;Ranger client policy polling interval&lt;/description&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>When Secure Socket Layer (SSL) is enabled for Ranger Admin, add <code>ranger-kudu-policymgr-ssl.xml</code>
+file to the Ranger client configuration directory with the following configurations:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.keystore&lt;/name&gt;
+  &lt;value&gt;[/path/to/keystore].jks&lt;/value&gt;
+  &lt;description&gt;Java keystore files&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.keystore.credential.file&lt;/name&gt;
+  &lt;value&gt;jceks://file/[path/to/credentials].jceks&lt;/value&gt;
+  &lt;description&gt;Java keystore credential file&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.truststore&lt;/name&gt;
+  &lt;value&gt;[/path/to/truststore].jks&lt;/value&gt;
+  &lt;description&gt;Java truststore file&lt;/description&gt;
+&lt;/property&gt;
+&lt;property&gt;
+  &lt;name&gt;xasecure.policymgr.clientssl.truststore.credential.file&lt;/name&gt;
+  &lt;value&gt;jceks://file/[path/to/credentials].jceks&lt;/value&gt;
+  &lt;description&gt;Java truststore credential file&lt;/description&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the following configurations on the Kudu master:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code># The path to directory containing Ranger client configuration. This example
+# assumes the path is '/kudu/ranger-config'.
+--ranger_config_path=/kudu/ranger-config
+
+# The path where the Java binary was installed. This example assumes
+# '$JAVA_HOME=/usr/local'
+--ranger_java_path=/usr/local/bin/java
+
+# The path to the JAR file containing the Ranger subprocess. This example
+# assumes '$KUDU_HOME=/kudu'
+--ranger_jar_path=/kudu/build/release/bin/kudu-subprocess.jar
+
+# This example ACL setup allows the 'impala' user to access all data stored in
+# Kudu, assuming Impala will authorize requests on its own. The 'kudu' user is
+# also granted access to all Kudu data, which may facilitate testing and
+# debugging (such as running the 'kudu cluster ksck' tool).
+--trusted_user_acl=impala,kudu</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the following configurations on the tablet servers:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>--tserver_enforce_access_control=true</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Add a Kudu service repository with the following configurations via the Ranger
+Admin web UI:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml"># This example setup configures the Kudu service user as a privileged user to be
+# able to retrieve authorization policies stored in Ranger.
+
+&lt;property&gt;
+  &lt;name&gt;policy.download.auth.users&lt;/name&gt;
+  &lt;value&gt;kudu&lt;/value&gt;
+&lt;/property&gt;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="privilege-caching"><a class="link" href="#privilege-caching">Ranger Client Caching</a></h3>
+<div class="paragraph">
+<p>On the other hand, privilege cache in Kudu master is disabled with Ranger integration,
+since Ranger provides client side cache the use privileges and can periodically poll
+the privilege store for any changes. When a change is detected, the cache will be
+automatically updated.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Update the <code>ranger.plugin.kudu.policy.pollIntervalMs</code> property specified in
+<code>ranger-kudu-security.xml</code> to set how often the Ranger client cache refreshes
+the privileges from the Ranger service.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="policy-for-kudu-masters"><a class="link" href="#policy-for-kudu-masters">Policy for Kudu Masters</a></h3>
+<div class="paragraph">
+<p>The following authorization policy is enforced by Kudu masters.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 1. Authorization Policy for Masters</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Operation</th>
+<th class="tableblock halign-left valign-top">Required Privilege</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>CreateTable</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>CREATE ON DATABASE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>CreateTable</code> with an owner different than the logged in user</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALL ON
+DATABASE</code> and <code>delegate admin</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DeleteTable</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DROP ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>AlterTable</code> (with no rename)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALTER ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>AlterTable</code> (with rename)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALL ON TABLE &lt;old-table&gt;</code> and <code>CREATE ON DATABASE &lt;new-database&gt;</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>AlterTable</code> (with owner change)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ALL ON TABLE</code> and <code>delegate admin</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>IsCreateTableDone</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>IsAlterTableDone</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ListTables</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GetTableLocations</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GetTableSchema</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>GetTabletLocations</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>METADATA ON TABLE</code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_policy_for_kudu_tablet_servers"><a class="link" href="#_policy_for_kudu_tablet_servers">Policy for Kudu Tablet Servers</a></h3>
+<div class="paragraph">
+<p>The following authorization policy is enforced by Kudu tablet servers.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 2. Authorization Policy for Tablet Servers</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Operation</th>
+<th class="tableblock halign-left valign-top">Required Privilege</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Scan</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SELECT ON TABLE</code>, or</p>
+<p class="tableblock"><code>METADATA ON TABLE</code> and <code>SELECT ON COLUMN</code> for each projected column and each predicate column</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Scan</code> (no projected columns, equivalent to <code>COUNT(*)</code>)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SELECT ON TABLE</code>, or</p>
+<p class="tableblock"><code>SELECT ON COLUMN</code> for each column in the table</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Scan</code> (with virtual columns)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SELECT ON TABLE</code>, or</p>
+<p class="tableblock"><code>SELECT ON COLUMN</code> for each column in the table</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Scan</code> (in <code>ORDERED</code> mode)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>&lt;privileges required for a Scan&gt;</code> and <code>SELECT ON COLUMN</code> for each primary key column</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Insert</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>INSERT ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Update</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>UPDATE ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Upsert</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>INSERT ON TABLE</code> and <code>UPDATE ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Delete</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DELETE ON TABLE</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SplitKeyRange</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>SELECT ON COLUMN</code> for each primary key column and <code>SELECT ON COLUMN</code> for each projected column</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>Checksum</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User must be configured in <code>--superuser_acl</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ListTablets</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User must be configured in <code>--superuser_acl</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Unlike Impala, Kudu only supports all-or-nothing access to a table&#8217;s
+schema, rather than showing only authorized columns.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_encryption"><a class="link" href="#_encryption">Encryption</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu allows all communications among servers and between clients and servers
+to be encrypted with TLS.</p>
+</div>
+<div class="paragraph">
+<p>Encryption can be configured on Kudu servers using the <code>--rpc_encryption</code> flag,
+which can be set to <code>required</code>, <code>optional</code>, or <code>disabled</code>. By default, the flag
+is set to <code>optional</code>. When <code>required</code>, Kudu will reject unencrypted connections.
+When <code>optional</code>, Kudu will attempt to use encryption. Same as authentication,
+when <code>disabled</code> or encryption fails for <code>optional</code>, Kudu will only allow
+unencrypted connections from trusted subnets and reject any unencrypted connections
+from publicly routable IPs. To secure a cluster, use <code>--rpc_encryption=required</code>.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Kudu will automatically turn off encryption on local loopback connections,
+since traffic from these connections is never exposed externally. This allows
+locality-aware compute frameworks like Spark and Impala to avoid encryption
+overhead, while still ensuring data confidentiality.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="web-ui"><a class="link" href="#web-ui">Web UI Encryption</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Kudu web UI can be configured to use secure HTTPS encryption by providing
+each server with TLS certificates. See <a href="#configuration">Configuring a Secure Kudu Cluster</a> for more information on
+web UI HTTPS configuration.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_web_ui_redaction"><a class="link" href="#_web_ui_redaction">Web UI Redaction</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>To prevent sensitive data from being exposed in the web UI, all row data is
+redacted. Table metadata, such as table names, column names, and partitioning
+information is not redacted. The web UI can be completely disabled by setting
+the <code>--webserver_enabled=false</code> flag on Kudu servers.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Disabling the web UI will also disable REST endpoints such as
+<code>/metrics</code>. Monitoring systems rely on these endpoints to gather metrics data.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="logs"><a class="link" href="#logs">Log Security</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>To prevent sensitive data from being included in Kudu server logs, all row data
+is redacted by default. By setting the <code>--redact=log</code> flag, redaction will be
+disabled in the web UI but retained for server logs. Alternatively, <code>--redact=none</code>
+can be used to disable redaction completely.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="configuration"><a class="link" href="#configuration">Configuring a Secure Kudu Cluster</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The following configuration parameters should be set on all servers (master and
+tablet server) in order to ensure that a Kudu cluster is secure:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code># Connection Security
+#--------------------
+--rpc_authentication=required
+--rpc_encryption=required
+--keytab_file=&lt;path-to-kerberos-keytab&gt;
+
+# Web UI Security
+#--------------------
+--webserver_certificate_file=&lt;path-to-cert-pem&gt;
+--webserver_private_key_file=&lt;path-to-key-pem&gt;
+# optional
+--webserver_private_key_password_cmd=&lt;password-cmd&gt;
+
+# If you prefer to disable the web UI entirely:
+--webserver_enabled=false
+
+# Coarse-grained authorization
+#--------------------------------
+
+# This example ACL setup allows the 'impala' user as well as the
+# 'nightly_etl_service_account' principal access to all data in the
+# Kudu cluster. The 'hadoopadmin' user is allowed to use administrative
+# tooling. Note that, by granting access to 'impala', other users
+# may access data in Kudu via the Impala service subject to its own
+# authorization rules.
+--user_acl=impala,nightly_etl_service_account
+--superuser_acl=hadoopadmin</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See <a href="#ranger-configuration">Configuring the Integration with Apache Ranger</a> to see an example of how to enable fine-grained
+authorization via Apache Ranger.</p>
+</div>
+<div class="paragraph">
+<p>Further information about these flags can be found in the configuration
+flag reference.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="known-limitations"><a class="link" href="#known-limitations">Known Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu has a few known security limitations:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Custom Kerberos Principal</dt>
+<dd>
+<p>Kudu does not support setting a custom service
+principal for Kudu processes. The principal must be 'kudu'.</p>
+</dd>
+<dt class="hdlist1">External PKI</dt>
+<dd>
+<p>Kudu does not support externally-issued certificates for internal
+wire encryption (server to server and client to server).</p>
+</dd>
+<dt class="hdlist1">On-disk Encryption</dt>
+<dd>
+<p>Kudu does not have built-in on-disk encryption. However,
+Kudu can be used with whole-disk encryption tools such as dm-crypt.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Security</span>
+            <ul class="sectlevel1">
+<li><a href="#_authentication">Authentication</a>
+<ul class="sectlevel2">
+<li><a href="#_internal_pki">Internal PKI</a></li>
+<li><a href="#_authentication_tokens">Authentication Tokens</a></li>
+<li><a href="#_client_authentication_to_secure_kudu_clusters">Client Authentication to Secure Kudu Clusters</a></li>
+<li><a href="#_scalability">Scalability</a></li>
+</ul>
+</li>
+<li><a href="#_coarse_grained_authorization">Coarse-Grained Authorization</a></li>
+<li><a href="#fine_grained_authz">Fine-Grained Authorization</a>
+<ul class="sectlevel2">
+<li><a href="#_apache_ranger">Apache Ranger</a></li>
+<li><a href="#_authorization_tokens">Authorization Tokens</a></li>
+<li><a href="#trusted-users">Trusted Users</a></li>
+<li><a href="#ranger-configuration">Configuring the Integration with Apache Ranger</a></li>
+<li><a href="#privilege-caching">Ranger Client Caching</a></li>
+<li><a href="#policy-for-kudu-masters">Policy for Kudu Masters</a></li>
+<li><a href="#_policy_for_kudu_tablet_servers">Policy for Kudu Tablet Servers</a></li>
+</ul>
+</li>
+<li><a href="#_encryption">Encryption</a></li>
+<li><a href="#web-ui">Web UI Encryption</a></li>
+<li><a href="#_web_ui_redaction">Web UI Redaction</a></li>
+<li><a href="#logs">Log Security</a></li>
+<li><a href="#configuration">Configuring a Secure Kudu Cluster</a></li>
+<li><a href="#known-limitations">Known Limitations</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

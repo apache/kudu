@@ -1,0 +1,6 @@
+org.apache.kudu
+org.apache.kudu.client
+org.apache.kudu.mapreduce
+org.apache.kudu.mapreduce.tools
+org.apache.kudu.test
+org.apache.kudu.util

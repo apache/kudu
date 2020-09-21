@@ -1,0 +1,518 @@
+---
+title: Apache Kudu 1.13.0 Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2020-09-10 10:33:51 +0200'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu 1.13.0 Release Notes</h1>
+      <div class="sect1">
+<h2 id="rn_1.13.0_upgrade_notes"><a class="link" href="#rn_1.13.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The Sentry integration has been removed and the Ranger integration should now
+be used in its place for fine-grained authorization.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_deprecations"><a class="link" href="#rn_1.13.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Python 2.x and Python 3.4 and earlier is deprecated and may be
+removed in the next minor release.</p>
+</li>
+<li>
+<p>The <code>kudu-mapreduce</code> integration has been deprecated and may be removed in the
+next minor release. Similar functionality and capabilities now exist via the
+Apache Spark, Apache Hive, Apache Impala, and Apache NiFi integrations.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_new_features"><a class="link" href="#rn_1.13.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Added table ownership support. All newly created tables are automatically
+owned by the user creating them. It is also possible to change the owner by
+altering the table. You can also assign privileges to table owners via Apache
+Ranger (see <a href="https://issues.apache.org/jira/browse/KUDU-3090">KUDU-3090</a>).</p>
+</li>
+<li>
+<p>An experimental feature is added to Kudu that allows it to automatically
+rebalance tablet replicas among tablet servers. The background task can be
+enabled by setting the <code>--auto_rebalancing_enabled</code> flag on the Kudu masters.
+Before starting auto-rebalancing on an existing cluster, the CLI rebalancer
+tool should be run first (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2780">KUDU-2780</a>).</p>
+</li>
+<li>
+<p>Bloom filter column predicate pushdown has been added to allow optimized
+execution of filters which match on a set of column values with a
+false-positive rate. Support for Impala queries utilizing Bloom filter
+predicate is available yielding performance improvements of 19% to 30% in TPC-H
+benchmarks and around 41% improvement for distributed joins across large
+tables. Support for Spark is not yet available. (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2483">KUDU-2483</a>).</p>
+</li>
+<li>
+<p>AArch64-based (ARM) architectures are now supported including published Docker
+images.</p>
+</li>
+<li>
+<p>The Java client now supports the columnar row format returned from the server
+transparently. Using this format can reduce the server CPU and size of the
+request over the network for scans. The columnar format can be enabled via the
+setRowDataFormat() method on the KuduScanner.</p>
+</li>
+<li>
+<p>An experimental feature that can be enabled by setting the
+<code>--enable_workload_score_for_perf_improvement_ops</code> prioritizes flushing and
+compacting hot tablets.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_improvements"><a class="link" href="#rn_1.13.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Hive metastore synchronization now supports Hive 3 and later.</p>
+</li>
+<li>
+<p>The Spark KuduContext accumulator metrics now track operation counts per table
+instead of cumulatively for all tables.</p>
+</li>
+<li>
+<p>The <code>kudu local_replica delete</code> CLI tool now accepts multiple tablet
+identifiers. Along with the newly added <code>--ignore_nonexistent</code> flag, this
+helps with scripting scenarios when removing multiple tablet replicas from a
+particular Tablet Server.</p>
+</li>
+<li>
+<p>Both Master’s and Tablet Server’s web UI now displays the name for a service
+thread pool group at the <code>/threadz</code> page</p>
+</li>
+<li>
+<p>Introduced <code>queue_overflow_rejections_</code> metrics for both Masters and Tablet
+Servers: number of RPC requests of a particular type dropped due to RPC
+service queue overflow.</p>
+</li>
+<li>
+<p>Introduced a CoDel-like queue control mechanism for the apply queue. This
+helps to avoid accumulating too many write requests and timing them out in
+case of seek-bound workloads (e.g., uniform random inserts). The newly
+introduced queue control mechanism is disabled by default. To enable it, set
+the <code>--tablet_apply_pool_overload_threshold_ms</code> Tablet Server’s flag to
+appropriate value, e.g. 250 (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1587">KUDU-1587</a>).</p>
+</li>
+<li>
+<p>Java client’s error collector can be resized (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1422">KUDU-1422</a>).</p>
+</li>
+<li>
+<p>Calls to the Kudu master server are now drastically reduced when using scan
+tokens. Previously deserializing a scan token would result in a GetTableSchema
+request and potentially a GetTableLocations request. Now the table schema and
+location information is serialized into the scan token itself avoiding the
+need for any requests to the master when processing them.</p>
+</li>
+<li>
+<p>The default size of Master’s RPC queue is now 100 (it was 50 in earlier
+releases). This is to optimize for use cases where a Kudu cluster has many
+clients working concurrently.</p>
+</li>
+<li>
+<p>Masters now have an option to cache table location responses. This is
+targeted for Kudu clusters which have many clients working concurrently. By
+default, the caching of table location responses is disabled. To enable table
+location caching, set the proper capacity of the table location cache using
+Master’s <code>--table_locations_cache_capacity_mb</code> flag (setting to 0 disables the
+caching). Up to 17% of improvement is observed in GetTableLocations request
+rate when enabling the caching.</p>
+</li>
+<li>
+<p>Removed lock contention on Raft consensus lock in Tablet Servers while
+processing a write request. This helps to avoid RPC queue overflows when
+handling concurrent write requests to the same tablet from multiple clients
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2727">KUDU-2727</a>).</p>
+</li>
+<li>
+<p>Master’s performance for handling concurrent GetTableSchema requests has been
+improved. End-to-end tests indicated up to 15% improvement in sustained
+request rate for high concurrency scenarios.</p>
+</li>
+<li>
+<p>Kudu servers now use protobuf Arena objects to perform all RPC
+request/response-related memory allocations. This gives a boost for overall
+RPC performance, and with further optimization the result request rate
+was increased significantly for certain methods. For example, the result request
+rate increased up to 25% for Master’s GetTabletLocations() RPC in case of
+highly concurrent scenarios (see
+<a href="https://issues.apache.org/jira/browse/KUDU-636">KUDU-636</a>).</p>
+</li>
+<li>
+<p>Tablet Servers now use protobuf Arena for allocating Raft-related runtime
+structures. This results in substantial reduction of CPU cycles used and
+increases write throughput (see
+<a href="https://issues.apache.org/jira/browse/KUDU-636">KUDU-636</a>).</p>
+</li>
+<li>
+<p>Tablet Servers now use protobuf Arena for allocating EncodedKeys to reduce
+allocator contention and improve memory locality (see
+<a href="https://issues.apache.org/jira/browse/KUDU-636">KUDU-636</a>).</p>
+</li>
+<li>
+<p>Bloom filter predicate evaluation for scans can be computationally expensive.
+A heuristic has been added that verifies rejection rate of the supplied Bloom
+filter predicate below which the Bloom filter predicate is automatically
+disabled. This helped reduce regression observed with Bloom filter predicate
+in TPC-H benchmark query #9 (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3140">KUDU-3140</a>).</p>
+</li>
+<li>
+<p>Improved scan performance of dictionary and plain-encoded string columns by
+avoiding copying them (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2844">KUDU-2844</a>).</p>
+</li>
+<li>
+<p>Improved maintenance manager&#8217;s heuristics to prioritize larger memstores
+(see <a href="https://issues.apache.org/jira/browse/KUDU-3180">KUDU-3180</a>).</p>
+</li>
+<li>
+<p>Spark client&#8217;s KuduReadOptions now supports setting a snapshot timestamp for
+repeatable reads with READ_AT_SNAPSHOT consistency mode (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3177">KUDU-3177</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_fixed_issues"><a class="link" href="#rn_1.13.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu scans now honor location assignments when multiple tablet servers are
+co-located with the client.</p>
+</li>
+<li>
+<p>Fixed a bug that caused IllegalArgumentException to be thrown when trying to
+create a predicate for a DATE column in Kudu Java client (see
+<a href="https://issues.apache.org/jira/browse/KUDU-3152">KUDU-3152</a>).</p>
+</li>
+<li>
+<p>Fixed a potential race when multiple RPCs work on the same scanner object.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_wire_compatibility"><a class="link" href="#rn_1.13.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.13.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.13 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.12 and Kudu 1.13 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.13 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.13 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.13 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.13 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_incompatible_changes"><a class="link" href="#rn_1.13.0_incompatible_changes">Incompatible Changes in Kudu 1.13.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.13.0_client_compatibility"><a class="link" href="#rn_1.13.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.13 Java client library is API- and ABI-compatible with Kudu 1.12. Applications
+written against Kudu 1.12 will compile and run against the Kudu 1.13 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.13 C&#43;&#43; client is API- and ABI-forward-compatible with Kudu 1.12.
+Applications written and compiled against the Kudu 1.12 client library will run without
+modification against the Kudu 1.13 client library. Applications written and compiled
+against the Kudu 1.13 client library will run without modification against the Kudu 1.12
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.13 Python client is API-compatible with Kudu 1.12. Applications
+written against Kudu 1.12 will continue to run against the Kudu 1.13 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_known_issues"><a class="link" href="#rn_1.13.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.13.0_contributors"><a class="link" href="#rn_1.13.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.13.0 includes contributions from 22 people, including 9 first-time
+contributors:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Jim Apple</p>
+</li>
+<li>
+<p>Kevin J McCarthy</p>
+</li>
+<li>
+<p>Li Zhiming</p>
+</li>
+<li>
+<p>Mahesh Reddy</p>
+</li>
+<li>
+<p>Romain Rigaux</p>
+</li>
+<li>
+<p>RuiChen</p>
+</li>
+<li>
+<p>Shuping Zhou</p>
+</li>
+<li>
+<p>ningw</p>
+</li>
+<li>
+<p>wenjie</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="resources_and_next_steps"><a class="link" href="#resources_and_next_steps">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://kudu.apache.org">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/apache/kudu">Kudu GitHub Repository</a></p>
+</li>
+<li>
+<p><a href="index.html">Kudu Documentation</a></p>
+</li>
+<li>
+<p><a href="prior_release_notes.html">Release notes for older releases</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="quickstart.html">Kudu Quickstart</a></p>
+</li>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Release Notes</span>
+            <ul class="sectlevel1">
+<li><a href="#rn_1.13.0_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.13.0_deprecations">Deprecations</a></li>
+<li><a href="#rn_1.13.0_new_features">New features</a></li>
+<li><a href="#rn_1.13.0_improvements">Optimizations and improvements</a></li>
+<li><a href="#rn_1.13.0_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.13.0_wire_compatibility">Wire Protocol compatibility</a></li>
+<li><a href="#rn_1.13.0_incompatible_changes">Incompatible Changes in Kudu 1.13.0</a>
+<ul class="sectlevel2">
+<li><a href="#rn_1.13.0_client_compatibility">Client Library Compatibility</a></li>
+</ul>
+</li>
+<li><a href="#rn_1.13.0_known_issues">Known Issues and Limitations</a></li>
+<li><a href="#rn_1.13.0_contributors">Contributors</a></li>
+<li><a href="#resources_and_next_steps">Resources</a></li>
+<li><a href="#_installation_options">Installation Options</a></li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Quickstart Guide</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="hive_metastore.html">Using the Hive Metastore with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

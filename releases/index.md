@@ -9,15 +9,16 @@ single_col_extra_classes: releases
 
 ### Latest release
 
-* **[Kudu 1.12.0](1.12.0/)** was released on May 11, 2020. <!-- LATREL: DO NOT REMOVE -->
+* **[Kudu 1.13.0](1.13.0/)** was released on Sep 17, 2020. <!-- LATREL: DO NOT REMOVE -->
 
 ### Previous releases (ongoing support)
 
-* [Kudu 1.11.1](1.11.1/)was released on November 20, 2019.  <!-- PREVREL: DO NOT REMOVE -->
-* [Kudu 1.10.1](1.10.1/) was released on November 20, 2019.
+* [Kudu 1.12.0](1.12.0/) was released on May 11, 2020. <!-- PREVREL: DO NOT REMOVE -->
+* [Kudu 1.11.1](1.11.1/)was released on November 20, 2019.
 
 ### Archived releases
-* [Kudu 1.11.0](1.11.0/) was released on November 1, 2019. <!--ARCHREL: DO NOT REMOVE -->
+* [Kudu 1.10.1](1.10.1/) was released on November 20, 2019. <!--ARCHREL: DO NOT REMOVE -->
+* [Kudu 1.11.0](1.11.0/) was released on November 1, 2019.
 * [Kudu 1.10.0](1.10.0/) was released on July 9, 2019.
 * [Kudu 1.9.0](1.9.0/) was released on March 12, 2019.
 * [Kudu 1.8.0](1.8.0/) was released on October 24, 2018.
