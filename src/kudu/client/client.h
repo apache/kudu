@@ -1148,8 +1148,8 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// @name Advanced/Unstable API
   ///
   /// There are no guarantees on the stability of this client API.
-  ///
   ///@{
+
   /// Create a new IN Bloom filter predicate using direct BlockBloomFilter
   /// pointers which can be used for scanners on this table.
   ///
