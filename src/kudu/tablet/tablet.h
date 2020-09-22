@@ -25,7 +25,9 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -89,10 +91,12 @@ class MemRowSet;
 class ParticipantOpState;
 class RowSetTree;
 class RowSetsInCompaction;
+class TxnMetadata;
 class WriteOpState;
 struct RowOp;
 struct TabletComponents;
 struct TabletMetrics;
+struct TxnRowSets;
 
 class Tablet {
  public:
@@ -117,9 +121,14 @@ class Tablet {
 
   ~Tablet();
 
-  // Open the tablet, initializing transactions for 'in_flight_txn_ids'.
+  // Open the tablet, initializing transactions for 'in_flight_txn_ids', and
+  // MRSs for 'txn_ids_with_mrs'. The created MRSs will be uncommitted -- it is
+  // up to the caller to determine whether they should be committed after
+  // finishing bootstrapping.
+  //
   // Upon completion, the tablet enters the kBootstrapping state.
-  Status Open(const std::unordered_set<int64_t>& in_flight_txn_ids = std::unordered_set<int64_t>{});
+  Status Open(const std::unordered_set<int64_t>& in_flight_txn_ids = std::unordered_set<int64_t>{},
+              const std::unordered_set<int64_t>& txn_ids_with_mrs = std::unordered_set<int64_t>{});
 
   // Mark that the tablet has finished bootstrapping.
   // This transitions from kBootstrapping to kOpen state.
@@ -152,6 +161,10 @@ class Tablet {
   // Acquire locks for each of the operations in the given op.
   // This also sets the row op's RowSetKeyProbe.
   Status AcquireRowLocks(WriteOpState* op_state);
+
+  // Acquire a shared lock on the given transaction, to ensure the
+  // transaction's state doesn't change while the given write is in flight.
+  Status AcquireTxnLock(int64_t txn_id, WriteOpState* op_state);
 
   // Starts an MVCC op which must have a pre-assigned timestamp.
   //
@@ -194,10 +207,17 @@ class Tablet {
   // using 'txn' as the anchor owner.
   void CommitTransaction(Txn* txn, Timestamp commit_ts, const consensus::OpId& op_id);
 
+  // Merges the uncommitted transaction rowsets associated with the given
+  // 'txn_id' with the committed rowsets.
+  void CommitTxnRowSets(int64_t txn_id);
+
   // Aborts the transaction, recording the abort in the tablet metadata.
   // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
   // using 'txn' as the anchor owner.
   void AbortTransaction(Txn* txn, const consensus::OpId& op_id);
+
+  // Creates new rowsets for the given transaction.
+  void CreateTxnRowSets(int64_t txn_id, scoped_refptr<TxnMetadata> txn_meta);
 
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
@@ -521,6 +541,7 @@ class Tablet {
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithOneRowSet);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithNonOverlappingRowSets);
   FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet);
+  FRIEND_TEST(TxnParticipantTest, TestFlushMultipleMRSs);
 
   // Lifecycle states that a Tablet can be in. Legal state transitions for a
   // Tablet object:
@@ -638,13 +659,15 @@ class Tablet {
 
   // Performs a merge compaction or a flush.
   Status DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
-                                  int64_t mrs_being_flushed);
+                                  int64_t mrs_being_flushed,
+                                  const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
 
   // Handle the case in which a compaction or flush yielded no output rows.
   // In this case, we just need to remove the rowsets in 'rowsets' from the
   // metadata and flush it.
   Status HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
-                                      int mrs_being_flushed);
+                                      int mrs_being_flushed,
+                                      const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
 
   // Updates the average rowset height metric. Acquires the tablet's
   // compact_select_lock_.
@@ -652,7 +675,8 @@ class Tablet {
 
   Status FlushMetadata(const RowSetVector& to_remove,
                        const RowSetMetadataVector& to_add,
-                       int64_t mrs_being_flushed);
+                       int64_t mrs_being_flushed,
+                       const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
 
   static void ModifyRowSetTree(const RowSetTree& old_tree,
                                const RowSetVector& rowsets_to_remove,
@@ -679,17 +703,13 @@ class Tablet {
     *comps = components_;
   }
 
-  // Create a new MemRowSet, replacing the current one.
-  // The 'old_ms' pointer will be set to the current MemRowSet set before the replacement.
-  // If the MemRowSet is not empty it will be added to the 'compaction' input
-  // and the MemRowSet compaction lock will be taken to prevent the inclusion
-  // in any concurrent compactions.
-  Status ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
-                                  std::shared_ptr<MemRowSet> *old_ms);
-
-  // TODO: Document me.
-  Status FlushInternal(const RowSetsInCompaction& input,
-                       const std::shared_ptr<MemRowSet>& old_ms);
+  // Create a new MemRowSet, replacing the current committed one(s).
+  // 'old_mrss' will be populated to the current committed MemRowSet(s) set
+  // before the replacement. If any MemRowSet is not empty it will be added to
+  // the 'compaction' input and the MemRowSets' compaction locks will be taken
+  // to prevent the inclusion in any concurrent compactions.
+  Status ReplaceMemRowSetsUnlocked(RowSetsInCompaction* compaction,
+                                   std::vector<std::shared_ptr<MemRowSet>>* old_mrss);
 
   // Convert the specified read client schema (without IDs) to a server schema (with IDs)
   // This method is used by NewRowIterator().
@@ -751,9 +771,12 @@ class Tablet {
   // is active, a writer comes along, then all future short readers will be blocked.
   mutable rw_spinlock component_lock_;
 
-  // The current components of the tablet. These should always be read
-  // or swapped under the component_lock.
+  // The components of the tablet whose base data has been committed. These
+  // should always be read or swapped under the component_lock.
   scoped_refptr<TabletComponents> components_;
+
+  // Uncommitted transaction state.
+  std::unordered_map<int64_t, scoped_refptr<TxnRowSets>> uncommitted_rowsets_by_txn_id_;
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   TabletMemTrackers mem_trackers_;
@@ -900,9 +923,27 @@ class Tablet::Iterator : public RowwiseIterator {
 // change.
 struct TabletComponents : public RefCountedThreadSafe<TabletComponents> {
   TabletComponents(std::shared_ptr<MemRowSet> mrs,
+                   std::vector<std::shared_ptr<MemRowSet>> txn_mrss,
                    std::shared_ptr<RowSetTree> rs_tree);
+  // The "main" MemRowSet that catches inserts to the tablet that are not a
+  // part of any transaction.
   const std::shared_ptr<MemRowSet> memrowset;
+
+  // MemRowSets whose insertion heads were inserted as a part of a transaction.
+  const std::vector<std::shared_ptr<MemRowSet>> txn_memrowsets;
+
+  // The persisted RowSets that comprise the rows of a tablet.
   const std::shared_ptr<RowSetTree> rowsets;
+};
+
+// Encapsulates data inserted as a part of a transaction that has not yet been
+// committed.
+// TODO(awong): when we support flushing transactional MRSs before committing,
+// track uncommitted disk rowsets here.
+struct TxnRowSets : public RefCountedThreadSafe<TxnRowSets> {
+  explicit TxnRowSets(std::shared_ptr<MemRowSet> mrs)
+      : memrowset(std::move(mrs)) {}
+  const std::shared_ptr<MemRowSet> memrowset;
 };
 
 } // namespace tablet

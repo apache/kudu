@@ -275,7 +275,12 @@ class shared_lock {
   }
 
   void swap(shared_lock& other) {
-    std::swap(m_,other.m_);
+    std::swap(m_, other.m_);
+  }
+
+  shared_lock& operator=(shared_lock&& other) noexcept {
+    swap(other);
+    return *this;
   }
 
   ~shared_lock() {

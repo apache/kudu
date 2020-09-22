@@ -35,6 +35,12 @@ message MemStoreTargetPB {
   // ... or both of the following fields are set.
   optional int64 rs_id = 2 [ default = -1 ];
   optional int64 dms_id = 3 [ default = -1 ];
+
+  // If the mutation landed in a rowset whose base data was inserted as a part
+  // of a transaction, the rowset will have a transaction ID associated with
+  // it that differentiates it from rowsets that were not inserted as a part of
+  // a transaction.
+  optional int64 rs_txn_id = 4 [ default = -1 ];
 }
 
 // Stores the result of an Insert or Mutate.

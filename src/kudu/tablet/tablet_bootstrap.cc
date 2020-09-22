@@ -464,6 +464,9 @@ class TabletBootstrap {
   std::unordered_set<int64_t> in_flight_txn_ids_;
   std::unordered_set<int64_t> terminal_txn_ids_;
 
+  // Transactions (committed or not) that have active MemRowSets.
+  std::unordered_set<int64_t> mrs_txn_ids_;
+
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
@@ -612,7 +615,7 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   }
 
   RETURN_NOT_OK(flushed_stores_.InitFrom(*tablet_meta_.get()));
-  tablet_meta_->GetTxnIds(&in_flight_txn_ids_, &terminal_txn_ids_);
+  tablet_meta_->GetTxnIds(&in_flight_txn_ids_, &terminal_txn_ids_, &mrs_txn_ids_);
 
   bool has_blocks;
   RETURN_NOT_OK(OpenTablet(&has_blocks));
@@ -672,7 +675,7 @@ Status TabletBootstrap::OpenTablet(bool* has_blocks) {
   // doing nothing for now except opening a tablet locally.
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(INFO, 100, LogPrefix(), "opening tablet");
-    RETURN_NOT_OK(tablet->Open(in_flight_txn_ids_));
+    RETURN_NOT_OK(tablet->Open(in_flight_txn_ids_, mrs_txn_ids_));
   }
   *has_blocks = tablet->num_rowsets() != 0;
   tablet_ = std::move(tablet);
@@ -1567,12 +1570,25 @@ Status TabletBootstrap::PlayTxnParticipantOpRequest(const IOContext* /*io_contex
                               tablet_->txn_participant(),
                               &replicate_msg->participant_request());
   const auto& op_type = op_state.request()->op().type();
+  const auto& txn_id = op_state.txn_id();
   if (ContainsKey(terminal_txn_ids_, op_state.txn_id())) {
+    // Even if we're skipping over this participant op because its metadata
+    // state has been persisted, we still need to commit its rowsets if active,
+    // since we may have had to rebuild a committed MRS.
+    if (op_type == ParticipantOpPB::FINALIZE_COMMIT &&
+        ContainsKey(mrs_txn_ids_, txn_id)) {
+      tablet_->CommitTxnRowSets(txn_id);
+    }
     return AppendCommitMsg(commit_msg);
   }
   bool persisted_in_flight = ContainsKey(in_flight_txn_ids_, op_state.txn_id());
   if ((persisted_in_flight && op_type != ParticipantOpPB::BEGIN_TXN) ||
       !persisted_in_flight) {
+    // If we're about to create a new MRS, add this transaction ID to the set
+    // that have active MRSs.
+    if (op_type == ParticipantOpPB::BEGIN_TXN) {
+      EmplaceOrDie(&mrs_txn_ids_, txn_id);
+    }
     op_state.mutable_op_id()->CopyFrom(replicate_msg->id());
     op_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
     op_state.AcquireTxnAndLock();
@@ -1718,6 +1734,14 @@ Status TabletBootstrap::FilterOperation(const OperationResultPB& op_result,
   // output targets was active.
   int num_active_stores = 0;
   for (const MemStoreTargetPB& mutated_store : op_result.mutated_stores()) {
+    if (mutated_store.has_rs_txn_id()) {
+      // TODO(awong): once we begin flushing before commit, we'll need to have
+      // this account for a last_flushed_mrs_id per transaction.
+      if (ContainsKey(mrs_txn_ids_, mutated_store.rs_txn_id())) {
+        num_active_stores++;
+      }
+      continue;
+    }
     if (flushed_stores_.IsMemStoreActive(mutated_store)) {
       num_active_stores++;
     }

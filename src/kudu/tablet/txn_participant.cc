@@ -55,6 +55,11 @@ void Txn::AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock) {
   *txn_lock = std::move(l);
 }
 
+void Txn::AcquireReadLock(shared_lock<rw_semaphore>* txn_lock) {
+  shared_lock<rw_semaphore> l(state_lock_);
+  *txn_lock = std::move(l);
+}
+
 void TxnParticipant::CreateOpenTransaction(int64_t txn_id,
                                            LogAnchorRegistry* log_anchor_registry) {
   std::lock_guard<simple_spinlock> l(lock_);
@@ -68,6 +73,11 @@ scoped_refptr<Txn> TxnParticipant::GetOrCreateTransaction(int64_t txn_id,
   std::lock_guard<simple_spinlock> l(lock_);
   return LookupOrInsertNewSharedPtr(&txns_, txn_id, txn_id, log_anchor_registry,
                                     tablet_metadata_);
+}
+
+scoped_refptr<Txn> TxnParticipant::GetTransaction(int64_t txn_id) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return FindPtrOrNull(txns_, txn_id);
 }
 
 void TxnParticipant::ClearIfInitFailed(int64_t txn_id) {

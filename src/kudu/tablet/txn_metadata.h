@@ -32,10 +32,23 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
  public:
   explicit TxnMetadata(bool aborted = false,
                        boost::optional<Timestamp> commit_mvcc_op_timestamp = boost::none,
-                       boost::optional<Timestamp> commit_ts = boost::none)
+                       boost::optional<Timestamp> commit_ts = boost::none,
+                       bool flushed_committed_mrs = false)
       : aborted_(aborted),
         commit_mvcc_op_timestamp_(std::move(commit_mvcc_op_timestamp)),
-        commit_timestamp_(std::move(commit_ts)) {}
+        commit_timestamp_(std::move(commit_ts)),
+        flushed_committed_mrs_(flushed_committed_mrs) {}
+
+  // NOTE: access to 'flushed_committed_mrs_' is not inherently threadsafe --
+  // it is expected that the caller will ensure thread safety (e.g.
+  // TabletMetadata only calls this with its flush lock held).
+  void set_flushed_committed_mrs_unlocked() {
+    flushed_committed_mrs_ = true;
+  }
+  bool flushed_committed_mrs_unlocked() const {
+    return flushed_committed_mrs_;
+  }
+
   void set_aborted() {
     std::lock_guard<simple_spinlock> l(lock_);
     CHECK(boost::none == commit_timestamp_);
@@ -87,6 +100,8 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
   boost::optional<Timestamp> commit_mvcc_op_timestamp_;
 
   boost::optional<Timestamp> commit_timestamp_;
+
+  bool flushed_committed_mrs_;
 };
 
 } // namespace tablet

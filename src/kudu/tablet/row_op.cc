@@ -55,6 +55,14 @@ void RowOp::SetInsertSucceeded(int mrs_id) {
   result->add_mutated_stores()->set_mrs_id(mrs_id);
 }
 
+void RowOp::SetInsertSucceeded(int64_t txn_id, int mrs_id) {
+  DCHECK(!result) << SecureDebugString(*result);
+  result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);
+  auto* mutated_store = result->add_mutated_stores();
+  mutated_store->set_mrs_id(mrs_id);
+  mutated_store->set_rs_txn_id(txn_id);
+}
+
 void RowOp::SetErrorIgnored() {
   DCHECK(!result) << SecureDebugString(*result);
   result = google::protobuf::Arena::CreateMessage<OperationResultPB>(pb_arena_);

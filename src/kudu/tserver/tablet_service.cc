@@ -3135,10 +3135,11 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   s = time_manager->WaitUntilSafe(tmp_snap_timestamp, final_deadline);
 
   tablet::MvccSnapshot snap;
+  auto* mvcc_manager = tablet->mvcc_manager();
   if (PREDICT_TRUE(s.ok())) {
     // Wait for the in-flights in the snapshot to be finished.
     TRACE("Waiting for operations to commit");
-    s = tablet->mvcc_manager()->WaitForSnapshotWithAllApplied(
+    s = mvcc_manager->WaitForSnapshotWithAllApplied(
           tmp_snap_timestamp, &snap, client_deadline);
   }
 

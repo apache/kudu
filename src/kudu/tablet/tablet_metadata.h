@@ -62,6 +62,12 @@ class TxnMetadata;
 typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;
 
+// A transaction ID whose MRS is being flushed.
+// TODO(awong): If we begin supporting flushing before committing, we should
+// extend this to include the MRS ID so we can define some
+// 'last_durable_mrs_id' per transaction.
+typedef int64_t TxnInfoBeingFlushed;
+
 extern const int64_t kNoDurableMemStore;
 
 // Manages the "blocks tracking" for the specified tablet.
@@ -190,7 +196,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   static const int64_t kNoMrsFlushed = -1;
   Status UpdateAndFlush(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        int64_t last_durable_mrs_id);
+                        int64_t last_durable_mrs_id,
+                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed = {});
 
   // Adds the blocks referenced by 'block_ids' to 'orphaned_blocks_'.
   //
@@ -266,10 +273,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Returns whether a given transaction has metadata.
   bool HasTxnMetadata(int64_t txn_id);
 
-  // Returns the transaction IDs that were persisted as being in-flight or
-  // terminal.
+  // Returns the transaction IDs that were persisted as being in-flight,
+  // terminal (committed or aborted), and having un-flushed MRSs.
   void GetTxnIds(std::unordered_set<int64_t>* in_flight_txn_ids,
-                 std::unordered_set<int64_t>* terminal_txn_ids = nullptr);
+                 std::unordered_set<int64_t>* terminal_txn_ids = nullptr,
+                 std::unordered_set<int64_t>* txn_ids_with_mrs = nullptr);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 
@@ -371,7 +379,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Requires 'data_lock_'.
   Status UpdateUnlocked(const RowSetMetadataIds& to_remove,
                         const RowSetMetadataVector& to_add,
-                        int64_t last_durable_mrs_id);
+                        int64_t last_durable_mrs_id,
+                        const std::vector<TxnInfoBeingFlushed>& txns_being_flushed);
 
   // Requires 'data_lock_'.
   Status ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,

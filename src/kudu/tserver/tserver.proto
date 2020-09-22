@@ -103,6 +103,9 @@ message TabletServerErrorPB {
 
     // The request is disallowed for the given user.
     NOT_AUTHORIZED = 21;
+
+    // The requested transaction is not in the appropriate state.
+    TXN_ILLEGAL_STATE = 22;
   }
 
   // The error code.

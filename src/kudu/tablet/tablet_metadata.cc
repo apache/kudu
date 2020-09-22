@@ -510,7 +510,8 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
                   boost::none,
               txn_meta.has_commit_timestamp() ?
                   boost::make_optional(Timestamp(txn_meta.commit_timestamp())) :
-                  boost::none
+                  boost::none,
+              txn_meta.has_flushed_committed_mrs() && txn_meta.flushed_committed_mrs()
           ));
     }
     txn_metadata_by_txn_id_ = std::move(txn_metas);
@@ -527,10 +528,11 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
-                                      int64_t last_durable_mrs_id) {
+                                      int64_t last_durable_mrs_id,
+                                      const vector<TxnInfoBeingFlushed>& txns_being_flushed) {
   {
     std::lock_guard<LockType> l(data_lock_);
-    RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id));
+    RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id, txns_being_flushed));
   }
   return Flush();
 }
@@ -642,12 +644,17 @@ Status TabletMetadata::Flush() {
 Status TabletMetadata::UpdateUnlocked(
     const RowSetMetadataIds& to_remove,
     const RowSetMetadataVector& to_add,
-    int64_t last_durable_mrs_id) {
+    int64_t last_durable_mrs_id,
+    const vector<TxnInfoBeingFlushed>& txns_being_flushed) {
   DCHECK(data_lock_.is_locked());
   CHECK_NE(state_, kNotLoadedYet);
   if (last_durable_mrs_id != kNoMrsFlushed) {
     DCHECK_GE(last_durable_mrs_id, last_durable_mrs_id_);
     last_durable_mrs_id_ = last_durable_mrs_id;
+  }
+  for (const auto& txn_id : txns_being_flushed) {
+    auto txn_meta = FindOrDie(txn_metadata_by_txn_id_, txn_id);
+    txn_meta->set_flushed_committed_mrs_unlocked();
   }
 
   RowSetMetadataVector new_rowsets = rowsets_;
@@ -752,7 +759,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     if (txn_meta->aborted()) {
       meta_pb.set_aborted(true);
     }
-    InsertOrDie(pb.mutable_txn_metadata(), txn_id_and_metadata.first, std::move(meta_pb));
+    if (txn_meta->flushed_committed_mrs_unlocked()) {
+      meta_pb.set_flushed_committed_mrs(true);
+    }
+    InsertOrDie(pb.mutable_txn_metadata(), txn_id_and_metadata.first, meta_pb);
   }
 
   DCHECK(schema_->has_column_ids());
@@ -846,23 +856,36 @@ bool TabletMetadata::HasTxnMetadata(int64_t txn_id) {
 }
 
 void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
-                               unordered_set<int64_t>* terminal_txn_ids) {
+                               unordered_set<int64_t>* terminal_txn_ids,
+                               unordered_set<int64_t>* txn_ids_with_mrs) {
   std::unordered_set<int64_t> in_flights;
   std::unordered_set<int64_t> terminals;
+  std::unordered_set<int64_t> needs_mrs;
   std::lock_guard<LockType> l(data_lock_);
   for (const auto& txn_id_and_metadata : txn_metadata_by_txn_id_) {
+    const auto& txn_id = txn_id_and_metadata.first;
     const auto& txn_meta = txn_id_and_metadata.second;
     if (txn_meta->commit_timestamp() || txn_meta->aborted()) {
       if (terminal_txn_ids) {
-        EmplaceOrDie(&terminals, txn_id_and_metadata.first);
+        EmplaceOrDie(&terminals, txn_id);
       }
     } else {
-      EmplaceOrDie(&in_flights, txn_id_and_metadata.first);
+      EmplaceOrDie(&in_flights, txn_id);
+    }
+    // If we have not flushed the MRS after committing, the bootstrap process
+    // will need to create an MRS for it, even if the transaction is committed.
+    if (txn_ids_with_mrs &&
+        !txn_meta->flushed_committed_mrs_unlocked() &&
+        !txn_meta->aborted()) {
+      EmplaceOrDie(&needs_mrs, txn_id);
     }
   }
   *in_flight_txn_ids = std::move(in_flights);
   if (terminal_txn_ids) {
     *terminal_txn_ids = std::move(terminals);
+  }
+  if (txn_ids_with_mrs) {
+    *txn_ids_with_mrs = std::move(needs_mrs);
   }
 }
 

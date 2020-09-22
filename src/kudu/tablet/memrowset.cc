@@ -135,7 +135,8 @@ MemRowSet::MemRowSet(int64_t id,
     tree_(arena_),
     debug_insert_count_(0),
     debug_update_count_(0),
-    anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)),
+    anchorer_(log_anchor_registry, Substitute("MemRowSet-$0$1", id_, txn_id_ ?
+                                              Substitute("(txn_id=$0)", *txn_id) : "")),
     has_been_compacted_(false),
     live_row_count_(0) {
   CHECK(schema.has_column_ids());
@@ -274,6 +275,9 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
 
     MemStoreTargetPB* target = result->add_mutated_stores();
     target->set_mrs_id(id_);
+    if (txn_id_) {
+      target->set_rs_txn_id(*txn_id_);
+    }
   }
 
   stats->mrs_consulted++;
@@ -699,14 +703,21 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
                                           Mutation** redo_head,
                                           Arena* mutation_arena,
                                           Timestamp* insertion_timestamp) {
-
   DCHECK(boost::none == opts_.snap_to_exclude);
   DCHECK(redo_head != nullptr);
 
   // Get the row from the MemRowSet. It may have a different schema from the iterator projection.
   MRSRow src_row = GetCurrentRow();
-
-  *insertion_timestamp = src_row.insertion_timestamp();
+  const auto& mrs_txn_id = memrowset_->txn_id();
+  if (mrs_txn_id) {
+    // NOTE: we currently only support flushing committed MRSs.
+    const auto& txn_meta = memrowset_->txn_metadata();
+    CHECK(opts_.snap_to_include.IsCommitted(*txn_meta.get()));
+    CHECK(boost::none != txn_meta->commit_timestamp());
+    *insertion_timestamp = *txn_meta->commit_timestamp();
+  } else {
+    *insertion_timestamp = src_row.insertion_timestamp();
+  }
 
   // Project the RowChangeList if required
   *redo_head = src_row.acquire_redo_head();

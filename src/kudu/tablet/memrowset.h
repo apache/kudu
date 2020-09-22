@@ -38,6 +38,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -383,7 +384,8 @@ class MemRowSet : public RowSet,
   virtual Status DebugDump(std::vector<std::string> *lines) override;
 
   std::string ToString() const override {
-    return "memrowset";
+    return strings::Substitute("memrowset$0",
+        txn_id_ ? strings::Substitute("(txn_id=$0)", *txn_id_) : "");
   }
 
   // Mark the memrowset as frozen. See CBTree::Freeze()

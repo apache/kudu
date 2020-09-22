@@ -95,6 +95,9 @@ Status TabletReplicaTestBase::ExecuteWrite(TabletReplica* replica, const WriteRe
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
+  if (resp.per_row_errors_size() > 0) {
+    return StatusFromPB(resp.per_row_errors(0).error());
+  }
   return Status::OK();
 }
 

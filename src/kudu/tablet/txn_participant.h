@@ -101,10 +101,11 @@ class Txn : public RefCountedThreadSafe<Txn> {
         commit_timestamp_(-1) {}
   ~Txn();
 
-  // Takes the state lock in write mode and returns it. As transaction state is
-  // meant to be driven via an op driver, lock acquisition is expected to be
-  // serialized in a single thread.
+  // Takes the state lock and returns it. As transaction state is meant to be
+  // driven via an op driver, lock acquisition is expected to be serialized in
+  // a single thread.
   void AcquireWriteLock(std::unique_lock<rw_semaphore>* txn_lock);
+  void AcquireReadLock(shared_lock<rw_semaphore>* txn_lock);
 
   // Validates that the transaction is in the appropriate state to perform the
   // given operation. Should be called while holding the state lock before
@@ -272,10 +273,14 @@ class TxnParticipant {
   void CreateOpenTransaction(int64_t txn_id,
                              log::LogAnchorRegistry* log_anchor_registry);
 
-  // Gets the transaction state for the given transaction ID, creating it in
+  // Gets the transaction for the given transaction ID, creating it in
   // the kInitializing state if one doesn't already exist.
   scoped_refptr<Txn> GetOrCreateTransaction(int64_t txn_id,
                                             log::LogAnchorRegistry* log_anchor_registry);
+
+  // Gets the transaction for the given transaction ID, or returns null if it
+  // does not exist.
+  scoped_refptr<Txn> GetTransaction(int64_t txn_id);
 
   // Removes the given transaction if it failed to initialize, e.g. the op that
   // created it failed to replicate, leaving it in the kInitializing state but

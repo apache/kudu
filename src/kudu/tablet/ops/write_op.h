@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -31,8 +32,8 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/lock_manager.h"
+#include "kudu/tablet/ops/op.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/bitset.h"
@@ -53,7 +54,9 @@ namespace tablet {
 
 class ScopedOp;
 class TabletReplica;
+class Txn;
 class TxResultPB;
+struct TxnRowSets;
 struct RowOp;
 struct TabletComponents;
 
@@ -139,6 +142,10 @@ class WriteOpState : public OpState {
     return response_;
   }
 
+  boost::optional<int64_t> txn_id() const {
+    return request_->has_txn_id() ? boost::make_optional(request_->txn_id()) : boost::none;
+  }
+
   // Returns the state associated with authorizing this op, or 'none' if no
   // authorization is necessary.
   const boost::optional<WriteAuthorizationContext>& authz_context() const {
@@ -156,6 +163,9 @@ class WriteOpState : public OpState {
   // in-memory edits.
   void set_tablet_components(const scoped_refptr<const TabletComponents>& components);
 
+  // Set the txn rowsets that this op will write into.
+  void set_txn_rowsets(const scoped_refptr<TxnRowSets>& rowsets);
+
   // Take a shared lock on the given schema lock.
   // This is required prior to decoding rows so that the schema does
   // not change in between performing the projection and applying
@@ -164,6 +174,11 @@ class WriteOpState : public OpState {
 
   // Acquire row locks for all of the rows in this Write.
   void AcquireRowLocks(LockManager* lock_manager);
+
+  // Acquires the lock on the given transaction, setting 'txn_' and
+  // 'txn_lock_', which must be freed upon finishing this op. Checks if the
+  // transaction is available to be written to, returning an error if not.
+  Status AcquireTxnLockCheckOpen(scoped_refptr<Txn> txn);
 
   // Release the already-acquired schema lock.
   void ReleaseSchemaLock();
@@ -182,6 +197,10 @@ class WriteOpState : public OpState {
 
   const TabletComponents* tablet_components() const {
     return tablet_components_.get();
+  }
+
+  const TxnRowSets* txn_rowsets() const {
+    return txn_rowsets_.get();
   }
 
   // Notifies the MVCC manager that this operation is about to start applying
@@ -229,6 +248,9 @@ class WriteOpState : public OpState {
   // Releases all the row locks acquired by this op.
   void ReleaseRowLocks();
 
+  // Releases the transaction state lock.
+  void ReleaseTxnLock();
+
   // Reset the RPC request, response, and row_ops_ (which refers to data
   // from the request).
   void ResetRpcFields();
@@ -261,8 +283,14 @@ class WriteOpState : public OpState {
   // The MVCC op, set up during PREPARE phase
   std::unique_ptr<ScopedOp> mvcc_op_;
 
-  // The tablet components, acquired at the same time as mvcc_op_ is set.
+  // The tablet components, acquired at the same time as mvcc_op_ is set. This
+  // is maintained in case any of the component's rowsets get compacted away,
+  // ensuring we retain a reference to them for the duration of this op.
   scoped_refptr<const TabletComponents> tablet_components_;
+
+  // The uncommitted transaction rowsets to write to if this write op is a part
+  // of a transaction, acquired at the same time as mvcc_op_ is set.
+  scoped_refptr<TxnRowSets> txn_rowsets_;
 
   // A lock held on the tablet's schema. Prevents concurrent schema change
   // from racing with a write.
@@ -275,6 +303,13 @@ class WriteOpState : public OpState {
 
   // Lock that protects access to various fields of WriteOpState.
   mutable simple_spinlock op_state_lock_;
+
+  // Transaction to which this write op writes to, if any.
+  scoped_refptr<Txn> txn_;
+
+  // Lock protecting the transaction's state, ensuring it remains open for the
+  // duration of this write.
+  shared_lock<rw_semaphore> txn_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(WriteOpState);
 };

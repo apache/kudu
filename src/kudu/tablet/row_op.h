@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "kudu/common/row_operations.h"
@@ -46,6 +47,7 @@ struct RowOp {
   // Only one of the following four functions must be called, at most once.
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
+  void SetInsertSucceeded(int64_t txn_id, int mrs_id);
   void SetErrorIgnored();
 
   // REQUIRES: result must be allocated from the same protobuf::Arena associated

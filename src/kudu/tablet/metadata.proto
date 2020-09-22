@@ -103,6 +103,11 @@ message TxnMetadataPB {
   // this avoids reading dirty, uncommitted rows.
   optional int64 commit_mvcc_op_timestamp = 3;
 
+  // Whether or not this transaction has flushed its MRS after committing. If
+  // set to true, Kudu should not create an MRS for this transaction when
+  // bootstrapping.
+  optional bool flushed_committed_mrs = 4;
+
   // TODO(awong): add an owner field to this for uncommitted transactions.
 }
 

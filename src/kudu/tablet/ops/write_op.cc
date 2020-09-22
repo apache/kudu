@@ -53,6 +53,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_participant.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -170,11 +171,34 @@ Status WriteOp::Prepare() {
 
   Tablet* tablet = state()->tablet_replica()->tablet();
 
-  Status s = tablet->DecodeWriteOperations(&client_schema, state());
+  // Before taking any other locks, acquire the transaction state lock and
+  // ensure it is open.
+  Status s;
+  if (state_->request()->has_txn_id()) {
+    s = tablet->AcquireTxnLock(state_->request()->txn_id(), state());
+    if (!s.ok()) {
+      state()->completion_callback()->set_error(s, TabletServerErrorPB::TXN_ILLEGAL_STATE);
+      return s;
+    }
+  }
+
+  s = tablet->DecodeWriteOperations(&client_schema, state());
   if (!s.ok()) {
     // TODO(unknown): is MISMATCHED_SCHEMA always right here? probably not.
     state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
     return s;
+  }
+  // Only after decoding rows, check that only supported operations make it
+  // through.
+  if (state_->request()->has_txn_id()) {
+    for (const auto& op : state_->row_ops()) {
+      const auto& op_type = op->decoded_op.type;
+      if (op_type != RowOperationsPB::INSERT &&
+          op_type != RowOperationsPB::INSERT_IGNORE) {
+        state()->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_MUTATION);
+        return Status::NotSupported("transactions may only insert");
+      }
+    }
   }
 
   // Authorize the request if needed.
@@ -340,11 +364,29 @@ void WriteOpState::set_tablet_components(
   tablet_components_ = components;
 }
 
+void WriteOpState::set_txn_rowsets(const scoped_refptr<TxnRowSets>& rowsets) {
+  DCHECK(!txn_rowsets_) << "Already set";
+  txn_rowsets_ = rowsets;
+}
+
 void WriteOpState::AcquireSchemaLock(rw_semaphore* schema_lock) {
   TRACE("Acquiring schema lock in shared mode");
   shared_lock<rw_semaphore> temp(*schema_lock);
   schema_lock_.swap(temp);
   TRACE("Acquired schema lock");
+}
+
+Status WriteOpState::AcquireTxnLockCheckOpen(scoped_refptr<Txn> txn) {
+  shared_lock<rw_semaphore> temp;
+  txn->AcquireReadLock(&temp);
+  const auto txn_state = txn->state();
+  if (PREDICT_FALSE(txn_state != Txn::kOpen)) {
+    return Status::InvalidArgument(Substitute("txn $0 is not open: $1",
+        txn->txn_id(), Txn::StateToString(txn_state)));
+  }
+  txn_lock_.swap(temp);
+  txn_ = std::move(txn);
+  return Status::OK();
 }
 
 void WriteOpState::ReleaseSchemaLock() {
@@ -485,7 +527,20 @@ void WriteOpState::AcquireRowLocks(LockManager* lock_manager) {
   rows_lock_ = ScopedRowLock(lock_manager, this, keys, LockManager::LOCK_EXCLUSIVE);
 }
 
-void WriteOpState::ReleaseRowLocks() { rows_lock_.Release(); }
+void WriteOpState::ReleaseRowLocks() {
+  rows_lock_.Release();
+}
+
+void WriteOpState::ReleaseTxnLock() {
+  shared_lock<rw_semaphore> temp;
+  txn_lock_.swap(temp);
+  // It's possible we took a reference to a transaction that failed to start
+  // (e.g. because we changed leadership before the BEGIN_TXN could complete).
+  // If that's the case, clear its state in the participant.
+  txn_.reset();
+  tablet_replica()->tablet()->txn_participant()->ClearIfInitFailed(txn_->txn_id());
+  TRACE("Released schema lock");
+}
 
 WriteOpState::~WriteOpState() {
   Reset();

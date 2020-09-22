@@ -36,6 +36,7 @@ set(INTEGRATION_TESTS_SRCS
 
 add_library(itest_util ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(itest_util
+  tablet_test_util
   tserver_proto
   tserver_test_util
   master_proto

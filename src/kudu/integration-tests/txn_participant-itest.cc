@@ -30,8 +30,12 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/ref_counted.h"
@@ -42,8 +46,10 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/tablet/txn_participant.h"
@@ -52,6 +58,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -78,8 +85,8 @@ using kudu::tablet::TabletReplica;
 using kudu::tablet::Txn;
 using kudu::tablet::TxnParticipant;
 using kudu::tserver::ParticipantOpPB;
-using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::ParticipantResponsePB;
+using kudu::tserver::WriteRequestPB;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -158,8 +165,10 @@ class TxnParticipantITest : public KuduTest {
   }
 
   // Creates a single-tablet replicated table.
-  void SetUpTable(string* table_name = nullptr) {
+  void SetUpTable(string* table_name = nullptr,
+                  TestWorkload::WritePattern pattern = TestWorkload::INSERT_RANDOM_ROWS) {
     TestWorkload w(cluster_.get());
+    w.set_write_pattern(pattern);
     w.Setup();
     w.Start();
     while (w.rows_inserted() < 1) {
@@ -169,6 +178,7 @@ class TxnParticipantITest : public KuduTest {
       *table_name = w.table_name();
     }
     w.StopAndJoin();
+    initial_row_count_ = w.rows_inserted();
   }
 
   // Quiesces servers such that the tablet server at index 'ts_idx' is set up
@@ -192,6 +202,7 @@ class TxnParticipantITest : public KuduTest {
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
   unordered_map<string, TServerDetails*> ts_map_;
+  int initial_row_count_;
 };
 
 // Test that participant ops only applied to followers via replication from
@@ -302,6 +313,7 @@ TEST_P(ParticipantCopyITest, TestCopyParticipantOps) {
       ASSERT_TRUE(leader_replica->tablet_metadata()->HasTxnMetadata(i));
     }
     TestWorkload w(cluster_.get());
+    w.set_already_present_allowed(true);
     w.set_table_name(table_name);
     w.Setup();
     w.Start();
@@ -452,49 +464,78 @@ class TxnParticipantElectionStormITest : public TxnParticipantITest {
     opts.num_tablet_servers = 3;
     cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
     ASSERT_OK(cluster_->Start());
-    NO_FATALS(SetUpTable());
+    // We'll continue writing from where we left off, so write in order.
+    NO_FATALS(SetUpTable(nullptr, TestWorkload::INSERT_SEQUENTIAL_ROWS));
   }
 };
 
 TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
   vector<TabletReplica*> replicas;
+  const string tablet_id = cluster_->mini_tablet_server(0)->ListTablets()[0];
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    auto* ts = cluster_->mini_tablet_server(i);
-    const auto& tablets = ts->ListTablets();
     scoped_refptr<TabletReplica> r;
-    ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
+    ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
+        tablet_id, &r));
     replicas.emplace_back(r.get());
   }
+
+  const auto write = [&] (int64_t txn_id, int row_id, TabletReplica* replica) {
+    WriteRequestPB req;
+    req.set_txn_id(txn_id);
+    req.set_tablet_id(tablet_id);
+    const auto& schema = GetSimpleTestSchema();
+    RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
+    KuduPartialRow row(&schema);
+    RETURN_NOT_OK(row.SetInt32(0, row_id));
+    RETURN_NOT_OK(row.SetInt32(1, row_id));
+    RowOperationsPBEncoder enc(req.mutable_row_operations());
+    enc.Add(RowOperationsPB::INSERT, row);
+    return tablet::TabletReplicaTestBase::ExecuteWrite(replica, req);
+  };
+
   // Inject latency so elections become more frequent and wait a bit for our
   // latency injection to kick in.
   FLAGS_raft_enable_pre_election = false;
   FLAGS_consensus_inject_latency_ms_in_notifications = 1.5 * FLAGS_raft_heartbeat_interval_ms;;
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
 
-  // Send a participant op to all replicas concurrently. Leaders should attempt
-  // to replicate, and followers should immediately reject the request. There
-  // will be a real chance that the leader op will not be successfully
-  // replicated because of an election change.
   constexpr const int kNumTxns = 10;
   vector<ParticipantOpPB::ParticipantOpType> last_successful_ops_per_txn(kNumTxns);
+  vector<int> num_successful_writes_per_txn(kNumTxns);
   for (int txn_id = 0; txn_id < kNumTxns; txn_id++) {
+    // Send some writes in the background and keep track of the number of
+    // successful rows.
+    CountDownLatch prt_ops_done(1);
+    thread writers_thread([&] {
+      int num_successful_writes = 0;
+      for (int cur_row = initial_row_count_; prt_ops_done.count() > 0; cur_row++) {
+        vector<Status> statuses(cluster_->num_tablet_servers());
+        vector<thread> write_threads;
+        for (int r = 0; r < cluster_->num_tablet_servers(); r++) {
+          write_threads.emplace_back([&, r, cur_row] {
+            statuses[r] = write(txn_id, cur_row, replicas[r]);
+          });
+        }
+        for (auto& wt : write_threads) {
+          wt.join();
+        }
+        for (const auto& s : statuses) {
+          if (s.ok()) {
+            num_successful_writes++;
+            break;
+          }
+        }
+      }
+      num_successful_writes_per_txn[txn_id] = num_successful_writes;
+    });
+
+    // Send a participant op to all replicas concurrently. Leaders should
+    // attempt to replicate, and followers should immediately reject the
+    // request. There will be a real chance that the leader op will not be
+    // successfully replicated because of a leadership change.
     ParticipantOpPB::ParticipantOpType last_successful_op = ParticipantOpPB::UNKNOWN;;
     for (const auto& op : kCommitSequence) {
-      vector<thread> threads;
-      vector<Status> statuses(cluster_->num_tablet_servers(), Status::Incomplete(""));
-      for (int r = 0; r < cluster_->num_tablet_servers(); r++) {
-        threads.emplace_back([&, r] {
-          ParticipantResponsePB resp;
-          Status s = CallParticipantOp(replicas[r], txn_id, op, kDummyCommitTimestamp, &resp);
-          if (resp.has_error()) {
-            s = StatusFromPB(resp.error().status());
-          }
-          statuses[r] = s;
-        });
-      }
-      for (auto& t : threads) {
-        t.join();
-      }
+      vector<Status> statuses = RunOnReplicas(replicas, txn_id, op);
       // If this op succeeded on any replica, keep track of it -- it indicates
       // what the final state of each transaction should be.
       for (const auto& s : statuses) {
@@ -504,9 +545,12 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
       }
       last_successful_ops_per_txn[txn_id] = last_successful_op;
     }
+    prt_ops_done.CountDown();
+    writers_thread.join();
   }
   // Validate that each replica has each transaction in the appropriate state.
   vector<TxnParticipant::TxnEntry> expected_txns;
+  int expected_rows = initial_row_count_;
   for (int txn_id = 0; txn_id < kNumTxns; txn_id++) {
     const auto& last_successful_op = last_successful_ops_per_txn[txn_id];
     if (last_successful_op == ParticipantOpPB::UNKNOWN) {
@@ -521,6 +565,7 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
         expected_state = Txn::kCommitInProgress;
         break;
       case ParticipantOpPB::FINALIZE_COMMIT:
+        expected_rows += num_successful_writes_per_txn[txn_id];
         expected_state = Txn::kCommitted;
         break;
       default:
@@ -539,6 +584,9 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
           << Substitute("Expected: $0,\nActual: $1",
                         TxnsAsString(expected_txns), TxnsAsString(actual_txns));
     });
+  }
+  for (int i = 0; i < replicas.size(); i++) {
+    ASSERT_EQ(expected_rows, replicas[i]->CountLiveRowsNoFail());
   }
 
   // Now restart the cluster and ensure the transaction state is restored.
@@ -569,6 +617,7 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
         << Substitute("Expected: $0,\nActual: $1",
                       TxnsAsString(expected_txns),
                       TxnsAsString(actual_txns_not_initting));
+    ASSERT_EQ(expected_rows, r->CountLiveRowsNoFail());
   }
 }
 

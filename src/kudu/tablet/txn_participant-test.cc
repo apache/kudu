@@ -33,10 +33,13 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -50,8 +53,10 @@
 #include "kudu/tablet/ops/op_driver.h"
 #include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/ops/participant_op.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_metadata.h"
@@ -59,6 +64,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -71,6 +77,7 @@ using kudu::tserver::ParticipantResponsePB;
 using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::WriteRequestPB;
 using std::map;
+using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
@@ -83,8 +90,14 @@ namespace kudu {
 namespace tablet {
 
 namespace {
+
+constexpr const int64_t kTxnId = 1;
+
+constexpr const int64_t kTxnOne = 1;
+constexpr const int64_t kTxnTwo = 2;
+
 Schema GetTestSchema() {
-  return Schema({ ColumnSchema("key", INT32) }, 1);
+  return Schema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
 }
 
 // A participant op that waits to start and finish applying based on input
@@ -129,16 +142,38 @@ class TxnParticipantTest : public TabletReplicaTestBase {
     ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
   }
 
-  Status Write(int key) {
+  Status Write(int key, boost::optional<int64_t> txn_id = boost::none,
+               RowOperationsPB::Type type = RowOperationsPB::INSERT) {
     WriteRequestPB req;
+    if (txn_id) {
+      req.set_txn_id(*txn_id);
+    }
     req.set_tablet_id(tablet_replica_->tablet_id());
     const auto& schema = GetTestSchema();
     RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
     KuduPartialRow row(&schema);
     RETURN_NOT_OK(row.SetInt32(0, key));
+    if (type != RowOperationsPB::DELETE &&
+        type != RowOperationsPB::DELETE_IGNORE) {
+      RETURN_NOT_OK(row.SetInt32(1, key));
+    }
     RowOperationsPBEncoder enc(req.mutable_row_operations());
-    enc.Add(RowOperationsPB::INSERT, row);
+    enc.Add(type, row);
     return ExecuteWrite(tablet_replica_.get(), req);
+  }
+
+  Status Delete(int key) {
+    return Write(key, boost::none, RowOperationsPB::DELETE);
+  }
+
+  Status CallParticipantOpCheckResp(int64_t txn_id, ParticipantOpPB::ParticipantOpType op_type,
+                                    int64_t ts_val) {
+    ParticipantResponsePB resp;
+    RETURN_NOT_OK(CallParticipantOp(tablet_replica_.get(), txn_id, op_type, ts_val, &resp));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+    return Status::OK();
   }
 
   // Writes an op to the WAL, rolls over onto a new WAL segment, and flushes
@@ -153,6 +188,20 @@ class TxnParticipantTest : public TabletReplicaTestBase {
 
   TxnParticipant* txn_participant() {
     return tablet_replica_->tablet()->txn_participant();
+  }
+
+  Status IterateToStrings(vector<string>* ret) {
+    unique_ptr<RowwiseIterator> iter;
+    RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(GetTestSchema(), &iter));
+    RETURN_NOT_OK(iter->Init(nullptr));
+    vector<string> out;
+    RETURN_NOT_OK(IterateToStringList(iter.get(), &out));
+    *ret = std::move(out);
+    return Status::OK();
+  }
+
+  clock::Clock* clock() {
+    return tablet_replica_->tablet()->clock();
   }
 };
 
@@ -218,7 +267,6 @@ TEST_F(TxnParticipantTest, TestTransactionNotFound) {
 }
 
 TEST_F(TxnParticipantTest, TestIllegalTransitions) {
-  const int64_t kTxnId = 1;
   const auto check_valid_op = [&] (const ParticipantOpPB::ParticipantOpType& type, int64_t txn_id) {
     ParticipantResponsePB resp;
     ASSERT_OK(CallParticipantOp(
@@ -308,7 +356,6 @@ TEST_F(TxnParticipantTest, TestConcurrentTransactions) {
 // Concurrently try to apply every op and test, based on the results, that some
 // invariants are maintained.
 TEST_F(TxnParticipantTest, TestConcurrentOps) {
-  const int64_t kTxnId = 1;
   const map<ParticipantOpPB::ParticipantOpType, int> kIndexByOps = {
     { ParticipantOpPB::BEGIN_TXN, 0 },
     { ParticipantOpPB::BEGIN_COMMIT, 1},
@@ -370,7 +417,6 @@ TEST_F(TxnParticipantTest, TestConcurrentOps) {
 }
 
 TEST_F(TxnParticipantTest, TestReplayParticipantOps) {
-  constexpr const int64_t kTxnId = 1;
   for (const auto& type : kCommitSequence) {
     ParticipantResponsePB resp;
     ASSERT_OK(CallParticipantOp(
@@ -397,9 +443,7 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
   const auto check_participant_ops_are_anchored =
     [&] (int64_t txn_id, const vector<ParticipantOpPB::ParticipantOpType>& ops) {
       for (const auto& op : ops) {
-        ParticipantResponsePB resp;
-        ASSERT_OK(CallParticipantOp(tablet_replica_.get(), txn_id, op,
-                                    kDummyCommitTimestamp, &resp));
+        ASSERT_OK(CallParticipantOpCheckResp(txn_id, op, kDummyCommitTimestamp));
         ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
         expected_index++;
         if (op == ParticipantOpPB::BEGIN_COMMIT) {
@@ -429,7 +473,6 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
 // restarts, and that the appropriate anchors are in place as we progress
 // through a transaction's life cycle.
 TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
-  const int64_t kTxnId = 1;
   // First, do a sanity check that there's nothing GCable.
   int64_t gcable_size;
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
@@ -437,10 +480,8 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
 
   // Perform some initial participant ops and roll the WAL segments so there
   // are some candidates for WAL GC.
-  ParticipantResponsePB resp;
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN,
+                                       kDummyCommitTimestamp));
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
   ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
@@ -464,9 +505,8 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   // Write and flush a BEGIN_COMMIT op. Once we GC, our WAL will start on this
   // op, and WALs should be anchored until the commit is finalized, regardless
   // of whether there are more segments.
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
   ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
   ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
   // There should be two anchors for this op: one that is in place until the
@@ -494,9 +534,8 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
 
   // Once we finalize the commit, the BEGIN_COMMIT anchor should be released.
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
@@ -523,18 +562,13 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
 // Test that we can replay BEGIN_COMMIT ops, given it anchors WALs until
 // metadata flush _and_ until the transaction is finalized or aborted.
 TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
-  const int64_t kTxnId = 1;
-  ParticipantResponsePB resp;
   // Start a transaction and begin committing.
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
   // We should have two anchors: one that lasts until we flush, another that
   // lasts until we finalize the commit.
   ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
@@ -554,9 +588,8 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
 
   // The anchor from the BEGIN_COMMIT op should be gone, but we should have
   // another anchor for the FINALIZE_COMMIT op until we flush the metadata.
@@ -576,17 +609,12 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
 
 // Like the above test but finalizing the commit before flushing the metadata.
 TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
-  const int64_t kTxnId = 1;
-  ParticipantResponsePB resp;
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
   auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
   ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
   ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
   ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
   const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
 
@@ -600,9 +628,8 @@ TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
   // We should have two anchors, one that lasts until we flush, another that
   // lasts until we finalize.
   ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId,
-                              ParticipantOpPB::FINALIZE_COMMIT, kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
 
   // Finalizing the commit shouldn't affect our metadata.
   txn_meta.reset();
@@ -624,11 +651,7 @@ class MetadataFlushTxnParticipantTest : public TxnParticipantTest,
 // Test rebuilding transaction state from the WALs and metadata.
 TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   const bool should_flush = GetParam();
-  const int64_t kTxnId = 1;
-  ParticipantResponsePB resp;
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
   if (should_flush) {
     ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   }
@@ -637,9 +660,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
       { kTxnId, Txn::kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                                       kDummyCommitTimestamp));
   if (should_flush) {
     ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   }
@@ -648,9 +670,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
       { kTxnId, Txn::kCommitInProgress, -1 }
   }), txn_participant()->GetTxnsForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
   if (should_flush) {
     ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   }
@@ -662,9 +683,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
 
   // Now perform the same validation but for a transaction that gets aborted.
   const int64_t kAbortedTxnId = 2;
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kAbortedTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN,
+                                       kDummyCommitTimestamp));
   if (should_flush) {
     ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   }
@@ -673,9 +693,8 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
       { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
       { kAbortedTxnId, Txn::kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kAbortedTxnId, ParticipantOpPB::ABORT_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN,
+                                       kDummyCommitTimestamp));
   if (should_flush) {
     ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   }
@@ -685,12 +704,83 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
       { kAbortedTxnId, Txn::kAborted, -1 }
   }), txn_participant()->GetTxnsForTests());
 }
+
+// Test rebuilding transaction state, including writes, from WALs and metadata.
+TEST_P(MetadataFlushTxnParticipantTest, TestReplayTransactionalInserts) {
+  const bool should_flush = GetParam();
+  constexpr const int64_t kAbortedTxnId = 2;
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnId));
+  ASSERT_OK(Write(0, kAbortedTxnId));
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+
+  // As long as we haven't finalized the transaction, we shouldn't be able to
+  // iterate through its mutations, even across restarts.
+  vector<string> rows;
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN,
+                                       clock()->Now().value()));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // Once we committed the transaction, we should see the rows.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+}
+
+// Test replaying mutations to transactional MRSs.
+TEST_P(MetadataFlushTxnParticipantTest, TestReplayUpdatesToTransactionalMRS) {
+  const bool should_flush = GetParam();
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnId));
+  ASSERT_OK(Write(1, kTxnId));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+  ASSERT_OK(Delete(0));
+  vector<string> rows;
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+}
+
 INSTANTIATE_TEST_CASE_P(ShouldFlushMetadata, MetadataFlushTxnParticipantTest,
     ::testing::Values(true, false));
 
 // Similar to the above test, but checking that in-flight ops anchor the WALs.
 TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
-  const int64_t kTxnId = 1;
   ParticipantRequestPB req;
   ParticipantResponsePB resp;
   auto op_state = NewParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
@@ -700,6 +790,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   CountDownLatch apply_continue(1);
   op_state->set_completion_callback(std::unique_ptr<OpCompletionCallback>(
       new LatchOpCompletionCallback<tserver::ParticipantResponsePB>(&latch, &resp)));
+
   scoped_refptr<OpDriver> driver;
   unique_ptr<DelayedParticipantOp> op(
       new DelayedParticipantOp(&apply_start, &apply_continue, std::move(op_state)));
@@ -735,6 +826,7 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   // Add some segments to ensure there are enough segments to GC.
   ASSERT_OK(WriteRolloverAndFlush(current_key++));
   ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_EQ(0, gcable_size);
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
 
@@ -750,6 +842,511 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
       { kTxnId, Txn::kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
 }
+
+// Test that we can only write to transactions if they are open.
+TEST_F(TxnParticipantTest, TestWriteToOpenTransactionsOnly) {
+  constexpr const int64_t kAbortedTxnId = 2;
+  Status s = Write(0, kTxnId);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnId));
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  // Even if the row already exists, we shouldn't get an AlreadyPresent error;
+  // the transaction's state is checked much earlier than the presence check.
+  s = Write(0, kTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  s = Write(1, kTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       kDummyCommitTimestamp));
+  s = Write(0, kTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  s = Write(1, kTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(2, kAbortedTxnId));
+  ASSERT_OK(CallParticipantOpCheckResp(kAbortedTxnId, ParticipantOpPB::ABORT_TXN, -1));
+  s = Write(2, kAbortedTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  s = Write(3, kAbortedTxnId);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+}
+
+// Test that we get an appropriate error when attempting transactional ops that
+// are not supported.
+TEST_F(TxnParticipantTest, TestUnsupportedOps) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  Status s = Write(0, kTxnId, RowOperationsPB::UPSERT);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  s = Write(0, kTxnId, RowOperationsPB::UPDATE);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  s = Write(0, kTxnId, RowOperationsPB::UPDATE_IGNORE);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+
+  // None of the ops should have done anything.
+  ASSERT_EQ(0, tablet_replica_->CountLiveRowsNoFail());
+
+  s = Write(0, kTxnId, RowOperationsPB::DELETE);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+  s = Write(0, kTxnId, RowOperationsPB::DELETE_IGNORE);
+  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+}
+
+// Test that rows inserted to transactional stores only show up when the
+// transactions complete.
+TEST_F(TxnParticipantTest, TestInsertToTransactionMRS) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnOne));
+  ASSERT_OK(Write(1, kTxnTwo));
+  ASSERT_OK(Write(2, kTxnTwo));
+
+  vector<string> rows;
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  // Only after we finalize a transaction's commit should we see its rows.
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(3, rows.size());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(3, rows.size());
+}
+
+// Test that rows inserted to transactional stores don't show up if the
+// transaction is aborted.
+TEST_F(TxnParticipantTest, TestDontReadAbortedInserts) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnOne));
+  ASSERT_OK(Write(1, kTxnTwo));
+
+  vector<string> rows;
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // Even if we begin committing, if the transaction is ultimately aborted, we
+  // should see nothing.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::ABORT_TXN, -1));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::ABORT_TXN, -1));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+}
+
+// Test that rows inserted as a part of a transaction cannot be updated if the
+// transaction is aborted.
+TEST_F(TxnParticipantTest, TestUpdateAfterAborting) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnId));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::ABORT_TXN, -1));
+  Status s = Write(0, boost::none, RowOperationsPB::UPDATE);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_OK(Write(0, boost::none, RowOperationsPB::UPDATE_IGNORE));
+  ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->update_ignore_errors->value());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_EQ(0, tablet_replica_->CountLiveRowsNoFail());
+
+  s = Write(0, boost::none, RowOperationsPB::DELETE);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_OK(Write(0, boost::none, RowOperationsPB::DELETE_IGNORE));
+  ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->delete_ignore_errors->value());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_EQ(0, tablet_replica_->CountLiveRowsNoFail());
+
+  ASSERT_OK(Write(0, boost::none, RowOperationsPB::UPSERT));
+  ASSERT_EQ(1, tablet_replica_->CountLiveRowsNoFail());
+}
+
+// Test that we can update rows that were inserted and committed as a part of a
+// transaction.
+TEST_F(TxnParticipantTest, TestUpdateCommittedTransactionMRS) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0, kTxnId));
+
+  // Since we haven't committed yet, we should see no rows.
+  vector<string> rows;
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  Status s = Delete(0);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+
+  // We still haven't finished committing, so we should see no rows.
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+  s = Delete(0);
+  ASSERT_TRUE(s.IsNotFound());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+
+  // We should be able to update committed, transactional stores.
+  ASSERT_OK(Delete(0));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // We should be able to re-insert the deleted row, even if to a row written
+  // during a transaction.
+  ASSERT_OK(Write(0));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+}
+
+// Test that we can flush multiple MRSs, and that when restarting, ops are
+// replayed (or not) as appropriate.
+TEST_F(TxnParticipantTest, TestFlushMultipleMRSs) {
+  const int kNumTxns = 3;
+  const int kNumRowsPerTxn = 100;
+  vector<string> rows;
+  Tablet* tablet = tablet_replica_->tablet();
+  scoped_refptr<TabletComponents> comps;
+  for (int t = 0; t < kNumTxns; t++) {
+    ASSERT_OK(CallParticipantOpCheckResp(t, ParticipantOpPB::BEGIN_TXN, kDummyCommitTimestamp));
+
+    // Since we haven't committed anything, the tablet components shouldn't
+    // have any transactional MRSs.
+    tablet->GetComponents(&comps);
+    ASSERT_TRUE(comps->txn_memrowsets.empty());
+  }
+  for (int t = 0; t < kNumTxns; t++) {
+    for (int r = 0; r < kNumRowsPerTxn; r++) {
+      ASSERT_OK(Write(t * kNumRowsPerTxn + r, t));
+    }
+    ASSERT_OK(CallParticipantOpCheckResp(t, ParticipantOpPB::BEGIN_COMMIT, kDummyCommitTimestamp));
+    ASSERT_OK(CallParticipantOpCheckResp(t, ParticipantOpPB::FINALIZE_COMMIT,
+                                         clock()->Now().value()));
+    ASSERT_OK(IterateToStrings(&rows));
+    ASSERT_EQ((t + 1) * kNumRowsPerTxn, rows.size());
+    tablet->GetComponents(&comps);
+    ASSERT_EQ(t + 1, comps->txn_memrowsets.size());
+  }
+  // After restarting, we should have the same number of rows and MRSs.
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  tablet = tablet_replica_->tablet();
+
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(kNumTxns * kNumRowsPerTxn, rows.size());
+  tablet->GetComponents(&comps);
+  ASSERT_EQ(kNumTxns, comps->txn_memrowsets.size());
+
+  // Once flushed, we should have the same number of rows, but no txn MRSs.
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(kNumTxns * kNumRowsPerTxn, rows.size());
+  tablet->GetComponents(&comps);
+  ASSERT_TRUE(comps->txn_memrowsets.empty());
+
+  // The verifications should hold after restarting the replica after flushing.
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  tablet = tablet_replica_->tablet();
+
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(kNumTxns * kNumRowsPerTxn, rows.size());
+  tablet->GetComponents(&comps);
+  ASSERT_TRUE(comps->txn_memrowsets.empty());
+}
+
+// Test that INSERT_IGNORE ops work when the row exists in the transactional
+// MRS.
+TEST_F(TxnParticipantTest, TestInsertIgnoreInTransactionMRS) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+
+  // Insert into a new transactional MRS, and then INSERT_IGNORE as a part of a
+  // transaction.
+  vector<string> rows;
+  ASSERT_OK(Write(0, kTxnId));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_TRUE(rows.empty());
+
+  Status s = Write(0, kTxnId);
+  ASSERT_TRUE(s.IsAlreadyPresent());
+  ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
+
+  ASSERT_OK(Write(0, kTxnId, RowOperationsPB::INSERT_IGNORE));
+  ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+}
+
+// Test that INSERT_IGNORE ops work when the row exists in the main MRS.
+TEST_F(TxnParticipantTest, TestInsertIgnoreInMainMRS) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  // Insert into the main MRS, and then INSERT_IGNORE as a part of a
+  // transaction.
+  vector<string> rows;
+  ASSERT_OK(Write(0));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+
+  Status s = Write(0, kTxnId);
+  ASSERT_TRUE(s.IsAlreadyPresent());
+  ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
+
+  ASSERT_OK(Write(0, kTxnId, RowOperationsPB::INSERT_IGNORE));
+  ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->insert_ignore_errors->value());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+}
+
+// Test that the live row count accounts for transactional MRSs.
+TEST_F(TxnParticipantTest, TestLiveRowCountAccountsForTransactionalMRSs) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(Write(0));
+  ASSERT_OK(Write(1, kTxnOne));
+  ASSERT_OK(Write(2, kTxnTwo));
+  ASSERT_EQ(1, tablet_replica_->CountLiveRowsNoFail());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_EQ(1, tablet_replica_->CountLiveRowsNoFail());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_EQ(2, tablet_replica_->CountLiveRowsNoFail());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_EQ(2, tablet_replica_->CountLiveRowsNoFail());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_EQ(3, tablet_replica_->CountLiveRowsNoFail());
+  ASSERT_OK(Delete(1));
+  ASSERT_OK(Delete(2));
+  ASSERT_EQ(1, tablet_replica_->CountLiveRowsNoFail());
+}
+
+// Test that the MRS size metrics account for transactional MRSs.
+TEST_F(TxnParticipantTest, TestSizeAccountsForTransactionalMRS) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_TRUE(tablet_replica_->tablet()->MemRowSetEmpty());
+
+  auto* tablet = tablet_replica_->tablet();
+  auto mrs_size_with_empty = tablet->MemRowSetSize();
+
+  ASSERT_OK(Write(1, kTxnOne));
+  ASSERT_OK(Write(2, kTxnTwo));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_TRUE(tablet->MemRowSetEmpty());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  auto mrs_size_with_one = tablet->MemRowSetSize();
+  ASSERT_GT(mrs_size_with_one, mrs_size_with_empty);
+  ASSERT_FALSE(tablet->MemRowSetEmpty());
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  auto mrs_size_with_two = tablet->MemRowSetSize();
+  ASSERT_GT(mrs_size_with_two, mrs_size_with_one);
+
+  // The MRSs shouldn't be considered empty even if their rows are deleted,
+  // since they still contain mutations.
+  ASSERT_OK(Delete(1));
+  ASSERT_OK(Delete(2));
+  ASSERT_FALSE(tablet_replica_->tablet()->MemRowSetEmpty());
+}
+
+// Test that the MRS anchored WALs metric accounts for transactional MRSs.
+TEST_F(TxnParticipantTest, TestWALsAnchoredAccountsForTransactionalMRS) {
+  const auto mrs_wal_size = [&] {
+    map<int64_t, int64_t> replay_size_map;
+    CHECK_OK(tablet_replica_->GetReplaySizeMap(&replay_size_map));
+    return tablet_replica_->tablet()->MemRowSetLogReplaySize(replay_size_map);
+  };
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+
+  // Write a row and roll over onto a new WAL segment so there are bytes to GC.
+  ASSERT_OK(Write(0, kTxnOne));
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+
+  // Nothing should be considered anchored, as the transaction hasn't been
+  // committed -- it thus wouldn't make sense to perform maintenance ops based
+  // on WAL segments for the uncommitted write.
+  ASSERT_EQ(0, mrs_wal_size());
+
+  // Once we commit, we should see some GCable bytes.
+  ASSERT_OK(Write(1, kTxnOne));
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  auto mrs_wal_size_with_first_committed = mrs_wal_size();
+  ASSERT_GT(mrs_wal_size_with_first_committed, 0);
+
+  ASSERT_OK(Write(2, kTxnTwo));
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+  auto mrs_wal_size_with_both_written = mrs_wal_size();
+
+  // Despite not having committed the second transaction, we still wrote new
+  // WAL segments, and that's enough to bump the MRS WALs anchored value.
+  ASSERT_GT(mrs_wal_size_with_both_written, mrs_wal_size_with_first_committed);
+
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+
+  auto mrs_wal_size_with_both_committed = mrs_wal_size();
+  ASSERT_EQ(mrs_wal_size_with_both_committed, mrs_wal_size_with_both_written);
+}
+
+// Test racing writes with commits, ensuring that we cease writing once
+// beginning to commit.
+TEST_F(TxnParticipantTest, TestRacingCommitAndWrite) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_TXN, -1));
+  int first_error_row = -1;
+  CountDownLatch first_write(1);
+  thread t([&] {
+    for (int row = 0 ;; row++) {
+      Status s = Write(row, kTxnId);
+      if (!s.ok()) {
+        first_error_row = row;
+        break;
+      }
+      first_write.CountDown();
+    }
+  });
+  first_write.Wait();
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  t.join();
+  ASSERT_GT(first_error_row, 0);
+  ASSERT_EQ(first_error_row, tablet_replica_->CountLiveRowsNoFail());
+}
+
+// Test that the write metrics account for transactional rowsets.
+TEST_F(TxnParticipantTest, TestMRSLookupsMetric) {
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_TXN, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnTwo, ParticipantOpPB::BEGIN_TXN, -1));
+
+  // A non-transactional write should not check any MRSs -- it should just be
+  // inserted into the main MRS.
+  ASSERT_OK(Write(0));
+  ASSERT_EQ(0, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+
+  // A transactional write will check the main MRS before trying to insert to
+  // the transactional MRS.
+  ASSERT_OK(Write(1, kTxnOne));
+  ASSERT_EQ(1, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+  ASSERT_OK(Write(2, kTxnTwo));
+  ASSERT_EQ(2, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+
+  // Once a transaction is committed, its MRS and the main MRS will be checked
+  // for new transactional writes.
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::BEGIN_COMMIT, -1));
+  ASSERT_OK(CallParticipantOpCheckResp(kTxnOne, ParticipantOpPB::FINALIZE_COMMIT,
+                                       clock()->Now().value()));
+  ASSERT_OK(Write(3, kTxnTwo));
+  ASSERT_EQ(4, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+
+  // Non-transactional writes will only check the committed transactional MRS,
+  // before attempting to insert to the main MRS.
+  ASSERT_OK(Write(4));
+  ASSERT_EQ(5, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+
+  // Trying to delete a row that doesn't exist will consult just the committed
+  // transactional MRS before attempting to delete from the main MRS.
+  Status s = Delete(10);
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_EQ(6, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+
+  // Deleting a row that exists in a MRS, the committed transactional MRS is
+  // checked, and the successful deletion from the MRS increments the lookup
+  // value, regardless of which MRS the row is in.
+  ASSERT_OK(Delete(0));
+  ASSERT_EQ(8, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+  ASSERT_OK(Delete(1));
+  ASSERT_EQ(10, tablet_replica_->tablet()->metrics()->mrs_lookups->value());
+}
+
+struct ConcurrencyParams {
+  int num_txns;
+  int num_rows_per_thread;
+};
+class TxnParticipantConcurrencyTest : public TxnParticipantTest,
+                                      public ::testing::WithParamInterface<ConcurrencyParams> {};
+
+// Test inserting into multiple transactions from multiple threads.
+TEST_P(TxnParticipantConcurrencyTest, TestConcurrentDisjointInsertsTxn) {
+  const auto& params = GetParam();
+  const auto& num_txns = params.num_txns;
+  const int kNumThreads = 10;
+  const auto& rows_per_thread = params.num_rows_per_thread;
+  for (int txn_id = 0; txn_id < num_txns; txn_id++) {
+    ASSERT_OK(CallParticipantOpCheckResp(txn_id, ParticipantOpPB::BEGIN_TXN, -1));
+  }
+  // Insert to multiple transactions concurrently.
+  vector<thread> threads;
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i] {
+      for (int r = 0; r < rows_per_thread; r++) {
+        int row = i * rows_per_thread + r;
+        ASSERT_OK(Write(row, row % num_txns));
+      }
+    });
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  vector<string> rows;
+  for (int txn_id = 0; txn_id < num_txns; txn_id++) {
+    ASSERT_OK(CallParticipantOpCheckResp(txn_id, ParticipantOpPB::BEGIN_COMMIT, -1));
+  }
+  ASSERT_OK(IterateToStrings(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // As we commit our transactions, we should see more and more rows show up.
+  for (int txn_id = 0; txn_id < num_txns; txn_id++) {
+    ASSERT_OK(CallParticipantOpCheckResp(txn_id, ParticipantOpPB::FINALIZE_COMMIT,
+                                         clock()->Now().value()));
+    ASSERT_OK(IterateToStrings(&rows));
+    ASSERT_EQ(kNumThreads * rows_per_thread * (txn_id + 1) / num_txns, rows.size());
+  }
+}
+INSTANTIATE_TEST_CASE_P(ConcurrencyParams, TxnParticipantConcurrencyTest,
+    ::testing::Values(
+      ConcurrencyParams{ /*num_txns*/1, /*num_rows_per_thread*/1 },
+      ConcurrencyParams{ /*num_txns*/10, /*num_rows_per_thread*/1 },
+      ConcurrencyParams{ /*num_txns*/1, /*num_rows_per_thread*/10 }
+    ));
 
 } // namespace tablet
 } // namespace kudu
