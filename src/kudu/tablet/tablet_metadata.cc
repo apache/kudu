@@ -27,6 +27,7 @@
 #include <utility>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/stubs/port.h>
 
@@ -34,9 +35,9 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -48,6 +49,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -504,7 +506,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           new TxnMetadata(
               txn_meta.has_aborted() && txn_meta.aborted(),
               txn_meta.has_commit_timestamp() ?
-                  boost::make_optional(txn_meta.commit_timestamp()) :
+                  boost::make_optional(Timestamp(txn_meta.commit_timestamp())) :
                   boost::none
           ));
     }
@@ -738,7 +740,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     const auto& txn_meta = txn_id_and_metadata.second;
     const auto& commit_ts = txn_meta->commit_timestamp();
     if (commit_ts) {
-      meta_pb.set_commit_timestamp(*commit_ts);
+      meta_pb.set_commit_timestamp(commit_ts->value());
     }
     if (txn_meta->aborted()) {
       meta_pb.set_aborted(true);
@@ -805,7 +807,7 @@ void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timesta
   std::lock_guard<LockType> l(data_lock_);
   auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
   CHECK(txn_metadata);
-  txn_metadata->set_commit_timestamp(commit_timestamp.value());
+  txn_metadata->set_commit_timestamp(commit_timestamp);
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
 }
 

@@ -37,6 +37,7 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -89,6 +90,7 @@ class CompactionInput;
 class MemRowSet;
 class Mutation;
 class OperationResultPB;
+class TxnMetadata;
 
 // The value stored in the CBTree for a single row.
 class MRSRow {
@@ -210,11 +212,20 @@ class MemRowSet : public RowSet,
   class Iterator;
 
   static Status Create(int64_t id,
-                       const Schema &schema,
+                       const Schema& schema,
                        log::LogAnchorRegistry* log_anchor_registry,
                        std::shared_ptr<MemTracker> parent_tracker,
                        std::shared_ptr<MemRowSet>* mrs);
 
+  // Create() variant for a MRS that get inserted to by a single transaction of
+  // the given transaction ID and metadata.
+  static Status Create(int64_t id,
+                       const Schema& schema,
+                       int64_t txn_id,
+                       scoped_refptr<TxnMetadata> txn_metadata,
+                       log::LogAnchorRegistry* log_anchor_registry,
+                       std::shared_ptr<MemTracker> parent_tracker,
+                       std::shared_ptr<MemRowSet>* mrs);
   ~MemRowSet();
 
   // Insert a new row into the memrowset.
@@ -230,7 +241,6 @@ class MemRowSet : public RowSet,
   Status Insert(Timestamp timestamp,
                 const ConstContiguousRow& row,
                 const consensus::OpId& op_id);
-
 
   // Update or delete an existing row in the memrowset.
   //
@@ -348,6 +358,19 @@ class MemRowSet : public RowSet,
     return id_;
   }
 
+  // Transaction ID that inserted the rows of this MRS. 'none' if the rows in
+  // this MRS were not inserted as a part of a transaction.
+  const boost::optional<int64_t>& txn_id() const {
+    return txn_id_;
+  }
+
+  // Transaction metadata of the transaction that inserted the rows of this
+  // MRS. 'nullptr' if the rows in this MRS were not inserted as a part of a
+  // transaction.
+  const scoped_refptr<TxnMetadata>& txn_metadata() const {
+    return txn_metadata_;
+  }
+
   std::shared_ptr<RowSetMetadata> metadata() override {
     return std::shared_ptr<RowSetMetadata>(
         reinterpret_cast<RowSetMetadata *>(NULL));
@@ -431,7 +454,9 @@ class MemRowSet : public RowSet,
 
  protected:
   MemRowSet(int64_t id,
-            const Schema &schema,
+            const Schema& schema,
+            boost::optional<int64_t> txn_id,
+            scoped_refptr<TxnMetadata> txn_metadata,
             log::LogAnchorRegistry* log_anchor_registry,
             std::shared_ptr<MemTracker> parent_tracker);
 
@@ -447,8 +472,12 @@ class MemRowSet : public RowSet,
   typedef btree::CBTree<MSBTreeTraits> MSBTree;
 
   int64_t id_;
-
   const Schema schema_;
+
+  // The transaction ID that inserted into this MemRowSet, and its corresponding metadata.
+  boost::optional<int64_t> txn_id_;
+  scoped_refptr<TxnMetadata> txn_metadata_;
+
   std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
   std::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 
@@ -526,7 +555,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return MRSRow(memrowset_.get(), mrsrow_data);
   }
 
-  // Copy the current MRSRow to the 'dst_row' provided using the iterator projection schema.
+  // Copy the current MRSRow to the 'dst_row' provided using the iterator
+  // projection schema. Used in compactions.
   Status GetCurrentRow(RowBlockRow* dst_row,
                        Arena* row_arena,
                        Mutation** redo_head,

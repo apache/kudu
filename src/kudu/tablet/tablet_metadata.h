@@ -19,14 +19,11 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
-#include <boost/none_t.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
@@ -60,47 +57,12 @@ class MinLogIndexAnchorer;
 namespace tablet {
 
 class RowSetMetadata;
+class TxnMetadata;
 
 typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;
 
 extern const int64_t kNoDurableMemStore;
-
-// Encapsulates the persistent state associated with a transaction.
-class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
- public:
-  TxnMetadata(bool aborted = false,
-              boost::optional<int64_t> commit_ts = boost::none)
-      : aborted_(aborted),
-        commit_timestamp_(std::move(commit_ts)) {}
-  void set_aborted() {
-    std::lock_guard<simple_spinlock> l(lock_);
-    CHECK(boost::none == commit_timestamp_);
-    aborted_ = true;
-  }
-  void set_commit_timestamp(int64_t commit_ts) {
-    std::lock_guard<simple_spinlock> l(lock_);
-    CHECK(boost::none == commit_timestamp_);
-    commit_timestamp_ = commit_ts;
-  }
-
-  bool aborted() const {
-    std::lock_guard<simple_spinlock> l(lock_);
-    return aborted_;
-  }
-  boost::optional<int64_t> commit_timestamp() const {
-    std::lock_guard<simple_spinlock> l(lock_);
-    return commit_timestamp_;
-  }
-
- private:
-  friend class RefCountedThreadSafe<TxnMetadata>;
-  ~TxnMetadata() = default;
-
-  mutable simple_spinlock lock_;
-  bool aborted_;
-  boost::optional<int64_t> commit_timestamp_;
-};
 
 // Manages the "blocks tracking" for the specified tablet.
 //

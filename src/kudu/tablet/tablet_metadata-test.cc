@@ -46,6 +46,7 @@
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -260,7 +261,7 @@ TEST_F(TestTabletMetadata, TestTxnMetadata) {
     const auto& committed_txn = FindOrDie(txn_metas, kCommittedTxnId);
     ASSERT_FALSE(committed_txn->aborted());
     ASSERT_NE(boost::none, committed_txn->commit_timestamp());
-    ASSERT_EQ(kDummyTimestamp.value(), *committed_txn->commit_timestamp());
+    ASSERT_EQ(kDummyTimestamp, *committed_txn->commit_timestamp());
 
     const auto& aborted_txn = FindOrDie(txn_metas, kAbortedTxnId);
     ASSERT_TRUE(aborted_txn->aborted());

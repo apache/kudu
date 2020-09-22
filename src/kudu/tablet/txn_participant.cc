@@ -26,9 +26,11 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "kudu/common/timestamp.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/txn_metadata.h"
 
 using kudu::log::LogAnchorRegistry;
 using std::vector;
@@ -120,7 +122,7 @@ vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {
       const auto& commit_ts = txn_meta->commit_timestamp();
       if (commit_ts) {
         txn_entry.state = Txn::kCommitted;
-        txn_entry.commit_timestamp = *commit_ts;
+        txn_entry.commit_timestamp = commit_ts->value();
         continue;
       }
     }
@@ -140,8 +142,8 @@ vector<TxnParticipant::TxnEntry> TxnParticipant::GetTxnsForTests() const {
     const auto& commit_ts = txn_meta->commit_timestamp();
     if (commit_ts) {
       txn_entry.state = Txn::kCommitted;
-      txn_entry.commit_timestamp = *commit_ts;
-      txns.emplace_back(std::move(txn_entry));
+      txn_entry.commit_timestamp = commit_ts->value();
+      txns.emplace_back(txn_entry);
       continue;
     }
   }

@@ -23,11 +23,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
@@ -44,13 +47,17 @@ class MvccSnapshot {
  public:
   MvccSnapshot();
 
-  // Create a snapshot with the current state of the given manager
-  explicit MvccSnapshot(const MvccManager &manager);
+  // Create a kLatest snapshot with the current state of the given manager
+  explicit MvccSnapshot(const MvccManager& manager);
 
-  // Create a snapshot at a specific Timestamp.
+  // Create a kTimestamp snapshot at a specific Timestamp.
   //
   // This snapshot considers all ops with lower timestamps to
-  // be applied, and those with higher timestamps to be nonapplied.
+  // be applied, and those with higher timestamps to be non-applied.
+  //
+  // This snapshot considers all transactions with lower commit timestamps to
+  // be committed, and higher commit timestamps or no commit timestamp to be
+  // non-committed.
   explicit MvccSnapshot(const Timestamp& timestamp);
 
   // Create a snapshot which considers all ops as applied. This is mostly
@@ -73,6 +80,44 @@ class MvccSnapshot {
     }
     // Out-of-line the unlikely case which involves more complex (loopy) code.
     return IsAppliedFallback(timestamp);
+  }
+
+  // Returns true if the given transaction should be considered committed in
+  // this snapshot. Calls to this should always return the same result
+  // assuming:
+  // - Txns start MVCC ops to track when they begin committing,
+  // - Txns assign commit timestamp that are higher than their MVCC ops
+  //   timestamps,
+  // - Txns set either the aborted bit or the commit timestamp before finishing
+  //   their MVCC ops.
+  // - If this is a kTimestamp snapshot, WaitUntil(ALL_APPLIED) was called with
+  //   a timestamp equal to or higher than this snapshot's timestamp.
+  inline bool IsCommitted(const TxnMetadata& txn_metadata) const {
+    boost::optional<Timestamp> commit_mvcc_op_ts;
+    boost::optional<Timestamp> commit_ts;
+    txn_metadata.GetTimestamps(&commit_mvcc_op_ts, &commit_ts);
+    // If there is no commit MVCC op in the metadata, the transaction could not
+    // have been committed at the time this snapshot represents.
+    if (!commit_mvcc_op_ts) {
+      return false;
+    }
+    if (type_ == kLatest) {
+      // If the commit MVCC op finished applying, the commit process is
+      // complete, and commit status should be determined by whether there is a
+      // commit timestamp.
+      // NOTE: we must consult the metadata again *after* checking on the apply
+      // status of the MVCC op; if we were to check the abort status first, we
+      // could race with the transaction aborting, and erroneously return that
+      // an aborted transaction is committed.
+      if (IsApplied(*commit_mvcc_op_ts)) {
+        return !txn_metadata.aborted();
+      }
+      return false;
+    }
+    DCHECK_EQ(kTimestamp, type_);
+    DCHECK_EQ(all_applied_before_, none_applied_at_or_after_);
+    DCHECK(applied_timestamps_.empty());
+    return commit_ts && *commit_ts < all_applied_before_;
   }
 
   // Returns true if this snapshot may have any applied ops with timestamp
@@ -122,9 +167,27 @@ class MvccSnapshot {
   FRIEND_TEST(MvccTest, TestWaitUntilAllApplied_SnapAtTimestampWithInFlights);
   FRIEND_TEST(MvccTest, TestCorrectInitWithNoOps);
 
+  // TODO(awong): it may be worth compiling entirely separate MvccSnapshot
+  // classes for these.
+  enum SnapshotType {
+    // The snapshot is defined entirely by a single timestamp T, indicating
+    // that iterating with this snapshot should return mutations that are
+    // committed as of T.
+    kTimestamp,
+
+    // The snapshot tracks the latest ops that have been applied. Unlike a
+    // 'kTimestamp' snapshot, may include mutations of a timestamp even though
+    // there are in-flight (non-applied) mutations at a lower timestamps.
+    kLatest,
+  };
+
   bool IsAppliedFallback(const Timestamp& timestamp) const;
 
   void AddAppliedTimestamp(Timestamp timestamp);
+
+  // Indicates what kind of snapshot type this is, which determines how
+  // transaction commit ops are viewed in this snapshot.
+  SnapshotType type_;
 
   // Summary rule:
   //   An op T is applied if and only if:
@@ -133,12 +196,15 @@ class MvccSnapshot {
   //
   // In ASCII form, where 'C' represents an applied op,
   // and 'U' represents an nonapplied one:
-  //
+  //                               ___ none_applied_at_or_after_
+  //                              /
   //   CCCCCCCCCCCCCCCCCUUUUUCUUUCU
   //                    |    \___\___ applied_timestamps_
   //                    |
   //                    \- all_applied_before_
-
+  //
+  // If this is a 'kTimestamp' snapshot, 'applied_timestamps_' is empty, and
+  // 'all_applied_before_' and 'none_applied_at_or_after_' are equal value.
 
   // An op timestamp below which all ops have been applied.
   // For any timestamp X, if X < all_applied_before_, then X is applied.
@@ -158,7 +224,6 @@ class MvccSnapshot {
   // or none_applied_at_or_after_. So, using the compact vector structure fits
   // the whole thing on one or two cache lines, and it ends up going faster.
   std::vector<Timestamp::val_type> applied_timestamps_;
-
 };
 
 // Coordinator of MVCC ops. Threads wishing to make updates use
@@ -205,7 +270,7 @@ class MvccManager {
   void AdjustNewOpLowerBound(Timestamp timestamp);
 
   // Take a snapshot of the MVCC state at 'timestamp' (i.e which includes all
-  // ops which have a lower timestamp)
+  // ops which have a lower timestamp).
   //
   // If there are any in-flight ops at a lower timestamp, waits for them to
   // complete before returning.
@@ -213,8 +278,8 @@ class MvccManager {
   // If 'timestamp' was marked safe before the call to this method (e.g. by TimeManager)
   // then the returned snapshot is repeatable.
   Status WaitForSnapshotWithAllApplied(Timestamp timestamp,
-                                         MvccSnapshot* snapshot,
-                                         const MonoTime& deadline) const WARN_UNUSED_RESULT;
+                                       MvccSnapshot* snapshot,
+                                       const MonoTime& deadline) const WARN_UNUSED_RESULT;
 
   // Wait for all operations that are currently APPLYING to finish applying.
   //
@@ -260,9 +325,9 @@ class MvccManager {
   friend class ScopedOp;
   FRIEND_TEST(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnApply);
   FRIEND_TEST(MvccTest, TestIllegalStateTransitionsCrash);
-  FRIEND_TEST(MvccTest, TestTxnAbort);
+  FRIEND_TEST(MvccTest, TestOpAbort);
 
-  enum TxnState {
+  enum OpState {
     RESERVED,
     APPLYING
   };
@@ -339,15 +404,15 @@ class MvccManager {
   // been achieved.
   bool IsDoneWaitingUnlocked(const WaitingState& waiter) const;
 
-  // Applies the given op.
-  // Sets *was_earliest to true if this was the earliest in-flight op.
+  // Applies the given op. Sets *was_earliest_op_in_flight to true if this was
+  // the earliest in-flight op.
   void ApplyOpUnlocked(Timestamp timestamp,
-                        bool* was_earliest_in_flight);
+                       bool* was_earliest_op_in_flight);
 
   // Remove the timestamp 'ts' from the in-flight map.
   // FATALs if the ts is not in the in-flight map.
   // Returns its state.
-  TxnState RemoveInFlightAndGetStateUnlocked(Timestamp ts);
+  OpState RemoveInFlightAndGetStateUnlocked(Timestamp ts);
 
   // Adjusts the clean time, i.e. the timestamp such that all ops with lower
   // timestamps are applied or aborted, based on which ops are currently in
@@ -365,11 +430,13 @@ class MvccManager {
   typedef simple_spinlock LockType;
   mutable LockType lock_;
 
+  // The kLatest snapshot that gets updated with op timestamps as MVCC ops
+  // start and complete through the lifespan of this MvccManager.
   MvccSnapshot cur_snap_;
 
   // The set of timestamps corresponding to currently in-flight ops.
-  typedef std::unordered_map<Timestamp::val_type, TxnState> InFlightMap;
-  InFlightMap timestamps_in_flight_;
+  typedef std::unordered_map<Timestamp::val_type, OpState> InFlightOpsMap;
+  InFlightOpsMap ops_in_flight_;
 
   // An op timestamp at and below which no new ops can be
   // initialized.
@@ -379,10 +446,10 @@ class MvccManager {
   // timestamp.
   Timestamp new_op_timestamp_exc_lower_bound_;
 
-  // The minimum timestamp in timestamps_in_flight_, or Timestamp::kMax
+  // The minimum timestamp in ops_in_flight_, or Timestamp::kMax
   // if that set is empty. This is cached in order to avoid having to iterate
-  // over timestamps_in_flight_ on every apply.
-  Timestamp earliest_in_flight_;
+  // over ops_in_flight_ on every apply.
+  Timestamp earliest_op_in_flight_;
 
   mutable std::vector<WaitingState*> waiters_;
 

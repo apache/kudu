@@ -30,6 +30,9 @@
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/txn_metadata.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -39,6 +42,7 @@
 
 using std::thread;
 using std::unique_ptr;
+using std::vector;
 
 METRIC_DECLARE_entity(server);
 
@@ -226,7 +230,7 @@ TEST_F(MvccTest, TestOutOfOrderOps) {
 
 // Tests starting ops at a point-in-time in the past and applying them while
 // adjusting the new op timestamp lower bound.
-TEST_F(MvccTest, TestSafeTimeWithOutOfOrderTxns) {
+TEST_F(MvccTest, TestSafeTimeWithOutOfOrderOps) {
   MvccManager mgr;
 
   // Set the clock to some time in the "future".
@@ -606,8 +610,7 @@ TEST_F(MvccTest, TestDontWaitAfterClose) {
 
 // Test that if we abort an op we don't advance the new op lower bound and
 // don't add the op to the applied set.
-TEST_F(MvccTest, TestTxnAbort) {
-
+TEST_F(MvccTest, TestOpAbort) {
   MvccManager mgr;
 
   // Ops with timestamps 1 through 3
@@ -780,6 +783,159 @@ TEST_F(MvccTest, TestCorrectInitWithNoOps) {
   EXPECT_EQ(snap2.none_applied_at_or_after_, new_ts_lower_bound);
   EXPECT_EQ(snap2.applied_timestamps_.size(), 0);
 }
+
+class TransactionMvccTest : public MvccTest {
+ public:
+  // Simulates successfully committing the given transaction by starting an MVCC
+  // op to track the commit, and setting a higher commit timestamp while that
+  // op is applying. Returns the commit timestmap.
+  Timestamp Commit(MvccManager* mgr, TxnMetadata* txn_meta) {
+    // Start an op to begin committing.
+    Timestamp ts = clock_.Now();
+    ScopedOp op(mgr, ts);
+    txn_meta->set_commit_mvcc_op_timestamp(ts);
+    // Finalize the commit with some future timestamp.
+    op.StartApplying();
+    Timestamp commit_ts = Timestamp(ts.value() + 10);
+    txn_meta->set_commit_timestamp(commit_ts);
+    op.FinishApplying();
+    return commit_ts;
+  }
+
+  // Simulates aborting a transaction by beginning to commit, and then aborting.
+  void AbortAfterBeginCommit(MvccManager* mgr, TxnMetadata* txn_meta) {
+    // Start an op to begin committing.
+    Timestamp ts = clock_.Now();
+    ScopedOp op(mgr, ts);
+    txn_meta->set_commit_mvcc_op_timestamp(ts);
+    // Abort the commit.
+    txn_meta->set_aborted();
+    op.Abort();
+  }
+
+  // Simulates aborting without starting any ops.
+  static void AbortBeforeBeginCommit(TxnMetadata* txn_meta) {
+    txn_meta->set_aborted();
+  }
+};
+
+// Test that timestamp snapshots before and after committing correctly
+// determine whether transactions are committed.
+TEST_F(TransactionMvccTest, TestTimestampSnapshot) {
+  MvccManager mgr;
+  scoped_refptr<TxnMetadata> committed_txn_meta(new TxnMetadata);
+  scoped_refptr<TxnMetadata> aborted_before_begin_commit_txn_meta(new TxnMetadata);
+  scoped_refptr<TxnMetadata> aborted_after_begin_commit_txn_meta(new TxnMetadata);
+  Timestamp initial_ts = clock_.Now();
+  MvccSnapshot initial_snap(initial_ts);
+  ASSERT_FALSE(initial_snap.IsCommitted(*committed_txn_meta.get()));
+  ASSERT_FALSE(initial_snap.IsCommitted(*aborted_before_begin_commit_txn_meta.get()));
+  ASSERT_FALSE(initial_snap.IsCommitted(*aborted_after_begin_commit_txn_meta.get()));
+
+  AbortAfterBeginCommit(&mgr, aborted_before_begin_commit_txn_meta.get());
+  AbortAfterBeginCommit(&mgr, aborted_after_begin_commit_txn_meta.get());
+  Timestamp commit_ts = Commit(&mgr, committed_txn_meta.get());
+
+  // Snapshots taken right before the commit timestamp should not return that
+  // the transaction was committed.
+  MvccSnapshot before_commit_snap(commit_ts);
+  ASSERT_FALSE(before_commit_snap.IsCommitted(*committed_txn_meta.get()));
+  ASSERT_FALSE(before_commit_snap.IsCommitted(*aborted_before_begin_commit_txn_meta.get()));
+  ASSERT_FALSE(before_commit_snap.IsCommitted(*aborted_after_begin_commit_txn_meta.get()));
+
+  // Snapshots taken right after the commit timestamp shouldn't return that
+  // aborted transactions were committed.
+  MvccSnapshot after_commit_snap(Timestamp(commit_ts.value() + 1));
+  ASSERT_TRUE(after_commit_snap.IsCommitted(*committed_txn_meta.get()));
+  ASSERT_FALSE(after_commit_snap.IsCommitted(*aborted_before_begin_commit_txn_meta.get()));
+  ASSERT_FALSE(after_commit_snap.IsCommitted(*aborted_after_begin_commit_txn_meta.get()));
+}
+
+// Test that the latest snapshots before and after committing or aborting
+// correctly determine whether transactions are committed.
+TEST_F(TransactionMvccTest, TestLatestSnapshot) {
+  MvccManager mgr;
+  {
+    scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+    MvccSnapshot latest_before_commit(mgr);
+    ASSERT_FALSE(latest_before_commit.IsCommitted(*txn_meta.get()));
+    Commit(&mgr, txn_meta.get());
+    MvccSnapshot latest_after_commit(mgr);
+    ASSERT_FALSE(latest_before_commit.IsCommitted(*txn_meta.get()));
+    ASSERT_TRUE(latest_after_commit.IsCommitted(*txn_meta.get()));
+  }
+  {
+    scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+    MvccSnapshot latest_before_abort(mgr);
+    ASSERT_FALSE(latest_before_abort.IsCommitted(*txn_meta.get()));
+    AbortAfterBeginCommit(&mgr, txn_meta.get());
+    MvccSnapshot latest_after_abort(mgr);
+    ASSERT_FALSE(latest_before_abort.IsCommitted(*txn_meta.get()));
+    ASSERT_FALSE(latest_after_abort.IsCommitted(*txn_meta.get()));
+  }
+  {
+    scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+    MvccSnapshot latest_before_abort(mgr);
+    ASSERT_FALSE(latest_before_abort.IsCommitted(*txn_meta.get()));
+    AbortBeforeBeginCommit(txn_meta.get());
+    MvccSnapshot latest_after_abort(mgr);
+    ASSERT_FALSE(latest_before_abort.IsCommitted(*txn_meta.get()));
+    ASSERT_FALSE(latest_after_abort.IsCommitted(*txn_meta.get()));
+  }
+}
+
+enum OpType {
+  kCommit,
+  kAbortAfterBeginCommit,
+  kAbortBeforeBeginCommit,
+};
+
+class ParamedTransactionMvccTest : public TransactionMvccTest,
+                                   public ::testing::WithParamInterface<OpType> {};
+
+// Test that snapshots taken concurrently with commit or abort do not change
+// commit status.
+TEST_P(ParamedTransactionMvccTest, TestConcurrentLatestSnapshots) {
+  constexpr const int kNumThreads = 10;
+  Barrier b(kNumThreads + 1);
+  vector<thread> threads;
+  vector<MvccSnapshot> snaps(kNumThreads);
+  // NOTE: we really only care about bools, but vector<bool> isn't thread-safe.
+  vector<int> is_committed(kNumThreads);
+  scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+  MvccManager mgr;
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i] {
+      b.Wait();
+      // Take a snapshot and immediately check whether the transaction is
+      // committed.
+      snaps[i] = MvccSnapshot(mgr);
+      is_committed[i] = snaps[i].IsCommitted(*txn_meta.get());
+    });
+  }
+  b.Wait();
+  switch (GetParam()) {
+    case kCommit:
+      Commit(&mgr, txn_meta.get());
+      break;
+    case kAbortAfterBeginCommit:
+      AbortAfterBeginCommit(&mgr, txn_meta.get());
+      break;
+    case kAbortBeforeBeginCommit:
+      AbortBeforeBeginCommit(txn_meta.get());
+      break;
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  // Take the collected snapshots and evaluate them again against the
+  // transaction metadata. The commit status should not have changed.
+  for (int i = 0; i < kNumThreads; i++) {
+    ASSERT_EQ(is_committed[i], snaps[i].IsCommitted(*txn_meta.get()));
+  }
+}
+INSTANTIATE_TEST_CASE_P(Op, ParamedTransactionMvccTest,
+    ::testing::Values(kCommit, kAbortAfterBeginCommit, kAbortBeforeBeginCommit));
 
 } // namespace tablet
 } // namespace kudu

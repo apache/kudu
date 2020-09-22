@@ -87,6 +87,8 @@ message TxnMetadataPB {
   // set.
   optional int64 commit_timestamp = 2;
 
+  // TODO(awong): persist the op timestamp for the commit's MVCC op.
+
   // TODO(awong): add an owner field to this for uncommitted transactions.
 }
 

@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/none_t.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -42,6 +43,7 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/memory.h"
@@ -50,17 +52,17 @@ DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 TAG_FLAG(mrs_use_codegen, hidden);
 
+using kudu::consensus::OpId;
+using kudu::fs::IOContext;
+using kudu::log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-
-namespace kudu { namespace tablet {
-
-using consensus::OpId;
-using fs::IOContext;
-using log::LogAnchorRegistry;
 using strings::Substitute;
+
+namespace kudu {
+namespace tablet {
 
 static const int kInitialArenaSize = 16;
 
@@ -95,17 +97,37 @@ Status MemRowSet::Create(int64_t id,
                          shared_ptr<MemTracker> parent_tracker,
                          shared_ptr<MemRowSet>* mrs) {
   auto local_mrs(MemRowSet::make_shared(
-      id, schema, log_anchor_registry, std::move(parent_tracker)));
+      id, schema, /*txn_id*/boost::none, /*txn_metadata*/nullptr, log_anchor_registry,
+      std::move(parent_tracker)));
   *mrs = std::move(local_mrs);
   return Status::OK();
 }
 
+Status MemRowSet::Create(int64_t id,
+                         const Schema &schema,
+                         int64_t txn_id,
+                         scoped_refptr<TxnMetadata> txn_metadata,
+                         LogAnchorRegistry* log_anchor_registry,
+                         shared_ptr<MemTracker> parent_tracker,
+                         shared_ptr<MemRowSet>* mrs) {
+  auto local_mrs(MemRowSet::make_shared(
+      id, schema, boost::make_optional(txn_id), std::move(txn_metadata), log_anchor_registry,
+      std::move(parent_tracker)));
+  *mrs = std::move(local_mrs);
+  return Status::OK();
+}
+
+
 MemRowSet::MemRowSet(int64_t id,
-                     const Schema &schema,
+                     const Schema& schema,
+                     boost::optional<int64_t> txn_id,
+                     scoped_refptr<TxnMetadata> txn_metadata,
                      LogAnchorRegistry* log_anchor_registry,
                      shared_ptr<MemTracker> parent_tracker)
   : id_(id),
     schema_(schema),
+    txn_id_(txn_id),
+    txn_metadata_(std::move(txn_metadata)),
     allocator_(new MemoryTrackingBufferAllocator(
         HeapBufferAllocator::Get(),
         CreateMemTrackerForMemRowSet(id, std::move(parent_tracker)))),
@@ -130,8 +152,13 @@ Status MemRowSet::DebugDump(vector<string> *lines) {
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
     LOG_STRING(INFO, lines)
-      << "@" << row.insertion_timestamp() << ": row "
-      << schema_.DebugRow(row)
+      << "@" << row.insertion_timestamp()
+      << string(txn_id_ ?
+                Substitute("(txn_id=$0$1)", *txn_id_,
+                           DCHECK_NOTNULL(txn_metadata_)->commit_timestamp() ?
+                               Substitute("@$0", txn_metadata_->commit_timestamp()->value()) : "") :
+                "")
+      << ": row " << schema_.DebugRow(row)
       << " mutations=" << Mutation::StringifyMutationList(schema_, row.header_->redo_head)
       << std::endl;
     iter->Next();
@@ -181,8 +208,8 @@ Status MemRowSet::Insert(Timestamp timestamp,
     RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
 
     CHECK(mutation.Insert(mrsrow_slice))
-    << "Expected to be able to insert, since the prepared mutation "
-    << "succeeded!";
+        << "Expected to be able to insert, since the prepared mutation "
+        << "succeeded!";
   }
 
   anchorer_.AnchorIfMinimum(op_id.index());
@@ -513,15 +540,23 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
     // 2. Both 'snap_to exclude' and 'snap_to_include' are set. The time range
     //    is [snap_to_exclude, snap_to_include).
     //
-    // If the row's insertion timestamp is committed in 'snap_to_exclude', it
-    // means the insertion was outside this iterator's time range (i.e. the
-    // insert was "excluded"). However, subsequent mutations may be inside the
-    // time range, so we must still project the row and walk its mutation list.
+    // If a non-transactional  row's insertion timestamp is applied in
+    // 'snap_to_exclude' or a transactional row's commit timestamp is committed
+    // in 'snap_to_exclude', the insertion was outside this iterator's time
+    // range (i.e. the insert was "excluded").  However, subsequent mutations
+    // may be inside the time range, so we must still project the row and walk
+    // its mutation list.
+    const auto& txn_meta = memrowset_->txn_metadata();
     bool insert_excluded = opts_.snap_to_exclude &&
-                           opts_.snap_to_exclude->IsApplied(row.insertion_timestamp());
+        // TODO(awong): if we find this to be too slow, we should be able to
+        // compute IsCommitted() once per iterator at construction time.
+        (txn_meta ? opts_.snap_to_exclude->IsCommitted(*txn_meta.get()) :
+                    opts_.snap_to_exclude->IsApplied(row.insertion_timestamp()));
     bool unset_in_sel_vector;
     ApplyStatus apply_status;
-    if (insert_excluded || opts_.snap_to_include.IsApplied(row.insertion_timestamp())) {
+    if (insert_excluded ||
+        (txn_meta ? opts_.snap_to_include.IsCommitted(*txn_meta.get()) :
+                    opts_.snap_to_include.IsApplied(row.insertion_timestamp()))) {
       RETURN_NOT_OK(projector_->ProjectRowForRead(row, &dst_row, dst->arena()));
 
       // Roll-forward MVCC for committed updates.
@@ -665,6 +700,7 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
                                           Arena* mutation_arena,
                                           Timestamp* insertion_timestamp) {
 
+  DCHECK(boost::none == opts_.snap_to_exclude);
   DCHECK(redo_head != nullptr);
 
   // Get the row from the MemRowSet. It may have a different schema from the iterator projection.

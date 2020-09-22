@@ -49,6 +49,7 @@
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
@@ -222,6 +223,24 @@ class TestMemRowSet : public KuduTest {
       fetched += block.selection_vector()->CountSelected();
     }
     return fetched;
+  }
+
+  // Checks the number of rows in the range (-Inf, snap].
+  bool CheckRowsAtSnapshot(MemRowSet* mrs, const MvccSnapshot& snap, int expected_rows) {
+    RowIteratorOptions opts;
+    opts.snap_to_include = snap;
+    opts.projection = &schema_;
+    return expected_rows == ScanAndCount(mrs, opts);
+  }
+
+  // Checks the number of mutations in the range (snap_to_exc, snap_to_inc].
+  bool CheckRowsBetween(MemRowSet* mrs, const MvccSnapshot& snap_to_exc,
+                        const MvccSnapshot& snap_to_inc, int expected_rows) {
+    RowIteratorOptions opts;
+    opts.snap_to_exclude = snap_to_exc;
+    opts.snap_to_include = snap_to_inc;
+    opts.projection = &schema_;
+    return expected_rows == ScanAndCount(mrs, opts);
   }
 
   Status GenerateTestData(MemRowSet* mrs) {
@@ -851,6 +870,146 @@ TEST_F(TestMemRowSet, TestCountLiveRows) {
 
   ASSERT_OK(UpdateRow(mrs.get(), "liverow 0", 1, &result));
   NO_FATALS(CheckLiveRowsCount(6));
+}
+
+// Test that rows inserted as a part of a transaction only get returned if the
+// transaction is committed in the iteration snapshot.
+TEST_F(TestMemRowSet, TestCommittedTransactionalRows) {
+  const int64_t kTxnId = 0;
+  shared_ptr<MemRowSet> mrs;
+  scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+  MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
+  MvccSnapshot latest_with_one_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "goodbye world", 54321));
+  MvccSnapshot latest_with_two_applied = MvccSnapshot(mvcc_);
+
+  ASSERT_EQ(2, mrs->entry_count());
+
+  // Iterating through the MRS with a snapshot that doesn't have the
+  // transaction committed should yield no rows.
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_two_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_one_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_none_applied, 0));
+
+  // Emulate transaction commit by starting an MVCC op timestamp higher than
+  // the transaction so ops with lower timestamps are considered applied.
+  //
+  // Only once we set the commit timestamp in the txn metadata and finish the
+  // op will iteration be able to read any rows.
+  auto mvcc_op_ts = clock_.Now();
+  ScopedOp commit_op(&mvcc_, mvcc_op_ts);
+  txn_meta->set_commit_mvcc_op_timestamp(mvcc_op_ts);
+  MvccSnapshot snap_after_begin_commit = MvccSnapshot(Timestamp(mvcc_op_ts.value() + 1));
+  MvccSnapshot snap_before_begin_commit = MvccSnapshot(Timestamp(mvcc_op_ts.value()));
+  MvccSnapshot latest_after_begin_commit = MvccSnapshot(mvcc_);
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_after_begin_commit, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_before_begin_commit, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_after_begin_commit, 0));
+
+  auto commit_ts = clock_.Now();
+  commit_op.StartApplying();
+  txn_meta->set_commit_timestamp(commit_ts);
+  commit_op.FinishApplying();
+
+  MvccSnapshot snap_after_commit = MvccSnapshot(Timestamp(commit_ts.value() + 1));
+  MvccSnapshot snap_before_commit = MvccSnapshot(commit_ts);
+  MvccSnapshot latest_after_commit = MvccSnapshot(mvcc_);
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_after_commit, 2));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_before_commit, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_after_commit, 2));
+
+  // Scanning for the rows inserted between the snapshots that didn't have
+  // the commit and the snapshot with the commit, we should see the rows.
+  NO_FATALS(CheckRowsBetween(mrs.get(), latest_with_two_applied, latest_after_commit, 2));
+  NO_FATALS(CheckRowsBetween(mrs.get(), latest_with_one_applied, latest_after_commit, 2));
+  NO_FATALS(CheckRowsBetween(mrs.get(), latest_with_none_applied, latest_after_commit, 2));
+  NO_FATALS(CheckRowsBetween(mrs.get(), snap_before_commit, latest_after_commit, 2));
+
+  // If we scan for rows in between snapshots with the commit, we shouldn't
+  // see anything.
+  NO_FATALS(CheckRowsBetween(mrs.get(), snap_after_commit, latest_after_commit, 0));
+  NO_FATALS(CheckRowsBetween(mrs.get(), latest_after_commit, latest_after_commit, 0));
+}
+
+// Like the above test, but testing the behavior when aborting before beginning
+// to commit.
+TEST_F(TestMemRowSet, TestAbortBeforeBeginningToCommitTransactionalRows) {
+  const int64_t kTxnId = 0;
+  shared_ptr<MemRowSet> mrs;
+  scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+  MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
+  MvccSnapshot latest_with_one_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "goodbye world", 54321));
+  MvccSnapshot latest_with_two_applied = MvccSnapshot(mvcc_);
+
+  ASSERT_EQ(2, mrs->entry_count());
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_two_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_one_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_none_applied, 0));
+  txn_meta->set_aborted();
+  MvccSnapshot latest_after_abort = MvccSnapshot(mvcc_);
+
+  // No matter how we iterate, we should see no rows.
+  const vector<MvccSnapshot> all_snaps = {
+      latest_with_none_applied, latest_with_one_applied, latest_with_two_applied, latest_after_abort
+  };
+  for (const auto& left_snap : all_snaps) {
+    for (const auto& right_snap : all_snaps) {
+      NO_FATALS(CheckRowsBetween(mrs.get(), left_snap, right_snap, 0));
+    }
+  }
+}
+
+// Like the above test, but testing the behavior when aborting after beginning
+// to commit.
+TEST_F(TestMemRowSet, TestAbortAfterBeginningToCommitTransactionalRows) {
+  const int64_t kTxnId = 0;
+  shared_ptr<MemRowSet> mrs;
+  scoped_refptr<TxnMetadata> txn_meta(new TxnMetadata);
+  ASSERT_OK(MemRowSet::Create(/*mrs_id*/0, schema_, kTxnId, txn_meta, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+  MvccSnapshot latest_with_none_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
+  MvccSnapshot latest_with_one_applied = MvccSnapshot(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "goodbye world", 54321));
+  MvccSnapshot latest_with_two_applied = MvccSnapshot(mvcc_);
+
+  ASSERT_EQ(2, mrs->entry_count());
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_two_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_one_applied, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_with_none_applied, 0));
+
+  // Start beginning to commit, but abort without finishing the commit.
+  auto mvcc_op_ts = clock_.Now();
+  ScopedOp commit_op(&mvcc_, mvcc_op_ts);
+  txn_meta->set_commit_mvcc_op_timestamp(mvcc_op_ts);
+  MvccSnapshot snap_after_begin_commit = MvccSnapshot(Timestamp(mvcc_op_ts.value() + 1));
+  MvccSnapshot snap_before_begin_commit = MvccSnapshot(Timestamp(mvcc_op_ts.value()));
+  MvccSnapshot latest_after_begin_commit = MvccSnapshot(mvcc_);
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_after_begin_commit, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), snap_before_begin_commit, 0));
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_after_begin_commit, 0));
+  txn_meta->set_aborted();
+  commit_op.Abort();
+  MvccSnapshot latest_after_abort = MvccSnapshot(mvcc_);
+
+  // No matter how we iterate, we should see no rows.
+  NO_FATALS(CheckRowsAtSnapshot(mrs.get(), latest_after_abort, 0));
+  const vector<MvccSnapshot> all_snaps = {
+      latest_with_none_applied, latest_with_one_applied, latest_with_two_applied,
+      snap_after_begin_commit, snap_before_begin_commit, latest_after_begin_commit
+  };
+  for (const auto& left_snap : all_snaps) {
+    for (const auto& right_snap : all_snaps) {
+      NO_FATALS(CheckRowsBetween(mrs.get(), left_snap, right_snap, 0));
+    }
+  }
 }
 
 } // namespace tablet

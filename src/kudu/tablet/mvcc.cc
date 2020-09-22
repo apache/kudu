@@ -27,7 +27,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
@@ -49,8 +49,9 @@ using strings::Substitute;
 
 MvccManager::MvccManager()
   : new_op_timestamp_exc_lower_bound_(Timestamp::kMin),
-    earliest_in_flight_(Timestamp::kMax),
+    earliest_op_in_flight_(Timestamp::kMax),
     open_(true) {
+  cur_snap_.type_ = MvccSnapshot::kLatest;
   cur_snap_.all_applied_before_ = Timestamp::kInitialTimestamp;
   cur_snap_.none_applied_at_or_after_ = Timestamp::kInitialTimestamp;
 }
@@ -70,7 +71,7 @@ void MvccManager::StartOp(Timestamp timestamp) {
                  "timestamp: $0, current MVCC snapshot: $1",
                  timestamp.ToString(), cur_snap_.ToString());
   CHECK(InitOpUnlocked(timestamp)) <<
-      Substitute("There is already a op with timestamp: $0 in flight, or "
+      Substitute("There is already an op with timestamp: $0 in flight, or "
                  "this timestamp is below or equal to the exclusive lower "
                  "bound for new op timestamps. Current lower bound: "
                  "$1, current MVCC snapshot: $2", timestamp.ToString(),
@@ -80,18 +81,17 @@ void MvccManager::StartOp(Timestamp timestamp) {
 
 void MvccManager::StartApplyingOp(Timestamp timestamp) {
   std::lock_guard<LockType> l(lock_);
-  auto it = timestamps_in_flight_.find(timestamp.value());
-  if (PREDICT_FALSE(it == timestamps_in_flight_.end())) {
+  auto it = ops_in_flight_.find(timestamp.value());
+  if (PREDICT_FALSE(it == ops_in_flight_.end())) {
     LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
                << "not in the in-flight map.";
   }
 
-  TxnState cur_state = it->second;
+  OpState cur_state = it->second;
   if (PREDICT_FALSE(cur_state != RESERVED)) {
     LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
                << "wrong state: " << cur_state;
   }
-
   it->second = APPLYING;
 }
 
@@ -102,18 +102,16 @@ bool MvccManager::InitOpUnlocked(const Timestamp& timestamp) {
     return false;
   }
 
-  if (timestamp < earliest_in_flight_) {
-    earliest_in_flight_ = timestamp;
-  }
+  earliest_op_in_flight_ = std::min(timestamp, earliest_op_in_flight_);
 
-  return InsertIfNotPresent(&timestamps_in_flight_, timestamp.value(), RESERVED);
+  return InsertIfNotPresent(&ops_in_flight_, timestamp.value(), RESERVED);
 }
 
 void MvccManager::AbortOp(Timestamp timestamp) {
   std::lock_guard<LockType> l(lock_);
 
   // Remove from our in-flight list.
-  TxnState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
+  OpState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
 
   // If the tablet is shutting down, we can ignore the state of the
   // ops.
@@ -128,7 +126,7 @@ void MvccManager::AbortOp(Timestamp timestamp) {
 
   // If we're aborting the earliest op that was in flight,
   // update our cached value.
-  if (earliest_in_flight_ == timestamp) {
+  if (earliest_op_in_flight_ == timestamp) {
     AdvanceEarliestInFlightTimestamp();
   }
 }
@@ -150,45 +148,45 @@ void MvccManager::FinishApplyingOp(Timestamp timestamp) {
   }
 }
 
-MvccManager::TxnState MvccManager::RemoveInFlightAndGetStateUnlocked(Timestamp ts) {
+MvccManager::OpState MvccManager::RemoveInFlightAndGetStateUnlocked(Timestamp ts) {
   DCHECK(lock_.is_locked());
 
-  auto it = timestamps_in_flight_.find(ts.value());
-  if (it == timestamps_in_flight_.end()) {
+  auto it = ops_in_flight_.find(ts.value());
+  if (it == ops_in_flight_.end()) {
     LOG(FATAL) << "Trying to remove timestamp which isn't in the in-flight set: "
                << ts.ToString();
   }
-  TxnState state = it->second;
-  timestamps_in_flight_.erase(it);
+  OpState state = it->second;
+  ops_in_flight_.erase(it);
   return state;
 }
 
 void MvccManager::ApplyOpUnlocked(Timestamp timestamp,
-                                   bool* was_earliest_in_flight) {
-  *was_earliest_in_flight = earliest_in_flight_ == timestamp;
+                                  bool* was_earliest_op_in_flight) {
+  *was_earliest_op_in_flight = earliest_op_in_flight_ == timestamp;
 
   // Remove from our in-flight list.
-  TxnState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
+  OpState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
   CHECK_EQ(old_state, APPLYING)
-    << "Trying to apply an op which never entered APPLYING state: "
-    << timestamp.ToString() << " state=" << old_state;
+      << "Trying to apply an op which never entered APPLYING state: "
+      << timestamp.ToString() << " state=" << old_state;
 
   // Add to snapshot's applied list
   cur_snap_.AddAppliedTimestamp(timestamp);
 
   // If we're applying the earliest op that was in flight, update our cached
   // value.
-  if (*was_earliest_in_flight) {
+  if (*was_earliest_op_in_flight) {
     AdvanceEarliestInFlightTimestamp();
   }
 }
 
 void MvccManager::AdvanceEarliestInFlightTimestamp() {
-  if (timestamps_in_flight_.empty()) {
-    earliest_in_flight_ = Timestamp::kMax;
+  if (ops_in_flight_.empty()) {
+    earliest_op_in_flight_ = Timestamp::kMax;
   } else {
-    earliest_in_flight_ = Timestamp(std::min_element(timestamps_in_flight_.begin(),
-                                                     timestamps_in_flight_.end())->first);
+    earliest_op_in_flight_ = Timestamp(std::min_element(ops_in_flight_.begin(),
+                                                     ops_in_flight_.end())->first);
   }
 }
 
@@ -256,8 +254,8 @@ void MvccManager::AdjustCleanTimeUnlocked() {
   // In either case, we have to add the newly applied ts only if it remains
   // higher than the new watermark.
 
-  if (earliest_in_flight_ < new_op_timestamp_exc_lower_bound_) {
-    cur_snap_.all_applied_before_ = earliest_in_flight_;
+  if (earliest_op_in_flight_ < new_op_timestamp_exc_lower_bound_) {
+    cur_snap_.all_applied_before_ = earliest_op_in_flight_;
   } else {
     cur_snap_.all_applied_before_ = new_op_timestamp_exc_lower_bound_;
   }
@@ -355,13 +353,13 @@ bool MvccManager::AreAllOpsAppliedUnlocked(Timestamp ts) const {
 
   // We might not have moved 'cur_snap_.all_applied_before_' (the clean time) but 'ts'
   // might still come before any possible in-flights.
-  return ts < earliest_in_flight_;
+  return ts < earliest_op_in_flight_;
 }
 
 bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
   // TODO(todd) this is not actually checking on the applying ops, it's checking on
   // _all in-flight_. Is this a bug?
-  for (const InFlightMap::value_type entry : timestamps_in_flight_) {
+  for (const InFlightOpsMap::value_type entry : ops_in_flight_) {
     if (entry.first <= ts.value()) {
       return true;
     }
@@ -375,8 +373,8 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 }
 
 Status MvccManager::WaitForSnapshotWithAllApplied(Timestamp timestamp,
-                                                    MvccSnapshot* snapshot,
-                                                    const MonoTime& deadline) const {
+                                                  MvccSnapshot* snapshot,
+                                                  const MonoTime& deadline) const {
   TRACE_EVENT0("tablet", "MvccManager::WaitForSnapshotWithAllApplied");
 
   RETURN_NOT_OK(WaitUntil(ALL_APPLIED, timestamp, deadline));
@@ -392,7 +390,7 @@ Status MvccManager::WaitForApplyingOpsToApply() const {
   Timestamp wait_for = Timestamp::kMin;
   {
     std::lock_guard<LockType> l(lock_);
-    for (const InFlightMap::value_type entry : timestamps_in_flight_) {
+    for (const auto& entry : ops_in_flight_) {
       if (entry.second == APPLYING) {
         wait_for = Timestamp(std::max(entry.first, wait_for.value()));
       }
@@ -416,8 +414,8 @@ Timestamp MvccManager::GetCleanTimestamp() const {
 
 void MvccManager::GetApplyingOpsTimestamps(std::vector<Timestamp>* timestamps) const {
   std::lock_guard<LockType> l(lock_);
-  timestamps->reserve(timestamps_in_flight_.size());
-  for (const InFlightMap::value_type entry : timestamps_in_flight_) {
+  timestamps->reserve(ops_in_flight_.size());
+  for (const auto& entry : ops_in_flight_) {
     if (entry.second == APPLYING) {
       timestamps->push_back(Timestamp(entry.first));
     }
@@ -433,18 +431,20 @@ MvccManager::~MvccManager() {
 ////////////////////////////////////////////////////////////
 
 MvccSnapshot::MvccSnapshot()
-  : all_applied_before_(Timestamp::kInitialTimestamp),
+  : type_(MvccSnapshot::kTimestamp),
+    all_applied_before_(Timestamp::kInitialTimestamp),
     none_applied_at_or_after_(Timestamp::kInitialTimestamp) {
 }
 
-MvccSnapshot::MvccSnapshot(const MvccManager &manager) {
+MvccSnapshot::MvccSnapshot(const MvccManager& manager) {
   manager.TakeSnapshot(this);
 }
 
 MvccSnapshot::MvccSnapshot(const Timestamp& timestamp)
-  : all_applied_before_(timestamp),
+  : type_(MvccSnapshot::kTimestamp),
+    all_applied_before_(timestamp),
     none_applied_at_or_after_(timestamp) {
- }
+}
 
 MvccSnapshot MvccSnapshot::CreateSnapshotIncludingAllOps() {
   return MvccSnapshot(Timestamp::kMax);
@@ -476,25 +476,9 @@ bool MvccSnapshot::MayHaveNonAppliedOpsAtOrBefore(const Timestamp& timestamp) co
 }
 
 std::string MvccSnapshot::ToString() const {
-  std::string ret("MvccSnapshot[applied={T|");
-
-  if (applied_timestamps_.size() == 0) {
-    StrAppend(&ret, "T < ", all_applied_before_.ToString(),"}]");
-    return ret;
-  }
-  StrAppend(&ret, "T < ", all_applied_before_.ToString(),
-            " or (T in {");
-
-  bool first = true;
-  for (Timestamp::val_type t : applied_timestamps_) {
-    if (!first) {
-      ret.push_back(',');
-    }
-    first = false;
-    StrAppend(&ret, t);
-  }
-  ret.append("})}]");
-  return ret;
+  return Substitute("MvccSnapshot[applied={T|T < $0$1}]", all_applied_before_.ToString(),
+      applied_timestamps_.empty() ?  "" :
+          Substitute(" or (T in {$0})", JoinInts(applied_timestamps_, ",")));
 }
 
 void MvccSnapshot::AddAppliedTimestamps(const std::vector<Timestamp>& timestamps) {
@@ -504,6 +488,7 @@ void MvccSnapshot::AddAppliedTimestamps(const std::vector<Timestamp>& timestamps
 }
 
 void MvccSnapshot::AddAppliedTimestamp(Timestamp timestamp) {
+  DCHECK_EQ(kLatest, type_);
   if (IsApplied(timestamp)) return;
 
   applied_timestamps_.push_back(timestamp.value());
@@ -515,6 +500,9 @@ void MvccSnapshot::AddAppliedTimestamp(Timestamp timestamp) {
 }
 
 bool MvccSnapshot::Equals(const MvccSnapshot& other) const {
+  if (type_ != other.type_) {
+    return false;
+  }
   if (all_applied_before_ != other.all_applied_before_) {
     return false;
   }
