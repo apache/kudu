@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/wire_format_lite.h>
@@ -310,6 +311,7 @@ int64_t TotalByteSizeForMessage(const ReplicateMsg& msg) {
 
 Status LogCache::ReadOps(int64_t after_op_index,
                          int max_size_bytes,
+                         const boost::optional<std::string>& for_peer_uuid,
                          std::vector<ReplicateRefPtr>* messages,
                          OpId* preceding_op) {
   DCHECK_GE(after_op_index, 0);
@@ -340,7 +342,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
       vector<ReplicateMsg*> raw_replicate_ptrs;
       RETURN_NOT_OK_PREPEND(
         log_->ReadReplicatesInRange(
-          next_index, up_to, remaining_space, &raw_replicate_ptrs),
+          next_index, up_to, remaining_space, for_peer_uuid, &raw_replicate_ptrs),
         Substitute("Failed to read ops $0..$1", next_index, up_to));
       l.lock();
       VLOG_WITH_PREFIX_UNLOCKED(2)

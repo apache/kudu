@@ -586,7 +586,7 @@ TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
     vector<ReplicateMsg*> repls;
     ElementDeleter d(&repls);
     Status s = log_->reader()->ReadReplicatesInRange(
-      1, 2, LogReader::kNoSizeLimit, &repls);
+      1, 2, LogReader::kNoSizeLimit, /*for_peer_uuid=*/boost::none, &repls);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 
@@ -977,7 +977,11 @@ TEST_P(LogTestOptionalCompression, TestReadLogWithReplacedReplicates) {
         vector<ReplicateMsg*> repls;
         ElementDeleter d(&repls);
         ASSERT_OK(log_->reader()->ReadReplicatesInRange(
-                    start_index, end_index, LogReader::kNoSizeLimit, &repls));
+                    start_index,
+                    end_index,
+                    LogReader::kNoSizeLimit,
+                    /*for_peer_uuid=*/boost::none,
+                    &repls));
         ASSERT_EQ(end_index - start_index + 1, repls.size());
         int expected_index = start_index;
         for (const ReplicateMsg* repl : repls) {
@@ -1001,7 +1005,12 @@ TEST_P(LogTestOptionalCompression, TestReadLogWithReplacedReplicates) {
                                 start_index, end_index, size_limit));
         vector<ReplicateMsg*> repls;
         ElementDeleter d(&repls);
-        ASSERT_OK(reader->ReadReplicatesInRange(start_index, end_index, size_limit, &repls));
+        ASSERT_OK(reader->ReadReplicatesInRange(
+              start_index,
+              end_index,
+              size_limit,
+              /*for_peer_uuid=*/boost::none,
+              &repls));
         ASSERT_LE(repls.size(), end_index - start_index + 1);
         int total_size = 0;
         int expected_index = start_index;
@@ -1044,8 +1053,12 @@ TEST_P(LogTestOptionalCompression, TestReadReplicatesHighIndex) {
   shared_ptr<LogReader> reader = log_->reader();
   vector<ReplicateMsg*> replicates;
   ElementDeleter deleter(&replicates);
-  ASSERT_OK(reader->ReadReplicatesInRange(first_log_index, first_log_index + kSequenceLength - 1,
-                                          LogReader::kNoSizeLimit, &replicates));
+  ASSERT_OK(reader->ReadReplicatesInRange(
+        first_log_index,
+        first_log_index + kSequenceLength - 1,
+        LogReader::kNoSizeLimit,
+        /*for_peer_uuid=*/boost::none,
+        &replicates));
   ASSERT_EQ(kSequenceLength, replicates.size());
   ASSERT_GT(op_id.index(), std::numeric_limits<int32_t>::max());
 }

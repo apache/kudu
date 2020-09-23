@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/ref_counted_replicate.h"
@@ -84,6 +85,7 @@ class LogCache {
   // of time and should not be called with important locks held, etc.
   Status ReadOps(int64_t after_op_index,
                  int max_size_bytes,
+                 const boost::optional<std::string>& for_peer_uuid,
                  std::vector<ReplicateRefPtr>* messages,
                  OpId* preceding_op);
 
