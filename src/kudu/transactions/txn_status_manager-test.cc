@@ -56,6 +56,8 @@
 using kudu::consensus::ConsensusBootstrapInfo;
 using kudu::tablet::ParticipantIdsByTxnId;
 using kudu::tablet::TabletReplicaTestBase;
+using kudu::transactions::TxnStatePB;
+using kudu::transactions::TxnStatusEntryPB;
 using kudu::tserver::TabletServerErrorPB;
 using std::string;
 using std::thread;
@@ -347,6 +349,111 @@ TEST_F(TxnStatusManagerTest, TestUpdateStateConcurrently) {
       ASSERT_TRUE(ContainsKey(txns_with_begin_commit, i));
       ASSERT_FALSE(ContainsKey(txns_with_abort, i));
     }
+  }
+}
+
+// This test scenario verifies basic functionality of the
+// TxnStatusManager::GetTransactionStatus() method.
+TEST_F(TxnStatusManagerTest, GetTransactionStatus) {
+  {
+    TabletServerErrorPB ts_error;
+    ASSERT_OK(txn_manager_->BeginTransaction(1, kOwner, &ts_error));
+
+    TxnStatusEntryPB txn_status;
+    ASSERT_OK(txn_manager_->GetTransactionStatus(1, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::OPEN, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+
+    ASSERT_OK(txn_manager_->BeginCommitTransaction(1, kOwner, &ts_error));
+    ASSERT_OK(txn_manager_->GetTransactionStatus(1, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::COMMIT_IN_PROGRESS, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+
+    ASSERT_OK(txn_manager_->FinalizeCommitTransaction(1));
+    ASSERT_OK(txn_manager_->GetTransactionStatus(1, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::COMMITTED, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+  }
+
+  {
+    TabletServerErrorPB ts_error;
+    ASSERT_OK(txn_manager_->BeginTransaction(2, kOwner, &ts_error));
+    ASSERT_OK(txn_manager_->AbortTransaction(2, kOwner, &ts_error));
+
+    TxnStatusEntryPB txn_status;
+    ASSERT_OK(txn_manager_->GetTransactionStatus(2, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::ABORTED, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+  }
+
+  // Start another transaction and start its commit phase.
+  TabletServerErrorPB ts_error;
+  ASSERT_OK(txn_manager_->BeginTransaction(3, kOwner, &ts_error));
+  ASSERT_OK(txn_manager_->BeginCommitTransaction(3, kOwner, &ts_error));
+
+  // Start just another transaction.
+  ASSERT_OK(txn_manager_->BeginTransaction(4, kOwner, &ts_error));
+
+  // Make the TxnStatusManager start from scratch.
+  ASSERT_OK(RestartReplica());
+
+  // Committed, aborted, and in-flight transactions should be known to the
+  // TxnStatusManager even after restarting the underlying replica and
+  // rebuilding the TxnStatusManager from scratch.
+  {
+    TxnStatusEntryPB txn_status;
+    ASSERT_OK(txn_manager_->GetTransactionStatus(1, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::COMMITTED, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+
+    ASSERT_OK(txn_manager_->GetTransactionStatus(2, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::ABORTED, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+
+    ASSERT_OK(txn_manager_->GetTransactionStatus(3, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::COMMIT_IN_PROGRESS, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+
+    ASSERT_OK(txn_manager_->GetTransactionStatus(4, kOwner, &txn_status));
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(TxnStatePB::OPEN, txn_status.state());
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_EQ(kOwner, txn_status.user());
+  }
+
+  // Supplying wrong user.
+  {
+    TxnStatusEntryPB txn_status;
+    auto s = txn_manager_->GetTransactionStatus(1, "stranger", &txn_status);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  }
+
+  // Supplying not-yet-used transaction ID.
+  {
+    TxnStatusEntryPB txn_status;
+    auto s = txn_manager_->GetTransactionStatus(0, kOwner, &txn_status);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
+  // Supplying wrong user and not-yet-used transaction ID.
+  {
+    TxnStatusEntryPB txn_status;
+    auto s = txn_manager_->GetTransactionStatus(0, "stranger", &txn_status);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   }
 }
 

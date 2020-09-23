@@ -20,14 +20,14 @@ PROTOBUF_GENERATE_CPP(
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES transactions.proto)
-
-add_library(transactions_proto
-  ${TRANSACTIONS_PROTO_SRCS}
-  ${TRANSACTIONS_PROTO_HDRS})
-target_link_libraries(transactions_proto
+set(TRANSACTIONS_PROTO_LIBS
   protobuf
   wire_protocol_proto
 )
+ADD_EXPORTABLE_LIBRARY(transactions_proto
+  SRCS ${TRANSACTIONS_PROTO_SRCS}
+  DEPS ${TRANSACTIONS_PROTO_LIBS}
+  NONLINK_DEPS ${TRANSACTIONS_PROTO_TGTS})
 
 set(TRANSACTIONS_SRCS
   coordinator_rpc.cc

@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -214,6 +215,24 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& use
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
   txn_lock.Commit();
+  return Status::OK();
+}
+
+Status TxnStatusManager::GetTransactionStatus(
+    int64_t txn_id,
+    const std::string& user,
+    transactions::TxnStatusEntryPB* txn_status) {
+  DCHECK(txn_status);
+  scoped_refptr<TransactionEntry> txn;
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn));
+
+  TransactionEntryLock txn_lock(txn.get(), LockMode::READ);
+  const auto& pb = txn_lock.data().pb;
+  DCHECK(pb.has_user());
+  txn_status->set_user(pb.user());
+  DCHECK(pb.has_state());
+  txn_status->set_state(pb.state());
+
   return Status::OK();
 }
 

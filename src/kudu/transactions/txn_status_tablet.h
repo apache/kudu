@@ -119,9 +119,6 @@ class TxnStatusTablet {
 
  private:
   friend class TxnStatusManager;
-  tablet::TabletReplica* tablet_replica() const {
-    return tablet_replica_;
-  }
 
   // Writes 'req' to the underlying tablet replica, populating 'ts_error' and
   // returning non-OK if there was a problem replicating the request, or simply

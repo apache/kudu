@@ -86,6 +86,7 @@
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_coordinator.h"
+#include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tablet_server.h"
@@ -1194,6 +1195,7 @@ Status ValidateCoordinatorOpFields(const CoordinatorOpPB& op) {
     case CoordinatorOpPB::BEGIN_TXN:
     case CoordinatorOpPB::BEGIN_COMMIT_TXN:
     case CoordinatorOpPB::ABORT_TXN:
+    case CoordinatorOpPB::GET_TXN_STATUS:
       if (!op.has_txn_id()) {
         return Status::InvalidArgument(Substitute("Missing txn id: $0",
                                                   SecureShortDebugString(op)));
@@ -1244,6 +1246,7 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   // Catch any replication errors in this 'ts_error' so we can return an
   // appropriate error to the caller if need be.
   TabletServerErrorPB ts_error;
+  transactions::TxnStatusEntryPB txn_status;
   const auto& user = op.user();
   const auto& txn_id = op.txn_id();
   switch (op.type()) {
@@ -1259,6 +1262,9 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
     case CoordinatorOpPB::ABORT_TXN:
       s = txn_coordinator->AbortTransaction(txn_id, user, &ts_error);
       break;
+    case CoordinatorOpPB::GET_TXN_STATUS:
+      s = txn_coordinator->GetTransactionStatus(txn_id, user, &txn_status);
+      break;
     default:
       s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
   }
@@ -1270,6 +1276,9 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   // From here on out, errors are considered application errors.
   if (PREDICT_FALSE(!s.ok())) {
     StatusToPB(s, resp->mutable_op_result()->mutable_op_error());
+  } else if (op.type() == CoordinatorOpPB::GET_TXN_STATUS) {
+    // Populate corresponding field in the response.
+    *(resp->mutable_op_result()->mutable_txn_status()) = std::move(txn_status);
   }
   context->RespondSuccess();
 }

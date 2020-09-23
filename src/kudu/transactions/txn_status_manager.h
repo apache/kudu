@@ -110,6 +110,12 @@ class TxnStatusManager : public tablet::TxnCoordinator {
   Status AbortTransaction(int64_t txn_id, const std::string& user,
                           tserver::TabletServerErrorPB* ts_error) override;
 
+  // Retrieves the status of the specified transaction, returning an error if
+  // the transaction doesn't exist or isn't owned by the specified user.
+  Status GetTransactionStatus(int64_t txn_id,
+                              const std::string& user,
+                              transactions::TxnStatusEntryPB* txn_status) override;
+
   // Creates an in-memory participant, writes an entry to the status table, and
   // attaches the in-memory participant to the transaction.
   //

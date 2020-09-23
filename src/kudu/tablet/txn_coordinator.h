@@ -24,6 +24,11 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+namespace transactions {
+class TxnStatusEntryPB;
+} // namespace transactions
+
 namespace tserver {
 class TabletServerErrorPB;
 } // namespace tserver
@@ -76,6 +81,11 @@ class TxnCoordinator {
   // no such transaction), returns an error without populating 'ts_error'.
   virtual Status AbortTransaction(int64_t txn_id, const std::string& user,
                                   tserver::TabletServerErrorPB* ts_error) = 0;
+
+  // Retrieves the status entry for the specified transaction.
+  virtual Status GetTransactionStatus(int64_t txn_id,
+                                      const std::string& user,
+                                      transactions::TxnStatusEntryPB* txn_status) = 0;
 
   // Registers a participant tablet ID to the given transaction ID as the given
   // user.

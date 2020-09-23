@@ -24,6 +24,7 @@ import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
+import "kudu/transactions/transactions.proto";
 import "kudu/tserver/tserver.proto";
 
 message CoordinatorOpPB {
@@ -33,6 +34,7 @@ message CoordinatorOpPB {
     REGISTER_PARTICIPANT = 2;
     BEGIN_COMMIT_TXN = 3;
     ABORT_TXN = 4;
+    GET_TXN_STATUS = 5;
   }
   optional CoordinatorOpType type = 1;
   optional int64 txn_id = 2;
@@ -46,6 +48,13 @@ message CoordinatorOpPB {
 
 message CoordinatorOpResultPB {
   optional AppStatusPB op_error = 1;
+
+  // The status of the transaction as seen at the moment when the request was
+  // processed. Populated only if responding to a request of the GET_TXN_STATUS
+  // operation type.
+  // TODO(aserbin): does it make sense to populate this with the current status
+  //                of the transaction for other operation types?
+  optional transactions.TxnStatusEntryPB txn_status = 2;
 
   // TODO(awong): populate this with some application-level results, like the
   // actual transaction ID assigned, the next highest transaction ID available,
