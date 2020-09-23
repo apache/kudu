@@ -57,6 +57,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -96,6 +97,7 @@
 using boost::none;
 using boost::optional;
 using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::itest::GetClusterId;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
@@ -1871,6 +1873,13 @@ TEST_F(MasterTest, TestConnectToMaster) {
   // The returned location should be empty because no location mapping command
   // is defined.
   ASSERT_TRUE(resp.client_location().empty());
+
+  // The cluster ID should match the masters cluster ID.
+  string cluster_id;
+  const std::shared_ptr<MasterServiceProxy> master_proxy = std::move(proxy_);
+  ASSERT_OK(GetClusterId(master_proxy, MonoDelta::FromSeconds(30), &cluster_id));
+  ASSERT_TRUE(!cluster_id.empty());
+  ASSERT_EQ(cluster_id, resp.cluster_id());
 }
 
 TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {

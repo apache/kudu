@@ -82,6 +82,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/data_gen_util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -176,6 +177,7 @@ using boost::none;
 using google::protobuf::util::MessageDifferencer;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
+using kudu::itest::GetClusterId;
 using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
@@ -785,6 +787,17 @@ class ClientTest : public KuduTest {
 
 const char *ClientTest::kTableName = "client-testtb";
 const int32_t ClientTest::kNoBound = kint32max;
+
+TEST_F(ClientTest, TestClusterId) {
+  int leader_idx;
+  ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
+  string cluster_id;
+  ASSERT_OK(GetClusterId(cluster_->master_proxy(leader_idx),
+                         MonoDelta::FromSeconds(30),
+                         &cluster_id));
+  ASSERT_TRUE(!cluster_id.empty());
+  ASSERT_EQ(cluster_id, client_->cluster_id());
+}
 
 TEST_F(ClientTest, TestListTables) {
   const char* kTable2Name = "client-testtb2";

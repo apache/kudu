@@ -804,6 +804,9 @@ message ConnectToMasterResponsePB {
 
   // The location of the client assigned by the master.
   optional string client_location = 7;
+
+  // The cluster ID of this master.
+  optional string cluster_id = 8;
 }
 
 // Hive Metastore integration options and configuration.

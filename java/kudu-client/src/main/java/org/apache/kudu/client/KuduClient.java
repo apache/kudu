@@ -93,6 +93,18 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Returns the ID of the cluster that this client is connected to.
+   * It will be an empty string if the client is not connected or
+   * the client is connected to a cluster that doesn't support
+   * cluster IDs.
+   *
+   * @return the ID of the cluster that this client is connected to
+   */
+  public String getClusterId() {
+    return asyncClient.getClusterId();
+  }
+
+  /**
    * Returns the unique client id assigned to this client.
    * @return the unique client id assigned to this client.
    */

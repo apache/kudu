@@ -36,7 +36,6 @@
 #include "kudu/gutil/strings/strip.h" // IWYU pragma: keep
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/master/master.pb.h"
 #include "kudu/master/sys_catalog.h" // IWYU pragma: keep
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
@@ -58,7 +57,7 @@ using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ScopedResumeExternalDaemon;
 using kudu::itest::GetInt64Metric;
-using kudu::itest::GetMasterRegistration;
+using kudu::itest::GetClusterId;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -155,14 +154,6 @@ class MasterFailoverTest : public KuduTest,
       ->RenameTo(table_name_new)
       ->wait(true)
       ->Alter();
-  }
-
-  std::string GetClusterId(const int master_idx) {
-    master::GetMasterRegistrationResponsePB registration;
-    CHECK_OK(GetMasterRegistration(cluster_->master_proxy(master_idx),
-        kOperationTimeout, &registration));
-    CHECK(registration.has_cluster_id());
-    return registration.cluster_id();
   }
 
  protected:
@@ -503,7 +494,9 @@ TEST_P(MasterFailoverTest, TestClusterIdOnFailover) {
   // Validate and store the initial cluster ID.
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-  string original_cluster_id = GetClusterId(leader_idx);
+  string original_cluster_id;
+  ASSERT_OK(GetClusterId(cluster_->master_proxy(leader_idx), kOperationTimeout,
+      &original_cluster_id));
   ASSERT_TRUE(!original_cluster_id.empty());
 
   LOG(INFO) << "Shutdown the leader master";
@@ -513,7 +506,9 @@ TEST_P(MasterFailoverTest, TestClusterIdOnFailover) {
   int new_leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&new_leader_idx));
   ASSERT_NE(leader_idx, new_leader_idx);
-  string new_cluster_id = GetClusterId(new_leader_idx);
+  string new_cluster_id;
+  ASSERT_OK(GetClusterId(cluster_->master_proxy(new_leader_idx), kOperationTimeout,
+                         &new_cluster_id));
   ASSERT_TRUE(!new_cluster_id.empty());
   ASSERT_EQ(original_cluster_id, new_cluster_id);
 }

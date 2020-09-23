@@ -1324,6 +1324,14 @@ public class TestKuduClient {
   }
 
   @Test(timeout = 100000)
+  public void testClusterId() throws Exception {
+    assertTrue(client.getClusterId().isEmpty());
+    // Do something that will cause the client to connect to the cluster.
+    client.listTabletServers();
+    assertFalse(client.getClusterId().isEmpty());
+  }
+
+  @Test(timeout = 100000)
   public void testSessionOnceClosed() throws Exception {
     client.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
     KuduTable table = client.openTable(TABLE_NAME);

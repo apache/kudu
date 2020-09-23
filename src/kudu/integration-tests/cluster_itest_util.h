@@ -460,6 +460,11 @@ Status GetMasterRegistration(const std::shared_ptr<master::MasterServiceProxy>& 
                              const MonoDelta& timeout,
                              master::GetMasterRegistrationResponsePB* registration);
 
+// Get the cluster ID from the Master.
+Status GetClusterId(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                    const MonoDelta& timeout,
+                    std::string* cluster_id);
+
 // Alter the table name.
 Status AlterTableName(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                       const std::string& table_id,

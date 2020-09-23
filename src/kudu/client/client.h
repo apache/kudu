@@ -594,6 +594,11 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   assigned yet, or if the leader master did not assign a location to
   ///   the client.
   std::string location() const KUDU_NO_EXPORT;
+
+  /// Private API.
+  ///
+  /// @return The ID of the cluster that this client is connected to.
+  std::string cluster_id() const KUDU_NO_EXPORT;
   /// @endcond
 
  private:

@@ -752,6 +752,10 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   // until we have taken over all the associated responsibilities.
   resp->set_role(is_leader ? consensus::RaftPeerPB::LEADER
                            : consensus::RaftPeerPB::FOLLOWER);
+
+  // Add the cluster ID.
+  resp->set_cluster_id(server_->cluster_id());
+
   rpc->RespondSuccess();
 }
 

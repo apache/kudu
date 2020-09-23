@@ -1329,6 +1329,16 @@ Status GetMasterRegistration(const shared_ptr<MasterServiceProxy>& master_proxy,
   return Status::OK();
 }
 
+Status GetClusterId(const shared_ptr<MasterServiceProxy>& master_proxy,
+                    const MonoDelta& timeout,
+                    string* cluster_id) {
+  master::GetMasterRegistrationResponsePB registration;
+  RETURN_NOT_OK(GetMasterRegistration(master_proxy, timeout, &registration));
+  CHECK(registration.has_cluster_id());
+  *cluster_id = registration.cluster_id();
+  return Status::OK();
+}
+
 Status GetTsCounterValue(ExternalTabletServer* ets,
                          MetricPrototype* metric,
                          int64_t* value) {

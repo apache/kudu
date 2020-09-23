@@ -660,6 +660,7 @@ void KuduClient::Data::ConnectedToClusterCb(
       hive_metastore_uuid_ = hive_config.hms_uuid();
 
       location_ = connect_response.client_location();
+      cluster_id_ = connect_response.cluster_id();
 
       master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
       master_proxy_->set_user_credentials(user_credentials_);
@@ -808,6 +809,11 @@ vector<HostPort> KuduClient::Data::master_hostports() const {
 string KuduClient::Data::location() const {
   std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return location_;
+}
+
+string KuduClient::Data::cluster_id() const {
+  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  return cluster_id_;
 }
 
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {

@@ -340,6 +340,15 @@ public class AsyncKuduClient implements AutoCloseable {
   private String location = "";
 
   /**
+   * The ID of the cluster that this client is connected to.
+   *
+   * It will be an empty string if the client is not connected
+   * or the client is connected to a cluster that doesn't support
+   * cluster IDs
+   */
+  private String clusterId = "";
+
+  /**
    * Semaphore used to rate-limit master lookups
    * Once we have more than this number of concurrent master lookups, we'll
    * start to throttle ourselves slightly.
@@ -476,6 +485,7 @@ public class AsyncKuduClient implements AutoCloseable {
         }
         synchronized (AsyncKuduClient.this) {
           location = masterResponsePB.getClientLocation();
+          clusterId = masterResponsePB.getClusterId();
         }
         return null;
       }
@@ -526,8 +536,20 @@ public class AsyncKuduClient implements AutoCloseable {
    *
    * @return a string representation of this client's location
    */
-  public String getLocationString() {
+  public synchronized String getLocationString() {
     return location;
+  }
+
+  /**
+   * Returns the ID of the cluster that this client is connected to.
+   * It will be an empty string if the client is not connected or
+   * the client is connected to a cluster that doesn't support
+   * cluster IDs.
+   *
+   * @return the ID of the cluster that this client is connected to
+   */
+  public synchronized String getClusterId() {
+    return clusterId;
   }
 
   /**
@@ -1807,6 +1829,7 @@ public class AsyncKuduClient implements AutoCloseable {
               synchronized (AsyncKuduClient.this) {
                 AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
                 location = respPb.getClientLocation();
+                clusterId = respPb.getClusterId();
               }
 
               hasConnectedToMaster = true;

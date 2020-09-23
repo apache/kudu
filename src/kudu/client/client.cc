@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/common.h>
 
@@ -681,6 +682,10 @@ string KuduClient::GetHiveMetastoreUuid() const {
 
 string KuduClient::location() const {
   return data_->location();
+}
+
+string KuduClient::cluster_id() const {
+  return data_->cluster_id();
 }
 
 ////////////////////////////////////////////////////////////
