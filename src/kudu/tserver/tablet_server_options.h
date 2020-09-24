@@ -70,7 +70,7 @@ struct TabletServerOptions : public kudu::server::ServerBaseOptions {
 
   // Leader Detected Callback. This should eventually be reconciled
   // with NORCB.
-  std::function<void()> ldcb;
+  std::function<void(int64_t)> ldcb;
   bool disable_noop = false;
 
   // This is to enable a fresh instance join the ring with logs from

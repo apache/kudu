@@ -126,7 +126,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
   typedef std::function<void(int64_t)> TermAdvancementCallback;
   typedef std::function<void(const OpId opId)> NoOpReceivedCallback;
-  typedef std::function<void()> LeaderDetectedCallback;
+  typedef std::function<void(int64_t)> LeaderDetectedCallback;
 
   // Modes for StartElection().
   enum ElectionMode {
@@ -893,8 +893,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void ScheduleNoOpReceivedCallback(const ReplicateRefPtr& msg);
   void DoNoOpReceivedCallback(const OpId opid);
 
-  void ScheduleLeaderDetectedCallback();
-  void DoLeaderDetectedCallback();
+  void ScheduleLeaderDetectedCallback(int64_t term);
+  void DoLeaderDetectedCallback(int64_t term);
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
