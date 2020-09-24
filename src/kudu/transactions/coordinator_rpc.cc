@@ -49,6 +49,7 @@ using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::ResponseCallback;
 using kudu::rpc::RetriableRpc;
 using kudu::rpc::RetriableRpcStatus;
+using kudu::tserver::CoordinatorOpResultPB;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
@@ -57,9 +58,11 @@ namespace kudu {
 class MonoTime;
 namespace transactions {
 
-CoordinatorRpc* CoordinatorRpc::NewRpc(unique_ptr<TxnStatusTabletContext> ctx,
-                                       const MonoTime& deadline,
-                                       StatusCallback cb) {
+CoordinatorRpc* CoordinatorRpc::NewRpc(
+    unique_ptr<TxnStatusTabletContext> ctx,
+    const MonoTime& deadline,
+    StatusCallback cb,
+    CoordinatorOpResultPB* op_result) {
   KuduClient* client = ctx->table->client();
   scoped_refptr<MetaCacheServerPicker> server_picker(
       new MetaCacheServerPicker(client,
@@ -69,7 +72,8 @@ CoordinatorRpc* CoordinatorRpc::NewRpc(unique_ptr<TxnStatusTabletContext> ctx,
   CoordinatorRpc* rpc = new CoordinatorRpc(std::move(ctx),
                                            server_picker,
                                            deadline,
-                                           std::move(cb));
+                                           std::move(cb),
+                                           op_result);
   return rpc;
 }
 
@@ -85,6 +89,9 @@ void CoordinatorRpc::Finish(const Status& status) {
       resp_.has_op_result() && resp_.op_result().has_op_error()) {
     final_status = StatusFromPB(resp_.op_result().op_error());
   }
+  if (resp_.has_op_result() && op_result_) {
+    *op_result_ = resp_.op_result();
+  }
   cb_(final_status);
 }
 
@@ -99,7 +106,8 @@ bool CoordinatorRpc::GetNewAuthnTokenAndRetry() {
 CoordinatorRpc::CoordinatorRpc(unique_ptr<TxnStatusTabletContext> ctx,
                                const scoped_refptr<MetaCacheServerPicker>& replica_picker,
                                const MonoTime& deadline,
-                               StatusCallback cb)
+                               StatusCallback cb,
+                               CoordinatorOpResultPB* op_result)
     : RetriableRpc(replica_picker,
                    DCHECK_NOTNULL(ctx->table)->client()->data_->request_tracker_,
                    deadline,
@@ -107,15 +115,16 @@ CoordinatorRpc::CoordinatorRpc(unique_ptr<TxnStatusTabletContext> ctx,
       client_(ctx->table->client()),
       table_(std::move(ctx->table)),
       tablet_(std::move(ctx->tablet)),
-      cb_(std::move(cb)) {
+      cb_(std::move(cb)),
+      op_result_(op_result) {
   req_.set_txn_status_tablet_id(tablet_->tablet_id());
   *req_.mutable_op() = std::move(ctx->coordinate_txn_op);
 }
 
-void CoordinatorRpc::Try(RemoteTabletServer* replica, const ResponseCallback& callback) {
+void CoordinatorRpc::Try(RemoteTabletServer* replica,
+                         const ResponseCallback& callback) {
   replica->admin_proxy()->CoordinateTransactionAsync(
-      req_, &resp_, mutable_retrier()->mutable_controller(),
-      callback);
+      req_, &resp_, mutable_retrier()->mutable_controller(), callback);
 }
 
 // TODO(awong): much of this is borrowed from WriteRpc::AnalyzeResponse(). It'd

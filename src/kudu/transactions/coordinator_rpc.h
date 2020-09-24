@@ -55,9 +55,12 @@ class CoordinatorRpc final : public rpc::RetriableRpc<client::internal::RemoteTa
                                                       tserver::CoordinateTransactionRequestPB,
                                                       tserver::CoordinateTransactionResponsePB> {
  public:
+  // NOTE: if 'op_result' is non-null, the memory it points to should stay valid
+  //       until the RPC completes (i.e. until callback 'cb' is invoked).
   static CoordinatorRpc* NewRpc(std::unique_ptr<TxnStatusTabletContext> ctx,
                                 const MonoTime& deadline,
-                                StatusCallback cb);
+                                StatusCallback cb,
+                                tserver::CoordinatorOpResultPB* op_result = nullptr);
 
   ~CoordinatorRpc() {}
 
@@ -78,12 +81,14 @@ class CoordinatorRpc final : public rpc::RetriableRpc<client::internal::RemoteTa
   CoordinatorRpc(std::unique_ptr<TxnStatusTabletContext> ctx,
                  const scoped_refptr<client::internal::MetaCacheServerPicker>& replica_picker,
                  const MonoTime& deadline,
-                 StatusCallback cb);
+                 StatusCallback cb,
+                 tserver::CoordinatorOpResultPB* op_result);
 
   client::KuduClient* client_;
   client::sp::shared_ptr<client::KuduTable> table_;
   scoped_refptr<client::internal::RemoteTablet> tablet_;
   const StatusCallback cb_;
+  tserver::CoordinatorOpResultPB* op_result_;
 };
 
 } // namespace transactions

@@ -44,9 +44,12 @@ class TxnStatusTableITest_TestProtectCreateAndAlter_Test;
 
 namespace tserver {
 class CoordinatorOpPB;
+class CoordinatorOpResultPB;
 } // namespace tserver
 
 namespace transactions {
+
+class TxnStatusEntryPB;
 
 // Wrapper around a KuduClient used by Kudu for making transaction-related
 // calls to various servers.
@@ -97,11 +100,20 @@ class TxnSystemClient {
                           const std::string& user,
                           MonoDelta timeout = MonoDelta::FromSeconds(10));
 
+  // Retrieves transactions status. On success, returns Status::OK() and stores
+  // the result status in the 'txn_status' output parameter. On failure,
+  // returns corresponding Status.
+  Status GetTransactionStatus(int64_t txn_id,
+                              const std::string& user,
+                              TxnStatusEntryPB* txn_status,
+                              MonoDelta timeout = MonoDelta::FromSeconds(10));
+
   // Opens the transaction status table, refreshing metadata with that from the
   // masters.
   Status OpenTxnStatusTable();
 
  private:
+
   friend class itest::TxnStatusTableITest;
   FRIEND_TEST(itest::TxnStatusTableITest, TestProtectCreateAndAlter);
 
@@ -115,7 +127,8 @@ class TxnSystemClient {
 
   Status CoordinateTransactionAsync(tserver::CoordinatorOpPB coordinate_txn_op,
                                     const MonoDelta& timeout,
-                                    const StatusCallback& cb);
+                                    const StatusCallback& cb,
+                                    tserver::CoordinatorOpResultPB* result = nullptr);
 
   client::sp::shared_ptr<client::KuduTable> txn_status_table() {
     std::lock_guard<simple_spinlock> l(table_lock_);
@@ -130,4 +143,3 @@ class TxnSystemClient {
 
 } // namespace transactions
 } // namespace kudu
-

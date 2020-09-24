@@ -50,6 +50,7 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
 #include "kudu/transactions/txn_system_client.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -66,18 +67,20 @@ DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
 
-using kudu::client::sp::shared_ptr;
 using kudu::client::AuthenticationCredentialsPB;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduTable;
+using kudu::client::sp::shared_ptr;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
-using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
+using kudu::itest::TabletServerMap;
 using kudu::tablet::TabletReplica;
-using kudu::transactions::TxnSystemClient;
+using kudu::transactions::TxnStatePB;
+using kudu::transactions::TxnStatusEntryPB;
 using kudu::transactions::TxnStatusTablet;
+using kudu::transactions::TxnSystemClient;
 using std::map;
 using std::string;
 using std::thread;
@@ -436,6 +439,7 @@ TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
 
   ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
   ASSERT_OK(txn_sys_client_->BeginCommitTransaction(1, kUser));
+
   // Calling BeginCommitTransaction() on already committing transaction is OK.
   ASSERT_OK(txn_sys_client_->BeginCommitTransaction(1, kUser));
   // It's completely legal to abort a transaction that has entered the commit
@@ -485,6 +489,61 @@ TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
     s = txn_sys_client_->AbortTransaction(3, "stranger");
     ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 3 not owned by stranger");
+  }
+}
+
+TEST_F(TxnStatusTableITest, GetTransactionStatus) {
+  const auto verify_state = [&](TxnStatePB state) {
+    TxnStatusEntryPB txn_status;
+    ASSERT_OK(txn_sys_client_->GetTransactionStatus(1, kUser, &txn_status));
+    ASSERT_TRUE(txn_status.has_user());
+    ASSERT_STREQ(kUser, txn_status.user().c_str());
+    ASSERT_TRUE(txn_status.has_state());
+    ASSERT_EQ(state, txn_status.state());
+  };
+
+  ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
+  ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
+
+  ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
+  NO_FATALS(verify_state(TxnStatePB::OPEN));
+
+  ASSERT_OK(txn_sys_client_->BeginCommitTransaction(1, kUser));
+  NO_FATALS(verify_state(TxnStatePB::COMMIT_IN_PROGRESS));
+
+  ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
+  NO_FATALS(verify_state(TxnStatePB::ABORTED));
+
+  {
+    auto s = txn_sys_client_->BeginCommitTransaction(1, kUser);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    NO_FATALS(verify_state(TxnStatePB::ABORTED));
+  }
+
+  // In the negative scenarios below, check for the expected status code
+  // and make sure nothing is set in the output argument.
+  {
+    TxnStatusEntryPB empty;
+    auto s = txn_sys_client_->GetTransactionStatus(1, "interloper", &empty);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+    ASSERT_FALSE(empty.has_user());
+    ASSERT_FALSE(empty.has_state());
+  }
+
+  {
+    TxnStatusEntryPB empty;
+    auto s = txn_sys_client_->GetTransactionStatus(2, kUser, &empty);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_FALSE(empty.has_user());
+    ASSERT_FALSE(empty.has_state());
+  }
+
+  {
+    TxnStatusEntryPB empty;
+    auto s = txn_sys_client_->GetTransactionStatus(2, "", &empty);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    ASSERT_FALSE(empty.has_user());
+    ASSERT_FALSE(empty.has_state());
   }
 }
 
