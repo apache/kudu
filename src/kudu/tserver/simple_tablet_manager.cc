@@ -479,7 +479,7 @@ Status TSTabletManager::SetupRaft() {
   //
   // However, for the MySQL case, we allow logs to be copied from a previous
   // instance while this instance is still new (is_first_run) and
-  // going to be added to the ring. In that mode, the consensus-metadata filess
+  // going to be added to the ring. In that mode, the consensus-metadata files
   // are not copied from the previous instance (this might change in the future).
   // The cmeta is actually built from the options parameters.
   // Using :

@@ -1539,6 +1539,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // The deduplicated request.
   LeaderRequest deduped_req;
   auto& messages = deduped_req.messages;
+  int64_t current_term_save = -1;
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
@@ -1629,6 +1630,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     Status prepare_status;
     auto iter = messages.begin();
+    // NB - (arahut)
+    // By this time new_leader_detected_failsafe_ has been set to
+    // true if a new leader has been detected via this UpdateReplica call.
+    // However if that new LEADER has not sent any messages in this round,
+    // and we are past LMP mismatch, then new_leader_detected_failsafe_
+    // will remain true. The No-Op can still come later.
+    // So there is a possibility that TACB, LDCB and NORCB all fire on
+    // same term. We have to handle this on plugin side.
     while (iter != messages.end()) {
       OperationType op_type = (*iter)->get()->op_type();
       if (op_type == NO_OP) {
@@ -1727,6 +1736,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Fill the response with the current state. We will not mutate anymore state until
     // we actually reply to the leader, we'll just wait for the messages to be durable.
     FillConsensusResponseOKUnlocked(response);
+    current_term_save = CurrentTermUnlocked();
   }
   // Release the lock while we wait for the log append to finish so that commits can go through.
   // We'll re-acquire it before we update the state again.
@@ -1759,7 +1769,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
                       << ". Request: " << SecureShortDebugString(*request);
 
   if (new_leader_detected_failsafe_) {
-    ScheduleLeaderDetectedCallback();
+    ScheduleLeaderDetectedCallback(current_term_save);
   }
   TRACE("UpdateReplicas() finished");
   return Status::OK();
@@ -3388,16 +3398,16 @@ void RaftConsensus::DoNoOpReceivedCallback(const OpId id) {
   if (norcb_) norcb_(id);
 }
 
-void RaftConsensus::ScheduleLeaderDetectedCallback() {
+void RaftConsensus::ScheduleLeaderDetectedCallback(int64_t term) {
   WARN_NOT_OK(
       raft_pool_token_->SubmitFunc(
         std::bind(&RaftConsensus::DoLeaderDetectedCallback,
-                  shared_from_this())),
+                  shared_from_this(), term)),
       LogPrefixThreadSafe() + "Unable to run leader detected callback");
 }
 
-void RaftConsensus::DoLeaderDetectedCallback() {
-  if (ldcb_) ldcb_();
+void RaftConsensus::DoLeaderDetectedCallback(int64_t term) {
+  if (ldcb_) ldcb_(term);
 }
 
 Status RaftConsensus::SetCurrentTermBootstrap(int64_t new_term) {
