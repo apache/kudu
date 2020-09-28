@@ -144,6 +144,7 @@ enum OperationType {
   CHANGE_CONFIG_OP = 5;
   WRITE_OP_EXT = 6;
   PROXY_OP = 7;
+  ROTATE_OP = 8;
 }
 
 /*
