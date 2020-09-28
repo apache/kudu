@@ -36,6 +36,7 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
+import org.apache.kudu.client.SessionConfiguration.FlushMode;
 
 /*
  * A simple example of using the synchronous Kudu Java client to
@@ -77,6 +78,7 @@ public class Example {
     // Open the newly-created table and create a KuduSession.
     KuduTable table = client.openTable(tableName);
     KuduSession session = client.newSession();
+    session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND);
     for (int i = 0; i < numRows; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
@@ -93,7 +95,7 @@ public class Example {
     // Call session.close() to end the session and ensure the rows are
     // flushed and errors are returned.
     // You can also call session.flush() to do the same without ending the session.
-    // When flushing in AUTO_FLUSH_BACKGROUND mode (the default mode recommended
+    // When flushing in AUTO_FLUSH_BACKGROUND mode (the mode recommended
     // for most workloads, you must check the pending errors as shown below, since
     // write operations are flushed to Kudu in background threads.
     session.close();
