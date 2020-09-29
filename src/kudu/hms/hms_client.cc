@@ -107,6 +107,7 @@ const char* const HmsClient::kLegacyKuduStorageHandler =
   "com.cloudera.kudu.hive.KuduStorageHandler";
 const char* const HmsClient::kLegacyTablePrefix = "impala::";
 const char* const HmsClient::kKuduTableIdKey = "kudu.table_id";
+const char* const HmsClient::kKuduClusterIdKey = "kudu.cluster_id";
 const char* const HmsClient::kKuduTableNameKey = "kudu.table_name";
 const char* const HmsClient::kKuduMasterAddrsKey = "kudu.master_addresses";
 const char* const HmsClient::kKuduMasterEventKey = "kudu.master_event";

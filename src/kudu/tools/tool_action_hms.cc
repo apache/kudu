@@ -188,7 +188,6 @@ bool IsSynced(const set<string>& master_addresses,
   DCHECK(!master_addresses.empty());
   auto schema = KuduSchema::ToSchema(kudu_table.schema());
   hive::Table hms_table_copy(hms_table);
-  // TODO(ghenke): Get the owner from Kudu?
   const string* hms_masters_field = FindOrNull(hms_table.parameters,
                                                HmsClient::kKuduMasterAddrsKey);
   if (!hms_masters_field ||
@@ -196,8 +195,8 @@ bool IsSynced(const set<string>& master_addresses,
     return false;
   }
   Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), kudu_table.owner(),
-                                       schema, *hms_masters_field, hms_table.tableType,
-                                       &hms_table_copy);
+                                       schema, kudu_table.client()->cluster_id(),
+                                       *hms_masters_field, hms_table.tableType, &hms_table_copy);
   return s.ok() && hms_table_copy == hms_table;
 }
 
@@ -227,6 +226,7 @@ Status PrintTables(const string& master_addrs,
   DataTable table({
       "Kudu table",
       "Kudu table ID",
+      "Kudu cluster ID",
       "Kudu owner",
       "Kudu master addresses",
       "HMS database",
@@ -235,21 +235,25 @@ Status PrintTables(const string& master_addrs,
       "HMS owner",
       Substitute("HMS $0", HmsClient::kKuduTableNameKey),
       Substitute("HMS $0", HmsClient::kKuduTableIdKey),
+      Substitute("HMS $0", HmsClient::kKuduClusterIdKey),
       Substitute("HMS $0", HmsClient::kKuduMasterAddrsKey),
       Substitute("HMS $0", HmsClient::kStorageHandlerKey),
   });
   for (auto& pair : tables) {
     vector<string> row;
     if (pair.first) {
+      // Note: If adding or removing fields, be sure to adjust `row.resize` below.
       const KuduTable& kudu_table = *pair.first;
       row.emplace_back(kudu_table.name());
       row.emplace_back(kudu_table.id());
+      row.emplace_back(kudu_table.client()->cluster_id());
       row.emplace_back(kudu_table.owner());
       row.emplace_back(master_addrs);
     } else {
-      row.resize(4);
+      row.resize(5);
     }
     if (pair.second) {
+      // Note: If adding or removing fields, be sure to adjust `row.resize` below.
       hive::Table& hms_table = *pair.second;
       row.emplace_back(hms_table.dbName);
       row.emplace_back(hms_table.tableName);
@@ -257,10 +261,11 @@ Status PrintTables(const string& master_addrs,
       row.emplace_back(hms_table.owner);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduTableNameKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduTableIdKey]);
+      row.emplace_back(hms_table.parameters[HmsClient::kKuduClusterIdKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduMasterAddrsKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kStorageHandlerKey]);
     } else {
-      row.resize(12);
+      row.resize(14);
     }
     table.AddRow(std::move(row));
   }
@@ -295,6 +300,10 @@ Status PrintHMSTables(vector<hive::Table> tables, ostream& out) {
     } else if (boost::iequals(column, HmsClient::kKuduTableIdKey)) {
       for (auto& hms_table : tables) {
         values.emplace_back(hms_table.parameters[HmsClient::kKuduTableIdKey]);
+      }
+    } else if (boost::iequals(column, HmsClient::kKuduClusterIdKey)) {
+      for (auto& hms_table : tables) {
+        values.emplace_back(hms_table.parameters[HmsClient::kKuduClusterIdKey]);
       }
     } else if (boost::iequals(column, HmsClient::kKuduMasterAddrsKey)) {
       for (auto& hms_table : tables) {
@@ -652,6 +661,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
   if (FLAGS_create_missing_hms_tables) {
     for (const auto& kudu_table : report.missing_hms_tables) {
       const string& table_id = kudu_table->id();
+      const string& cluster_id = kudu_table->client()->cluster_id();
       const string& table_name = kudu_table->name();
       auto schema = KuduSchema::ToSchema(kudu_table->schema());
       string normalized_table_name(table_name.data(), table_name.size());
@@ -660,7 +670,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
       if (FLAGS_dryrun) {
         LOG(INFO) << "[dryrun] Creating HMS table for Kudu table " << TableIdent(*kudu_table);
       } else {
-        Status s = hms_catalog->CreateTable(table_id, table_name, kudu_table->owner(), schema);
+        Status s = hms_catalog->CreateTable(table_id, table_name, cluster_id,
+            kudu_table->owner(), schema);
         if (s.IsAlreadyPresent()) {
           LOG(ERROR) << "Failed to create HMS table for Kudu table "
                      << TableIdent(*kudu_table)
@@ -714,8 +725,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
                   << hms_table_name;
       } else {
         RETURN_NOT_OK_PREPEND(hms_catalog->UpgradeLegacyImpalaTable(
-                  kudu_table.id(), hms_table.dbName, hms_table.tableName,
-                  KuduSchema::ToSchema(kudu_table.schema())),
+                  kudu_table.id(), kudu_table.client()->cluster_id(), hms_table.dbName,
+                  hms_table.tableName, KuduSchema::ToSchema(kudu_table.schema())),
             Substitute("failed to upgrade legacy Impala HMS metadata for table $0",
               hms_table_name));
       }
@@ -803,7 +814,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
         RETURN_NOT_OK_PREPEND(
             // Disable table ID checking to support fixing tables with unsynchronized IDs.
             hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name,
-                owner, schema, /* check_id */ false),
+                                    kudu_table.client()->cluster_id(), owner, schema,
+                                    /* check_id */ false),
             Substitute("failed to refresh HMS table metadata for Kudu table $0",
               TableIdent(kudu_table)));
       }
@@ -939,9 +951,10 @@ unique_ptr<Mode> BuildHmsMode() {
                                                   HmsClient::kKuduTableNameKey),
                                 Substitute("Comma-separated list of HMS entry fields to "
                                            "include in output.\nPossible values: database, "
-                                           "table, type, owner, $0, $1, $2, $3",
+                                           "table, type, owner, $0, $1, $2, $3, $4",
                                            HmsClient::kKuduTableNameKey,
                                            HmsClient::kKuduTableIdKey,
+                                           HmsClient::kKuduClusterIdKey,
                                            HmsClient::kKuduMasterAddrsKey,
                                            HmsClient::kStorageHandlerKey))
           .AddOptionalParameter("format")

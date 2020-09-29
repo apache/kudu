@@ -352,6 +352,18 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
     return Status::OK();
   }
 
+  // If there is not a cluster ID, for maximum compatibility we should assume this is an older
+  // Kudu table without a cluster ID set. This is safe because we still validate the table ID
+  // which is universally unique.
+  const string* cluster_id =
+      FindOrNull(before_table.parameters, hms::HmsClient::kKuduClusterIdKey);
+  if (cluster_id && *cluster_id != catalog_manager_->GetClusterId()) {
+    // Not for this cluster; skip it.
+    VLOG(2) << Substitute("Ignoring alter event for table $0 of cluster $1",
+        before_table.tableName, *cluster_id);
+    return Status::OK();
+  }
+
   hive::Table after_table;
   RETURN_NOT_OK(DeserializeTable(event, message, "tableObjAfterJson", &after_table));
 
@@ -419,6 +431,18 @@ Status HmsNotificationLogListenerTask::HandleDropTableEvent(const hive::Notifica
   if (!hms::HmsClient::IsKuduTable(table)) {
     // Not a Kudu table; skip it.
     VLOG(2) << Substitute("Ignoring drop event for non-Kudu table $0", table.tableName);
+    return Status::OK();
+  }
+
+  // If there is not a cluster ID, for maximum compatibility we should assume this is an older
+  // Kudu table without a cluster ID set. This is safe because we still validate the table ID
+  // which is universally unique.
+  const string* cluster_id =
+      FindOrNull(table.parameters, hms::HmsClient::kKuduClusterIdKey);
+  if (cluster_id && *cluster_id != catalog_manager_->GetClusterId()) {
+    // Not for this cluster; skip it.
+    VLOG(2) << Substitute("Ignoring alter event for table $0 of cluster $1",
+                          table.tableName, *cluster_id);
     return Status::OK();
   }
 

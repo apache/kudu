@@ -33,6 +33,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/common.pb.h"
 #include "kudu/common/table_util.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
@@ -557,6 +558,68 @@ TEST_F(MasterHmsTest, TestIgnoreExternalTables) {
   ASSERT_OK(table_alterer->Alter());
   ASSERT_OK(harness_.hms_client()->GetTable("default", "ext3", &ext));
   ASSERT_EQ(kManagedTableName, ext.parameters[HmsClient::kKuduTableNameKey]);
+}
+
+TEST_F(MasterHmsTest, TestIgnoreOtherClusterIds) {
+  // Set up a few tables.
+  ASSERT_OK(CreateKuduTable("default", "same"));
+  ASSERT_OK(CreateKuduTable("default", "other"));
+  ASSERT_OK(CreateKuduTable("default", "noid"));
+  shared_ptr<KuduTable> kudu_table;
+  hive::Table hive_table;
+
+  // Alter the cluster id for the `other` table so that it no longer matches the cluster.
+  // This event and any future events should be ignored.
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "other", &hive_table));
+  hive_table.parameters[HmsClient::kKuduClusterIdKey] = "other_cluster_id";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "other", hive_table));
+
+  // Remove the cluster id for the `noid` table to represent a table created before
+  // cluster id support was added.
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "noid", &hive_table));
+  EraseKeyReturnValuePtr(&hive_table.parameters, HmsClient::kKuduClusterIdKey);
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "noid", hive_table));
+
+  // Alter the tables in the HMS, the `same` and `noid` tables should be updated in Kudu.
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "same", &hive_table));
+  hive_table.tableName = "same1";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "same", hive_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "other", &hive_table));
+  hive_table.tableName = "other1";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "other", hive_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "noid", &hive_table));
+  hive_table.tableName = "noid1";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "noid", hive_table));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(client_->OpenTable("default.same1", &kudu_table));
+    ASSERT_OK(client_->OpenTable("default.other", &kudu_table));
+    ASSERT_OK(client_->OpenTable("default.noid1", &kudu_table));
+    Status s = client_->OpenTable("default.other1", &kudu_table);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  });
+
+  // Alter the tables back.
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "same1", &hive_table));
+  hive_table.tableName = "same";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "same1", hive_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "other1", &hive_table));
+  hive_table.tableName = "other";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "other1", hive_table));
+  ASSERT_OK(harness_.hms_client()->GetTable("default", "noid1", &hive_table));
+  hive_table.tableName = "noid";
+  ASSERT_OK(harness_.hms_client()->AlterTable("default", "noid1", hive_table));
+
+  // Drop the tables in the HMS, the `same` and `noid` tables should be dropped in Kudu.
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "same"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "other"));
+  ASSERT_OK(harness_.hms_client()->DropTable("default", "noid"));
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(client_->OpenTable("default.other", &kudu_table));
+    Status s = client_->OpenTable("default.same", &kudu_table);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    s = client_->OpenTable("default.noid", &kudu_table);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  });
 }
 
 TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {

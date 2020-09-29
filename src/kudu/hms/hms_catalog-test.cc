@@ -211,6 +211,7 @@ class HmsCatalogTest : public KuduTest {
   void CheckTable(const string& database_name,
                   const string& table_name,
                   const string& table_id,
+                  const string& cluster_id,
                   const boost::optional<const string&>& owner,
                   const Schema& schema) {
     hive::Table table;
@@ -222,6 +223,7 @@ class HmsCatalogTest : public KuduTest {
       EXPECT_TRUE(table.owner.empty());
     }
     EXPECT_EQ(table.parameters[HmsClient::kKuduTableIdKey], table_id);
+    EXPECT_EQ(table.parameters[HmsClient::kKuduClusterIdKey], cluster_id);
     EXPECT_EQ(table.parameters[HmsClient::kKuduMasterAddrsKey], kMasterAddrs);
     EXPECT_EQ(table.parameters[HmsClient::kStorageHandlerKey], HmsClient::kKuduStorageHandler);
 
@@ -289,6 +291,7 @@ INSTANTIATE_TEST_CASE_P(HmsCatalogTests, HmsCatalogTestParameterized,
 // Test creating, altering, and dropping a table with the HMS Catalog.
 TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
   const string kTableId = "table-id";
+  const string kClusterId = "cluster-id";
   const string kHmsDatabase = "default";
   const string kHmsTableName = "table_name";
   const string kTableName = Substitute("$0.$1", kHmsDatabase, kHmsTableName);
@@ -299,22 +302,26 @@ TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
   Schema schema = AllTypesSchema();
 
   // Create the table.
-  ASSERT_OK(hms_catalog_->CreateTable(kTableId, kTableName, kOwner, schema));
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, kOwner, schema));
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, kTableName,
+      kClusterId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId,
+      kClusterId, kOwner, schema));
 
   // Create the table again, and check that the expected failure occurs.
-  Status s = hms_catalog_->CreateTable(kTableId, kTableName, kOwner, schema);
+  Status s = hms_catalog_->CreateTable(kTableId, kTableName,
+      kClusterId, kOwner, schema);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, kClusterId, kOwner, schema));
 
   // Alter the table.
   SchemaBuilder b(schema);
   b.AddColumn("new_column", DataType::INT32);
   Schema altered_schema = b.Build();
   ASSERT_OK(hms_catalog_->AlterTable(kTableId, kTableName, kAlteredTableName,
-                                     kOwner, altered_schema));
+      kClusterId, kOwner, altered_schema));
   NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, kHmsTableName));
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsAlteredTableName, kTableId, kOwner, altered_schema));
+  NO_FATALS(CheckTable(kHmsDatabase, kHmsAlteredTableName, kTableId, kClusterId, kOwner,
+      altered_schema));
 
   // Drop the table.
   ASSERT_OK(hms_catalog_->DropTable(kTableId, kAlteredTableName));
@@ -326,6 +333,7 @@ TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
 // belong to external tables from other systems.
 TEST_F(HmsCatalogTest, TestExternalTable) {
   const string kTableId = "table-id";
+  const string kClusterId = "cluster-id";
 
   // Create the external table (default.ext).
   hive::Table external_table;
@@ -345,26 +353,30 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
 
   // Create the Kudu table (default.a).
   Schema schema = AllTypesSchema();
-  ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a", boost::none, schema));
-  NO_FATALS(CheckTable("default", "a", kTableId, boost::none, schema));
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a",
+      kClusterId, boost::none, schema));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema));
 
   // Try and create a Kudu table with the same name as the external table.
-  Status s = hms_catalog_->CreateTable(kTableId, "default.ext", boost::none, schema);
+  Status s = hms_catalog_->CreateTable(kTableId, "default.ext",
+      kClusterId, boost::none, schema);
   EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   NO_FATALS(CheckExternalTable());
 
   // Try and rename the Kudu table to the external table name.
-  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext", boost::none, schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext",
+      kClusterId, boost::none, schema);
   EXPECT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckExternalTable());
-  NO_FATALS(CheckTable("default", "a", kTableId, boost::none, schema));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema));
 
   // Try and rename the external table. This shouldn't succeed because the Table
   // ID doesn't match.
-  s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.b", boost::none, schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.b",
+      kClusterId, boost::none, schema);
   EXPECT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckExternalTable());
-  NO_FATALS(CheckTable("default", "a", kTableId, boost::none, schema));
+  NO_FATALS(CheckTable("default", "a", kTableId, kClusterId, boost::none, schema));
   NO_FATALS(CheckTableDoesNotExist("default", "b"));
 
   // Try and drop the external table as if it were a Kudu table.
@@ -380,6 +392,7 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
 }
 
 TEST_F(HmsCatalogTest, TestGetKuduTables) {
+  const string kClusterId = "cluster-id";
   const string kHmsDatabase = "db";
   const string kManagedTableName = "managed_table";
   const string kExternalTableName = "external_table";
@@ -398,7 +411,8 @@ TEST_F(HmsCatalogTest, TestGetKuduTables) {
   ASSERT_OK(CreateLegacyTable("db", "external_table", HmsClient::kExternalTable));
   ASSERT_OK(hms_client_->GetTable("db", "external_table", &table));
 
-  ASSERT_OK(hms_catalog_->CreateTable("fake-id", "db.table", kOwner, Schema()));
+  ASSERT_OK(hms_catalog_->CreateTable("fake-id", "db.table",
+      kClusterId, kOwner, Schema()));
 
   hive::Table non_kudu_table;
   non_kudu_table.dbName = "db";
@@ -421,12 +435,13 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   // MiniHms does not support HA, since it relies on a single-process Derby database.
 
   const string kTableId = "table-id";
+  const string kClusterId = "cluster-id";
   const string kHmsDatabase = "default";
   const string kOwner = "alice";
   Schema schema = AllTypesSchema();
-  ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a", kOwner, schema));
-  NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, kOwner, schema));
-
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a",
+      kClusterId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, kClusterId, kOwner, schema));
   // Shutdown the HMS and try a few operations.
   ASSERT_OK(StopHms());
 
@@ -434,24 +449,28 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   // while the HMS is unavailable results in a non-linear number of reconnect
   // attempts.
 
-  Status s = hms_catalog_->CreateTable(kTableId, "default.b", kOwner, schema);
+  Status s = hms_catalog_->CreateTable(kTableId, "default.b",
+      kClusterId, kOwner, schema);
   EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
 
-  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.c", kOwner, schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.c",
+      kClusterId, kOwner, schema);
   EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Start the HMS back up and ensure that the same operations succeed.
   ASSERT_OK(StartHms());
   ASSERT_EVENTUALLY([&] {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
-    ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.d", kOwner, schema));
+    ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.d",
+        kClusterId, kOwner, schema));
   });
 
-  NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, kOwner, schema));
-  NO_FATALS(CheckTable(kHmsDatabase, "d", kTableId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, kClusterId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, "d", kTableId, kClusterId, kOwner, schema));
 
-  EXPECT_OK(hms_catalog_->AlterTable(kTableId, "default.a", "default.c", kOwner, schema));
-  NO_FATALS(CheckTable(kHmsDatabase, "c", kTableId, kOwner, schema));
+  EXPECT_OK(hms_catalog_->AlterTable(kTableId, "default.a", "default.c",
+      kClusterId, kOwner, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, "c", kTableId, kClusterId, kOwner, schema));
   NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, "a"));
 }
 

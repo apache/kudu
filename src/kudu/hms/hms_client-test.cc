@@ -57,10 +57,11 @@ class HmsClientTest : public KuduTest,
                       public ::testing::WithParamInterface<optional<SaslProtection::Type>> {
  public:
 
-  Status CreateTable(HmsClient* client,
+  static Status CreateTable(HmsClient* client,
                      const string& database_name,
                      const string& table_name,
-                     const string& table_id) {
+                     const string& table_id,
+                     const string& cluster_id) {
     hive::Table table;
     table.dbName = database_name;
     table.tableName = table_name;
@@ -68,6 +69,7 @@ class HmsClientTest : public KuduTest,
     table.__set_parameters({
         make_pair(HmsClient::kKuduTableIdKey, table_id),
         make_pair(HmsClient::kKuduTableNameKey, table_name),
+        make_pair(HmsClient::kKuduClusterIdKey, cluster_id),
         make_pair(HmsClient::kKuduMasterAddrsKey, string("TODO")),
         make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler)
     });
@@ -156,14 +158,16 @@ TEST_P(HmsClientTest, TestHmsOperations) {
 
   string table_name = "my_table";
   string table_id = "table-id";
+  string cluster_id = "cluster-id";
 
   // Check that the HMS rejects Kudu tables without a table ID.
-  ASSERT_STR_CONTAINS(CreateTable(&client, database_name, table_name, "").ToString(),
+  ASSERT_STR_CONTAINS(CreateTable(&client, database_name, table_name, "", cluster_id).ToString(),
                       "Kudu table entry must contain a table ID");
 
   // Create a table.
-  ASSERT_OK(CreateTable(&client, database_name, table_name, table_id));
-  ASSERT_TRUE(CreateTable(&client, database_name, table_name, table_id).IsAlreadyPresent());
+  ASSERT_OK(CreateTable(&client, database_name, table_name, table_id, cluster_id));
+  ASSERT_TRUE(CreateTable(&client, database_name, table_name,
+      table_id, cluster_id).IsAlreadyPresent());
 
   // Retrieve a table.
   hive::Table my_table;
@@ -171,6 +175,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(database_name, my_table.dbName) << "my_table: " << my_table;
   EXPECT_EQ(table_name, my_table.tableName);
   EXPECT_EQ(table_id, my_table.parameters[HmsClient::kKuduTableIdKey]);
+  EXPECT_EQ(cluster_id, my_table.parameters[HmsClient::kKuduClusterIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler, my_table.parameters[HmsClient::kStorageHandlerKey]);
   EXPECT_EQ(HmsClient::kManagedTable, my_table.tableType);
 
@@ -201,10 +206,12 @@ TEST_P(HmsClientTest, TestHmsOperations) {
 
   // Create a table with an uppercase name.
   string uppercase_table_name = "my_UPPERCASE_Table";
-  ASSERT_OK(CreateTable(&client, database_name, uppercase_table_name, "uppercase-table-id"));
+  ASSERT_OK(CreateTable(&client, database_name, uppercase_table_name,
+      "uppercase-table-id", cluster_id));
 
   // Create a table with an illegal utf-8 name.
-  ASSERT_TRUE(CreateTable(&client, database_name, "☃ sculptures 😉", table_id).IsInvalidArgument());
+  ASSERT_TRUE(CreateTable(&client, database_name, "☃ sculptures 😉",
+      table_id, cluster_id).IsInvalidArgument());
 
   // Create a non-Kudu table.
   hive::Table non_kudu_table;
@@ -453,7 +460,7 @@ TEST_F(HmsClientTest, TestCaseSensitivity) {
   ASSERT_OK(client.CreateDatabase(db));
 
   // Create a table.
-  ASSERT_OK(CreateTable(&client, "my_db", "Foo", "abc123"));
+  ASSERT_OK(CreateTable(&client, "my_db", "Foo", "abc123", "Bar"));
 
   hive::Table table;
   ASSERT_OK(client.GetTable("my_db", "Foo", &table));

@@ -359,7 +359,7 @@ Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
     local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
     RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
     local_entry.set_role(RaftPeerPB::LEADER);
-    local_entry.set_cluster_id(cluster_id_);
+    local_entry.set_cluster_id(catalog_manager_->GetClusterId());
     local_entry.set_member_type(RaftPeerPB::VOTER);
     masters->emplace_back(std::move(local_entry));
     return Status::OK();

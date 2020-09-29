@@ -221,6 +221,7 @@ void HmsITestHarness::CheckTable(const string& database_name,
     ASSERT_EQ(schema.Column(idx).comment(), hms_table.sd.cols[idx].comment);
   }
   ASSERT_EQ(table->id(), hms_table.parameters[hms::HmsClient::kKuduTableIdKey]);
+  ASSERT_EQ(table->client()->cluster_id(), hms_table.parameters[hms::HmsClient::kKuduClusterIdKey]);
   ASSERT_TRUE(boost::iequals(table->name(),
       hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
   ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster->master_rpc_addrs()),

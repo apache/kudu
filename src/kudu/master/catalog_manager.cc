@@ -910,7 +910,8 @@ Status CatalogManager::InitClusterId() {
   // Once the cluster ID is loaded or stored, store it in a variable for
   // fast lookup.
   if (s.ok()) {
-     master_->set_cluster_id(cluster_id);
+    std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+    cluster_id_ = cluster_id;
   }
 
   return s;
@@ -1276,7 +1277,8 @@ Status CatalogManager::PrepareFollowerClusterId() {
     LOG_WITH_PREFIX(INFO) << kDescription << ": success";
     // Once the cluster ID is loaded or stored, store it in a variable for
     // fast lookup.
-    master_->set_cluster_id(cluster_id);
+    std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+    cluster_id_ = cluster_id;
   } else {
     LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
   }
@@ -1331,7 +1333,7 @@ Status CatalogManager::PrepareFollowerTokenVerifier() {
 Status CatalogManager::PrepareFollower(MonoTime* last_tspk_run) {
   leader_lock_.AssertAcquiredForReading();
   // Load the cluster ID.
-  if (master_->cluster_id().empty()) {
+  if (GetClusterId().empty()) {
     RETURN_NOT_OK(PrepareFollowerClusterId());
   }
   // Load the CA certificate and CA private key.
@@ -1872,7 +1874,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_ && is_user_table) {
     CHECK(rpc);
-    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, req.owner(), schema);
+    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, GetClusterId(),
+        req.owner(), schema);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
                                        normalized_table_name));
@@ -2630,7 +2633,7 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     // Rename the table in the HMS.
     RETURN_NOT_OK(SetupError(hms_catalog_->AlterTable(
             table->id(), l.data().name(), normalized_new_table_name,
-            l.data().owner(), schema),
+            GetClusterId(), l.data().owner(), schema),
         resp, MasterErrorPB::HIVE_METASTORE_ERROR));
 
     // Unlock the table, and wait for the notification log listener to handle
@@ -3001,7 +3004,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     DCHECK(!req.has_new_table_name());
     WARN_NOT_OK(hms_catalog_->AlterTable(
           table->id(), normalized_table_name, normalized_table_name,
-          l.mutable_data()->owner(), new_schema),
+          GetClusterId(), l.mutable_data()->owner(), new_schema),
         Substitute("failed to alter HiveMetastore schema for table $0, "
                    "HMS schema information will be stale", table->ToString()));
   }
@@ -4601,6 +4604,11 @@ Status CatalogManager::ProcessTabletReport(
   }
 
   return Status::OK();
+}
+
+string CatalogManager::GetClusterId() const {
+  std::lock_guard<simple_spinlock> l(cluster_id_lock_);
+  return cluster_id_;
 }
 
 int64_t CatalogManager::GetLatestNotificationLogEventId() {

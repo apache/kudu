@@ -145,11 +145,13 @@ void HmsCatalog::Stop() {
 
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
+                               const string& cluster_id,
                                const optional<const string&>& owner,
                                const Schema& schema,
                                const string& table_type) {
   hive::Table table;
-  RETURN_NOT_OK(PopulateTable(id, name, owner, schema, master_addresses_, table_type, &table));
+  RETURN_NOT_OK(PopulateTable(id, name, owner, schema, cluster_id, master_addresses_,
+      table_type, &table));
   return ha_client_.Execute([&] (HmsClient* client) {
       return client->CreateTable(table, EnvironmentContext());
   });
@@ -175,6 +177,7 @@ Status HmsCatalog::DropTable(const string& name, const hive::EnvironmentContext&
 }
 
 Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
+                                            const string& cluster_id,
                                             const string& db_name,
                                             const string& tb_name,
                                             const Schema& schema) {
@@ -195,8 +198,8 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
     if (!HmsClient::IsSynchronized(table)) {
       table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
     } else {
-      RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name),
-                                  table.owner, schema, master_addresses_, table.tableType, &table));
+      RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name), table.owner, schema,
+                                  cluster_id, master_addresses_, table.tableType, &table));
     }
     return client->AlterTable(db_name, tb_name, table, EnvironmentContext());
   });
@@ -215,8 +218,9 @@ Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
     }
     // Downgrade the storage handler.
     table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kLegacyKuduStorageHandler;
-    // Remove the Kudu-specific field 'kudu.table_id'.
+    // Remove the Kudu-specific fields 'kudu.table_id' and `kudu.cluster_id`
     EraseKeyReturnValuePtr(&table.parameters, HmsClient::kKuduTableIdKey);
+    EraseKeyReturnValuePtr(&table.parameters, HmsClient::kKuduClusterIdKey);
     return client->AlterTable(table.dbName, table.tableName, table, EnvironmentContext());
   });
 }
@@ -254,6 +258,7 @@ Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
 Status HmsCatalog::AlterTable(const string& id,
                               const string& name,
                               const string& new_name,
+                              const string& cluster_id,
                               optional<const string&> owner,
                               const Schema& schema,
                               const bool& check_id) {
@@ -289,7 +294,7 @@ Status HmsCatalog::AlterTable(const string& id,
       }
 
       // Overwrite fields in the table that have changed, including the new name.
-      RETURN_NOT_OK(PopulateTable(id, new_name, owner, schema, master_addresses_,
+      RETURN_NOT_OK(PopulateTable(id, new_name, owner, schema, cluster_id, master_addresses_,
           table.tableType, &table));
       return client->AlterTable(hms_database.ToString(), hms_table.ToString(),
                                 table, EnvironmentContext(check_id));
@@ -360,6 +365,7 @@ Status HmsCatalog::PopulateTable(const string& id,
                                  const string& name,
                                  const optional<const string&>& owner,
                                  const Schema& schema,
+                                 const string& cluster_id,
                                  const string& master_addresses,
                                  const string& table_type,
                                  hive::Table* table) {
@@ -387,9 +393,10 @@ Status HmsCatalog::PopulateTable(const string& id,
     EraseKeyReturnValuePtr(&table->parameters, HmsClient::kExternalTableKey);
   }
 
-  // Only set the table id on synchronized tables.
+  // Only set the table id and cluster id on synchronized tables.
   if (HmsClient::IsSynchronized(*table)) {
     table->parameters[HmsClient::kKuduTableIdKey] = id;
+    table->parameters[HmsClient::kKuduClusterIdKey] = cluster_id;
   }
 
   // Add the Kudu-specific parameters. This intentionally avoids overwriting

@@ -439,8 +439,8 @@ TEST_F(SysCatalogTest, LoadClusterID) {
   ASSERT_TRUE(cluster_id_entry.has_cluster_id());
   ASSERT_TRUE(!cluster_id_entry.cluster_id().empty());
 
-  ASSERT_EQ(cluster_id_entry.cluster_id(), master_->cluster_id());
-  const string init_id = master_->cluster_id();
+  string init_id = master_->catalog_manager()->GetClusterId();
+  ASSERT_EQ(cluster_id_entry.cluster_id(), init_id);
 
   // Check that if a cluster ID is already present,
   // it cannot be overwritten using SysCatalogTable::AddClusterIdEntry().

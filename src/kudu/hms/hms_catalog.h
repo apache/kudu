@@ -72,6 +72,7 @@ class HmsCatalog {
   // Fails the HMS is unreachable, or a table with the same name is already present.
   Status CreateTable(const std::string& id,
                      const std::string& name,
+                     const std::string& cluster_id,
                      const boost::optional<const std::string&>& owner,
                      const Schema& schema,
                      const std::string& table_type = hms::HmsClient::kManagedTable)
@@ -102,6 +103,7 @@ class HmsCatalog {
   Status AlterTable(const std::string& id,
                     const std::string& name,
                     const std::string& new_name,
+                    const std::string& cluster_id,
                     boost::optional<const std::string&> owner,
                     const Schema& schema,
                     const bool& check_id = true) WARN_UNUSED_RESULT;
@@ -111,6 +113,7 @@ class HmsCatalog {
   // This method will fail if the HMS is unreachable, if the table is not a
   // legacy table, or if the table entry in not in the HMS.
   Status UpgradeLegacyImpalaTable(const std::string& id,
+                                  const std::string& cluster_id,
                                   const std::string& db_name,
                                   const std::string& tb_name,
                                   const Schema& schema) WARN_UNUSED_RESULT;
@@ -163,6 +166,7 @@ class HmsCatalog {
                               const std::string& name,
                               const boost::optional<const std::string&>& owner,
                               const Schema& schema,
+                              const std::string& cluster_id,
                               const std::string& master_addresses,
                               const std::string& table_type,
                               hive::Table* table) WARN_UNUSED_RESULT;
