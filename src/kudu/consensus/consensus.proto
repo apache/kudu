@@ -484,6 +484,12 @@ message ConsensusRequestPB {
   // The index of the most recent operation appended to the leader.
   // Followers can use this to determine roughly how far behind they are from the leader.
   optional int64 last_idx_appended_to_leader = 11;
+
+  // The index that is deemed to have been 'region-durable'. Region durability
+  // is currently defined as the OpId that is replicated to atleast one
+  // additional region (other than the leader's region). This is sent by the
+  // leader to all followers and they sync their queue state with this index.
+  optional int64 region_durable_index = 15;
 }
 
 message ConsensusResponsePB {

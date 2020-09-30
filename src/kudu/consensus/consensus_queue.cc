@@ -190,6 +190,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   queue_state_.committed_index = 0;
   queue_state_.all_replicated_index = 0;
   queue_state_.majority_replicated_index = 0;
+  queue_state_.region_durable_index = 0;
   queue_state_.last_idx_appended_to_leader = 0;
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = -1;
@@ -658,6 +659,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     request->set_all_replicated_index(queue_state_.all_replicated_index);
     request->set_last_idx_appended_to_leader(queue_state_.last_appended.index());
     request->set_caller_term(current_term);
+    request->set_region_durable_index(queue_state_.region_durable_index);
     unreachable_time = MonoTime::Now() - peer_copy.last_communication_time;
 
     RETURN_NOT_OK(routing_table_->NextHop(local_peer_pb_.permanent_uuid(), uuid, &next_hop_uuid));
@@ -830,6 +832,36 @@ Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
 }
 #endif
 
+void PeerMessageQueue::AdvanceQueueRegionDurableIndex() {
+  int64_t max_region_durable_index = -1;
+
+  if (!local_peer_pb_.attrs().has_region()) {
+    return;
+  }
+
+  // region_durable_index is updated only if following constraints are satisfied
+  // 1. region_durable_index <= committed_index
+  // 2. Atleast one non-leader region has received this index
+  const std::string& local_region = local_peer_pb_.attrs().region();
+  for (const PeersMap::value_type& peer : peers_map_) {
+    if (peer.second->peer_pb.attrs().has_region()) {
+      const std::string& peer_region = peer.second->peer_pb.attrs().region();
+
+      if (local_region != peer_region && // 2
+          peer.second->last_received.index() <= queue_state_.committed_index) {
+        // This peer is outside our region and the last received index is
+        // lower than the current committed_index. Include this in the
+        // calculation of region_durable_index
+        max_region_durable_index = std::max(
+            max_region_durable_index, peer.second->last_received.index());
+      }
+    }
+  }
+
+  queue_state_.region_durable_index = std::max(
+    queue_state_.region_durable_index, max_region_durable_index);
+}
+
 void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int64_t* watermark,
                                              const OpId& replicated_before,
@@ -844,6 +876,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
         << replicated_before << " to " << replicated_after << ". "
                                  << "Current value: " << *watermark;
   }
+
 
   // Go through the peer's watermarks, we want the highest watermark that
   // 'num_peers_required' of peers has replicated. To find this we do the
@@ -1229,11 +1262,16 @@ Status PeerMessageQueue::GetNextRoutingHopFromLeader(const string& dest_uuid, st
 }
 
 void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
-                                                int64_t all_replicated_index) {
+                                                int64_t all_replicated_index,
+                                                int64_t region_durable_index) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   DCHECK_EQ(queue_state_.mode, NON_LEADER);
   queue_state_.committed_index = committed_index;
   queue_state_.all_replicated_index = all_replicated_index;
+
+  if (region_durable_index > queue_state_.region_durable_index)
+    queue_state_.region_durable_index = region_durable_index;
+
   UpdateMetricsUnlocked();
 }
 
@@ -1645,6 +1683,10 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
 
       }
 
+      // Once the commit index has been updated, go ahead and update the
+      // region_durable_index
+      AdvanceQueueRegionDurableIndex();
+
       // Only notify observers if the commit index actually changed.
       if (queue_state_.committed_index != commit_index_before) {
         DCHECK_GT(queue_state_.committed_index, commit_index_before);
@@ -1686,6 +1728,11 @@ int64_t PeerMessageQueue::GetAllReplicatedIndex() const {
 int64_t PeerMessageQueue::GetCommittedIndex() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.committed_index;
+}
+
+int64_t PeerMessageQueue::GetRegionDurableIndex() const {
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
+  return queue_state_.region_durable_index;
 }
 
 bool PeerMessageQueue::IsCommittedIndexInCurrentTerm() const {

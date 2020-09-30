@@ -1726,7 +1726,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking committed up to " << apply_up_to;
     TRACE("Marking committed up to $0", apply_up_to);
     CHECK_OK(pending_->AdvanceCommittedIndex(apply_up_to));
-    queue_->UpdateFollowerWatermarks(apply_up_to, request->all_replicated_index());
+    queue_->UpdateFollowerWatermarks(
+        apply_up_to,
+        request->all_replicated_index(),
+        request->region_durable_index());
 
     // If any messages failed to be started locally, then we already have removed them
     // from 'deduped_req' at this point. So, 'last_from_leader' is the last one that
@@ -3027,7 +3030,8 @@ log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {
   // which just means we'll retain slightly more than necessary in this invocation
   // of log GC.
   return log::RetentionIndexes(queue_->GetCommittedIndex(), // for durability
-                               queue_->GetAllReplicatedIndex()); // for peers
+                               queue_->GetAllReplicatedIndex(), // for peers
+                               queue_->GetRegionDurableIndex()); // for region based durability
 }
 
 void RaftConsensus::MarkDirty(const std::string& reason) {
@@ -3680,6 +3684,9 @@ void RaftConsensus::HandleProxyRequest(const ConsensusRequestPB* request,
   }
   if (request->has_last_idx_appended_to_leader()) {
     downstream_request.set_last_idx_appended_to_leader(request->last_idx_appended_to_leader());
+  }
+  if(request->has_region_durable_index()) {
+    downstream_request.set_region_durable_index(request->region_durable_index());
   }
 
   downstream_request.set_proxy_caller_uuid(peer_uuid());

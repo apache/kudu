@@ -311,7 +311,8 @@ class PeerMessageQueue {
   // based on information provided by the leader. This is used for metrics and
   // log retention.
   void UpdateFollowerWatermarks(int64_t committed_index,
-                                int64_t all_replicated_index);
+                                int64_t all_replicated_index,
+                                int64_t region_durable_index);
 
   // Updates the last op appended to the leader and the corresponding lag metric.
   // This should not be called by a leader.
@@ -330,6 +331,10 @@ class PeerMessageQueue {
   // Returns the committed index. All operations with index less than or equal to
   // this index have been committed.
   int64_t GetCommittedIndex() const;
+
+  // Returns the index that is deemed to be 'region-durable'
+  // Check region_durable_index
+  int64_t GetRegionDurableIndex() const;
 
   // Return true if the committed index falls within the current term.
   bool IsCommittedIndexInCurrentTerm() const;
@@ -430,6 +435,13 @@ class PeerMessageQueue {
 
     // The index of the last operation to be considered committed.
     int64_t committed_index;
+
+    // The index that is deemed to have been 'region-durable'.
+    // This index is updated when the OpId is replicated to atleast one
+    // additional region (other than the current leader region). This is useful
+    // only when the raft ring is configured to have nodes in multiple region as
+    // defined in RaftPeerAttrsPB
+    int64_t region_durable_index;
 
     // The index of the last operation appended to the leader. A follower will use this to
     // determine how many ops behind the leader it is, as a soft metric for follower lag.
@@ -563,6 +575,9 @@ class PeerMessageQueue {
   void LocalPeerAppendFinished(const OpId& id,
                                const StatusCallback& callback,
                                const Status& status);
+
+  // Advances the 'region_durable_index' maintained by the queue
+  void AdvanceQueueRegionDurableIndex();
 
   // Advances 'watermark' to the smallest op that 'num_peers_required' have.
   // If 'replica_types' is set to VOTER_REPLICAS, the 'num_peers_required' is
