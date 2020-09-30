@@ -922,16 +922,30 @@ Status LeaderMasterProxy::SyncRpc(const Req& req,
                                   const std::function<void(master::MasterServiceProxy*,
                                                            const Req&, Resp*,
                                                            rpc::RpcController*,
-                                                           const ResponseCallback&)>& func) {
+                                                           const ResponseCallback&)>& func,
+                                  std::vector<uint32_t> required_feature_flags) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
   Synchronizer sync;
   AsyncLeaderMasterRpc<Req, Resp> rpc(deadline, client_.get(), BackoffType::EXPONENTIAL,
-      req, resp, func, std::move(func_name), sync.AsStatusCallback(), {});
+      req, resp, func, std::move(func_name), sync.AsStatusCallback(),
+      std::move(required_feature_flags));
   rpc.SendRpc();
   return sync.Wait();
 }
 
 // Explicit specializations for callers outside this compilation unit.
+template
+Status LeaderMasterProxy::SyncRpc(
+    const master::AddMasterRequestPB& req,
+    master::AddMasterResponsePB* resp,
+    string func_name,
+    const std::function<void(MasterServiceProxy*,
+                             const master::AddMasterRequestPB&,
+                             master::AddMasterResponsePB*,
+                             RpcController*,
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ChangeTServerStateRequestPB& req,
@@ -941,7 +955,9 @@ Status LeaderMasterProxy::SyncRpc(
                              const master::ChangeTServerStateRequestPB&,
                              master::ChangeTServerStateResponsePB*,
                              RpcController*,
-                             const ResponseCallback&)>& func);
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ListTabletServersRequestPB& req,
@@ -951,7 +967,9 @@ Status LeaderMasterProxy::SyncRpc(
                              const master::ListTabletServersRequestPB&,
                              master::ListTabletServersResponsePB*,
                              RpcController*,
-                             const ResponseCallback&)>& func);
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ListMastersRequestPB& req,
@@ -961,7 +979,9 @@ Status LeaderMasterProxy::SyncRpc(
                              const master::ListMastersRequestPB&,
                              master::ListMastersResponsePB*,
                              RpcController*,
-                             const ResponseCallback&)>& func);
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
+
 template
 Status LeaderMasterProxy::SyncRpc(
     const master::ReplaceTabletRequestPB& req,
@@ -971,7 +991,8 @@ Status LeaderMasterProxy::SyncRpc(
                              const master::ReplaceTabletRequestPB&,
                              master::ReplaceTabletResponsePB*,
                              RpcController*,
-                             const ResponseCallback&)>& func);
+                             const ResponseCallback&)>& func,
+    std::vector<uint32_t> required_feature_flags);
 
 } // namespace tools
 } // namespace kudu

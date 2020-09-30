@@ -288,7 +288,8 @@ class LeaderMasterProxy {
                  const std::function<void(master::MasterServiceProxy*,
                                           const Req&, Resp*,
                                           rpc::RpcController*,
-                                          const rpc::ResponseCallback&)>& func)
+                                          const rpc::ResponseCallback&)>& func,
+                 std::vector<uint32_t> required_feature_flags = {})
       WARN_UNUSED_RESULT;
 
  private:

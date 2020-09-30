@@ -84,6 +84,9 @@ message MasterErrorPB {
 
     // The caller is not authorized to perform the attempted operation.
     NOT_AUTHORIZED = 14;
+
+    // Master is already part of the Raft configuration.
+    MASTER_ALREADY_PRESENT = 15;
   }
 
   // The error code.

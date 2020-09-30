@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <iterator>
@@ -50,6 +51,7 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/init.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
@@ -57,6 +59,11 @@ DECLARE_bool(force);
 DECLARE_int64(timeout_ms);
 DECLARE_string(columns);
 
+DEFINE_int64(wait_secs, 8,
+             "Timeout in seconds to wait for the newly added master to be promoted as VOTER.");
+
+using kudu::master::AddMasterRequestPB;
+using kudu::master::AddMasterResponsePB;
 using kudu::master::ConnectToMasterRequestPB;
 using kudu::master::ConnectToMasterResponsePB;
 using kudu::master::ListMastersRequestPB;
@@ -114,6 +121,101 @@ Status MasterStatus(const RunnerContext& context) {
 Status MasterTimestamp(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   return PrintServerTimestamp(address, Master::kDefaultPort);
+}
+
+Status AddMasterChangeConfig(const RunnerContext& context) {
+  const string& new_master_address = FindOrDie(context.required_args, kMasterAddressArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(new_master_address, Master::kDefaultPort));
+  {
+    AddMasterRequestPB req;
+    AddMasterResponsePB resp;
+    *req.mutable_rpc_addr() = HostPortToPB(hp);
+
+    Status s = proxy.SyncRpc<AddMasterRequestPB, AddMasterResponsePB>(
+        req, &resp, "AddMaster", &MasterServiceProxy::AddMasterAsync,
+        {master::MasterFeatures::DYNAMIC_MULTI_MASTER});
+    // It's possible this is a retry request in which case instead of returning
+    // the master is already present in the Raft config error we make further checks
+    // whether the master has been promoted to a VOTER.
+    bool master_already_present =
+        resp.has_error() && resp.error().code() == master::MasterErrorPB::MASTER_ALREADY_PRESENT;
+    if (!s.ok() && !master_already_present) {
+      return s;
+    }
+    if (master_already_present) {
+      LOG(INFO) << "Master already present. Checking for promotion to VOTER...";
+    }
+  }
+
+  // If the system catalog of the new master can be caught up from the WAL then the new master will
+  // be promoted to a VOTER and become a FOLLOWER. However this can take some time, so we'll
+  // try for a few seconds. It's perfectly normal for the new master to be not caught up from
+  // the WAL in which case subsequent steps of system catalog tablet copy need to be carried out
+  // as outlined in the documentation for adding a new master to Kudu cluster.
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(FLAGS_wait_secs);
+  RaftPeerPB::Role master_role = RaftPeerPB::UNKNOWN_ROLE;
+  RaftPeerPB::MemberType master_type = RaftPeerPB::UNKNOWN_MEMBER_TYPE;
+  do {
+    ListMastersRequestPB req;
+    ListMastersResponsePB resp;
+    RETURN_NOT_OK((proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
+                   req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync)));
+
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+
+    int i = 0;
+    bool new_master_found = false;
+    for (; i < resp.masters_size(); i++) {
+      const auto& master = resp.masters(i);
+      if (master.has_error()) {
+        LOG(WARNING) << "Failed to retrieve info for master: "
+                     << StatusFromPB(master.error()).ToString();
+        continue;
+      }
+      for (const auto& master_hp : master.registration().rpc_addresses()) {
+        if (hp == HostPortFromPB(master_hp)) {
+          // Found the newly added master
+          new_master_found = true;
+          break;
+        }
+      }
+      if (new_master_found) {
+        break;
+      }
+    }
+    if (!new_master_found) {
+      return Status::NotFound(Substitute("New master $0 not found. Retry adding the master",
+                                         hp.ToString()));
+    }
+    CHECK_LT(i, resp.masters_size());
+    const auto& master = resp.masters(i);
+    master_role = master.role();
+    master_type = master.member_type();
+    if (master_type == RaftPeerPB::VOTER &&
+        (master_role == RaftPeerPB::FOLLOWER || master_role == RaftPeerPB::LEADER)) {
+      LOG(INFO) << Substitute("Successfully added master $0 to the cluster. Please follow the "
+                              "next steps which includes updating master addresses, updating "
+                              "client configuration etc. from the Kudu administration "
+                              "documentation on \"Migrating to Multiple Kudu Masters\".",
+                              hp.ToString());
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  } while (MonoTime::Now() < deadline);
+
+  LOG(INFO) << Substitute("New master $0 part of the Raft configuration; role: $1, member_type: "
+                          "$2. Please follow the next steps which includes system catalog tablet "
+                          "copy, updating master addresses etc. from the Kudu administration "
+                          "documentation on \"Migrating to Multiple Kudu Masters\".",
+                          hp.ToString(), master_role, master_type);
+  return Status::OK();
 }
 
 Status ListMasters(const RunnerContext& context) {
@@ -419,6 +521,18 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("format")
         .Build();
     builder.AddAction(std::move(list_masters));
+  }
+  {
+    unique_ptr<Action> add_master =
+        ActionBuilder("add", &AddMasterChangeConfig)
+        .Description("Add a master to the Raft configuration of the Kudu cluster. "
+                     "Please refer to the Kudu administration documentation on "
+                     "\"Migrating to Multiple Kudu Masters\" for the complete steps.")
+        .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+        .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
+        .AddOptionalParameter("wait_secs")
+        .Build();
+    builder.AddAction(std::move(add_master));
   }
 
   return builder.Build();
