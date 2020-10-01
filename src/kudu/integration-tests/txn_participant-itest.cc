@@ -31,6 +31,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -64,6 +65,7 @@ using kudu::tablet::TxnParticipant;
 using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::ParticipantRequestPB;
 using kudu::tserver::ParticipantResponsePB;
+using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
@@ -92,6 +94,14 @@ vector<Status> RunOnReplicas(const vector<TabletReplica*>& replicas,
     t.join();
   }
   return statuses;
+}
+string TxnsAsString(const vector<TxnParticipant::TxnEntry>& txns) {
+  return JoinMapped(txns,
+      [](const TxnParticipant::TxnEntry& txn) {
+        return Substitute("(txn_id=$0: $1, $2)",
+            txn.txn_id, Txn::StateToString(txn.state), txn.commit_timestamp);
+      },
+      ",");
 }
 } // anonymous namespace
 
@@ -334,7 +344,10 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
     // op only guarantees successful replication on a majority. We need to wait
     // a bit for the state to fully quiesce.
     ASSERT_EVENTUALLY([&] {
-      ASSERT_EQ(expected_txns, replicas[i]->tablet()->txn_participant()->GetTxnsForTests());
+      const auto& actual_txns = replicas[i]->tablet()->txn_participant()->GetTxnsForTests();
+      ASSERT_EQ(expected_txns, actual_txns)
+          << Substitute("Expected: $0,\nActual: $1",
+                        TxnsAsString(expected_txns), TxnsAsString(actual_txns));
     });
   }
 
@@ -346,7 +359,26 @@ TEST_F(TxnParticipantElectionStormITest, TestFrequentElections) {
     const auto& tablets = ts->ListTablets();
     scoped_refptr<TabletReplica> r;
     ASSERT_TRUE(ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
-    ASSERT_EQ(expected_txns, r->tablet()->txn_participant()->GetTxnsForTests());
+    ASSERT_OK(r->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+    auto actual_txns = r->tablet()->txn_participant()->GetTxnsForTests();
+    // Upon bootstrapping, we may end up replaying a REPLICATE message with no
+    // COMMIT message, starting it as a follower op. If it's a BEGIN_TXN op,
+    // this leaves us with an initialized Txn that isn't in the expected set,
+    // as it was completed on a majority. The Txn is benign: either it will be
+    // replicated on a majority and will complete, leaving the Txn as kOpen; or
+    // it doesn't, and the op will be aborted by the next leader, removing the
+    // Txn. Ignore such Txns and just assert the ones we know to have
+    // successfully initialized.
+    vector<TxnParticipant::TxnEntry> actual_txns_not_initting;
+    for (const auto& txn : actual_txns) {
+      if (txn.state != Txn::kInitializing) {
+        actual_txns_not_initting.emplace_back(txn);
+      }
+    }
+    ASSERT_EQ(expected_txns, actual_txns_not_initting)
+        << Substitute("Expected: $0,\nActual: $1",
+                      TxnsAsString(expected_txns),
+                      TxnsAsString(actual_txns_not_initting));
   }
 }
 
