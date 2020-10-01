@@ -33,6 +33,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
 using kudu::pb_util::SecureShortDebugString;
@@ -156,18 +157,36 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
   return Status::OK();
 }
 
-Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user,
+// NOTE: In this method, the idea is to try setting the 'highest_seen_txn_id'
+//       on return in most cases. Sending back the most recent highest
+//       transaction identifier helps to avoid extra RPC calls from
+//       TxnManager to TxnStatusManager in case of contention. Since we use
+//       a trial-and-error approach to assign transaction identifiers,
+//       in case of higher contention outdated and not assigned
+//       highest_seen_txn_id would cause at least one extra round-trip between
+//       TxnManager and TxnStatusManager to come up with a valid identifier
+//       for a transaction.
+Status TxnStatusManager::BeginTransaction(int64_t txn_id,
+                                          const string& user,
+                                          int64_t* highest_seen_txn_id,
                                           TabletServerErrorPB* ts_error) {
   {
     std::lock_guard<simple_spinlock> l(lock_);
+
     // First, make sure the transaction status data has been loaded.
     // If not, then there is chance that, being a leader, this replica might
     // register a transaction with the identifier which is lower than the
     // identifiers of already registered transactions.
+    //
+    // If this check fails, don not set the 'highest_seen_txn_id' because
+    // 'highest_txn_id_' doesn't contain any meaningful value yet.
     RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked());
 
     // Second, make sure the requested ID is viable.
     if (PREDICT_FALSE(txn_id <= highest_txn_id_)) {
+      if (highest_seen_txn_id) {
+        *highest_seen_txn_id = highest_txn_id_;
+      }
       return Status::InvalidArgument(
           Substitute("transaction ID $0 is not higher than the highest ID so far: $1",
                      txn_id, highest_txn_id_));
@@ -182,6 +201,14 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user,
   // since we've serialized the transaction ID checking above, we're guaranteed
   // that at most one call to start a given transaction ID can succeed.
 
+  // This ScopedCleanup instance is to set 'highest_seen_txn_id' if writing
+  // the entry into the txn status tablet fails.
+  auto cleanup = MakeScopedCleanup([&]() {
+    if (highest_seen_txn_id) {
+      std::lock_guard<simple_spinlock> l(lock_);
+      *highest_seen_txn_id = highest_txn_id_;
+    }
+  });
   // Write an entry to the status tablet for this transaction.
   RETURN_NOT_OK(status_tablet_.AddNewTransaction(txn_id, user, ts_error));
 
@@ -196,6 +223,12 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user,
   }
   std::lock_guard<simple_spinlock> l(lock_);
   EmplaceOrDie(&txns_by_id_, txn_id, std::move(txn));
+  if (highest_seen_txn_id) {
+    *highest_seen_txn_id = highest_txn_id_;
+  }
+  // Avoid acquiring the lock again: 'highest_seen_txn_id' has already been set.
+  cleanup.cancel();
+
   return Status::OK();
 }
 

@@ -82,12 +82,16 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
   // Writes an entry to the status tablet and creates a transaction in memory.
   // Returns an error if a higher transaction ID has already been attempted
   // (even if that attempt failed), which helps ensure that at most one call to
-  // this method will succeed for a given transaction ID.
+  // this method will succeed for a given transaction ID. The
+  // 'highest_seen_txn_id' output parameter, if not null, is populated in both
+  // success and failure cases.
   //
   // TODO(awong): consider computing the next available transaction ID in this
   // partition and using it in case this transaction is already used, or having
   // callers forward a request for the next-highest transaction ID.
-  Status BeginTransaction(int64_t txn_id, const std::string& user,
+  Status BeginTransaction(int64_t txn_id,
+                          const std::string& user,
+                          int64_t* highest_seen_txn_id,
                           tserver::TabletServerErrorPB* ts_error) override;
 
   // Begins committing the given transaction, returning an error if the

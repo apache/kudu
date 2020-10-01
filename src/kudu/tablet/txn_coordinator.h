@@ -53,8 +53,11 @@ class TxnCoordinator {
   // Returns any replication-layer errors (e.g. not-the-leader errors) in
   // 'ts_error'. If there was otherwise a logical error with the request (e.g.
   // transaction already exists), returns an error without populating
-  // 'ts_error'.
-  virtual Status BeginTransaction(int64_t txn_id, const std::string& user,
+  // 'ts_error'. The 'highest_seen_txn_id' output parameter is populated with
+  // the highest seen txn_id so far: that's so for success and all error cases.
+  virtual Status BeginTransaction(int64_t txn_id,
+                                  const std::string& user,
+                                  int64_t* highest_seen_txn_id,
                                   tserver::TabletServerErrorPB* ts_error) = 0;
 
   // Begins committing the given transaction as the given user.

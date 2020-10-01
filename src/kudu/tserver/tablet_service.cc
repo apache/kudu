@@ -1249,9 +1249,10 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   transactions::TxnStatusEntryPB txn_status;
   const auto& user = op.user();
   const auto& txn_id = op.txn_id();
+  int64_t highest_seen_txn_id = -1;
   switch (op.type()) {
     case CoordinatorOpPB::BEGIN_TXN:
-      s = txn_coordinator->BeginTransaction(txn_id, user, &ts_error);
+      s = txn_coordinator->BeginTransaction(txn_id, user, &highest_seen_txn_id, &ts_error);
       break;
     case CoordinatorOpPB::REGISTER_PARTICIPANT:
       s = txn_coordinator->RegisterParticipant(txn_id, op.txn_participant_id(), user, &ts_error);
@@ -1279,6 +1280,10 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   } else if (op.type() == CoordinatorOpPB::GET_TXN_STATUS) {
     // Populate corresponding field in the response.
     *(resp->mutable_op_result()->mutable_txn_status()) = std::move(txn_status);
+  }
+  if (op.type() == CoordinatorOpPB::BEGIN_TXN) {
+    DCHECK_GE(highest_seen_txn_id, 0);
+    resp->mutable_op_result()->set_highest_seen_txn_id(highest_seen_txn_id);
   }
   context->RespondSuccess();
 }

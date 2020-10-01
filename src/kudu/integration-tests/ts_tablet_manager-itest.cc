@@ -1113,7 +1113,7 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
     TabletServerErrorPB ts_error;
     for (const auto& txn_id_and_prt_ids : txns) {
       const auto& txn_id = txn_id_and_prt_ids.first;
-      RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner, &ts_error));
+      RETURN_NOT_OK(coordinator->BeginTransaction(txn_id, kOwner, nullptr, &ts_error));
       for (const auto& prt_id : txn_id_and_prt_ids.second) {
         RETURN_NOT_OK(coordinator->RegisterParticipant(txn_id, prt_id, kOwner, &ts_error));
       }
@@ -1261,7 +1261,8 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
       SCOPED_TRACE(SecureDebugString(resp));
       if (expect_success) {
         ASSERT_FALSE(resp.has_error());
-        ASSERT_EQ(op_type == CoordinatorOpPB::GET_TXN_STATUS,
+        ASSERT_EQ(op_type == CoordinatorOpPB::BEGIN_TXN ||
+                  op_type == CoordinatorOpPB::GET_TXN_STATUS,
                   resp.has_op_result());
       } else {
         ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
@@ -1353,7 +1354,8 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCallErrors) {
       ASSERT_OK(admin_proxy->CoordinateTransaction(req, &resp, &rpc));
       SCOPED_TRACE(SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
-      ASSERT_FALSE(resp.has_op_result());
+      ASSERT_TRUE(resp.has_op_result());
+      ASSERT_EQ(1, resp.op_result().highest_seen_txn_id());
     }
     {
       CoordinateTransactionResponsePB resp;
@@ -1362,6 +1364,7 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCallErrors) {
       SCOPED_TRACE(SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
       ASSERT_TRUE(resp.has_op_result());
+      ASSERT_EQ(1, resp.op_result().highest_seen_txn_id());
       Status s = StatusFromPB(resp.op_result().op_error());
       ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
       ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID so far");

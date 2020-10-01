@@ -56,6 +56,12 @@ message CoordinatorOpResultPB {
   //                of the transaction for other operation types?
   optional transactions.TxnStatusEntryPB txn_status = 2;
 
+  // The highest transaction identifier (txn_id) seen by the TxnStatusManager
+  // that coordinates the lifecycle of operations for a particular tablet
+  // of the transaction status table. This field is populated when responding
+  // to a request of the BEGIN_TXN type (in success and error cases).
+  optional int64 highest_seen_txn_id = 3;
+
   // TODO(awong): populate this with some application-level results, like the
   // actual transaction ID assigned, the next highest transaction ID available,
   // etc.

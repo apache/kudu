@@ -79,8 +79,15 @@ class TxnSystemClient {
 
   // Attempts to create a transaction with the given 'txn_id'.
   // Returns an error if the transaction ID has already been taken, or if there
-  // was an error writing to the transaction status table.
-  Status BeginTransaction(int64_t txn_id, const std::string& user,
+  // was an error writing to the transaction status table. In success case
+  // or in case of conflicting txn_id, the 'highest_seen_txn_id' output
+  // parameter (if not null) is set to the highest transaction identifier
+  // observed by corresponding TxnStatusManager. Otherwise, the
+  // 'highest_seen_txn_id' parameter is unset (e.g., in case of the requeset
+  // to TxnStatusManager timed out).
+  Status BeginTransaction(int64_t txn_id, const
+                          std::string& user,
+                          int64_t* highest_seen_txn_id = nullptr,
                           MonoDelta timeout = MonoDelta::FromSeconds(10));
 
   // Attempts to register the given participant with the given transaction.

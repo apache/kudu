@@ -122,16 +122,28 @@ Status TxnSystemClient::OpenTxnStatusTable() {
   return Status::OK();
 }
 
-Status TxnSystemClient::BeginTransaction(int64_t txn_id, const string& user, MonoDelta timeout) {
+Status TxnSystemClient::BeginTransaction(int64_t txn_id,
+                                         const string& user,
+                                         int64_t* highest_seen_txn_id,
+                                         MonoDelta timeout) {
   CoordinatorOpPB coordinate_txn_op;
   coordinate_txn_op.set_type(CoordinatorOpPB::BEGIN_TXN);
   coordinate_txn_op.set_txn_id(txn_id);
   coordinate_txn_op.set_user(user);
   Synchronizer s;
+  CoordinatorOpResultPB result;
   RETURN_NOT_OK(CoordinateTransactionAsync(std::move(coordinate_txn_op),
                                            timeout,
-                                           s.AsStatusCallback()));
-  return s.Wait();
+                                           s.AsStatusCallback(),
+                                           &result));
+  const auto ret = s.Wait();
+  if (ret.ok() || ret.IsInvalidArgument()) {
+    DCHECK(result.has_highest_seen_txn_id());
+    if (highest_seen_txn_id) {
+      *highest_seen_txn_id = result.highest_seen_txn_id();
+    }
+  }
+  return ret;
 }
 
 Status TxnSystemClient::RegisterParticipant(int64_t txn_id, const string& participant_id,
