@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -40,9 +41,9 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/txn_coordinator.h"
-#include "kudu/tserver/tserver.pb.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/transactions/txn_status_tablet.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
@@ -88,6 +89,7 @@ class TxnStatusManagerTest : public TabletReplicaTestBase {
     ConsensusBootstrapInfo info;
     ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
     txn_manager_.reset(new TxnStatusManager(tablet_replica_.get()));
+    ASSERT_OK(txn_manager_->LoadFromTablet());
   }
  protected:
   unique_ptr<TxnStatusManager> txn_manager_;
@@ -151,6 +153,48 @@ TEST_F(TxnStatusManagerTest, TestStartTransactions) {
     ASSERT_EQ(expected_prts_by_txn_id,
               txn_manager_reloaded.GetParticipantsByTxnIdForTests());
     ASSERT_EQ(3, txn_manager_reloaded.highest_txn_id());
+  }
+
+  // Verify that TxnStatusManager methods return Status::ServiceUnavailable()
+  // if the transaction status tablet's data is not loaded yet.
+  ASSERT_OK(RestartReplica());
+  {
+    TxnStatusManager tsm(tablet_replica_.get());
+    // Check for the special value of the highest_txn_id when the data from
+    // the transaction status tablet isn't loaded yet.
+    ASSERT_EQ(-2, tsm.highest_txn_id());
+
+    // Regardless of transaction identifiers and the records stored in the
+    // transaction status tablet, all relevant methods should return
+    // Status::ServiceUnavailable().
+    const string kErrMsg = "transaction status data is not loaded";
+    TabletServerErrorPB ts_error;
+    for (int64_t txn_id : { 0, 1, 3, 4 }) {
+      auto s = tsm.BeginTransaction(txn_id, kOwner, &ts_error);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+
+      s = tsm.BeginCommitTransaction(txn_id, kOwner, &ts_error);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+
+      s = tsm.FinalizeCommitTransaction(txn_id);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+
+      s = tsm.AbortTransaction(txn_id, kOwner, &ts_error);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+
+      transactions::TxnStatusEntryPB txn_status;
+      s = tsm.GetTransactionStatus(txn_id, kOwner, &txn_status);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+
+      s = tsm.RegisterParticipant(txn_id, kParticipant1, kOwner, &ts_error);
+      ASSERT_TRUE(s.IsServiceUnavailable());
+      ASSERT_STR_CONTAINS(s.ToString(), kErrMsg);
+    }
   }
 }
 

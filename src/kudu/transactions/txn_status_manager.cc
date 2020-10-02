@@ -45,6 +45,24 @@ using strings::Substitute;
 namespace kudu {
 namespace transactions {
 
+namespace {
+
+// The following special values are used to determine whether the data from
+// the underlying transaction status tablet has already been loaded
+// (an alternative would be introducing a dedicated member field into the
+//  TxnStatusManager):
+//   * kIdStatusDataNotLoaded: value assigned at construction time
+//   * kIdStatusDataReady: value after loading data from the transaction status
+//     tablet (unless the tablet contains a record with higher txn_id)
+constexpr int64_t kIdStatusDataNotLoaded = -2;
+constexpr int64_t kIdStatusDataReady = -1;
+
+} // anonymous namespace
+
+TxnStatusManagerBuildingVisitor::TxnStatusManagerBuildingVisitor()
+    : highest_txn_id_(kIdStatusDataReady) {
+}
+
 void TxnStatusManagerBuildingVisitor::VisitTransactionEntries(
     int64_t txn_id, TxnStatusEntryPB status_entry_pb,
     vector<ParticipantIdAndPB> participants) {
@@ -80,6 +98,11 @@ void TxnStatusManagerBuildingVisitor::Release(
   *txns_by_id = std::move(txns_by_id_);
 }
 
+TxnStatusManager::TxnStatusManager(tablet::TabletReplica* tablet_replica)
+    : highest_txn_id_(kIdStatusDataNotLoaded),
+      status_tablet_(tablet_replica) {
+}
+
 Status TxnStatusManager::LoadFromTablet() {
   TxnStatusManagerBuildingVisitor v;
   RETURN_NOT_OK(status_tablet_.VisitTransactions(&v));
@@ -93,10 +116,32 @@ Status TxnStatusManager::LoadFromTablet() {
   return Status::OK();
 }
 
+Status TxnStatusManager::CheckTxnStatusDataLoadedUnlocked() const {
+  DCHECK(lock_.is_locked());
+  // TODO(aserbin): this is just to handle requests which come in a short time
+  //                interval when the leader replica of the transaction status
+  //                tablet is already in RUNNING state, but the records from
+  //                the tablet hasn't yet been loaded into the runtime
+  //                structures of this TxnStatusManager instance. However,
+  //                the case when a former leader replica is queried about the
+  //                status of transactions which it is no longer aware of should
+  //                be handled separately.
+  if (PREDICT_FALSE(highest_txn_id_ <= kIdStatusDataNotLoaded)) {
+    return Status::ServiceUnavailable("transaction status data is not loaded");
+  }
+  return Status::OK();
+}
+
 Status TxnStatusManager::GetTransaction(int64_t txn_id,
                                         const boost::optional<string>& user,
                                         scoped_refptr<TransactionEntry>* txn) const {
   std::lock_guard<simple_spinlock> l(lock_);
+
+  // First, make sure the transaction status data has been loaded. If not, then
+  // the caller might get an unexpected error response and bail instead of
+  // retrying a bit later and getting proper response.
+  RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked());
+
   scoped_refptr<TransactionEntry> ret = FindPtrOrNull(txns_by_id_, txn_id);
   if (PREDICT_FALSE(!ret)) {
     return Status::NotFound(
@@ -114,8 +159,14 @@ Status TxnStatusManager::GetTransaction(int64_t txn_id,
 Status TxnStatusManager::BeginTransaction(int64_t txn_id, const string& user,
                                           TabletServerErrorPB* ts_error) {
   {
-    // First, make sure the requested ID is viable.
     std::lock_guard<simple_spinlock> l(lock_);
+    // First, make sure the transaction status data has been loaded.
+    // If not, then there is chance that, being a leader, this replica might
+    // register a transaction with the identifier which is lower than the
+    // identifiers of already registered transactions.
+    RETURN_NOT_OK(CheckTxnStatusDataLoadedUnlocked());
+
+    // Second, make sure the requested ID is viable.
     if (PREDICT_FALSE(txn_id <= highest_txn_id_)) {
       return Status::InvalidArgument(
           Substitute("transaction ID $0 is not higher than the highest ID so far: $1",

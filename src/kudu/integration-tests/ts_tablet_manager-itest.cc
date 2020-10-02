@@ -1052,7 +1052,8 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
   // Creates a tablet with a fixed schema, with the given tablet ID.
   Status CreateTablet(MiniTabletServer* ts,
                       const string& tablet_id,
-                      bool is_txn_status_tablet) {
+                      bool is_txn_status_tablet,
+                      scoped_refptr<TabletReplica>* replica = nullptr) {
     CreateTabletRequestPB req = CreateTxnTabletReq(
         tablet_id, ts->server()->fs_manager()->uuid(), ts->CreateLocalConfig(),
         is_txn_status_tablet);
@@ -1074,12 +1075,38 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
 
     // Wait for the tablet to be in RUNNING state and its consensus running too.
     RETURN_NOT_OK(r->WaitUntilConsensusRunning(kTimeout));
-    return r->consensus()->WaitUntilLeaderForTests(kTimeout);
+    auto s = r->consensus()->WaitUntilLeaderForTests(kTimeout);
+    if (replica) {
+      *replica = std::move(r);
+    }
+    return s;
   }
 
-  // Creates a transaction status tablet at the given tablet server.
+  // Creates a transaction status tablet at the given tablet server,
+  // waiting for the transaction status data to be loaded from the tablet.
   Status CreateTxnStatusTablet(MiniTabletServer* ts) {
-    return CreateTablet(ts, kTxnStatusTabletId, /*is_txn_status_tablet*/true);
+    scoped_refptr<TabletReplica> r;
+    RETURN_NOT_OK(CreateTablet(
+        ts, kTxnStatusTabletId, /*is_txn_status_tablet*/true, &r));
+    TxnCoordinator* c = CHECK_NOTNULL(CHECK_NOTNULL(r)->txn_coordinator());
+
+    // Wait for the transaction status data to be loaded. The verification below
+    // relies on the internals of the TxnStatusManager's implementation, but it
+    // seems OK for test purposes.
+    const auto deadline = MonoTime::Now() + kTimeout;
+    bool is_data_loaded = false;
+    do {
+      auto txn_id = c->highest_txn_id();
+      if (txn_id >= -1) {
+        is_data_loaded = true;
+        break;
+      }
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    } while (MonoTime::Now() < deadline);
+
+    return is_data_loaded
+        ? Status::OK()
+        : Status::TimedOut("timed out waiting for txn status data to be loaded");
   }
 
   static Status StartTransactions(const ParticipantIdsByTxnId& txns, TxnCoordinator* coordinator) {

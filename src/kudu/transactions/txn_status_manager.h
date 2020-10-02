@@ -53,6 +53,8 @@ typedef std::unordered_map<int64_t, scoped_refptr<TransactionEntry>> Transaction
 // status tablet.
 class TxnStatusManagerBuildingVisitor : public TransactionsVisitor {
  public:
+  TxnStatusManagerBuildingVisitor();
+  ~TxnStatusManagerBuildingVisitor() = default;
   // Builds a TransactionEntry for the given metadata and keeps track of it in
   // txns_by_id_. This is not thread-safe -- callers should ensure only a
   // single thread calls it at once.
@@ -63,18 +65,16 @@ class TxnStatusManagerBuildingVisitor : public TransactionsVisitor {
   // per call to VisitTransactionEntries().
   void Release(int64_t* highest_txn_id, TransactionsMap* txns_by_id);
  private:
-  int64_t highest_txn_id_ = -1;
+  int64_t highest_txn_id_;
   TransactionsMap txns_by_id_;
 };
 
 // Manages ongoing transactions and participants therein, backed by an
 // underlying tablet.
-class TxnStatusManager : public tablet::TxnCoordinator {
+class TxnStatusManager final : public tablet::TxnCoordinator {
  public:
-  explicit TxnStatusManager(tablet::TabletReplica* tablet_replica)
-      : highest_txn_id_(-1),
-        status_tablet_(tablet_replica) {}
-  virtual ~TxnStatusManager() {}
+  explicit TxnStatusManager(tablet::TabletReplica* tablet_replica);
+  ~TxnStatusManager() = default;
 
   // Loads the contents of the status tablet into memory.
   Status LoadFromTablet() override;
@@ -135,6 +135,11 @@ class TxnStatusManager : public tablet::TxnCoordinator {
   }
 
  private:
+  // Verifies that the transaction status data has already been loaded from the
+  // underlying tablet. Returns Status::OK() if the data is loaded, otherwise
+  // returns Status::ServiceUnavailable().
+  Status CheckTxnStatusDataLoadedUnlocked() const;
+
   // Returns the transaction entry, returning an error if the transaction ID
   // doesn't exist or if 'user' is specified but isn't the owner of the
   // transaction.
