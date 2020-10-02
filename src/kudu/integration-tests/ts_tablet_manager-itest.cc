@@ -1071,6 +1071,9 @@ class TxnStatusTabletManagementTest : public TsTabletManagerITest {
     RETURN_NOT_OK(admin_proxy->CreateTablet(req, &resp, &rpc));
     scoped_refptr<TabletReplica> r;
     CHECK(ts->server()->tablet_manager()->LookupTablet(tablet_id, &r));
+
+    // Wait for the tablet to be in RUNNING state and its consensus running too.
+    RETURN_NOT_OK(r->WaitUntilConsensusRunning(kTimeout));
     return r->consensus()->WaitUntilLeaderForTests(kTimeout);
   }
 
