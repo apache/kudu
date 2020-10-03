@@ -389,7 +389,7 @@ public class TestAlterTable {
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
-    // ADD [0, 100) <- illegal (duplicate)
+    // ADD [0, 100) <- already present (duplicate)
     PartialRow lower = schema.newPartialRow();
     PartialRow upper = schema.newPartialRow();
     lower.addInt("c0", 0);
@@ -398,9 +398,9 @@ public class TestAlterTable {
       client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
       fail();
     } catch (KuduException e) {
-      assertTrue(e.getStatus().isInvalidArgument());
+      assertTrue(e.getStatus().isAlreadyPresent());
       assertTrue(e.getStatus().getMessage().contains(
-          "New range partition conflicts with existing range partition"));
+          "range partition already exists"));
     }
     assertEquals(100, countRowsInTable(table));
 
@@ -413,7 +413,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage().contains(
-          "New range partition conflicts with existing range partition"));
+          "new range partition conflicts with existing one"));
     }
     assertEquals(100, countRowsInTable(table));
 
@@ -426,7 +426,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage().contains(
-          "New range partition conflicts with existing range partition"));
+          "new range partition conflicts with existing one"));
     }
     assertEquals(100, countRowsInTable(table));
 
@@ -445,7 +445,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage().contains(
-          "New range partition conflicts with existing range partition"));
+          "new range partition conflicts with existing one"));
     }
     assertEquals(100, countRowsInTable(table));
 
@@ -458,7 +458,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage(), e.getStatus().getMessage().contains(
-          "No range partition found for drop range partition step"));
+          "no range partition to drop"));
     }
     assertEquals(100, countRowsInTable(table));
 
@@ -473,7 +473,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage().contains(
-          "No range partition found for drop range partition step"));
+          "no range partition to drop"));
     }
     assertEquals(100, countRowsInTable(table));
     assertFalse(client.tableExists("foo"));
@@ -507,7 +507,7 @@ public class TestAlterTable {
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
       assertTrue(e.getStatus().getMessage().contains(
-          "No range partition found for drop range partition step"));
+          "no range partition to drop"));
     }
     assertEquals(100, countRowsInTable(table));
   }

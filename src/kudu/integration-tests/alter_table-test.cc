@@ -1417,7 +1417,7 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(InsertRowsSequential(table_name, 0, 100));
   ASSERT_EQ(100, CountTableRows(table.get()));
 
-  // ADD [0, 100) <- illegal (duplicate)
+  // ADD [0, 100) <- already present (duplicate)
   table_alterer.reset(client_->NewTableAlterer(table_name));
   lower.reset(schema_.NewRow());
   upper.reset(schema_.NewRow());
@@ -1425,8 +1425,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 100));
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "range partition already exists");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [50, 150) <- illegal (overlap)
@@ -1437,8 +1437,9 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 150));
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "new range partition conflicts with existing one");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD (-50, 50] <- illegal (overlap)
@@ -1451,8 +1452,9 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
                                    KuduTableCreator::EXCLUSIVE_BOUND,
                                    KuduTableCreator::INCLUSIVE_BOUND);
   s = table_alterer->wait(false)->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(
+      s.ToString(), "new range partition conflicts with existing one");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [200, 300)
@@ -1469,8 +1471,9 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 150));
   table_alterer->AddRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "New range partition conflicts with existing range partition");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(
+      s.ToString(), "new range partition conflicts with existing one");
   ASSERT_FALSE(InsertRowsSequential(table_name, 200, 100).ok());
   ASSERT_EQ(100, CountTableRows(table.get()));
 
@@ -1478,8 +1481,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer.reset(client_->NewTableAlterer(table_name));
   table_alterer->DropRangePartition(schema_.NewRow(), schema_.NewRow());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [50, 150)
@@ -1492,8 +1495,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   table_alterer->DropRangePartition(lower.release(), upper.release());
   table_alterer->RenameTo("foo");
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [-50, 50)
@@ -1504,8 +1507,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [0, 100)
@@ -1540,8 +1543,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 10));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->wait(false)->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // KUDU-1750 Regression cases:
@@ -1554,8 +1557,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [50, 100)  <- illegal
@@ -1566,8 +1569,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 100));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [100, 200)
@@ -1584,8 +1587,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 150));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [100, 200)
@@ -1602,8 +1605,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 200));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [<min>, 0)
@@ -1618,8 +1621,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", -50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [<min>, 0)
@@ -1634,8 +1637,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [100, <max>)
@@ -1650,8 +1653,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(lower->SetInt32("c0", 150));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // ADD [100, <max>)
@@ -1666,8 +1669,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(lower->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // Setup for the next few test cases:
@@ -1691,8 +1694,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", -50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [<min>, 50] <- illegal
@@ -1702,8 +1705,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(upper->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [150, <max>] <- illegal
@@ -1713,8 +1716,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(lower->SetInt32("c0", 150));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [50, <max>] <- illegal
@@ -1724,8 +1727,8 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_OK(lower->SetInt32("c0", 50));
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // DROP [<min>, <max>] <- illegal
@@ -1734,15 +1737,15 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   upper.reset(schema_.NewRow());
   table_alterer->DropRangePartition(lower.release(), upper.release());
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
   ASSERT_EQ(100, CountTableRows(table.get()));
 
   // Bad arguments (null ranges)
   table_alterer.reset(client_->NewTableAlterer(table_name));
   table_alterer->DropRangePartition(nullptr, nullptr);
   s = table_alterer->Alter();
-  ASSERT_FALSE(s.ok());
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "range partition bounds may not be null");
 }
 
@@ -1856,19 +1859,30 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
 
     // Add a then add b.
     ASSERT_OK(add_range_partition(a_lower_bound, a_upper_bound));
-    Status s = add_range_partition(b_lower_bound, b_upper_bound);
-    ASSERT_FALSE(s.ok());
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "New range partition conflicts with existing range partition");
+    auto s = add_range_partition(b_lower_bound, b_upper_bound);
+    if (a_lower_bound == b_lower_bound && a_upper_bound == b_upper_bound) {
+      ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "range partition already exists");
+    } else {
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+                          "new range partition conflicts with existing one");
+    }
     // Clean up by removing a.
     ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
 
     // Add a and b in the same op.
     s = add_range_partitions(a_lower_bound, a_upper_bound,
                              b_lower_bound, b_upper_bound);
-    ASSERT_FALSE(s.ok());
-    ASSERT_STR_CONTAINS(s.ToString(),
-                        "New range partition conflicts with another new range partition");
+    if (a_lower_bound == b_lower_bound && a_upper_bound == b_upper_bound) {
+      ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+                          "new range partiton duplicates another newly added one");
+    } else {
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+                          "new range partition conflicts with another newly added one");
+    }
 
     // To get some extra coverage of DROP RANGE PARTITION, check if the two
     // ranges are not equal, and if so, check that adding one and dropping the
@@ -1878,17 +1892,16 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
       // Add a then drop b.
       ASSERT_OK(add_range_partition(a_lower_bound, a_upper_bound));
       Status s = drop_range_partition(b_lower_bound, b_upper_bound);
-      ASSERT_FALSE(s.ok());
-      ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
       // Clean up by removing a.
       ASSERT_OK(drop_range_partition(a_lower_bound, a_upper_bound));
 
       // Add a and drop b in a single op.
       s = add_drop_range_partitions(a_lower_bound, a_upper_bound,
                                     b_lower_bound, b_upper_bound);
-      ASSERT_FALSE(s.ok());
-      ASSERT_STR_CONTAINS(s.ToString(),
-                          "No range partition found for drop range partition step");
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "no range partition to drop");
     }
   };
 

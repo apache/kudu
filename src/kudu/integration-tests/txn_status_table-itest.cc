@@ -326,7 +326,7 @@ TEST_F(TxnStatusTableITest, TestCreateTxnStatusTablePartitions) {
   // Now add more partitions and try again.
   ASSERT_OK(txn_sys_client_->AddTxnStatusTableRange(100, 200));
   s = txn_sys_client_->AddTxnStatusTableRange(100, 200);
-  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   NO_FATALS(CheckTableTypes({ { TableTypePB::TXN_STATUS_TABLE, 2 } }));
 
   // Ensure we still create transaction status tablets even after the master is

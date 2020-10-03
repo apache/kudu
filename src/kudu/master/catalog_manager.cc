@@ -2431,8 +2431,9 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     }
 
     if (ops.size() != 2) {
-      return Status::InvalidArgument("expected two row operations for alter range partition step",
-                                     SecureShortDebugString(step));
+      return Status::InvalidArgument(
+          "expected two row operations for alter range partition step",
+          SecureShortDebugString(step));
     }
 
     if ((ops[0].type != RowOperationsPB::RANGE_LOWER_BOUND &&
@@ -2441,7 +2442,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
          ops[1].type != RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND)) {
       return Status::InvalidArgument(
           "expected a lower bound and upper bound row op for alter range partition step",
-          strings::Substitute("$0, $1", ops[0].ToString(schema), ops[1].ToString(schema)));
+          Substitute("$0, $1", ops[0].ToString(schema), ops[1].ToString(schema)));
     }
 
     if (ops[0].type == RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND) {
@@ -2454,65 +2455,97 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     }
 
     vector<Partition> partitions;
-    RETURN_NOT_OK(partition_schema.CreatePartitions({}, {{ *ops[0].split_row, *ops[1].split_row }},
-                                                    schema, &partitions));
-
+    RETURN_NOT_OK(partition_schema.CreatePartitions(
+        {}, {{ *ops[0].split_row, *ops[1].split_row }}, schema, &partitions));
     switch (step.type()) {
       case AlterTableRequestPB::ADD_RANGE_PARTITION: {
         for (const Partition& partition : partitions) {
           const string& lower_bound = partition.partition_key_start();
           const string& upper_bound = partition.partition_key_end();
 
-          // Check that the new tablet doesn't overlap with the existing tablets.
-          // Iter points at the tablet directly *after* the lower bound (or to
-          // existing_tablets.end(), if such a tablet does not exist).
-          auto existing_iter = existing_tablets.upper_bound(lower_bound);
+          // Check that the new tablet does not overlap with any of the existing
+          // tablets. Since the elements of 'existing_tablets' are ordered by
+          // the tablets' lower bounds, the iterator points at the tablet
+          // directly *after* the lower bound or to existing_tablets.end()
+          // if such a tablet does not exist.
+          const auto existing_iter = existing_tablets.upper_bound(lower_bound);
           if (existing_iter != existing_tablets.end()) {
-            TabletMetadataLock metadata(existing_iter->second.get(), LockMode::READ);
-            if (upper_bound.empty() ||
-                metadata.data().pb.partition().partition_key_start() < upper_bound) {
+            TabletMetadataLock metadata(existing_iter->second.get(),
+                                        LockMode::READ);
+            const auto& p = metadata.data().pb.partition();
+            // Check for the overlapping ranges.
+            if (upper_bound.empty() || p.partition_key_start() < upper_bound) {
               return Status::InvalidArgument(
-                  "New range partition conflicts with existing range partition",
-                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
+                  "new range partition conflicts with existing one",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
             }
           }
+          // This is the case when there is an existing tablet with the lower
+          // bound being less or equal to the lower bound of the new tablet to
+          // create. This cannot be the case of an empty 'existing_tablets'
+          // container (otherwise, existing_tablets.end() would be equal to
+          // existing_tablets.begin()), so it's safe to decrement the iterator
+          // (i.e. call std::prev() on it) and de-reference it.
           if (existing_iter != existing_tablets.begin()) {
             TabletMetadataLock metadata(std::prev(existing_iter)->second.get(),
                                         LockMode::READ);
-            if (metadata.data().pb.partition().partition_key_end().empty() ||
-                metadata.data().pb.partition().partition_key_end() > lower_bound) {
+            const auto& p = metadata.data().pb.partition();
+            // Check for the exact match of ranges.
+            if (lower_bound == p.partition_key_start() &&
+                upper_bound == p.partition_key_end()) {
+              return Status::AlreadyPresent(
+                  "range partition already exists",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
+            }
+            // Check for the overlapping ranges.
+            if (p.partition_key_end().empty() ||
+                p.partition_key_end() > lower_bound) {
               return Status::InvalidArgument(
-                  "New range partition conflicts with existing range partition",
-                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
+                  "new range partition conflicts with existing one",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
             }
           }
 
           // Check that the new tablet doesn't overlap with any other new tablets.
           auto new_iter = new_tablets.upper_bound(lower_bound);
           if (new_iter != new_tablets.end()) {
-            const auto& metadata = new_iter->second->mutable_metadata()->dirty();
-            if (upper_bound.empty() ||
-                metadata.pb.partition().partition_key_start() < upper_bound) {
+            // Check for the overlapping ranges.
+            const auto& p = new_iter->second->mutable_metadata()->dirty().pb.partition();
+            if (upper_bound.empty() || p.partition_key_start() < upper_bound) {
               return Status::InvalidArgument(
-                  "New range partition conflicts with another new range partition",
-                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
+                  "new range partition conflicts with another newly added one",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
             }
           }
           if (new_iter != new_tablets.begin()) {
-            const auto& metadata = std::prev(new_iter)->second->mutable_metadata()->dirty();
-            if (metadata.pb.partition().partition_key_end().empty() ||
-                metadata.pb.partition().partition_key_end() > lower_bound) {
+            const auto& p = std::prev(new_iter)->second->mutable_metadata()->dirty().pb.partition();
+            // Check for the exact match of ranges.
+            if (lower_bound == p.partition_key_start() &&
+                upper_bound == p.partition_key_end()) {
+              return Status::AlreadyPresent(
+                  "new range partiton duplicates another newly added one",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
+            }
+            // Check for the overlapping ranges.
+            if (p.partition_key_end().empty() || p.partition_key_end() > lower_bound) {
               return Status::InvalidArgument(
-                  "New range partition conflicts with another new range partition",
-                  partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
+                  "new range partition conflicts with another newly added one",
+                  partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                             *ops[1].split_row));
             }
           }
 
-          PartitionPB partition_pb;
-          partition.ToPB(&partition_pb);
-          const optional<string> dimension_label = step.add_range_partition().has_dimension_label()
+          const optional<string> dimension_label =
+              step.add_range_partition().has_dimension_label()
               ? make_optional(step.add_range_partition().dimension_label())
               : none;
+          PartitionPB partition_pb;
+          partition.ToPB(&partition_pb);
           new_tablets.emplace(lower_bound,
                               CreateTabletInfo(table, partition_pb, dimension_label));
         }
@@ -2551,15 +2584,15 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
             new_iter->second->mutable_metadata()->AbortMutation();
             new_tablets.erase(new_iter);
           } else {
-            return Status::InvalidArgument(
-                "No range partition found for drop range partition step",
-                partition_schema.RangePartitionDebugString(*ops[0].split_row, *ops[1].split_row));
+            return Status::InvalidArgument("no range partition to drop",
+                partition_schema.RangePartitionDebugString(*ops[0].split_row,
+                                                           *ops[1].split_row));
           }
         }
         break;
       }
       default: {
-        return Status::InvalidArgument("Unknown alter table range partitioning step",
+        return Status::InvalidArgument("unknown alter table range partitioning step",
                                        SecureShortDebugString(step));
       }
     }
