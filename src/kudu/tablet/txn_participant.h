@@ -33,6 +33,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_semaphore.h"
 #include "kudu/util/status.h"
@@ -91,10 +92,12 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // contains the participant op that replays to the transaction's current
   // in-memory state is not GCed, allowing us to rebuild this transaction's
   // in-memory state upon rebooting a server.
-  Txn(int64_t txn_id, log::LogAnchorRegistry* log_anchor_registry)
+  Txn(int64_t txn_id, log::LogAnchorRegistry* log_anchor_registry,
+      scoped_refptr<TabletMetadata> tablet_metadata, State init_state = kInitializing)
       : txn_id_(txn_id),
         log_anchor_registry_(log_anchor_registry),
-        state_(kInitializing),
+        tablet_metadata_(std::move(tablet_metadata)),
+        state_(init_state),
         commit_timestamp_(-1) {}
   ~Txn();
 
@@ -108,6 +111,11 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // replicating a participant op.
   Status ValidateBeginTransaction() const {
     DCHECK(state_lock_.is_locked());
+    if (PREDICT_FALSE(tablet_metadata_->HasTxnMetadata(txn_id_))) {
+      return Status::IllegalState(
+          strings::Substitute("Transaction metadata for transaction $0 already exists",
+                              txn_id_));
+    }
     if (PREDICT_FALSE(state_ != kInitializing)) {
       return Status::IllegalState(
           strings::Substitute("Cannot begin transaction in state: $0",
@@ -149,26 +157,23 @@ class Txn : public RefCountedThreadSafe<Txn> {
 
   // Applies the given state transitions. Should be called while holding the
   // state lock in write mode after successfully replicating a participant op.
-  void BeginTransaction(const consensus::OpId& op_id) {
-    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
-        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
+  void BeginTransaction() {
     SetState(kOpen);
   }
   void BeginCommit(const consensus::OpId& op_id) {
     CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
-        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
+        op_id.index(), strings::Substitute("BEGIN_COMMIT-$0-$1", txn_id_, this),
+        &begin_commit_anchor_));
     SetState(kCommitInProgress);
   }
-  void FinalizeCommit(const consensus::OpId& op_id, int64_t finalized_commit_timestamp) {
-    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
-        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
-    SetState(kCommitted);
+  void FinalizeCommit(int64_t finalized_commit_timestamp) {
     commit_timestamp_ = finalized_commit_timestamp;
+    SetState(kCommitted);
+    log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
   }
-  void AbortTransaction(const consensus::OpId& op_id) {
-    CHECK_OK(log_anchor_registry_->RegisterOrUpdate(
-        op_id.index(), strings::Substitute("Txn-$0-$1", txn_id_, this), &log_anchor_));
+  void AbortTransaction() {
     SetState(kAborted);
+    log_anchor_registry_->UnregisterIfAnchored(&begin_commit_anchor_);
   }
 
   // Simple accessors for state. No locks are required to call these.
@@ -177,6 +182,9 @@ class Txn : public RefCountedThreadSafe<Txn> {
   }
   int64_t commit_timestamp() const {
     return commit_timestamp_;
+  }
+  int64_t txn_id() const {
+    return txn_id_;
   }
 
   void SetCommitOp(std::unique_ptr<ScopedOp> commit_op) {
@@ -200,6 +208,13 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // Returns an error if the transaction has not finished initializing.
   Status CheckFinishedInitializing() const {
     if (PREDICT_FALSE(state_ == kInitializing)) {
+      if (tablet_metadata_->HasTxnMetadata(txn_id_)) {
+        // We created this transaction as a part of this op (i.e. it was not
+        // already in flight), and there is existing metadata for it.
+        return Status::IllegalState(
+            strings::Substitute("Transaction metadata for transaction $0 already exists",
+                                txn_id_));
+      }
       return Status::NotFound("Transaction hasn't been successfully started");
     }
     return Status::OK();
@@ -211,7 +226,12 @@ class Txn : public RefCountedThreadSafe<Txn> {
   // Log anchor registry with which to anchor WAL segments, and an anchor to
   // update upon applying a state change.
   log::LogAnchorRegistry* log_anchor_registry_;
-  log::LogAnchor log_anchor_;
+
+  // Anchor used to prevent GC of a BEGIN_COMMIT op.
+  log::LogAnchor begin_commit_anchor_;
+
+  // Tablet metadata used to persist this transaction's metadata.
+  scoped_refptr<TabletMetadata> tablet_metadata_;
 
   // Lock protecting access to 'state_' and 'commit_timestamp'. Ops that intend
   // on mutating 'state_' must take this lock in write mode. Ops that intend on
@@ -237,6 +257,9 @@ class Txn : public RefCountedThreadSafe<Txn> {
 // Tracks the on-going transactions in which a given tablet is participating.
 class TxnParticipant {
  public:
+  explicit TxnParticipant(scoped_refptr<TabletMetadata> tmeta)
+      : tablet_metadata_(std::move(tmeta)) {}
+
   // Convenience struct representing a Txn of this participant. This is useful
   // for testing, as it easy to construct.
   struct TxnEntry {
@@ -244,6 +267,10 @@ class TxnParticipant {
     Txn::State state;
     int64_t commit_timestamp;
   };
+
+  // Creates a transaction in kOpen.
+  void CreateOpenTransaction(int64_t txn_id,
+                             log::LogAnchorRegistry* log_anchor_registry);
 
   // Gets the transaction state for the given transaction ID, creating it in
   // the kInitializing state if one doesn't already exist.
@@ -266,9 +293,11 @@ class TxnParticipant {
   //
   // Returns whether or not this call actually cleared the transaction (i.e.
   // returns 'false' if the transaction was not found)..
-  bool ClearIfCompleteForTests(int64_t txn_id);
+  bool ClearIfComplete(int64_t txn_id);
 
-  // Returns the transactions, sorted by transaction ID.
+  // Returns the transactions, sorted by transaction ID. This returns both
+  // in-flight transactions tracked by 'txns_' as well as transactions that
+  // have terminated and persisted metadata via abort or commit.
   std::vector<TxnEntry> GetTxnsForTests() const;
 
  private:
@@ -277,6 +306,9 @@ class TxnParticipant {
 
   // Maps from transaction ID to the corresponding transaction state.
   std::unordered_map<int64_t, scoped_refptr<Txn>> txns_;
+
+  // Tablet metadata used to persist this transaction's metadata.
+  scoped_refptr<TabletMetadata> tablet_metadata_;
 };
 
 inline bool operator==(const TxnParticipant::TxnEntry& lhs, const TxnParticipant::TxnEntry& rhs) {

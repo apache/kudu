@@ -49,6 +49,7 @@
 #include "kudu/tablet/ops/op_tracker.h"
 #include "kudu/tablet/ops/participant_op.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant-test-util.h"
@@ -140,8 +141,8 @@ class TxnParticipantTest : public TabletReplicaTestBase {
   // Writes an op to the WAL, rolls over onto a new WAL segment, and flushes
   // the MRS, leaving us with a new WAL segment that should be GC-able unless
   // previous WAL segments are anchored.
-  Status WriteRolloverAndFlush(int* current_key) {
-    RETURN_NOT_OK(Write(*current_key++));
+  Status WriteRolloverAndFlush(int key) {
+    RETURN_NOT_OK(Write(key));
     RETURN_NOT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
     RETURN_NOT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
     return tablet_replica_->tablet()->Flush();
@@ -378,7 +379,7 @@ TEST_F(TxnParticipantTest, TestReplayParticipantOps) {
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
       { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
-  ASSERT_OK(RestartReplica());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
       { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
@@ -396,12 +397,17 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
         ParticipantResponsePB resp;
         ASSERT_OK(CallParticipantOp(tablet_replica_.get(), txn_id, op,
                                     kDummyCommitTimestamp, &resp));
-        ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-        int64_t log_index = -1;
-        tablet_replica_->log_anchor_registry()->GetEarliestRegisteredLogIndex(&log_index);
-        ASSERT_EQ(++expected_index, log_index);
+        ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+        expected_index++;
+        if (op == ParticipantOpPB::BEGIN_COMMIT) {
+          ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+          int64_t log_index = -1;
+          tablet_replica_->log_anchor_registry()->GetEarliestRegisteredLogIndex(&log_index);
+          ASSERT_EQ(expected_index, log_index);
+        } else {
+          ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+        }
       }
-      ASSERT_TRUE(txn_participant()->ClearIfCompleteForTests(txn_id));
       ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
     };
   NO_FATALS(check_participant_ops_are_anchored(1, {
@@ -416,76 +422,165 @@ TEST_F(TxnParticipantTest, TestAllOpsRegisterAnchors) {
   }));
 }
 
-// Test that participant ops are anchored, the anchors are updated as a
-// transaction's state gets updated.
-TEST_F(TxnParticipantTest, TestParticipantOpsAnchorWALs) {
+// Test that participant ops result in tablet metadata updates that can survive
+// restarts, and that the appropriate anchors are in place as we progress
+// through a transaction's life cycle.
+TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   const int64_t kTxnId = 1;
-  // First, perform some initial participant ops and roll the WAL segments so
-  // there are some candidates for WAL GC.
-  ParticipantResponsePB resp;
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
-                              kDummyCommitTimestamp, &resp));
-  ASSERT_FALSE(resp.has_error());
-  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
-  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
-
-  // Write and flush some ops that would otherwise lead to GC-able WAL
-  // segments. Since there is an anchored participant op in the WAL before
-  // these writes, the tablet should not be GC-able.
-  int current_key = 0;
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
+  // First, do a sanity check that there's nothing GCable.
   int64_t gcable_size;
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 
-  // WAL GC should proceed to clear out ops for both the transaction and the
-  // inserts.
+  // Perform some initial participant ops and roll the WAL segments so there
+  // are some candidates for WAL GC.
+  ParticipantResponsePB resp;
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // We can't GC down to 0 segments, so write some rows and roll onto new
+  // segments so we have a segment to GC.
+  int current_key = 0;
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // We should be able to GC the WALs that have the BEGIN_TXN op.
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_GT(gcable_size, 0);
+  ASSERT_OK(tablet_replica_->RunLogGC());
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_EQ(0, gcable_size);
+
+  // At this point, we have a single segment with some writes in it.
+  // Write and flush a BEGIN_COMMIT op. Once we GC, our WAL will start on this
+  // op, and WALs should be anchored until the commit is finalized, regardless
+  // of whether there are more segments.
   ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                               kDummyCommitTimestamp, &resp));
   ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
+  ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_GT(gcable_size, 0);
+  ASSERT_OK(tablet_replica_->RunLogGC());
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_EQ(0, gcable_size);
+
+  // Even if we write and roll over, we shouldn't be able to GC because of the
+  // anchor.
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_EQ(0, gcable_size);
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitInProgress, -1 }
+  }), txn_participant()->GetTxnsForTests());
+
+  // Once we finalize the commit, the BEGIN_COMMIT anchor should be released.
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
                               kDummyCommitTimestamp, &resp));
   ASSERT_FALSE(resp.has_error());
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // Because we rebuilt the WAL, we only have one segment and thus shouldn't be
+  // able to GC anything until we add more segments.
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_EQ(0, gcable_size);
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
-
   ASSERT_OK(tablet_replica_->RunLogGC());
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_EQ(0, gcable_size);
 
   // Ensure the transaction bootstraps to the expected state.
-  // NOTE: we need to reset the tablet here to reset the TxnParticipant.
-  // Otherwise, we might start the replica with a LogAnchor already registered.
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
+  }), txn_participant()->GetTxnsForTests());
+}
+
+class MetadataFlushTxnParticipantTest : public TxnParticipantTest,
+                                        public ::testing::WithParamInterface<bool> {};
+
+// Test rebuilding transaction state from the WALs and metadata.
+TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
+  const bool should_flush = GetParam();
+  const int64_t kTxnId = 1;
+  ParticipantResponsePB resp;
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kOpen, -1 }
+  }), txn_participant()->GetTxnsForTests());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  // NOTE: BEGIN_COMMIT ops don't anchor on metadata flush, so don't bother
+  // flushing.
+
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitInProgress, -1 }
+  }), txn_participant()->GetTxnsForTests());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
       { kTxnId, Txn::kCommitted, kDummyCommitTimestamp }
   }), txn_participant()->GetTxnsForTests());
 
-  // Roll onto new WAL segments and add more segments so we can get to a state
-  // without any transaction ops in the WALs.
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-
-  // While the transaction still exists, we shouldn't GC anything.
-  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
-  ASSERT_EQ(0, gcable_size);
-
-  // Once we cull the transaction state in memory, we should be left with no
-  // trace of the transaction.
-  ASSERT_TRUE(txn_participant()->ClearIfCompleteForTests(kTxnId));
-  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
-  ASSERT_GT(gcable_size, 0);
-
-  ASSERT_OK(tablet_replica_->RunLogGC());
-  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
-  ASSERT_EQ(0, gcable_size);
-
-  // Do a final check that we bootstrap to the expected state (i.e. the
-  // transaction is culled).
+  // Now perform the same validation but for a transaction that gets aborted.
+  const int64_t kAbortedTxnId = 2;
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kAbortedTxnId, ParticipantOpPB::BEGIN_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
-  ASSERT_TRUE(txn_participant()->GetTxnsForTests().empty());
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
+      { kAbortedTxnId, Txn::kOpen, -1 }
+  }), txn_participant()->GetTxnsForTests());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kAbortedTxnId, ParticipantOpPB::ABORT_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
+      { kTxnId, Txn::kCommitted, kDummyCommitTimestamp },
+      { kAbortedTxnId, Txn::kAborted, -1 }
+  }), txn_participant()->GetTxnsForTests());
 }
+INSTANTIATE_TEST_CASE_P(ShouldFlushMetadata, MetadataFlushTxnParticipantTest,
+    ::testing::Values(true, false));
 
 // Similar to the above test, but checking that in-flight ops anchor the WALs.
 TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
@@ -512,8 +607,8 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
 
   // Create some WAL segments to ensure some would-be-GC-able segments.
   int current_key = 0;
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
 
   // Our participant op is still pending, and nothing should be GC-able.
   ASSERT_EQ(1, tablet_replica_->op_tracker()->GetNumPendingForTests());
@@ -522,29 +617,31 @@ TEST_F(TxnParticipantTest, TestActiveParticipantOpsAnchorWALs) {
   ASSERT_EQ(0, gcable_size);
 
   // Finish applying the participant op and proceed to completion.
+  // Even with more segments added, the WAL should be anchored until we flush
+  // the tablet metadata to include the transaction.
   apply_continue.CountDown();
   latch.Wait();
-
-  // Even though we've completed the op, the replicate message should still be
-  // anchored while the in-memory transaction state exists on this participant.
-  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
-  ASSERT_EQ(0, gcable_size);
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-  ASSERT_OK(WriteRolloverAndFlush(&current_key));
-  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
-  ASSERT_EQ(0, gcable_size);
-
-  // The moment we update the in-memory state, we should be able to GC.
-  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
-                              kDummyCommitTimestamp, &resp));
   ASSERT_FALSE(resp.has_error());
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // Add some segments to ensure there are enough segments to GC.
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
+  ASSERT_OK(WriteRolloverAndFlush(current_key++));
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
+
+  // Now that we've completed the op, we can get rid of the WAL segments that
+  // had the participant op.
+  ASSERT_OK(tablet_replica_->RunLogGC());
+  ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
+  ASSERT_EQ(0, gcable_size);
 
   // As a sanity check, ensure we get to the expected state if we reboot.
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({
-      { kTxnId, Txn::kCommitInProgress, -1 }
+      { kTxnId, Txn::kOpen, -1 }
   }), txn_participant()->GetTxnsForTests());
 }
 

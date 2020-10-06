@@ -41,6 +41,7 @@ class OpId;
 } // namespace consensus
 
 namespace tablet {
+class Tablet;
 class TabletReplica;
 
 // An OpState for an update to transaction participant state.
@@ -72,9 +73,8 @@ class ParticipantOpState : public OpState {
   //
   // Anchors the given 'op_id' in the WAL, ensuring that subsequent bootstraps
   // of the tablet's WAL will leave the transaction in the appropriate state.
-  // Updates 'commit_msg' to include a commit message appropriate for this op
-  // using this op's arena.
-  Status PerformOp(const consensus::OpId& op_id, consensus::CommitMsg** commit_msg);
+  // Uses 'tablet' for this anchoring, and to update metadata.
+  Status PerformOp(const consensus::OpId& op_id, Tablet* tablet);
 
   // Releases the transaction and its lock.
   void ReleaseTxn();

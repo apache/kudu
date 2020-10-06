@@ -209,8 +209,10 @@ METRIC_DEFINE_gauge_uint64(tablet, last_write_elapsed_time, "Seconds Since Last 
 
 using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;
+using kudu::consensus::OpId;
 using kudu::fs::IOContext;
 using kudu::log::LogAnchorRegistry;
+using kudu::log::MinLogIndexAnchorer;
 using std::endl;
 using std::make_shared;
 using std::ostream;
@@ -256,6 +258,7 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
     mem_trackers_(tablet_id(), std::move(parent_mem_tracker)),
     next_mrs_id_(0),
     clock_(clock),
+    txn_participant_(metadata_),
     rowsets_flush_sem_(1),
     state_(kInitialized),
     last_write_time_(MonoTime::Now()),
@@ -315,7 +318,7 @@ Tablet::~Tablet() {
   CHECK_EQ(expected_state, _local_state); \
 } while (0)
 
-Status Tablet::Open() {
+Status Tablet::Open(const unordered_set<int64_t>& in_flight_txn_ids) {
   TRACE_EVENT0("tablet", "Tablet::Open");
   RETURN_IF_STOPPED_OR_CHECK_STATE(kInitialized);
 
@@ -324,6 +327,14 @@ Status Tablet::Open() {
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
 
   RowSetVector rowsets_opened;
+
+  // If we persisted the state of any transaction IDs before shutting down,
+  // initialize those that were in-flight here as kOpen. If there were any ops
+  // applied that didn't get persisted to the tablet metadata, the bootstrap
+  // process will replay those ops.
+  for (const auto& txn_id : in_flight_txn_ids) {
+    txn_participant_.CreateOpenTransaction(txn_id, log_anchor_registry_.get());
+  }
 
   fs::IOContext io_context({ tablet_id() });
   // open the tablet row-sets
@@ -1003,6 +1014,30 @@ Status Tablet::CheckHasNotBeenStopped(State* cur_state) const {
     *cur_state = s;
   }
   return Status::OK();
+}
+
+void Tablet::BeginTransaction(Txn* txn, const OpId& op_id) {
+  unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
+        Substitute("BEGIN_TXN-$0-$1", txn->txn_id(), txn)));
+  anchor->AnchorIfMinimum(op_id.index());
+  metadata_->AddTxnMetadata(txn->txn_id(), std::move(anchor));
+  txn->BeginTransaction();
+}
+
+void Tablet::CommitTransaction(Txn* txn, Timestamp commit_ts, const OpId& op_id) {
+  unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
+        Substitute("FINALIZE_COMMIT-$0-$1", txn->txn_id(), txn)));
+  anchor->AnchorIfMinimum(op_id.index());
+  metadata_->AddCommitTimestamp(txn->txn_id(), commit_ts, std::move(anchor));
+  txn->FinalizeCommit(commit_ts.value());
+}
+
+void Tablet::AbortTransaction(Txn* txn,  const OpId& op_id) {
+  unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
+        Substitute("ABORT_TXN-$0-$1", txn->txn_id(), txn)));
+  anchor->AnchorIfMinimum(op_id.index());
+  metadata_->AbortTransaction(txn->txn_id(), std::move(anchor));
+  txn->AbortTransaction();
 }
 
 Status Tablet::ApplyRowOperations(WriteOpState* op_state) {

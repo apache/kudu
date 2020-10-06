@@ -21,6 +21,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -34,12 +35,15 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/tablet/txn_participant.h"
@@ -48,6 +52,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -56,8 +61,14 @@
 DECLARE_bool(raft_enable_pre_election);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_int32(consensus_inject_latency_ms_in_notifications);
+DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(follower_unavailable_considered_failed_sec);
+DECLARE_int32(log_segment_size_mb);
+DECLARE_int32(maintenance_manager_polling_interval_ms);
 DECLARE_int32(raft_heartbeat_interval_ms);
+
+METRIC_DECLARE_histogram(log_gc_duration);
 
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
@@ -72,6 +83,7 @@ using kudu::tserver::ParticipantResponsePB;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -116,8 +128,8 @@ Status RunOnReplica(TabletReplica* replica, int64_t txn_id,
   return RunOnReplicas({ replica }, txn_id, type, commit_timestamp)[0];
 }
 
-// Emulate a snapshot scan by waiting for the safe time to be advanced past 't'
-// and for all ops before 't' to complete.
+// Emulates a snapshot scan by waiting for the safe time to be advanced past
+// 't' and for all ops before 't' to complete.
 Status WaitForCompletedOps(TabletReplica* replica, Timestamp t, MonoDelta timeout) {
   const auto deadline = MonoTime::Now() + timeout;
   RETURN_NOT_OK_PREPEND(
@@ -132,6 +144,9 @@ Status WaitForCompletedOps(TabletReplica* replica, Timestamp t, MonoDelta timeou
 
 class TxnParticipantITest : public KuduTest {
  public:
+  ~TxnParticipantITest() {
+    STLDeleteValues(&ts_map_);
+  }
   void SetUp() override {
     KuduTest::SetUp();
     InternalMiniClusterOptions opts;
@@ -139,15 +154,19 @@ class TxnParticipantITest : public KuduTest {
     cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
     ASSERT_OK(cluster_->Start());
     NO_FATALS(SetUpTable());
+    ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(), cluster_->messenger(), &ts_map_));
   }
 
   // Creates a single-tablet replicated table.
-  void SetUpTable() {
+  void SetUpTable(string* table_name = nullptr) {
     TestWorkload w(cluster_.get());
     w.Setup();
     w.Start();
     while (w.rows_inserted() < 1) {
       SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+    if (table_name) {
+      *table_name = w.table_name();
     }
     w.StopAndJoin();
   }
@@ -172,6 +191,7 @@ class TxnParticipantITest : public KuduTest {
 
  protected:
   unique_ptr<InternalMiniCluster> cluster_;
+  unordered_map<string, TServerDetails*> ts_map_;
 };
 
 // Test that participant ops only applied to followers via replication from
@@ -225,10 +245,27 @@ TEST_F(TxnParticipantITest, TestReplicateParticipantOps) {
   }
 }
 
+class ParticipantCopyITest : public TxnParticipantITest,
+                             public ::testing::WithParamInterface<bool> {
+ public:
+  void SetUp() override {
+    // To test the behavior with WAL GC, encourage flushing so our WALs don't
+    // stay anchored for too long.
+    FLAGS_flush_threshold_mb = 1;
+    FLAGS_flush_threshold_secs = 1;
+    FLAGS_maintenance_manager_polling_interval_ms = 10;
+    // Additionally, make the WAL segments smaller to encourage more frequent
+    // roll-over onto WAL segments.
+    FLAGS_log_segment_size_mb = 1;
+    NO_FATALS(TxnParticipantITest::SetUp());
+  }
+};
+
 // Test that participant ops are copied when performing a tablet copy,
 // resulting in identical transaction states on the new copy.
-TEST_F(TxnParticipantITest, TestCopyParticipantOps) {
-  NO_FATALS(SetUpTable());
+TEST_P(ParticipantCopyITest, TestCopyParticipantOps) {
+  string table_name;
+  NO_FATALS(SetUpTable(&table_name));
 
   constexpr const int kNumTxns = 10;
   constexpr const int kLeaderIdx = 0;
@@ -258,6 +295,25 @@ TEST_F(TxnParticipantITest, TestCopyParticipantOps) {
     });
   }
 
+  // If we're meant to GC WALs, insert rows to the tablet until a WAL GC op
+  // happens.
+  if (GetParam()) {
+    for (int i = 0; i < kNumTxns; i++) {
+      ASSERT_TRUE(leader_replica->tablet_metadata()->HasTxnMetadata(i));
+    }
+    TestWorkload w(cluster_.get());
+    w.set_table_name(table_name);
+    w.Setup();
+    w.Start();
+    auto gc_ops = leader_replica->tablet()->GetMetricEntity()->FindOrCreateHistogram(
+        &METRIC_log_gc_duration);
+    const auto initial_gcs = gc_ops->TotalCount();
+    while (gc_ops->TotalCount() == initial_gcs) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+    w.StopAndJoin();
+  }
+
   // Set ourselves up to make a copy.
   cluster_->mini_tablet_server(kDeadServerIdx)->Shutdown();
   ASSERT_OK(cluster_->AddTabletServer());
@@ -272,20 +328,28 @@ TEST_F(TxnParticipantITest, TestCopyParticipantOps) {
     ASSERT_TRUE(new_ts->server()->tablet_manager()->LookupTablet(tablets[0], &r));
     ASSERT_OK(r->WaitUntilConsensusRunning(kTimeout));
     ASSERT_EQ(expected_txns, r->tablet()->txn_participant()->GetTxnsForTests());
+    for (int i = 0; i < kNumTxns; i++) {
+      ASSERT_TRUE(r->tablet_metadata()->HasTxnMetadata(i));
+    }
   });
 }
+INSTANTIATE_TEST_CASE_P(ShouldGCWals, ParticipantCopyITest, ::testing::Values(true, false));
 
 // Test to ensure that the mechanisms built to allow snapshot scans to wait for
 // safe time advancement will actually wait for transactions to commit.
 TEST_F(TxnParticipantITest, TestWaitOnFinalizeCommit) {
   const int kLeaderIdx = 0;
   vector<TabletReplica*> replicas = SetUpLeaderGetReplicas(kLeaderIdx);
+
   auto* leader_replica = replicas[kLeaderIdx];
   auto* follower_replica = replicas[kLeaderIdx + 1];
   auto* clock = leader_replica->clock();
   const int64_t kTxnId = 1;
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
+  const MonoDelta kAgreeTimeout = MonoDelta::FromSeconds(10);
+  const auto& tablet_id = leader_replica->tablet()->tablet_id();
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
 
   // We should consistently be able to scan a bit in the future just by
   // waiting on leaders. Leader safe times move forward with its clock, while
@@ -301,6 +365,7 @@ TEST_F(TxnParticipantITest, TestWaitOnFinalizeCommit) {
   // reads, scans asking for a timestamp higher than the BEGIN_COMMIT op's
   // timestamp should wait.
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
   const auto before_finalize_ts = clock->Now();
   Status s;
   s = WaitForCompletedOps(leader_replica, before_finalize_ts, kShortTimeout);
@@ -325,6 +390,7 @@ TEST_F(TxnParticipantITest, TestWaitOnFinalizeCommit) {
   const auto commit_ts_val = clock->Now().value() + 10000;
   const auto commit_ts = Timestamp(commit_ts_val);
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::FINALIZE_COMMIT, commit_ts_val));
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
   ASSERT_OK(WaitForCompletedOps(leader_replica, before_finalize_ts, kShortTimeout));
   ASSERT_OK(WaitForCompletedOps(follower_replica, before_finalize_ts, kShortTimeout));
   ASSERT_OK(WaitForCompletedOps(leader_replica, commit_ts, kShortTimeout));
@@ -342,6 +408,9 @@ TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
   const int64_t kTxnId = 1;
   ASSERT_OK(leader_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_TXN));
+  const MonoDelta kAgreeTimeout = MonoDelta::FromSeconds(10);
+  const auto& tablet_id = leader_replica->tablet()->tablet_id();
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
 
   const auto kShortTimeout = MonoDelta::FromMilliseconds(10);
   const auto before_commit_ts = clock->Now();
@@ -349,6 +418,7 @@ TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
   // reads, scans asking for a timestamp higher than the BEGIN_COMMIT op's
   // timestamp should wait.
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::BEGIN_COMMIT));
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
   const auto before_abort_ts = clock->Now();
   Status s = WaitForCompletedOps(leader_replica, before_abort_ts, kShortTimeout);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
@@ -364,6 +434,7 @@ TEST_F(TxnParticipantITest, TestWaitOnAbortCommit) {
   // On followers, this will happen via heartbeats, so we need to wait to
   // heartbeat (wait 2x the heartbeat time to avoid flakiness).
   ASSERT_OK(RunOnReplica(leader_replica, kTxnId, ParticipantOpPB::ABORT_TXN));
+  ASSERT_OK(WaitForServersToAgree(kAgreeTimeout, ts_map_, tablet_id, /*minimum_index*/1));
   ASSERT_OK(WaitForCompletedOps(leader_replica, before_abort_ts, kShortTimeout));
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2));
   ASSERT_OK(WaitForCompletedOps(follower_replica, before_abort_ts, kShortTimeout));

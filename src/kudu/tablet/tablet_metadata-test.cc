@@ -22,6 +22,8 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -31,8 +33,11 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -49,9 +54,12 @@
 DEFINE_int64(test_row_set_count, 1000, "");
 DEFINE_int64(test_block_count_per_rs, 1000, "");
 
+using kudu::log::LogAnchorRegistry;
+using kudu::log::MinLogIndexAnchorer;
 using std::map;
 using std::shared_ptr;
 using std::unique_ptr;
+using std::unordered_set;
 
 namespace kudu {
 namespace tablet {
@@ -218,6 +226,73 @@ TEST_F(TestTabletMetadata, BenchmarkCollectBlockIds) {
     }
     LOG(INFO) << "block_ids size: " << block_ids.size();
   }
+}
+
+TEST_F(TestTabletMetadata, TestTxnMetadata) {
+  constexpr const char* kOwner = "txn";
+  const Timestamp kDummyTimestamp = Timestamp(1337);
+  scoped_refptr<LogAnchorRegistry> registry(new LogAnchorRegistry);
+  TabletMetadata* meta = harness_->tablet()->metadata();
+  const auto make_anchor = [&] () {
+    return unique_ptr<MinLogIndexAnchorer>(new MinLogIndexAnchorer(registry.get(), kOwner));
+  };
+  int64_t kCommittedTxnId = 1;
+  int64_t kAbortedTxnId = 2;
+  int64_t kInFlightTxnId = 3;
+  meta->AddTxnMetadata(kCommittedTxnId, make_anchor());
+  meta->AddCommitTimestamp(kCommittedTxnId, kDummyTimestamp, make_anchor());
+  ASSERT_EQ(1, meta->GetTxnMetadata().size());
+
+  meta->AddTxnMetadata(kAbortedTxnId, make_anchor());
+  meta->AbortTransaction(kAbortedTxnId, make_anchor());
+  ASSERT_EQ(2, meta->GetTxnMetadata().size());
+
+  meta->AddTxnMetadata(kInFlightTxnId, make_anchor());
+
+  // Validate the transactions' fields.
+  const auto validate_txn_metas = [&] (TabletMetadata* meta) {
+    auto txn_metas = meta->GetTxnMetadata();
+    ASSERT_EQ(3, txn_metas.size());
+    ASSERT_TRUE(meta->HasTxnMetadata(kCommittedTxnId));
+    ASSERT_TRUE(meta->HasTxnMetadata(kAbortedTxnId));
+    ASSERT_TRUE(meta->HasTxnMetadata(kInFlightTxnId));
+
+    const auto& committed_txn = FindOrDie(txn_metas, kCommittedTxnId);
+    ASSERT_FALSE(committed_txn->aborted());
+    ASSERT_NE(boost::none, committed_txn->commit_timestamp());
+    ASSERT_EQ(kDummyTimestamp.value(), *committed_txn->commit_timestamp());
+
+    const auto& aborted_txn = FindOrDie(txn_metas, kAbortedTxnId);
+    ASSERT_TRUE(aborted_txn->aborted());
+    ASSERT_EQ(boost::none, aborted_txn->commit_timestamp());
+
+    const auto& in_flight_txn = FindOrDie(txn_metas, kInFlightTxnId);
+    ASSERT_FALSE(in_flight_txn->aborted());
+    ASSERT_EQ(boost::none, in_flight_txn->commit_timestamp());
+
+    unordered_set<int64_t> in_flight_txn_ids;
+    unordered_set<int64_t> terminal_txn_ids;
+    meta->GetTxnIds(&in_flight_txn_ids, &terminal_txn_ids);
+    ASSERT_EQ(1, in_flight_txn_ids.size());
+    ASSERT_EQ(2, terminal_txn_ids.size());
+    ASSERT_TRUE(ContainsKey(in_flight_txn_ids, kInFlightTxnId));
+    ASSERT_TRUE(ContainsKey(terminal_txn_ids, kAbortedTxnId));
+    ASSERT_TRUE(ContainsKey(terminal_txn_ids, kCommittedTxnId));
+  };
+  NO_FATALS(validate_txn_metas(meta));
+
+  // Validate the superblock fields are set.
+  TabletSuperBlockPB superblock_pb;
+  ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
+  ASSERT_EQ(3, superblock_pb.txn_metadata_size());
+
+  // Flush and reload the metadata.
+  ASSERT_OK(meta->Flush());
+  scoped_refptr<TabletMetadata> new_meta;
+  ASSERT_OK(TabletMetadata::Load(harness_->fs_manager(),
+                                  harness_->tablet()->tablet_id(),
+                                  &new_meta));
+  NO_FATALS(validate_txn_metas(new_meta.get()));
 }
 
 } // namespace tablet

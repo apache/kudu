@@ -161,7 +161,7 @@ Status ParticipantOp::Start() {
   return Status::OK();
 }
 
-Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, CommitMsg** commit_msg) {
+Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* tablet) {
   const auto& op = request()->op();
   const auto& op_type = request()->op().type();
   Status s;
@@ -170,26 +170,29 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, CommitMsg** c
     // metadata. When we begin validating write ops before committing, we'll
     // need to populate the response with errors.
     case ParticipantOpPB::BEGIN_TXN: {
-      txn_->BeginTransaction(op_id);
+      tablet->BeginTransaction(txn_.get(), op_id);
       break;
     }
     case ParticipantOpPB::BEGIN_COMMIT: {
-      // TODO(awong): Wait for all ops below this timestamp to complete.
       txn_->BeginCommit(op_id);
+      ReleaseMvccOpToTxn();
       break;
     }
     case ParticipantOpPB::FINALIZE_COMMIT: {
-      txn_->FinalizeCommit(op_id, op.finalized_commit_timestamp());
-      // NOTE: we may not have a commit op if we are bootstrapping.
-      // TODO(awong): consider not replaying the FINALIZE_COMMIT unless the
-      // BEGIN_COMMIT also needs to be replayed.
+      DCHECK(op.has_finalized_commit_timestamp());
+      const auto& commit_ts = op.finalized_commit_timestamp();
+      tablet->CommitTransaction(txn_.get(), Timestamp(commit_ts), op_id);
+      // NOTE: we may not have a commit op if we are bootstrapping and we GCed
+      // the BEGIN_COMMIT op before flushing the finalized commit timestamp.
       if (txn_->commit_op()) {
         txn_->commit_op()->FinishApplying();
       }
       break;
     }
     case ParticipantOpPB::ABORT_TXN: {
-      txn_->AbortTransaction(op_id);
+      tablet->AbortTransaction(txn_.get(), op_id);
+      // NOTE: we may not have a commit op if we are aborting before beginning
+      // to commit.
       if (txn_->commit_op()) {
         txn_->commit_op()->Abort();
       }
@@ -199,8 +202,6 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, CommitMsg** c
       return Status::InvalidArgument("unknown op type");
     }
   }
-  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(pb_arena());
-  (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
   return Status::OK();
 }
 
@@ -208,12 +209,9 @@ Status ParticipantOp::Apply(CommitMsg** commit_msg) {
   TRACE_EVENT0("op", "ParticipantOp::Apply");
   TRACE("APPLY: Starting.");
   state_->tablet_replica()->tablet()->StartApplying(state_.get());
-  CHECK_OK(state_->PerformOp(state()->op_id(), commit_msg));
-  // If this is a BEGIN_COMMIT op, pass the commit's MVCC op to the
-  // transaction, keeping it open until the commit is finalized or aborted.
-  if (state_->request()->op().type() == ParticipantOpPB::BEGIN_COMMIT) {
-    state_->ReleaseMvccOpToTxn();
-  }
+  CHECK_OK(state_->PerformOp(state()->op_id(), state_->tablet_replica()->tablet()));
+  *commit_msg = google::protobuf::Arena::CreateMessage<CommitMsg>(state_->pb_arena());
+  (*commit_msg)->set_op_type(OperationType::PARTICIPANT_OP);
   TRACE("APPLY: Finished.");
   return Status::OK();
 }
@@ -222,15 +220,19 @@ void ParticipantOp::Finish(OpResult result) {
   auto txn_id = state_->request()->op().txn_id();
   state_->ReleaseTxn();
   TxnParticipant* txn_participant = state_->txn_participant_;
+
+  // If the transaction is complete, get rid of the in-flight Txn.
+  txn_participant->ClearIfComplete(txn_id);
+
   if (PREDICT_FALSE(result == Op::ABORTED)) {
+    // NOTE: The only way we end up with an init failure is if we ran a
+    // BEGIN_TXN op but aborted mid-way, leaving the Txn in the kInitialized
+    // state and no further ops attempting to drive the state change to kOpen.
     txn_participant->ClearIfInitFailed(txn_id);
     TRACE("FINISH: Op aborted");
     return;
   }
-
   DCHECK_EQ(result, Op::APPLIED);
-  // TODO(awong): when implementing transaction cleanup on participants, clean
-  // up finalized and aborted transactions here.
   TRACE("FINISH: Op applied");
 }
 

@@ -77,6 +77,19 @@ enum TabletDataState {
   TABLET_DATA_TOMBSTONED = 3;
 }
 
+// Metadata that indicates the state of a transaction.
+message TxnMetadataPB {
+  // Whether the transaction was aborted. If true, 'commit_timestamp' must not
+  // be set.
+  optional bool aborted = 1;
+
+  // The commit timestamp of the transaction. If set, 'aborted' must not be
+  // set.
+  optional int64 commit_timestamp = 2;
+
+  // TODO(awong): add an owner field to this for uncommitted transactions.
+}
+
 // The super-block keeps track of the tablet data blocks.
 // A tablet contains one or more RowSets, which contain
 // a set of blocks (one for each column), a set of delta blocks
@@ -150,6 +163,13 @@ message TabletSuperBlockPB {
   // The dimension label for tablet. Used by the master to determine load when
   // creating new tablet replicas based on dimension.
   optional string dimension_label = 18;
+
+  // Map from txn ID to metadata associated with the transaction. This is
+  // updated on each metadata flush to reflect the current in-memory state of
+  // transactions. In between an in-memory state update and a flush,
+  // participant ops should be anchored to replay the updates upon restarting.
+  // TODO(awong): consider storing these separately from the superblock.
+  map<int64, TxnMetadataPB> txn_metadata = 20;
 }
 
 // Tablet states represent stages of a TabletReplica's object lifecycle and are

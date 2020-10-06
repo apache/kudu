@@ -23,15 +23,20 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -64,11 +69,14 @@ using kudu::consensus::MinimumOpId;
 using kudu::consensus::OpId;
 using kudu::fs::BlockManager;
 using kudu::fs::BlockDeletionTransaction;
+using kudu::log::MinLogIndexAnchorer;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
 using std::shared_ptr;
 using std::string;
+using std::unordered_map;
+using std::unordered_set;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -488,6 +496,19 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     if (superblock.has_table_type() && superblock.table_type() != TableTypePB::DEFAULT_TABLE) {
       table_type_ = superblock.table_type();
     }
+
+    std::unordered_map<int64_t, scoped_refptr<TxnMetadata>> txn_metas;
+    for (const auto& txn_id_and_metadata : superblock.txn_metadata()) {
+      const auto& txn_meta = txn_id_and_metadata.second;
+      EmplaceOrDie(&txn_metas, txn_id_and_metadata.first,
+          new TxnMetadata(
+              txn_meta.has_aborted() && txn_meta.aborted(),
+              txn_meta.has_commit_timestamp() ?
+                  boost::make_optional(txn_meta.commit_timestamp()) :
+                  boost::none
+          ));
+    }
+    txn_metadata_by_txn_id_ = std::move(txn_metas);
   }
 
   // Now is a good time to clean up any orphaned blocks that may have been
@@ -573,6 +594,7 @@ Status TabletMetadata::Flush() {
   MutexLock l_flush(flush_lock_);
   BlockIdContainer orphaned;
   TabletSuperBlockPB pb;
+  vector<unique_ptr<MinLogIndexAnchorer>> anchors_needing_flush;
   {
     std::lock_guard<LockType> l(data_lock_);
     CHECK_GE(num_flush_pins_, 0);
@@ -592,11 +614,16 @@ Status TabletMetadata::Flush() {
     // want to accidentally delete those blocks before that next metadata update
     // is persisted. See KUDU-701 for details.
     orphaned.assign(orphaned_blocks_.begin(), orphaned_blocks_.end());
+    anchors_needing_flush = std::move(anchors_needing_flush_);
   }
   pre_flush_callback_();
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
   l_flush.Unlock();
+
+  // Now that we've flushed, we can unanchor our WALs by destructing our
+  // anchors.
+  anchors_needing_flush.clear();
 
   // Now that the superblock is written, try to delete the orphaned blocks.
   //
@@ -706,6 +733,19 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     meta->ToProtobuf(pb.add_rowsets());
   }
 
+  for (const auto& txn_id_and_metadata : txn_metadata_by_txn_id_) {
+    TxnMetadataPB meta_pb;
+    const auto& txn_meta = txn_id_and_metadata.second;
+    const auto& commit_ts = txn_meta->commit_timestamp();
+    if (commit_ts) {
+      meta_pb.set_commit_timestamp(*commit_ts);
+    }
+    if (txn_meta->aborted()) {
+      meta_pb.set_aborted(true);
+    }
+    InsertOrDie(pb.mutable_txn_metadata(), txn_id_and_metadata.first, std::move(meta_pb));
+  }
+
   DCHECK(schema_->has_column_ids());
   RETURN_NOT_OK_PREPEND(SchemaToPB(*schema_, pb.mutable_schema()),
                         "Couldn't serialize schema into superblock");
@@ -752,6 +792,60 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata>* rowset) {
   RETURN_NOT_OK(RowSetMetadata::CreateNew(this, rowset_idx, &scoped_rsm));
   rowset->reset(DCHECK_NOTNULL(scoped_rsm.release()));
   return Status::OK();
+}
+
+void TabletMetadata::AddTxnMetadata(int64_t txn_id, unique_ptr<MinLogIndexAnchorer> log_anchor) {
+  std::lock_guard<LockType> l(data_lock_);
+  EmplaceOrDie(&txn_metadata_by_txn_id_, txn_id, new TxnMetadata());
+  anchors_needing_flush_.emplace_back(std::move(log_anchor));
+}
+
+void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timestamp,
+                                        unique_ptr<MinLogIndexAnchorer> log_anchor) {
+  std::lock_guard<LockType> l(data_lock_);
+  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  CHECK(txn_metadata);
+  txn_metadata->set_commit_timestamp(commit_timestamp.value());
+  anchors_needing_flush_.emplace_back(std::move(log_anchor));
+}
+
+void TabletMetadata::AbortTransaction(int64_t txn_id, unique_ptr<MinLogIndexAnchorer> log_anchor) {
+  std::lock_guard<LockType> l(data_lock_);
+  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  CHECK(txn_metadata);
+  txn_metadata->set_aborted();
+  anchors_needing_flush_.emplace_back(std::move(log_anchor));
+}
+
+bool TabletMetadata::HasTxnMetadata(int64_t txn_id) {
+  std::lock_guard<LockType> l(data_lock_);
+  return ContainsKey(txn_metadata_by_txn_id_, txn_id);
+}
+
+void TabletMetadata::GetTxnIds(unordered_set<int64_t>* in_flight_txn_ids,
+                               unordered_set<int64_t>* terminal_txn_ids) {
+  std::unordered_set<int64_t> in_flights;
+  std::unordered_set<int64_t> terminals;
+  std::lock_guard<LockType> l(data_lock_);
+  for (const auto& txn_id_and_metadata : txn_metadata_by_txn_id_) {
+    const auto& txn_meta = txn_id_and_metadata.second;
+    if (txn_meta->commit_timestamp() || txn_meta->aborted()) {
+      if (terminal_txn_ids) {
+        EmplaceOrDie(&terminals, txn_id_and_metadata.first);
+      }
+    } else {
+      EmplaceOrDie(&in_flights, txn_id_and_metadata.first);
+    }
+  }
+  *in_flight_txn_ids = std::move(in_flights);
+  if (terminal_txn_ids) {
+    *terminal_txn_ids = std::move(terminals);
+  }
+}
+
+unordered_map<int64_t, scoped_refptr<TxnMetadata>> TabletMetadata::GetTxnMetadata() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return txn_metadata_by_txn_id_;
 }
 
 const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {

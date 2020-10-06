@@ -19,10 +19,14 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <boost/none_t.hpp>
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
@@ -43,10 +47,15 @@ namespace kudu {
 class BlockIdPB;
 class FsManager;
 class Schema;
+class Timestamp;
 
 namespace consensus {
 class OpId;
-}
+} // namespace consensus
+
+namespace log {
+class MinLogIndexAnchorer;
+} // namespace log
 
 namespace tablet {
 
@@ -56,6 +65,42 @@ typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;
 
 extern const int64_t kNoDurableMemStore;
+
+// Encapsulates the persistent state associated with a transaction.
+class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
+ public:
+  TxnMetadata(bool aborted = false,
+              boost::optional<int64_t> commit_ts = boost::none)
+      : aborted_(aborted),
+        commit_timestamp_(std::move(commit_ts)) {}
+  void set_aborted() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    CHECK(boost::none == commit_timestamp_);
+    aborted_ = true;
+  }
+  void set_commit_timestamp(int64_t commit_ts) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    CHECK(boost::none == commit_timestamp_);
+    commit_timestamp_ = commit_ts;
+  }
+
+  bool aborted() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return aborted_;
+  }
+  boost::optional<int64_t> commit_timestamp() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return commit_timestamp_;
+  }
+
+ private:
+  friend class RefCountedThreadSafe<TxnMetadata>;
+  ~TxnMetadata() = default;
+
+  mutable simple_spinlock lock_;
+  bool aborted_;
+  boost::optional<int64_t> commit_timestamp_;
+};
 
 // Manages the "blocks tracking" for the specified tablet.
 //
@@ -230,6 +275,33 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // calls to do so.
   Status CreateRowSet(std::shared_ptr<RowSetMetadata>* rowset);
 
+  // Records the fact that the given transaction ID has been started, adopting
+  // the anchor until the metadata is flushed. The transaction must not already
+  // have metadata associated with it.
+  void AddTxnMetadata(int64_t txn_id, std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
+
+  // Records the fact that the transaction was committed at the given
+  // timestamp, adopting the anchor until the metadata is flushed. The
+  // transaction must already have metadata associated with it.
+  //
+  // TODO(awong): implement a way to remove timstamps once all relevant
+  // transactional mutations have been merged with the rest of the tablet.
+  void AddCommitTimestamp(int64_t txn_id, Timestamp commit_timestamp,
+                          std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
+
+  // Adds an abort bit to the transaction metadata, adopting the anchor until
+  // the metadata is flushed. The transaction must already have metadata
+  // associated with it.
+  void AbortTransaction(int64_t txn_id, std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
+
+  // Returns whether a given transaction has metadata.
+  bool HasTxnMetadata(int64_t txn_id);
+
+  // Returns the transaction IDs that were persisted as being in-flight or
+  // terminal.
+  void GetTxnIds(std::unordered_set<int64_t>* in_flight_txn_ids,
+                 std::unordered_set<int64_t>* terminal_txn_ids = nullptr);
+
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 
   FsManager *fs_manager() const { return fs_manager_; }
@@ -271,6 +343,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   const RowSetMetadata *GetRowSetForTests(int64_t id) const;
 
   RowSetMetadata *GetRowSetForTests(int64_t id);
+
+  std::unordered_map<int64_t, scoped_refptr<TxnMetadata>> GetTxnMetadata() const;
 
   // Return standard "T xxx P yyy" log prefix.
   std::string LogPrefix() const;
@@ -371,6 +445,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   base::subtle::Atomic64 next_rowset_idx_;
 
   int64_t last_durable_mrs_id_;
+
+  // Log anchors that are waiting on a metadata flush to be unanchored.
+  std::vector<std::unique_ptr<log::MinLogIndexAnchorer>> anchors_needing_flush_;
+
+  // Commit timestamps for transactions whose mutations have not yet been
+  // merged with main state.
+  std::unordered_map<int64_t, scoped_refptr<TxnMetadata>> txn_metadata_by_txn_id_;;
 
   // The current schema version. This is owned by this class.
   // We don't use unique_ptr so that we can do an atomic swap.

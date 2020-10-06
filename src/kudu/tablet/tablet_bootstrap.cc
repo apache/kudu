@@ -25,6 +25,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -130,6 +131,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::ResultTracker;
 using kudu::tserver::AlterSchemaRequestPB;
+using kudu::tserver::ParticipantOpPB;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using std::map;
@@ -456,6 +458,11 @@ class TabletBootstrap {
   // Snapshot of which stores were flushed prior to restart.
   FlushedStoresSnapshot flushed_stores_;
 
+  // Transactions that were persisted as being in-flight (neither finalized or
+  // aborted) and completed prior to restart.
+  std::unordered_set<int64_t> in_flight_txn_ids_;
+  std::unordered_set<int64_t> terminal_txn_ids_;
+
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
@@ -604,6 +611,7 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   }
 
   RETURN_NOT_OK(flushed_stores_.InitFrom(*tablet_meta_.get()));
+  tablet_meta_->GetTxnIds(&in_flight_txn_ids_, &terminal_txn_ids_);
 
   bool has_blocks;
   RETURN_NOT_OK(OpenTablet(&has_blocks));
@@ -663,7 +671,7 @@ Status TabletBootstrap::OpenTablet(bool* has_blocks) {
   // doing nothing for now except opening a tablet locally.
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(INFO, 100, LogPrefix(), "opening tablet");
-    RETURN_NOT_OK(tablet->Open());
+    RETURN_NOT_OK(tablet->Open(in_flight_txn_ids_));
   }
   *has_blocks = tablet->num_rowsets() != 0;
   tablet_ = std::move(tablet);
@@ -1545,22 +1553,42 @@ Status TabletBootstrap::PlayChangeConfigRequest(const IOContext* /*io_context*/,
 Status TabletBootstrap::PlayTxnParticipantOpRequest(const IOContext* /*io_context*/,
                                                     ReplicateMsg* replicate_msg,
                                                     const CommitMsg& commit_msg) {
+  // When replaying participant ops:
+  // - If we've persisted completed transactions (i.e. aborted or committed),
+  //   we can skip replaying all participant ops for that transaction.
+  // - If we otherwise have persisted that a transaction exists, it was
+  //   persisted on-disk as being in-flight before restarting, we should have
+  //   opened a transaction before starting to replay, and we should replay all
+  //   participant ops for that transaction.
+  // - If we have no record of a transaction persisted, it was not persisted
+  //   on-disk as being in-flight, and we must replay all participant ops.
   ParticipantOpState op_state(tablet_replica_.get(),
                               tablet_->txn_participant(),
                               &replicate_msg->participant_request());
-  op_state.AcquireTxnAndLock();
-  SCOPED_CLEANUP({
-    op_state.ReleaseTxn();
-  });
-  LogEntryPB& commit_entry = *google::protobuf::Arena::CreateMessage<LogEntryPB>(
-      op_state.pb_arena());
-  commit_entry.set_type(log::COMMIT);
-  CommitMsg* new_commit = commit_entry.mutable_commit();
-  new_commit->CopyFrom(commit_msg);
-  // NOTE: don't bother validating the current state of the op. Presumably that
-  // happened the first time this op was written.
-  tablet_->StartApplying(&op_state);
-  RETURN_NOT_OK(op_state.PerformOp(replicate_msg->id(), &new_commit));
+  const auto& op_type = op_state.request()->op().type();
+  if (ContainsKey(terminal_txn_ids_, op_state.txn_id())) {
+    return AppendCommitMsg(commit_msg);
+  }
+  bool persisted_in_flight = ContainsKey(in_flight_txn_ids_, op_state.txn_id());
+  if ((persisted_in_flight && op_type != ParticipantOpPB::BEGIN_TXN) ||
+      !persisted_in_flight) {
+    op_state.mutable_op_id()->CopyFrom(replicate_msg->id());
+    op_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
+    op_state.AcquireTxnAndLock();
+    SCOPED_CLEANUP({
+      op_state.ReleaseTxn();
+    });
+    // Start an MVCC op to track the commit if we're beginning to commit.
+    tablet_->StartOp(&op_state);
+
+    // Start applying the commit's MVCC op if we're finalizing the commit.
+    // PerformOp() will take care of finishing applying the op.
+    tablet_->StartApplying(&op_state);
+
+    // NOTE: don't bother validating the current state of the op. Presumably that
+    // happened the first time this op was written.
+    RETURN_NOT_OK(op_state.PerformOp(replicate_msg->id(), tablet_.get()));
+  }
   return AppendCommitMsg(commit_msg);
 }
 

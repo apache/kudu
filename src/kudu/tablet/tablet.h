@@ -25,6 +25,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <glog/logging.h>
@@ -54,6 +55,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
 class AlterTableTest;
 class ConstContiguousRow;
 class EncodedKey;
@@ -65,6 +67,10 @@ class Throttler;
 class Timestamp;
 struct IterWithBounds;
 struct IteratorStats;
+
+namespace consensus {
+class OpId;
+}  // namespace consensus
 
 namespace clock {
 class Clock;
@@ -111,9 +117,9 @@ class Tablet {
 
   ~Tablet();
 
-  // Open the tablet.
+  // Open the tablet, initializing transactions for 'in_flight_txn_ids'.
   // Upon completion, the tablet enters the kBootstrapping state.
-  Status Open();
+  Status Open(const std::unordered_set<int64_t>& in_flight_txn_ids = std::unordered_set<int64_t>{});
 
   // Mark that the tablet has finished bootstrapping.
   // This transitions from kBootstrapping to kOpen state.
@@ -171,6 +177,21 @@ class Tablet {
                            WriteOpState* op_state,
                            RowOp* row_op,
                            ProbeStats* stats) WARN_UNUSED_RESULT;
+
+  // Begins the transaction, recording its presence in the tablet metadata.
+  // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
+  // using 'txn' as the anchor owner.
+  void BeginTransaction(Txn* txn, const consensus::OpId& op_id);
+
+  // Commits the transaction, recording its commit timestamp in the tablet metadata.
+  // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
+  // using 'txn' as the anchor owner.
+  void CommitTransaction(Txn* txn, Timestamp commit_ts, const consensus::OpId& op_id);
+
+  // Aborts the transaction, recording the abort in the tablet metadata.
+  // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
+  // using 'txn' as the anchor owner.
+  void AbortTransaction(Txn* txn, const consensus::OpId& op_id);
 
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
