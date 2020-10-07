@@ -552,6 +552,11 @@ message DeleteTableResponsePB {
 message ListTablesRequestPB {
   // When used, only returns tables that satisfy a substring match on name_filter.
   optional string name_filter = 1;
+
+  // The filter for the table types to return. If not set or empty, it is
+  // interpreted as if it were set to [TableTypePB::DEFAULT_TABLE], meaning
+  // to include only user-defined tables.
+  repeated TableTypePB type_filter = 2;
 }
 
 message ListTablesResponsePB {

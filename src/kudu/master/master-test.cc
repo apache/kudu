@@ -165,12 +165,14 @@ class MasterTest : public KuduTest {
   void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
   void DoListAllTables(ListTablesResponsePB* resp);
   Status CreateTable(const string& table_name,
-                     const Schema& schema);
+                     const Schema& schema,
+                     const optional<TableTypePB>& table_type = boost::none);
   Status CreateTable(const string& table_name,
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-                     const optional<string>& owner);
+                     const optional<string>& owner,
+                     const optional<TableTypePB>& table_type = boost::none);
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<MiniMaster> mini_master_;
@@ -527,27 +529,32 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 }
 
 Status MasterTest::CreateTable(const string& table_name,
-                               const Schema& schema) {
+                               const Schema& schema,
+                               const optional<TableTypePB>& table_type) {
   KuduPartialRow split1(&schema);
   RETURN_NOT_OK(split1.SetInt32("key", 10));
 
   KuduPartialRow split2(&schema);
   RETURN_NOT_OK(split2.SetInt32("key", 20));
 
-  return CreateTable(table_name, schema, { split1, split2 }, {}, boost::none);
+  return CreateTable(
+      table_name, schema, { split1, split2 }, {}, boost::none, table_type);
 }
 
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema,
                                const vector<KuduPartialRow>& split_rows,
                                const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds,
-                               const optional<string>& owner) {
-
+                               const optional<string>& owner,
+                               const optional<TableTypePB>& table_type) {
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController controller;
 
   req.set_name(table_name);
+  if (table_type) {
+    req.set_table_type(*table_type);
+  }
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
   RowOperationsPBEncoder encoder(req.mutable_split_rows_range_bounds());
   for (const KuduPartialRow& row : split_rows) {
@@ -665,6 +672,109 @@ TEST_F(MasterTest, TestCatalog) {
     req.set_name_filter("randomname");
     DoListTables(req, &tables);
     ASSERT_EQ(0, tables.tables_size());
+  }
+}
+
+TEST_F(MasterTest, ListTablesWithTableFilter) {
+  static const char* const kUserTableName = "user_table";
+  static const char* const kSystemTableName = "system_table";
+  const Schema kSchema({ColumnSchema("key", INT32), ColumnSchema("v1", INT8)}, 1);
+
+  // Make sure this test scenario stays valid
+  ASSERT_EQ(TableTypePB_MAX, TableTypePB::TXN_STATUS_TABLE);
+
+  // Given there is not any tablet server in the cluster, there should be no
+  // tables out there yet, so a request with an empty (default) filter should
+  // return empty list of tables.
+  {
+    ListTablesRequestPB req;
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(0, resp.tables_size());
+  }
+
+  // The same reasoning as above, but supply filter with all known table types
+  // in the 'table_type' field.
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::DEFAULT_TABLE);
+    req.add_type_filter(TableTypePB::TXN_STATUS_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(0, resp.tables_size());
+  }
+
+  ASSERT_OK(CreateTable(kUserTableName, kSchema));
+
+  // An empty 'filter_type' field is equivalent to setting the 'filter_type'
+  // to [TableTypePB::DEFAULT_TABLE].
+  {
+    ListTablesRequestPB req;
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(1, resp.tables_size());
+    ASSERT_EQ(kUserTableName, resp.tables(0).name());
+  }
+
+  // Specify the table type filter explicitly.
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::DEFAULT_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(1, resp.tables_size());
+    ASSERT_EQ(kUserTableName, resp.tables(0).name());
+  }
+
+  // No system tables are present at this point.
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::TXN_STATUS_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(0, resp.tables_size());
+  }
+
+  ASSERT_OK(CreateTable(
+      kSystemTableName, kSchema, TableTypePB::TXN_STATUS_TABLE));
+
+  // Only user tables should be listed because the explicitly specified
+  // 'type_filter' is set to [TableTypePB::DEFAULT_TABLE].
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::DEFAULT_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(1, resp.tables_size());
+    ASSERT_EQ(kUserTableName, resp.tables(0).name());
+  }
+
+  // Only the txn status system table should be listed because the explicitly
+  // specified 'type_filter' is set to [TableTypePB::TXN_STATUS_TABLE].
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::TXN_STATUS_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(1, resp.tables_size());
+    ASSERT_EQ(kSystemTableName, resp.tables(0).name());
+  }
+
+  // Both tables should be output when the filter is set to
+  // [TableTypePB::DEFAULT_TABLE, TableTypePB::TXN_STATUS_TABLE].
+  {
+    ListTablesRequestPB req;
+    req.add_type_filter(TableTypePB::DEFAULT_TABLE);
+    req.add_type_filter(TableTypePB::TXN_STATUS_TABLE);
+    ListTablesResponsePB resp;
+    NO_FATALS(DoListTables(req, &resp));
+    ASSERT_EQ(2, resp.tables_size());
+    unordered_set<string> table_names;
+    table_names.emplace(resp.tables(0).name());
+    table_names.emplace(resp.tables(1).name());
+    ASSERT_EQ(2, table_names.size());
+    ASSERT_TRUE(ContainsKey(table_names, kUserTableName));
+    ASSERT_TRUE(ContainsKey(table_names, kSystemTableName));
   }
 }
 

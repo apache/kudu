@@ -3153,15 +3153,28 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       tables_info.emplace_back(entry.second);
     }
   }
+  unordered_set<int> table_types;
+  for (auto idx = 0; idx < req->type_filter_size(); ++idx) {
+    table_types.emplace(req->type_filter(idx));
+  }
+  if (table_types.empty()) {
+    // The default behavior is to list only user tables (that's backwards
+    // compatible).
+    table_types.emplace(TableTypePB::DEFAULT_TABLE);
+  }
   unordered_map<string, scoped_refptr<TableInfo>> table_info_by_name;
   unordered_map<string, bool> table_owner_map;
   for (const auto& table_info : tables_info) {
     TableMetadataLock ltm(table_info.get(), LockMode::READ);
     const auto& table_data = ltm.data();
-    // Don't list system tables or tables that aren't running
-    // TODO(awong): consider allow for opting into listing system tables.
-    if (!table_data.is_running() ||
-        table_data.pb.table_type() != TableTypePB::DEFAULT_TABLE) {
+    // Don't list tables that aren't running
+    if (!table_data.is_running()) {
+      continue;
+    }
+    // The table type might be unset in the data stored in the system catalog.
+    const auto table_type = table_data.pb.has_table_type()
+        ? table_data.pb.table_type() : TableTypePB::DEFAULT_TABLE;
+    if (!ContainsKey(table_types, table_type)) {
       continue;
     }
 
