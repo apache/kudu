@@ -72,11 +72,12 @@ Status Compress(Slice input, ostream* out) {
   return CompressLevel(input, Z_DEFAULT_COMPRESSION, out);
 }
 
+// See https://zlib.net/zlib_how.html for context on using zlib.
 Status CompressLevel(Slice input, int level, ostream* out) {
   z_stream zs;
   memset(&zs, 0, sizeof(zs));
   ZRETURN_NOT_OK(deflateInit2(&zs, level, Z_DEFLATED,
-                              15 + 16 /* 15 window bits, enable gzip */,
+                              MAX_WBITS + 16 /* enable gzip */,
                               8 /* memory level, max is 9 */,
                               Z_DEFAULT_STRATEGY));
 
@@ -102,27 +103,34 @@ Status CompressLevel(Slice input, int level, ostream* out) {
   return Status::OK();
 }
 
+// See https://zlib.net/zlib_how.html for context on using zlib.
 Status Uncompress(Slice compressed, std::ostream* out) {
+  // Initialize the z_stream at the start of the data with the
+  // data size as the available input.
   z_stream zs;
   memset(&zs, 0, sizeof(zs));
   zs.next_in = const_cast<uint8_t*>(compressed.data());
   zs.avail_in = compressed.size();
-  ZRETURN_NOT_OK(inflateInit2(&zs, 15 + 16 /* 15 window bits, enable zlib */));
-  int flush;
+  // Initialize inflation with the windowBits set to be GZIP compatible.
+  // The documentation (https://www.zlib.net/manual.html#Advanced) describes that
+  // Adding 16 configures inflate to decode the gzip format.
+  ZRETURN_NOT_OK(inflateInit2(&zs, MAX_WBITS + 16 /* enable gzip */));
+  // Continue calling inflate, decompressing data into the buffer in `zs.next_out` and writing
+  // the buffer content to `out`, until an error is received or there is no more data
+  // to decompress.
   Status s;
   do {
     unsigned char buf[4096];
     zs.next_out = buf;
     zs.avail_out = arraysize(buf);
-    flush = zs.avail_in > 0 ? Z_NO_FLUSH : Z_FINISH;
-    s = ZlibResultToStatus(inflate(&zs, flush));
+    s = ZlibResultToStatus(inflate(&zs, Z_NO_FLUSH));
     if (!s.ok() && !s.IsEndOfFile()) {
       return s;
     }
     out->write(reinterpret_cast<char *>(buf), zs.next_out - buf);
-  } while (flush == Z_NO_FLUSH);
+  } while (zs.avail_out == 0);
+  // If we haven't returned early with a bad status, finalize inflation.
   ZRETURN_NOT_OK(inflateEnd(&zs));
-
   return Status::OK();
 }
 

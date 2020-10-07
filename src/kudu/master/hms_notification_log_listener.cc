@@ -29,12 +29,12 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
@@ -45,6 +45,8 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/url-coding.h"
+#include "kudu/util/zlib.h"
 
 DEFINE_uint32(hive_metastore_notification_log_poll_period_seconds, 15,
               "Amount of time the notification log listener waits between attempts to poll "
@@ -174,28 +176,6 @@ namespace {
 // Returns a text string appropriate for debugging a notification event.
 string EventDebugString(const hive::NotificationEvent& event) {
   return Substitute("$0 $1 $2.$3", event.eventId, event.eventType, event.dbName, event.tableName);
-}
-
-// Parses the event message from a notification event. See
-// org.apache.hadoop.hive.metastore.messaging.MessageFactory for more info.
-//
-// Since JSONMessageFactory is currently the only concrete implementation of
-// MessageFactory, this method is specialized to return the Document type. If
-// another MessageFactory instance becomes used in the future this method should
-// be updated to handle it accordingly.
-// Also because 'messageFormat' is an optional field introduced in HIVE-10562.
-// We consider message without this field valid, to be compatible with HIVE
-// distributions that do not include HIVE-10562 but still have the proper
-// JSONMessageFactory.
-Status ParseMessage(const hive::NotificationEvent& event, Document* message) {
-  if (!event.messageFormat.empty() && event.messageFormat != "json-0.2") {
-    return Status::NotSupported("unknown message format", event.messageFormat);
-  }
-  if (message->Parse<0>(event.message.c_str()).HasParseError()) {
-    return Status::Corruption("failed to parse message",
-                              rapidjson::GetParseError_En(message->GetParseError()));
-  }
-  return Status::OK();
 }
 
 // Deserializes an HMS table object from a JSON notification log message.
@@ -459,6 +439,47 @@ Status HmsNotificationLogListenerTask::HandleDropTableEvent(const hive::Notifica
   string table_name = Substitute("$0.$1", event.dbName, event.tableName);
   RETURN_NOT_OK(catalog_manager_->DeleteTableHms(table_name, *table_id, event.eventId));
   *durable_event_id = event.eventId;
+  return Status::OK();
+}
+
+Status HmsNotificationLogListenerTask::ParseMessage(const hive::NotificationEvent& event,
+                                                    Document* message) {
+  string format = event.messageFormat;
+  // Default to the json-0.2 format for backwards compatibility.
+  if (format.empty()) {
+    format = "json-0.2";
+  }
+
+  // See Hive's JSONMessageEncoder and GzipJSONMessageEncoder for the format definitions.
+  if (event.messageFormat != "json-0.2" && event.messageFormat != "gzip(json-2.0)") {
+    return Status::NotSupported("unknown message format", event.messageFormat);
+  }
+
+  string content = event.message;
+  if (HasPrefixString(format, "gzip")) {
+    string decoded;
+    KUDU_RETURN_NOT_OK(DecodeGzipMessage(content, &decoded));
+    content = decoded;
+  }
+
+  if (message->Parse<0>(content.c_str()).HasParseError()) {
+    return Status::Corruption("failed to parse message",
+                              rapidjson::GetParseError_En(message->GetParseError()));
+  }
+
+  return Status::OK();
+}
+
+Status HmsNotificationLogListenerTask::DecodeGzipMessage(const string& encoded,
+                                                         string* decoded) {
+  string result;
+  bool success = Base64Decode(encoded, &result);
+  if (!success) {
+    return Status::Corruption("failed to decode message");
+  }
+  std::ostringstream oss;
+  RETURN_NOT_OK_PREPEND(zlib::Uncompress(Slice(result), &oss), "failed decompress message");
+  *decoded = oss.str();
   return Status::OK();
 }
 

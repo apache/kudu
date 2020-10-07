@@ -18,7 +18,10 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
+
+#include <rapidjson/document.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -98,6 +101,7 @@ class HmsNotificationLogListenerTask {
   Status WaitForCatchUp(const MonoTime& deadline) WARN_UNUSED_RESULT;
 
  private:
+  friend class HmsNotificationLogListenerTest;
 
   // Runs the main loop of the listening thread.
   void RunLoop();
@@ -118,6 +122,26 @@ class HmsNotificationLogListenerTask {
   // table is deleted in the local catalog. All other events are ignored.
   Status HandleDropTableEvent(const hive::NotificationEvent& event,
                               int64_t* durable_event_id) WARN_UNUSED_RESULT;
+
+  // Parses the event message from a notification event. See
+  // org.apache.hadoop.hive.metastore.messaging.MessageFactory and
+  // org.apache.hadoop.hive.metastore.messaging.MessageEncoder for more info.
+  //
+  // Since JSON formats are currently the only concrete implementation,
+  // this method is specialized to return the Document type.
+  // If another MessageFactory instance becomes used in the future this
+  // method should be updated to handle it accordingly. Also because
+  // 'messageFormat' is an optional field introduced in HIVE-10562,
+  // we consider messages without this field to be `json-0.2` to be
+  // compatible with Hive distributions that do not include HIVE-10562
+  // but still have the proper JSON message.
+  static Status ParseMessage(const hive::NotificationEvent& event,
+                             rapidjson::Document* message) WARN_UNUSED_RESULT;
+
+  // Decodes an event that was Gzip encoded by Hive.
+  // Hive also Base64 encodes the content after compressing.
+  static Status DecodeGzipMessage(const std::string& encoded,
+                                  std::string* decoded) WARN_UNUSED_RESULT;
 
   // The associated catalog manager.
   //

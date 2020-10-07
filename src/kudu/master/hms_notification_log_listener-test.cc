@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <thread>
+#include <string>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -32,12 +33,18 @@
 DECLARE_uint32(hive_metastore_notification_log_poll_period_seconds);
 DECLARE_uint32(hive_metastore_notification_log_poll_inject_latency_ms);
 
+using std::string;
+
 namespace kudu {
 namespace master {
 
 class HmsNotificationLogListenerTest : public KuduTest {
  public:
   uint32_t poll_period_ = FLAGS_hive_metastore_notification_log_poll_period_seconds;
+
+  static Status DecodeGzipMessage(const string& encoded, string* decoded) {
+    return HmsNotificationLogListenerTask::DecodeGzipMessage(encoded, decoded);
+  }
 };
 
 // Test that an immediate shutdown will short-circuit the poll period.
@@ -100,5 +107,22 @@ TEST_F(HmsNotificationLogListenerTest, TestWaitAndShutdown) {
   listener.Shutdown();
   waiter.join();
 }
+
+TEST_F(HmsNotificationLogListenerTest, TestGzipEventDecoding) {
+  // A message encoded via the following Hive code:
+  //    JSONDropTableMessage message =
+  //       new JSONDropTableMessage("server", "principal", "db", "table", 0L);
+  //    String serialized =
+  //       GzipJSONMessageEncoder.getInstance().getSerializer().serialize(message);
+  string encoded = "H4sIAAAAAAAAAKtWKk4tKkstUrKCMXTAjMzk1ICizLzkzILEHKBcAZyto5SSBBQAE"
+                   "jpKJYlJOalADoSG8kMqC4BieaU5OVAB/6Qsr+L8PLhYZm5qcUliboGSlUEtAOPIspV/AAAA";
+  // The JSON content of the encoded string and the expected result after decoding.
+  string json = "{\"server\":\"server\",\"servicePrincipal\":\"principal\",\"db\":\"db\","
+                "\"table\":\"table\",\"tableType\":null,\"tableObjJson\":null,\"timestamp\":0}";
+  string decoded;
+  ASSERT_OK(DecodeGzipMessage(encoded, &decoded));
+  ASSERT_EQ(json, decoded);
+}
+
 } // namespace master
 } // namespace kudu
