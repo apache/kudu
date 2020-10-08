@@ -3356,8 +3356,7 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
     RaftConfigPB pending_config = cmeta_->PendingConfig();
     if (!pending_config.unsafe_config_change()) {
       // Quorums must be exactly equal, even w.r.t. peer ordering.
-      CHECK_EQ(pending_config.SerializeAsString(),
-               config_to_commit.SerializeAsString())
+      CHECK(MessageDifferencer::Equals(pending_config, config_to_commit))
           << Substitute("New committed config must equal pending config, but does not. "
                         "Pending config: $0, committed config: $1",
                         SecureShortDebugString(pending_config),
