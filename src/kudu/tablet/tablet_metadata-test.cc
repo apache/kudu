@@ -241,14 +241,18 @@ TEST_F(TestTabletMetadata, TestTxnMetadata) {
   int64_t kAbortedTxnId = 2;
   int64_t kInFlightTxnId = 3;
   meta->AddTxnMetadata(kCommittedTxnId, make_anchor());
+  meta->BeginCommitTransaction(kCommittedTxnId, kDummyTimestamp, make_anchor());
   meta->AddCommitTimestamp(kCommittedTxnId, kDummyTimestamp, make_anchor());
   ASSERT_EQ(1, meta->GetTxnMetadata().size());
 
   meta->AddTxnMetadata(kAbortedTxnId, make_anchor());
+  meta->BeginCommitTransaction(kAbortedTxnId, kDummyTimestamp, make_anchor());
   meta->AbortTransaction(kAbortedTxnId, make_anchor());
   ASSERT_EQ(2, meta->GetTxnMetadata().size());
 
   meta->AddTxnMetadata(kInFlightTxnId, make_anchor());
+  meta->BeginCommitTransaction(kInFlightTxnId, kDummyTimestamp, make_anchor());
+  ASSERT_EQ(3, meta->GetTxnMetadata().size());
 
   // Validate the transactions' fields.
   const auto validate_txn_metas = [&] (TabletMetadata* meta) {
@@ -260,16 +264,22 @@ TEST_F(TestTabletMetadata, TestTxnMetadata) {
 
     const auto& committed_txn = FindOrDie(txn_metas, kCommittedTxnId);
     ASSERT_FALSE(committed_txn->aborted());
+    ASSERT_NE(boost::none, committed_txn->commit_mvcc_op_timestamp());
+    ASSERT_EQ(kDummyTimestamp, *committed_txn->commit_mvcc_op_timestamp());
     ASSERT_NE(boost::none, committed_txn->commit_timestamp());
     ASSERT_EQ(kDummyTimestamp, *committed_txn->commit_timestamp());
 
     const auto& aborted_txn = FindOrDie(txn_metas, kAbortedTxnId);
     ASSERT_TRUE(aborted_txn->aborted());
     ASSERT_EQ(boost::none, aborted_txn->commit_timestamp());
+    ASSERT_NE(boost::none, aborted_txn->commit_mvcc_op_timestamp());
+    ASSERT_EQ(kDummyTimestamp, *aborted_txn->commit_mvcc_op_timestamp());
 
     const auto& in_flight_txn = FindOrDie(txn_metas, kInFlightTxnId);
     ASSERT_FALSE(in_flight_txn->aborted());
     ASSERT_EQ(boost::none, in_flight_txn->commit_timestamp());
+    ASSERT_NE(boost::none, in_flight_txn->commit_mvcc_op_timestamp());
+    ASSERT_EQ(kDummyTimestamp, *in_flight_txn->commit_mvcc_op_timestamp());
 
     unordered_set<int64_t> in_flight_txn_ids;
     unordered_set<int64_t> terminal_txn_ids;

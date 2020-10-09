@@ -183,6 +183,12 @@ class Tablet {
   // using 'txn' as the anchor owner.
   void BeginTransaction(Txn* txn, const consensus::OpId& op_id);
 
+  // Indicates that the transaction has started to commit, recording the
+  // timestamp used by the MVCC op to demarcate the end of the transaction in
+  // the tablet metadata. Upon calling this, 'op_id' will be anchored until
+  // the metadata is flushed, using 'txn' as the anchor owner.
+  void BeginCommit(Txn* txn, Timestamp mvcc_op_ts, const consensus::OpId& op_id);
+
   // Commits the transaction, recording its commit timestamp in the tablet metadata.
   // Upon calling this, 'op_id' will be anchored until the metadata is flushed,
   // using 'txn' as the anchor owner.

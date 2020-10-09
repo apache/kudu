@@ -505,6 +505,9 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       EmplaceOrDie(&txn_metas, txn_id_and_metadata.first,
           new TxnMetadata(
               txn_meta.has_aborted() && txn_meta.aborted(),
+              txn_meta.has_commit_mvcc_op_timestamp() ?
+                  boost::make_optional(Timestamp(txn_meta.commit_mvcc_op_timestamp())) :
+                  boost::none,
               txn_meta.has_commit_timestamp() ?
                   boost::make_optional(Timestamp(txn_meta.commit_timestamp())) :
                   boost::none
@@ -742,6 +745,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     if (commit_ts) {
       meta_pb.set_commit_timestamp(commit_ts->value());
     }
+    const auto& commit_mvcc_op_ts = txn_meta->commit_mvcc_op_timestamp();
+    if (commit_mvcc_op_ts) {
+      meta_pb.set_commit_mvcc_op_timestamp(commit_mvcc_op_ts->value());
+    }
     if (txn_meta->aborted()) {
       meta_pb.set_aborted(true);
     }
@@ -800,6 +807,20 @@ void TabletMetadata::AddTxnMetadata(int64_t txn_id, unique_ptr<MinLogIndexAnchor
   std::lock_guard<LockType> l(data_lock_);
   EmplaceOrDie(&txn_metadata_by_txn_id_, txn_id, new TxnMetadata());
   anchors_needing_flush_.emplace_back(std::move(log_anchor));
+}
+
+void TabletMetadata::BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_timestamp,
+                                            unique_ptr<MinLogIndexAnchorer> log_anchor) {
+  std::lock_guard<LockType> l(data_lock_);
+  auto txn_metadata = FindPtrOrNull(txn_metadata_by_txn_id_, txn_id);
+  CHECK(txn_metadata);
+  // NOTE: we may already have an MVCC op timestamp if we are bootstrapping and
+  // the timestamp was persisted already, in which case, we don't need to
+  // anchor the WAL to ensure the timestamp's persistence in metadata.
+  if (!txn_metadata->commit_mvcc_op_timestamp()) {
+    txn_metadata->set_commit_mvcc_op_timestamp(mvcc_op_timestamp);
+    anchors_needing_flush_.emplace_back(std::move(log_anchor));
+  }
 }
 
 void TabletMetadata::AddCommitTimestamp(int64_t txn_id, Timestamp commit_timestamp,

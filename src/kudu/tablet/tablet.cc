@@ -1041,6 +1041,14 @@ void Tablet::BeginTransaction(Txn* txn, const OpId& op_id) {
   txn->BeginTransaction();
 }
 
+void Tablet::BeginCommit(Txn* txn, Timestamp mvcc_op_ts, const OpId& op_id) {
+  unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
+        Substitute("BEGIN_COMMIT-$0-$1", txn->txn_id(), txn)));
+  anchor->AnchorIfMinimum(op_id.index());
+  metadata_->BeginCommitTransaction(txn->txn_id(), mvcc_op_ts, std::move(anchor));
+  txn->BeginCommit(op_id);
+}
+
 void Tablet::CommitTransaction(Txn* txn, Timestamp commit_ts, const OpId& op_id) {
   unique_ptr<MinLogIndexAnchorer> anchor(new MinLogIndexAnchorer(log_anchor_registry_.get(),
         Substitute("FINALIZE_COMMIT-$0-$1", txn->txn_id(), txn)));

@@ -24,9 +24,11 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -52,6 +54,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica-test-base.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_metadata.h"
 #include "kudu/tablet/txn_participant-test-util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
@@ -464,9 +467,13 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                               kDummyCommitTimestamp, &resp));
   ASSERT_FALSE(resp.has_error());
-  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
   ASSERT_OK(tablet_replica_->log()->WaitUntilAllFlushed());
   ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOverForTests());
+  // There should be two anchors for this op: one that is in place until the
+  // FINALIZE_COMMIT op, another until we flush.
+  ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_OK(tablet_replica_->GetGCableDataSize(&gcable_size));
   ASSERT_GT(gcable_size, 0);
   ASSERT_OK(tablet_replica_->RunLogGC());
@@ -513,6 +520,104 @@ TEST_F(TxnParticipantTest, TestTxnMetadataSurvivesRestart) {
   }), txn_participant()->GetTxnsForTests());
 }
 
+// Test that we can replay BEGIN_COMMIT ops, given it anchors WALs until
+// metadata flush _and_ until the transaction is finalized or aborted.
+TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFlush) {
+  const int64_t kTxnId = 1;
+  ParticipantResponsePB resp;
+  // Start a transaction and begin committing.
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  // We should have two anchors: one that lasts until we flush, another that
+  // lasts until we finalize the commit.
+  ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // We should have an MVCC op timestamp in the metadata, even after
+  // restarting.
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
+  txn_meta.reset();
+  RestartReplica(/*reset_tablet*/true);
+  txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
+
+  // Once we flush, we should drop down to one anchor.
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(RestartReplica(/*reset_tablet*/true));
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::FINALIZE_COMMIT,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+
+  // The anchor from the BEGIN_COMMIT op should be gone, but we should have
+  // another anchor for the FINALIZE_COMMIT op until we flush the metadata.
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+
+  // As another sanity check, we should still have metadata for the MVCC op
+  // after restarting.
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  txn_meta.reset();
+  RestartReplica(/*reset_tablet*/true);
+  txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
+}
+
+// Like the above test but finalizing the commit before flushing the metadata.
+TEST_F(TxnParticipantTest, TestBeginCommitAnchorsOnFinalize) {
+  const int64_t kTxnId = 1;
+  ParticipantResponsePB resp;
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_TXN,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  auto txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_EQ(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
+                              kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  const auto orig_mvcc_op_timestamp = *txn_meta->commit_mvcc_op_timestamp();
+
+  // Restarting shouldn't affect our metadata.
+  txn_meta.reset();
+  RestartReplica(/*reset_tablet*/true);
+  txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
+
+  // We should have two anchors, one that lasts until we flush, another that
+  // lasts until we finalize.
+  ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId,
+                              ParticipantOpPB::FINALIZE_COMMIT, kDummyCommitTimestamp, &resp));
+  ASSERT_FALSE(resp.has_error());
+
+  // Finalizing the commit shouldn't affect our metadata.
+  txn_meta.reset();
+  RestartReplica(/*reset_tablet*/true);
+  txn_meta = FindOrDie(tablet_replica_->tablet_metadata()->GetTxnMetadata(), kTxnId);
+  ASSERT_NE(boost::none, txn_meta->commit_mvcc_op_timestamp());
+  ASSERT_EQ(orig_mvcc_op_timestamp, *txn_meta->commit_mvcc_op_timestamp());
+
+  // One anchor should be gone and another should be registered in its place
+  // that lasts until we flush the finalized metadata.
+  ASSERT_EQ(2, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+}
+
 class MetadataFlushTxnParticipantTest : public TxnParticipantTest,
                                         public ::testing::WithParamInterface<bool> {};
 
@@ -535,8 +640,9 @@ TEST_P(MetadataFlushTxnParticipantTest, TestRebuildTxnMetadata) {
   ASSERT_OK(CallParticipantOp(tablet_replica_.get(), kTxnId, ParticipantOpPB::BEGIN_COMMIT,
                               kDummyCommitTimestamp, &resp));
   ASSERT_FALSE(resp.has_error());
-  // NOTE: BEGIN_COMMIT ops don't anchor on metadata flush, so don't bother
-  // flushing.
+  if (should_flush) {
+    ASSERT_OK(tablet_replica_->tablet_metadata()->Flush());
+  }
 
   ASSERT_OK(RestartReplica(/*reset_tablet*/true));
   ASSERT_EQ(vector<TxnParticipant::TxnEntry>({

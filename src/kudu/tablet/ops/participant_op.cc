@@ -174,7 +174,7 @@ Status ParticipantOpState::PerformOp(const consensus::OpId& op_id, Tablet* table
       break;
     }
     case ParticipantOpPB::BEGIN_COMMIT: {
-      txn_->BeginCommit(op_id);
+      tablet->BeginCommit(txn_.get(), begin_commit_mvcc_op_->timestamp(), op_id);
       ReleaseMvccOpToTxn();
       break;
     }

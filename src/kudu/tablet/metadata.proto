@@ -87,7 +87,21 @@ message TxnMetadataPB {
   // set.
   optional int64 commit_timestamp = 2;
 
-  // TODO(awong): persist the op timestamp for the commit's MVCC op.
+  // The timestamp used by the MVCC op that tracks the commit of this
+  // transaction. This is sent to the transaction status manager in response to
+  // a BEGIN_COMMIT request to be used to assign a commit timestamp that is
+  // higher than all participants' commit MVCC op timestamps.
+  //
+  // When iterating through mutations at a specific clean snapshot (as in a
+  // READ_AT_SNAPSHOT or diff scan), both this MVCC op timestamp and the commit
+  // timestamp must be applied for the mutation to be considered committed in
+  // that snapshot.
+  //
+  // When iterating through mutations at the latest snapshot (as in READ_LATEST
+  // or during compactions), this MVCC op timestamp must be applied and there
+  // must be a commit timestamp for the mutation to be considered committed --
+  // this avoids reading dirty, uncommitted rows.
+  optional int64 commit_mvcc_op_timestamp = 3;
 
   // TODO(awong): add an owner field to this for uncommitted transactions.
 }

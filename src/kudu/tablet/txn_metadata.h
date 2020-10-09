@@ -30,12 +30,11 @@ namespace tablet {
 // Encapsulates the persistent state associated with a transaction.
 class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
  public:
-  // TODO(awong): add commit_mvcc_op_timestamp to the contructor when reading
-  // from TxnMetadataPB.
   explicit TxnMetadata(bool aborted = false,
+                       boost::optional<Timestamp> commit_mvcc_op_timestamp = boost::none,
                        boost::optional<Timestamp> commit_ts = boost::none)
       : aborted_(aborted),
-        commit_mvcc_op_timestamp_(boost::none),
+        commit_mvcc_op_timestamp_(std::move(commit_mvcc_op_timestamp)),
         commit_timestamp_(std::move(commit_ts)) {}
   void set_aborted() {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -45,13 +44,13 @@ class TxnMetadata : public RefCountedThreadSafe<TxnMetadata> {
   void set_commit_timestamp(Timestamp commit_ts) {
     std::lock_guard<simple_spinlock> l(lock_);
     CHECK(boost::none == commit_timestamp_);
+    CHECK(boost::none != commit_mvcc_op_timestamp_);
     CHECK(!aborted_);
     commit_timestamp_ = commit_ts;
   }
   void set_commit_mvcc_op_timestamp(Timestamp op_ts) {
     std::lock_guard<simple_spinlock> l(lock_);
     CHECK(boost::none == commit_timestamp_);
-    CHECK(boost::none == commit_mvcc_op_timestamp_);
     commit_mvcc_op_timestamp_ = op_ts;
   }
 

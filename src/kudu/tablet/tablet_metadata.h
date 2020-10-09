@@ -242,6 +242,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // have metadata associated with it.
   void AddTxnMetadata(int64_t txn_id, std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
 
+  // Records the fact that the given transaction has started committing, with
+  // the given timestamp as the end of its open window, adopting the anchor
+  // until the metadata is flushed. The transaction must already have metadata
+  // associated with it.
+  void BeginCommitTransaction(int64_t txn_id, Timestamp mvcc_op_timestamp,
+                              std::unique_ptr<log::MinLogIndexAnchorer> log_anchor);
+
   // Records the fact that the transaction was committed at the given
   // timestamp, adopting the anchor until the metadata is flushed. The
   // transaction must already have metadata associated with it.
