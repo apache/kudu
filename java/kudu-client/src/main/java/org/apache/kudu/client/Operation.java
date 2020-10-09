@@ -366,9 +366,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
       if (type == ChangeType.DELETE) {
         columnCount = row.getSchema().getPrimaryKeyColumnCount();
         // Clear the bits indicating any non-key fields are set.
-        columnsBitSet.clear(schema.getPrimaryKeyColumnCount(), columnsBitSet.size() - 1);
+        columnsBitSet.clear(schema.getPrimaryKeyColumnCount(), columnsBitSet.size());
         if (schema.hasNullableColumns()) {
-          nullsBitSet.clear(schema.getPrimaryKeyColumnCount(), nullsBitSet.size() - 1);
+          nullsBitSet.clear(schema.getPrimaryKeyColumnCount(), nullsBitSet.size());
         }
       }
 

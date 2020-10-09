@@ -37,7 +37,9 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.test.KuduTestHarness;
 
@@ -186,6 +188,52 @@ public class TestKuduSession {
     for (int i = 0; i < 25; i++) {
       Insert insert = createInsert(table, i);
       rows.add(insert.getRow());
+      session.apply(insert);
+    }
+    session.flush();
+
+    for (PartialRow row : rows) {
+      Delete del = table.newDelete();
+      del.setRow(row);
+      session.apply(del);
+    }
+    session.flush();
+
+    assertEquals(0, session.countPendingErrors());
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
+  }
+
+  /** Regression test for KUDU-3198. Delete with full row from a 64-column table. */
+  @Test(timeout = 100000)
+  public void testDeleteWithFullRowFrom64ColumnTable() throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<>(64);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
+    for (int i = 1; i < 64; i++) {
+      columns.add(new ColumnSchema.ColumnSchemaBuilder("column_" + i, Type.STRING)
+          .nullable(true)
+          .build());
+    }
+    Schema schema = new Schema(columns);
+
+    KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+
+    // Insert 25 rows and then delete them.
+    List<PartialRow> rows = new ArrayList<>();
+    for (int i = 0; i < 25; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addInt(0, 1);
+      for (int j = 1; j < 64; j++) {
+        if (j % 2 == 0) {
+          row.setNull(j);
+        } else {
+          row.addString(j, "val_" + j);
+        }
+      }
+      rows.add(row);
       session.apply(insert);
     }
     session.flush();
