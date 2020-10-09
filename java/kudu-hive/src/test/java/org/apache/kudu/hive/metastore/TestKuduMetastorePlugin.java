@@ -607,16 +607,14 @@ public class TestKuduMetastorePlugin {
     // A Kudu table should should be allowed to be created via Hive.
     Table table = newTable("table");
     client.createTable(table);
+    // Get the table from the HMS in case any translation occurred.
+    table = client.getTable(table.getDbName(), table.getTableName());
 
     // A Kudu table should should be allowed to be altered via Hive.
     // Add a column to the original table.
-    table.getSd().addToCols(new FieldSchema("b", "int", ""));
-    // Also change the location to avoid MetastoreDefaultTransformer validation
-    // that exists in some Hive versions.
-    table.getSd().setLocation(String.format("%s/%s/%s",
-        clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
-        table.getDbName(), table.getTableName()));
-    client.alter_table(table.getDbName(), table.getTableName(), table);
+    Table newTable = table.deepCopy();
+    newTable.getSd().addToCols(new FieldSchema("b", "int", ""));
+    client.alter_table(table.getDbName(), table.getTableName(), newTable);
 
     // A Kudu table should should be allowed to be dropped via Hive.
     client.dropTable(table.getDbName(), table.getTableName());
