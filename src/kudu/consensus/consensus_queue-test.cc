@@ -960,7 +960,8 @@ TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
   // Update the committed index. In real life, this would be done by the consensus
   // implementation when it receives an updated committed index from the leader.
   queue_->UpdateFollowerWatermarks(/*committed_index=*/ 10,
-                                   /*all_replicated_index=*/ 10);
+                                   /*all_replicated_index=*/ 10,
+                                   /*region_durable_index=*/-1);
   ASSERT_EQ(10, queue_->GetCommittedIndex());
 
   // Check the metrics have the right values based on the updated committed index.

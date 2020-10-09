@@ -510,9 +510,11 @@ public:
 // logs need to be retained for either purposes.
 struct RetentionIndexes {
   explicit RetentionIndexes(int64_t durability = std::numeric_limits<int64_t>::max(),
-                            int64_t peers = std::numeric_limits<int64_t>::max())
+                            int64_t peers = std::numeric_limits<int64_t>::max(),
+                            int64_t region_durability = std::numeric_limits<int64_t>::max())
       : for_durability(durability),
-        for_peers(peers) {}
+        for_peers(peers),
+        for_region_durability(region_durability) {}
 
   // The minimum log entry index which *must* be retained in order to
   // preserve durability and the ability to restart the local node
@@ -524,6 +526,13 @@ struct RetentionIndexes {
   // still be GCed in the case that they are from very old log segments
   // or the log has become too large.
   int64_t for_peers;
+
+  // The minimum log entry index which *should* be retained in order to ensure
+  // 'region-durability'. Region durability is currently defined as the OpId
+  // that is replicated to atleast one additional region (other than the
+  // leader's region). Useful only when the raft ring is configured to have
+  // nodes in different region
+  int64_t for_region_durability;
 };
 
 
