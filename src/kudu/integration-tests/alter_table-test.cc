@@ -72,10 +72,12 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_maintenance_manager);
-DECLARE_int32(heartbeat_interval_ms);
-DECLARE_int32(flush_threshold_mb);
-DECLARE_bool(use_hybrid_clock);
+DECLARE_bool(log_inject_latency);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
+DECLARE_bool(use_hybrid_clock);
+DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(log_inject_latency_ms_mean);
 
 using kudu::client::CountTableRows;
 using kudu::client::KuduClient;
@@ -109,6 +111,7 @@ using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -226,7 +229,7 @@ class AlterTableTest : public KuduTest {
                          const MonoDelta& timeout) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
     table_alterer->AddColumn(column_name)->Type(KuduColumnSchema::INT32)->
-      NotNull()->Default(KuduValue::FromInt(default_value));
+        NotNull()->Default(KuduValue::FromInt(default_value));
     return table_alterer->timeout(timeout)->Alter();
   }
 
@@ -288,7 +291,7 @@ class AlterTableTest : public KuduTest {
  protected:
   virtual int num_replicas() const { return 1; }
 
-  static const char *kTableName;
+  static const char* const kTableName;
 
   unique_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
@@ -313,7 +316,7 @@ class ReplicatedAlterTableTest : public AlterTableTest {
   virtual int num_replicas() const OVERRIDE { return 3; }
 };
 
-const char *AlterTableTest::kTableName = "fake-table";
+const char* const AlterTableTest::kTableName = "fake-table";
 
 // Simple test to verify that the "alter table" command sent and executed
 // on the TS handling the tablet of the altered table.
@@ -1215,9 +1218,7 @@ TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
       SleepFor(MonoDelta::FromSeconds(3));
     }
 
-    ASSERT_OK(AddNewI32Column(kTableName,
-                                     strings::Substitute("c$0", i),
-                                     i));
+    ASSERT_OK(AddNewI32Column(kTableName, Substitute("c$0", i), i));
   }
 
   // A sanity check: the updater should have generate at least one update
@@ -1277,7 +1278,7 @@ TEST_F(AlterTableTest, TestMultipleAlters) {
   // Issue a bunch of new alters without waiting for them to finish.
   for (int i = 0; i < kNumNewCols; i++) {
     unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kSplitTableName));
-    table_alterer->AddColumn(strings::Substitute("new_col$0", i))
+    table_alterer->AddColumn(Substitute("new_col$0", i))
       ->Type(KuduColumnSchema::INT32)->NotNull()
       ->Default(KuduValue::FromInt(kDefaultValue));
     ASSERT_OK(table_alterer->wait(false)->Alter());
@@ -1841,12 +1842,12 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
       return "UNBOUNDED";
     }
     if (!lower_bound) {
-      return strings::Substitute("VALUES < $0", *upper_bound);
+      return Substitute("VALUES < $0", *upper_bound);
     }
     if (!upper_bound) {
-      return strings::Substitute("VALUES >= $0", *lower_bound);
+      return Substitute("VALUES >= $0", *lower_bound);
     }
-    return strings::Substitute("$0 <= VALUES < $1", *lower_bound, *upper_bound);
+    return Substitute("$0 <= VALUES < $1", *lower_bound, *upper_bound);
   };
 
   // Checks that b conflicts with a, when added in that order.
@@ -1854,8 +1855,8 @@ TEST_F(AlterTableTest, TestAddRangePartitionConflictExhaustive) {
                                                   boost::optional<int32_t> a_upper_bound,
                                                   boost::optional<int32_t> b_lower_bound,
                                                   boost::optional<int32_t> b_upper_bound) {
-    SCOPED_TRACE(strings::Substitute("b: $0", bounds_to_string(b_lower_bound, b_upper_bound)));
-    SCOPED_TRACE(strings::Substitute("a: $0", bounds_to_string(a_lower_bound, a_upper_bound)));
+    SCOPED_TRACE(Substitute("b: $0", bounds_to_string(b_lower_bound, b_upper_bound)));
+    SCOPED_TRACE(Substitute("a: $0", bounds_to_string(a_lower_bound, a_upper_bound)));
 
     // Add a then add b.
     ASSERT_OK(add_range_partition(a_lower_bound, a_upper_bound));
@@ -2098,6 +2099,57 @@ TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
   });
 }
 
+// This scenario verifies that many DDL operations (e.g., ALTER TABLE adding
+// a new column) followed by dropping a tablet are processed with no issues
+// even in case of slow WAL. In addition, this scenario covers the regression
+// fixed with changelist 81f0dbf99ac2114a29431f49fa2ef480e7ef26c4.
+TEST_F(ReplicatedAlterTableTest, AlterTableAndDropTablet) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  constexpr int32_t kIterNum = 10;
+#else
+  constexpr int32_t kIterNum = 50;
+#endif
+
+  static constexpr const char* const kTableName = "many-ranges-table";
+  const auto fill_row = [&] (int32_t value) {
+    unique_ptr<KuduPartialRow> row(schema_.NewRow());
+    CHECK_OK(row->SetInt32("c0", value));
+    return row;
+  };
+
+  {
+    vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> bounds;
+    bounds.emplace_back(fill_row(0), fill_row(1));
+    ASSERT_OK(CreateTable(kTableName, schema_, {"c0"}, {}, std::move(bounds)));
+  }
+
+  for (auto i = 1; i < kIterNum; ++i) {
+    unique_ptr<KuduTableAlterer> ta(client_->NewTableAlterer(kTableName));
+    ASSERT_OK(ta->AddRangePartition(
+        fill_row(i).release(),
+        fill_row(i + 1).release())->wait(true)->Alter());
+  }
+
+  FLAGS_log_inject_latency = true;
+  FLAGS_log_inject_latency_ms_mean = 250;
+
+  for (auto i = 0; i < kIterNum; ++i) {
+    unique_ptr<KuduTableAlterer> ta(client_->NewTableAlterer(kTableName));
+    ta->AddColumn(Substitute("new_c$0", i))->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(ta->wait(false)->Alter());
+  }
+
+  for (auto i = 0; i < kIterNum; ++i) {
+    unique_ptr<KuduTableAlterer> ta(client_->NewTableAlterer(kTableName));
+    ASSERT_OK(ta->DropRangePartition(
+        fill_row(i).release(),
+        fill_row(i + 1).release())->wait(false)->Alter());
+  }
+  ASSERT_OK(client_->DeleteTable(kTableName));
+}
+
 TEST_F(AlterTableTest, TestRenameStillCreatingTable) {
   const string kNewTableName = "foo";
 
@@ -2158,6 +2210,5 @@ TEST_F(AlterTableTest, TestMaintenancePriorityAlter) {
   ASSERT_OK(table_alterer->AlterExtraConfig({{"kudu.table.maintenance_priority", "0"}})->Alter());
   NO_FATALS(CheckMaintenancePriority(0));
 }
-
 
 } // namespace kudu
