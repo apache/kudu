@@ -510,7 +510,7 @@ ranges will be rejected.
 ----
 CREATE TABLE sales_by_year (
   year INT, sale_id INT, amount INT,
-  PRIMARY KEY (sale_id, year)
+  PRIMARY KEY (year, sale_id)
 )
 PARTITION BY RANGE (year) (
   PARTITION VALUE = 2012,
