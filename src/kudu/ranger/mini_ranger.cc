@@ -331,7 +331,7 @@ Status MiniRanger::PostToRanger(string url, EasyJson payload) {
   RETURN_NOT_OK_PREPEND(curl_.PostToURL(JoinPathSegments(ranger_admin_url_, std::move(url)),
                                         std::move(payload.ToString()), &result,
                                         {"Content-Type: application/json"}),
-                        Substitute("Error recceived from Ranger: $0", result.ToString()));
+                        Substitute("Error received from Ranger: $0", result.ToString()));
   return Status::OK();
 }
 
