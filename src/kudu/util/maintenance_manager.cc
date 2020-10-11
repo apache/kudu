@@ -228,18 +228,36 @@ void MaintenanceManager::Shutdown() {
   }
 }
 
+void MaintenanceManager::MergePendingOpRegistrationsUnlocked() {
+  lock_.AssertAcquired();
+  OpMapType ops_to_register;
+  {
+    std::lock_guard<simple_spinlock> l(registration_lock_);
+    ops_to_register = std::move(ops_pending_registration_);
+    ops_pending_registration_.clear();
+  }
+  for (auto& op_and_stats : ops_to_register) {
+    auto* op = op_and_stats.first;
+    op->cond_.reset(new ConditionVariable(&lock_));
+    VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Registered " << op->name();
+  }
+  ops_.insert(ops_to_register.begin(), ops_to_register.end());
+}
+
 void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
   CHECK(op);
-  std::lock_guard<Mutex> guard(lock_);
-  CHECK(!op->manager_) << "Tried to register " << op->name()
-                       << ", but it is already registered.";
-  pair<OpMapTy::iterator, bool> val
-    (ops_.insert(OpMapTy::value_type(op, MaintenanceOpStats())));
-  CHECK(val.second) << "Tried to register " << op->name()
-                    << ", but it already exists in ops_.";
-  op->manager_ = shared_from_this();
-  op->cond_.reset(new ConditionVariable(&lock_));
-  VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Registered " << op->name();
+  {
+    std::lock_guard<simple_spinlock> l(registration_lock_);
+    CHECK(!op->manager_) << "Tried to register " << op->name()
+                        << ", but it is already registered.";
+    EmplaceOrDie(&ops_pending_registration_, op, MaintenanceOpStats());
+    op->manager_ = shared_from_this();
+  }
+  // If we can take 'lock_', add to 'ops_' immediately.
+  if (lock_.try_lock()) {
+    MergePendingOpRegistrationsUnlocked();
+    lock_.unlock();
+  }
 }
 
 void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
@@ -247,23 +265,23 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
     std::lock_guard<Mutex> guard(lock_);
     CHECK(op->manager_.get() == this) << "Tried to unregister " << op->name()
         << ", but it is not currently registered with this maintenance manager.";
-    auto iter = ops_.find(op);
-    CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
-                              << ", but it was never registered";
+
     // While the op is running, wait for it to be finished.
-    if (iter->first->running_ > 0) {
-      VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1) << "Waiting for op " << op->name()
-                                                   << " to finish so we can unregister it.";
+    if (op->running_ > 0) {
+      VLOG_AND_TRACE_WITH_PREFIX("maintenance", 1)
+          << Substitute("Waiting for op $0 to finish so we can unregister it", op->name());
     }
     op->CancelAndDisable();
-    while (iter->first->running_ > 0) {
+    while (op->running_ > 0) {
       op->cond_->Wait();
-      iter = ops_.find(op);
-      CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
-          << ", but another thread unregistered it while we were "
-          << "waiting for it to complete";
     }
-    ops_.erase(iter);
+    // Remove the op from 'ops_', and if it wasn't there, erase it from
+    // 'ops_pending_registration_'.
+    if (ops_.erase(op) == 0) {
+      std::lock_guard<simple_spinlock> l(registration_lock_);
+      const auto num_erased_ops = ops_pending_registration_.erase(op);
+      CHECK_GT(num_erased_ops, 0);
+    }
   }
   VLOG_WITH_PREFIX(1) << "Unregistered op " << op->name();
   op->cond_.reset();
@@ -289,6 +307,11 @@ void MaintenanceManager::RunSchedulerThread() {
   bool prev_iter_found_no_work = false;
 
   while (true) {
+    // Upon each iteration, we should have dropped and reacquired 'lock_'.
+    // Register any ops that may have been buffered for registration while the
+    // lock was last held.
+    MergePendingOpRegistrationsUnlocked();
+
     // We'll keep sleeping if:
     //    1) there are no free threads available to perform a maintenance op.
     // or 2) we just tried to schedule an op but found nothing to run.
@@ -554,6 +577,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
   DCHECK(out_pb != nullptr);
   std::lock_guard<Mutex> guard(lock_);
+  MergePendingOpRegistrationsUnlocked();
   for (const auto& val : ops_) {
     MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();
     MaintenanceOp* op(val.first);

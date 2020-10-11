@@ -36,6 +36,7 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -113,8 +114,12 @@ class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
                     IOUsage io_usage,
-                    int32_t priority = 0)
+                    int32_t priority = 0,
+                    CountDownLatch* start_stats_latch = nullptr,
+                    CountDownLatch* continue_stats_latch = nullptr)
     : MaintenanceOp(name, io_usage),
+      start_stats_latch_(start_stats_latch),
+      continue_stats_latch_(continue_stats_latch),
       ram_anchored_(500),
       logs_retained_bytes_(0),
       perf_improvement_(0),
@@ -156,6 +161,10 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   void UpdateStats(MaintenanceOpStats* stats) override {
+    if (start_stats_latch_) {
+      start_stats_latch_->CountDown();
+      DCHECK_NOTNULL(continue_stats_latch_)->Wait();
+    }
     std::lock_guard<Mutex> guard(lock_);
     stats->set_runnable(remaining_runs_ > 0);
     stats->set_ram_anchored(ram_anchored_);
@@ -214,6 +223,14 @@ class TestMaintenanceOp : public MaintenanceOp {
  private:
   mutable Mutex lock_;
 
+  // Latch used to help other threads wait for us to begin updating stats for
+  // this op. Another thread may wait for this latch, and once the countdown is
+  // complete, the maintenance manager lock will be locked while computing
+  // stats, at which point the scheduler thread will wait for
+  // 'continue_stats_latch_' to be counted down.
+  CountDownLatch* start_stats_latch_;
+  CountDownLatch* continue_stats_latch_;
+
   uint64_t ram_anchored_;
   uint64_t logs_retained_bytes_;
   uint64_t perf_improvement_;
@@ -253,6 +270,39 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
     ASSERT_EQ(op1.DurationHistogram()->TotalCount(), 1);
   });
   manager_->UnregisterOp(&op1);
+}
+
+TEST_F(MaintenanceManagerTest, TestRegisterUnregisterWithContention) {
+  CountDownLatch start_latch(1);
+  CountDownLatch continue_latch(1);
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, 0, &start_latch, &continue_latch);
+  manager_->RegisterOp(&op1);
+  // Wait for the maintenance manager to start updating stats for this op.
+  // This will effectively block the maintenance manager lock until
+  // 'continue_latch' counts down.
+  start_latch.Wait();
+
+  // Register another op while the maintenance manager lock is held.
+  TestMaintenanceOp op2("2", MaintenanceOp::HIGH_IO_USAGE);
+  manager_->RegisterOp(&op2);
+  TestMaintenanceOp op3("3", MaintenanceOp::HIGH_IO_USAGE);
+  manager_->RegisterOp(&op3);
+
+  // Allow UpdateStats() to complete and release the maintenance manager lock.
+  continue_latch.CountDown();
+
+  // We should be able to unregister an op even though, because of the forced
+  // lock contention, it may have been added to the list of ops pending
+  // registration instead of "fully registered" ops.
+  manager_->UnregisterOp(&op3);
+
+  // Even though we blocked registration, when we dump, we'll take the
+  // maintenance manager and merge ops that were pending registration.
+  MaintenanceManagerStatusPB status_pb;
+  manager_->GetMaintenanceManagerStatusDump(&status_pb);
+  ASSERT_EQ(2, status_pb.registered_operations_size());
+  manager_->UnregisterOp(&op1);
+  manager_->UnregisterOp(&op2);
 }
 
 // Regression test for KUDU-1495: when an operation is being unregistered,

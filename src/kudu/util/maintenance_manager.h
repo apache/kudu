@@ -34,20 +34,21 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-template<class T>
-class AtomicGauge;
 class Histogram;
 class MaintenanceManager;
 class MaintenanceManagerStatusPB;
 class MaintenanceManagerStatusPB_OpInstancePB;
 class Thread;
 class ThreadPool;
+template<class T>
+class AtomicGauge;
 
 class MaintenanceOpStats {
  public:
@@ -306,14 +307,19 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   Status Start();
   void Shutdown();
 
-  // Register an op with the manager.
+  // Register an op with the manager. If the op cannot be put into 'ops_'
+  // immediately because 'lock_' is currently held, buffers the op into
+  // 'ops_pending_registration_', and MergePendingOpRegistrationsUnlocked() can
+  // be used to coalesce them the next time 'lock_' is taken.
   void RegisterOp(MaintenanceOp* op);
 
   // Unregister an op with the manager.
-  // If the Op is currently running, it will not be interrupted.  However, this
+  // If the Op is currently running, it will not be interrupted. However, this
   // function will block until the Op is finished.
   void UnregisterOp(MaintenanceOp* op);
 
+  // Fill out 'out_pb' based on the registered ops, merging in any ops pending
+  // registration in case any exist.
   void GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb);
 
   void set_memory_pressure_func_for_tests(std::function<bool(double*)> f) {
@@ -329,7 +335,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   FRIEND_TEST(MaintenanceManagerTest, TestOpFactors);
 
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
-          MaintenanceOpComparator> OpMapTy;
+          MaintenanceOpComparator> OpMapType;
 
   // Return true if tests have currently disabled the maintenance
   // manager by way of changing the gflags at runtime.
@@ -360,9 +366,22 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   void IncreaseOpCount(MaintenanceOp *op);
   void DecreaseOpCount(MaintenanceOp *op);
 
+  // Adds ops in 'ops_pending_registration_' to 'ops_'. Must be called while
+  // 'lock_' is held.
+  void MergePendingOpRegistrationsUnlocked();
+
   const std::string server_uuid_;
   const int32_t num_threads_;
-  OpMapTy ops_; // Registered operations.
+
+  // Ops for which RegisterOp() has been called, but that have not yet been
+  // added to 'ops_'. Since adding to 'ops_' requires taking 'lock_', rather
+  // than blocking registration (and bootstrapping), this serves as a buffer to
+  // be added to 'ops_' once the lock is available. If this lock is taken
+  // concurrently with 'lock_', 'lock_' must be taken first.
+  simple_spinlock registration_lock_;
+  OpMapType ops_pending_registration_;
+
+  OpMapType ops_; // Registered operations.
   Mutex lock_;
   scoped_refptr<kudu::Thread> monitor_thread_;
   std::unique_ptr<ThreadPool> thread_pool_;
