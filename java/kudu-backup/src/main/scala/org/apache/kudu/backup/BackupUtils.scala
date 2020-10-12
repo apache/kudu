@@ -43,12 +43,12 @@ object BackupUtils {
    * The column name can vary because it's accessed positionally.
    */
   private def generateRowActionColumn(schema: Schema): StructField = {
-    var columnName = "backup_row_action"
+    val columnName = new StringBuffer("backup_row_action")
     // If the column already exists and we need to pick an alternate column name.
-    while (schema.hasColumn(columnName)) {
-      columnName += "_"
+    while (schema.hasColumn(columnName.toString)) {
+      columnName.append("_")
     }
-    StructField(columnName, ByteType)
+    StructField(columnName.toString, ByteType)
   }
 
 }

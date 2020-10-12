@@ -83,6 +83,8 @@
              <Bug pattern="SE_NO_SERIALVERSIONID"/>
              <!-- HE_HASHCODE_USE_OBJECT_EQUALS: Class defines hashCode() and uses Object.equals(). -->
              <Bug pattern="HE_HASHCODE_USE_OBJECT_EQUALS"/>
+             <!-- MS_PKGPROTECT: Field should be package protected -->
+             <Bug pattern="MS_PKGPROTECT"/>
          </Or>
     </Match>
     <Match>
@@ -142,6 +144,15 @@
             <Field name="table" />
         </Or>
         <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
+    <Match>
+        <!-- The casts in these methods are known and safe. -->
+        <Class name="org.apache.kudu.backup.KuduBackupRDD"/>
+        <Or>
+            <Method name="compute" />
+            <Method name="getPreferredLocations" />
+        </Or>
+        <Bug pattern="BC_UNCONFIRMED_CAST" />
     </Match>
 
     <!-- kudu-client exclusions -->
@@ -291,6 +302,15 @@
             <Field name="table"/>
         </Or>
         <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
+    <Match>
+        <!-- The casts in these methods are known and safe. -->
+        <Class name="org.apache.kudu.spark.kudu.KuduRDD"/>
+        <Or>
+            <Method name="compute" />
+            <Method name="getPreferredLocations" />
+        </Or>
+        <Bug pattern="BC_UNCONFIRMED_CAST" />
     </Match>
     <Match>
         <!-- These fields don't need to be restored in this case. -->

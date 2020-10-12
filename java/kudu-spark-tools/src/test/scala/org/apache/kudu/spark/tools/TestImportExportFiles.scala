@@ -96,7 +96,7 @@ class TestImportExportFiles extends KuduTestSuite {
   // TODO(KUDU-2454): Use random schemas and random data to ensure all type/values round-trip.
   private def loadSampleData(table: KuduTable, numRows: Int): Unit = {
     val session = kuduClient.newSession()
-    val rows = Range(0, numRows).map { i =>
+    Range(0, numRows).map { i =>
       val insert = table.newInsert
       val row = insert.getRow
       row.addString(0, i.toString)

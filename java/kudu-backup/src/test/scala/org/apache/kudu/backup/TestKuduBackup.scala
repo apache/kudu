@@ -515,7 +515,7 @@ class TestKuduBackup extends KuduTestSuite {
       .addRangePartition(ten, twenty)
       .addRangePartition(twenty, thirty)
       .addRangePartition(thirty, fourty)
-    var table = kuduClient.createTable(tableName, schema, options)
+    val table = kuduClient.createTable(tableName, schema, options)
 
     // Fill the partitions with rows.
     insertRows(table, 30, 10)
