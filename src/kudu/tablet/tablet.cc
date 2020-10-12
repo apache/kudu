@@ -1740,7 +1740,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                                     "duplicate updates in new rowsets)",
                                     op_name);
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
-    new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
+      new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
 
   // The next step is to swap in the DuplicatingRowSet, and at the same time,
   // determine an MVCC snapshot which includes all of the ops that saw a
@@ -2196,20 +2196,6 @@ bool Tablet::DeltaMemRowSetEmpty() const {
   return true;
 }
 
-void Tablet::GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
-                                      int64_t* mem_size, int64_t* replay_size) const {
-  shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
-
-  if (rowset) {
-    *replay_size = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
-                                         replay_size_map);
-    *mem_size = rowset->DeltaMemStoreSize();
-  } else {
-    *replay_size = 0;
-    *mem_size = 0;
-  }
-}
-
 Status Tablet::FlushBestDMS(const ReplaySizeMap &replay_size_map) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
@@ -2220,33 +2206,52 @@ Status Tablet::FlushBestDMS(const ReplaySizeMap &replay_size_map) const {
   return Status::OK();
 }
 
-shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_map) const {
+shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_map,
+                                              int64_t* mem_size, int64_t* replay_size,
+                                              MonoTime* earliest_dms_time) const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
-  int64_t mem_size = 0;
+  int64_t max_dms_size = 0;
   double max_score = 0;
   double mem_weight = 0;
+  int64_t dms_replay_size = 0;
+  MonoTime earliest_creation_time = MonoTime::Max();
   // If system is under memory pressure, we use the percentage of the hard limit consumed
   // as mem_weight, so the tighter memory, the higher weight. Otherwise just left the
   // mem_weight to 0.
   process_memory::UnderMemoryPressure(&mem_weight);
 
   shared_ptr<RowSet> best_dms;
-  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
-    if (rowset->DeltaMemStoreEmpty()) {
+  for (const shared_ptr<RowSet>& rowset : comps->rowsets->all_rowsets()) {
+    size_t dms_size_bytes;
+    MonoTime creation_time;
+    if (!rowset->DeltaMemStoreInfo(&dms_size_bytes, &creation_time)) {
       continue;
     }
-    int64_t size = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
-                                         replay_size_map);
-    int64_t mem = rowset->DeltaMemStoreSize();
-    double score = mem * mem_weight + size * (100 - mem_weight);
-
+    earliest_creation_time = std::min(earliest_creation_time, creation_time);
+    int64_t replay_size_bytes = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
+                                                      replay_size_map);
+    // To facilitate memory-based flushing when under memory pressure, we
+    // define a score that's part memory and part WAL retention bytes.
+    double score = dms_size_bytes * mem_weight + replay_size_bytes * (100 - mem_weight);
     if ((score > max_score) ||
-        (score > max_score - 1 && mem > mem_size)) {
+        // If the score is close to the max, as a tie-breaker, just look at the
+        // DMS size.
+        (score > max_score - 1 && dms_size_bytes > max_dms_size)) {
       max_score = score;
-      mem_size = mem;
+      max_dms_size = dms_size_bytes;
+      dms_replay_size = replay_size_bytes;
       best_dms = rowset;
     }
+  }
+  if (earliest_dms_time) {
+    *earliest_dms_time = earliest_creation_time;
+  }
+  if (mem_size) {
+    *mem_size = max_dms_size;
+  }
+  if (replay_size) {
+    *replay_size = dms_replay_size;
   }
   return best_dms;
 }

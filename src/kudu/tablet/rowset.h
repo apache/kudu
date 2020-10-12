@@ -177,7 +177,7 @@ class RowSet {
 
   // Dump the full contents of this rowset, for debugging.
   // This is very verbose so only useful within unit tests.
-  virtual Status DebugDump(std::vector<std::string> *lines = NULL) = 0;
+  virtual Status DebugDump(std::vector<std::string> *lines = nullptr) = 0;
 
   // Return the size of this rowset on disk, in bytes.
   virtual uint64_t OnDiskSize() const = 0;
@@ -205,6 +205,9 @@ class RowSet {
   virtual size_t DeltaMemStoreSize() const = 0;
 
   virtual bool DeltaMemStoreEmpty() const = 0;
+
+  // Get the size and creation time of the DMS, returning false if none exists.
+  virtual bool DeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const = 0;
 
   // Get the minimum log index corresponding to unflushed data in this row set.
   virtual int64_t MinUnflushedLogIndex() const = 0;
@@ -389,75 +392,79 @@ class DuplicatingRowSet : public RowSet {
                            const consensus::OpId& op_id,
                            const fs::IOContext* io_context,
                            ProbeStats* stats,
-                           OperationResultPB* result) OVERRIDE;
+                           OperationResultPB* result) override;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
-                         bool *present, ProbeStats* stats) const OVERRIDE;
+                         bool *present, ProbeStats* stats) const override;
 
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                std::unique_ptr<RowwiseIterator>* out) const OVERRIDE;
+                                std::unique_ptr<RowwiseIterator>* out) const override;
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
                                     const fs::IOContext* io_context,
-                                    std::unique_ptr<CompactionInput>* out) const OVERRIDE;
+                                    std::unique_ptr<CompactionInput>* out) const override;
 
-  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const OVERRIDE;
+  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const override;
 
-  virtual Status CountLiveRows(uint64_t* count) const OVERRIDE;
+  virtual Status CountLiveRows(uint64_t* count) const override;
 
   virtual Status GetBounds(std::string* min_encoded_key,
-                           std::string* max_encoded_key) const OVERRIDE;
+                           std::string* max_encoded_key) const override;
 
   // Return the total size on-disk of this rowset, in bytes.
-  uint64_t OnDiskSize() const OVERRIDE;
+  uint64_t OnDiskSize() const override;
 
   // Return the total size on-disk of this rowset's data (i.e. excludes metadata), in bytes.
-  uint64_t OnDiskBaseDataSize() const OVERRIDE;
+  uint64_t OnDiskBaseDataSize() const override;
 
   // Return the total size on-disk of this rowset's column data, in bytes.
-  uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const OVERRIDE;
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const override;
 
   // Return the size, in bytes, of this rowset's data, not including UNDOs.
-  uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE;
+  uint64_t OnDiskBaseDataSizeWithRedos() const override;
 
-  std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
-  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
+  virtual Status DebugDump(std::vector<std::string> *lines = nullptr) override;
 
-  std::shared_ptr<RowSetMetadata> metadata() OVERRIDE;
+  std::shared_ptr<RowSetMetadata> metadata() override;
 
   // A flush-in-progress rowset should never be selected for compaction.
-  std::mutex *compact_flush_lock() OVERRIDE {
+  std::mutex *compact_flush_lock() override {
     LOG(FATAL) << "Cannot be compacted";
-    return NULL;
+    return nullptr;
   }
 
-  virtual bool IsAvailableForCompaction() OVERRIDE {
+  virtual bool IsAvailableForCompaction() override {
     return false;
   }
 
-  virtual bool has_been_compacted() const OVERRIDE {
+  virtual bool has_been_compacted() const override {
     return false;
   }
 
-  virtual void set_has_been_compacted() OVERRIDE {
+  virtual void set_has_been_compacted() override {
     LOG(FATAL) << "Cannot be compacted";
   }
 
   ~DuplicatingRowSet();
 
-  size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
+  size_t DeltaMemStoreSize() const override { return 0; }
 
-  bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
+  bool DeltaMemStoreInfo(size_t* /*size_bytes*/, MonoTime* /*creation_time*/) const override {
+    return false;
+  }
 
-  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const OVERRIDE {
+  bool DeltaMemStoreEmpty() const override { return true; }
+
+  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType /*type*/) const override {
     return 0;
   }
 
-  int64_t MinUnflushedLogIndex() const OVERRIDE { return -1; }
+  int64_t MinUnflushedLogIndex() const override { return -1; }
 
-  Status FlushDeltas(const fs::IOContext* /*io_context*/) OVERRIDE {
+  Status FlushDeltas(const fs::IOContext* /*io_context*/) override {
     // It's important that DuplicatingRowSet does not FlushDeltas. This prevents
     // a bug where we might end up with out-of-order deltas. See the long
     // comment in Tablet::Flush(...)
@@ -465,7 +472,7 @@ class DuplicatingRowSet : public RowSet {
   }
 
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                                     int64_t* bytes) OVERRIDE {
+                                                     int64_t* bytes) override {
     DCHECK(bytes);
     *bytes = 0;
     return Status::OK();
@@ -482,7 +489,7 @@ class DuplicatingRowSet : public RowSet {
                         MonoTime /*deadline*/,
                         const fs::IOContext* /*io_context*/,
                         int64_t* delta_blocks_initialized,
-                        int64_t* bytes_in_ancient_undos) OVERRIDE {
+                        int64_t* bytes_in_ancient_undos) override {
     if (delta_blocks_initialized) *delta_blocks_initialized = 0;
     if (bytes_in_ancient_undos) *bytes_in_ancient_undos = 0;
     return Status::OK();
@@ -490,14 +497,14 @@ class DuplicatingRowSet : public RowSet {
 
   Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
                                  const fs::IOContext* /*io_context*/,
-                                 int64_t* blocks_deleted, int64_t* bytes_deleted) OVERRIDE {
+                                 int64_t* blocks_deleted, int64_t* bytes_deleted) override {
     if (blocks_deleted) *blocks_deleted = 0;
     if (bytes_deleted) *bytes_deleted = 0;
     return Status::OK();
   }
 
   Status MinorCompactDeltaStores(
-      const fs::IOContext* /*io_context*/) OVERRIDE { return Status::OK(); }
+      const fs::IOContext* /*io_context*/) override { return Status::OK(); }
 
  private:
   friend class Tablet;

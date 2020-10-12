@@ -808,6 +808,11 @@ bool DiskRowSet::DeltaMemStoreEmpty() const {
   return delta_tracker_->DeltaMemStoreEmpty();
 }
 
+bool DiskRowSet::DeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const {
+  DCHECK(open_);
+  return delta_tracker_->GetDeltaMemStoreInfo(size_bytes, creation_time);
+}
+
 int64_t DiskRowSet::MinUnflushedLogIndex() const {
   DCHECK(open_);
   return delta_tracker_->MinUnflushedLogIndex();

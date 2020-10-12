@@ -36,6 +36,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
@@ -120,11 +121,13 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
     DCHECK_GE(extra_mb, 0);
     stats->set_perf_improvement(std::max(1.0, extra_mb));
   } else if (elapsed_ms > FLAGS_flush_threshold_secs * 1000) {
-    // Even if we aren't over the threshold, consider flushing if we haven't flushed
-    // in a long time. But, don't give it a large perf_improvement score. We should
-    // only do this if we really don't have much else to do, and if we've already waited a bit.
-    // The following will give an improvement that's between 0.0 and 1.0, gradually growing as
-    // 'elapsed_ms' approaches 'upper_bound_ms' or 'anchored_mb' approaches 'threshold_mb'.
+    // Even if we aren't over the threshold, consider flushing if we have
+    // mem-stores that are older with respect to the time threshold. But, don't
+    // give it a large perf_improvement score. We should only do this if we
+    // really don't have much else to do, and if we've already waited a bit.
+    // The following will give an improvement that's between 0.0 and 1.0,
+    // gradually growing as 'elapsed_ms' approaches 'upper_bound_ms' or
+    // 'anchored_mb' approaches 'threshold_mb'.
     double perf = std::max(elapsed_ms / upper_bound_ms, anchored_mb / threshold_mb);
     stats->set_perf_improvement(std::min(1.0, perf));
   }
@@ -238,16 +241,17 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
-  int64_t dms_size;
-  int64_t retention_size;
   map<int64_t, int64_t> max_idx_to_replay_size;
   if (tablet_replica_->tablet()->DeltaMemRowSetEmpty() ||
       !tablet_replica_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
     return;
   }
-  tablet_replica_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_replay_size,
-                                                   &dms_size, &retention_size);
+  int64_t dms_size;
+  int64_t retention_size;
+  MonoTime earliest_dms_time = MonoTime::Max();
+  tablet_replica_->tablet()->FindBestDMSToFlush(max_idx_to_replay_size,
+                                                &dms_size, &retention_size,
+                                                &earliest_dms_time);
 
   stats->set_ram_anchored(dms_size);
   stats->set_runnable(true);
@@ -259,9 +263,12 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
     stats->set_workload_score(workload_score);
   }
 
+  const auto now = MonoTime::Now();
+  const auto time_since_earliest_update_ms = now > earliest_dms_time ?
+      (now - earliest_dms_time).ToMilliseconds() : 0;
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
       stats,
-      time_since_flush_.elapsed().wall_millis());
+      time_since_earliest_update_ms);
 }
 
 void FlushDeltaMemStoresOp::Perform() {
@@ -278,10 +285,6 @@ void FlushDeltaMemStoresOp::Perform() {
     CHECK(tablet->HasBeenStopped()) << "Unrecoverable flush failure caused by error: "
                                     << s.ToString();
     return;
-  }
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    time_since_flush_.start();
   }
 }
 

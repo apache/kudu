@@ -235,6 +235,14 @@ class DeltaTracker {
                           const fs::IOContext* io_context,
                           DeltaType type);
 
+  // Returns true if a DMS exists, returning its size in bytes and the time at
+  // which it was created. Otherwise, returns false and doesn't update the
+  // input pointers.
+  //
+  // NOTE: we lazily create the DMS, so the creation time corresponds to the
+  // age of the oldest update to the rowset.
+  bool GetDeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const;
+
   // Get the delta MemStore's size in bytes, including pre-allocation.
   size_t DeltaMemStoreSize() const;
 

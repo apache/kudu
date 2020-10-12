@@ -377,6 +377,10 @@ class MemRowSet : public RowSet,
 
   size_t DeltaMemStoreSize() const override { return 0; }
 
+  bool DeltaMemStoreInfo(size_t* /*size_bytes*/, MonoTime* /*creation_time*/) const override {
+    return false;
+  }
+
   bool DeltaMemStoreEmpty() const override { return true; }
 
   int64_t MinUnflushedLogIndex() const override {

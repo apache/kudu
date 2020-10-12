@@ -863,6 +863,21 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
   return Status::OK();
 }
 
+bool DeltaTracker::GetDeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const {
+  // Check dms_exists_ first to avoid unnecessary contention on
+  // component_lock_. We need to check again after taking the lock in case we
+  // raced with a DMS flush.
+  if (dms_exists_.Load()) {
+    shared_lock<rw_spinlock> lock(component_lock_);
+    if (dms_exists_.Load()) {
+      *size_bytes = dms_->EstimateSize();
+      *creation_time = dms_->creation_time();
+      return true;
+    }
+  }
+  return false;
+}
+
 size_t DeltaTracker::DeltaMemStoreSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   return dms_exists_.Load() ? dms_->EstimateSize() : 0;

@@ -37,146 +37,146 @@ namespace tablet {
 // Mock implementation of RowSet which just aborts on every call.
 class MockRowSet : public RowSet {
  public:
-  virtual Status CheckRowPresent(const RowSetKeyProbe& /*probe*/,
-                                 const fs::IOContext* /*io_context*/,
-                                 bool* /*present*/, ProbeStats* /*stats*/) const override {
+  Status CheckRowPresent(const RowSetKeyProbe& /*probe*/,
+                         const fs::IOContext* /*io_context*/,
+                         bool* /*present*/, ProbeStats* /*stats*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status MutateRow(Timestamp /*timestamp*/,
-                           const RowSetKeyProbe& /*probe*/,
-                           const RowChangeList& /*update*/,
-                           const consensus::OpId& /*op_id_*/,
-                           const fs::IOContext* /*io_context*/,
-                           ProbeStats* /*stats*/,
-                           OperationResultPB* /*result*/) override {
+  Status MutateRow(Timestamp /*timestamp*/,
+                   const RowSetKeyProbe& /*probe*/,
+                   const RowChangeList& /*update*/,
+                   const consensus::OpId& /*op_id_*/,
+                   const fs::IOContext* /*io_context*/,
+                   ProbeStats* /*stats*/,
+                   OperationResultPB* /*result*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status NewRowIterator(const RowIteratorOptions& /*opts*/,
-                                std::unique_ptr<RowwiseIterator>* /*out*/) const override {
+  Status NewRowIterator(const RowIteratorOptions& /*opts*/,
+                        std::unique_ptr<RowwiseIterator>* /*out*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status NewCompactionInput(const Schema* /*projection*/,
-                                    const MvccSnapshot& /*snap*/,
-                                    const fs::IOContext* /*io_context*/,
-                                    std::unique_ptr<CompactionInput>* /*out*/) const override {
+  Status NewCompactionInput(const Schema* /*projection*/,
+                            const MvccSnapshot& /*snap*/,
+                            const fs::IOContext* /*io_context*/,
+                            std::unique_ptr<CompactionInput>* /*out*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status CountRows(const fs::IOContext* /*io_context*/, rowid_t* /*count*/) const override {
+  Status CountRows(const fs::IOContext* /*io_context*/, rowid_t* /*count*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status CountLiveRows(uint64_t* /*count*/) const override {
+  Status CountLiveRows(uint64_t* /*count*/) const override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual std::string ToString() const override {
+  std::string ToString() const override {
     LOG(FATAL) << "Unimplemented";
     return "";
   }
-  virtual Status DebugDump(std::vector<std::string>* /*lines*/) override {
+  Status DebugDump(std::vector<std::string>* /*lines*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status Delete() {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
-  virtual uint64_t OnDiskSize() const override {
+  uint64_t OnDiskSize() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual uint64_t OnDiskBaseDataSize() const override {
+  uint64_t OnDiskBaseDataSize() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& /*col_id*/) const override {
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& /*col_id*/) const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual uint64_t OnDiskBaseDataSizeWithRedos() const override {
+  uint64_t OnDiskBaseDataSizeWithRedos() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual std::mutex *compact_flush_lock() override {
+  std::mutex *compact_flush_lock() override {
     LOG(FATAL) << "Unimplemented";
     return nullptr;
   }
-  virtual bool has_been_compacted() const override {
+  bool has_been_compacted() const override {
     LOG(FATAL) << "Unimplemented";
     return false;
   }
-  virtual void set_has_been_compacted() override {
+  void set_has_been_compacted() override {
     LOG(FATAL) << "Unimplemented";
   }
-  virtual std::shared_ptr<RowSetMetadata> metadata() override {
+  std::shared_ptr<RowSetMetadata> metadata() override {
     return nullptr;
   }
 
-  virtual size_t DeltaMemStoreSize() const override {
+  size_t DeltaMemStoreSize() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual bool DeltaMemStoreEmpty() const override {
+  bool DeltaMemStoreInfo(size_t* /*size_bytes*/, MonoTime* /*creation_time*/) const override {
+    LOG(FATAL) << "Unimplemented";
+    return false;
+  }
+
+  bool DeltaMemStoreEmpty() const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual int64_t MinUnflushedLogIndex() const override {
+  int64_t MinUnflushedLogIndex() const override {
     LOG(FATAL) << "Unimplemented";
     return -1;
   }
 
-  virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType /*type*/)
-      const override {
+  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType /*type*/) const override {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual Status FlushDeltas(const fs::IOContext* /*io_context*/) override {
+  Status FlushDeltas(const fs::IOContext* /*io_context*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status MinorCompactDeltaStores(const fs::IOContext* /*io_context*/) override {
+  Status MinorCompactDeltaStores(const fs::IOContext* /*io_context*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status IsDeletedAndFullyAncient(Timestamp /*ancient_history_mark*/,
-                                          bool* /*deleted_and_ancient*/) override {
+  Status IsDeletedAndFullyAncient(Timestamp /*ancient_history_mark*/,
+                                  bool* /*deleted_and_ancient*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                                             int64_t* /*bytes*/) override {
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                                     int64_t* /*bytes*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                MonoTime /*deadline*/,
-                                const fs::IOContext* /*io_context*/,
-                                int64_t* /*delta_blocks_initialized*/,
-                                int64_t* /*bytes_in_ancient_undos*/) override {
+  Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
+                        MonoTime /*deadline*/,
+                        const fs::IOContext* /*io_context*/,
+                        int64_t* /*delta_blocks_initialized*/,
+                        int64_t* /*bytes_in_ancient_undos*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
-                                         const fs::IOContext* /*io_context*/,
-                                         int64_t* /*blocks_deleted*/,
-                                         int64_t* /*bytes_deleted*/) override {
+  Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                 const fs::IOContext* /*io_context*/,
+                                 int64_t* /*blocks_deleted*/,
+                                 int64_t* /*bytes_deleted*/) override {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual bool IsAvailableForCompaction() override {
+  bool IsAvailableForCompaction() override {
     return true;
   }
 };
@@ -191,30 +191,30 @@ class MockDiskRowSet : public MockRowSet {
         size_(size),
         column_size_(column_size) {}
 
-  virtual Status GetBounds(std::string* min_encoded_key,
-                           std::string* max_encoded_key) const override {
+  Status GetBounds(std::string* min_encoded_key,
+                   std::string* max_encoded_key) const override {
     *min_encoded_key = first_key_;
     *max_encoded_key = last_key_;
     return Status::OK();
   }
 
-  virtual uint64_t OnDiskSize() const override {
+  uint64_t OnDiskSize() const override {
     return size_;
   }
 
-  virtual uint64_t OnDiskBaseDataSize() const override {
+  uint64_t OnDiskBaseDataSize() const override {
     return size_;
   }
 
-  virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& /*col_id*/) const override {
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& /*col_id*/) const override {
     return column_size_;
   }
 
-  virtual uint64_t OnDiskBaseDataSizeWithRedos() const override {
+  uint64_t OnDiskBaseDataSizeWithRedos() const override {
     return size_;
   }
 
-  virtual std::string ToString() const override {
+  std::string ToString() const override {
     return strings::Substitute("mock[$0, $1]",
                                Slice(first_key_).ToDebugString(),
                                Slice(last_key_).ToDebugString());
@@ -230,8 +230,8 @@ class MockDiskRowSet : public MockRowSet {
 // Mock which acts like a MemRowSet and has no known bounds.
 class MockMemRowSet : public MockRowSet {
  public:
-  virtual Status GetBounds(std::string* /*min_encoded_key*/,
-                           std::string* /*max_encoded_key*/) const override {
+  Status GetBounds(std::string* /*min_encoded_key*/,
+                   std::string* /*max_encoded_key*/) const override {
     return Status::NotSupported("");
   }
 

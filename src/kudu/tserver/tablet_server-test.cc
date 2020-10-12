@@ -4332,6 +4332,41 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
   }
 }
 
+// Regression test for KUDU-3195 that ensures that as long as there are DMSs
+// older than the flush threshold, we will schedule DMS flushes.
+TEST_F(TabletServerTest, TestTimeBasedFlushDMS) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+  // We're going to generate a bunch of DMSs, and for that, we need multiple
+  // rowsets, so disable merge compactions.
+  FLAGS_enable_rowset_compaction = false;
+
+  constexpr const int kNumRowsets = 100;
+  constexpr const int kRowsPerRowset = 1;
+  for (int i = 0; i < kNumRowsets; i++) {
+    NO_FATALS(InsertTestRowsDirect(i * kRowsPerRowset, kRowsPerRowset));
+    ASSERT_OK(tablet_replica_->tablet()->Flush());
+  }
+  for (int i = 0; i < kNumRowsets * kRowsPerRowset; i++) {
+    NO_FATALS(UpdateTestRowRemote(i, 0));
+  }
+  ASSERT_FALSE(tablet_replica_->tablet()->DeltaMemRowSetEmpty());
+
+  // We want to see how quickly we can flush DMSs, so speed up time-based
+  // flushing.
+  FLAGS_enable_maintenance_manager = true;
+  FLAGS_maintenance_manager_polling_interval_ms = 1;
+  FLAGS_flush_threshold_secs = 1;
+  NO_FATALS(ShutdownAndRebuildTablet());
+  // We should be able to wait for the flush threshold and very quickly see all
+  // DMSs get flushed. We'll wait 5x the flush threshold, which should be ample
+  // time given how little we're writing.
+  // NOTE: There are 100 DMSs to flush -- we shouldn't be doing anything silly
+  // like waiting a full flush threshold between flushes, which would take 100
+  // seconds!
+  SleepFor(MonoDelta::FromSeconds(5 * FLAGS_flush_threshold_secs));
+  ASSERT_TRUE(tablet_replica_->tablet()->DeltaMemRowSetEmpty());
+}
+
 TEST_F(TabletServerTest, TestStarvePerfImprovementOpsInColdTablet) {
   SKIP_IF_SLOW_NOT_ALLOWED();
   FLAGS_enable_maintenance_manager = true;

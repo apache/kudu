@@ -292,11 +292,6 @@ class Tablet {
   // Same as MemRowSetEmpty(), but for the DMS.
   bool DeltaMemRowSetEmpty() const;
 
-  // Fills in the in-memory size and replay size in bytes for the DMS with the
-  // highest retention.
-  void GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
-                                int64_t* mem_size, int64_t* replay_size) const;
-
   // Flushes the DMS with the highest retention.
   Status FlushBestDMS(const ReplaySizeMap &replay_size_map) const;
 
@@ -500,6 +495,15 @@ class Tablet {
   // This method is not thread safe and should only be called from a single thread at once.
   double CollectAndUpdateWorkloadStats(MaintenanceOp::PerfImprovementOpType type);
 
+  // Returns the best DMS to flush, based on its memory size and retained
+  // bytes. Also returns the earliest creation time of a DMS seen. Note that
+  // 'mem_size' and 'replay_size' correspond to the same DMS but
+  // 'earliest_dms_time' may not.
+  std::shared_ptr<RowSet> FindBestDMSToFlush(const ReplaySizeMap& replay_size_map,
+                                             int64_t* mem_size = nullptr,
+                                             int64_t* replay_size = nullptr,
+                                             MonoTime* earliest_dms_time = nullptr) const;
+
  private:
   friend class kudu::AlterTableTest;
   friend class Iterator;
@@ -687,9 +691,6 @@ class Tablet {
                                  Schema *mapped_projection) const;
 
   Status CheckRowInTablet(const ConstContiguousRow& row) const;
-
-  // Helper method to find the rowset that has the DMS with the highest retention.
-  std::shared_ptr<RowSet> FindBestDMSToFlush(const ReplaySizeMap& replay_size_map) const;
 
   // Helper method to find how many bytes need to be replayed to restore in-memory
   // state from this index.

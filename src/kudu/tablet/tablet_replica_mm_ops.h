@@ -39,7 +39,7 @@ class FlushOpPerfImprovementPolicy {
   ~FlushOpPerfImprovementPolicy() {}
 
   // Sets the performance improvement based on the anchored ram if it's over the threshold,
-  // else it will set it based on how long it has been since the last flush.
+  // else it will set it based on how long the mem-store has been non-empty.
   static void SetPerfImprovementForFlush(MaintenanceOpStats* stats, double elapsed_ms);
 
  private:
@@ -91,9 +91,7 @@ class FlushDeltaMemStoresOp : public TabletReplicaOpBase {
     : TabletReplicaOpBase(StringPrintf("FlushDeltaMemStoresOp(%s)",
                                        tablet_replica->tablet()->tablet_id().c_str()),
                           MaintenanceOp::HIGH_IO_USAGE,
-                          tablet_replica) {
-    time_since_flush_.start();
-  }
+                          tablet_replica) {}
 
   void UpdateStats(MaintenanceOpStats* stats) override;
 
@@ -106,11 +104,6 @@ class FlushDeltaMemStoresOp : public TabletReplicaOpBase {
   scoped_refptr<Histogram> DurationHistogram() const override;
 
   scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
-
- private:
-  // Lock protecting time_since_flush_
-  mutable simple_spinlock lock_;
-  Stopwatch time_since_flush_;
 };
 
 // Maintenance task that runs log GC. Reports log retention that represents the amount of data

@@ -390,6 +390,8 @@ class DiskRowSet :
 
   size_t DeltaMemStoreSize() const override;
 
+  bool DeltaMemStoreInfo(size_t* size_bytes, MonoTime* creation_time) const override;
+
   bool DeltaMemStoreEmpty() const override;
 
   int64_t MinUnflushedLogIndex() const override;

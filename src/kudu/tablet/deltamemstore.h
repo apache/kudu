@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 
 #include "kudu/common/rowid.h"
 #include "kudu/common/timestamp.h"
@@ -38,6 +39,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -130,7 +132,8 @@ class DeltaMemStore : public DeltaStore,
     return arena_->memory_footprint();
   }
 
-  const int64_t id() const { return id_; }
+  int64_t id() const { return id_; }
+  const MonoTime& creation_time() const { return creation_time_; }
 
   typedef btree::CBTree<DMSTreeTraits> DMSTree;
   typedef btree::CBTreeIterator<DMSTreeTraits> DMSTreeIter;
@@ -175,6 +178,8 @@ class DeltaMemStore : public DeltaStore,
 
   const int64_t id_;    // DeltaMemStore ID.
   const int64_t rs_id_; // Rowset ID.
+
+  const MonoTime creation_time_;
 
   mutable simple_spinlock ts_lock_;
   Timestamp highest_timestamp_;
