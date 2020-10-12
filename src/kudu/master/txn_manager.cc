@@ -73,6 +73,13 @@ DEFINE_int64(txn_manager_status_table_range_partition_span, 1000000,
 TAG_FLAG(txn_manager_status_table_range_partition_span, advanced);
 TAG_FLAG(txn_manager_status_table_range_partition_span, experimental);
 
+DEFINE_uint32(transaction_keep_alive_interval_ms, 3000,
+              "Maximum interval (in milliseconds) between subsequent "
+              "keep-alive heartbeats from client to TxnManager to let it know "
+              "that a transaction is alive");
+TAG_FLAG(transaction_keep_alive_interval_ms, runtime);
+TAG_FLAG(transaction_keep_alive_interval_ms, experimental);
+
 namespace kudu {
 namespace transactions {
 
@@ -103,6 +110,8 @@ MonoDelta ToDelta(const MonoTime& deadline) {
 
 TxnManager::TxnManager(Master* server)
     : is_lazily_initialized_(FLAGS_txn_manager_lazily_initialized),
+      txn_status_table_range_span_(
+          FLAGS_txn_manager_status_table_range_partition_span),
       server_(server),
       need_init_(true),
       initialized_(false),
@@ -112,15 +121,86 @@ TxnManager::TxnManager(Master* server)
 TxnManager::~TxnManager() {
 }
 
-Status TxnManager::BeginTransaction(const string& /* username */,
+Status TxnManager::BeginTransaction(const string& username,
                                     const MonoTime& deadline,
                                     int64_t* txn_id,
                                     int32_t* keep_alive_interval_ms) {
   DCHECK(txn_id);
   DCHECK(keep_alive_interval_ms);
   RETURN_NOT_OK(CheckInitialized(deadline));
-  // TODO(aserbin): this is implemented in a follow-up changelist
-  return Status::NotSupported("BeginTransaction is not supported yet");
+
+  // TxnManager uses next_txn_id_ as a hint for next transaction identifier.
+  //
+  // TODO(aserbin): a better approach is to change TxnStatusManager's
+  //                BeginTransaction() to reserve next available transaction
+  //                identifier by forwarding initial hint supplied from here
+  //                through the chain, where each TxnStatusManager increments
+  //                its last seen txn ID and either sends it further
+  //                to corresponding TxnManager or writes a record into its own
+  //                txn status tablet. The latter ends the forwarding chain with
+  //                the reserved txn ID that is sent to TxnSystemClient with
+  //                the response and passed back to be used here as a hint for
+  //                txn ID on the next request.
+  int64_t try_txn_id = next_txn_id_++;
+  auto s = Status::TimedOut("timed out while trying to find txn_id");
+  while (MonoTime::Now() < deadline) {
+    int64_t highest_seen_txn_id = -1;
+    s = txn_sys_client_->BeginTransaction(
+        try_txn_id, username, &highest_seen_txn_id, ToDelta(deadline));
+    if (s.ok()) {
+      DCHECK_GE(highest_seen_txn_id, 0);
+      // The idea is to make the thread that has gotten a transaction reserved
+      // with the highest 'highest_seen_txn_id' so far updating 'next_txn_id_'
+      // until it succeeds or bail if there is another thread that received a
+      // greater 'highest_seen_txn_id' back from TxnStatusManager.
+      int64_t stored_txn_id = try_txn_id + 1;
+      while (true) {
+        if (next_txn_id_.compare_exchange_strong(stored_txn_id,
+                                                 highest_seen_txn_id + 1) ||
+            stored_txn_id > highest_seen_txn_id) {
+          break;
+        }
+      }
+      break;
+    }
+    if (s.IsInvalidArgument()) {
+      // TxnStatusManager reports that try_txn_id is too low to be used as
+      // an identifier for a new transaction.
+      DCHECK_GE(highest_seen_txn_id, 0);
+      try_txn_id = highest_seen_txn_id + 1;
+      continue;
+    }
+    if (s.IsNotFound()) {
+      // No tablet exists to store the record for a new transaction identified
+      // by 'try_txn_id', so it's time to add a new range into the transaction
+      // status table. By current design, TxnManager is the entity to take care
+      // of this: the TxnStatusManager cannot do that on its own because it is
+      // a logical entity just on top of a tablet corresponding to a single
+      // range of transaction identifiers.
+      //
+      // TODO(aserbin): make the range step controllable via a gflag and
+      //                retrieve the information on the high bound of the last
+      //                used transaction range from the tablet's metadata.
+      const auto lb = (try_txn_id / txn_status_table_range_span_) *
+          txn_status_table_range_span_;
+      const auto hb = lb + txn_status_table_range_span_;
+      auto new_range_status = txn_sys_client_->AddTxnStatusTableRange(lb, hb);
+      if (new_range_status.ok() || new_range_status.IsAlreadyPresent()) {
+        // OK, the tablet corresponding to the new range now exists.
+        // Status::AlreadyPresent() might be returned if there were concurrent
+        // requests to add the same range to the transaction status table.
+        continue;
+      }
+      return new_range_status.CloneAndPrepend(
+          "cannot add a new range to the transaction status table");
+    }
+    break;
+  }
+  if (s.ok()) {
+    *txn_id = try_txn_id;
+    *keep_alive_interval_ms = FLAGS_transaction_keep_alive_interval_ms;
+  }
+  return s;
 }
 
 Status TxnManager::CommitTransaction(int64_t txn_id,

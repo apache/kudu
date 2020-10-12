@@ -102,6 +102,10 @@ class TxnManager final {
   // Whether or not this instance is lazily initialized.
   const bool is_lazily_initialized_;
 
+  // The span of a range partition to use when adding new ranges to the
+  // transaction status table.
+  const int64_t txn_status_table_range_span_;
+
   // The pointer to the top-level Master object. From the lifecycle perspective,
   // Master is assumed to be alive during the whole lifecycle of TxnManager
   // since the Master is the component that hosts TxnManager (this is similar

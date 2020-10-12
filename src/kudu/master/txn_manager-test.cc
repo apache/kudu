@@ -23,6 +23,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -37,6 +38,8 @@
 #include "kudu/master/txn_manager.proxy.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/transactions/transactions.pb.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -47,14 +50,18 @@
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::rpc::RpcController;
+using kudu::transactions::TxnStatePB;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_int32(rpc_service_queue_length);
+DECLARE_int64(txn_manager_status_table_range_partition_span);
+DECLARE_uint32(transaction_keep_alive_interval_ms);
 
 namespace kudu {
 namespace transactions {
@@ -74,6 +81,11 @@ class TxnManagerTest : public KuduTest {
     // Explicitly setting the flags just for better readability.
     FLAGS_txn_manager_enabled = true;
     FLAGS_txn_manager_lazily_initialized = true;
+
+    // Make TxnManager creating new ranges in the transaction status table more
+    // often, so it's not necessary to start too many transactions to see it
+    // switching to a new tablet of the transaction status table.
+    FLAGS_txn_manager_status_table_range_partition_span = 1024;
 
     // A few scenarios (e.g. LazyInitializationConcurrentCalls) might require
     // an insanely high capacity of the service RPC queue since their workload
@@ -280,21 +292,205 @@ TEST_F(TxnManagerTest, NonlazyInitialization) {
   }
 }
 
-// BeginTransaction implementation is moved into a follow-up changelist.
-// TODO(aserbin): update this scenario once BeginTransction is here
-TEST_F(TxnManagerTest, BeginTransactionRpc) {
-  RpcController ctx;
-  PrepareRpcController(&ctx);
-  BeginTransactionRequestPB req;
-  BeginTransactionResponsePB resp;
-  ASSERT_OK(proxy_->BeginTransaction(req, &resp, &ctx));
+// This is scenario calls almost all methods of the TxnManager.
+TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
+  const auto fetch_txn_status = [this] (int64_t txn_id, TxnStatePB* state) {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    GetTransactionStateRequestPB req;
+    GetTransactionStateResponsePB resp;
+    req.set_txn_id(txn_id);
+    ASSERT_OK(proxy_->GetTransactionState(req, &resp, &ctx));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
+    ASSERT_TRUE(resp.has_state());
+    *state = resp.state();
+  };
 
-  ASSERT_TRUE(resp.has_error());
-  auto s = StatusFromPB(resp.error().status());
-  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
-  ASSERT_STR_CONTAINS(
-      s.ToString(), "Not implemented: BeginTransaction is not supported yet");
+  int64_t txn_id = -1;
+  {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    BeginTransactionRequestPB req;
+    BeginTransactionResponsePB resp;
+    ASSERT_OK(proxy_->BeginTransaction(req, &resp, &ctx));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
+    ASSERT_TRUE(resp.has_txn_id());
+    txn_id = resp.txn_id();
+    ASSERT_LE(0, txn_id);
+    ASSERT_TRUE(resp.has_keepalive_millis());
+    ASSERT_EQ(FLAGS_transaction_keep_alive_interval_ms, resp.keepalive_millis());
+    TxnStatePB txn_state;
+    NO_FATALS(fetch_txn_status(txn_id, &txn_state));
+    ASSERT_EQ(TxnStatePB::OPEN, txn_state);
+  }
+
+  {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    CommitTransactionRequestPB req;
+    CommitTransactionResponsePB resp;
+    req.set_txn_id(txn_id);
+    ASSERT_OK(proxy_->CommitTransaction(req, &resp, &ctx));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
+    TxnStatePB txn_state;
+    NO_FATALS(fetch_txn_status(txn_id, &txn_state));
+    ASSERT_EQ(TxnStatePB::COMMIT_IN_PROGRESS, txn_state);
+  }
+
+  // TODO(aserbin): add call to KeepTransactionAlive() when TxnStatusManager
+  //                has the functionality implemented.
+
+  {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    AbortTransactionRequestPB req;
+    AbortTransactionResponsePB resp;
+    req.set_txn_id(txn_id);
+    ASSERT_OK(proxy_->AbortTransaction(req, &resp, &ctx));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
+    TxnStatePB txn_state;
+    NO_FATALS(fetch_txn_status(txn_id, &txn_state));
+    ASSERT_EQ(TxnStatePB::ABORTED, txn_state);
+  }
 }
+
+TEST_F(TxnManagerTest, BeginManyTransactions) {
+  SKIP_IF_SLOW_NOT_ALLOWED();
+
+  // In this functor CHECK_ is used instead of ASSERT_ because it's targeted
+  // for multi-thread use, and ASSERT_ macros do not seem working as expected
+  // in such case.
+  const auto txn_initiator = [this](
+      size_t txn_num,
+      vector<int64_t>* txn_ids) {
+    // Create its own proxy: this is important if trying to create more
+    // concurrency since a proxy serializes RPC calls.
+    TxnManagerServiceProxy p(
+        cluster_->messenger(),
+        cluster_->mini_master()->bound_rpc_addr(),
+        cluster_->mini_master()->bound_rpc_addr().host());
+    int64_t max_txn_id = -1;
+    for (auto id = 0; id < txn_num; ++id) {
+      BeginTransactionResponsePB resp;
+      while (true) {
+        RpcController ctx;
+        PrepareRpcController(&ctx);
+        BeginTransactionRequestPB req;
+        resp.Clear();
+        auto s = p.BeginTransaction(req, &resp, &ctx);
+        // The only acceptable non-OK status here is Status::ServiceUnavailable.
+        if (s.IsServiceUnavailable() ||
+            (resp.has_error() &&
+             StatusFromPB(resp.error().status()).IsServiceUnavailable())) {
+          SleepFor(MonoDelta::FromMilliseconds(10));
+          continue;
+        }
+        break;
+      }
+      CHECK(!resp.has_error()) << StatusFromPB(resp.error().status()).ToString();
+      CHECK(resp.has_txn_id());
+      int64_t txn_id = resp.txn_id();
+      CHECK_GT(txn_id, max_txn_id);
+      max_txn_id = txn_id;
+      if (txn_ids) {
+        txn_ids->emplace_back(txn_id);
+      }
+      CHECK(resp.has_keepalive_millis());
+      CHECK_EQ(FLAGS_transaction_keep_alive_interval_ms, resp.keepalive_millis());
+    }
+  };
+
+  // First, a simple sequential case: start many transactions one after another.
+  // The point here is to make sure the TxnManager:
+  //   * takes care adding new range partitions to the transaction status table
+  //   * transaction identifiers assigned to the newly started transactions are
+  //       ** unique
+  //       ** increase monotonically
+  {
+    const int64_t kNumTransactions =
+        FLAGS_txn_manager_status_table_range_partition_span * 3;
+
+    // TxnManager is lazily initialized, so no tablets of the transaction
+    // status tablet should be created yet.
+    const auto txn_tablets_before =
+        cluster_->mini_tablet_server(0)->ListTablets();
+    ASSERT_EQ(0, txn_tablets_before.size());
+
+    vector<int64_t> txn_ids;
+    txn_initiator(kNumTransactions, &txn_ids);
+    ASSERT_EQ(kNumTransactions, txn_ids.size());
+    int64_t prev_txn_id = -1;
+    for (const auto& txn_id : txn_ids) {
+      ASSERT_GT(txn_id, prev_txn_id);
+      prev_txn_id = txn_id;
+    }
+
+    // Check that corresponding tablets have been created for the transaction
+    // status table.
+    const auto txn_tablets_after =
+        cluster_->mini_tablet_server(0)->ListTablets();
+    auto expected_tablets_num = 1 +
+        prev_txn_id / FLAGS_txn_manager_status_table_range_partition_span;
+    ASSERT_EQ(expected_tablets_num, txn_tablets_after.size());
+  }
+
+  // A more complex case: run multiple threads, each starting many transactions.
+  // Make sure the generated transaction identifiers are unique.
+  {
+    const int64_t kNumTransactionsPerThread =
+        FLAGS_txn_manager_status_table_range_partition_span * 2;
+    const int kNumCPUs = base::NumCPUs();
+    const size_t kNumThreads = 2 * kNumCPUs;
+    vector<thread> threads;
+    threads.reserve(kNumThreads);
+    vector<vector<int64_t>> txn_ids_per_thread;
+    txn_ids_per_thread.resize(kNumThreads);
+    for (auto& slice : txn_ids_per_thread) {
+      slice.reserve(kNumTransactionsPerThread);
+    }
+    for (auto idx = 0; idx < kNumThreads; ++idx) {
+      threads.emplace_back(txn_initiator,
+                           kNumTransactionsPerThread,
+                           &txn_ids_per_thread[idx]);
+    }
+    for (auto& t : threads) {
+      t.join();
+    }
+
+    // Verify the uniqueness of the identifiers across all the threads. Instead
+    // of sort/unique, use std::unordered_set.
+    unordered_set<int64_t> txn_ids;
+    size_t total_size = 0;
+    for (const auto& slice: txn_ids_per_thread) {
+      EXPECT_EQ(kNumTransactionsPerThread, slice.size());
+      txn_ids.insert(slice.begin(), slice.end());
+      total_size += slice.size();
+    }
+    ASSERT_EQ(kNumTransactionsPerThread * kNumThreads, total_size);
+    ASSERT_EQ(total_size, txn_ids.size());
+  }
+
+  // Now start a single transaction to get the highest assigned txn_id so far.
+  // This is to check for the number of tablets in the transaction status table
+  // after all this activity.
+  {
+    vector<int64_t> txn_ids;
+    txn_initiator(1, &txn_ids);
+    ASSERT_EQ(1, txn_ids.size());
+    const auto txn_tablets = cluster_->mini_tablet_server(0)->ListTablets();
+    auto expected_tablets_num = 1 +
+        txn_ids[0] / FLAGS_txn_manager_status_table_range_partition_span;
+    ASSERT_EQ(expected_tablets_num, txn_tablets.size());
+  }
+}
+
+// TODO(aserbin): add test scenarios involving a multi-master Kudu cluster
+//                (hence there will be multiple TxnManager instances) and verify
+//                how all this works in case of frequent master re-elections.
 
 // KeepTransactionAlive is not yet supported.
 // TODO(aserbin): update this scenario once KeepTransactionAlive is implemented

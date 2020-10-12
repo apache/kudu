@@ -138,11 +138,8 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
                                            s.AsStatusCallback(),
                                            &result));
   const auto ret = s.Wait();
-  if (ret.ok() || ret.IsInvalidArgument()) {
-    DCHECK(result.has_highest_seen_txn_id());
-    if (highest_seen_txn_id) {
-      *highest_seen_txn_id = result.highest_seen_txn_id();
-    }
+  if (result.has_highest_seen_txn_id() && highest_seen_txn_id) {
+    *highest_seen_txn_id = result.highest_seen_txn_id();
   }
   return ret;
 }
