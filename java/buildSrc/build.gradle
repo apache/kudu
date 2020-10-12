@@ -29,7 +29,7 @@ repositories {
 // For more details see: https://docs.gradle.org/current/userguide/plugins.html#plugins_dsl_limitations
 dependencies {
   compile "com.github.ben-manes:gradle-versions-plugin:0.33.0"
-  compile "com.github.jengelman.gradle.plugins:shadow:6.0.0"
+  compile "com.github.jengelman.gradle.plugins:shadow:6.1.0"
   compile "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.6.2"
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.13"
   compile "com.netflix.nebula:nebula-clojure-plugin:9.4.1"
