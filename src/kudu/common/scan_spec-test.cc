@@ -413,7 +413,7 @@ TEST_F(CompositeIntKeysTest, TestOneHashKeyInListHashPruning) {
                           &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   // clone scan_spec for different partition.
@@ -466,7 +466,7 @@ TEST_F(CompositeIntKeysTest, TestHashKeyInListHashPruningEmptyDetect) {
                           &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   // clone scan_spec for different partition.
@@ -519,7 +519,7 @@ TEST_F(CompositeIntKeysTest, TestMultiHashKeyOneColumnInListHashPruning) {
                           &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   // clone scan_spec for different partition.
@@ -630,7 +630,7 @@ TEST_F(CompositeIntKeysTest, TesMultiHashColumnsInListHashPruning) {
                           &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   // clone scan_spec for different partition.
@@ -686,7 +686,7 @@ TEST_F(CompositeIntKeysTest, TesMultiHashKeyMultiHashInListHashPruning) {
                           &partition_schema);
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   ASSERT_EQ(9, partitions.size());
 
   // clone scan_spec for different partition.

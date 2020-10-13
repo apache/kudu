@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_COMMON_PARTITION_H
-#define KUDU_COMMON_PARTITION_H
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -29,13 +28,21 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+namespace google {
+namespace protobuf {
+template <typename T> class RepeatedPtrField;
+}  // namespace protobuf
+}  // namespace google
+
 namespace kudu {
 
 class Arena;
 class ConstContiguousRow;
 class KuduPartialRow;
-class PartitionSchemaPB;
 class PartitionPB;
+class PartitionSchemaPB;
+class PartitionSchemaPB_ColumnIdentifierPB;
+template <typename Buffer> class KeyEncoder;
 
 // A Partition describes the set of rows that a Tablet is responsible for
 // serving. Each tablet is assigned a single Partition.
@@ -146,6 +153,22 @@ class PartitionSchema {
     uint32_t seed;
   };
 
+  typedef std::vector<HashBucketSchema> HashBucketSchemas;
+  // Holds each bound's HashBucketSchemas.
+  typedef std::vector<HashBucketSchemas> RangeHashSchema;
+
+  struct RangeWithHashSchemas {
+    std::string lower;
+    std::string upper;
+    HashBucketSchemas hash_schemas;
+  };
+
+  // Extracts the column IDs from a protobuf repeated field of column identifiers.
+  static Status ExtractColumnIds(
+      const google::protobuf::RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
+      const Schema& schema,
+      std::vector<ColumnId>* column_ids);
+
   // Deserializes a protobuf message into a partition schema.
   static Status FromPB(const PartitionSchemaPB& pb,
                        const Schema& schema,
@@ -168,9 +191,14 @@ class PartitionSchema {
   // of resulting partitions is the product of the number of hash buckets for
   // each hash bucket component, multiplied by
   // (split_rows.size() + max(1, range_bounds.size())).
+  // 'range_hash_schema' contains each range's HashBucketSchemas,
+  // its order corresponds to the bounds in 'range_bounds'.
+  // If 'range_hash_schemas' is empty, the table wide hash schema is used per range.
+  // Size of 'range_hash_schemas' and 'range_bounds' are equal if 'range_hash_schema' isn't empty.
   Status CreatePartitions(const std::vector<KuduPartialRow>& split_rows,
                           const std::vector<std::pair<KuduPartialRow,
                                                       KuduPartialRow>>& range_bounds,
+                          const RangeHashSchema& range_hash_schemas,
                           const Schema& schema,
                           std::vector<Partition>* partitions) const WARN_UNUSED_RESULT;
 
@@ -263,7 +291,7 @@ class PartitionSchema {
     return range_schema_;
   }
 
-  const std::vector<HashBucketSchema>& hash_partition_schemas() const {
+  const HashBucketSchemas& hash_partition_schemas() const {
     return hash_bucket_schemas_;
   }
 
@@ -344,7 +372,7 @@ class PartitionSchema {
   void AppendRangeDebugStringComponentsOrMin(const KuduPartialRow& row,
                                              std::vector<std::string>* components) const;
 
-  // Returns the stringified hash and range schema componenets of the partition
+  // Returns the stringified hash and range schema components of the partition
   // schema.
   //
   // Partition schemas are considered metadata, so no redaction will happen on
@@ -372,6 +400,10 @@ class PartitionSchema {
   // appropriate error code for an invalid partition schema.
   Status Validate(const Schema& schema) const;
 
+  // Generates hash partitions for each combination of hash buckets in hash_schemas.
+  static std::vector<Partition> GenerateHashPartitions(const HashBucketSchemas& hash_schemas,
+                                                       const KeyEncoder<std::string>& hash_encoder);
+
   // Validates the split rows, converts them to partition key form, and inserts
   // them into splits in sorted order.
   Status EncodeRangeSplits(const std::vector<KuduPartialRow>& split_rows,
@@ -379,30 +411,30 @@ class PartitionSchema {
                            std::vector<std::string>* splits) const;
 
   // Validates the range bounds, converts them to partition key form, and
-  // inserts them into encoded_range_partitions in sorted order.
+  // inserts them into 'bounds_with_hash_schemas' in sorted order. The hash schemas
+  // per range are stored within 'range_hash_schemas'. If 'range_hash_schemas' is empty,
+  // it indicates that the table wide hash schema will be used per range.
   Status EncodeRangeBounds(const std::vector<std::pair<KuduPartialRow,
                                                        KuduPartialRow>>& range_bounds,
+                           const RangeHashSchema& range_hash_schemas,
                            const Schema& schema,
-                           std::vector<std::pair<std::string,
-                                                 std::string>>* encoded_range_bounds) const;
+                           std::vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const;
 
-  // Splits the encoded range bounds by the split points. The splits and bounds
-  // must be sorted. If `bounds` is empty, then a single unbounded range is
-  // assumed. If any of the splits falls outside of the bounds then an
-  // InvalidArgument status is returned.
+  // Splits the encoded range bounds by the split points. The splits and bounds within
+  // 'bounds_with_hash_schemas' must be sorted. If `bounds_with_hash_schemas` is empty,
+  // then a single unbounded range is assumed. If any of the splits falls outside
+  // of the bounds, then an InvalidArgument status is returned.
   Status SplitRangeBounds(const Schema& schema,
                           std::vector<std::string> splits,
-                          std::vector<std::pair<std::string, std::string>>* bounds) const;
+                          std::vector<RangeWithHashSchemas>* bounds_with_hash_schemas) const;
 
   // Increments a range partition key, setting 'increment' to true if the
   // increment succeeds, or false if all range partition columns are already the
   // maximum value. Unset columns will be incremented to increment(min_value).
   Status IncrementRangePartitionKey(KuduPartialRow* row, bool* increment) const;
 
-  std::vector<HashBucketSchema> hash_bucket_schemas_;
+  HashBucketSchemas hash_bucket_schemas_;
   RangeSchema range_schema_;
 };
 
 } // namespace kudu
-
-#endif

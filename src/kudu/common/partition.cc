@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -110,34 +111,6 @@ void Partition::FromPB(const PartitionPB& pb, Partition* partition) {
 }
 
 namespace {
-// Extracts the column IDs from a protobuf repeated field of column identifiers.
-Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
-                        const Schema& schema,
-                        vector<ColumnId>* column_ids) {
-    column_ids->reserve(identifiers.size());
-    for (const auto& identifier : identifiers) {
-      switch (identifier.identifier_case()) {
-        case PartitionSchemaPB_ColumnIdentifierPB::kId: {
-          ColumnId column_id(identifier.id());
-          if (schema.find_column_by_id(column_id) == Schema::kColumnNotFound) {
-            return Status::InvalidArgument("unknown column id", SecureDebugString(identifier));
-          }
-          column_ids->push_back(column_id);
-          continue;
-        }
-        case PartitionSchemaPB_ColumnIdentifierPB::kName: {
-          int32_t column_idx = schema.find_column(identifier.name());
-          if (column_idx == Schema::kColumnNotFound) {
-            return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
-          }
-          column_ids->push_back(schema.column_id(column_idx));
-          continue;
-        }
-        default: return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
-      }
-    }
-    return Status::OK();
-}
 // Sets a repeated field of column identifiers to the provided column IDs.
 void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
                           RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>* identifiers) {
@@ -147,6 +120,38 @@ void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
     }
 }
 } // namespace
+
+// Extracts the column IDs from a protobuf repeated field of column identifiers.
+Status PartitionSchema::ExtractColumnIds(
+    const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
+    const Schema& schema,
+    vector<ColumnId>* column_ids) {
+  vector<ColumnId> new_column_ids;
+  new_column_ids.reserve(identifiers.size());
+  for (const auto& identifier : identifiers) {
+    switch (identifier.identifier_case()) {
+      case PartitionSchemaPB_ColumnIdentifierPB::kId: {
+        ColumnId column_id(identifier.id());
+        if (schema.find_column_by_id(column_id) == Schema::kColumnNotFound) {
+          return Status::InvalidArgument("unknown column id", SecureDebugString(identifier));
+        }
+        new_column_ids.emplace_back(std::move(column_id));
+      continue;
+      }
+      case PartitionSchemaPB_ColumnIdentifierPB::kName: {
+        int32_t column_idx = schema.find_column(identifier.name());
+        if (column_idx == Schema::kColumnNotFound) {
+          return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
+        }
+        new_column_ids.emplace_back(schema.column_id(column_idx));
+      continue;
+      }
+      default: return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
+    }
+  }
+  *column_ids = std::move(new_column_ids);
+  return Status::OK();
+}
 
 Status PartitionSchema::FromPB(const PartitionSchemaPB& pb,
                                const Schema& schema,
@@ -247,6 +252,9 @@ Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_ro
                                           const Schema& schema,
                                           vector<string>* splits) const {
   DCHECK(splits->empty());
+  if (split_rows.empty()) {
+    return Status::OK();
+  }
   for (const KuduPartialRow& row : split_rows) {
     string split;
     RETURN_NOT_OK(EncodeRangeKey(row, schema, &split));
@@ -267,14 +275,17 @@ Status PartitionSchema::EncodeRangeSplits(const vector<KuduPartialRow>& split_ro
 
 Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
                                                             KuduPartialRow>>& range_bounds,
+                                          const RangeHashSchema& range_hash_schemas,
                                           const Schema& schema,
-                                          vector<pair<string, string>>* range_partitions) const {
-  DCHECK(range_partitions->empty());
+                                          vector<RangeWithHashSchemas>*
+                                              bounds_with_hash_schemas) const {
+  DCHECK(bounds_with_hash_schemas->empty());
   if (range_bounds.empty()) {
-    range_partitions->emplace_back("", "");
+    bounds_with_hash_schemas->emplace_back(RangeWithHashSchemas{"", "", {}});
     return Status::OK();
   }
 
+  int j = 0;
   for (const auto& bound : range_bounds) {
     string lower;
     string upper;
@@ -286,24 +297,31 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
           "range partition lower bound must be less than the upper bound",
           RangePartitionDebugString(bound.first, bound.second));
     }
-    range_partitions->emplace_back(std::move(lower), std::move(upper));
+    RangeWithHashSchemas temp{std::move(lower), std::move(upper), {}};
+    if (!range_hash_schemas.empty()) {
+      temp.hash_schemas = range_hash_schemas[j++];
+    }
+    bounds_with_hash_schemas->emplace_back(std::move(temp));
   }
 
+  std::sort(bounds_with_hash_schemas->begin(), bounds_with_hash_schemas->end(),
+            [](const RangeWithHashSchemas& s1, const RangeWithHashSchemas& s2) {
+    return s1.lower < s2.lower;
+  });
   // Check that the range bounds are non-overlapping
-  std::sort(range_partitions->begin(), range_partitions->end());
-  for (int i = 0; i < range_partitions->size() - 1; i++) {
-    const string& first_upper = range_partitions->at(i).second;
-    const string& second_lower = range_partitions->at(i + 1).first;
+  for (int i = 0; i < bounds_with_hash_schemas->size() - 1; i++) {
+    const string& first_upper = bounds_with_hash_schemas->at(i).upper;
+    const string& second_lower = bounds_with_hash_schemas->at(i + 1).lower;
 
     if (first_upper.empty() || second_lower.empty() || first_upper > second_lower) {
       return Status::InvalidArgument(
           "overlapping range partitions",
           strings::Substitute("first range partition: $0, second range partition: $1",
-                              RangePartitionDebugString(range_partitions->at(i).first,
-                                                        range_partitions->at(i).second,
+                              RangePartitionDebugString(bounds_with_hash_schemas->at(i).lower,
+                                                        bounds_with_hash_schemas->at(i).upper,
                                                         schema),
-                              RangePartitionDebugString(range_partitions->at(i + 1).first,
-                                                        range_partitions->at(i + 1).second,
+                              RangePartitionDebugString(bounds_with_hash_schemas->at(i + 1).lower,
+                                                        bounds_with_hash_schemas->at(i + 1).upper,
                                                         schema)));
     }
   }
@@ -313,19 +331,23 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
 
 Status PartitionSchema::SplitRangeBounds(const Schema& schema,
                                          vector<string> splits,
-                                         vector<pair<string, string>>* bounds) const {
-  int expected_bounds = std::max(1UL, bounds->size()) + splits.size();
+                                         vector<RangeWithHashSchemas>*
+                                             bounds_with_hash_schemas) const {
+  if (splits.empty()) {
+    return Status::OK();
+  }
 
-  vector<pair<string, string>> new_bounds;
-  new_bounds.reserve(expected_bounds);
+  auto expected_bounds = std::max(1UL, bounds_with_hash_schemas->size()) + splits.size();
+  vector<RangeWithHashSchemas> new_bounds_with_hash_schemas;
+  new_bounds_with_hash_schemas.reserve(expected_bounds);
 
   // Iterate through the sorted bounds and sorted splits, splitting the bounds
   // as appropriate and adding them to the result list ('new_bounds').
 
   auto split = splits.begin();
-  for (auto& bound : *bounds) {
-    string& lower = bound.first;
-    const string& upper = bound.second;
+  for (auto& bound : *bounds_with_hash_schemas) {
+    string& lower = bound.lower;
+    const string& upper = bound.upper;
 
     for (; split != splits.end() && (upper.empty() || *split <= upper); split++) {
       if (!lower.empty() && *split < lower) {
@@ -337,36 +359,33 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
       }
       // Split the current bound. Add the lower section to the result list,
       // and continue iterating on the upper section.
-      new_bounds.emplace_back(std::move(lower), *split);
+      new_bounds_with_hash_schemas.emplace_back(RangeWithHashSchemas{std::move(lower), *split, {}});
       lower = std::move(*split);
     }
 
-    new_bounds.emplace_back(std::move(lower), upper);
+    new_bounds_with_hash_schemas.emplace_back(RangeWithHashSchemas{std::move(lower), upper, {}});
   }
 
   if (split != splits.end()) {
     return Status::InvalidArgument("split out of bounds", RangeKeyDebugString(*split, schema));
   }
 
-  bounds->swap(new_bounds);
-  CHECK_EQ(expected_bounds, bounds->size());
+  bounds_with_hash_schemas->swap(new_bounds_with_hash_schemas);
+  CHECK_EQ(expected_bounds, bounds_with_hash_schemas->size());
   return Status::OK();
 }
 
-Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_rows,
-                                         const vector<pair<KuduPartialRow,
-                                                           KuduPartialRow>>& range_bounds,
-                                         const Schema& schema,
-                                         vector<Partition>* partitions) const {
-  const KeyEncoder<string>& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
-
-  // Create a partition per hash bucket combination.
-  *partitions = vector<Partition>(1);
-  for (const HashBucketSchema& bucket_schema : hash_bucket_schemas_) {
+vector<Partition> PartitionSchema::GenerateHashPartitions(const HashBucketSchemas& hash_schemas,
+                                                          const KeyEncoder<string>& hash_encoder) {
+  vector<Partition> hash_partitions(1);
+  // Create a partition for each hash bucket combination.
+  for (const HashBucketSchema& bucket_schema : hash_schemas) {
+    auto expected_partitions = hash_partitions.size() * bucket_schema.num_buckets;
     vector<Partition> new_partitions;
+    new_partitions.reserve(expected_partitions);
     // For each of the partitions created so far, replicate it
-    // by the number of buckets in the next hash bucketing component
-    for (const Partition& base_partition : *partitions) {
+    // by the number of buckets in the next hash bucketing component.
+    for (const Partition& base_partition : hash_partitions) {
       for (int32_t bucket = 0; bucket < bucket_schema.num_buckets; bucket++) {
         Partition partition = base_partition;
         partition.hash_buckets_.push_back(bucket);
@@ -375,8 +394,30 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
         new_partitions.push_back(partition);
       }
     }
-    partitions->swap(new_partitions);
+    hash_partitions = std::move(new_partitions);
   }
+  return hash_partitions;
+}
+
+Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_rows,
+                                         const vector<pair<KuduPartialRow,
+                                                           KuduPartialRow>>& range_bounds,
+                                         const RangeHashSchema& range_hash_schemas,
+                                         const Schema& schema,
+                                         vector<Partition>* partitions) const {
+  const auto& hash_encoder = GetKeyEncoder<string>(GetTypeInfo(UINT32));
+
+  if (!split_rows.empty()) {
+    for (const auto& hash_schemas : range_hash_schemas) {
+      if (!hash_schemas.empty()) {
+        return Status::InvalidArgument("Both 'split_rows' and 'range_hash_schemas' cannot be "
+                                       "populated at the same time.");
+      }
+    }
+  }
+
+  vector<Partition> base_hash_partitions = GenerateHashPartitions(hash_bucket_schemas_,
+                                                                  hash_encoder);
 
   std::unordered_set<int> range_column_idxs;
   for (const ColumnId& column_id : range_schema_.column_ids) {
@@ -391,24 +432,52 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     }
   }
 
-  vector<pair<string, string>> bounds;
+  vector<RangeWithHashSchemas> bounds_with_hash_schemas;
   vector<string> splits;
-  RETURN_NOT_OK(EncodeRangeBounds(range_bounds, schema, &bounds));
+  RETURN_NOT_OK(EncodeRangeBounds(range_bounds, range_hash_schemas, schema,
+                                  &bounds_with_hash_schemas));
   RETURN_NOT_OK(EncodeRangeSplits(split_rows, schema, &splits));
-  RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds));
+  RETURN_NOT_OK(SplitRangeBounds(schema, std::move(splits), &bounds_with_hash_schemas));
 
-  // Create a partition per range bound and hash bucket combination.
-  vector<Partition> new_partitions;
-  for (const Partition& base_partition : *partitions) {
-    for (const auto& bound : bounds) {
-      Partition partition = base_partition;
-      partition.partition_key_start_.append(bound.first);
-      partition.partition_key_end_.append(bound.second);
-      new_partitions.push_back(partition);
+  if (!range_hash_schemas.empty()) {
+    // Hash schemas per range cannot be applied to split rows.
+    DCHECK_EQ(range_hash_schemas.size(), bounds_with_hash_schemas.size());
+    vector<Partition> result_partitions;
+    // Iterate through each bound and its hash schemas to generate hash partitions.
+    for (const auto& bound : bounds_with_hash_schemas) {
+      const auto& current_range_hash_schemas = bound.hash_schemas;
+      vector<Partition> current_bound_hash_partitions;
+      // If current bound's HashBucketSchema is empty, implies use of default table-wide schema.
+      // If not empty, generate hash partitions for all the provided hash schemas in this range.
+      if (current_range_hash_schemas.empty()) {
+        current_bound_hash_partitions = base_hash_partitions;
+      } else {
+        current_bound_hash_partitions = GenerateHashPartitions(current_range_hash_schemas,
+                                                               hash_encoder);
+      }
+      // Adds range part to partition key.
+      for (Partition& partition : current_bound_hash_partitions) {
+        partition.partition_key_start_.append(bound.lower);
+        partition.partition_key_end_.append(bound.upper);
+      }
+      result_partitions.insert(result_partitions.end(),
+                               std::make_move_iterator(current_bound_hash_partitions.begin()),
+                               std::make_move_iterator(current_bound_hash_partitions.end()));
     }
+    *partitions = std::move(result_partitions);
+  } else {
+    // Create a partition per range bound and hash bucket combination.
+    vector<Partition> new_partitions;
+    for (const Partition &base_partition : base_hash_partitions) {
+      for (const auto& bound : bounds_with_hash_schemas) {
+        Partition partition = base_partition;
+        partition.partition_key_start_.append(bound.lower);
+        partition.partition_key_end_.append(bound.upper);
+        new_partitions.push_back(partition);
+      }
+    }
+    *partitions = std::move(new_partitions);
   }
-  partitions->swap(new_partitions);
-
   // Note: the following discussion and logic only takes effect when the table's
   // partition schema includes at least one hash bucket component, and the
   // absolute upper and/or absolute lower range bound is unbounded.

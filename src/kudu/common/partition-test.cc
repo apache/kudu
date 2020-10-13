@@ -19,7 +19,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <random>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -41,6 +43,7 @@ using boost::optional;
 using std::pair;
 using std::string;
 using std::vector;
+using std::make_pair;
 
 namespace kudu {
 
@@ -72,7 +75,7 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
   CHECK_EQ(std::max(raw_bounds.size(), 1UL) + raw_splits.size(), expected_partition_ranges.size());
 
   // CREATE TABLE t (col STRING PRIMARY KEY),
-  // PARITITION BY RANGE (col);
+  // PARTITION BY RANGE (col);
   Schema schema({ ColumnSchema("col", STRING) }, { ColumnId(0) }, 1);
 
   PartitionSchema partition_schema;
@@ -103,7 +106,7 @@ void CheckCreateRangePartitions(const vector<pair<optional<string>, optional<str
   }
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(splits, bounds, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(splits, bounds, {}, schema, &partitions));
   ASSERT_EQ(expected_partition_ranges.size(), partitions.size());
 
   for (int i = 0; i < partitions.size(); i++) {
@@ -129,7 +132,7 @@ TEST_F(PartitionTest, TestCompoundRangeKeyEncoding) {
 
   // CREATE TABLE t (c1 STRING, c2 STRING, c3 STRING),
   // PRIMARY KEY (c1, c2, c3)
-  // PARITITION BY RANGE (c1, c2, c3);
+  // PARTITION BY RANGE (c1, c2, c3);
   Schema schema({ ColumnSchema("c1", STRING),
                   ColumnSchema("c2", STRING),
                   ColumnSchema("c3", STRING) },
@@ -175,7 +178,7 @@ TEST_F(PartitionTest, TestCompoundRangeKeyEncoding) {
   }
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(splits, bounds, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(splits, bounds, {}, schema, &partitions));
   ASSERT_EQ(4, partitions.size());
 
   EXPECT_TRUE(partitions[0].hash_buckets().empty());
@@ -192,7 +195,7 @@ TEST_F(PartitionTest, TestCompoundRangeKeyEncoding) {
 
 TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   // CREATE TABLE t (a INT32, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
-  // PARITITION BY [HASH BUCKET (a, b), HASH BUCKET (c), RANGE (a, b, c)];
+  // PARTITION BY [HASH BUCKET (a, b), HASH BUCKET (c), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", INT32),
                   ColumnSchema("b", STRING),
                   ColumnSchema("c", STRING) },
@@ -418,7 +421,7 @@ TEST_F(PartitionTest, TestCreateRangePartitions) {
 
 TEST_F(PartitionTest, TestCreateHashBucketPartitions) {
   // CREATE TABLE t (a VARCHAR PRIMARY KEY),
-  // PARITITION BY [HASH BUCKET (a)];
+  // PARTITION BY [HASH BUCKET (a)];
   Schema schema({ ColumnSchema("a", STRING) }, { ColumnId(0) }, 1);
 
   PartitionSchemaPB schema_builder;
@@ -433,10 +436,11 @@ TEST_F(PartitionTest, TestCreateHashBucketPartitions) {
   //
   // [ (_), (1) )
   // [ (1), (2) )
-  // [ (3), (_) )
+  // [ (2), (_) )
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+  ASSERT_OK(
+      partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {}, schema, &partitions));
   ASSERT_EQ(3, partitions.size());
 
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
@@ -471,7 +475,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
 
   // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
-  // PARITITION BY [HASH BUCKET (a), HASH BUCKET (b), RANGE (a, b, c)];
+  // PARTITION BY [HASH BUCKET (a), HASH BUCKET (b), RANGE (a, b, c)];
   Schema schema({ ColumnSchema("a", STRING),
                   ColumnSchema("b", STRING),
                   ColumnSchema("c", STRING) },
@@ -529,7 +533,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   // Split keys need not be passed in sorted order.
   vector<KuduPartialRow> split_rows = { split_b, split_a };
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(split_rows, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(split_rows, {}, {}, schema, &partitions));
   ASSERT_EQ(12, partitions.size());
 
   EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
@@ -659,7 +663,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
 
 TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
   // CREATE TABLE t (a INT8, b INT8, c INT8, PRIMARY KEY (a, b, c))
-  // PARITITION BY RANGE (a, b, c);
+  // PARTITION BY RANGE (a, b, c);
   Schema schema({ ColumnSchema("c1", INT8),
                   ColumnSchema("c2", INT8),
                   ColumnSchema("c3", INT8) },
@@ -752,7 +756,7 @@ TEST_F(PartitionTest, TestIncrementRangePartitionBounds) {
 
 TEST_F(PartitionTest, TestIncrementRangePartitionStringBounds) {
   // CREATE TABLE t (a STRING, b STRING, PRIMARY KEY (a, b))
-  // PARITITION BY RANGE (a, b, c);
+  // PARTITION BY RANGE (a, b, c);
   Schema schema({ ColumnSchema("c1", STRING),
                   ColumnSchema("c2", STRING) },
                 { ColumnId(0), ColumnId(1) }, 2);
@@ -856,5 +860,225 @@ TEST_F(PartitionTest, TestVarcharRangePartitions) {
     check(test, true);
     check(test, false);
   }
+}
+
+namespace {
+void CheckPartitions(const vector<Partition>& partitions) {
+  ASSERT_EQ(16, partitions.size());
+
+  EXPECT_EQ(0, partitions[0].hash_buckets()[0]);
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[0].range_key_start());
+  EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[0].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "a1\0\0\0\0c1", 12),partitions[0].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "a2\0\0\0\0c2", 12),partitions[0].partition_key_end());
+
+  EXPECT_EQ(1, partitions[1].hash_buckets()[0]);
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[1].range_key_start());
+  EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[1].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "a1\0\0\0\0c1", 12),partitions[1].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "a2\0\0\0\0c2", 12),partitions[1].partition_key_end());
+
+  EXPECT_EQ(2, partitions[2].hash_buckets()[0]);
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[2].range_key_start());
+  EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[2].range_key_end());
+  EXPECT_EQ(string("\0\0\0\2" "a1\0\0\0\0c1", 12),partitions[2].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\2" "a2\0\0\0\0c2", 12),partitions[2].partition_key_end());
+
+  EXPECT_EQ(3, partitions[3].hash_buckets()[0]);
+  EXPECT_EQ(string("a1\0\0\0\0c1", 8), partitions[3].range_key_start());
+  EXPECT_EQ(string("a2\0\0\0\0c2", 8), partitions[3].range_key_end());
+  EXPECT_EQ(string("\0\0\0\3" "a1\0\0\0\0c1", 12),partitions[3].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\3" "a2\0\0\0\0c2", 12),partitions[3].partition_key_end());
+
+  EXPECT_EQ(0, partitions[4].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[4].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[4].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[4].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a3\0\0b3\0\0", 16),partitions[4].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a4\0\0b4\0\0", 16),partitions[4].partition_key_end());
+
+  EXPECT_EQ(0, partitions[5].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[5].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[5].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[5].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a3\0\0b3\0\0", 16),partitions[5].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[5].partition_key_end());
+
+  EXPECT_EQ(1, partitions[6].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[6].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[6].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[6].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a3\0\0b3\0\0", 16),partitions[6].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a4\0\0b4\0\0", 16),partitions[6].partition_key_end());
+
+  EXPECT_EQ(1, partitions[7].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[7].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[7].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[7].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a3\0\0b3\0\0", 16),partitions[7].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[7].partition_key_end());
+
+  EXPECT_EQ(2, partitions[8].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[8].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[8].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[8].range_key_end());
+  EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a3\0\0b3\0\0", 16),partitions[8].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\2" "\0\0\0\0" "a4\0\0b4\0\0", 16),partitions[8].partition_key_end());
+
+  EXPECT_EQ(2, partitions[9].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[9].hash_buckets()[1]);
+  EXPECT_EQ(string("a3\0\0b3\0\0", 8),partitions[9].range_key_start());
+  EXPECT_EQ(string("a4\0\0b4\0\0", 8),partitions[9].range_key_end());
+  EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a3\0\0b3\0\0", 16),partitions[9].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\2" "\0\0\0\1" "a4\0\0b4\0\0", 16),partitions[9].partition_key_end());
+
+  EXPECT_EQ(0, partitions[10].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[10].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[10].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[10].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a5\0\0b5\0\0", 16),partitions[10].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\0" "a6\0\0\0\0c6", 16),partitions[10].partition_key_end());
+
+  EXPECT_EQ(0, partitions[11].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[11].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[11].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[11].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a5\0\0b5\0\0", 16),partitions[11].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\1" "a6\0\0\0\0c6", 16),partitions[11].partition_key_end());
+
+  EXPECT_EQ(0, partitions[12].hash_buckets()[0]);
+  EXPECT_EQ(2, partitions[12].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[12].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[12].range_key_end());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a5\0\0b5\0\0", 16),partitions[12].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\0" "\0\0\0\2" "a6\0\0\0\0c6", 16),partitions[12].partition_key_end());
+
+  EXPECT_EQ(1, partitions[13].hash_buckets()[0]);
+  EXPECT_EQ(0, partitions[13].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[13].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[13].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a5\0\0b5\0\0", 16),partitions[13].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\0" "a6\0\0\0\0c6", 16),partitions[13].partition_key_end());
+
+  EXPECT_EQ(1, partitions[14].hash_buckets()[0]);
+  EXPECT_EQ(1, partitions[14].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[14].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[14].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a5\0\0b5\0\0", 16),partitions[14].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\1" "a6\0\0\0\0c6", 16),partitions[14].partition_key_end());
+
+  EXPECT_EQ(1, partitions[15].hash_buckets()[0]);
+  EXPECT_EQ(2, partitions[15].hash_buckets()[1]);
+  EXPECT_EQ(string("a5\0\0b5\0\0", 8),partitions[15].range_key_start());
+  EXPECT_EQ(string("a6\0\0\0\0c6", 8),partitions[15].range_key_end());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a5\0\0b5\0\0", 16),partitions[15].partition_key_start());
+  EXPECT_EQ(string("\0\0\0\1" "\0\0\0\2" "a6\0\0\0\0c6", 16),partitions[15].partition_key_end());
+}
+} // namespace
+
+TEST_F(PartitionTest, TestVaryingHashSchemasPerRange) {
+  // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
+  // PARTITION BY [HASH BUCKET (a, c), HASH BUCKET (b), RANGE (a, b, c)];
+  Schema schema({ ColumnSchema("a", STRING),
+                  ColumnSchema("b", STRING),
+                  ColumnSchema("c", STRING) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) }, 3);
+
+  PartitionSchemaPB schema_builder;
+  // Table-wide HashSchema defined below, 3 by 2 buckets so 6 total.
+  AddHashBucketComponent(&schema_builder, { "a", "c" }, 3, 0);
+  AddHashBucketComponent(&schema_builder, { "b" }, 2, 0);
+  PartitionSchema partition_schema;
+  ASSERT_OK(PartitionSchema::FromPB(schema_builder, schema, &partition_schema));
+
+  ASSERT_EQ("HASH (a, c) PARTITIONS 3, HASH (b) PARTITIONS 2, RANGE (a, b, c)",
+            partition_schema.DebugString(schema));
+
+  vector<pair<KuduPartialRow, KuduPartialRow>> bounds;
+  PartitionSchema::RangeHashSchema range_hash_schemas;
+  vector<pair<pair<KuduPartialRow, KuduPartialRow>,
+      PartitionSchema::HashBucketSchemas>> bounds_with_hash_schemas;
+
+  { // [(a1, _, c1), (a2, _, c2))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a1"));
+    ASSERT_OK(lower.SetStringCopy("c", "c1"));
+    ASSERT_OK(upper.SetStringCopy("a", "a2"));
+    ASSERT_OK(upper.SetStringCopy("c", "c2"));
+    PartitionSchema::HashBucketSchemas hash_schema_4_buckets = {{{ColumnId(0)}, 4, 0}};
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(hash_schema_4_buckets);
+    bounds_with_hash_schemas.emplace_back(make_pair(std::move(lower), std::move(upper)),
+                                          std::move(hash_schema_4_buckets));
+  }
+
+  { // [(a3, b3, _), (a4, b4, _))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a3"));
+    ASSERT_OK(lower.SetStringCopy("b", "b3"));
+    ASSERT_OK(upper.SetStringCopy("a", "a4"));
+    ASSERT_OK(upper.SetStringCopy("b", "b4"));
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(PartitionSchema::HashBucketSchemas());
+    bounds_with_hash_schemas.emplace_back(make_pair(std::move(lower), std::move(upper)),
+                                          PartitionSchema::HashBucketSchemas());
+  }
+
+  { // [(a5, b5, _), (a6, _, c6))
+    KuduPartialRow lower(&schema);
+    KuduPartialRow upper(&schema);
+    ASSERT_OK(lower.SetStringCopy("a", "a5"));
+    ASSERT_OK(lower.SetStringCopy("b", "b5"));
+    ASSERT_OK(upper.SetStringCopy("a", "a6"));
+    ASSERT_OK(upper.SetStringCopy("c", "c6"));
+    PartitionSchema::HashBucketSchemas hash_schema_2_buckets_by_3 = {
+        {{ColumnId(0)}, 2, 0},
+        {{ColumnId(1)}, 3, 0}
+    };
+    bounds.emplace_back(lower, upper);
+    range_hash_schemas.emplace_back(hash_schema_2_buckets_by_3);
+    bounds_with_hash_schemas.emplace_back(make_pair(std::move(lower), std::move(upper)),
+                                          std::move(hash_schema_2_buckets_by_3));
+  }
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  CheckPartitions(partitions);
+
+  bounds.clear();
+  range_hash_schemas.clear();
+  partitions.clear();
+
+  // Using std::random_shuffle to insert bounds and their hash schemas out of sorted order,
+  // yet resulting partitions will still be the same.
+  std::mt19937 gen(SeedRandom());
+  std::shuffle(bounds_with_hash_schemas.begin(), bounds_with_hash_schemas.end(), gen);
+
+  for (const auto& bounds_and_schema : bounds_with_hash_schemas) {
+    bounds.emplace_back(bounds_and_schema.first);
+    range_hash_schemas.emplace_back(bounds_and_schema.second);
+  }
+
+  ASSERT_OK(partition_schema.CreatePartitions({}, bounds, range_hash_schemas, schema, &partitions));
+  CheckPartitions(partitions);
+
+  // not clearing bounds or range_hash_schemas, adding a split row to test incompatibility
+  vector<KuduPartialRow> splits;
+  { // split: (a1, _, c12)
+    KuduPartialRow split(&schema);
+    ASSERT_OK(split.SetStringCopy("a", "a1"));
+    ASSERT_OK(split.SetStringCopy("c", "c12"));
+    splits.emplace_back(std::move(split));
+  }
+
+  // expecting Status:InvalidArgument due to 'splits' and schemas within 'range_hash_schemas'
+  // being defined at the same time.
+  Status s = partition_schema.CreatePartitions(splits, bounds, range_hash_schemas,
+                                               schema, &partitions);
+  ASSERT_EQ("Invalid argument: Both 'split_rows' and 'range_hash_schemas' "
+            "cannot be populated at the same time.", s.ToString());
+
 }
 } // namespace kudu

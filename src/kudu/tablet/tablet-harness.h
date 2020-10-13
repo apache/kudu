@@ -53,7 +53,7 @@ static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema
 
   // Create the tablet partitions.
   std::vector<Partition> partitions;
-  CHECK_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  CHECK_OK(partition_schema.CreatePartitions({}, {}, {}, schema, &partitions));
   CHECK_EQ(1, partitions.size());
   return std::make_pair(partition_schema, partitions[0]);
 }

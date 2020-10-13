@@ -114,7 +114,7 @@ TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
   ASSERT_OK(split2.SetInt8("c", 10));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
 
   // Creates a scan with optional lower and upper bounds, and checks that the
   // expected number of tablets are pruned.
@@ -236,7 +236,7 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   ASSERT_OK(split2.SetStringCopy("b", "r"));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
 
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
@@ -349,7 +349,7 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
   ASSERT_OK(split.SetInt8("b", 0));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split }, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split }, {}, {}, schema, &partitions));
 
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
@@ -439,7 +439,7 @@ TEST_F(PartitionPrunerTest, TestRangePruning) {
   ASSERT_OK(split2.SetStringCopy("b", "r"));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1, split2 }, {}, {}, schema, &partitions));
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
@@ -617,7 +617,8 @@ TEST_F(PartitionPrunerTest, TestHashPruning) {
     ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
     vector<Partition> partitions;
-    ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+    ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+                                                       schema, &partitions));
 
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -706,7 +707,8 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+                                                     schema, &partitions));
 
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -794,7 +796,8 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, {},
+                                                     schema, &partitions));
 
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -899,8 +902,8 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   ASSERT_OK(split.SetUnixTimeMicros("time", 10));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ split },
-                                              {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ split }, {}, {},
+                                                     schema, &partitions));
   ASSERT_EQ(4, partitions.size());
 
   // Applies the specified predicates to a scan and checks that the expected
@@ -1012,7 +1015,7 @@ TEST_F(PartitionPrunerTest, TestKudu2173) {
   KuduPartialRow split1(&schema);
   ASSERT_OK(split1.SetInt8("a", 10));
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions({ split1 }, {}, schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ split1 }, {}, {}, schema, &partitions));
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
