@@ -25,6 +25,9 @@ dependencies {
   compile(libs.hadoopCommon) {
     // hadoopCommon and rangerPlugin use different versions of jersey.
     exclude group: "com.sun.jersey"
+    // Exclude log4j and slf4j to ensure we use our own versions.
+    exclude group: "log4j"
+    exclude group: "org.slf4j"
   }
   compile libs.protobufJava
   compile libs.protobufJavaUtil
@@ -33,10 +36,14 @@ dependencies {
     // rangerPlugin depends on kafka which includes different versions
     // of jersey than rangerPlugin.
     exclude group: "org.apache.kafka"
+    // Exclude log4j and slf4j to ensure we use our own versions.
+    exclude group: "log4j"
+    exclude group: "org.slf4j"
   }
   compile libs.slf4jApi
   compile libs.log4jApi
   compile libs.log4jCore
+  compile libs.log4jCompat
   compile libs.log4jSlf4jImpl
 
   optional libs.jsr305
@@ -44,10 +51,6 @@ dependencies {
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile libs.junit
-  testCompile libs.log4jApi
-  testCompile libs.log4jCompat
-  testCompile libs.log4jCore
-  testCompile libs.log4jSlf4jImpl
   testCompile libs.mockitoCore
 }
 
