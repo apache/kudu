@@ -857,6 +857,17 @@ TEST_F(ClientTest, TestBadTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "Not found: the table does not exist");
 }
 
+// If no master address is specified, KuduClientBuilder::Build() should
+// immediately return corresponding status code instead of stalling with
+// ConnectToCluster() for a long time.
+TEST_F(ClientTest, ConnectToClusterNoMasterAddressSpecified) {
+  shared_ptr<KuduClient> c;
+  KuduClientBuilder b;
+  auto s = b.Build(&c);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no master address specified");
+}
+
 // Test that, if the master is down, we experience a network error talking
 // to it (no "find the new leader master" since there's only one master).
 TEST_F(ClientTest, TestMasterDown) {

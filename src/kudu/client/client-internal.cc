@@ -686,6 +686,10 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
                                              CredentialsPolicy creds_policy) {
   DCHECK(deadline.Initialized());
 
+  if (master_server_addrs_.empty()) {
+    cb(Status::InvalidArgument("no master address specified"));
+  }
+
   vector<pair<Sockaddr, string>> master_addrs_with_names;
   for (const string& master_server_addr : master_server_addrs_) {
     vector<Sockaddr> addrs;
