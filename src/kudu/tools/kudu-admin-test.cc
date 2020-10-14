@@ -517,15 +517,14 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
-  vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id, kTimeout, &leader_ts));
+  vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id, kTimeout, &followers));
   });
-  OpId opid;
-  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout, &opid));
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout));
 
   // Shut down master so it doesn't interfere while we shut down the leader and
   // one of the other followers.
@@ -552,6 +551,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
                                             3, tablet_id, kTimeout,
                                             WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
+  OpId opid;
   ASSERT_OK(WaitForOpFromCurrentTerm(followers[0], tablet_id, COMMITTED_OPID, kTimeout, &opid));
 
   active_tablet_servers.clear();
@@ -608,14 +608,14 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
   // Shut down servers follower1 and follower2,
   // so that we can force new config on remaining leader.
@@ -693,14 +693,14 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
   // Shut down leader and prepare 2-node config.
   cluster_->tablet_server_by_uuid(leader_ts->uuid())->Shutdown();
@@ -777,15 +777,16 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
   ASSERT_EQ(followers.size(), 4);
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
+
   cluster_->tablet_server_by_uuid(followers[2]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(followers[3]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(leader_ts->uuid())->Shutdown();
@@ -856,15 +857,15 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
   ASSERT_EQ(followers.size(), 2);
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
   // Shut down servers follower1 and follower2,
   // so that leader can't replicate future config change ops.
@@ -944,14 +945,14 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
   // Shut down servers follower1 and follower2,
   // so that leader can't replicate future config change ops.
@@ -1043,14 +1044,14 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   });
+  // Wait for initial NO_OP to be committed by the leader.
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id_, COMMITTED_OPID, kTimeout));
 
   // Shut down servers follower1 and follower2,
   // so that leader can't replicate future config change ops.
