@@ -88,8 +88,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    * @param client a Kudu client for the cluster
    * @return a scanner for the scan token
    */
-  public KuduScanner intoScanner(KuduClient client) throws Exception {
-    return pbIntoScanner(message, client);
+  public KuduScanner intoScanner(KuduClient client) throws IOException {
+    return pbIntoScannerBuilder(message, client).build();
   }
 
   /**
@@ -123,7 +123,18 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    */
   public static KuduScanner deserializeIntoScanner(byte[] buf, KuduClient client)
       throws IOException {
-    return pbIntoScanner(ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf)), client);
+    return deserializeIntoScannerBuilder(buf, client).build();
+  }
+
+  /**
+   * Deserializes a {@code KuduScanToken} into a {@link KuduScanner.KuduScannerBuilder}.
+   * @param buf a byte array containing the serialized scan token.
+   * @param client a Kudu client for the cluster
+   * @return a scanner builder for the serialized scan token
+   */
+  public static KuduScanner.KuduScannerBuilder deserializeIntoScannerBuilder(
+      byte[] buf, KuduClient client) throws IOException {
+    return pbIntoScannerBuilder(ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf)), client);
   }
 
   /**
@@ -195,8 +206,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
   }
 
   @SuppressWarnings("deprecation")
-  private static KuduScanner pbIntoScanner(ScanTokenPB message,
-                                           KuduClient client) throws KuduException {
+  private static KuduScanner.KuduScannerBuilder pbIntoScannerBuilder(
+      ScanTokenPB message, KuduClient client) throws KuduException {
     Preconditions.checkArgument(
         !message.getFeatureFlagsList().contains(ScanTokenPB.Feature.Unknown),
         "Scan token requires an unsupported feature. This Kudu client must be updated.");
@@ -340,7 +351,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       builder.keepAlivePeriodMs(message.getKeepAlivePeriodMs());
     }
 
-    return builder.build();
+    return builder;
   }
 
   private static KuduTable getKuduTable(ScanTokenPB message,

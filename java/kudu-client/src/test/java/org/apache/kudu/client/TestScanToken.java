@@ -35,9 +35,12 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -661,5 +664,33 @@ public class TestScanToken {
     assertTrue(tokenWithAllMetadataBytes.length > tokenWithTableMetadataBytes.length);
     assertTrue(tokenWithTableMetadataBytes.length > tokenWithTabletMetadataBytes.length);
     assertTrue(tokenWithTabletMetadataBytes.length > tokenBytes.length);
+  }
+
+  @Test
+  public void testScanTokensWithExtraPredicate() throws IOException {
+    final int NUM_ROWS_DESIRED = 100;
+    final int PREDICATE_INDEX = 0;
+    final int PREDICATE_VAL = 1;
+    KuduTable table = createDefaultTable(client, testTableName);
+    loadDefaultTable(client, testTableName, NUM_ROWS_DESIRED);
+    KuduScanToken.KuduScanTokenBuilder builder =
+        new KuduScanToken.KuduScanTokenBuilder(asyncClient, table);
+    List<KuduScanToken> tokens = builder.build();
+    ColumnSchema cs = table.getSchema().getColumnByIndex(PREDICATE_INDEX);
+    KuduPredicate predicate = KuduPredicate.newComparisonPredicate(
+        cs, KuduPredicate.ComparisonOp.EQUAL, PREDICATE_VAL);
+    Set<Integer> resultKeys = new HashSet<>();
+    for (KuduScanToken token : tokens) {
+      byte[] serialized = token.serialize();
+      KuduScanner.KuduScannerBuilder scannerBuilder = KuduScanToken.deserializeIntoScannerBuilder(
+          serialized, client);
+      scannerBuilder.addPredicate(predicate);
+      KuduScanner scanner = scannerBuilder.build();
+      for (RowResult rowResult : scanner) {
+        resultKeys.add(rowResult.getInt(PREDICATE_INDEX));
+      }
+    }
+    assertEquals(1, resultKeys.size());
+    assertEquals(PREDICATE_VAL, Iterables.getOnlyElement(resultKeys).intValue());
   }
 }
