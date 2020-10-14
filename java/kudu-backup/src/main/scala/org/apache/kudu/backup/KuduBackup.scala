@@ -17,7 +17,7 @@
 
 package org.apache.kudu.backup
 
-import scala.concurrent.forkjoin.ForkJoinPool
+import java.util.concurrent.ForkJoinPool
 
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SaveMode

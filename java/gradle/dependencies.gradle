@@ -55,7 +55,7 @@ versions += [
     protobuf       : "3.13.0",
     ranger         : "2.1.0",
     scala211       : "2.11.12",
-    scala          : "2.12.10",
+    scala          : "2.12.12",
     scalatest      : "3.2.2",
     scopt          : "3.7.1",
     slf4j          : "1.7.30",

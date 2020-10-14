@@ -33,7 +33,6 @@ import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
 import org.apache.kudu.client.PartialRow
 import org.apache.kudu.client.PartitionSchema
-import org.apache.kudu.util.DateUtil
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
@@ -330,7 +329,6 @@ object TableMetadata {
   def getCreateTableOptionsWithoutRangePartitions(
       metadata: TableMetadataPB,
       restoreOwner: Boolean): CreateTableOptions = {
-    val schema = getKuduSchema(metadata)
     val options = new CreateTableOptions()
     if (restoreOwner) {
       options.setOwner(metadata.getTableOwner)

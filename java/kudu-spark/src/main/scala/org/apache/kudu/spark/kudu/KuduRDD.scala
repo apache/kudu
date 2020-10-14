@@ -60,7 +60,7 @@ class KuduRDD private[kudu] (
       .batchSizeBytes(options.batchSize)
       .setProjectedColumnNames(projectedCols.toSeq.asJava)
       .setFaultTolerant(options.faultTolerantScanner)
-      .keepAlivePeriodMs(options.keepAlivePeriodMs)
+      .keepAlivePeriodMs(keepAlivePeriodMs)
       .cacheBlocks(true)
 
     // A scan is partitioned to multiple ones. If scan locality is enabled,

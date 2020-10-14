@@ -74,6 +74,6 @@ public class HostAndPort {
 
   @Override
   public String toString() {
-    return address.toString();
+    return address.getHostName() + ":" + address.getPort();
   }
 }

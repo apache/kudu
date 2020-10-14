@@ -79,7 +79,7 @@ public class TestNetUtil {
         new HostAndPort("127.0.0.1", 1111),
         new HostAndPort("1.2.3.4.5", 0)
     );
-    assertEquals(NetUtil.hostsAndPortsToString(hostsAndPorts), "127.0.0.1:1111,1.2.3.4.5:0");
+    assertEquals("127.0.0.1:1111,1.2.3.4.5:0", NetUtil.hostsAndPortsToString(hostsAndPorts));
   }
 
   @Test

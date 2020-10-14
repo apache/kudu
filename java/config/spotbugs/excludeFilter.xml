@@ -88,6 +88,17 @@
          </Or>
     </Match>
     <Match>
+        <!-- Spotbugs can trigger false positives for redundant null checks on JDK 11+.
+         See https://github.com/spotbugs/spotbugs/issues/756
+         This is fixed in SpotBugs 4.1.3, but we can't upgrade yet due to
+         https://github.com/spotbugs/spotbugs/issues/1272
+         -->
+        <Or>
+            <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE" />
+            <Bug pattern="RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE" />
+        </Or>
+    </Match>
+    <Match>
         <!-- Disable warnings about mutable objects and the use of public fields.
          Though these are important concerns, we have many instances of this warning
          and "fixing" the warning could have performance implications. -->

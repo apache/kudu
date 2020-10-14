@@ -44,6 +44,7 @@ tasks.withType(Test) {
   if (JavaVersion.current().isJava9Compatible()) {
     jvmArgs += "--illegal-access=permit"
     def reflectionModules = [
+        "java.base/java.io",   // java.io reflection is used by Spark
         "java.base/java.lang", // java.lang reflection is used by TestUtils
         "java.base/java.net",  // java.net reflection is used by FakeDNS
         "java.base/java.nio",  // java.nio reflection is used by Protobuf

@@ -17,6 +17,17 @@
 
 apply plugin: "nebula.clojure"
 
+// Clojure doesn't support Java 12+
+// https://clojure.org/releases/downloads#_java_compatibility
+if(JavaVersion.current().isJava12Compatible()) {
+  // Disable all tasks for the `kudu-jepsen` sub-project.
+  gradle.taskGraph.whenReady {
+    gradle.taskGraph.allTasks.each {
+      it.onlyIf { it.project != project }
+    }
+  }
+}
+
 repositories {
   maven { url "https://clojars.org/repo/" }
 }

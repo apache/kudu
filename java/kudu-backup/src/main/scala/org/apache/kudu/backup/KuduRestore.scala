@@ -17,6 +17,8 @@
 
 package org.apache.kudu.backup
 
+import java.util.concurrent.ForkJoinPool
+
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.client.KuduPartitioner
@@ -32,7 +34,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
-import scala.concurrent.forkjoin.ForkJoinPool
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -84,7 +85,6 @@ object KuduRestore {
       }
       val backupSchema = BackupUtils.dataSchema(TableMetadata.getKuduSchema(metadata))
       val rowActionCol = backupSchema.fields.last.name
-      val table = context.syncClient.openTable(restoreName)
 
       var data = session.sqlContext.read
         .format(metadata.getDataFormat)
