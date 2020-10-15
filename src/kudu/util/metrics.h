@@ -917,6 +917,10 @@ class MetricPrototypeRegistry {
   // Convenience wrapper around WriteAsJson(...). This dumps the JSON information
   // to stdout.
   void WriteAsJson() const;
+
+  // This dumps the XML information to stdout.
+  void WriteAsXML() const;
+
  private:
   friend class Singleton<MetricPrototypeRegistry>;
   friend class MetricPrototype;

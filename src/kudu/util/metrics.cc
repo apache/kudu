@@ -615,6 +615,35 @@ void MetricPrototypeRegistry::WriteAsJson() const {
   std::cout << s.str() << std::endl;
 }
 
+void MetricPrototypeRegistry::WriteAsXML() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  std::cout << "<?xml version=\"1.0\"?>" << "\n";
+  // Add a root node for the document.
+  std::cout << "<AllMetrics>" << "\n";
+
+  // Dump metric prototypes.
+  for (const MetricPrototype* p : metrics_) {
+    std::cout << "<metric>";
+    std::cout << "<name>" << p->name() << "</name>";
+    std::cout << "<label>" << p->label() << "</label>";
+    std::cout << "<type>" << MetricType::Name(p->type()) << "</type>";
+    std::cout << "<unit>" << MetricUnit::Name(p->unit()) << "</unit>";
+    std::cout << "<description>" << p->description() << "</description>";
+    std::cout << "<level>" << MetricLevelName(p->level()) << "</level>";
+    std::cout << "<entity_type>" << p->entity_type() << "</entity_type>";
+    std::cout << "</metric>" << "\n";
+  }
+
+  // Dump entity prototypes.
+  for (const MetricEntityPrototype* e : entities_) {
+    std::cout << "<entity>";
+    std::cout << "<name>" << e->name() << "</name>";
+    std::cout << "</entity>" << "\n";
+  }
+
+  std::cout << "</AllMetrics>" << "\n";
+}
+
 //
 // MetricPrototype
 //

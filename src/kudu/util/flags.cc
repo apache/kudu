@@ -72,6 +72,11 @@ DEFINE_bool(dump_metrics_json, false,
             "by this binary.");
 TAG_FLAG(dump_metrics_json, hidden);
 
+DEFINE_bool(dump_metrics_xml, false,
+            "Dump an XML document describing all of the metrics which may be emitted "
+            "by this binary.");
+TAG_FLAG(dump_metrics_xml, hidden);
+
 #ifdef TCMALLOC_ENABLED
 DEFINE_bool(enable_process_lifetime_heap_profiling, false, "Enables heap "
     "profiling for the lifetime of the process. Profile output will be stored in the "
@@ -492,6 +497,9 @@ void HandleCommonFlags() {
     exit(1);
   } else if (FLAGS_dump_metrics_json) {
     MetricPrototypeRegistry::get()->WriteAsJson();
+    exit(0);
+  } else if (FLAGS_dump_metrics_xml) {
+    MetricPrototypeRegistry::get()->WriteAsXML();
     exit(0);
   } else if (FLAGS_version) {
     cout << VersionInfo::GetAllVersionInfo() << endl;

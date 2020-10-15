@@ -154,8 +154,6 @@ binaries=("kudu-master" \
           "kudu-tserver")
 
 for binary in ${binaries[@]}; do
-  echo "Running $binary --helpxml"
-
   (
     # Reset environment to avoid affecting the default flag values.
     for var in $(env | awk -F= '{print $1}' | egrep -i 'KUDU|GLOG'); do
@@ -163,9 +161,14 @@ for binary in ${binaries[@]}; do
       eval "unset $var"
     done
 
-    # Create the XML file.
+    echo "Running $binary --helpxml"
+    # Create the help XML file.
     # This command exits with a nonzero value.
     $BUILD_ROOT/bin/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
+
+    echo "Running $binary --dump_metrics_xml"
+    # Create the metrics XML file.
+    $BUILD_ROOT/bin/$binary --dump_metrics_xml > ${GEN_DOC_DIR}/$(basename $binary)-metrics.xml
   )
 
   # Create the supported config reference
@@ -174,7 +177,7 @@ for binary in ${binaries[@]}; do
     --stringparam support-level supported \
     -o $GEN_DOC_DIR/${binary}_configuration_reference.adoc \
       $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
-    ${GEN_DOC_DIR}/$binary.xml
+    ${GEN_DOC_DIR}/${binary}.xml
   INCLUSIONS_SUPPORTED+="include::${binary}_configuration_reference.adoc[leveloffset=+1]\\"$'\n'
 
   # Create the unsupported config reference
@@ -183,14 +186,26 @@ for binary in ${binaries[@]}; do
     --stringparam support-level unsupported \
     -o $GEN_DOC_DIR/${binary}_configuration_reference_unsupported.adoc \
       $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
-    ${GEN_DOC_DIR}/$binary.xml
+    ${GEN_DOC_DIR}/${binary}.xml
   INCLUSIONS_UNSUPPORTED+="include::${binary}_configuration_reference_unsupported.adoc[leveloffset=+1]\\"$'\n'
+
+  # Create the metrics reference
+  xsltproc \
+    --stringparam binary $binary \
+    -o $GEN_DOC_DIR/${binary}_metrics_reference.adoc \
+      $SOURCE_ROOT/docs/support/xsl/metrics_to_asciidoc.xsl \
+    ${GEN_DOC_DIR}/${binary}-metrics.xml
+  INCLUSIONS_METRICS+="include::${binary}_metrics_reference.adoc[leveloffset=+1]\\"$'\n'
 done
 
 # Add the includes to the configuration reference files, replacing the template lines
 cp $SOURCE_ROOT/docs/configuration_reference* $GEN_DOC_DIR/
 $SED "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference.adoc
 $SED "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference_unsupported.adoc
+
+# Add the includes to the metrics reference files, replacing the template lines
+cp $SOURCE_ROOT/docs/metrics_reference.adoc $GEN_DOC_DIR/
+$SED "s#@@METRICS_REFERENCE@@#${INCLUSIONS_METRICS}#" ${GEN_DOC_DIR}/metrics_reference.adoc
 
 # Create tool references
 echo "Running kudu --helpxml"
@@ -206,7 +221,7 @@ echo "Running kudu --helpxml"
   $BUILD_ROOT/bin/kudu --helpxml > ${GEN_DOC_DIR}/kudu.xml || true
 )
 
-# Create the supported config reference
+# Create the command line tool reference
 xsltproc \
 -o $GEN_DOC_DIR/command_line_tools.adoc \
   $SOURCE_ROOT/docs/support/xsl/tool_to_asciidoc.xsl \

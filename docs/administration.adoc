@@ -115,7 +115,8 @@ The levels are ordered and lower levels include the levels above them. If no lev
                during normal operation.
    * `info` - Generally useful metrics that operators always want to have available
               but may not be monitored under normal circumstances.
-   * `warn` - Metrics which can often indicate operational oddities, which may need more investigation.
+   * `warn` - Metrics which can often indicate operational oddities that may need
+              more investigation.
 
 For example:
 
@@ -123,6 +124,9 @@ For example:
 ----
 $ curl -s 'http://example-ts:8050/metrics?include_schema=1&metrics=connections_accepted'
 ----
+
+NOTE: See the `link:metrics_reference.html[metrics reference]`
+page for more information on the available metrics.
 
 [source,json]
 ----
