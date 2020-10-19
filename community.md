@@ -54,6 +54,7 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
 **Project information**
 
 * [**Apache Kudu Committers list**](/committers.html)
+* [**Apache Kudu Ecosystem**](/ecosystem.html)
 * [**Security**](https://www.apache.org/security/)
 * [**Sponsorship**](https://www.apache.org/foundation/sponsorship.html)
 * [**Thanks**](https://www.apache.org/foundation/thanks.html)
