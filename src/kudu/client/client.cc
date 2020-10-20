@@ -1154,7 +1154,12 @@ KuduError::~KuduError() {
 ////////////////////////////////////////////////////////////
 
 KuduSession::KuduSession(const shared_ptr<KuduClient>& client)
-  : data_(new KuduSession::Data(client, client->data_->messenger_)) {
+    : data_(new KuduSession::Data(client, client->data_->messenger_)) {
+}
+
+KuduSession::KuduSession(const shared_ptr<KuduClient>& client,
+                         const TxnId& txn_id)
+    : data_(new KuduSession::Data(client, client->data_->messenger_, txn_id)) {
 }
 
 KuduSession::~KuduSession() {

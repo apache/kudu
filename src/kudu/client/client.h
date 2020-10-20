@@ -60,6 +60,7 @@ class MonoDelta;
 class Partition;
 class PartitionSchema;
 class SecurityUnknownTskTest;
+class TxnId;
 
 namespace client {
 class KuduClient;
@@ -2039,8 +2040,10 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   friend class ClientTest;
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
+  FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
 
   explicit KuduSession(const sp::shared_ptr<KuduClient>& client);
+  KuduSession(const sp::shared_ptr<KuduClient>& client, const TxnId& txn_id);
 
   // Owned.
   Data* data_;

@@ -27,6 +27,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -70,7 +71,8 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   Batcher(KuduClient* client,
           scoped_refptr<ErrorCollector> error_collector,
           client::sp::weak_ptr<KuduSession> session,
-          kudu::client::KuduSession::ExternalConsistencyMode consistency_mode);
+          kudu::client::KuduSession::ExternalConsistencyMode consistency_mode,
+          const kudu::TxnId& txn_id);
 
   // Abort the current batch. Any writes that were buffered and not yet sent are
   // discarded. Those that were sent may still be delivered.  If there is a pending Flush
@@ -123,6 +125,12 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // accumulated by the batcher.
   int64_t buffer_bytes_used() const {
     return buffer_bytes_used_.Load();
+  }
+
+  // Return the identifier of a multi-row transaction (if any) that all the
+  // accumulated write operations are part of.
+  const TxnId& txn_id() const {
+    return txn_id_;
   }
 
   // Compute in-buffer size for the given write operation.
@@ -185,7 +193,14 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   client::sp::weak_ptr<KuduSession> weak_session_;
 
   // The consistency mode set in the session.
-  kudu::client::KuduSession::ExternalConsistencyMode consistency_mode_;
+  const kudu::client::KuduSession::ExternalConsistencyMode consistency_mode_;
+
+  // The identifier of a transaction that is associated with operations
+  // processed by this batcher. All operations accumulated by one batcher either
+  // related to the same multi-row transaction or all of the accumulated
+  // operations are not a part of any multi-row transaction. In the latter case,
+  // txn_id_.IsValid() would return 'false'.
+  const TxnId txn_id_;
 
   // Errors are reported into this error collector.
   scoped_refptr<ErrorCollector> error_collector_;

@@ -143,6 +143,9 @@ message WriteRequestPB {
 
   // An authorization token with which to authorize this request.
   optional security.SignedTokenPB authz_token = 6;
+
+  // The transaction ID associated with this write request, if any.
+  optional int64 txn_id = 7;
 }
 
 message WriteResponsePB {

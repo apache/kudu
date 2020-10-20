@@ -35,24 +35,21 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/logging.h"
 
+
+using kudu::client::internal::Batcher;
+using kudu::client::internal::ErrorCollector;
+using kudu::client::sp::shared_ptr;
+using kudu::client::sp::weak_ptr;
+using kudu::rpc::Messenger;
 using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
-
-using rpc::Messenger;
-
 namespace client {
 
-using internal::Batcher;
-using internal::ErrorCollector;
-
-using sp::shared_ptr;
-using sp::weak_ptr;
-
-
 KuduSession::Data::Data(shared_ptr<KuduClient> client,
-                        std::weak_ptr<rpc::Messenger> messenger)
+                        std::weak_ptr<rpc::Messenger> messenger,
+                        const TxnId& txn_id)
     : client_(std::move(client)),
       messenger_(std::move(messenger)),
       error_collector_(new ErrorCollector()),
@@ -66,6 +63,7 @@ KuduSession::Data::Data(shared_ptr<KuduClient> client,
       buffer_bytes_limit_(7 * 1024 * 1024),
       buffer_watermark_pct_(50),
       buffer_bytes_used_(0),
+      txn_id_(txn_id),
       buffer_pre_flush_enabled_(true) {
 }
 
@@ -475,7 +473,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
       // no thread-safety is advertised for the kudu::KuduSession interface.
       scoped_refptr<Batcher> batcher(
           new Batcher(client_.get(), error_collector_, session_,
-                      external_consistency_mode_));
+                      external_consistency_mode_, txn_id_));
       if (timeout_.Initialized()) {
         batcher->SetTimeout(timeout_);
       }

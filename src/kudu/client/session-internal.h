@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_SESSION_INTERNAL_H
-#define KUDU_CLIENT_SESSION_INTERNAL_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +26,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/common/txn_id.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"
@@ -63,7 +63,8 @@ class KuduWriteOperation;
 class KuduSession::Data {
  public:
   explicit Data(sp::shared_ptr<KuduClient> client,
-                std::weak_ptr<rpc::Messenger> messenger);
+                std::weak_ptr<rpc::Messenger> messenger,
+                const kudu::TxnId& txn_id = kudu::TxnId::kInvalidTxnId);
 
   void Init(sp::weak_ptr<KuduSession> session);
 
@@ -241,9 +242,14 @@ class KuduSession::Data {
   // The total number of bytes used by buffered write operations.
   int64_t buffer_bytes_used_;  // protected by mutex_
 
+  // Transaction ID for this session's transaction (if any): txn_id_.IsValid()
+  // returns true only if the upper-level session is a transactional one.
+  const TxnId txn_id_;
+
  private:
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
+  FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
 
   bool buffer_pre_flush_enabled_; // Set to 'false' only in test scenarios.
 
@@ -252,5 +258,3 @@ class KuduSession::Data {
 
 } // namespace client
 } // namespace kudu
-
-#endif

@@ -42,6 +42,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/atomic_refcount.h"
@@ -80,6 +81,7 @@ using kudu::security::SignedTokenPB;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using kudu::tserver::WriteResponsePB_PerRowErrorPB;
+using kudu::TxnId;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -294,6 +296,10 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   // If set, propagate the latest observed timestamp.
   if (PREDICT_TRUE(propagated_timestamp != KuduClient::kNoTimestamp)) {
     req_.set_propagated_timestamp(propagated_timestamp);
+  }
+
+  if (batcher->txn_id().IsValid()) {
+    req_.set_txn_id(batcher->txn_id());
   }
 
   // Set up schema
@@ -580,11 +586,13 @@ void WriteRpc::GotNewAuthzTokenRetryCb(const Status& status) {
 Batcher::Batcher(KuduClient* client,
                  scoped_refptr<ErrorCollector> error_collector,
                  sp::weak_ptr<KuduSession> session,
-                 kudu::client::KuduSession::ExternalConsistencyMode consistency_mode)
+                 kudu::client::KuduSession::ExternalConsistencyMode consistency_mode,
+                 const TxnId& txn_id)
   : state_(kGatheringOps),
     client_(client),
     weak_session_(std::move(session)),
     consistency_mode_(consistency_mode),
+    txn_id_(txn_id),
     error_collector_(std::move(error_collector)),
     had_errors_(false),
     flush_callback_(nullptr),

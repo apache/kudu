@@ -45,6 +45,7 @@
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
@@ -70,6 +71,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/txn_id.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
@@ -6438,6 +6440,54 @@ TEST_F(ClientTest, TestRetrieveAuthzTokenInParallel) {
   LOG(INFO) << Substitute("$0 concurrent threads sent $1 RPC(s) to get authz tokens",
                           kThreads, num_reqs);
   ASSERT_LT(num_reqs, kThreads);
+}
+
+// This is test verifies that txn_id is properly set in a transactional session
+// and its current batcher. This is a unit-level test scenario.
+TEST_F(ClientTest, TxnIdOfTransactionalSession) {
+  const auto apply_single_insert = [this] (KuduSession* s) {
+    ASSERT_OK(s->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    unique_ptr<KuduInsert> insert(client_table_->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt32("key", 0));
+    ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 0));
+    ASSERT_OK(s->Apply(insert.release()));
+  };
+
+  // Check how relevant member fields are populated in case of
+  // non-transactional session.
+  {
+    KuduSession s(client_);
+
+    const auto& session_data_txn_id = s.data_->txn_id_;
+    ASSERT_FALSE(session_data_txn_id.IsValid());
+
+    NO_FATALS(apply_single_insert(&s));
+
+    // Make sure current batcher has txn_id_ set to an non-valid transaction
+    // identifier.
+    ASSERT_NE(nullptr, s.data_->batcher_.get());
+    const auto& batcher_txn_id = s.data_->batcher_->txn_id();
+    ASSERT_FALSE(batcher_txn_id.IsValid());
+  }
+
+  // Check how relevant member fields are populated in case of
+  // transactional session.
+  {
+    const TxnId kTxnId(0);
+    KuduSession s(client_, kTxnId);
+
+    const auto& session_data_txn_id = s.data_->txn_id_;
+    ASSERT_TRUE(session_data_txn_id.IsValid());
+    ASSERT_EQ(kTxnId.value(), session_data_txn_id.value());
+
+    NO_FATALS(apply_single_insert(&s));
+
+    // Make sure current batcher has txn_id_ member properly set.
+    ASSERT_NE(nullptr, s.data_->batcher_.get());
+    const auto& batcher_txn_id = s.data_->batcher_->txn_id();
+    ASSERT_TRUE(batcher_txn_id.IsValid());
+    ASSERT_EQ(kTxnId.value(), batcher_txn_id.value());
+  }
 }
 
 // This test verifies that rows with column schema violations such as
