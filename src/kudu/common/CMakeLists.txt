@@ -61,6 +61,7 @@ set(COMMON_SRCS
   schema.cc
   table_util.cc
   timestamp.cc
+  txn_id.cc
   types.cc
   wire_protocol.cc
   zp7.cc)
@@ -99,5 +100,6 @@ ADD_KUDU_TEST(row_operations-test)
 ADD_KUDU_TEST(scan_spec-test)
 ADD_KUDU_TEST(schema-test)
 ADD_KUDU_TEST(table_util-test)
+ADD_KUDU_TEST(txn_id-test)
 ADD_KUDU_TEST(types-test)
 ADD_KUDU_TEST(wire_protocol-test NUM_SHARDS 10)
