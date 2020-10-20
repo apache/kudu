@@ -120,7 +120,8 @@ void CheckInvalidAuthzToken(const Status& s, const RpcController& rpc) {
 TokenSigningPrivateKeyPB GetTokenSigningPrivateKey(int seq_num) {
   TokenSigningPrivateKeyPB tsk;
   PrivateKey private_key;
-  CHECK_OK(GeneratePrivateKey(/*num_bits=*/512, &private_key));
+  int key_size = UseLargeKeys() ? 2048 : 512;
+  CHECK_OK(GeneratePrivateKey(key_size, &private_key));
   string private_key_str_der;
   CHECK_OK(private_key.ToString(&private_key_str_der, security::DataFormat::DER));
   tsk.set_rsa_key_der(private_key_str_der);

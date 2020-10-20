@@ -369,7 +369,8 @@ TEST_F(AuthzTokenTest, TestUnknownTsk) {
   // the server.
   TokenSigningPrivateKeyPB tsk;
   PrivateKey private_key;
-  ASSERT_OK(GeneratePrivateKey(/*num_bits=*/512, &private_key));
+  int key_size = UseLargeKeys() ? 2048 : 512;
+  ASSERT_OK(GeneratePrivateKey(key_size, &private_key));
   string private_key_str_der;
   ASSERT_OK(private_key.ToString(&private_key_str_der, DataFormat::DER));
   tsk.set_rsa_key_der(private_key_str_der);

@@ -72,7 +72,8 @@ class CertManagementTest : public KuduTest {
   template<class CSRGen = CertRequestGenerator>
   CertSignRequest PrepareTestCSR(typename CSRGen::Config config,
                                  PrivateKey* key) {
-    CHECK_OK(GeneratePrivateKey(512, key));
+    int key_size = UseLargeKeys() ? 2048 : 512;
+    CHECK_OK(GeneratePrivateKey(key_size, key));
     CSRGen gen(std::move(config));
     CHECK_OK(gen.Init());
     CertSignRequest req;

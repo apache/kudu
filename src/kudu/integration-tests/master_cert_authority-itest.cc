@@ -260,7 +260,8 @@ TEST_F(MasterCertAuthorityTest, CertAuthorityOnLeaderRoleSwitch) {
 void GenerateCSR(const CertRequestGenerator::Config& gen_config,
                  string* csr_str) {
   PrivateKey key;
-  ASSERT_OK(security::GeneratePrivateKey(512, &key));
+  int key_size = UseLargeKeys() ? 2048 : 512;
+  ASSERT_OK(security::GeneratePrivateKey(key_size, &key));
   CertRequestGenerator gen(gen_config);
   ASSERT_OK(gen.Init());
   CertSignRequest csr;

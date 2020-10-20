@@ -57,7 +57,7 @@ namespace security {
 namespace {
 
 // Dummy variables to use when their values don't matter much.
-const int kNumBits = 512;
+const int kNumBits = UseLargeKeys() ? 2048 : 512;
 const int64_t kTokenValiditySeconds = 10;
 const char kUser[] = "user";
 

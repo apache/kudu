@@ -75,6 +75,7 @@ namespace kudu {
 
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
 static const char* const kSlowTestsEnvVar = "KUDU_ALLOW_SLOW_TESTS";
+static const char* const kLargeKeysEnvVar = "KUDU_USE_LARGE_KEYS_IN_TESTS";
 
 static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
@@ -99,24 +100,26 @@ KuduTest::KuduTest()
     {"never_fsync", "true"},
     // Disable redaction.
     {"redact", "none"},
+    // For a generic Kudu test, the local wall-clock time is good enough even
+    // if it's not synchronized by NTP. All test components are run at the same
+    // node, so there aren't multiple time sources to synchronize.
+    {"time_source", "system_unsync"},
+  };
+  if (!UseLargeKeys()) {
     // Reduce default RSA key length for faster tests. We are using strong/high
     // TLS v1.2 cipher suites, so minimum possible for TLS-related RSA keys is
     // 768 bits. Java security policies in tests tweaked appropriately to allow
     // for using smaller RSA keys in certificates. As for the TSK keys, 512 bits
     // is the minimum since the SHA256 digest is used for token
     // signing/verification.
-    {"ipki_server_key_size", "768"},
-    {"ipki_ca_key_size", "768"},
-    {"tsk_num_rsa_bits", "512"},
+    flags_for_tests.emplace("ipki_server_key_size", "768");
+    flags_for_tests.emplace("ipki_ca_key_size", "768");
+    flags_for_tests.emplace("tsk_num_rsa_bits", "512");
     // Some OS distros set the default security level higher than 0, so it's
     // necessary to override it to use the key length specified above (which are
     // considered lax and don't work in case of security level 2 or higher).
-    {"openssl_security_level_override", "0"},
-    // For a generic Kudu test, the local wall-clock time is good enough even
-    // if it's not synchronized by NTP. All test components are run at the same
-    // node, so there aren't multiple time sources to synchronize.
-    {"time_source", "system_unsync"},
-  };
+    flags_for_tests.emplace("openssl_security_level_override", "0");
+  }
   for (const auto& e : flags_for_tests) {
     // We don't check for errors here, because we have some default flags that
     // only apply to certain tests. If a flag is defined in a library which
@@ -180,6 +183,8 @@ void KuduTest::OverrideKrb5Environment() {
 ///////////////////////////////////////////////////
 
 bool AllowSlowTests() { return GetBooleanEnvironmentVariable(kSlowTestsEnvVar); }
+
+bool UseLargeKeys() { return GetBooleanEnvironmentVariable(kLargeKeysEnvVar); }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,
                               const std::string& new_value) {

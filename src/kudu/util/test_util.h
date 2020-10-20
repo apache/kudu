@@ -87,6 +87,10 @@ class KuduTest : public ::testing::Test {
 // Returns true if slow tests are runtime-enabled.
 bool AllowSlowTests();
 
+// Returns true if the KUDU_USE_LARGE_KEYS_IN_TESTS environment variable is set
+// to true. This is required to pass certain tests in FIPS approved mode.
+bool UseLargeKeys();
+
 // Override the given gflag to the new value, only in the case that
 // slow tests are enabled and the user hasn't otherwise overridden
 // it on the command line.

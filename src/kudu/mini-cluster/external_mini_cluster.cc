@@ -975,20 +975,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     // rely on forcefully cutting power to a machine or equivalent.
     "--never_fsync",
 
-    // Generate smaller RSA keys -- generating a 768-bit key is faster
-    // than generating the default 2048-bit key, and we don't care about
-    // strong encryption in tests. Setting it lower (e.g. 512 bits) results
-    // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122
-    // since we are using strong/high TLS v1.2 cipher suites, so the minimum
-    // size of TLS-related RSA key is 768 bits (due to the usage of
-    // the ECDHE-RSA-AES256-GCM-SHA384 suite).
-    "--ipki_server_key_size=768",
-
-    // The RSA key of 768 bits is too short if OpenSSL security level is set to
-    // 1 or higher (applicable for OpenSSL 1.1.0 and newer). Lowering the
-    // security level to 0 makes possible ot use shorter keys in such cases.
-    "--openssl_security_level_override=0",
-
     // Disable minidumps by default since many tests purposely inject faults.
     "--enable_minidumps=false",
 
@@ -1020,6 +1006,23 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     // Ensure that logging goes to the test output and doesn't get buffered.
     argv.emplace_back("--logtostderr");
     argv.emplace_back("--logbuflevel=-1");
+  }
+
+  // If large keys are not enabled.
+  if (!UseLargeKeys()) {
+    // Generate smaller RSA keys -- generating a 768-bit key is faster
+    // than generating the default 2048-bit key, and we don't care about
+    // strong encryption in tests. Setting it lower (e.g. 512 bits) results
+    // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122
+    // since we are using strong/high TLS v1.2 cipher suites, so the minimum
+    // size of TLS-related RSA key is 768 bits (due to the usage of
+    // the ECDHE-RSA-AES256-GCM-SHA384 suite).
+    argv.emplace_back("--ipki_server_key_size=768");
+
+    // The RSA key of 768 bits is too short if OpenSSL security level is set to
+    // 1 or higher (applicable for OpenSSL 1.1.0 and newer). Lowering the
+    // security level to 0 makes possible ot use shorter keys in such cases.
+    argv.emplace_back("--openssl_security_level_override=0");
   }
 
   // Add all the flags coming from the minicluster framework.
@@ -1447,18 +1450,20 @@ Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
 }
 
 const vector<string>& ExternalMaster::GetCommonFlags() {
-  static const vector<string> kFlags = {
-    // See the in-line comment for "--ipki_server_key_size" flag in
-    // ExternalDaemon::StartProcess() method.
-    "--ipki_ca_key_size=768",
+  static vector<string> kFlags;
+  if (!UseLargeKeys()) {
+    kFlags = {
+        // See the in-line comment for "--ipki_server_key_size" flag in
+        // ExternalDaemon::StartProcess() method.
+        "--ipki_ca_key_size=768",
 
-    // As for the TSK keys, 512 bits is the minimum since we are using
-    // SHA256 digest for token signing/verification.
-    "--tsk_num_rsa_bits=512",
-  };
+        // As for the TSK keys, 512 bits is the minimum since we are using
+        // SHA256 digest for token signing/verification.
+        "--tsk_num_rsa_bits=512",
+    };
+  }
   return kFlags;
 }
-
 
 //------------------------------------------------------------
 // ExternalTabletServer
