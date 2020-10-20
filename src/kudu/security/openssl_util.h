@@ -24,6 +24,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
 
@@ -198,29 +199,39 @@ class RawDataWrapper {
   c_unique_ptr<RawDataType> data_;
 };
 
+// Wrapper around std::mutex that only locks if a special
+// 'openssl_defensive_locking' flag is set to true. See the description of the
+// flag for more details.
+class OpenSSLMutex {
+ public:
+  OpenSSLMutex();
+  void lock();
+  bool try_lock();
+  void unlock();
+
+ private:
+  std::mutex mutex_;
+  const bool locking_enabled_;
+};
 
 namespace internal {
-
 // Implementation of SCOPED_OPENSSL_NO_PENDING_ERRORS. Use the macro form
 // instead of directly instantiating the implementation class.
 struct ScopedCheckNoPendingSSLErrors {
  public:
-  explicit ScopedCheckNoPendingSSLErrors(const char* func)
-      : func_(func) {
-    DCHECK_EQ(ERR_peek_error(), 0)
-        << "Expected no pending OpenSSL errors on " << func_
-        << " entry, but had: " << GetOpenSSLErrors();
+  explicit ScopedCheckNoPendingSSLErrors(const char* func) : func_(func) {
+    DCHECK_EQ(ERR_peek_error(), 0) << "Expected no pending OpenSSL errors on " << func_
+                                   << " entry, but had: " << GetOpenSSLErrors();
   }
   ~ScopedCheckNoPendingSSLErrors() {
-    DCHECK_EQ(ERR_peek_error(), 0)
-        << "Expected no pending OpenSSL errors on " << func_
-        << " exit, but had: " << GetOpenSSLErrors();
+    DCHECK_EQ(ERR_peek_error(), 0) << "Expected no pending OpenSSL errors on " << func_
+                                   << " exit, but had: " << GetOpenSSLErrors();
   }
 
  private:
   const char* const func_;
 };
 
-} // namespace internal
-} // namespace security
+}  // namespace internal
+}  // namespace security
 } // namespace kudu

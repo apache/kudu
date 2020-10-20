@@ -94,6 +94,12 @@ DEFINE_int32(openssl_security_level_override, -1,
 TAG_FLAG(openssl_security_level_override, hidden);
 TAG_FLAG(openssl_security_level_override, unsafe);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+namespace {
+kudu::security::OpenSSLMutex mutex;
+}  // anonymous namespace
+#endif
+
 namespace kudu {
 namespace security {
 
@@ -460,6 +466,10 @@ boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
 
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  unique_lock<OpenSSLMutex> lock_global(mutex);
+#endif
   unique_lock<RWMutex> lock(lock_);
 
   if (!csr_) {

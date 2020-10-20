@@ -22,11 +22,15 @@
 #include <openssl/x509.h>
 
 #include <memory>
+#if OPENSSL_VERSION_NUMBER < 0x10002000L
+#include <mutex>
+#endif
 #include <string>
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_socket.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -39,6 +43,12 @@
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+namespace {
+kudu::security::OpenSSLMutex mutex;
+}  // anonymous namespace
+#endif
 
 namespace kudu {
 namespace security {
@@ -92,7 +102,13 @@ Status TlsHandshake::Continue(const string& recv, string* send) {
   DCHECK(n == recv.size() || (n == -1 && recv.empty()));
   DCHECK_EQ(BIO_ctrl_pending(rbio), recv.size());
 
-  int rc = SSL_do_handshake(ssl_.get());
+  int rc;
+  {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    std::unique_lock<OpenSSLMutex> lock(mutex);
+#endif
+    rc = SSL_do_handshake(ssl_.get());
+  }
   if (rc != 1) {
     int ssl_err = SSL_get_error(ssl_.get(), rc);
     // WANT_READ and WANT_WRITE indicate that the handshake is not yet complete.
