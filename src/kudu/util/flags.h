@@ -90,5 +90,7 @@ Status ParseTriState(const char* flag_name, const std::string& flag_value,
 
 std::string CheckFlagAndRedact(const google::CommandLineFlagInfo& flag, EscapeMode mode);
 
+bool GetBooleanEnvironmentVariable(const char* env_var_name);
+
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

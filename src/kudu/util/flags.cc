@@ -17,10 +17,12 @@
 
 #include "kudu/util/flags.h"
 
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h> // IWYU pragma: keep
 
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -605,6 +607,26 @@ Status ParseTriState(const char* flag_name, const std::string& flag_value,
           flag_name));
   }
   return Status::OK();
+}
+
+// Get the value of an environment variable that has boolean semantics.
+bool GetBooleanEnvironmentVariable(const char* env_var_name) {
+  const char* const e = getenv(env_var_name);
+  if ((e == nullptr) ||
+      (strlen(e) == 0) ||
+      (strcasecmp(e, "false") == 0) ||
+      (strcasecmp(e, "0") == 0) ||
+      (strcasecmp(e, "no") == 0)) {
+    return false;
+  }
+  if ((strcasecmp(e, "true") == 0) ||
+      (strcasecmp(e, "1") == 0) ||
+      (strcasecmp(e, "yes") == 0)) {
+    return true;
+  }
+  LOG(FATAL) << Substitute("$0: invalid value for environment variable $0",
+                           e, env_var_name);
+  return false;  // unreachable
 }
 
 } // namespace kudu

@@ -18,12 +18,10 @@
 #include "kudu/util/test_util.h"
 
 #include <limits.h>
-#include <strings.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstdlib>
-#include <cstring>
 #include <limits>
 #include <map>
 #include <memory>
@@ -51,6 +49,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -180,31 +179,7 @@ void KuduTest::OverrideKrb5Environment() {
 // Test utility functions
 ///////////////////////////////////////////////////
 
-namespace {
-// Get the value of an environment variable that has boolean semantics.
-bool GetBooleanEnvironmentVariable(const char* env_var_name) {
-  const char* const e = getenv(env_var_name);
-  if ((e == nullptr) ||
-      (strlen(e) == 0) ||
-      (strcasecmp(e, "false") == 0) ||
-      (strcasecmp(e, "0") == 0) ||
-      (strcasecmp(e, "no") == 0)) {
-    return false;
-  }
-  if ((strcasecmp(e, "true") == 0) ||
-      (strcasecmp(e, "1") == 0) ||
-      (strcasecmp(e, "yes") == 0)) {
-    return true;
-  }
-  LOG(FATAL) << Substitute("$0: invalid value for environment variable $0",
-                           e, env_var_name);
-  return false;  // unreachable
-}
-} // anonymous namespace
-
-bool AllowSlowTests() {
-  return GetBooleanEnvironmentVariable(kSlowTestsEnvVar);
-}
+bool AllowSlowTests() { return GetBooleanEnvironmentVariable(kSlowTestsEnvVar); }
 
 void OverrideFlagForSlowTests(const std::string& flag_name,
                               const std::string& new_value) {
