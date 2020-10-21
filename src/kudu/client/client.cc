@@ -1162,10 +1162,6 @@ KuduSession::~KuduSession() {
   delete data_;
 }
 
-Status KuduSession::Close() {
-  return data_->Close(false);
-}
-
 Status KuduSession::SetFlushMode(FlushMode m) {
   if (!tight_enum_test<FlushMode>(m)) {
     // Be paranoid in client code.
@@ -1203,18 +1199,6 @@ void KuduSession::SetTimeoutMillis(int timeout_ms) {
   data_->SetTimeoutMillis(timeout_ms);
 }
 
-Status KuduSession::Flush() {
-  return data_->Flush();
-}
-
-void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
-  data_->FlushAsync(user_callback);
-}
-
-bool KuduSession::HasPendingOperations() const {
-  return data_->HasPendingOperations();
-}
-
 Status KuduSession::Apply(KuduWriteOperation* write_op) {
   RETURN_NOT_OK(data_->ApplyWriteOp(write_op));
   // Thread-safety note: this method should not be called concurrently
@@ -1224,6 +1208,22 @@ Status KuduSession::Apply(KuduWriteOperation* write_op) {
     RETURN_NOT_OK(data_->Flush());
   }
   return Status::OK();
+}
+
+Status KuduSession::Flush() {
+  return data_->Flush();
+}
+
+void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
+  data_->FlushAsync(user_callback);
+}
+
+Status KuduSession::Close() {
+  return data_->Close(false);
+}
+
+bool KuduSession::HasPendingOperations() const {
+  return data_->HasPendingOperations();
 }
 
 int KuduSession::CountBufferedOperations() const {
