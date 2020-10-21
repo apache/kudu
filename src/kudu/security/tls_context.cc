@@ -31,6 +31,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -245,9 +246,13 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   int rc = X509_verify_cert(store_ctx.get());
   if (rc != 1) {
     int err = X509_STORE_CTX_get_error(store_ctx.get());
+
+    // This also clears the errors. It's important to do this before we call
+    // X509NameToString(), as it expects the error stack to be empty and it
+    // calls SCOPED_OPENSSL_NO_PENDING_ERRORS.
+    const auto error_msg = GetOpenSSLErrors();
     if (err == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
       // It's OK to provide a self-signed cert.
-      ERR_clear_error(); // in case it left anything on the queue.
       return Status::OK();
     }
 
@@ -260,9 +265,8 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
                                 X509NameToString(X509_get_issuer_name(cur_cert)));
     }
 
-    ERR_clear_error(); // in case it left anything on the queue.
     return Status::RuntimeError(
-        Substitute("could not verify certificate chain$0", cert_details),
+        Substitute("could not verify certificate chain$0: $1", cert_details, error_msg),
         X509_verify_cert_error_string(err));
   }
   return Status::OK();
