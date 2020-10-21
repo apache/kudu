@@ -316,6 +316,44 @@ bool GetClusterName(const string& master_addresses_str, string* cluster_name) {
   return false;
 }
 
+// Retrieve flags from a remote server.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+//
+// 'all_flags' controls whether all flags are returned, or only flags which are
+// explicitly set.
+//
+// 'flag_tags' is a comma-separated list of tags used to restrict which flags
+// are returned. An empty value matches all tags.
+Status GetServerFlags(const string& address,
+                      uint16_t default_port,
+                      bool all_flags,
+                      const string& flags_to_get,
+                      const string& flag_tags,
+                      vector<server::GetFlagsResponsePB_Flag>* flags) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  GetFlagsRequestPB req;
+  GetFlagsResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+
+  req.set_all_flags(all_flags);
+  for (StringPiece tag : strings::Split(flag_tags, ",", strings::SkipEmpty())) {
+    req.add_tags(tag.as_string());
+  }
+  for (StringPiece flag: strings::Split(flags_to_get, ",", strings::SkipEmpty())) {
+    req.add_flags(flag.as_string());
+  }
+
+  RETURN_NOT_OK(proxy->GetFlags(req, &resp, &rpc));
+
+  flags->clear();
+  std::move(resp.flags().begin(), resp.flags().end(), std::back_inserter(*flags));
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 template<class ProxyClass>
@@ -406,35 +444,6 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     cout << "Footer:\n" << SecureDebugString(segment->footer());
   }
 
-  return Status::OK();
-}
-
-Status GetServerFlags(const string& address,
-                      uint16_t default_port,
-                      bool all_flags,
-                      const string& flags_to_get,
-                      const string& flag_tags,
-                      vector<server::GetFlagsResponsePB_Flag>* flags) {
-  unique_ptr<GenericServiceProxy> proxy;
-  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
-
-  GetFlagsRequestPB req;
-  GetFlagsResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
-
-  req.set_all_flags(all_flags);
-  for (StringPiece tag : strings::Split(flag_tags, ",", strings::SkipEmpty())) {
-    req.add_tags(tag.as_string());
-  }
-  for (StringPiece flag: strings::Split(flags_to_get, ",", strings::SkipEmpty())) {
-    req.add_flags(flag.as_string());
-  }
-
-  RETURN_NOT_OK(proxy->GetFlags(req, &resp, &rpc));
-
-  flags->clear();
-  std::move(resp.flags().begin(), resp.flags().end(), std::back_inserter(*flags));
   return Status::OK();
 }
 
