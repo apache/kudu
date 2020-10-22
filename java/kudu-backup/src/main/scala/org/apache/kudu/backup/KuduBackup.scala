@@ -17,8 +17,6 @@
 
 package org.apache.kudu.backup
 
-import java.util.concurrent.ForkJoinPool
-
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.SparkSession
@@ -28,6 +26,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import scala.collection.JavaConverters._
 import scala.collection.parallel.ForkJoinTaskSupport
+import scala.concurrent.forkjoin.ForkJoinPool
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
