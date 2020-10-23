@@ -329,7 +329,7 @@ class RowBlock {
   RowBlockRow row(size_t idx) const;
 
   const Schema* schema() const { return schema_; }
-  Arena* arena() const { return &memory_->arena; }
+  Arena* arena() const { return &DCHECK_NOTNULL(memory_)->arena; }
 
   ColumnBlock column_block(size_t col_idx) const {
     return column_block(col_idx, nrows_);

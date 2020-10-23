@@ -1026,9 +1026,7 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
   DoMerge(schemas.back(), schemas);
 }
 
-// Test MergeCompactionInput against MemRowSets. This behavior isn't currently
-// used (we never compact in-memory), but this is a regression test for a bug
-// encountered during development where the first row of each MRS got dropped.
+// Test MergeCompactionInput against MemRowSets.
 TEST_F(TestCompaction, TestMergeMRS) {
   shared_ptr<MemRowSet> mrs_a;
   ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
@@ -1040,6 +1038,14 @@ TEST_F(TestCompaction, TestMergeMRS) {
                               mem_trackers_.tablet_tracker, &mrs_b));
   InsertRows(mrs_b.get(), 10, 1);
 
+  // While we're at it, let's strew some rows' histories across both rowsets.
+  // This will create ghost rows in the compaction inputs and help validate
+  // some of the ghost-row handling applied during compaction.
+  DeleteRows(mrs_a.get(), 5, 0);
+  InsertRows(mrs_b.get(), 5, 0);
+  DeleteRows(mrs_b.get(), 5, 1);
+  InsertRows(mrs_a.get(), 5, 1);
+
   MvccSnapshot snap(mvcc_);
   vector<shared_ptr<CompactionInput> > merge_inputs;
   merge_inputs.push_back(
@@ -1047,16 +1053,15 @@ TEST_F(TestCompaction, TestMergeMRS) {
   merge_inputs.push_back(
         shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)));
   unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
-
-  vector<string> out;
-  IterateInput(input.get(), &out);
-  ASSERT_EQ(out.size(), 20);
-  EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
-                "int32 nullable_val=0); Undo Mutations: [@1(DELETE)]; "
-                "Redo Mutations: [];", out[0]);
-  EXPECT_EQ(R"(RowIdxInBlock: 9; Base: (string key="hello 00000091", int32 val=9, )"
-                "int32 nullable_val=NULL); Undo Mutations: [@20(DELETE)]; "
-                "Redo Mutations: [];", out[19]);
+  vector<shared_ptr<DiskRowSet>> result_rs;
+  DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
+  int total_num_rows = 0;
+  for (const auto& rs : result_rs) {
+    size_t rs_live_rows;
+    ASSERT_OK(rs->CountLiveRows(&rs_live_rows));
+    total_num_rows += rs_live_rows;
+  }
+  ASSERT_EQ(20, total_num_rows);
 }
 
 #ifdef NDEBUG

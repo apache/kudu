@@ -104,7 +104,7 @@ class MemRowSetCompactionInput : public CompactionInput {
   MemRowSetCompactionInput(const MemRowSet& memrowset,
                            const MvccSnapshot& snap,
                            const Schema* projection)
-    : arena_(32*1024),
+    : mem_(32*1024),
       has_more_blocks_(false) {
     RowIteratorOptions opts;
     opts.projection = projection;
@@ -129,10 +129,10 @@ class MemRowSetCompactionInput : public CompactionInput {
     // Realloc the internal block storage if we don't have enough space to
     // copy the whole leaf node's worth of data into it.
     if (PREDICT_FALSE(!row_block_ || num_in_block > row_block_->nrows())) {
-      row_block_.reset(new RowBlock(&iter_->schema(), num_in_block, nullptr));
+      row_block_.reset(new RowBlock(&iter_->schema(), num_in_block, &mem_));
     }
 
-    arena_.Reset();
+    mem_.arena.Reset();
     RowChangeListEncoder undo_encoder(&buffer_);
     int next_row_index = 0;
     for (int i = 0; i < num_in_block; ++i) {
@@ -143,7 +143,7 @@ class MemRowSetCompactionInput : public CompactionInput {
       RETURN_NOT_OK(iter_->GetCurrentRow(&input_row.row,
                                          static_cast<Arena*>(nullptr),
                                          &input_row.redo_head,
-                                         &arena_,
+                                         &mem_.arena,
                                          &insertion_timestamp));
 
       // Handle the rare case where a row was inserted and deleted in the same operation.
@@ -165,7 +165,7 @@ class MemRowSetCompactionInput : public CompactionInput {
 
       // Materialize MRSRow undo insert (delete)
       undo_encoder.SetToDelete();
-      input_row.undo_head = Mutation::CreateInArena(&arena_,
+      input_row.undo_head = Mutation::CreateInArena(&mem_.arena,
                                                     insertion_timestamp,
                                                     undo_encoder.as_changelist());
       undo_encoder.Reset();
@@ -181,7 +181,7 @@ class MemRowSetCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  Arena* PreparedBlockArena() override { return &arena_; }
+  Arena* PreparedBlockArena() override { return &mem_.arena; }
 
   Status FinishBlock() override {
     return Status::OK();
@@ -197,8 +197,8 @@ class MemRowSetCompactionInput : public CompactionInput {
 
   unique_ptr<MemRowSet::Iterator> iter_;
 
-  // Arena used to store the projected undo/redo mutations of the current block.
-  Arena arena_;
+  // Memory used to store the projected undo/redo mutations of the current block.
+  RowBlockMemory mem_;
 
   faststring buffer_;
 
@@ -502,8 +502,9 @@ class MergeCompactionInput : public CompactionInput {
                    << CompactionInputRowToString(*smallest);
           continue;
         }
-        // If we found two rows with the same key, we want to make the newer one point to the older
-        // one, which must be a ghost.
+
+        // If we found two rows with the same key, we want to make the newer
+        // one point to the older one, which must be a ghost.
         if (PREDICT_FALSE(row_comp == 0)) {
           DVLOG(4) << "Duplicate row.\nLeft: " << CompactionInputRowToString(*state->next())
                    << "\nRight: " << CompactionInputRowToString(*smallest);
@@ -523,7 +524,7 @@ class MergeCompactionInput : public CompactionInput {
           }
           // .. otherwise copy and pop the other one.
           RETURN_NOT_OK(SetPreviousGhost(smallest, state->next(), true /* clone */,
-                                         smallest->row.row_block()->arena()));
+                                         DCHECK_NOTNULL(smallest)->row.row_block()->arena()));
           DVLOG(4) << "Updated left duplicate smallest: "
                    << CompactionInputRowToString(*smallest);
           states_[i]->pop_front();
@@ -658,8 +659,12 @@ class MergeCompactionInput : public CompactionInput {
     return Status::OK();
   }
 
-  // Sets the previous ghost row for a CompactionInputRow.
-  // 'must_copy' indicates whether there must be a deep copy (using CloneCompactionInputRow()).
+  // Merges the 'previous_ghost' histories of 'older' and 'newer' such that
+  // 'older->previous_ghost' is the head of a list of rows in increasing
+  // timestamp order (deltas get newer down the list).
+  //
+  // 'must_copy' indicates whether there must be a deep copy (using
+  // CloneCompactionInputRow()).
   Status SetPreviousGhost(CompactionInputRow* older,
                           CompactionInputRow* newer,
                           bool must_copy,
@@ -669,7 +674,7 @@ class MergeCompactionInput : public CompactionInput {
     // recent.
     if (older->previous_ghost != nullptr) {
       if (CompareDuplicatedRows(*older->previous_ghost, *newer) > 0) {
-        // 'older' was more recent.
+        // 'older->previous_ghost' was more recent.
         return SetPreviousGhost(older->previous_ghost, newer, must_copy /* clone */, arena);
       }
       // 'newer' was more recent.
@@ -766,8 +771,8 @@ Mutation* MergeUndoHistories(Mutation* left, Mutation* right) {
   return head;
 }
 
-// If 'old_row' has previous versions, this transforms prior version in undos and adds them
-// to 'new_undo_head'.
+// If 'old_row' has previous versions, this transforms prior version in undos
+// and adds them to 'new_undo_head'.
 Status MergeDuplicatedRowHistory(const string& tablet_id,
                                  const FsErrorManager* error_manager,
                                  CompactionInputRow* old_row,
@@ -992,6 +997,12 @@ void RemoveAncientUndos(const HistoryGcOpts& history_gc_opts,
   }
 }
 
+// Applies the REDOs of 'src_row' in accordance with the input snapshot,
+// returning the result in 'dst_row', and converting those REDOs to UNDOs,
+// returned via 'new_undo_head' and any remaining REDO (e.g. a delete) in
+// 'new_redo_head'.
+//
+// NOTE: input REDOs are expected to be in increasing timestamp order.
 Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       const CompactionInputRow& src_row,
                                       Mutation** new_undo_head,
@@ -1152,6 +1163,8 @@ Status FlushCompactionInput(const string& tablet_id,
       Mutation* new_undos_head = nullptr;
       Mutation* new_redos_head = nullptr;
 
+      // Apply all REDOs to the base row, generating UNDOs for it. This does
+      // not take into account any 'previous_ghost' members.
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
                                                    *input_row,
                                                    &new_undos_head,
