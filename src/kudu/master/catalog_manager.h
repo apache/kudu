@@ -1205,7 +1205,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // reading. Following an election where this master is elected leader, it
   // should acquire this lock for writing before reloading the metadata.
   //
-  // Readers should not acquire this lock directly; use ScopedLeadershipLock
+  // Readers should not acquire this lock directly; use ScopedLeaderSharedLock
   // instead.
   //
   // Always acquire this lock before state_lock_.
