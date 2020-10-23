@@ -146,15 +146,20 @@ using tserver::TSTabletManager;
 
 namespace {
 
-const char* const kSeparatorLine =
+constexpr const char* const kSeparatorLine =
     "----------------------------------------------------------------------\n";
 
-const char* const kTermArg = "term";
+constexpr const char* const kTermArg = "term";
 
-const char* const kTabletIdGlobArg = "tablet_id_pattern";
-const char* const kTabletIdGlobArgDesc = "Tablet identifier pattern. "
+constexpr const char* const kTabletIdGlobArg = "tablet_id_pattern";
+constexpr const char* const kTabletIdGlobArgDesc = "Tablet identifier pattern. "
     "This argument supports basic glob syntax: '*' matches 0 or more wildcard "
     "characters.";
+
+constexpr const char* const kRaftPeersArg = "peers";
+constexpr const char* const kRaftPeersArgDesc =
+    "List of peers where each element is of form 'uuid:hostname:port', "
+    "with elements of the list separated by a whitespace";
 
 string Indent(int indent) {
   return string(indent, ' ');
@@ -885,9 +890,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("rewrite_raft_config", &RewriteRaftConfig)
       .Description("Rewrite a tablet replica's Raft configuration")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddRequiredVariadicParameter({
-        "peers", "List of peers where each peer is of "
-        "form 'uuid:hostname:port'" })
+      .AddRequiredVariadicParameter({ kRaftPeersArg, kRaftPeersArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")

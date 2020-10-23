@@ -36,9 +36,6 @@
 DECLARE_int64(timeout_ms);
 DECLARE_string(format);
 
-namespace kudu {
-namespace tools {
-
 using std::ifstream;
 using std::string;
 using std::unique_ptr;
@@ -46,9 +43,14 @@ using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
-const char* kLogPathArg = "path";
+namespace kudu {
+namespace tools {
 
 namespace {
+
+constexpr const char* const kLogPathArg = "path";
+constexpr const char* const kLogPathArgDesc =
+    "Path(s) to log file(s) to parse, separated by a whitespace, if many";
 
 Status ParseStacksFromPath(const string& path) {
   errno = 0;
@@ -87,7 +89,7 @@ unique_ptr<Mode> BuildDiagnoseMode() {
   unique_ptr<Action> parse_stacks =
       ActionBuilder("parse_stacks", &ParseStacks)
       .Description("Parse sampled stack traces out of a diagnostics log")
-      .AddRequiredVariadicParameter({ kLogPathArg, "path to log file(s) to parse" })
+      .AddRequiredVariadicParameter({ kLogPathArg, kLogPathArgDesc })
       .Build();
 
   return ModeBuilder("diagnose")

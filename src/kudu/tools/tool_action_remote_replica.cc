@@ -70,19 +70,28 @@ DECLARE_string(table_name);
 DECLARE_string(tablets);
 DECLARE_int64(timeout_ms); // defined in ksck
 
-namespace kudu {
-namespace tools {
-
-using client::KuduRowResult;
-using client::KuduScanBatch;
-using client::KuduSchema;
-using consensus::ConsensusServiceProxy;
-using consensus::RaftConfigPB;
-using consensus::RaftPeerPB;
-using consensus::StartTabletCopyRequestPB;
-using consensus::StartTabletCopyResponsePB;
-using rpc::RpcController;
-using server::ServerStatusPB;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduSchema;
+using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::StartTabletCopyRequestPB;
+using kudu::consensus::StartTabletCopyResponsePB;
+using kudu::rpc::RpcController;
+using kudu::server::ServerStatusPB;
+using kudu::tablet::TabletStatusPB;
+using kudu::tserver::DeleteTabletRequestPB;
+using kudu::tserver::DeleteTabletResponsePB;
+using kudu::tserver::ListTabletsRequestPB;
+using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::NewScanRequestPB;
+using kudu::tserver::ScanRequestPB;
+using kudu::tserver::ScanResponsePB;
+using kudu::tserver::TabletServer;
+using kudu::tserver::TabletServerAdminServiceProxy;
+using kudu::tserver::TabletServerErrorPB;
+using kudu::tserver::TabletServerServiceProxy;
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -90,18 +99,9 @@ using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
-using tablet::TabletStatusPB;
-using tserver::DeleteTabletRequestPB;
-using tserver::DeleteTabletResponsePB;
-using tserver::ListTabletsRequestPB;
-using tserver::ListTabletsResponsePB;
-using tserver::NewScanRequestPB;
-using tserver::ScanRequestPB;
-using tserver::ScanResponsePB;
-using tserver::TabletServer;
-using tserver::TabletServerErrorPB;
-using tserver::TabletServerAdminServiceProxy;
-using tserver::TabletServerServiceProxy;
+
+namespace kudu {
+namespace tools {
 
 // This class only exists so that Dump() can easily be friended with
 // KuduSchema and KuduScanBatch.
@@ -168,15 +168,16 @@ class ReplicaDumper {
 
 namespace {
 
-const char* const kReasonArg = "reason";
-const char* const kTServerAddressArg = "tserver_address";
-const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
-    "form 'hostname:port'. Port may be omitted if the Tablet Server is bound "
-    "to the default port.";
-const char* const kSrcAddressArg = "src_address";
-const char* const kDstAddressArg = "dst_address";
-const char* const kPeerUUIDsArg = "peer uuids";
-const char* const kPeerUUIDsArgDesc = "List of peer uuids to be part of new config";
+constexpr const char* const kReasonArg = "reason";
+constexpr const char* const kTServerAddressArg = "tserver_address";
+constexpr const char* const kTServerAddressDesc =
+    "Address of a Kudu Tablet Server of form 'hostname:port'. Port may be "
+    "omitted if the Tablet Server is bound to the default port.";
+constexpr const char* const kSrcAddressArg = "src_address";
+constexpr const char* const kDstAddressArg = "dst_address";
+constexpr const char* const kPeerUUIDsArg = "peer uuids";
+constexpr const char* const kPeerUUIDsArgDesc =
+    "List of peer uuids to be part of new config, separated by whitespace";
 
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
