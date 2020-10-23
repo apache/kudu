@@ -2356,11 +2356,7 @@ Status RaftConsensus::UnsafeChangeConfig(
 }
 
 Status RaftConsensus::ChangeProxyTopology(const ProxyTopologyPB& proxy_topology) {
-  Status s = routing_table_->UpdateProxyTopology(proxy_topology);
-  if (FLAGS_raft_enable_multi_hop_proxy_routing && s.ok()) {
-    LOG_WITH_PREFIX(INFO) << "updated routing table: \n" << routing_table_->ToString();
-  }
-  return s;
+  return routing_table_->UpdateProxyTopology(proxy_topology);
 }
 
 ProxyTopologyPB RaftConsensus::GetProxyTopology() const {

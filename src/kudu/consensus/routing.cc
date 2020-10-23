@@ -335,10 +335,10 @@ Status DurableRoutingTable::UpdateProxyTopology(ProxyTopologyPB proxy_topology) 
 
   if (leader_uuid_) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    LOG_WITH_PREFIX(INFO) << "proxy routing temporarily disabled: no known leader";
   }
 
   return Status::OK();
@@ -363,7 +363,7 @@ Status DurableRoutingTable::UpdateRaftConfig(RaftConfigPB raft_config) {
     } else {
       RETURN_NOT_OK(s);
     }
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table.ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table.ToString();
   }
 
   // Upgrade to an exclusive commit lock and make atomic changes here.
@@ -375,10 +375,10 @@ Status DurableRoutingTable::UpdateRaftConfig(RaftConfigPB raft_config) {
 
   if (leader_in_config) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    LOG_WITH_PREFIX(INFO) << "proxy routing temporarily disabled: the leader is not in the config";
   }
 
   return Status::OK();
@@ -413,10 +413,10 @@ void DurableRoutingTable::UpdateLeader(string leader_uuid) {
   leader_uuid_ = std::move(leader_uuid);
   if (initialized) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes: \n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    VLOG_WITH_PREFIX(2) << "proxy routing disabled: no valid proxy topology is set";
   }
 }
 
