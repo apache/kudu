@@ -372,7 +372,6 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   std::shared_ptr<Tablet> tablet_;
   std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<consensus::RaftConsensus> consensus_;
-  simple_spinlock prepare_replicate_lock_;
 
   // Lock protecting state_, last_status_, as well as pointers to collaborating
   // classes such as tablet_, consensus_, and maintenance_ops_.
