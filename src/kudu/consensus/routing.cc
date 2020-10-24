@@ -399,9 +399,9 @@ void DurableRoutingTable::UpdateLeader(string leader_uuid) {
       LOG_WITH_PREFIX(WARNING) << s.ToString();
       initialized = true;
     } else if (PREDICT_FALSE(!s.ok())) {
-      initialized = true;
-    } else {
       LOG_WITH_PREFIX(WARNING) << "unable to initialize proxy routing table: " << s.ToString();
+    } else {
+      initialized = true;
     }
   }
 
