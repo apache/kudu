@@ -128,6 +128,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
   private long timeoutMillis;
+  private final long txnId;
 
   /**
    * Protects internal state from concurrent access. {@code AsyncKuduSession} is not threadsafe
@@ -188,6 +189,24 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   AsyncKuduSession(AsyncKuduClient client) {
     this.client = client;
+    this.txnId = AsyncKuduClient.INVALID_TXN_ID;
+    flushMode = FlushMode.AUTO_FLUSH_SYNC;
+    consistencyMode = CLIENT_PROPAGATED;
+    timeoutMillis = client.getDefaultOperationTimeoutMs();
+    inactiveBuffers.add(bufferA);
+    inactiveBuffers.add(bufferB);
+    errorCollector = new ErrorCollector(mutationBufferMaxOps);
+  }
+
+  /**
+   * Constructor for a transactional session.
+   * @param client client that creates this session
+   * @param txnId transaction identifier for all operations within the session
+   */
+  AsyncKuduSession(AsyncKuduClient client, long txnId) {
+    assert txnId >= 0;
+    this.client = client;
+    this.txnId = txnId;
     flushMode = FlushMode.AUTO_FLUSH_SYNC;
     consistencyMode = CLIENT_PROPAGATED;
     timeoutMillis = client.getDefaultOperationTimeoutMs();
@@ -386,7 +405,7 @@ public class AsyncKuduSession implements SessionConfiguration {
         Batch batch = batches.get(tabletId);
         if (batch == null) {
           batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows,
-              ignoreAllNotFoundRows);
+              ignoreAllNotFoundRows, txnId);
           batches.put(tabletId, batch);
         }
         batch.add(operation, currentIndex++);
@@ -525,6 +544,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     operation.setExternalConsistencyMode(consistencyMode);
     operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
     operation.setIgnoreAllNotFoundRows(ignoreAllNotFoundRows);
+    operation.setTxnId(txnId);
 
     return client.sendRpcToTablet(operation)
         .addCallbackDeferring(resp -> {

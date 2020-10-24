@@ -64,8 +64,10 @@ class Batch extends KuduRpc<BatchResponse> {
 
   private final EnumSet<ErrorCode> ignoredErrors;
 
+  private final long txnId;
+
   Batch(KuduTable table, LocatedTablet tablet, boolean ignoreAllDuplicateRows,
-        boolean ignoreAllNotFoundRows) {
+        boolean ignoreAllNotFoundRows, long txnId) {
     super(table, null, 0);
     // Build a set of ignored errors.
     Set<ErrorCode> ignoredErrors = new HashSet<>();
@@ -82,6 +84,7 @@ class Batch extends KuduRpc<BatchResponse> {
       this.ignoredErrors = EnumSet.copyOf(ignoredErrors);
     }
     this.tablet = tablet;
+    this.txnId = txnId;
   }
 
   /**
@@ -147,6 +150,9 @@ class Batch extends KuduRpc<BatchResponse> {
     }
     if (authzToken != null) {
       builder.setAuthzToken(authzToken);
+    }
+    if (this.txnId != AsyncKuduClient.INVALID_TXN_ID) {
+      builder.setTxnId(this.txnId);
     }
     return builder.build();
   }
