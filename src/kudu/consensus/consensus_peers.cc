@@ -491,7 +491,7 @@ void Peer::ProcessResponseError(const Status& status) {
   }
 #endif
 
-  LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
+  KLOG_EVERY_N_SECS(WARNING, 60) << LogPrefixUnlocked() << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_ << "."
       << resp_err_info
       << " Status: " << status.ToString() << "."
@@ -513,7 +513,7 @@ void Peer::Close() {
     if (closed_) return;
     closed_ = true;
   }
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+  KLOG_EVERY_N(INFO, 5) << LogPrefixUnlocked() << "Closing peer: " << peer_pb_.permanent_uuid();
 
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
 }
