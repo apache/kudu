@@ -1055,9 +1055,9 @@ TEST_F(TestCompaction, TestMergeMRS) {
   unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
-  int total_num_rows = 0;
+  uint64_t total_num_rows = 0;
   for (const auto& rs : result_rs) {
-    size_t rs_live_rows;
+    uint64_t rs_live_rows;
     ASSERT_OK(rs->CountLiveRows(&rs_live_rows));
     total_num_rows += rs_live_rows;
   }
