@@ -108,7 +108,9 @@ enum TestOpType {
   TEST_UPSERT,
   TEST_UPSERT_PK_ONLY,
   TEST_UPDATE,
+  TEST_UPDATE_IGNORE,
   TEST_DELETE,
+  TEST_DELETE_IGNORE,
   TEST_FLUSH_OPS,
   TEST_FLUSH_TABLET,
   TEST_FLUSH_DELTAS,
@@ -130,7 +132,9 @@ const char* TestOpType_names[] = {
   "TEST_UPSERT",
   "TEST_UPSERT_PK_ONLY",
   "TEST_UPDATE",
+  "TEST_UPDATE_IGNORE",
   "TEST_DELETE",
+  "TEST_DELETE_IGNORE",
   "TEST_FLUSH_OPS",
   "TEST_FLUSH_TABLET",
   "TEST_FLUSH_DELTAS",
@@ -180,7 +184,9 @@ struct TestOp {
       case TEST_UPSERT:
       case TEST_UPSERT_PK_ONLY:
       case TEST_UPDATE:
+      case TEST_UPDATE_IGNORE:
       case TEST_DELETE:
+      case TEST_DELETE_IGNORE:
       case TEST_SCAN_AT_TIMESTAMP:
         return strings::Substitute("{$0, $1}", TestOpType_names[type], val);
       case TEST_DIFF_SCAN:
@@ -224,7 +230,9 @@ const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_UPSERT,
                                   TEST_UPSERT_PK_ONLY,
                                   TEST_UPDATE,
+                                  TEST_UPDATE_IGNORE,
                                   TEST_DELETE,
+                                  TEST_DELETE_IGNORE,
                                   TEST_FLUSH_OPS,
                                   TEST_FLUSH_TABLET,
                                   TEST_FLUSH_DELTAS,
@@ -239,6 +247,7 @@ const vector<TestOpType> kPkOnlyOps {TEST_INSERT_PK_ONLY,
                                      TEST_INSERT_IGNORE_PK_ONLY,
                                      TEST_UPSERT_PK_ONLY,
                                      TEST_DELETE,
+                                     TEST_DELETE_IGNORE,
                                      TEST_FLUSH_OPS,
                                      TEST_FLUSH_TABLET,
                                      TEST_FLUSH_DELTAS,
@@ -372,10 +381,15 @@ class FuzzTest : public KuduTest {
 
   // Adds an update of the given key/value pair to 'ops', returning the new contents
   // of the row.
-  ExpectedKeyValueRow MutateRow(int key, uint32_t new_val) {
+  ExpectedKeyValueRow MutateRow(int key, uint32_t new_val, TestOpType type) {
     ExpectedKeyValueRow ret;
-    unique_ptr<KuduUpdate> update(table_->NewUpdate());
-    KuduPartialRow* row = update->mutable_row();
+    unique_ptr<KuduWriteOperation> op;
+    if (type == TEST_UPDATE_IGNORE) {
+      op.reset(table_->NewUpdateIgnore());
+    } else {
+      op.reset(table_->NewUpdate());
+    }
+    KuduPartialRow* row = op->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
     ret.key = key;
     if (new_val & 1) {
@@ -384,17 +398,22 @@ class FuzzTest : public KuduTest {
       CHECK_OK(row->SetInt32(1, new_val));
       ret.val = new_val;
     }
-    CHECK_OK(session_->Apply(update.release()));
+    CHECK_OK(session_->Apply(op.release()));
     return ret;
   }
 
   // Adds a delete of the given row to 'ops', returning boost::none (indicating that
   // the row no longer exists).
-  optional<ExpectedKeyValueRow> DeleteRow(int key) {
-    unique_ptr<KuduDelete> del(table_->NewDelete());
-    KuduPartialRow* row = del->mutable_row();
+  optional<ExpectedKeyValueRow> DeleteRow(int key, TestOpType type) {
+    unique_ptr<KuduWriteOperation> op;
+    if (type == TEST_DELETE_IGNORE) {
+      op.reset(table_->NewDeleteIgnore());
+    } else {
+      op.reset(table_->NewDelete());
+    }
+    KuduPartialRow* row = op->mutable_row();
     CHECK_OK(row->SetInt32(0, key));
-    CHECK_OK(session_->Apply(del.release()));
+    CHECK_OK(session_->Apply(op.release()));
     return boost::none;
   }
 
@@ -708,7 +727,9 @@ bool IsMutation(const TestOpType& op) {
     case TEST_UPSERT:
     case TEST_UPSERT_PK_ONLY:
     case TEST_UPDATE:
+    case TEST_UPDATE_IGNORE:
     case TEST_DELETE:
+    case TEST_DELETE_IGNORE:
       return true;
     default:
       return false;
@@ -772,20 +793,39 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
         break;
       case TEST_UPDATE:
         if (!exists[row_key]) continue;
-        ops->emplace_back(TEST_UPDATE, row_key);
+        ops->emplace_back(r, row_key);
         ops_pending = true;
         if (!data_in_mrs) {
           data_in_dms = true;
         }
         break;
+      case TEST_UPDATE_IGNORE:
+        ops->emplace_back(r, row_key);
+        ops_pending = true;
+        // If it does exist, this will act like an update and put it into
+        // a DMS.
+        if (exists[row_key] && !data_in_mrs) {
+          data_in_dms = true;
+        }
+        break;
       case TEST_DELETE:
         if (!exists[row_key]) continue;
-        ops->emplace_back(TEST_DELETE, row_key);
+        ops->emplace_back(r, row_key);
         ops_pending = true;
-        exists[row_key] = false;
         if (!data_in_mrs) {
           data_in_dms = true;
         }
+        exists[row_key] = false;
+        break;
+      case TEST_DELETE_IGNORE:
+        ops->emplace_back(r, row_key);
+        ops_pending = true;
+        // If it does exist, this will act like a delete and put it into
+        // a DMS.
+        if (exists[row_key] && !data_in_mrs) {
+          data_in_dms = true;
+        }
+        exists[row_key] = false;
         break;
       case TEST_FLUSH_OPS:
         if (ops_pending) {
@@ -887,8 +927,14 @@ void FuzzTest::ValidateFuzzCase(const vector<TestOp>& test_ops) {
       case TEST_UPDATE:
         CHECK(exists[test_op.val]) << "invalid case: updating non-existing row";
         break;
+      case TEST_UPDATE_IGNORE:
+        // No change to `exists[test_op.val]`.
+        break;
       case TEST_DELETE:
         CHECK(exists[test_op.val]) << "invalid case: deleting non-existing row";
+        exists[test_op.val] = false;
+        break;
+      case TEST_DELETE_IGNORE:
         exists[test_op.val] = false;
         break;
       default:
@@ -944,15 +990,39 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         break;
       }
       case TEST_UPDATE:
+      case TEST_UPDATE_IGNORE: {
+        // An update ignore on a row that doesn't exist will be dropped server-side.
+        // We must do the same.
+        if (test_op.type == TEST_UPDATE_IGNORE && !pending_val[test_op.val]) {
+          // Still call MutateRow to apply the UPDATE_IGNORE operations to the session.
+          // However don't adjust the pending values given the operation will be ignored.
+          for (int j = 0; j < update_multiplier; j++) {
+            MutateRow(test_op.val, i++, test_op.type);
+          }
+          break;
+        }
+
         for (int j = 0; j < update_multiplier; j++) {
-          pending_val[test_op.val] = MutateRow(test_op.val, i++);
+          pending_val[test_op.val] = MutateRow(test_op.val, i++, test_op.type);
           pending_redos.emplace_back(UPDATE, test_op.val, pending_val[test_op.val]->val);
         }
         break;
+      }
       case TEST_DELETE:
-        pending_val[test_op.val] = DeleteRow(test_op.val);
+      case TEST_DELETE_IGNORE: {
+        // A delete ignore on a row that doesn't exist will be dropped server-side.
+        // We must do the same.
+        if (test_op.type == TEST_DELETE_IGNORE && !pending_val[test_op.val]) {
+          // Still call DeleteRow to apply the DELETE_IGNORE operation to the session.
+          // However don't adjust the pending values given the operation will be ignored.
+          DeleteRow(test_op.val, test_op.type);
+          break;
+        }
+
+        pending_val[test_op.val] = DeleteRow(test_op.val, test_op.type);
         pending_redos.emplace_back(DELETE, test_op.val, boost::none);
         break;
+      }
       case TEST_FLUSH_OPS: {
         FlushSessionOrDie(session_);
         cur_val = pending_val;

@@ -69,7 +69,9 @@ class KUDU_EXPORT KuduWriteOperation {
     UPDATE = 2,
     DELETE = 3,
     UPSERT = 4,
-    INSERT_IGNORE = 5
+    INSERT_IGNORE = 5,
+    UPDATE_IGNORE = 6,
+    DELETE_IGNORE = 7
   };
   virtual ~KuduWriteOperation();
 
@@ -236,6 +238,31 @@ class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
   explicit KuduUpdate(const sp::shared_ptr<KuduTable>& table);
 };
 
+/// @brief A single row update ignore to be sent to the cluster, missing row errors are ignored.
+///
+/// @pre An update ignore requires the key columns and at least one other column
+///   in the schema to be set in the embedded KuduPartialRow object.
+class KUDU_EXPORT KuduUpdateIgnore : public KuduWriteOperation {
+public:
+  virtual ~KuduUpdateIgnore();
+
+  /// @copydoc KuduWriteOperation::ToString()
+  virtual std::string ToString() const OVERRIDE { return "UPDATE IGNORE " + row_.ToString(); }
+
+protected:
+  /// @cond PROTECTED_MEMBERS_DOCUMENTED
+
+  /// @copydoc KuduWriteOperation::type()
+  virtual Type type() const OVERRIDE {
+    return UPDATE_IGNORE;
+  }
+
+  /// @endcond
+
+private:
+  friend class KuduTable;
+  explicit KuduUpdateIgnore(const sp::shared_ptr<KuduTable>& table);
+};
 
 /// @brief A single row delete to be sent to the cluster.
 ///
@@ -261,6 +288,32 @@ class KUDU_EXPORT KuduDelete : public KuduWriteOperation {
  private:
   friend class KuduTable;
   explicit KuduDelete(const sp::shared_ptr<KuduTable>& table);
+};
+
+/// @brief A single row delete ignore to be sent to the cluster.
+///
+/// @pre A delete ignore requires the key columns to be set in the embedded
+///   KuduPartialRow object.
+class KUDU_EXPORT KuduDeleteIgnore : public KuduWriteOperation {
+public:
+  virtual ~KuduDeleteIgnore();
+
+  /// @copydoc KuduWriteOperation::ToString()
+  virtual std::string ToString() const OVERRIDE { return "DELETE IGNORE " + row_.ToString(); }
+
+protected:
+  /// @cond PROTECTED_MEMBERS_DOCUMENTED
+
+  /// @copydoc KuduWriteOperation::type()
+  virtual Type type() const OVERRIDE {
+    return DELETE_IGNORE;
+  }
+
+  /// @endcond
+
+private:
+  friend class KuduTable;
+  explicit KuduDeleteIgnore(const sp::shared_ptr<KuduTable>& table);
 };
 
 } // namespace client

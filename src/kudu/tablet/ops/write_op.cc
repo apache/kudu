@@ -103,6 +103,7 @@ void AddWritePrivilegesForRowOperations(const RowOperationsPB::Type& op_type,
                                         WritePrivileges* privileges) {
   switch (op_type) {
     case RowOperationsPB::INSERT:
+    case RowOperationsPB::INSERT_IGNORE:
       InsertIfNotPresent(privileges, WritePrivilegeType::INSERT);
       break;
     case RowOperationsPB::UPSERT:
@@ -110,9 +111,11 @@ void AddWritePrivilegesForRowOperations(const RowOperationsPB::Type& op_type,
       InsertIfNotPresent(privileges, WritePrivilegeType::UPDATE);
       break;
     case RowOperationsPB::UPDATE:
+    case RowOperationsPB::UPDATE_IGNORE:
       InsertIfNotPresent(privileges, WritePrivilegeType::UPDATE);
       break;
     case RowOperationsPB::DELETE:
+    case RowOperationsPB::DELETE_IGNORE:
       InsertIfNotPresent(privileges, WritePrivilegeType::DELETE);
       break;
     default:
@@ -271,7 +274,9 @@ void WriteOp::Finish(OpResult result) {
     metrics->insert_ignore_errors->IncrementBy(state_->metrics().insert_ignore_errors);
     metrics->rows_upserted->IncrementBy(state_->metrics().successful_upserts);
     metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
+    metrics->update_ignore_errors->IncrementBy(state_->metrics().update_ignore_errors);
     metrics->rows_deleted->IncrementBy(state_->metrics().successful_deletes);
+    metrics->delete_ignore_errors->IncrementBy(state_->metrics().delete_ignore_errors);
 
     if (type() == consensus::LEADER) {
       if (state()->external_consistency_mode() == COMMIT_WAIT) {
@@ -420,6 +425,7 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
   }
   switch (op.decoded_op.type) {
     case RowOperationsPB::INSERT:
+      DCHECK(!op.error_ignored);
       op_metrics_.successful_inserts++;
       break;
     case RowOperationsPB::INSERT_IGNORE:
@@ -430,13 +436,30 @@ void WriteOpState::UpdateMetricsForOp(const RowOp& op) {
       }
       break;
     case RowOperationsPB::UPSERT:
+      DCHECK(!op.error_ignored);
       op_metrics_.successful_upserts++;
       break;
     case RowOperationsPB::UPDATE:
+      DCHECK(!op.error_ignored);
       op_metrics_.successful_updates++;
       break;
+    case RowOperationsPB::UPDATE_IGNORE:
+      if (op.error_ignored) {
+        op_metrics_.update_ignore_errors++;
+      } else {
+        op_metrics_.successful_updates++;
+      }
+      break;
     case RowOperationsPB::DELETE:
+      DCHECK(!op.error_ignored);
       op_metrics_.successful_deletes++;
+      break;
+    case RowOperationsPB::DELETE_IGNORE:
+      if (op.error_ignored) {
+        op_metrics_.delete_ignore_errors++;
+      } else {
+        op_metrics_.successful_deletes++;
+      }
       break;
     case RowOperationsPB::UNKNOWN:
     case RowOperationsPB::SPLIT_ROW:

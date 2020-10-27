@@ -800,6 +800,70 @@ TYPED_TEST(TestTablet, TestInsertIgnore) {
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1011, false) }, rows);
 }
 
+TYPED_TEST(TestTablet, TestUpdateIgnore) {
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+  KuduPartialRow row(&this->client_schema_);
+  vector<string> rows;
+
+  // update ignore a missing row, operation should succeed.
+  this->setup_.BuildRow(&row, 0, 1000);
+  vector<LocalTabletWriter::RowOp> ops;
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::UPDATE_IGNORE, &row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // insert a row that can be updated.
+  ops.clear();
+  this->setup_.BuildRow(&row, 0, 1000);
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT, &row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1000, false) }, rows);
+
+  // update ignore an existing row, implements normal update.
+  ops.clear();
+  this->setup_.BuildRow(&row, 0, 1011);
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::UPDATE_IGNORE, &row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1011, false) }, rows);
+}
+
+TYPED_TEST(TestTablet, TestDeleteIgnore) {
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
+  KuduPartialRow row(&this->client_schema_);
+  vector<string> rows;
+
+  // delete ignore a missing row, operation should succeed.
+  this->setup_.BuildRowKey(&row, 0);
+  vector<LocalTabletWriter::RowOp> ops;
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE_IGNORE, &row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+
+  // insert a row that can be deleted.
+  ops.clear();
+  this->setup_.BuildRow(&row, 0, 1000);
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::INSERT, &row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(1, rows.size());
+  EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1000, false) }, rows);
+
+  // delete ignore an existing row, implements normal delete.
+  ops.clear();
+  KuduPartialRow delete_row(&this->client_schema_);
+  this->setup_.BuildRowKey(&delete_row, 0);
+  ops.emplace_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE_IGNORE, &delete_row));
+  ASSERT_OK(writer.WriteBatch(ops));
+  ASSERT_OK(this->IterateToStringList(&rows));
+  ASSERT_EQ(0, rows.size());
+}
+
 TYPED_TEST(TestTablet, TestUpsert) {
   vector<string> rows;
   const auto& upserts_as_updates = this->tablet()->metrics()->upserts_as_updates;

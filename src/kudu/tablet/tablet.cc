@@ -626,7 +626,9 @@ Status Tablet::ValidateOp(const RowOp& op) {
       return ValidateInsertOrUpsertUnlocked(op);
 
     case RowOperationsPB::UPDATE:
+    case RowOperationsPB::UPDATE_IGNORE:
     case RowOperationsPB::DELETE:
+    case RowOperationsPB::DELETE_IGNORE:
       return ValidateMutateUnlocked(op);
 
     default:
@@ -824,10 +826,10 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
 
 Status Tablet::MutateRowUnlocked(const IOContext* io_context,
                                  WriteOpState *op_state,
-                                 RowOp* mutate,
+                                 RowOp* op,
                                  ProbeStats* stats) {
-  DCHECK(mutate->checked_present);
-  DCHECK(mutate->valid);
+  DCHECK(op->checked_present);
+  DCHECK(op->valid);
 
   auto* result = google::protobuf::Arena::CreateMessage<OperationResultPB>(
       op_state->pb_arena());
@@ -836,23 +838,38 @@ Status Tablet::MutateRowUnlocked(const IOContext* io_context,
 
   // If we found the row in any existing RowSet, mutate it there. Otherwise
   // attempt to mutate in the MRS.
-  RowSet* rs_to_attempt = mutate->present_in_rowset ?
-      mutate->present_in_rowset : comps->memrowset.get();
+  RowSet* rs_to_attempt = op->present_in_rowset ?
+      op->present_in_rowset : comps->memrowset.get();
   Status s = rs_to_attempt->MutateRow(ts,
-                                      *mutate->key_probe,
-                                      mutate->decoded_op.changelist,
+                                      *op->key_probe,
+                                      op->decoded_op.changelist,
                                       op_state->op_id(),
                                       io_context,
                                       stats,
                                       result);
   if (PREDICT_TRUE(s.ok())) {
-    mutate->SetMutateSucceeded(result);
+    op->SetMutateSucceeded(result);
   } else {
     if (s.IsNotFound()) {
-      // Replace internal error messages with one more suitable for users.
-      s = Status::NotFound("key not found");
+      RowOperationsPB_Type op_type = op->decoded_op.type;
+      switch (op_type) {
+        case RowOperationsPB::UPDATE_IGNORE:
+        case RowOperationsPB::DELETE_IGNORE:
+          s = Status::OK();
+          op->SetErrorIgnored();
+          break;
+        case RowOperationsPB::UPDATE:
+        case RowOperationsPB::DELETE:
+          // Replace internal error messages with one more suitable for users.
+          s = Status::NotFound("key not found");
+          op->SetFailed(s);
+          break;
+        default:
+          LOG(FATAL) << "Unknown operation type: " << op_type;
+      }
+    } else {
+      op->SetFailed(s);
     }
-    mutate->SetFailed(s);
   }
   return s;
 }
@@ -1115,7 +1132,9 @@ Status Tablet::ApplyRowOperation(const IOContext* io_context,
       return s;
 
     case RowOperationsPB::UPDATE:
+    case RowOperationsPB::UPDATE_IGNORE:
     case RowOperationsPB::DELETE:
+    case RowOperationsPB::DELETE_IGNORE:
       s = MutateRowUnlocked(io_context, op_state, row_op, stats);
       if (s.IsNotFound()) {
         return Status::OK();

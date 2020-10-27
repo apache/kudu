@@ -70,7 +70,9 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
     case RowOperationsPB::UPSERT:
       return "UPSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPDATE:
+    case RowOperationsPB::UPDATE_IGNORE:
     case RowOperationsPB::DELETE:
+    case RowOperationsPB::DELETE_IGNORE:
       return Substitute("MUTATE $0 $1",
                         schema.DebugRowKey(ConstContiguousRow(&schema, row_data)),
                         changelist.ToString(schema));
@@ -542,7 +544,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   // update to perform.
   // For DELETE, we expect no other columns to be set (and we verify that).
   Status row_status;
-  if (op->type == RowOperationsPB::UPDATE) {
+  if (op->type == RowOperationsPB::UPDATE || op->type == RowOperationsPB::UPDATE_IGNORE) {
     faststring buf;
     RowChangeListEncoder rcl_encoder(&buf);
 
@@ -586,7 +588,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
       memcpy(rcl_in_arena, buf.data(), buf.size());
       op->changelist = RowChangeList(Slice(rcl_in_arena, buf.size()));
     }
-  } else if (op->type == RowOperationsPB::DELETE) {
+  } else if (op->type == RowOperationsPB::DELETE || op->type == RowOperationsPB::DELETE_IGNORE) {
     // Ensure that no other columns are set.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
       if (PREDICT_FALSE(BitmapTest(client_isset_map, client_col_idx))) {
@@ -700,7 +702,9 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
       RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op));
       break;
     case RowOperationsPB::UPDATE:
+    case RowOperationsPB::UPDATE_IGNORE:
     case RowOperationsPB::DELETE:
+    case RowOperationsPB::DELETE_IGNORE:
       RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, op));
       break;
     default:

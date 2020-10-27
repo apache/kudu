@@ -39,7 +39,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
@@ -63,7 +62,9 @@ struct OpMetrics {
   int insert_ignore_errors;
   int successful_upserts;
   int successful_updates;
+  int update_ignore_errors;
   int successful_deletes;
+  int delete_ignore_errors;
   uint64_t commit_wait_duration_usec;
 };
 

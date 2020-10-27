@@ -125,7 +125,7 @@ void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
 void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
                                    const KuduPartialRow& row,
                                    int n_random_changes) {
-  for (int operation = 0; operation <= 9; operation++) {
+  for (int operation = 0; operation <= 11; operation++) {
     RowOperationsPB pb;
     RowOperationsPBEncoder enc(&pb);
 
@@ -159,6 +159,12 @@ void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
         break;
       case 9:
         enc.Add(RowOperationsPB::INSERT_IGNORE, row);
+        break;
+      case 10:
+        enc.Add(RowOperationsPB::UPDATE_IGNORE, row);
+        break;
+      case 11:
+        enc.Add(RowOperationsPB::DELETE_IGNORE, row);
         break;
     }
 
@@ -826,7 +832,8 @@ void CheckExceedCellLimit(const Schema& client_schema,
   // Fill the row.
   KuduPartialRow row(&client_schema);
   for (size_t i = 0; i < client_schema.num_columns(); ++i) {
-    if (op_type == RowOperationsPB::DELETE && i >= client_schema.num_key_columns()) {
+    if ((op_type == RowOperationsPB::DELETE || op_type == RowOperationsPB::DELETE_IGNORE) &&
+         i >= client_schema.num_key_columns()) {
       // DELETE should not have a value for non-key column.
       break;
     }
@@ -856,6 +863,9 @@ void CheckExceedCellLimit(const Schema& client_schema,
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
     case RowOperationsPB::UPSERT:
+    case RowOperationsPB::INSERT_IGNORE:
+    case RowOperationsPB::UPDATE_IGNORE:
+    case RowOperationsPB::DELETE_IGNORE:
       s = decoder.DecodeOperations<WRITE_OPS>(&ops);
       break;
     case RowOperationsPB::SPLIT_ROW:
@@ -870,7 +880,8 @@ void CheckExceedCellLimit(const Schema& client_schema,
   }
   ASSERT_OK(s);
   for (const auto& op : ops) {
-    ASSERT_EQ(op.result.CodeAsString(), expect_status.CodeAsString());
+    ASSERT_EQ(op.result.CodeAsString(),
+        expect_status.CodeAsString()) << op.result.message().ToString();
     ASSERT_STR_CONTAINS(op.result.ToString(), expect_msg);
   }
 }
@@ -880,6 +891,7 @@ void CheckInsertUpsertExceedCellLimit(const Schema& client_schema,
                                       const Status& expect_status,
                                       const string& expect_msg) {
   for (auto op_type : { RowOperationsPB::INSERT,
+                        RowOperationsPB::INSERT_IGNORE,
                         RowOperationsPB::UPSERT }) {
     NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
   }
@@ -890,7 +902,9 @@ void CheckUpdateDeleteExceedCellLimit(const Schema& client_schema,
                                       const Status& expect_status,
                                       const string& expect_msg) {
   for (auto op_type : { RowOperationsPB::UPDATE,
-                        RowOperationsPB::DELETE }) {
+                        RowOperationsPB::UPDATE_IGNORE,
+                        RowOperationsPB::DELETE,
+                        RowOperationsPB::DELETE_IGNORE }) {
     NO_FATALS(CheckExceedCellLimit(client_schema, col_values, op_type, expect_status, expect_msg));
   }
 }

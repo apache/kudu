@@ -117,31 +117,45 @@ class TestRandomAccess : public KuduTabletTest {
     vector<LocalTabletWriter::RowOp> pending;
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
-      int r = rand() % 3;
       if (cur_val == boost::none) {
-        // If there is no row, then randomly insert or upsert.
-        switch (r) {
+        // If there is no row, then randomly insert, insert ignore,
+        // update ignore, delete ignore, or upsert.
+        switch (rand() % 5) {
           case 1:
             cur_val = InsertRow(key, new_val, &pending);
             break;
           case 2:
             cur_val = InsertIgnoreRow(key, new_val, &pending);
             break;
+          case 3:
+            UpdateIgnoreRow(key, new_val, cur_val, &pending); // won't change current value
+            break;
+          case 4:
+            DeleteIgnoreRow(key, &pending); // won't change current value
+            break;
           default:
             cur_val = UpsertRow(key, new_val, cur_val, &pending);
         }
       } else {
         if (new_val % (FLAGS_update_delete_ratio + 1) == 0) {
-          cur_val = DeleteRow(key, &pending);
+          // Randomly choose between delete and delete ignore.
+          if (rand() % 2 == 0) {
+            cur_val = DeleteRow(key, &pending);
+          } else {
+            cur_val = DeleteIgnoreRow(key, &pending);
+          }
         } else {
           // If row already exists, randomly choose between an update,
-          // upsert, and insert ignore.
-          switch (r) {
+          // update ignore, insert ignore, and upsert.
+          switch (rand() % 4) {
             case 1:
-              cur_val = MutateRow(key, new_val, cur_val, &pending);
+              cur_val = UpdateRow(key, new_val, cur_val, &pending);
               break;
             case 2:
-              InsertIgnoreRow(key, new_val, &pending); // won't change existing value
+              cur_val = UpdateIgnoreRow(key, new_val, cur_val, &pending);
+              break;
+            case 3:
+              InsertIgnoreRow(key, new_val, &pending); // won't change current value
               break;
             default:
               cur_val = UpsertRow(key, new_val, cur_val, &pending);
@@ -213,11 +227,19 @@ class TestRandomAccess : public KuduTabletTest {
   }
 
   // Adds an update of the given key/value pair to 'ops', returning the expected value
-  optional<ExpectedKeyValueRow> MutateRow(int key,
+  optional<ExpectedKeyValueRow> UpdateRow(int key,
                                           uint32_t new_val,
                                           const optional<ExpectedKeyValueRow>& old_row,
                                           vector<LocalTabletWriter::RowOp>* ops) {
     return DoRowOp(RowOperationsPB::UPDATE, key, new_val, old_row, ops);
+  }
+
+  // Adds an update of the given key/value pair to 'ops', returning the expected value
+  optional<ExpectedKeyValueRow> UpdateIgnoreRow(int key,
+                                                uint32_t new_val,
+                                                const optional<ExpectedKeyValueRow>& old_row,
+                                                vector<LocalTabletWriter::RowOp>* ops) {
+    return DoRowOp(RowOperationsPB::UPDATE_IGNORE, key, new_val, old_row, ops);
   }
 
   optional<ExpectedKeyValueRow> DoRowOp(RowOperationsPB::Type type,
@@ -234,6 +256,7 @@ class TestRandomAccess : public KuduTabletTest {
     switch (type) {
       case RowOperationsPB::UPSERT:
       case RowOperationsPB::UPDATE:
+      case RowOperationsPB::UPDATE_IGNORE:
       case RowOperationsPB::INSERT:
       case RowOperationsPB::INSERT_IGNORE:
         switch (val % 2) {
@@ -247,7 +270,8 @@ class TestRandomAccess : public KuduTabletTest {
             break;
         }
 
-        if ((type != RowOperationsPB::UPDATE) && (val % 3 == 1)) {
+        if ((type != RowOperationsPB::UPDATE &&
+             type != RowOperationsPB::UPDATE_IGNORE) && (val % 3 == 1)) {
           // Don't set the value. In the case of an INSERT or an UPSERT with no pre-existing
           // row, this should default to NULL. Otherwise it should remain set to whatever it
           // was previously set to.
@@ -261,6 +285,7 @@ class TestRandomAccess : public KuduTabletTest {
         }
         break;
       case RowOperationsPB::DELETE:
+      case RowOperationsPB::DELETE_IGNORE:
         ret = boost::none;
         break;
       default:
@@ -270,13 +295,21 @@ class TestRandomAccess : public KuduTabletTest {
     return ret;
   }
 
-
   // Adds a delete of the given row to 'ops', returning an empty string (indicating that
   // the row no longer exists).
   optional<ExpectedKeyValueRow> DeleteRow(int key, vector<LocalTabletWriter::RowOp>* ops) {
     unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
     CHECK_OK(row->SetInt32(0, key));
     ops->push_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE, row.release()));
+    return boost::none;
+  }
+
+  // Adds a delete ignore of the given row to 'ops', returning an empty string (indicating that
+  // the row no longer exists).
+  optional<ExpectedKeyValueRow> DeleteIgnoreRow(int key, vector<LocalTabletWriter::RowOp>* ops) {
+    unique_ptr<KuduPartialRow> row(new KuduPartialRow(&client_schema_));
+    CHECK_OK(row->SetInt32(0, key));
+    ops->push_back(LocalTabletWriter::RowOp(RowOperationsPB::DELETE_IGNORE, row.release()));
     return boost::none;
   }
 

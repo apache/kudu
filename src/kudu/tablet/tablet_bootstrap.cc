@@ -445,8 +445,9 @@ class TabletBootstrap {
     // Number of REPLICATE messages for which a matching COMMIT was found.
     int ops_committed;
 
-    // Number inserts/mutations seen and ignored. Note inserts_ignored does not refer
-    // to the INSERT_IGNORE operation. It refers to inserts ignored during log replay.
+    // Number inserts/mutations seen and ignored. Note inserts_ignored and mutations_ignored
+    // do not refer to the INSERT_IGNORE, UPDATE_IGNORE, and DELETE_IGNORE operations.
+    // They refer to inserts and mutations ignored during log replay.
     int inserts_seen, inserts_ignored;
     int mutations_seen, mutations_ignored;
 
@@ -1642,7 +1643,9 @@ Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
         break;
       }
       case RowOperationsPB::UPDATE:
-      case RowOperationsPB::DELETE: {
+      case RowOperationsPB::UPDATE_IGNORE:
+      case RowOperationsPB::DELETE:
+      case RowOperationsPB::DELETE_IGNORE: {
         stats_.mutations_seen++;
         if (op->has_result()) {
           stats_.mutations_ignored++;

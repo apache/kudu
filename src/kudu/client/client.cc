@@ -967,8 +967,16 @@ KuduUpdate* KuduTable::NewUpdate() {
   return new KuduUpdate(shared_from_this());
 }
 
+KuduUpdateIgnore* KuduTable::NewUpdateIgnore() {
+  return new KuduUpdateIgnore(shared_from_this());
+}
+
 KuduDelete* KuduTable::NewDelete() {
   return new KuduDelete(shared_from_this());
+}
+
+KuduDeleteIgnore* KuduTable::NewDeleteIgnore() {
+  return new KuduDeleteIgnore(shared_from_this());
 }
 
 KuduClient* KuduTable::client() const {

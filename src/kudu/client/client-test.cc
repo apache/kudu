@@ -413,10 +413,24 @@ class ClientTest : public KuduTest {
   }
 
   static unique_ptr<KuduInsertIgnore> BuildTestInsertIgnore(KuduTable* table, int index) {
-    unique_ptr<KuduInsertIgnore> insert(table->NewInsertIgnore());
-    KuduPartialRow* row = insert->mutable_row();
+    unique_ptr<KuduInsertIgnore> insert_ignore(table->NewInsertIgnore());
+    KuduPartialRow* row = insert_ignore->mutable_row();
     PopulateDefaultRow(row, index);
-    return insert;
+    return insert_ignore;
+  }
+
+  static unique_ptr<KuduUpdateIgnore> BuildTestUpdateIgnore(KuduTable* table, int index) {
+    unique_ptr<KuduUpdateIgnore> update_ignore(table->NewUpdateIgnore());
+    KuduPartialRow* row = update_ignore->mutable_row();
+    PopulateDefaultRow(row, index);
+    return update_ignore;
+  }
+
+  static unique_ptr<KuduDeleteIgnore> BuildTestDeleteIgnore(KuduTable* table, int index) {
+    unique_ptr<KuduDeleteIgnore> delete_ignore(table->NewDeleteIgnore());
+    KuduPartialRow* row = delete_ignore->mutable_row();
+    CHECK_OK(row->SetInt32(0, index));
+    return delete_ignore;
   }
 
   static void PopulateDefaultRow(KuduPartialRow* row, int index) {
@@ -2509,7 +2523,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   FlushSessionOrDie(session);
 }
 
-static void DoTestInsertIgnoreVerifyRows(const shared_ptr<KuduTable>& tbl, int num_rows) {
+static void DoTestVerifyRows(const shared_ptr<KuduTable>& tbl, int num_rows) {
   vector<string> rows;
   KuduScanner scanner(tbl.get());
   ASSERT_OK(ScanToStrings(&scanner, &rows));
@@ -2529,32 +2543,94 @@ TEST_F(ClientTest, TestInsertIgnore) {
   {
     unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert.release()));
-    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+    DoTestVerifyRows(client_table_, 1);
   }
 
   {
-    // INSERT IGNORE results in no error on duplicate primary key
+    // INSERT IGNORE results in no error on duplicate primary key.
     unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 1));
     ASSERT_OK(session->Apply(insert_ignore.release()));
-    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+    DoTestVerifyRows(client_table_, 1);
   }
 
   {
-    // INSERT IGNORE cannot update row
+    // INSERT IGNORE cannot update row.
     unique_ptr<KuduInsertIgnore> insert_ignore(client_table_->NewInsertIgnore());
     ASSERT_OK(insert_ignore->mutable_row()->SetInt32("key", 1));
     ASSERT_OK(insert_ignore->mutable_row()->SetInt32("int_val", 999));
     ASSERT_OK(insert_ignore->mutable_row()->SetStringCopy("string_val", "hello world"));
     ASSERT_OK(insert_ignore->mutable_row()->SetInt32("non_null_with_default", 999));
     ASSERT_OK(session->Apply(insert_ignore.release())); // returns ok but results in no change
-    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+    DoTestVerifyRows(client_table_, 1);
   }
 
   {
-    // INSERT IGNORE can insert new row
+    // INSERT IGNORE can insert new row.
     unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 2));
     ASSERT_OK(session->Apply(insert_ignore.release()));
-    DoTestInsertIgnoreVerifyRows(client_table_, 2);
+    DoTestVerifyRows(client_table_, 2);
+  }
+}
+
+TEST_F(ClientTest, TestUpdateIgnore) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  {
+    // UPDATE IGNORE results in no error on missing primary key.
+    unique_ptr<KuduUpdateIgnore> update_ignore(BuildTestUpdateIgnore(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(update_ignore.release()));
+    DoTestVerifyRows(client_table_, 0);
+  }
+
+  {
+    unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(insert.release()));
+    DoTestVerifyRows(client_table_, 1);
+  }
+
+  {
+    // UPDATE IGNORE can update row.
+    unique_ptr<KuduUpdateIgnore> update_ignore(client_table_->NewUpdateIgnore());
+    ASSERT_OK(update_ignore->mutable_row()->SetInt32("key", 1));
+    ASSERT_OK(update_ignore->mutable_row()->SetInt32("int_val", 999));
+    ASSERT_OK(update_ignore->mutable_row()->SetStringCopy("string_val", "hello world"));
+    ASSERT_OK(update_ignore->mutable_row()->SetInt32("non_null_with_default", 999));
+    ASSERT_OK(session->Apply(update_ignore.release()));
+
+    vector<string> rows;
+    KuduScanner scanner(client_table_.get());
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
+    ASSERT_EQ(1, rows.size());
+    ASSERT_EQ("(int32 key=1, int32 int_val=999, string string_val=\"hello world\", "
+              "int32 non_null_with_default=999)", rows[0]);
+  }
+}
+
+TEST_F(ClientTest, TestDeleteIgnore) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  {
+    unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(insert.release()));
+    DoTestVerifyRows(client_table_, 1);
+  }
+
+  {
+    // DELETE IGNORE can delete row.
+    unique_ptr<KuduDeleteIgnore> delete_ignore(BuildTestDeleteIgnore(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(delete_ignore.release()));
+    DoTestVerifyRows(client_table_, 0);
+  }
+
+  {
+    // DELETE IGNORE results in no error on missing primary key.
+    unique_ptr<KuduDeleteIgnore> delete_ignore(BuildTestDeleteIgnore(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(delete_ignore.release()));
+    DoTestVerifyRows(client_table_, 0);
   }
 }
 

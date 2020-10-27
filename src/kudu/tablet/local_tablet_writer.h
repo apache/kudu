@@ -79,8 +79,16 @@ class LocalTabletWriter {
     return Write(RowOperationsPB::DELETE, row);
   }
 
+  Status DeleteIgnore(const KuduPartialRow& row) {
+    return Write(RowOperationsPB::DELETE_IGNORE, row);
+  }
+
   Status Update(const KuduPartialRow& row) {
     return Write(RowOperationsPB::UPDATE, row);
+  }
+
+  Status UpdateIgnore(const KuduPartialRow& row) {
+    return Write(RowOperationsPB::UPDATE_IGNORE, row);
   }
 
   // Perform a write against the local tablet.

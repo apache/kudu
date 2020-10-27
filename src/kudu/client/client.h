@@ -81,6 +81,7 @@ namespace client {
 
 class KuduColumnarScanBatch;
 class KuduDelete;
+class KuduDeleteIgnore;
 class KuduInsert;
 class KuduInsertIgnore;
 class KuduLoggingCallback;
@@ -94,6 +95,7 @@ class KuduTableStatistics;
 class KuduTablet;
 class KuduTabletServer;
 class KuduUpdate;
+class KuduUpdateIgnore;
 class KuduUpsert;
 class KuduValue;
 class KuduWriteOperation;
@@ -1085,10 +1087,20 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///   KuduSession::Apply().
   KuduUpdate* NewUpdate();
 
+  /// @return New @c UPDATE_IGNORE operation for this table. It is the
+  ///   caller's responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
+  KuduUpdateIgnore* NewUpdateIgnore();
+
   /// @return New @c DELETE operation for this table. It is the caller's
   ///   responsibility to free the result, unless it is passed to
   ///   KuduSession::Apply().
   KuduDelete* NewDelete();
+
+  /// @return New @c DELETE_IGNORE operation for this table. It is the
+  ///   caller's responsibility to free the result, unless it is passed to
+  ///   KuduSession::Apply().
+  KuduDeleteIgnore* NewDeleteIgnore();
 
   /// Create a new comparison predicate.
   ///

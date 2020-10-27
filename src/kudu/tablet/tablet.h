@@ -589,10 +589,10 @@ class Tablet {
                                 RowOp* op,
                                 ProbeStats* stats);
 
-  // Same as above, but for UPDATE.
+  // Same as above, but for UPDATE, UPDATE_IGNORE, DELETE, or DELETE_IGNORE operations.
   Status MutateRowUnlocked(const fs::IOContext* io_context,
                            WriteOpState *op_state,
-                           RowOp* mutate,
+                           RowOp* op,
                            ProbeStats* stats);
 
   // In the case of an UPSERT against a duplicate row, converts the UPSERT

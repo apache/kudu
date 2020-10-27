@@ -76,7 +76,7 @@ struct DecodedRowOperation {
   RowOperationsPB::Type type;
 
   // For INSERT, INSERT_IGNORE, or UPSERT, the whole projected row.
-  // For UPDATE or DELETE, the row key.
+  // For UPDATE, UPDATE_IGNORE, DELETE, or DELETE_IGNORE, the row key.
   const uint8_t* row_data;
 
   // For INSERT or UPDATE, a bitmap indicating which of the cells were
