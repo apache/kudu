@@ -213,6 +213,13 @@ class TestClient(KuduTestBase, unittest.TestCase):
         op = table.new_insert_ignore((3, 1, 'hello_1'))
         session.apply(op)
 
+        # Update ignore a missing row
+        op = table.new_update_ignore((-999, 1, 'hello_1'))
+        session.apply(op)
+
+        # Delete ignore a missing row
+        op = table.new_delete_ignore({'key': -998})
+        session.apply(op)
 
         scanner = table.scanner().open()
         rows = dict((t[0], t) for t in scanner.read_all_tuples())
@@ -225,7 +232,10 @@ class TestClient(KuduTestBase, unittest.TestCase):
 
         # Delete the rows we just wrote
         for i in range(nrows):
-            op = table.new_delete({'key': i})
+            if i % 2 == 0:
+                op = table.new_delete({'key': i})
+            else:
+                op = table.new_delete_ignore({'key': i})
             session.apply(op)
         session.flush()
 

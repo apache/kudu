@@ -915,6 +915,24 @@ cdef class Table:
         """
         return Update(self, record)
 
+    def new_update_ignore(self, record=None):
+        """
+        Create a new UpdateIgnore operation. Pass the completed UpdateIgnore to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        updateIgnore : UpdateIgnore
+        """
+        return UpdateIgnore(self, record)
+
     def new_delete(self, record=None):
         """
         Create a new Delete operation. Pass the completed Update to a Session.
@@ -932,6 +950,24 @@ cdef class Table:
         delete : Delete
         """
         return Delete(self, record)
+
+    def new_delete_ignore(self, record=None):
+        """
+        Create a new DeleteIgnore operation. Pass the completed DeleteIgnore to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        deleteIgnore : DeleteIgnore
+        """
+        return DeleteIgnore(self, record)
 
     def scanner(self):
         """
@@ -2920,6 +2956,15 @@ cdef class Update(WriteOperation):
     def __dealloc__(self):
         del self.op
 
+cdef class UpdateIgnore(WriteOperation):
+    def __cinit__(self, Table table, record=None):
+        self.op = table.ptr().NewUpdateIgnore()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
+
+    def __dealloc__(self):
+        del self.op
 
 cdef class Delete(WriteOperation):
     def __cinit__(self, Table table, record=None):
@@ -2931,7 +2976,15 @@ cdef class Delete(WriteOperation):
     def __dealloc__(self):
         del self.op
 
+cdef class DeleteIgnore(WriteOperation):
+    def __cinit__(self, Table table, record=None):
+        self.op = table.ptr().NewDeleteIgnore()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
 
+    def __dealloc__(self):
+        del self.op
 
 cdef inline cast_pyvalue(DataType t, object o):
     if t == KUDU_BOOL:

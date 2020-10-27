@@ -450,6 +450,10 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
         INSERT " kudu::client::KuduWriteOperation::INSERT"
         UPDATE " kudu::client::KuduWriteOperation::UPDATE"
         DELETE " kudu::client::KuduWriteOperation::DELETE"
+        UPSERT " kudu::client::KuduWriteOperation::UPSERT"
+        INSERT_IGNORE " kudu::client::KuduWriteOperation::INSERT_IGNORE"
+        UPDATE_IGNORE " kudu::client::KuduWriteOperation::UPDATE_IGNORE"
+        DELETE_IGNORE " kudu::client::KuduWriteOperation::DELETE_IGNORE"
 
     cdef cppclass KuduWriteOperation:
         KuduPartialRow& row()
@@ -474,7 +478,13 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
     cdef cppclass KuduDelete(KuduWriteOperation):
         pass
 
+    cdef cppclass KuduDeleteIgnore(KuduWriteOperation):
+        pass
+
     cdef cppclass KuduUpdate(KuduWriteOperation):
+        pass
+
+    cdef cppclass KuduUpdateIgnore(KuduWriteOperation):
         pass
 
 
@@ -629,7 +639,9 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduInsertIgnore* NewInsertIgnore()
         KuduUpsert* NewUpsert()
         KuduUpdate* NewUpdate()
+        KuduUpdateIgnore* NewUpdateIgnore()
         KuduDelete* NewDelete()
+        KuduDeleteIgnore* NewDeleteIgnore()
 
         KuduPredicate* NewComparisonPredicate(const Slice& col_name,
                                               ComparisonOp op,
@@ -665,7 +677,9 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status Apply(KuduInsertIgnore* write_op)
         Status Apply(KuduUpsert* write_op)
         Status Apply(KuduUpdate* write_op)
+        Status Apply(KuduUpdateIgnore* write_op)
         Status Apply(KuduDelete* write_op)
+        Status Apply(KuduDeleteIgnore* write_op)
 
         # This is thread-safe
         Status Flush()
