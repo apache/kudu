@@ -189,6 +189,26 @@ public class KuduTable {
   }
 
   /**
+   * Get a new update ignore configured with this table's schema. An update ignore will
+   * ignore missing row errors. This is useful to update a row only if it exists.
+   * The returned object should not be reused.
+   * @return an update ignore with this table's schema
+   */
+  public UpdateIgnore newUpdateIgnore() {
+    return new UpdateIgnore(this);
+  }
+
+  /**
+   * Get a new delete ignore configured with this table's schema. An delete ignore will
+   * ignore missing row errors. This is useful to delete a row only if it exists.
+   * The returned object should not be reused.
+   * @return a delete ignore with this table's schema
+   */
+  public DeleteIgnore newDeleteIgnore() {
+    return new DeleteIgnore(this);
+  }
+
+  /**
    * Asynchronously get all the tablets for this table.
    * @param deadline max time spent in milliseconds for the deferred result of this method to
    *         get called back, if deadline is reached, the deferred result will get erred back

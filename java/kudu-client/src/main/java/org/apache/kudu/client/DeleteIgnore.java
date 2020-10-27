@@ -21,19 +21,20 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 /**
- * Operation to update columns on an existing row.
+ * Class of Operation for whole row removals ignoring missing rows.
+ * Only columns which are part of the key can be set.
  * Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class Update extends Operation {
+public class DeleteIgnore extends Operation {
 
-  Update(KuduTable table) {
+  DeleteIgnore(KuduTable table) {
     super(table);
   }
 
   @Override
   ChangeType getChangeType() {
-    return ChangeType.UPDATE;
+    return ChangeType.DELETE_IGNORE;
   }
 }

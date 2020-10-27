@@ -21,19 +21,19 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 /**
- * Operation to update columns on an existing row.
+ * Represents a single row update ignoring missing rows.
  * Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class Update extends Operation {
+public class UpdateIgnore extends Operation {
 
-  Update(KuduTable table) {
+  UpdateIgnore(KuduTable table) {
     super(table);
   }
 
   @Override
   ChangeType getChangeType() {
-    return ChangeType.UPDATE;
+    return ChangeType.UPDATE_IGNORE;
   }
 }

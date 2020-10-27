@@ -21,7 +21,8 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 /**
- * Represents a single row insert. Instances of this class should not be reused.
+ * Represents a single row insert.
+ * Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
