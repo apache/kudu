@@ -646,6 +646,7 @@ class KUDU_EXPORT KuduPartialRow {
   friend class PartitionSchema;
   friend class RowOperationsPBDecoder;
   friend class RowOperationsPBEncoder;
+  friend class ScanSpec; // for Set(int32_t column_idx, const uint8_t* val)
   friend class tools::TableScanner;
   friend class TestScanSpec;
   template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;

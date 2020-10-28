@@ -259,6 +259,13 @@ class ColumnPredicate {
   const std::vector<const void*>& raw_values() const {
     return values_;
   }
+
+  // Returns the pointer to list of values if this is an in-list predicate.
+  // Use for pruning in-list predicate values in case of hash-key based in-list prediate.
+  std::vector<const void*>* mutable_raw_values() {
+    return &values_;
+  }
+
   // Returns bloom filters if this is a bloom filter predicate.
   const std::vector<BlockBloomFilter*>& bloom_filters() const {
     return bloom_filters_;

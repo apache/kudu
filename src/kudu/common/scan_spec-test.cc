@@ -19,9 +19,9 @@
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -33,6 +33,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
@@ -43,10 +44,33 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::unique_ptr;
 using std::vector;
+using std::pair;
 
 namespace kudu {
+
+namespace {
+// Generate partition schema of a table with given hash_partitions.
+// E.g. GeneratePartitionSchema(schema, {make_pair({a, b}, 3), make_pair({c}, 5) })
+// Returns 'partition by hash(a, b) partitions 3, hash(c) partitions 5'.
+void GeneratePartitionSchema(const Schema& schema,
+                             const vector<std::pair<vector<std::string>, int>>& hash_partitions,
+                             PartitionSchema* partition_schema) {
+  PartitionSchemaPB partition_schema_pb;
+  for (const auto& col_names_and_num_buckets : hash_partitions) {
+    auto* hash_pb = partition_schema_pb.add_hash_bucket_schemas();
+    hash_pb->set_num_buckets(col_names_and_num_buckets.second);
+    hash_pb->set_seed(0);
+    for (const auto& col_name : col_names_and_num_buckets.first) {
+      auto* column_pb = hash_pb->add_columns();
+      int col_idx = schema.find_column(col_name);
+      column_pb->set_id(col_idx);
+      column_pb->set_name(col_name);
+    }
+  }
+  CHECK_OK(PartitionSchema::FromPB(partition_schema_pb, schema, partition_schema));
+}
+} // anonymous namespace
 
 static std::string ToString(const vector<ColumnSchema>& columns) {
   std::string str;
@@ -59,9 +83,9 @@ static std::string ToString(const vector<ColumnSchema>& columns) {
 
 class TestScanSpec : public KuduTest {
  public:
-  explicit TestScanSpec(const Schema& s)
+  explicit TestScanSpec(Schema s)
     : arena_(1024),
-      schema_(s) {
+      schema_(std::move(s)) {
   }
 
   enum ComparisonOp {
@@ -373,6 +397,391 @@ TEST_F(CompositeIntKeysTest, TestInListPushdown) {
             "PK < (int8 a=10, int8 b=101, int8 c=-128) AND "
             "a IN (0, 10) AND b IN (50, 100)",
             spec.ToString(schema_));
+}
+
+// Test that hash(a) IN list predicates prune with right values.
+TEST_F(CompositeIntKeysTest, TestOneHashKeyInListHashPruning) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 });
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+
+  Schema schema = schema_.CopyWithColumnIds();
+
+  PartitionSchema partition_schema;
+  GeneratePartitionSchema(schema,
+                          { pair<vector<std::string>, int>({ "a" }, 3) },
+                          &partition_schema);
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_EQ(3, partitions.size());
+
+  // clone scan_spec for different partition.
+  ScanSpec spec_p1 = spec;
+  ScanSpec spec_p2 = spec;
+  ScanSpec spec_p3 = spec;
+
+  spec_p1.PruneHashForInlistIfPossible(schema, partitions[0], partition_schema);
+  spec_p1.OptimizeScan(schema, &arena_, true);
+
+  // Verify the splitted values can merge into originl set without overlapping.
+  SCOPED_TRACE(spec_p1.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=4, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=8, int8 b=101, int8 c=-128) AND "
+            "a IN (4, 7, 8) AND b IN (50, 100)",
+            spec_p1.ToString(schema));
+
+  spec_p2.PruneHashForInlistIfPossible(schema, partitions[1], partition_schema);
+  spec_p2.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p2.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=101, int8 c=-128) AND "
+            "a IN (0, 2, 5, 9) AND b IN (50, 100)",
+            spec_p2.ToString(schema));
+
+  spec_p3.PruneHashForInlistIfPossible(schema, partitions[2], partition_schema);
+  spec_p3.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p3.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=1, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=6, int8 b=101, int8 c=-128) AND "
+            "a IN (1, 3, 6) AND b IN (50, 100)",
+            spec_p3.ToString(schema));
+}
+
+// Test that in case hash(a) prune all predicate values, the rest predicate values for
+// pruned in-list predicate should be detect correctly by CanShortCircuit().
+// BTW, empty IN list predicates wouldn't result in the crash of OptimizeScan().
+TEST_F(CompositeIntKeysTest, TestHashKeyInListHashPruningEmptyDetect) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 2, 4, 5, 7, 8, 9 });
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+
+  Schema schema = schema_.CopyWithColumnIds();
+
+  PartitionSchema partition_schema;
+  GeneratePartitionSchema(schema,
+                          { pair<vector<std::string>, int>({ "a" }, 3) },
+                          &partition_schema);
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_EQ(3, partitions.size());
+
+  // clone scan_spec for different partition.
+  ScanSpec spec_p1 = spec;
+  ScanSpec spec_p2 = spec;
+  ScanSpec spec_p3 = spec;
+
+  spec_p1.PruneHashForInlistIfPossible(schema, partitions[0], partition_schema);
+  // Guarantee OptimizeScan can be call without fatal.
+  NO_FATALS(spec_p1.OptimizeScan(schema, &arena_, true));
+
+  // Verify the splitted values can merge into originl set without overlapping.
+  SCOPED_TRACE(spec_p1.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=4, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=8, int8 b=101, int8 c=-128) AND "
+            "a IN (4, 7, 8) AND b IN (50, 100)",
+            spec_p1.ToString(schema));
+  ASSERT_FALSE(spec_p1.CanShortCircuit());
+
+  spec_p2.PruneHashForInlistIfPossible(schema, partitions[1], partition_schema);
+  // Guarantee OptimizeScan can be call without fatal.
+  NO_FATALS(spec_p2.OptimizeScan(schema, &arena_, true));
+
+  SCOPED_TRACE(spec_p2.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=101, int8 c=-128) AND "
+            "a IN (0, 2, 5, 9) AND b IN (50, 100)",
+            spec_p2.ToString(schema));
+  ASSERT_FALSE(spec_p2.CanShortCircuit());
+
+  // There should be no predicate values after prune.
+  spec_p3.PruneHashForInlistIfPossible(schema, partitions[2], partition_schema);
+  // Guarantee OptimizeScan can be call without fatal.
+  NO_FATALS(spec_p3.OptimizeScan(schema, &arena_, true));
+  ASSERT_TRUE(spec_p3.CanShortCircuit());
+}
+
+// Test that hash(a), hash(b) IN list predicates should be pruned.
+TEST_F(CompositeIntKeysTest, TestMultiHashKeyOneColumnInListHashPruning) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 });
+  AddInPredicate<int8_t>(&spec, "b", { 10, 20, 30, 40, 50, 60, 70, 80 });
+
+  Schema schema = schema_.CopyWithColumnIds();
+
+  PartitionSchema partition_schema;
+  GeneratePartitionSchema(schema,
+                          { pair<vector<std::string>, int>({ "a" }, 3),
+                            pair<vector<std::string>, int>({ "b" }, 3) },
+                          &partition_schema);
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_EQ(9, partitions.size());
+
+  // clone scan_spec for different partition.
+  ScanSpec spec_p1 = spec;
+  ScanSpec spec_p2 = spec;
+  ScanSpec spec_p3 = spec;
+  ScanSpec spec_p4 = spec;
+  ScanSpec spec_p5 = spec;
+  ScanSpec spec_p6 = spec;
+  ScanSpec spec_p7 = spec;
+  ScanSpec spec_p8 = spec;
+  ScanSpec spec_p9 = spec;
+
+  // p1, p2, p3 should have the same predicate values to be pushed on hash(a).
+  // p1, p4, p7 should have the same predicate values to be pushed on hash(b).
+  spec_p1.PruneHashForInlistIfPossible(schema, partitions[0], partition_schema);
+  spec_p1.OptimizeScan(schema, &arena_, true);
+  SCOPED_TRACE(spec_p1.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=4, int8 b=40, int8 c=-128) AND "
+            "PK < (int8 a=8, int8 b=71, int8 c=-128) AND "
+            "a IN (4, 7, 8) AND b IN (40, 60, 70)",
+            spec_p1.ToString(schema));
+
+  spec_p2.PruneHashForInlistIfPossible(schema, partitions[1], partition_schema);
+  spec_p2.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p2.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=4, int8 b=20, int8 c=-128) AND "
+            "PK < (int8 a=8, int8 b=51, int8 c=-128) AND "
+            "a IN (4, 7, 8) AND b IN (20, 30, 50)",
+            spec_p2.ToString(schema));
+
+  spec_p3.PruneHashForInlistIfPossible(schema, partitions[2], partition_schema);
+  spec_p3.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p3.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=4, int8 b=10, int8 c=-128) AND "
+            "PK < (int8 a=8, int8 b=81, int8 c=-128) AND "
+            "a IN (4, 7, 8) AND b IN (10, 80)",
+            spec_p3.ToString(schema));
+
+  spec_p4.PruneHashForInlistIfPossible(schema, partitions[3], partition_schema);
+  spec_p4.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p4.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=40, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=71, int8 c=-128) AND "
+            "a IN (0, 2, 5, 9) AND b IN (40, 60, 70)",
+            spec_p4.ToString(schema));
+
+  spec_p5.PruneHashForInlistIfPossible(schema, partitions[4], partition_schema);
+  spec_p5.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p5.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=20, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=51, int8 c=-128) AND "
+            "a IN (0, 2, 5, 9) AND b IN (20, 30, 50)",
+            spec_p5.ToString(schema));
+
+  spec_p6.PruneHashForInlistIfPossible(schema, partitions[5], partition_schema);
+  spec_p6.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p6.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=10, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=81, int8 c=-128) AND "
+            "a IN (0, 2, 5, 9) AND b IN (10, 80)",
+            spec_p6.ToString(schema));
+
+  spec_p7.PruneHashForInlistIfPossible(schema, partitions[6], partition_schema);
+  spec_p7.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p7.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=1, int8 b=40, int8 c=-128) AND "
+            "PK < (int8 a=6, int8 b=71, int8 c=-128) AND "
+            "a IN (1, 3, 6) AND b IN (40, 60, 70)",
+            spec_p7.ToString(schema));
+
+  spec_p8.PruneHashForInlistIfPossible(schema, partitions[7], partition_schema);
+  spec_p8.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p8.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=1, int8 b=20, int8 c=-128) AND "
+            "PK < (int8 a=6, int8 b=51, int8 c=-128) AND "
+            "a IN (1, 3, 6) AND b IN (20, 30, 50)",
+            spec_p8.ToString(schema));
+
+  spec_p9.PruneHashForInlistIfPossible(schema, partitions[8], partition_schema);
+  spec_p9.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p9.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=1, int8 b=10, int8 c=-128) AND "
+            "PK < (int8 a=6, int8 b=81, int8 c=-128) AND "
+            "a IN (1, 3, 6) AND b IN (10, 80)",
+            spec_p9.ToString(schema));
+}
+
+// Test that hash(a, b) IN list predicates should not be pruned.
+TEST_F(CompositeIntKeysTest, TesMultiHashColumnsInListHashPruning) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 });
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+
+  Schema schema = schema_.CopyWithColumnIds();
+
+  PartitionSchema partition_schema;
+  GeneratePartitionSchema(schema,
+                          { pair<vector<std::string>, int>({ "a", "b" }, 3) },
+                          &partition_schema);
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_EQ(3, partitions.size());
+
+  // clone scan_spec for different partition.
+  ScanSpec spec_p1 = spec;
+  ScanSpec spec_p2 = spec;
+  ScanSpec spec_p3 = spec;
+
+  spec_p1.PruneHashForInlistIfPossible(schema, partitions[0], partition_schema);
+  spec_p1.OptimizeScan(schema, &arena_, true);
+
+  // Verify that the predicates to be pushed to different partition should be
+  // the same when no hash prune happened.
+  SCOPED_TRACE(spec_p1.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=101, int8 c=-128) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100)",
+            spec_p1.ToString(schema));
+
+  spec_p2.PruneHashForInlistIfPossible(schema, partitions[1], partition_schema);
+  spec_p2.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p2.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=101, int8 c=-128) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100)",
+            spec_p2.ToString(schema));
+
+  spec_p3.PruneHashForInlistIfPossible(schema, partitions[2], partition_schema);
+  spec_p3.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p3.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
+            "PK < (int8 a=9, int8 b=101, int8 c=-128) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100)",
+            spec_p3.ToString(schema));
+}
+
+// Test that hash(a, b), hash(c) InList predicates.
+// Neither a or b IN list can be pruned.
+// c IN list should be pruned.
+TEST_F(CompositeIntKeysTest, TesMultiHashKeyMultiHashInListHashPruning) {
+  ScanSpec spec;
+  AddInPredicate<int8_t>(&spec, "a", { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 });
+  AddInPredicate<int8_t>(&spec, "b", { 50, 100 });
+  AddInPredicate<int8_t>(&spec, "c", { 20, 30, 40, 50, 60, 70, 80, 90});
+
+  Schema schema = schema_.CopyWithColumnIds();
+
+  PartitionSchema partition_schema;
+  GeneratePartitionSchema(schema,
+                          { pair<vector<std::string>, int>({ "a", "b" }, 3),
+                            pair<vector<std::string>, int>({ "c" }, 3) },
+                          &partition_schema);
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({}, {}, schema, &partitions));
+  ASSERT_EQ(9, partitions.size());
+
+  // clone scan_spec for different partition.
+  ScanSpec spec_p1 = spec;
+  ScanSpec spec_p2 = spec;
+  ScanSpec spec_p3 = spec;
+  ScanSpec spec_p4 = spec;
+  ScanSpec spec_p5 = spec;
+  ScanSpec spec_p6 = spec;
+  ScanSpec spec_p7 = spec;
+  ScanSpec spec_p8 = spec;
+  ScanSpec spec_p9 = spec;
+
+  spec_p1.PruneHashForInlistIfPossible(schema, partitions[0], partition_schema);
+  spec_p1.OptimizeScan(schema, &arena_, true);
+
+  // hash(a, b) should not be pruned, hash(c) should be pruned.
+  // p1, p4, p7 should have the same values to be pushed.
+  SCOPED_TRACE(spec_p1.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=40) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=71) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (40, 60, 70)",
+            spec_p1.ToString(schema));
+
+  spec_p2.PruneHashForInlistIfPossible(schema, partitions[1], partition_schema);
+  spec_p2.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p2.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=20) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=51) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (20, 30, 50)",
+            spec_p2.ToString(schema));
+
+  spec_p3.PruneHashForInlistIfPossible(schema, partitions[2], partition_schema);
+  spec_p3.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p3.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=80) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=91) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (80, 90)",
+            spec_p3.ToString(schema));
+
+  spec_p4.PruneHashForInlistIfPossible(schema, partitions[3], partition_schema);
+  spec_p4.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p4.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=40) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=71) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (40, 60, 70)",
+            spec_p4.ToString(schema));
+
+  spec_p5.PruneHashForInlistIfPossible(schema, partitions[4], partition_schema);
+  spec_p5.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p5.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=20) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=51) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (20, 30, 50)",
+            spec_p5.ToString(schema));
+
+  spec_p6.PruneHashForInlistIfPossible(schema, partitions[5], partition_schema);
+  spec_p6.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p6.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=80) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=91) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (80, 90)",
+            spec_p6.ToString(schema));
+
+  spec_p7.PruneHashForInlistIfPossible(schema, partitions[6], partition_schema);
+  spec_p7.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p7.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=40) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=71) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (40, 60, 70)",
+            spec_p7.ToString(schema));
+
+  spec_p8.PruneHashForInlistIfPossible(schema, partitions[7], partition_schema);
+  spec_p8.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p8.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=20) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=51) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (20, 30, 50)",
+            spec_p8.ToString(schema));
+
+  spec_p9.PruneHashForInlistIfPossible(schema, partitions[8], partition_schema);
+  spec_p9.OptimizeScan(schema, &arena_, true);
+
+  SCOPED_TRACE(spec_p9.ToString(schema));
+  EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=80) AND "
+            "PK < (int8 a=9, int8 b=100, int8 c=91) AND "
+            "a IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9) AND b IN (50, 100) AND c IN (80, 90)",
+            spec_p9.ToString(schema));
 }
 
 // Test that IN list mixed with range predicates get pushed into the primary key

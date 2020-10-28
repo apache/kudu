@@ -26,7 +26,6 @@
 #include <vector>
 
 #include <glog/logging.h>
-#include <google/protobuf/stubs/port.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/key_encoder.h"
@@ -458,12 +457,8 @@ Status PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
                                                  bool* contains) const {
   CHECK_EQ(partition.hash_buckets().size(), hash_bucket_schemas_.size());
   for (int i = 0; i < hash_bucket_schemas_.size(); i++) {
-    const HashBucketSchema& hash_bucket_schema = hash_bucket_schemas_[i];
-    int32_t bucket;
-    RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
-
-    if (bucket != partition.hash_buckets()[i]) {
-      *contains = false;
+    RETURN_NOT_OK(HashPartitionContainsRowImpl(partition, row, i, contains));
+    if (!*contains) {
       return Status::OK();
     }
   }
@@ -481,6 +476,19 @@ Status PartitionSchema::PartitionContainsRowImpl(const Partition& partition,
   return Status::OK();
 }
 
+template<typename Row>
+Status PartitionSchema::HashPartitionContainsRowImpl(const Partition& partition,
+                                                     const Row& row,
+                                                     int hash_idx,
+                                                     bool* contains) const {
+  DCHECK_EQ(partition.hash_buckets().size(), hash_bucket_schemas_.size());
+  const HashBucketSchema& hash_bucket_schema = hash_bucket_schemas_[hash_idx];
+  int32_t bucket = -1;
+  RETURN_NOT_OK(BucketForRow(row, hash_bucket_schema, &bucket));
+  *contains = (partition.hash_buckets()[hash_idx] == bucket);
+  return Status::OK();
+}
+
 Status PartitionSchema::PartitionContainsRow(const Partition& partition,
                                              const KuduPartialRow& row,
                                              bool* contains) const {
@@ -493,11 +501,24 @@ Status PartitionSchema::PartitionContainsRow(const Partition& partition,
   return PartitionContainsRowImpl(partition, row, contains);
 }
 
+Status PartitionSchema::HashPartitionContainsRow(const Partition& partition,
+                                                 const KuduPartialRow& row,
+                                                 int hash_idx,
+                                                 bool* contains) const {
+  return HashPartitionContainsRowImpl(partition, row, hash_idx, contains);
+}
+
+Status PartitionSchema::HashPartitionContainsRow(const Partition& partition,
+                                                 const ConstContiguousRow& row,
+                                                 int hash_idx,
+                                                 bool* contains) const {
+  return HashPartitionContainsRowImpl(partition, row, hash_idx, contains);
+}
 
 Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
-                                       KuduPartialRow* row,
+                                       KuduPartialRow* partial_row,
                                        Arena* arena) const {
-  ContiguousRow cont_row(row->schema(), row->row_data_);
+  ContiguousRow cont_row(partial_row->schema(), partial_row->row_data_);
   for (int i = 0; i < range_schema_.column_ids.size(); i++) {
     if (encoded_key->empty()) {
       // This can happen when decoding partition start and end keys, since they
@@ -505,8 +526,8 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
       break;
     }
 
-    int32_t column_idx = row->schema()->find_column_by_id(range_schema_.column_ids[i]);
-    const ColumnSchema& column = row->schema()->column(column_idx);
+    int32_t column_idx = partial_row->schema()->find_column_by_id(range_schema_.column_ids[i]);
+    const ColumnSchema& column = partial_row->schema()->column(column_idx);
     const KeyEncoder<faststring>& key_encoder = GetKeyEncoder<faststring>(column.type_info());
     bool is_last = i == (range_schema_.column_ids.size() - 1);
 
@@ -518,7 +539,7 @@ Status PartitionSchema::DecodeRangeKey(Slice* encoded_key,
                           Substitute("Error decoding partition key range component '$0'",
                                      column.name()));
     // Mark the column as set.
-    BitmapSet(row->isset_bitmap_, column_idx);
+    BitmapSet(partial_row->isset_bitmap_, column_idx);
   }
   if (!encoded_key->empty()) {
     return Status::InvalidArgument("unable to fully decode range key",
@@ -585,6 +606,7 @@ namespace {
 string ColumnIdsToColumnNames(const Schema& schema,
                               const vector<ColumnId>& column_ids) {
   vector<string> names;
+  names.reserve(column_ids.size());
   for (const ColumnId& column_id : column_ids) {
     names.push_back(schema.column(schema.find_column_by_id(column_id)).name());
   }
@@ -913,10 +935,10 @@ Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
   return Status::OK();
 }
 
-int32_t PartitionSchema::BucketForEncodedColumns(const string& encoded_key,
+int32_t PartitionSchema::BucketForEncodedColumns(const string& encoded_hash_columns,
                                                  const HashBucketSchema& hash_bucket_schema) {
-  uint64_t hash = HashUtil::MurmurHash2_64(encoded_key.data(),
-                                           encoded_key.length(),
+  uint64_t hash = HashUtil::MurmurHash2_64(encoded_hash_columns.data(),
+                                           encoded_hash_columns.length(),
                                            hash_bucket_schema.seed);
   return hash % static_cast<uint64_t>(hash_bucket_schema.num_buckets);
 }
@@ -1271,6 +1293,18 @@ Status PartitionSchema::GetRangeSchemaColumnIndexes(const Schema& schema,
     range_column_idxs->push_back(idx);
   }
   return Status::OK();
+}
+
+int32_t PartitionSchema::TryGetSingleColumnHashPartitionIndex(const Schema& schema,
+                                                              int32_t col_idx) const {
+  const ColumnId column_id = schema.column_id(col_idx);
+  for (int i = 0; i < hash_partition_schemas().size(); ++i) {
+    auto hash_partition = hash_partition_schemas()[i];
+    if (hash_partition.column_ids.size() == 1 && hash_partition.column_ids[0] == column_id) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 } // namespace kudu

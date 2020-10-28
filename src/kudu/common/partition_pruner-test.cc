@@ -339,7 +339,7 @@ TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
 
   PartitionSchema partition_schema;
   auto pb = PartitionSchemaPB();
-  auto range_schema = pb.mutable_range_schema();
+  auto* range_schema = pb.mutable_range_schema();
   range_schema->add_columns()->set_name("a");
   range_schema->add_columns()->set_name("b");
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));

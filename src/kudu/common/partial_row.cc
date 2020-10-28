@@ -103,7 +103,7 @@ KuduPartialRow::KuduPartialRow(const KuduPartialRow& other)
     if (BitmapTest(owned_strings_bitmap_, col_idx)) {
       ContiguousRow row(schema_, row_data_);
       Slice* slice = reinterpret_cast<Slice*>(row.mutable_cell_ptr(col_idx));
-      auto data = new uint8_t[slice->size()];
+      auto* data = new uint8_t[slice->size()];
       slice->relocate(data);
     }
   }

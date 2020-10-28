@@ -182,6 +182,16 @@ class PartitionSchema {
                               const ConstContiguousRow& row,
                               bool* contains) const WARN_UNUSED_RESULT;
 
+  // Tests if the hash partition contians the row with given hash_idx.
+  Status HashPartitionContainsRow(const Partition& partition,
+                                  const KuduPartialRow& row,
+                                  int hash_idx,
+                                  bool* contains) const WARN_UNUSED_RESULT;
+  Status HashPartitionContainsRow(const Partition& partition,
+                                  const ConstContiguousRow& row,
+                                  int hash_idx,
+                                  bool* contains) const WARN_UNUSED_RESULT;
+
   // Returns a text description of the partition suitable for debug printing.
   //
   // Partitions are considered metadata, so no redaction will happen on the hash
@@ -245,7 +255,7 @@ class PartitionSchema {
 
   // Decodes a range partition key into a partial row, with variable-length
   // fields stored in the arena.
-  Status DecodeRangeKey(Slice* encode_key,
+  Status DecodeRangeKey(Slice* encoded_key,
                         KuduPartialRow* partial_row,
                         Arena* arena) const;
 
@@ -262,6 +272,10 @@ class PartitionSchema {
   // InvalidArgument status is returned.
   Status GetRangeSchemaColumnIndexes(const Schema& schema,
                                      std::vector<int>* range_column_idxs) const;
+
+  // Returns index of given column idx, if it is one of hash key and this hash schema
+  // contains only one column, otherwise returns -1.
+  int32_t TryGetSingleColumnHashPartitionIndex(const Schema& schema, int32_t col_idx) const;
 
  private:
   friend class PartitionPruner;
@@ -307,6 +321,13 @@ class PartitionSchema {
                                   const Row& row,
                                   bool* contains) const;
 
+  // Private templated helper for HashPartitionContainsRow.
+  template<typename Row>
+  Status HashPartitionContainsRowImpl(const Partition& partition,
+                                      const Row& row,
+                                      int hash_idx,
+                                      bool* contains) const;
+
   // Private templated helper for EncodeKey.
   template<typename Row>
   Status EncodeKeyImpl(const Row& row, std::string* buf) const;
@@ -342,7 +363,7 @@ class PartitionSchema {
   //
   // This should only be called with partition keys created from a row, not with
   // partition keys from a partition.
-  Status DecodeHashBuckets(Slice* partition_key, std::vector<int32_t>* buckets) const;
+  Status DecodeHashBuckets(Slice* encoded_key, std::vector<int32_t>* buckets) const;
 
   // Clears the state of this partition schema.
   void Clear();

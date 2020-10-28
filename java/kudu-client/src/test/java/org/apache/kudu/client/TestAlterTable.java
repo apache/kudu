@@ -382,7 +382,7 @@ public class TestAlterTable {
   }
 
   @Test
-  public void testAlterRangeParitioningInvalid() throws KuduException {
+  public void testAlterRangePartitioningInvalid() throws KuduException {
     // Create initial table with single range partition covering [0, 100).
     KuduTable table = createTable(ImmutableList.of(new Pair<>(0, 100)));
     Schema schema = table.getSchema();

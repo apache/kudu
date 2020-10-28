@@ -31,6 +31,8 @@
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/key_util.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
@@ -39,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
 
 using std::any_of;
 using std::max;
@@ -82,7 +85,9 @@ bool ScanSpec::CanShortCircuit() const {
 
   return any_of(predicates_.begin(), predicates_.end(),
                 [] (const pair<string, ColumnPredicate>& predicate) {
-                  return predicate.second.predicate_type() == PredicateType::None;
+                  return predicate.second.predicate_type() == PredicateType::None ||
+                      (predicate.second.predicate_type() == PredicateType::InList &&
+                       predicate.second.raw_values().empty());
                 });
 }
 
@@ -163,6 +168,36 @@ void ScanSpec::OptimizeScan(const Schema& schema,
     } else {
       itr = std::next(itr);
     }
+  }
+}
+
+void ScanSpec::PruneHashForInlistIfPossible(const Schema& schema,
+                                            const Partition& partition,
+                                            const PartitionSchema& partition_schema) {
+  for (auto& predicate_pair : predicates_) {
+    auto& predicate = predicate_pair.second;
+    if (predicate.predicate_type() != PredicateType::InList) continue;
+
+    const string& col_name = predicate_pair.first;
+    int32_t idx;
+    Status s = schema.FindColumn(col_name, &idx);
+    if (!s.ok() || !schema.is_key_column(idx)) continue;
+
+    int hash_idx = partition_schema.TryGetSingleColumnHashPartitionIndex(schema, idx);
+    if (hash_idx == -1) continue;
+
+    auto* predicate_values = predicate.mutable_raw_values();
+    predicate_values->erase(std::remove_if(predicate_values->begin(), predicate_values->end(),
+          [idx, hash_idx, &schema, &partition, &partition_schema](const void* value) {
+        KuduPartialRow partial_row(&schema);
+        Status s = partial_row.Set(idx, reinterpret_cast<const uint8_t*>(value));
+        if (!s.ok()) return false;
+        bool is_value_in;
+        s = partition_schema.HashPartitionContainsRow(partition, partial_row,
+                                                      hash_idx, &is_value_in);
+        if (!s.ok()) return false;
+        return !is_value_in;
+      }), predicate_values->end());
   }
 }
 
@@ -279,7 +314,7 @@ void ScanSpec::LiftPrimaryKeyBounds(const Schema& schema, Arena* arena) {
       if (is_exclusive) {
         ColumnPredicate predicate = ColumnPredicate::Range(column, lower, upper);
         if (predicate.predicate_type() == PredicateType::Equality &&
-            col_idx + 1 < num_key_columns) {
+            col_idx + 1 < num_key_columns && lower_bound_key_ != nullptr) {
           // If this turns out to be an equality predicate, then we can add one
           // more lower bound predicate from the next component (if it exists).
           //

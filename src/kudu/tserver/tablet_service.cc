@@ -2657,6 +2657,9 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
 
   VLOG(3) << "Before optimizing scan spec: " << spec.ToString(tablet_schema);
+  spec.PruneHashForInlistIfPossible(tablet_schema,
+                                    replica->tablet_metadata()->partition(),
+                                    replica->tablet_metadata()->partition_schema());
   spec.OptimizeScan(tablet_schema, scanner->arena(), true);
   VLOG(3) << "After optimizing scan spec: " << spec.ToString(tablet_schema);
 
