@@ -51,7 +51,6 @@ DEFINE_int32(safe_time_max_lag_ms, 30 * 1000,
 TAG_FLAG(safe_time_max_lag_ms, experimental);
 
 DECLARE_int32(raft_heartbeat_interval_ms);
-DECLARE_int32(scanner_max_wait_ms);
 
 using kudu::clock::Clock;
 using std::string;
