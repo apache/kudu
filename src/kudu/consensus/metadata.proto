@@ -42,6 +42,9 @@ message RaftPeerAttrsPB {
 
   // Geographic region of the raft server.
   optional string region = 4;
+  
+  // The port on which the logtailer server for a BLS peer is running
+  optional int32 logtailer_server_port = 5 [ default = 0 ];
 }
 
 // Report on a replica's (peer's) health.
