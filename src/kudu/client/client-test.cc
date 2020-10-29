@@ -62,6 +62,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
+#include "kudu/client/transaction-internal.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/clock/clock.h"
@@ -100,6 +101,8 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_coordinator.h"
+#include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
@@ -137,6 +140,7 @@ DECLARE_bool(mock_table_metrics_for_testing);
 DECLARE_bool(rpc_listen_on_unix_domain_socket);
 DECLARE_bool(rpc_trace_negotiation);
 DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
+DECLARE_bool(txn_manager_enabled);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
@@ -187,6 +191,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
+using kudu::transactions::TxnTokenPB;
 using kudu::tserver::MiniTabletServer;
 using std::function;
 using std::map;
@@ -223,6 +228,9 @@ class ClientTest : public KuduTest {
     // Reduce the TS<->Master heartbeat interval
     FLAGS_heartbeat_interval_ms = 10;
     FLAGS_scanner_gc_check_interval_us = 50 * 1000; // 50 milliseconds.
+
+    // Enable TxnManager in Kudu master.
+    FLAGS_txn_manager_enabled = true;
 
     SetLocationMappingCmd();
 
@@ -341,6 +349,43 @@ class ClientTest : public KuduTest {
                   RpcsQueueOverflowMetric()->value());
       }
     }
+  }
+
+  // TODO(aserbin): consider removing this method and update the scenarios it
+  //                was used once the transaction orchestration is implemented
+  Status FinalizeCommitTransaction(int64_t txn_id) {
+    for (auto i = 0; i < cluster_->num_tablet_servers(); ++i) {
+      auto* tm = cluster_->mini_tablet_server(i)->server()->tablet_manager();
+      vector<scoped_refptr<TabletReplica>> replicas;
+      tm->GetTabletReplicas(&replicas);
+      for (auto& r : replicas) {
+        auto* c = r->txn_coordinator();
+        if (!c) {
+          continue;
+        }
+        auto highest_txn_id = c->highest_txn_id();
+        if (txn_id > highest_txn_id) {
+          continue;
+        }
+        auto s = c->FinalizeCommitTransaction(txn_id);
+        if (s.IsNotFound()) {
+          continue;
+        }
+        return s;
+      }
+    }
+    return Status::NotFound(Substitute("transaction $0 not found", txn_id));
+  }
+
+  // TODO(aserbin): remove this method and update the scenarios it's used
+  //                once the transaction orchestration is implemented
+  Status FinalizeCommitTransaction(const shared_ptr<KuduTransaction>& txn) {
+    string txn_token;
+    RETURN_NOT_OK(txn->Serialize(&txn_token));
+    TxnTokenPB token;
+    CHECK(token.ParseFromString(txn_token));
+    CHECK(token.has_txn_id());
+    return FinalizeCommitTransaction(token.txn_id());
   }
 
   // Return the number of lookup-related RPCs which have been serviced by the master.
@@ -6585,12 +6630,15 @@ TEST_F(ClientTest, TxnIdOfTransactionalSession) {
   // Check how relevant member fields are populated in case of
   // transactional session.
   {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
     const TxnId kTxnId(0);
     KuduSession s(client_, kTxnId);
 
     const auto& session_data_txn_id = s.data_->txn_id_;
     ASSERT_TRUE(session_data_txn_id.IsValid());
-    ASSERT_EQ(kTxnId.value(), session_data_txn_id.value());
+    const auto& txnId = txn->data_->txn_id_;
+    ASSERT_EQ(txnId.value(), session_data_txn_id.value());
 
     NO_FATALS(apply_single_insert(&s));
 
@@ -6598,7 +6646,7 @@ TEST_F(ClientTest, TxnIdOfTransactionalSession) {
     ASSERT_NE(nullptr, s.data_->batcher_.get());
     const auto& batcher_txn_id = s.data_->batcher_->txn_id();
     ASSERT_TRUE(batcher_txn_id.IsValid());
-    ASSERT_EQ(kTxnId.value(), batcher_txn_id.value());
+    ASSERT_EQ(txnId.value(), batcher_txn_id.value());
   }
 }
 
@@ -6691,6 +6739,394 @@ TEST_F(ClientTest, WritingRowsWithUnsetNonNullableColumns) {
 
 TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
   ASSERT_TRUE(client_->location().empty());
+}
+
+// Check basic operations of the transaction-related API.
+// TODO(aserbin): add more scenarios and update existing ones to remove explicit
+//                FinalizeCommitTransaction() call when transaction
+//                orchestration is ready (i.e. FinalizeCommitTransaction() is
+//                called for all registered participants by the backend itself).
+TEST_F(ClientTest, TxnBasicOperations) {
+  // KuduClient::NewTransaction() populates the output parameter on success.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_NE(nullptr, txn.get());
+
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    ASSERT_NE(nullptr, session.get());
+    ASSERT_EQ(0, session->CountPendingErrors());
+    ASSERT_OK(session->Close());
+  }
+
+  // Multiple Rollback() calls are OK.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Rollback());
+    ASSERT_OK(txn->Rollback());
+  }
+
+  // It's possible to rollback a transaction that hasn't yet finalized
+  // its commit phase.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit(false /* wait */));
+    ASSERT_OK(txn->Rollback());
+  }
+
+  // It's impossible to rollback a transaction that has finalized
+  // its commit phase.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit(false /* wait */));
+    ASSERT_OK(FinalizeCommitTransaction(txn));
+    auto cs = Status::Incomplete("other than Status::OK() initial status");
+    bool is_complete = false;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_OK(cs);
+    ASSERT_TRUE(is_complete);
+    auto s = txn->Rollback();
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  }
+
+  // It's impossible to commit a transaction that's being rolled back.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Rollback());
+    auto s = txn->Commit(false /* wait */);
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "is not open: state: ABORTED");
+  }
+
+  // TODO(aserbin): uncomment this when other parts of transaction lifecycle
+  //                are properly implemented
+#if 0
+  // Insert rows in a transactional session, then rollback the transaction
+  // and make sure the rows are gone.
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), 10));
+    ASSERT_OK(txn->Rollback());
+    ASSERT_EQ(0, CountRowsFromClient(client_table_.get()));
+  }
+
+  // Insert rows in a transactional session, then commit the transaction
+  // and make sure the expected rows are there.
+  {
+    constexpr auto kRowsNum = 123;
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(txn->CreateSession(&session));
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), kRowsNum));
+    ASSERT_OK(txn->Commit());
+    ASSERT_EQ(kRowsNum, CountRowsFromClient(
+        client_table_.get(), KuduScanner::READ_YOUR_WRITES, kNoBound, kNoBound));
+    ASSERT_EQ(0, session->CountPendingErrors());
+  }
+#endif
+}
+
+// Verify the basic functionality of the KuduTransaction::Commit() and
+// KuduTransaction::IsCommitComplete() methods.
+TEST_F(ClientTest, TxnCommit) {
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    bool is_complete = true;
+    Status cs;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_FALSE(is_complete);
+    ASSERT_TRUE(cs.IsIllegalState()) << cs.ToString();
+    ASSERT_STR_CONTAINS(cs.ToString(), "transaction is still open");
+
+    ASSERT_OK(txn->Rollback());
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_TRUE(is_complete);
+    ASSERT_TRUE(cs.IsAborted()) << cs.ToString();
+    ASSERT_STR_CONTAINS(cs.ToString(), "transaction has been aborted");
+  }
+
+  {
+    string txn_token;
+    {
+      shared_ptr<KuduTransaction> txn;
+      ASSERT_OK(client_->NewTransaction(&txn));
+      ASSERT_OK(txn->Commit(false /* wait */));
+      // TODO(aserbin): when txn lifecycle is properly implemented, inject a
+      //                delay into the txn finalizing code to make sure
+      //                the transaction stays in the COMMIT_IN_PROGRESS state
+      //                for a while
+      bool is_complete = true;
+      Status cs;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+      ASSERT_FALSE(is_complete);
+      ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
+      ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
+      ASSERT_OK(txn->Serialize(&txn_token));
+    }
+
+    // Make sure the transaction isn't aborted once its KuduTransaction handle
+    // goes out of scope.
+    shared_ptr<KuduTransaction> serdes_txn;
+    ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
+    bool is_complete = true;
+    Status cs;
+    ASSERT_OK(serdes_txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_FALSE(is_complete);
+    ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
+    ASSERT_STR_CONTAINS(cs.ToString(), "commit is still in progress");
+  }
+
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit(false /* wait */));
+    bool is_complete = true;
+    Status cs;
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_FALSE(is_complete);
+    ASSERT_TRUE(cs.IsIncomplete()) << cs.ToString();
+    ASSERT_OK(FinalizeCommitTransaction(txn));
+    {
+      bool is_complete = false;
+      auto cs = Status::Incomplete("other than Status::OK() initial status");
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+      ASSERT_TRUE(is_complete);
+      ASSERT_OK(cs);
+    }
+  }
+
+  // TODO(aserbin): uncomment this when txn lifecycle is properly implemented
+#if 0
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit(false /* wait */));
+    ASSERT_EVENTUALLY([&] {
+      bool is_complete = false;
+      Status cs;
+      ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+      ASSERT_TRUE(is_complete);
+      ASSERT_OK(cs);
+    });
+  }
+
+  {
+    shared_ptr<KuduTransaction> txn;
+    ASSERT_OK(client_->NewTransaction(&txn));
+    ASSERT_OK(txn->Commit());
+    bool is_complete = false;
+    Status cs = Status::Incomplete("other than Status::OK() initial status");
+    ASSERT_OK(txn->IsCommitComplete(&is_complete, &cs));
+    ASSERT_TRUE(is_complete);
+    ASSERT_OK(cs);
+  }
+#endif
+}
+
+// This test verifies the behavior of KuduTransaction instance when the bound
+// KuduClient instance gets out of scope.
+TEST_F(ClientTest, TxnHandleLifecycle) {
+  shared_ptr<KuduTransaction> txn;
+  {
+    const auto master_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
+    KuduClientBuilder b;
+    b.add_master_server_addr(master_addr);
+    shared_ptr<KuduClient> c;
+    ASSERT_OK(b.Build(&c));
+    ASSERT_OK(c->NewTransaction(&txn));
+  }
+  auto s = txn->Rollback();
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "associated KuduClient is gone");
+}
+
+TEST_F(ClientTest, TxnCorruptedToken) {
+  vector<pair<string, string>> token_test_cases;
+  token_test_cases.emplace_back("an empty string", "");
+  {
+    TxnTokenPB token;
+    string buf;
+    ASSERT_TRUE(token.SerializeToString(&buf));
+    token_test_cases.emplace_back("empty token", std::move(buf));
+  }
+  {
+    TxnTokenPB token;
+    token.set_txn_id(0);
+    string buf;
+    ASSERT_TRUE(token.SerializeToString(&buf));
+    token_test_cases.emplace_back("missing keepalive_millis field",
+                                  std::move(buf));
+  }
+  {
+    TxnTokenPB token;
+    token.set_keepalive_millis(1000);
+    string buf;
+    ASSERT_TRUE(token.SerializeToString(&buf));
+    token_test_cases.emplace_back("missing txn_id field", std::move(buf));
+  }
+
+  for (const auto& description_and_token : token_test_cases) {
+    SCOPED_TRACE(description_and_token.first);
+    const auto& token = description_and_token.second;
+    shared_ptr<KuduTransaction> serdes_txn;
+    auto s = KuduTransaction::Deserialize(client_, token, &serdes_txn);
+    ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+  }
+}
+
+// Test scenario to verify serialization/deserialization of transaction tokens.
+TEST_F(ClientTest, TxnToken) {
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+
+  const TxnId txn_id = txn->data_->txn_id_;
+  ASSERT_TRUE(txn_id.IsValid());
+  const uint32_t txn_keepalive_ms = txn->data_->txn_keep_alive_ms_;
+  ASSERT_GT(txn_keepalive_ms, 0);
+
+  string txn_token;
+  ASSERT_OK(txn->Serialize(&txn_token));
+
+  // Serializing the same transaction again produces the same result.
+  {
+    string token;
+    ASSERT_OK(txn->Serialize(&token));
+    ASSERT_EQ(txn_token, token);
+  }
+
+  // Check the token for consistency.
+  {
+    TxnTokenPB token;
+    ASSERT_TRUE(token.ParseFromString(txn_token));
+    ASSERT_TRUE(token.has_txn_id());
+    ASSERT_EQ(txn_id.value(), token.txn_id());
+    ASSERT_TRUE(token.has_keepalive_millis());
+    ASSERT_EQ(txn_keepalive_ms, token.keepalive_millis());
+  }
+
+  shared_ptr<KuduTransaction> serdes_txn;
+  ASSERT_OK(KuduTransaction::Deserialize(client_, txn_token, &serdes_txn));
+  ASSERT_NE(nullptr, serdes_txn.get());
+  ASSERT_EQ(txn_id, serdes_txn->data_->txn_id_);
+  ASSERT_EQ(txn_keepalive_ms, serdes_txn->data_->txn_keep_alive_ms_);
+
+  // Make sure the KuduTransaction object deserialized from a token is fully
+  // functional.
+  string serdes_txn_token;
+  ASSERT_OK(serdes_txn->Serialize(&serdes_txn_token));
+  ASSERT_EQ(txn_token, serdes_txn_token);
+
+  {
+    static constexpr auto kNumRows = 10;
+    shared_ptr<KuduSession> session;
+    ASSERT_OK(serdes_txn->CreateSession(&session));
+    NO_FATALS(InsertTestRows(client_table_.get(), session.get(), kNumRows));
+    ASSERT_OK(serdes_txn->Commit(false /* wait */));
+
+    // The state of a transaction isn't stored in the token, so initiating
+    // commit of the transaction doesn't change the result of the serialization.
+    string token;
+    ASSERT_OK(serdes_txn->Serialize(&token));
+    ASSERT_EQ(serdes_txn_token, token);
+  }
+
+  // A new transaction should produce in a new, different token.
+  shared_ptr<KuduTransaction> other_txn;
+  ASSERT_OK(client_->NewTransaction(&other_txn));
+  string other_txn_token;
+  ASSERT_OK(other_txn->Serialize(&other_txn_token));
+  ASSERT_NE(txn_token, other_txn_token);
+
+  // The state of a transaction isn't stored in the token, so aborting
+  // the doesn't change the result of the serialization.
+  string token;
+  ASSERT_OK(other_txn->Rollback());
+  ASSERT_OK(other_txn->Serialize(&token));
+  ASSERT_EQ(other_txn_token, token);
+}
+
+// Begin a transaction under one user, and then try to commit/rollback the
+// transaction under different user. The latter should result in
+// Status::NotAuthorized() status.
+TEST_F(ClientTest, AttemptToControlTxnByOtherUser) {
+  static constexpr const char* const kOtherTxnUser = "other-txn-user";
+
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+  string txn_token;
+  ASSERT_OK(txn->Serialize(&txn_token));
+
+  // Transaction identifier is surfacing here only to build the reference error
+  // message for Status::NotAuthorized() returned by attempts to perform
+  // commit/rollback operations below.
+  TxnId txn_id;
+  {
+    TxnTokenPB token;
+    ASSERT_TRUE(token.ParseFromString(txn_token));
+    ASSERT_TRUE(token.has_txn_id());
+    txn_id = token.txn_id();
+  }
+  ASSERT_TRUE(txn_id.IsValid());
+  const auto ref_msg = Substitute(
+      "transaction ID $0 not owned by $1", txn_id.value(), kOtherTxnUser);
+
+  KuduClientBuilder client_builder;
+  string authn_creds;
+  AuthenticationCredentialsPB pb;
+  pb.set_real_user(kOtherTxnUser);
+  ASSERT_TRUE(pb.SerializeToString(&authn_creds));
+  client_builder.import_authentication_credentials(authn_creds);
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(&client_builder, &client));
+  shared_ptr<KuduTransaction> serdes_txn;
+  ASSERT_OK(KuduTransaction::Deserialize(client, txn_token, &serdes_txn));
+  const vector<pair<string, Status>> txn_ctl_results = {
+    { "rollback", serdes_txn->Rollback() },
+    { "commit", serdes_txn->Commit(false /* wait */) },
+  };
+  for (const auto& op_and_status : txn_ctl_results) {
+    SCOPED_TRACE(op_and_status.first);
+    const auto& s = op_and_status.second;
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), ref_msg);
+  }
+}
+
+TEST_F(ClientTest, NoTxnManager) {
+  shared_ptr<KuduTransaction> txn;
+  ASSERT_OK(client_->NewTransaction(&txn));
+
+  // Shutdown all masters: a TxnManager is a part of master, so after shutting
+  // down all masters in the cluster there will be no single TxnManager running.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+
+  {
+    shared_ptr<KuduTransaction> txn;
+    auto s = client_->NewTransaction(&txn);
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Client connection negotiation failed");
+  }
+
+  const vector<pair<string, Status>> txn_ctl_results = {
+    { "rollback", txn->Rollback() },
+    { "commit", txn->Commit(false /* wait */) },
+  };
+  for (const auto& op_and_status : txn_ctl_results) {
+    SCOPED_TRACE(op_and_status.first);
+    const auto& s = op_and_status.second;
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Client connection negotiation failed");
+  }
 }
 
 // Client test that assigns locations to clients and tablet servers.

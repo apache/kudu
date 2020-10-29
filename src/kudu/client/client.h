@@ -115,6 +115,8 @@ class ScanBatchDataInterface;
 class WriteRpc;
 template <class ReqClass, class RespClass>
 class AsyncLeaderMasterRpc; // IWYU pragma: keep
+template <class ReqClass, class RespClass>
+class AsyncRandomTxnManagerRpc; // IWYU pragma: keep
 } // namespace internal
 
 /// Install a callback for internal client logging.
@@ -322,6 +324,134 @@ class KUDU_EXPORT KuduClientBuilder {
   DISALLOW_COPY_AND_ASSIGN(KuduClientBuilder);
 };
 
+/// A class representing a multi-row transaction in Kudu. Once created using
+/// @c KuduClient::BeginTransaction() or @c KuduTransaction::Deserialize method,
+/// @c KuduTransaction instance can be used to commit or rollback the underlying
+/// multi-row transaction and create a transactional session.
+///
+/// @note There isn't any automation to rollback or commit the underlying
+///   transaction upon destruction of an instance of this class.
+///
+/// @warning The set of methods in this class, their behavior, and signatures
+///          are experimental and may change or disappear in future. The class
+///          itself is experimental and may change its lineage, API status,
+///          or disappear in future.
+class KUDU_EXPORT KuduTransaction :
+    public sp::enable_shared_from_this<KuduTransaction> {
+ public:
+  ~KuduTransaction();
+
+  /// Create a new @c KuduSession with "transactional" semantics.
+  ///
+  /// Every write operation performed in the context of the newly created
+  /// "transactional" session becomes a part of the corresponding multi-row
+  /// transaction represented by an instance of this class. Multiple sessions
+  /// can be created in the context of the same multi-row distributed
+  /// transaction by the same or different Kudu clients residing on a single
+  /// or multiple nodes.
+  ///
+  /// @param [out] session
+  ///   The result session object.
+  /// @return Operation result status.
+  Status CreateSession(sp::shared_ptr<KuduSession>* session) WARN_UNUSED_RESULT;
+
+  /// Commit the transaction.
+  ///
+  /// This method initiates committing the transaction, and, depending on the
+  /// @c wait parameter, either returns right after that or awaits
+  /// for the commit to finalize.
+  ///
+  /// @param [in] mode
+  ///   This parameter controls the way how this method operates:
+  ///     @li @c true means synchronous operation mode
+  ///     @li @c false means asynchronous operation mode
+  ///   In case of asynchronous mode, @c KuduTransaction::IsCommitComplete()
+  ///   can be used to detect whether the commit has successfully finalized.
+  /// @return Operation result status.
+  Status Commit(bool wait = true) WARN_UNUSED_RESULT;
+
+  /// Whether the commit has completed i.e. no longer in progress of finalizing.
+  ///
+  /// This method checks for the transaction's commit status, setting the
+  /// @c is_complete out parameter to @c true and the @c completion_status
+  /// parameter to the finalization status of the commit process,
+  /// assuming the method returning @c Status::OK(). The happy case is when
+  /// the method returns @c Status::OK(), @c is_complete is set to @c true and
+  /// @c completion_status is set to @c Status::OK() -- that means the
+  /// transaction has successfully finalized its commit phase.
+  ///
+  /// @param [out] is_complete
+  ///   Whether the process of finalizing the commit of the transaction has
+  ///   ended, including both success and failure outcomes. In other words,
+  ///   the value of this out parameter indicates whether the finalization
+  ///   of the transaction's commit phase is no longer in progress: it already
+  ///   succeeded or failed by the time of processing the request.
+  ///   This parameter is assigned a meaningful value iff the method returns
+  ///   @c Status::OK().
+  /// @param [out] commit_status
+  ///   The status of finalization of the transaction's commit phase:
+  ///     @li Status::OK() if the commit phase successfully finalized
+  ///     @li non-OK status if the commit phase failed to finalize
+  ///   This parameter is assigned a meaningful value iff the method returns
+  ///   @c Status::OK().
+  /// @return The result status of querying the transaction's commit status.
+  ///   Both @c is_complete and @c completion_status are set iff the method
+  ///   returns @c Status::OK().
+  Status IsCommitComplete(bool* is_complete,
+                          Status* completion_status) WARN_UNUSED_RESULT;
+
+  /// Rollback/abort the transaction.
+  ///
+  /// @return Operation result status.
+  Status Rollback() WARN_UNUSED_RESULT;
+
+  /// Export the information on this transaction in a serialized form.
+  ///
+  /// The serialized information on a Kudu transaction can be passed among
+  /// different Kudu clients running at multiple nodes, so those separate
+  /// Kudu clients can perform operations to be a part of the same distributed
+  /// transaction. The resulting string is called "transaction token" and it
+  /// can be deserialized using the @c KuduTransaction::Deserialize() method.
+  /// The result of the latter is an instance of the @c KuduTransaction class
+  /// to work with in the run-time.
+  ///
+  /// This method doesn't perform any RPC under the hood.
+  ///
+  /// @note The representation of the data in the serialized form
+  ///   (i.e. the format of a Kudu transaction token) is an implementation
+  ///   detail, not a part of the public API.
+  ///
+  /// @param [out] serialized_txn
+  ///   Result string to output the serialized transaction information.
+  /// @return Operation result status.
+  Status Serialize(std::string* serialized_txn) const WARN_UNUSED_RESULT;
+
+  /// Re-create KuduTransaction object given its serialized representation.
+  ///
+  /// This method doesn't perform any RPC under the hood.
+  ///
+  /// @param [in] client
+  ///   Client instance to bound the result object to.
+  /// @param [in] serialized_txn
+  ///   String containing serialized representation of KuduTransaction object.
+  /// @param [out] txn
+  ///   The result KuduTransaction object, wrapped into a smart pointer.
+  /// @return Operation result status.
+  static Status Deserialize(const sp::shared_ptr<KuduClient>& client,
+                            const std::string& serialized_txn,
+                            sp::shared_ptr<KuduTransaction>* txn) WARN_UNUSED_RESULT;
+ private:
+  friend class KuduClient;
+  friend class KuduSession;
+  FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
+  FRIEND_TEST(ClientTest, TxnToken);
+
+  class KUDU_NO_EXPORT Data;
+
+  explicit KuduTransaction(const sp::shared_ptr<KuduClient>& client);
+  Data* data_; // Owned.
+};
+
 /// @brief A handle for a connection to a cluster.
 ///
 /// The KuduClient class represents a connection to a cluster. From the user
@@ -472,6 +602,26 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///
   /// @return A new session object; caller is responsible for destroying it.
   sp::shared_ptr<KuduSession> NewSession();
+
+  /// Start a multi-row transaction.
+  ///
+  /// This method results in an RPC sent to a Kudu cluster to begin a multi-row
+  /// distributed transaction. In case of success, the resulting transaction
+  /// handle is output into the 'txn' parameter. That handle can be used
+  /// to create a new @c KuduSession using the
+  /// @c NewSession(const sp::shared_ptr<KuduSession>&) method. To commit or
+  /// rollback all single-row write operations performed in the context of
+  /// the newly created transaction, use @c KuduTransaction::Commit() and
+  /// @c KuduTransaction::Rollback() methods correspondingly.
+  ///
+  /// @warning This method is experimental and may change or disappear in future.
+  ///
+  /// @param txn [out]
+  ///   The resulting @c KuduTransaction object wrapped into a smart pointer.
+  ///   This 'out' parameter is populated iff the operation to begin
+  ///   a transaction was successful.
+  /// @return The status of underlying "begin transaction" operation.
+  Status NewTransaction(sp::shared_ptr<KuduTransaction>* txn);
 
   /// @cond PRIVATE_API
 
@@ -628,6 +778,8 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
 
   template <class ReqClass, class RespClass>
   friend class internal::AsyncLeaderMasterRpc;
+  template <class ReqClass, class RespClass>
+  friend class internal::AsyncRandomTxnManagerRpc;
 
   friend class ClientTest;
   friend class ConnectToClusterBaseTest;
@@ -2067,11 +2219,13 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
  private:
   class KUDU_NO_EXPORT Data;
 
-  friend class KuduClient;
-  friend class internal::Batcher;
   friend class ClientTest;
-  FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
+  friend class KuduClient;
+  friend class KuduTransaction;
+  friend class internal::Batcher;
+
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
+  FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
   FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
 
   explicit KuduSession(const sp::shared_ptr<KuduClient>& client);
@@ -2606,7 +2760,8 @@ class KUDU_EXPORT KuduScanToken {
 
   /// Serialize the token into a string.
   ///
-  /// Deserialize with KuduScanToken::DeserializeIntoScanner().
+  /// The resulting string can be deserialized with
+  /// @c KuduScanToken::Deserialize() to
   ///
   /// @param [out] buf
   ///   Result string to output the serialized token.

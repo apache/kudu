@@ -42,3 +42,17 @@ message TxnParticipantEntryPB {
   optional TxnStatePB state = 1;
 }
 
+// High-level metadata about a transaction. Serialized messages of this type
+// are used to pass information on an already opened transaction among multiple
+// Kudu clients (even if residing on different nodes), so they can issue write
+// operations in the context of the same multi-row distributed transaction.
+message TxnTokenPB {
+  // Transaction identifier assigned to the transaction.
+  optional int64 txn_id = 1;
+
+  // The keep-alive interval (in milliseconds) to keep the transaction alive.
+  // To avoid auto-aborting the transaction, TxnManager should receive
+  // keep-alive heartbeats spaced by intervals equal or shorter than
+  // 'keepalive_millis' milliseconds in duration.
+  optional uint32 keepalive_millis = 2;
+}

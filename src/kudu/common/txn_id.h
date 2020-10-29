@@ -30,7 +30,7 @@ class TxnId {
   static const TxnId kInvalidTxnId;
 
   TxnId() noexcept : id_(-1) {}
-  explicit TxnId(int64_t id) noexcept;
+  TxnId(int64_t id) noexcept; // NOLINT
 
   int64_t value() const;
   bool IsValid() const { return id_ >= 0; }
@@ -48,7 +48,7 @@ class TxnId {
   friend bool operator>(const TxnId& lhs, const TxnId& rhs);
   friend bool operator>=(const TxnId& lhs, const TxnId& rhs);
 
-  const int64_t id_;
+  int64_t id_;
 };
 
 std::ostream& operator<<(std::ostream& o, const TxnId& txn_id);

@@ -58,6 +58,8 @@ set(CLIENT_SRCS
   table_creator-internal.cc
   tablet-internal.cc
   tablet_server-internal.cc
+  transaction-internal.cc
+  txn_manager_proxy_rpc.cc
   value.cc
   write_op.cc
 )
@@ -70,7 +72,8 @@ set(CLIENT_LIBS
   kudu_util
   master_proto
   tserver_proto
-  tserver_service_proto)
+  tserver_service_proto
+  txn_manager_proto)
 
 # Make sure we exclude tcmalloc from the exported library; we want the library
 # code to use the linking application's malloc implementation.

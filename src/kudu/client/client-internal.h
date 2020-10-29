@@ -66,6 +66,10 @@ class Messenger;
 class RequestTracker;
 } // namespace rpc
 
+namespace transactions {
+class TxnManagerServiceProxy;
+} // namespace transactions
+
 namespace client {
 
 class KuduSchema;
@@ -231,6 +235,7 @@ class KuduClient::Data {
                        const security::SignedTokenPB& token);
 
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const;
+  std::shared_ptr<transactions::TxnManagerServiceProxy> txn_manager_proxy() const;
 
   HostPort leader_master_hostport() const;
 
@@ -299,6 +304,13 @@ class KuduClient::Data {
 
   // Proxy to the leader master.
   std::shared_ptr<master::MasterServiceProxy> master_proxy_;
+
+  // A proxy to TxnManagerService instance. As of now, every master hosts
+  // a TxnManagerService, so it's easy to find one.
+  //
+  // TODO(aserbin): switch to multiple (per-master) proxies from TxnManager
+  //                and distribute transaction-related requests among those
+  std::shared_ptr<transactions::TxnManagerServiceProxy> txn_manager_proxy_;
 
   // Ref-counted RPC instance: since 'ConnectToClusterAsync' call
   // is asynchronous, we need to hold a reference in this class

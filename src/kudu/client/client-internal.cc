@@ -53,6 +53,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/txn_manager.proxy.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
@@ -99,8 +100,8 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::TableIdentifierPB;
 using kudu::rpc::BackoffType;
 using kudu::rpc::CredentialsPolicy;
-using kudu::rpc::MessengerBuilder;
 using kudu::security::SignedTokenPB;
+using kudu::transactions::TxnManagerServiceProxy;
 using std::map;
 using std::pair;
 using std::set;
@@ -483,13 +484,13 @@ Status KuduClient::Data::ListTabletServers(KuduClient* client,
   return Status::OK();
 }
 
+bool KuduClient::Data::FetchCachedAuthzToken(const string& table_id, SignedTokenPB* token) {
+  return authz_token_cache_.Fetch(table_id, token);
+}
+
 void KuduClient::Data::StoreAuthzToken(const string& table_id,
                                        const SignedTokenPB& token) {
   authz_token_cache_.Put(table_id, token);
-}
-
-bool KuduClient::Data::FetchCachedAuthzToken(const string& table_id, SignedTokenPB* token) {
-  return authz_token_cache_.Fetch(table_id, token);
 }
 
 Status KuduClient::Data::OpenTable(KuduClient* client,
@@ -665,6 +666,10 @@ void KuduClient::Data::ConnectedToClusterCb(
       master_proxy_ = std::make_shared<MasterServiceProxy>(
           messenger_, leader_addr, leader_hostname);
       master_proxy_->set_user_credentials(user_credentials_);
+
+      txn_manager_proxy_ = std::make_shared<TxnManagerServiceProxy>(
+          messenger_, leader_addr, leader_hostname);
+      txn_manager_proxy_->set_user_credentials(user_credentials_);
     }
   }
 
@@ -824,6 +829,12 @@ string KuduClient::Data::cluster_id() const {
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {
   std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return master_proxy_;
+}
+
+std::shared_ptr<transactions::TxnManagerServiceProxy>
+KuduClient::Data::txn_manager_proxy() const {
+  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  return txn_manager_proxy_;
 }
 
 uint64_t KuduClient::Data::GetLatestObservedTimestamp() const {
