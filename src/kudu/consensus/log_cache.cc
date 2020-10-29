@@ -315,7 +315,26 @@ Status LogCache::ReadOps(int64_t after_op_index,
                          std::vector<ReplicateRefPtr>* messages,
                          OpId* preceding_op) {
   DCHECK_GE(after_op_index, 0);
-  RETURN_NOT_OK(LookupOpId(after_op_index, preceding_op));
+
+  // Try to lookup the first OpId in index
+  auto lookUpStatus = LookupOpId(after_op_index, preceding_op);
+  if (!lookUpStatus.ok()) {
+    // On error return early
+    if (lookUpStatus.IsNotFound()) {
+      // If it is a NotFound() error, then do a dummy call into
+      // ReadReplicatesInRange() to read a single op. This is so that it gets a
+      // chance to update the error manager and report the error to upper layer
+      vector<ReplicateMsg*> raw_replicate_ptrs;
+      log_->ReadReplicatesInRange(
+          after_op_index, after_op_index + 1, max_size_bytes, for_peer_uuid,
+          &raw_replicate_ptrs);
+      for (ReplicateMsg* msg : raw_replicate_ptrs) {
+        delete msg;
+      }
+    }
+
+    return lookUpStatus;
+  }
 
   std::unique_lock<simple_spinlock> l(lock_);
   int64_t next_index = after_op_index + 1;
