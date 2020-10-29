@@ -18,6 +18,7 @@
 #include "kudu/server/webserver.h"
 
 #include <netinet/in.h>
+#include <openssl/crypto.h>
 #include <sys/socket.h>
 
 #include <algorithm>
@@ -276,6 +277,10 @@ Status Webserver::Start() {
   }
 
   if (!opts_.password_file.empty()) {
+    if (FIPS_mode()) {
+      return Status::IllegalState(
+          "Webserver cannot be started with Digest authentication in FIPS approved mode");
+    }
     // Mongoose doesn't log anything if it can't stat the password file (but
     // will if it can't open it, which it tries to do during a request).
     if (!Env::Default()->FileExists(opts_.password_file)) {
