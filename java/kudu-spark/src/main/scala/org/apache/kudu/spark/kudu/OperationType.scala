@@ -33,10 +33,20 @@ private[kudu] case object Insert extends OperationType {
 
   override def toString(): String = "insert"
 }
+private[kudu] case object InsertIgnore extends OperationType {
+  override def operation(table: KuduTable): Operation = table.newInsertIgnore()
+
+  override def toString(): String = "insert_ignore"
+}
 private[kudu] case object Update extends OperationType {
   override def operation(table: KuduTable): Operation = table.newUpdate()
 
   override def toString(): String = "update"
+}
+private[kudu] case object UpdateIgnore extends OperationType {
+  override def operation(table: KuduTable): Operation = table.newUpdateIgnore()
+
+  override def toString(): String = "update_ignore"
 }
 private[kudu] case object Upsert extends OperationType {
   override def operation(table: KuduTable): Operation = table.newUpsert()
@@ -47,4 +57,9 @@ private[kudu] case object Delete extends OperationType {
   override def operation(table: KuduTable): Operation = table.newDelete()
 
   override def toString(): String = "delete"
+}
+private[kudu] case object DeleteIgnore extends OperationType {
+  override def operation(table: KuduTable): Operation = table.newDeleteIgnore()
+
+  override def toString(): String = "delete_ignore"
 }

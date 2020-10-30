@@ -32,6 +32,7 @@ import org.apache.spark.sql.types.StructField
 import org.apache.spark.sql.types.StructType
 import org.junit.Assert._
 import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.kudu.test.KuduTestHarness.MasterServerConfig
@@ -254,6 +255,43 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertIgnoreRowsWriteOption() {
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
+    val baseDF = df.limit(1) // filter down to just the first row
+
+    // change the c2 string to abc and insert
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.operation" -> "insert_ignore")
+    updateDF.write.options(newOptions).mode("append").format("kudu").save
+
+    // change the key and insert
+    val insertDF = df
+      .limit(1)
+      .withColumn("key", df("key").plus(100))
+      .withColumn("c2_s", lit("def"))
+    insertDF.write.options(newOptions).mode("append").format("kudu").save
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
+
+    // restore the original state of the table
+    deleteRow(100)
+  }
+
+  /**
+   * Identical to the above test, but exercising the old session based insert ignore operations,
+   * ensuring we functionally support the same semantics.
+   * Also uses "insert-ignore" instead of "insert_ignore".
+   */
+  @Test
+  @KuduTestHarness.MasterServerConfig(flags = Array("--master_support_ignore_operations=false"))
+  def testLegacyInsertIgnoreRowsWriteOption() {
     val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 

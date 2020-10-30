@@ -91,9 +91,12 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   private def addForOperation(count: Long, opType: OperationType, tableName: String): Unit = {
     opType match {
       case Insert => numInserts.add((tableName, count))
+      case InsertIgnore => numInserts.add((tableName, count))
       case Upsert => numUpserts.add((tableName, count))
       case Update => numUpdates.add((tableName, count))
+      case UpdateIgnore => numUpdates.add((tableName, count))
       case Delete => numDeletes.add((tableName, count))
+      case DeleteIgnore => numDeletes.add((tableName, count))
     }
   }
 
@@ -152,6 +155,8 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     }
     c
   }
+
+  @transient lazy val supportsIgnoreOperations: Boolean = syncClient.supportsIgnoreOperations()
 
   // Visible for testing.
   private[kudu] val authnCredentials: Array[Byte] = {
@@ -381,15 +386,24 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       rdd = repartitionRows(rdd, tableName, schema, writeOptions)
     }
 
+    // If the cluster doesn't support the INSERT_IGNORE operation fallback to the old
+    // session based style.
+    var adjustedOperation = operation
+    var adjustedWriteOptions = writeOptions
+    if (operation == InsertIgnore && !supportsIgnoreOperations) {
+      adjustedOperation = Insert;
+      adjustedWriteOptions = writeOptions.copy(ignoreDuplicateRowErrors = true);
+    }
+
     // Write the rows for each Spark partition.
     rdd.foreachPartition(iterator => {
       val pendingErrors = writePartitionRows(
         iterator,
         schema,
         tableName,
-        operation,
+        adjustedOperation,
         lastPropagatedTimestamp,
-        writeOptions)
+        adjustedWriteOptions)
       if (pendingErrors.getRowErrors.nonEmpty) {
         val errors = pendingErrors.getRowErrors
         val sample = errors.take(5).map(_.getErrorStatus).mkString
@@ -467,6 +481,10 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val rowConverter = new RowConverter(table.getSchema, schema, writeOptions.ignoreNull)
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+    if (writeOptions.ignoreDuplicateRowErrors) {
+      log.warn(
+        "kudu.ignoreDuplicateRowErrors is deprecated and slow. Use the insert_ignore operation instead.")
+    }
     session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
     var numRows = 0
     log.info(s"applying operations of type '${opType.toString}' to table '$tableName'")

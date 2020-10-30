@@ -203,8 +203,10 @@ class DefaultSource
 
   private def getWriteOptions(parameters: Map[String, String]): KuduWriteOptions = {
     val ignoreDuplicateRowErrors =
-    Try(parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean).getOrElse(false) ||
-    Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
+      parameters
+        .get(IGNORE_DUPLICATE_ROW_ERRORS)
+        .map(_.toBoolean)
+        .getOrElse(defaultIgnoreDuplicateRowErrors)
     val ignoreNull =
       parameters.get(IGNORE_NULL).map(_.toBoolean).getOrElse(defaultIgnoreNull)
     val repartition =
@@ -241,10 +243,15 @@ class DefaultSource
   private def stringToOperationType(opParam: String): OperationType = {
     opParam.toLowerCase(Locale.ENGLISH) match {
       case "insert" => Insert
-      case "insert-ignore" => Insert
+      case "insert_ignore" => InsertIgnore
+      case "insert-ignore" => InsertIgnore
       case "upsert" => Upsert
       case "update" => Update
+      case "update_ignore" => UpdateIgnore
+      case "update-ignore" => UpdateIgnore
       case "delete" => Delete
+      case "delete_ignore" => DeleteIgnore
+      case "delete-ignore" => DeleteIgnore
       case _ =>
         throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
     }
