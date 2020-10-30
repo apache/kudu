@@ -193,7 +193,12 @@ public class TestKuduSession {
     session.flush();
 
     for (PartialRow row : rows) {
-      Delete del = table.newDelete();
+      Operation del;
+      if (row.getInt(0) % 2 == 0) {
+        del = table.newDelete();
+      } else {
+        del = table.newDeleteIgnore();
+      }
       del.setRow(row);
       session.apply(del);
     }
@@ -239,7 +244,12 @@ public class TestKuduSession {
     session.flush();
 
     for (PartialRow row : rows) {
-      Delete del = table.newDelete();
+      Operation del;
+      if (row.getInt(0) % 2 == 0) {
+        del = table.newDelete();
+      } else {
+        del = table.newDeleteIgnore();
+      }
       del.setRow(row);
       session.apply(del);
     }

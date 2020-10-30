@@ -383,7 +383,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
       BitSet nullsBitSet = row.getNullsBitSet();
 
       // If this is a DELETE operation only the key columns should to be set.
-      if (type == ChangeType.DELETE) {
+      if (type == ChangeType.DELETE || type == ChangeType.DELETE_IGNORE) {
         columnCount = row.getSchema().getPrimaryKeyColumnCount();
         // Clear the bits indicating any non-key fields are set.
         columnsBitSet.clear(schema.getPrimaryKeyColumnCount(), columnsBitSet.size());
