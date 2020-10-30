@@ -32,8 +32,9 @@ import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobDescriptionCollector
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.CapturingLogAppender
-import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
+import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.test.RandomUtils
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
 import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
@@ -591,6 +592,20 @@ class TestKuduBackup extends KuduTestSuite {
 
   @Test
   def testDeleteIgnore(): Unit = {
+    doDeleteIgnoreTest()
+  }
+
+  /**
+   * Identical to the above test, but exercising the old session based delete ignore operations,
+   * ensuring we functionally support the same semantics.
+   */
+  @Test
+  @KuduTestHarness.MasterServerConfig(flags = Array("--master_support_ignore_operations=false"))
+  def testLegacyDeleteIgnore(): Unit = {
+    doDeleteIgnoreTest()
+  }
+
+  def doDeleteIgnoreTest(): Unit = {
     insertRows(table, 100) // Insert data into the default test table.
 
     // Run and validate initial backup.

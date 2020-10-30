@@ -91,6 +91,7 @@ object KuduRestore {
         .load(backup.path.toString)
         // Default the the row action column with a value of "UPSERT" so that the
         // rows from a full backup, which don't have a row action, are upserted.
+        // TODO(ghenke): Consider using INSERT_IGNORE for full backups.
         .na
         .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
 
@@ -106,8 +107,8 @@ object KuduRestore {
         val session = context.syncClient.newSession
         session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
         // In the case of task retries we need to ignore NotFound errors for deleted rows.
-        // TODO(KUDU-1563): Implement server side ignore capabilities to improve performance
-        //  and reliability.
+        // This can't occur if DELETE_IGNORE is used, but still needs to be set in the case
+        // DELETE is used for backwards compatibility.
         session.setIgnoreAllNotFoundRows(true)
         try for (internalRow <- internalRows) {
           // Convert the InternalRows to Rows.
@@ -120,7 +121,13 @@ object KuduRestore {
           // Generate an operation based on the row action.
           val operation = rowAction match {
             case RowAction.UPSERT => table.newUpsert()
-            case RowAction.DELETE => table.newDelete()
+            case RowAction.DELETE => {
+              if (context.supportsIgnoreOperations) {
+                table.newDeleteIgnore()
+              } else {
+                table.newDelete()
+              }
+            }
             case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
           }
           // Convert the Spark row to a partial row and set it on the operation.
