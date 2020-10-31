@@ -428,7 +428,7 @@ class MergeCompactionInput : public CompactionInput {
                        const Schema* schema)
     : schema_(schema),
       num_dup_rows_(0) {
-    for (const shared_ptr<CompactionInput> &input : inputs) {
+    for (const shared_ptr<CompactionInput>& input : inputs) {
       unique_ptr<MergeState> state(new MergeState);
       state->input = input;
       states_.push_back(state.release());
@@ -573,8 +573,13 @@ class MergeCompactionInput : public CompactionInput {
 
       // If an input is fully exhausted, no need to consider it
       // in the merge anymore.
-      if (!state->input->HasMoreBlocks()) {
-
+      bool has_blocks = state->input->HasMoreBlocks();
+      if (has_blocks) {
+        state->Reset();
+        RETURN_NOT_OK(state->input->PrepareBlock(&state->pending));
+        has_blocks = !state->empty();
+      }
+      if (!has_blocks) {
         // Any inputs that were dominated by the last block of this input
         // need to be re-added into the merge.
         states_.insert(states_.end(), state->dominated.begin(), state->dominated.end());
@@ -583,9 +588,6 @@ class MergeCompactionInput : public CompactionInput {
         j--;
         continue;
       }
-
-      state->Reset();
-      RETURN_NOT_OK(state->input->PrepareBlock(&state->pending));
 
       // Now that this input has moved to its next block, it's possible that
       // it no longer dominates the inputs in it 'dominated' list. Re-check

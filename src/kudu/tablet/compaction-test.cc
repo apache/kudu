@@ -298,7 +298,6 @@ class TestCompaction : public KuduRowSetTest {
 
     vector<shared_ptr<RowSetMetadata> > metas;
     rsw.GetWrittenRowSetMetadata(&metas);
-    ASSERT_GE(metas.size(), 1);
     for (const shared_ptr<RowSetMetadata>& meta : metas) {
       ASSERT_TRUE(meta->HasBloomDataBlockForTests());
     }
@@ -370,6 +369,31 @@ class TestCompaction : public KuduRowSetTest {
     FlushMRSAndReopen(mrs, projection, kLargeRollThreshold, &rowsets);
     ASSERT_EQ(1, rowsets.size());
     *result_rs = rowsets[0];
+  }
+
+  // Create an invisible MRS -- one whose inserts and deletes were applied at
+  // the same timestamp.
+  shared_ptr<MemRowSet> CreateInvisibleMRS() {
+    shared_ptr<MemRowSet> mrs;
+    CHECK_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                               mem_trackers_.tablet_tracker, &mrs));
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    InsertRowInOp(mrs.get(), op, 0, 0);
+    DeleteRowInOp(mrs.get(), op, 0);
+    op.FinishApplying();
+    return mrs;
+  }
+
+  // Count the number of rows in the given rowsets.
+  static uint64_t CountRows(const vector<shared_ptr<DiskRowSet>>& rowsets) {
+    uint64_t total_num_rows = 0;
+    for (const auto& rs : rowsets) {
+      uint64_t rs_live_rows;
+      CHECK_OK(rs->CountLiveRows(&rs_live_rows));
+      total_num_rows += rs_live_rows;
+    }
+    return total_num_rows;
   }
 
   // Test compaction where each of the input rowsets has
@@ -1047,21 +1071,50 @@ TEST_F(TestCompaction, TestMergeMRS) {
   InsertRows(mrs_a.get(), 5, 1);
 
   MvccSnapshot snap(mvcc_);
-  vector<shared_ptr<CompactionInput> > merge_inputs;
-  merge_inputs.push_back(
-        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)));
-  merge_inputs.push_back(
-        shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)));
+  vector<shared_ptr<CompactionInput> > merge_inputs {
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+  };
   unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
   vector<shared_ptr<DiskRowSet>> result_rs;
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
-  uint64_t total_num_rows = 0;
-  for (const auto& rs : result_rs) {
-    uint64_t rs_live_rows;
-    ASSERT_OK(rs->CountLiveRows(&rs_live_rows));
-    total_num_rows += rs_live_rows;
-  }
+  uint64_t total_num_rows = CountRows(result_rs);
   ASSERT_EQ(20, total_num_rows);
+}
+
+// Test MergeCompactionInput against MemRowSets, where there are rows that were
+// inserted and deleted in the same op, and can thus never be seen.
+TEST_F(TestCompaction, TestMergeMRSWithInvisibleRows) {
+  shared_ptr<MemRowSet> mrs_a = CreateInvisibleMRS();
+  shared_ptr<MemRowSet> mrs_b;
+  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_b));
+  InsertRows(mrs_b.get(), 10, 0);
+  MvccSnapshot snap(mvcc_);
+  vector<shared_ptr<CompactionInput> > merge_inputs {
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+  };
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  vector<shared_ptr<DiskRowSet>> result_rs;
+  DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
+  ASSERT_EQ(1, result_rs.size());
+  ASSERT_EQ(10, CountRows(result_rs));
+}
+
+// Like the above test, but with all invisible rowsets.
+TEST_F(TestCompaction, TestMergeMRSWithAllInvisibleRows) {
+  shared_ptr<MemRowSet> mrs_a = CreateInvisibleMRS();
+  shared_ptr<MemRowSet> mrs_b = CreateInvisibleMRS();
+  MvccSnapshot snap(mvcc_);
+  vector<shared_ptr<CompactionInput> > merge_inputs {
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap))
+  };
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  vector<shared_ptr<DiskRowSet>> result_rs;
+  DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
+  ASSERT_TRUE(result_rs.empty());
 }
 
 #ifdef NDEBUG
