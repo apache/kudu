@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_CLIENT_BUILDER_INTERNAL_H
-#define KUDU_CLIENT_CLIENT_BUILDER_INTERNAL_H
+#pragma once
 
 #include <string>
 #include <vector>
@@ -39,6 +38,7 @@ class KuduClientBuilder::Data {
   std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
   MonoDelta default_rpc_timeout_;
+  MonoDelta connection_negotiation_timeout_;
   std::string authn_creds_;
   internal::ReplicaController::Visibility replica_visibility_;
   boost::optional<int> num_reactors_;
@@ -48,5 +48,3 @@ class KuduClientBuilder::Data {
 
 } // namespace client
 } // namespace kudu
-
-#endif

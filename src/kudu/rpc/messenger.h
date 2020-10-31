@@ -82,6 +82,8 @@ class MessengerBuilder {
   friend class Messenger;
   friend class ReactorThread;
 
+  static const int64_t kRpcNegotiationTimeoutMs;
+
   explicit MessengerBuilder(std::string name);
 
   // Set the length of time we will keep a TCP connection will alive with no traffic.
@@ -308,7 +310,9 @@ class Messenger {
 
   scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_; }
 
-  const int64_t rpc_negotiation_timeout_ms() const { return rpc_negotiation_timeout_ms_; }
+  int64_t rpc_negotiation_timeout_ms() const {
+    return rpc_negotiation_timeout_ms_;
+  }
 
   const std::string& sasl_proto_name() const {
     return sasl_proto_name_;

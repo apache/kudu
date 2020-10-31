@@ -183,6 +183,7 @@ using kudu::itest::GetClusterId;
 using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::rpc::MessengerBuilder;
 using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
@@ -882,6 +883,41 @@ TEST_F(ClientTest, ConnectToClusterNoMasterAddressSpecified) {
   auto s = b.Build(&c);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "no master address specified");
+}
+
+// Verify setting of the connection negotiation timeout (KUDU-2966).
+TEST_F(ClientTest, ConnectionNegotiationTimeout) {
+  const auto master_addr = cluster_->mini_master()->bound_rpc_addr().ToString();
+
+  // The connection negotiation timeout isn't set explicitly: it should be
+  // equal to the default setting for the RPC messenger.
+  {
+    KuduClientBuilder b;
+    b.add_master_server_addr(master_addr);
+    shared_ptr<KuduClient> c;
+    ASSERT_OK(b.Build(&c));
+    auto t = c->connection_negotiation_timeout();
+    ASSERT_TRUE(t.Initialized());
+    ASSERT_EQ(MessengerBuilder::kRpcNegotiationTimeoutMs, t.ToMilliseconds());
+    auto t_ms = c->data_->messenger_->rpc_negotiation_timeout_ms();
+    ASSERT_EQ(t_ms, t.ToMilliseconds());
+  }
+
+  // The connection negotiation timeout is set explicitly via KuduBuilder. It
+  // should be propagated to the RPC messenger and reported back correspondingly
+  // by the KuduClient::connection_negotiaton_timeout() method.
+  {
+    const MonoDelta kNegotiationTimeout = MonoDelta::FromMilliseconds(12321);
+    KuduClientBuilder b;
+    b.add_master_server_addr(master_addr);
+    b.connection_negotiation_timeout(kNegotiationTimeout);
+    shared_ptr<KuduClient> c;
+    ASSERT_OK(b.Build(&c));
+    auto t = c->connection_negotiation_timeout();
+    ASSERT_EQ(kNegotiationTimeout, t);
+    auto t_ms = c->data_->messenger_->rpc_negotiation_timeout_ms();
+    ASSERT_EQ(t_ms, t.ToMilliseconds());
+  }
 }
 
 // Test that, if the master is down, we experience a network error talking

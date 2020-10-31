@@ -62,6 +62,8 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
+const int64_t MessengerBuilder::kRpcNegotiationTimeoutMs = 3000;
+
 MessengerBuilder::MessengerBuilder(std::string name)
     : name_(std::move(name)),
       connection_keepalive_time_(MonoDelta::FromMilliseconds(65000)),
@@ -69,7 +71,7 @@ MessengerBuilder::MessengerBuilder(std::string name)
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
       coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
-      rpc_negotiation_timeout_ms_(3000),
+      rpc_negotiation_timeout_ms_(kRpcNegotiationTimeoutMs),
       sasl_proto_name_("kudu"),
       rpc_authentication_("optional"),
       rpc_encryption_("optional"),

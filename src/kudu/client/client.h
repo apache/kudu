@@ -263,6 +263,22 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
+  /// Set the timeout for negotiating a connection to a remote server.
+  ///
+  /// If not provided, the underlying messenger is created with reasonable
+  /// default. The result value could be retrieved using
+  /// @c KuduClient.connection_negotiation_timeout() after an instance of
+  /// @c KuduClient is created. Sometimes it makes sense to customize the
+  /// timeout for connection negotiation, e.g. when running on a cluster with
+  /// heavily loaded tablet servers. For details on the connection negotiation,
+  /// see ../../../docs/design-docs/rpc.md#negotiation.
+  ///
+  /// @param [in] timeout
+  ///   Timeout value to set.
+  /// @return Reference to the updated object.
+  KuduClientBuilder& connection_negotiation_timeout(const MonoDelta& timeout);
+
+
   /// Import serialized authentication credentials from another client.
   ///
   /// @param [in] authn_creds
@@ -518,6 +534,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Default timeout for RPCs.
   const MonoDelta& default_rpc_timeout() const;
 
+  /// @return Timeout for connection negotiation to a remote server.
+  MonoDelta connection_negotiation_timeout() const;
+
   /// Value for the latest observed timestamp when none has been observed
   /// or set.
   static const uint64_t kNoTimestamp;
@@ -637,6 +656,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class tools::RemoteKsckCluster;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
+  FRIEND_TEST(ClientTest, ConnectionNegotiationTimeout);
   FRIEND_TEST(ClientTest, TestCacheAuthzTokens);
   FRIEND_TEST(ClientTest, TestGetSecurityInfoFromMaster);
   FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);

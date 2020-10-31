@@ -304,6 +304,12 @@ KuduClientBuilder& KuduClientBuilder::default_rpc_timeout(const MonoDelta& timeo
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::connection_negotiation_timeout(
+    const MonoDelta& timeout) {
+  data_->connection_negotiation_timeout_ = timeout;
+  return *this;
+}
+
 KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string authn_creds) {
   data_->authn_creds_ = std::move(authn_creds);
   return *this;
@@ -350,6 +356,10 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
 
   // Init messenger.
   MessengerBuilder builder("client");
+  if (data_->connection_negotiation_timeout_.Initialized()) {
+    builder.set_rpc_negotiation_timeout_ms(
+        data_->connection_negotiation_timeout_.ToMilliseconds());
+  }
   if (data_->num_reactors_) {
     builder.set_num_reactors(data_->num_reactors_.get());
   }
@@ -630,6 +640,12 @@ const MonoDelta& KuduClient::default_admin_operation_timeout() const {
 
 const MonoDelta& KuduClient::default_rpc_timeout() const {
   return data_->default_rpc_timeout_;
+}
+
+MonoDelta KuduClient::connection_negotiation_timeout() const {
+  DCHECK(data_->messenger_);
+  return MonoDelta::FromMilliseconds(
+      data_->messenger_->rpc_negotiation_timeout_ms());
 }
 
 const uint64_t KuduClient::kNoTimestamp = 0;

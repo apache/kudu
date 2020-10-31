@@ -279,6 +279,7 @@ class KuduClient::Data {
   std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
   MonoDelta default_rpc_timeout_;
+  MonoDelta connection_negotiation_timeout_;
 
   // The host port of the leader master. This is set in
   // ConnectedToClusterCb, which is invoked as a callback by
