@@ -77,16 +77,6 @@ class ClientFailoverOnNegotiationTimeoutITest : public KuduTest {
     // let's make the client re-establishing connections on every RPC.
     FLAGS_rpc_reopen_outbound_connections = true;
 
-    // Set the connection negotiation timeout shorter than its default value
-    // to run the test faster. For sanitizer builds we don't want the timeout
-    // to be too short: running the test concurrently with other activities
-    // might lead client to fail even if the client retries again and again.
-#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
-    FLAGS_rpc_negotiation_timeout_ms = 3000;
-#else
-    FLAGS_rpc_negotiation_timeout_ms = 1000;
-#endif
-
     cluster_opts_.extra_tserver_flags = {
         // Speed up Raft elections.
         "--raft_heartbeat_interval_ms=25",
@@ -106,13 +96,37 @@ class ClientFailoverOnNegotiationTimeoutITest : public KuduTest {
     return cluster_->Start();
   }
 
+  shared_ptr<KuduClient> CreateClient(
+      const MonoDelta& rpc_timeout,
+      const MonoDelta& negotiation_timeout = {}) {
+    KuduClientBuilder b;
+    b.default_admin_operation_timeout(rpc_timeout);
+    b.default_rpc_timeout(rpc_timeout);
+    if (negotiation_timeout.Initialized()) {
+      b.connection_negotiation_timeout(negotiation_timeout);
+    }
+    shared_ptr<KuduClient> client;
+    CHECK_OK(cluster_->CreateClient(&b, &client));
+    return client;
+  }
+
   void TearDown() override {
     if (cluster_) {
       cluster_->Shutdown();
     }
     KuduTest::TearDown();
   }
+
  protected:
+  // Set the connection negotiation timeout shorter than its default value
+  // to run the test faster. For sanitizer builds we don't want the timeout
+  // to be too short: running the test concurrently with other activities
+  // might lead client to fail even if the client retries again and again.
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  const MonoDelta kNegotiationTimeout = MonoDelta::FromMilliseconds(3000);
+#else
+  const MonoDelta kNegotiationTimeout = MonoDelta::FromMilliseconds(500);
+#endif
   ExternalMiniClusterOptions cluster_opts_;
   shared_ptr<ExternalMiniCluster> cluster_;
 };
@@ -132,12 +146,9 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
   cluster_opts_.num_tablet_servers = kNumTabletServers;
   ASSERT_OK(CreateAndStartCluster());
 
-  shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(
-      &KuduClientBuilder()
-          .default_admin_operation_timeout(MonoDelta::FromMilliseconds(kTimeoutMs))
-          .default_rpc_timeout(MonoDelta::FromMilliseconds(kTimeoutMs)),
-      &client));
+  shared_ptr<KuduClient> client = CreateClient(
+      MonoDelta::FromMilliseconds(kTimeoutMs), kNegotiationTimeout);
+  ASSERT_NE(nullptr, client.get());
   unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   KuduSchema schema(KuduSchema::FromSchema(CreateKeyValueTestSchema()));
   ASSERT_OK(table_creator->table_name(kTableName)
@@ -240,12 +251,8 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021ConnectToMaster) {
   cluster_opts_.num_tablet_servers = 1;
   ASSERT_OK(CreateAndStartCluster());
 
-  shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(
-      &KuduClientBuilder()
-          .default_admin_operation_timeout(kTimeout)
-          .default_rpc_timeout(kTimeout),
-      &client));
+  shared_ptr<KuduClient> client = CreateClient(kTimeout, kNegotiationTimeout);
+  ASSERT_NE(nullptr, client.get());
 
   // Make a call to the master to populate the client's metadata cache.
   vector<string> tables;
@@ -274,12 +281,8 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021NegotiateWithMaster) {
   cluster_opts_.num_tablet_servers = 1;
   ASSERT_OK(CreateAndStartCluster());
 
-  shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(
-      &KuduClientBuilder()
-          .default_admin_operation_timeout(kTimeout)
-          .default_rpc_timeout(kTimeout),
-      &client));
+  shared_ptr<KuduClient> client = CreateClient(kTimeout, kNegotiationTimeout);
+  ASSERT_NE(nullptr, client.get());
 
   // Check client can successfully call ListTables().
   vector<string> tables;
