@@ -86,5 +86,22 @@ TEST(RoutingTest, TestProxyFromNotInRaftConfig) {
   ASSERT_EQ("peer-1", next_hop); // Direct routing fallback.
 }
 
+// If a node has no routing table, and receives a request from the leader to
+// proxy a message, the proxy node should proxy directly.
+TEST(RoutingTest, TestStaleRouter) {
+  RaftConfigPB raft_config = BuildRaftConfigPBForTests(/*num_voters=*/3);
+  raft_config.set_opid_index(1); // required for validation
+
+  const string kLeaderUuid = "peer-0";
+
+  ProxyTopologyPB proxy_topology;
+  RoutingTable routing_table;
+  ASSERT_OK(routing_table.Init(raft_config, proxy_topology, kLeaderUuid));
+
+  string next_hop;
+  ASSERT_OK(routing_table.NextHop(/*src_uuid=*/"peer-1", /*dest_uuid=*/"peer-2", &next_hop));
+  ASSERT_EQ("peer-2", next_hop); // Direct routing fallback.
+}
+
 } // namespace consensus
 } // namespace kudu

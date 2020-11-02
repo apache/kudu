@@ -66,6 +66,7 @@ Status RoutingTable::Init(const RaftConfigPB& raft_config,
   RETURN_NOT_OK(MergeForestIntoSingleRoutingTree(leader_uuid, index, &forest));
   ConstructNextHopIndicesRec(forest.begin()->second.get());
 
+  has_explicit_routes_ = !proxy_topology.proxy_edges().empty();
   index_ = std::move(index);
   topology_root_ = std::move(forest.begin()->second);
 
@@ -201,6 +202,18 @@ void RoutingTable::ConstructNextHopIndicesRec(Node* cur) {
 Status RoutingTable::NextHop(const string& src_uuid,
                              const string& dest_uuid,
                              string* next_hop) const {
+  // Base case: use direct routing if no routing topology is defined. If we
+  // don't do this, if the leader has a proxy topology defined, and a proxy node
+  // does not, then the proxy node will think the shortest path to the
+  // destination is the leader, resulting in a routing loop. In the general case
+  // this can happen due to proxy topology inconsistencies across the cluster
+  // anyway, but it's nice to get non-pathological behavior in this case.
+  if (!has_explicit_routes_) {
+    *next_hop = dest_uuid;
+    return Status::OK();
+  }
+
+  DCHECK(has_explicit_routes_); // Some proxy topology is defined.
   Node* src = FindWithDefault(index_, src_uuid, nullptr);
   if (!src) {
     return Status::NotFound(Substitute("unknown source uuid: $0", src_uuid));

@@ -147,6 +147,7 @@ class RoutingTable {
   // Recursive helper for DFS to build the debug string emitted by ToString().
   void ToStringHelperRec(Node* cur, int level, std::string* out) const;
 
+  bool has_explicit_routes_{false}; // Whether there are any topology edges.
   std::unique_ptr<Node> topology_root_;
   std::unordered_map<std::string, Node*> index_;
 };
