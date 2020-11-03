@@ -104,8 +104,7 @@ DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts/updates to batch at once.  Set to 0 "
              "to delegate the batching control to the logic of the "
              "KuduSession running in AUTO_BACKGROUND_MODE flush mode.");
-DEFINE_string(table_name, "lineitem",
-              "The table name to write/read");
+DECLARE_string(table_name);
 
 using kudu::client::KuduRowResult;
 using std::string;
@@ -132,7 +131,7 @@ struct SliceMapKey {
 
   // This copies the string out of the result buffer
   void RelocateSlice() {
-    auto buf = new uint8_t[slice.size()];
+    auto* buf = new uint8_t[slice.size()];
     slice.relocate(buf);
   }
 
@@ -273,8 +272,10 @@ int main(int argc, char **argv) {
     master_address = FLAGS_master_address;
   }
 
+  string tpch_table_name = FLAGS_table_name.empty() ? "lineitem" : FLAGS_table_name;
+
   unique_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(
-      master_address, FLAGS_table_name, FLAGS_tpch_max_batch_size,
+      master_address, std::move(tpch_table_name), FLAGS_tpch_max_batch_size,
       /* timeout_ms = */ 5000, kudu::RpcLineItemDAO::RANGE,
       /* num_buckets = */ 1));
   dao->Init();
