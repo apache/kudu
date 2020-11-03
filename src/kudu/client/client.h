@@ -67,6 +67,10 @@ class KuduClient;
 class KuduTable;
 } // namespace client
 
+namespace tablet {
+class FuzzTest;
+} // namespace tablet
+
 namespace transactions {
 class CoordinatorRpc;
 class TxnSystemClient;
@@ -2228,7 +2232,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   friend class KuduClient;
   friend class KuduTransaction;
   friend class internal::Batcher;
-
+  friend class tablet::FuzzTest;
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundAndErrorCollector);
   FRIEND_TEST(ClientTest, TestAutoFlushBackgroundApplyBlocks);
   FRIEND_TEST(ClientTest, TxnIdOfTransactionalSession);
