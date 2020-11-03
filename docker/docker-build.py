@@ -164,7 +164,7 @@ def get_os_tag(base):
   os_name = base.split(':')[0]
   os_version = base.split(':')[1]
   os_tag = os_name
-  if os_version.isnumeric():
+  if os_version.isdigit():
     os_tag += os_version
   return os_tag
 
