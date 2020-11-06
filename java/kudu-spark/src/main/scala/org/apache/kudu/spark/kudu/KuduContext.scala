@@ -135,8 +135,11 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   val timestampAccumulator = new TimestampAccumulator()
   sc.register(timestampAccumulator)
 
-  val durationHistogram = new HdrHistogramAccumulator()
-  sc.register(durationHistogram, "kudu.write_duration")
+  lazy val durationHistogram = {
+    val acc = new HdrHistogramAccumulator()
+    sc.register(acc, "kudu.write_duration")
+    acc
+  }
 
   @deprecated("Use KuduContext constructor", "1.4.0")
   def this(kuduMaster: String) {
@@ -381,6 +384,8 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       rdd = repartitionRows(rdd, tableName, schema, writeOptions)
     }
 
+    // materialize durationHistogram
+    durationHistogram
     // Write the rows for each Spark partition.
     rdd.foreachPartition(iterator => {
       val pendingErrors = writePartitionRows(
