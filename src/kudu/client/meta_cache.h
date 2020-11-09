@@ -16,8 +16,7 @@
 // under the License.
 //
 // This module is internal to the client and not a public API.
-#ifndef KUDU_CLIENT_META_CACHE_H
-#define KUDU_CLIENT_META_CACHE_H
+#pragma once
 
 #include <atomic>
 #include <map>
@@ -530,4 +529,3 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 } // namespace internal
 } // namespace client
 } // namespace kudu
-#endif /* KUDU_CLIENT_META_CACHE_H */

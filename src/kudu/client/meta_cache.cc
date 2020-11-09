@@ -115,12 +115,16 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
 
   VLOG(1) << "Successfully resolved " << hp.ToString() << ": "
           << (*addrs)[0].ToString();
+  auto proxy = std::make_shared<TabletServerServiceProxy>(
+        client->data_->messenger_, (*addrs)[0], hp.host());
+  proxy->set_user_credentials(client->data_->user_credentials_);
+  auto admin_proxy = std::make_shared<TabletServerAdminServiceProxy>(
+        client->data_->messenger_, (*addrs)[0], hp.host());
 
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
-    admin_proxy_.reset(
-        new TabletServerAdminServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
+    proxy_ = std::move(proxy);
+    admin_proxy_ = std::move(admin_proxy);
     proxy_->set_user_credentials(client->data_->user_credentials_);
   }
   user_callback(s);
@@ -144,7 +148,7 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
     hp = rpc_hostports_[0];
   }
 
-  auto addrs = new vector<Sockaddr>();
+  auto addrs = new vector<Sockaddr>;
 
   if (FLAGS_client_use_unix_domain_sockets && unix_domain_socket_path_ &&
       client->data_->IsLocalHostPort(hp)) {

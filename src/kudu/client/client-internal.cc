@@ -560,7 +560,7 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   rpc.SendRpc();
   RETURN_NOT_OK(sync.Wait());
   // Parse the server schema out of the response.
-  unique_ptr<Schema> new_schema(new Schema());
+  unique_ptr<Schema> new_schema(new Schema);
   RETURN_NOT_OK(SchemaFromPB(resp.schema(), new_schema.get()));
 
   // Parse the server partition schema out of the response.
@@ -662,7 +662,8 @@ void KuduClient::Data::ConnectedToClusterCb(
       location_ = connect_response.client_location();
       cluster_id_ = connect_response.cluster_id();
 
-      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
+      master_proxy_ = std::make_shared<MasterServiceProxy>(
+          messenger_, leader_addr, leader_hostname);
       master_proxy_->set_user_credentials(user_credentials_);
     }
   }
