@@ -25,6 +25,7 @@
 #include <utility>
 
 #include <boost/optional/optional.hpp>
+#include <boost/type_traits/decay.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
@@ -102,6 +103,12 @@ DEFINE_double(tablet_copy_fault_crash_before_write_cmeta, 0.0,
               "(For testing only!)");
 TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, unsafe);
 TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, runtime);
+
+DEFINE_double(tablet_copy_fault_crash_during_download_block, 0.0,
+              "Fraction of the time that DownloadBlock() will fail. "
+              "For use in test only.");
+TAG_FLAG(tablet_copy_fault_crash_during_download_block, unsafe);
+TAG_FLAG(tablet_copy_fault_crash_during_download_block, runtime);
 
 DEFINE_int32(tablet_copy_download_threads_nums_per_session, 4,
              "Number of threads per tablet copy session for downloading tablet data blocks.");
@@ -777,6 +784,8 @@ Status TabletCopyClient::DownloadAndRewriteBlockIfEndStatusOK(const BlockIdPB& s
 Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
                                        BlockId* new_block_id) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
+  MAYBE_RETURN_FAILURE(FLAGS_tablet_copy_fault_crash_during_download_block,
+                       Status::IOError("Injected failure on downloading block"));
   RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(), "Not downloading block for replica");
 
   unique_ptr<WritableBlock> block;

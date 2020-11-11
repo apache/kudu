@@ -139,6 +139,7 @@ class TabletCopyClient {
   FRIEND_TEST(TabletCopyClientTest, TestDownloadBlock);
   FRIEND_TEST(TabletCopyClientTest, TestLifeCycle);
   FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
+  FRIEND_TEST(TabletCopyClientTest, TestDownloadBlockMayFail);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
   FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);

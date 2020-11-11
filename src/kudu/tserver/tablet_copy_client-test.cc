@@ -75,6 +75,7 @@ using std::thread;
 using std::vector;
 
 DECLARE_double(env_inject_eio);
+DECLARE_double(tablet_copy_fault_crash_during_download_block);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
@@ -213,19 +214,6 @@ TEST_F(TabletCopyClientTest, TestLifeCycle) {
     ASSERT_FALSE(meta_);
   }
 
-  // Rowset are download by multithreads, the error status can be corretly
-  // collected among all threads.
-  {
-    google::FlagSaver fs;
-    FLAGS_env_inject_eio = 0.5;
-    FLAGS_tablet_copy_download_threads_nums_per_session = 16;
-    s = StartCopy();
-    ASSERT_TRUE(s.IsIOError()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Failed to write tablet metadata");
-    ASSERT_EQ(TabletCopyClient::State::kInitialized, client_->state_);
-    ASSERT_FALSE(meta_);
-  }
-
   // Now let's try replacing a tablet. Set a metadata that we can replace.
   ASSERT_OK(ResetTabletCopyClient());
   ASSERT_OK(StartCopy());
@@ -301,6 +289,18 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
 
   // Ensure it placed the block where we expected it to.
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
+}
+
+// Test that error status is properly reported if there was a failure in any
+// of multiple threads downloading tablet's data blocks.
+TEST_F(TabletCopyClientTest, TestDownloadBlockMayFail) {
+  FLAGS_tablet_copy_fault_crash_during_download_block = 0.5;
+  FLAGS_tablet_copy_download_threads_nums_per_session = 16;
+
+  ASSERT_OK(StartCopy());
+  Status s = client_->DownloadBlocks();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "Injected failure on downloading block");
 }
 
 // Basic WAL segment download unit test.
