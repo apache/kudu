@@ -27,6 +27,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -51,6 +52,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
@@ -70,6 +72,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -93,6 +96,7 @@ using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 
 namespace kudu {
@@ -140,6 +144,26 @@ class TestCompaction : public KuduRowSetTest {
     ScopedOp op(&mvcc_, clock_.Now());
     op.StartApplying();
     InsertRowInOp(mrs, op, row_key, val);
+    op.FinishApplying();
+  }
+
+  void DeleteAndInsertRow(MemRowSet* mrs_to_delete, MemRowSet* mrs_to_insert,
+                          int row_key, int32_t val, bool also_update) {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    DeleteRowInOp(mrs_to_delete, op, row_key);
+    InsertRowInOp(mrs_to_insert, op, row_key, val);
+    if (also_update) {
+      UpdateRowInOp(mrs_to_insert, op, row_key, val);
+    }
+    op.FinishApplying();
+  }
+
+  void InsertAndDeleteRow(MemRowSet* mrs, int row_key, int32_t val) {
+    ScopedOp op(&mvcc_, clock_.Now());
+    op.StartApplying();
+    InsertRowInOp(mrs, op, row_key, val);
+    DeleteRowInOp(mrs, op, row_key);
     op.FinishApplying();
   }
 
@@ -378,11 +402,7 @@ class TestCompaction : public KuduRowSetTest {
     shared_ptr<MemRowSet> mrs;
     CHECK_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
                                mem_trackers_.tablet_tracker, &mrs));
-    ScopedOp op(&mvcc_, clock_.Now());
-    op.StartApplying();
-    InsertRowInOp(mrs.get(), op, 0, 0);
-    DeleteRowInOp(mrs.get(), op, 0);
-    op.FinishApplying();
+    InsertAndDeleteRow(mrs.get(), 0, 0);
     return mrs;
   }
 
@@ -1102,6 +1122,132 @@ TEST_F(TestCompaction, TestMergeMRSWithInvisibleRows) {
   DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
   ASSERT_EQ(1, result_rs.size());
   ASSERT_EQ(10, CountRows(result_rs));
+}
+
+TEST_F(TestCompaction, TestRandomizeDuplicatedRowsAcrossTransactions) {
+  ThreadSafeRandom prng(SeedRandom());
+  constexpr int kMaxIters = 32;
+  constexpr int kMinIters = 2;
+  shared_ptr<MemRowSet> main_mrs;
+  int mrs_id = 0;
+  ASSERT_OK(MemRowSet::Create(mrs_id++, schema_, log_anchor_registry_.get(),
+            mem_trackers_.tablet_tracker, &main_mrs));
+
+  // Keep track of our transactional MRSs. Since we can only mutate a row in
+  // a transactional MRS after committing, we'll treat these MRSs as having
+  // committed immediately after being inserted to.
+  unordered_set<shared_ptr<MemRowSet>> txn_mrss;
+
+  // Keep track of which MRS has the live row, if any.
+  MemRowSet* mrs_with_live_row = nullptr;
+
+  int num_iters = kMinIters + prng.Uniform(kMaxIters - kMinIters);
+  for (int i = 0; i < num_iters; i++) {
+    const auto one_of_three = prng.Next() % 3;
+    if (mrs_with_live_row) {
+      switch (one_of_three) {
+        case 0:
+          LOG(INFO) << Substitute("Deleting row from mrs $0", mrs_with_live_row->mrs_id());
+          NO_FATALS(DeleteRow(mrs_with_live_row, 1));
+          mrs_with_live_row = nullptr;
+          break;
+        case 1:
+          LOG(INFO) << Substitute("Updating row from mrs $0", mrs_with_live_row->mrs_id());
+          NO_FATALS(UpdateRow(mrs_with_live_row, 1, 1337));
+          break;
+        case 2: {
+          // For some added spice, let's also sometimes update the row in the
+          // same op.
+          bool update = prng.Next() % 2;
+          LOG(INFO) << Substitute("Deleting row from mrs $0, inserting $1to mrs $2",
+                                  mrs_with_live_row->mrs_id(), update ? "and updating " : "",
+                                  main_mrs->mrs_id());
+          NO_FATALS(DeleteAndInsertRow(mrs_with_live_row, main_mrs.get(), 1, 0, update));
+          mrs_with_live_row = main_mrs.get();
+          break;
+        }
+      }
+      continue;
+    }
+    switch (one_of_three) {
+      case 0:
+        LOG(INFO) << Substitute("Inserting row into mrs $0", main_mrs->mrs_id());
+        NO_FATALS(InsertRow(main_mrs.get(), 1, 0));
+        mrs_with_live_row = main_mrs.get();
+        break;
+      case 1: {
+        shared_ptr<MemRowSet> txn_mrs;
+        ASSERT_OK(MemRowSet::Create(mrs_id++, schema_, log_anchor_registry_.get(),
+                                    mem_trackers_.tablet_tracker, &txn_mrs));
+        LOG(INFO) << Substitute("Inserting into mrs $0 and committing", txn_mrs->mrs_id());
+        NO_FATALS(InsertRow(txn_mrs.get(), 1, 0));
+        mrs_with_live_row = txn_mrs.get();
+        EmplaceOrDie(&txn_mrss, std::move(txn_mrs));
+        break;
+      }
+      case 2:
+        LOG(INFO) << Substitute("Inserting row into mrs $0 and deleting", main_mrs->mrs_id());
+        NO_FATALS(InsertAndDeleteRow(main_mrs.get(), 1, 0));
+        break;
+    }
+  }
+  MvccSnapshot snap(mvcc_);
+  vector<shared_ptr<CompactionInput>> merge_inputs;
+  merge_inputs.emplace_back(CompactionInput::Create(*main_mrs, &schema_, snap));
+  for (auto& mrs : txn_mrss) {
+    merge_inputs.emplace_back(CompactionInput::Create(*mrs, &schema_, snap));
+  }
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  vector<shared_ptr<DiskRowSet>> result_rs;
+  DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
+  ASSERT_EQ(1, result_rs.size());
+  ASSERT_EQ(mrs_with_live_row ? 1 : 0, CountRows(result_rs));
+}
+
+// Test that we can merge rowsets in which we have a row whose liveness jumps
+// back and forth between rowsets over time.
+TEST_F(TestCompaction, TestRowHistoryJumpsBetweenRowsets) {
+  shared_ptr<MemRowSet> mrs_a;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_a));
+  shared_ptr<MemRowSet> mrs_b;
+  ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_b));
+  shared_ptr<MemRowSet> mrs_c;
+  ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs_c));
+  // Interleave the history of a row across three MRSs.
+  InsertRows(mrs_a.get(), 1, 0);
+  DeleteRows(mrs_a.get(), 1, 0);
+  InsertRows(mrs_b.get(), 1, 0);
+  DeleteRows(mrs_b.get(), 1, 0);
+  InsertRows(mrs_a.get(), 1, 0);
+  DeleteRows(mrs_a.get(), 1, 0);
+  InsertRows(mrs_c.get(), 1, 0);
+  DeleteRows(mrs_c.get(), 1, 0);
+  InsertRows(mrs_a.get(), 1, 0);
+  DeleteRows(mrs_a.get(), 1, 0);
+
+  // At this point, our compaction input rows look like:
+  // MRS a:
+  // UNDO(del@ts1) <- 0 -> REDO(del@ts2) -> REDO(reins@ts5) -> REDO(del@ts6)
+  //                      -> REDO(reins@ts9) -> REDO(del@ts10)
+  // UNDO(del@ts3) <- 0 -> REDO(del@ts4)
+  // UNDO(del@ts7) <- 0 -> REDO(del@ts8)
+  //
+  // Despite the overlapping time ranges across these inputs, the compaction
+  // should go off without a hitch.
+  MvccSnapshot snap(mvcc_);
+  vector<shared_ptr<CompactionInput> > merge_inputs {
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_a, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_b, &schema_, snap)),
+    shared_ptr<CompactionInput>(CompactionInput::Create(*mrs_c, &schema_, snap)),
+  };
+  unique_ptr<CompactionInput> input(CompactionInput::Merge(merge_inputs, &schema_));
+  vector<shared_ptr<DiskRowSet>> result_rs;
+  DoFlushAndReopen(input.get(), schema_, snap, kSmallRollThreshold, &result_rs);
+  ASSERT_EQ(1, result_rs.size());
+  ASSERT_EQ(0, CountRows(result_rs));
 }
 
 // Like the above test, but with all invisible rowsets.

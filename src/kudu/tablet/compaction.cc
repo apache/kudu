@@ -99,6 +99,13 @@ namespace {
 const int kCompactionOutputBlockNumRows = 100;
 
 // Advances to the last mutation in a mutation list.
+void AdvanceToLastInList(Mutation** m) {
+  if (*m == nullptr) return;
+  Mutation* next;
+  while ((next = (*m)->acquire_next()) != nullptr) {
+    *m = next;
+  }
+}
 void AdvanceToLastInList(const Mutation** m) {
   if (*m == nullptr) return;
   const Mutation* next;
@@ -299,70 +306,165 @@ class DiskRowSetCompactionInput : public CompactionInput {
   };
 };
 
-// Compares two duplicate rows before compaction (and before the REDO->UNDO transformation).
-// Returns -1 if 'left' is less recent than 'right', 1 otherwise. Never returns 0.
+// Compares two duplicate rows before compaction (and before the REDO->UNDO
+// transformation). Returns 1 if 'left' is more recent than 'right', -1
+// otherwise. Never returns 0.
+//
+// The resulting order will determine the order in which ghost rows are linked.
+//
+// It's possible that transactional inserts and non-transactional inserts
+// of the same row land in separate rowsets, and that a row's liveness will
+// bounce between the main MRS and a transactional MRS:
+// - Row 'a' is inserted into the main MRS @ 5
+// - Row 'a' is deleted from the main MRS @ 10
+// - Row 'a' is inserted into a transactional MRS, committed @ 15
+// - Row 'a' is deleted from the transactional MRS @ 20
+// - Row 'a' is inserted again into the main MRS @ 25
+//
+// The result of this sequence is that we have two compaction input rows with
+// REDO time ranges whose REDO timestamps overlap, making it less
+// straightforward to determine which is newer:
+//
+//   UNDO(del@5) <- BASE(a) -> REDO(del@10) -> REDO(reins@25)  // main MRS
+//   UNDO(del@15) <- BASE(a) -> REDO(del@20)                   // txn MRS
+//
+// This method selects the input whose REDO head is newer as the newer input.
+// However, callers should detect such cases and update the lists to have
+// non-overlapping time ranges. For example, after the call to PrepareBlock()
+// completes, the merged row should be updated as below, with REDO(reins@25)
+// transferred onto the newer input:
+//
+//   UNDO(del@15) <- BASE(a) -> REDO(del@20) -> REDO(reins@25)
+//                      | previous_ghost
+//                      v
+//   UNDO(del@5) <- BASE(a) -> REDO(del@10)
+//
+// To detect such cases, if set, 'redos_overlap' returns true if there exist
+// REDOs in the older input that are of equal or higher timestamp than the
+// first REDO in the newer input. Callers can then transfer those newer
+// mutations onto the newer input.
+//
+// Note that the transferral can be done by simply appending the newer
+// mutations onto the newer input, and we don't have to worry about mutations
+// interleaving, as in the below bad example:
+//
+//   UNDO(del@5) <- BASE(a) -> REDO(del@10) -> REDO(reins@25)  // main MRS
+//   UNDO(del@15) <- BASE(a) -> REDO(del@20) -> REDO(reins@30) // txn MRS
+//
+// In this bad example, transferral via append would result in:
+//
+//   UNDO(del@5) <- BASE(a) -> REDO(del@10)
+//   UNDO(del@15) <- BASE(a) -> REDO(del@20) -> REDO(reins@30) -> REDO(reins@25)
+//
+// This history would not make sense, since reinserts cannot directly follow
+// one another without a delete separating them. However, the initial input of
+// this example is not possible, as for it to be the case, two rowsets would
+// have to commit their inserts, be deleted from, and then commit reinserts
+// again. However, only the main tablet MRS can be reinserted to after
+// committing inserts -- once a transaction commits, its transactional MRS no
+// longer becomes eligible for inserts. Since only a single rowset in the
+// tablet can be reinserted to, the above scenario cannot happen.
 int CompareDuplicatedRows(const CompactionInputRow& left,
-                          const CompactionInputRow& right) {
+                          const CompactionInputRow& right,
+                          bool* redos_overlap = nullptr) {
   const Mutation* left_last = left.redo_head;
   const Mutation* right_last = right.redo_head;
-  AdvanceToLastInList(&left_last);
-  AdvanceToLastInList(&right_last);
 
   if (left.redo_head == nullptr) {
 #ifndef NDEBUG
     // left must still be alive, meaning right must have at least a DELETE redo.
     if (PREDICT_TRUE(FLAGS_dcheck_on_kudu_2233_invariants)) {
-      DCHECK(right_last != nullptr);
-      DCHECK(right_last->changelist().is_delete());
+      // Only do the validations in DEBUG mode. RELEASE builds should fail the
+      // tablet.
+      AdvanceToLastInList(&right_last);
+      // left must still be alive, meaning right must have at least a DELETE redo.
+      CHECK(right_last != nullptr);
+      CHECK(right_last->changelist().is_delete());
     }
 #endif
+    if (redos_overlap) *redos_overlap = false;
     return 1;
   }
   if (right.redo_head == nullptr) {
 #ifndef NDEBUG
     // right must still be alive, meaning left must have at least a DELETE redo.
     if (PREDICT_TRUE(FLAGS_dcheck_on_kudu_2233_invariants)) {
-      DCHECK(left_last != nullptr);
-      DCHECK(left_last->changelist().is_delete());
+      // Only do the validations in DEBUG mode. RELEASE builds should fail the
+      // tablet.
+      AdvanceToLastInList(&left_last);
+      // right must still be alive, meaning left must have at least a DELETE redo.
+      CHECK(left_last != nullptr);
+      CHECK(left_last->changelist().is_delete());
     }
 #endif
+    if (redos_overlap) *redos_overlap = false;
     return -1;
   }
+  AdvanceToLastInList(&right_last);
+  AdvanceToLastInList(&left_last);
 
-  // Duplicated rows usually have disjoint redo histories, meaning the first mutation
-  // should be enough for the sake of determining the most recent row in most cases.
+  // Duplicated rows usually have disjoint redo histories, meaning the first
+  // mutation should be enough for the sake of determining the most recent row
+  // in most cases.
   int ret = left.redo_head->timestamp().CompareTo(right.redo_head->timestamp());
 
-  if (ret > 0) {
+  if (ret != 0) {
+    if (redos_overlap) {
+      bool left_newer = ret > 0;
+      const Mutation* newer_row_head = left_newer ? left.redo_head : right.redo_head;
+      const Mutation* newer_row_last = left_newer ? left_last: right_last;
+      const Mutation* older_row_last = left_newer ? right_last : left_last;
+      // There is overlap between the rows if the older row's last timestamp >
+      // the newer row's head.
+      int older_last_vs_newer_head =
+          older_row_last->timestamp().CompareTo(newer_row_head->timestamp());
+      *redos_overlap = older_last_vs_newer_head > 0 ||
+          // If the older row's tail has the same timestamp as the newer row's
+          // head, the row must have been deleted, reinserted, and updated
+          // (maybe even deleted again) at the same timestamp. If so, the older
+          // row should end in a delete, and if not, there is overlap.
+          (older_last_vs_newer_head == 0 &&
+           older_row_last->timestamp() >= newer_row_last->timestamp() &&
+           (!older_row_last->changelist().is_delete() ||
+            // Since the older row's last is a delete, it's safe to move
+            // newer's history onto it.
+            newer_row_last->changelist().is_delete()));
+    }
     return ret;
   }
 
-  if (PREDICT_TRUE(ret < 0)) {
-    return ret;
-  }
-
-  // In case the histories aren't disjoint it must be because one row was deleted in the
-  // the same operation that inserted the other one, which was then mutated.
+  // The only way that the redo heads have the same timestamp is if a delete,
+  // insert, and update of the same row are all assigned the same timestamp.
   // For instance this is a valid history with non-disjoint REDO histories:
   // -- Row 'a' lives in DRS1
-  // Update row 'a' @ 10
+  // Update row 'a' @ 10  // This is the first redo for DRS1's input row.
   // Delete row 'a' @ 10
-  // Insert row 'a' @ 10
+  // Insert row 'a' @ 10  // A new input row is added for the MRS.
   // -- Row 'a' lives in the MRS
-  // Update row 'a' @ 10
+  // Update row 'a' @ 10  // This is the first redo for the MRS.
   // -- Flush the MRS into DRS2
   // -- Compact DRS1 and DRS2
-  //
-  // We can't have the case here where both 'left' and 'right' have a DELETE as the last
-  // mutation at the same timestamp. This would be troublesome as we would possibly have
-  // no way to decide which version is the most up-to-date (one or both version's undos
-  // might have been garbage collected). See MemRowSetCompactionInput::PrepareBlock().
-
+  if (redos_overlap) {
+    *redos_overlap = false;
+  }
   // At least one of the rows must have a DELETE REDO as its last redo.
   CHECK(left_last->changelist().is_delete() || right_last->changelist().is_delete());
-  // We made sure that rows that are inserted and deleted in the same operation can never
-  // be part of a compaction input so they can't both be deletes.
-  CHECK(!(left_last->changelist().is_delete() && right_last->changelist().is_delete()));
+  if (left_last->changelist().is_delete() && right_last->changelist().is_delete()) {
+    // We can't have the case here where both 'left' and 'right' have a DELETE
+    // as the last mutation at the same timestamp, e.g. if we also deleted the
+    // row in the MRS in the above example. This would be troublesome as we
+    // would possibly have no way to decide which version is the most
+    // up-to-date (one or both version's undos might have been garbage
+    // collected). See MemRowSetCompactionInput::PrepareBlock().
+    //
+    // If the last changes are both deletes, it must be because we deleted the
+    // row in one compaction input, inserted into the other, and then deleted
+    // the row again. If that's the case, the delete with the higher timestamp
+    // defines the newer input, or
+    int ret = left_last->timestamp().CompareTo(right_last->timestamp());
+    CHECK_NE(0, ret);
+    return ret;
+  }
 
   // If 'left' doesn't have a delete then it's the latest version.
   if (!left_last->changelist().is_delete() && right_last->changelist().is_delete()) {
@@ -387,6 +489,36 @@ void CopyMutations(Mutation* from, Mutation** to, Arena* arena) {
     previous = copy;
   }
 }
+
+void AdvanceWhileNextLessThan(Mutation** head, Timestamp ts) {
+  while ((*head)->next() != nullptr && (*head)->next()->timestamp() < ts) {
+    *head = (*head)->next();
+  }
+}
+
+// Transfers all updates older than the first REDO in 'newer' found in 'older'
+// onto 'newer'.
+void TransferRedoHistory(CompactionInputRow* newer, CompactionInputRow* older) {
+  CHECK(newer->redo_head);
+  CHECK(older->redo_head);
+  DCHECK_GT(newer->redo_head->timestamp(), older->redo_head->timestamp());
+
+  const auto& newer_head_ts = newer->redo_head->timestamp();
+  // Find the first mutation in 'older' that has a higher timestamp than the
+  // REDO head of 'newer'. The linked list starting from that mutation must be
+  // transferred onto 'newer'.
+  Mutation* older_highest_below_ts = older->redo_head;
+  AdvanceWhileNextLessThan(&older_highest_below_ts, newer_head_ts);
+  DCHECK(older_highest_below_ts);
+  auto* transferred_history = older_highest_below_ts->next();
+
+  Mutation* newer_last = newer->redo_head;
+  AdvanceToLastInList(&newer_last);
+  DCHECK(newer_last);
+  newer_last->set_next(transferred_history);
+  older_highest_below_ts->set_next(nullptr);
+}
+
 
 class MergeCompactionInput : public CompactionInput {
  private:
@@ -488,7 +620,9 @@ class MergeCompactionInput : public CompactionInput {
       int smallest_idx = -1;
       CompactionInputRow* smallest = nullptr;
 
-      // Iterate over the inputs to find the one with the smallest next row.
+      // Iterate over the inputs to find the one with the smallest next row,
+      // merging duplicates as ghost rows in decreasing timestamp order.
+      //
       // It may seem like an O(n lg k) merge using a heap would be more efficient,
       // but some benchmarks indicated that the simpler code path of the O(n k) merge
       // actually ends up a bit faster.
@@ -522,22 +656,34 @@ class MergeCompactionInput : public CompactionInput {
 
         // If we found two rows with the same key, we want to make the newer
         // one point to the older one, which must be a ghost.
+
         if (PREDICT_FALSE(row_comp == 0)) {
           DVLOG(4) << "Duplicate row.\nLeft: " << CompactionInputRowToString(*state->next())
                    << "\nRight: " << CompactionInputRowToString(*smallest);
-          int mutation_comp = CompareDuplicatedRows(*state->next(), *smallest);
+          bool redos_overlap = false;
+          int mutation_comp = CompareDuplicatedRows(*state->next(), *smallest, &redos_overlap);
           CHECK_NE(mutation_comp, 0);
           if (mutation_comp > 0) {
-            // If the previous smallest row has a highest version that is lower
-            // than this one, clone it as the previous version and discard the original.
+            if (redos_overlap) {
+              TransferRedoHistory(state->next(), smallest);
+            }
+            // This input has higher redo timestamps than 'smallest'. Clone
+            // 'smallest' as this input's previous ghost and discard the
+            // original.
             RETURN_NOT_OK(SetPreviousGhost(state->next(), smallest, true /* clone */,
                                            state->input->PreparedBlockArena()));
+
+            // Now that the current 'smallest' has been added to
+            // 'state->next()', iterate forward and set the new smallest value.
             states_[smallest_idx]->pop_front();
             smallest_idx = i;
             smallest = state->next();
             DVLOG(4) << "Set smallest to right duplicate: "
                      << CompactionInputRowToString(*smallest);
             continue;
+          }
+          if (redos_overlap) {
+            TransferRedoHistory(smallest, state->next());
           }
           // .. otherwise copy and pop the other one.
           RETURN_NOT_OK(SetPreviousGhost(smallest, state->next(), true /* clone */,
@@ -679,44 +825,47 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   // Merges the 'previous_ghost' histories of 'older' and 'newer' such that
-  // 'older->previous_ghost' is the head of a list of rows in increasing
-  // timestamp order (deltas get newer down the list).
+  // 'newer->previous_ghost' is the head of a list of rows in decreasing
+  // timestamp order (deltas get older down the list).
   //
   // 'must_copy' indicates whether there must be a deep copy (using
   // CloneCompactionInputRow()).
-  Status SetPreviousGhost(CompactionInputRow* older,
-                          CompactionInputRow* newer,
+  //
+  // 'arena' is the arena of 'newer', in which the ghosts and mutations will
+  // keep memory.
+  Status SetPreviousGhost(CompactionInputRow* newer,
+                          CompactionInputRow* older,
                           bool must_copy,
                           Arena* arena) {
     CHECK(arena != nullptr) << "Arena can't be null";
-    // Check if we already had a previous version and, if yes, whether 'newer' is more or less
-    // recent.
-    if (older->previous_ghost != nullptr) {
-      if (CompareDuplicatedRows(*older->previous_ghost, *newer) > 0) {
-        // 'older->previous_ghost' was more recent.
-        return SetPreviousGhost(older->previous_ghost, newer, must_copy /* clone */, arena);
+    // Check if 'newer' already had a previous version and, if so, whether
+    // 'older' is more or less recent.
+    if (newer->previous_ghost != nullptr) {
+      if (CompareDuplicatedRows(*newer->previous_ghost, *older) > 0) {
+        // 'newer->previous_ghost' was more recent.
+        return SetPreviousGhost(newer->previous_ghost, older, must_copy /* clone */, arena);
       }
-      // 'newer' was more recent.
+      // 'older' was more recent.
       if (must_copy) {
-        CompactionInputRow* newer_copy;
-        RETURN_NOT_OK(CloneCompactionInputRow(newer, &newer_copy, arena));
-        newer = newer_copy;
+        CompactionInputRow* older_copy;
+        RETURN_NOT_OK(CloneCompactionInputRow(older, &older_copy, arena));
+        older = older_copy;
       }
-      // 'older->previous_ghost' is already in 'arena' so avoid the copy.
-      RETURN_NOT_OK(SetPreviousGhost(newer,
-                                     older->previous_ghost,
+      // 'newer->previous_ghost' is already in 'arena' so avoid the copy.
+      RETURN_NOT_OK(SetPreviousGhost(older,
+                                     newer->previous_ghost,
                                      false /* don't clone */,
                                      arena));
-      older->previous_ghost = newer;
+      newer->previous_ghost = older;
       return Status::OK();
     }
 
     if (must_copy) {
-      CompactionInputRow* newer_copy;
-      RETURN_NOT_OK(CloneCompactionInputRow(newer, &newer_copy, arena));
-      newer = newer_copy;
+      CompactionInputRow* older_copy;
+      RETURN_NOT_OK(CloneCompactionInputRow(older, &older_copy, arena));
+      older = older_copy;
     }
-    older->previous_ghost = newer;
+    newer->previous_ghost = older;
     return Status::OK();
   }
 
@@ -756,8 +905,9 @@ void AdvanceWhileNextEqualToOrBiggerThan(Mutation** head, Timestamp ts) {
     *head = (*head)->next();
   }
 }
-
-// Merges two undo histories into one with decreasing timestamp order and returns the new head.
+// Merges two undo histories into one with decreasing timestamp order and
+// returns the new head. Assumes that all mutation memory is kept in the same
+// arena and therefore makes no effort to copy memory.
 Mutation* MergeUndoHistories(Mutation* left, Mutation* right) {
 
   if (PREDICT_FALSE(left == nullptr)) {
@@ -809,7 +959,7 @@ Status MergeDuplicatedRowHistory(const string& tablet_id,
   CompactionInputRow* previous_ghost = old_row->previous_ghost;
   while (previous_ghost != nullptr) {
 
-    // First step is to transform the old rows REDO's into undos, if there are any.
+    // First step is to transform the old rows REDO's into UNDOs, if there are any.
     // This simplifies this for several reasons:
     // - will be left with most up-to-date version of the old row
     // - only have one REDO left to deal with (the delete)
@@ -1053,7 +1203,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
        redo_mut != nullptr;
        redo_mut = redo_mut->acquire_next()) {
 
-    // Skip anything not committed.
+    // Skip anything not applied.
     if (!snap.IsApplied(redo_mut->timestamp())) {
       break;
     }
@@ -1235,6 +1385,26 @@ Status FlushCompactionInput(const string& tablet_id,
 
       DVLOG(4) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
                << "; RowId: " << index_in_current_drs;
+#ifndef NDEBUG
+      auto* u = new_undos_head;
+      bool is_deleted = false;
+      // The resulting list should have the following invariants:
+      // - deletes can only be observed if not already deleted
+      // - reinserts can only be observed if deleted
+      // - UNDO mutations are in decreasing order
+      while (u != nullptr) {
+        if (u->changelist().is_delete()) {
+          CHECK(!is_deleted);
+          is_deleted = true;
+        } else if (u->changelist().is_reinsert()) {
+          CHECK(is_deleted);
+          is_deleted = false;
+        }
+        if (!u->next()) break;
+        CHECK_GE(u->timestamp(), u->next()->timestamp());
+        u = u->next();
+      }
+#endif // NDEBUG
 
       n++;
       if (n == block.nrows()) {

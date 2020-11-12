@@ -70,6 +70,10 @@ class Mutation {
     return reinterpret_cast<const Mutation*>(base::subtle::Acquire_Load(
         reinterpret_cast<const AtomicWord*>(&next_)));
   }
+  Mutation* acquire_next() {
+    return reinterpret_cast<Mutation*>(base::subtle::Acquire_Load(
+        reinterpret_cast<AtomicWord*>(&next_)));
+  }
 
   void set_next(Mutation *next) {
     next_ = next;

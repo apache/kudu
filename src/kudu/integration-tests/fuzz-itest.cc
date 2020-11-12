@@ -259,8 +259,6 @@ struct Redo {
   optional<int32_t> val;
 };
 
-// TODO(awong): Merging multiple transactional MRSs together can sometimes lead
-// to a crash. Uncomment the transactional ops once fixed.
 const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_INSERT_PK_ONLY,
                                   TEST_INSERT_IGNORE,
@@ -279,15 +277,13 @@ const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_COMPACT_TABLET,
                                   TEST_RESTART_TS,
                                   TEST_SCAN_AT_TIMESTAMP,
-                                  TEST_DIFF_SCAN};
-                                  // TEST_BEGIN_TXN,
-                                  // TEST_COMMIT_TXN,
-                                  // TEST_ABORT_TXN};
+                                  TEST_DIFF_SCAN,
+                                  TEST_BEGIN_TXN,
+                                  TEST_COMMIT_TXN,
+                                  TEST_ABORT_TXN};
 
 // Ops that focus on hammering workloads in which rows come in and out of
 // existence.
-// TODO(awong): Merging multiple transactional MRSs together can sometimes lead
-// to a crash. Uncomment the transactional ops once fixed.
 const vector<TestOpType> kPkOnlyOps {TEST_INSERT_PK_ONLY,
                                      TEST_INSERT_IGNORE_PK_ONLY,
                                      TEST_UPSERT_PK_ONLY,
@@ -301,10 +297,10 @@ const vector<TestOpType> kPkOnlyOps {TEST_INSERT_PK_ONLY,
                                      TEST_COMPACT_TABLET,
                                      TEST_RESTART_TS,
                                      TEST_SCAN_AT_TIMESTAMP,
-                                     TEST_DIFF_SCAN};
-                                     // TEST_BEGIN_TXN,
-                                     // TEST_COMMIT_TXN,
-                                     // TEST_ABORT_TXN};
+                                     TEST_DIFF_SCAN,
+                                     TEST_BEGIN_TXN,
+                                     TEST_COMMIT_TXN,
+                                     TEST_ABORT_TXN};
 
 // Test which does only random operations against a tablet, including update and random
 // get (ie scans with equal lower and upper bounds).
@@ -534,12 +530,12 @@ class FuzzTest : public KuduTest {
           }
           ExpectedKeyValueRow found_val = rows_found[found_idx++];
           if (expected_val.key != found_val.key) {
-            errors->push_back(Substitute("Mismached key. Expected: $0 Found: $1",
+            errors->push_back(Substitute("Mismatched key. Expected: $0 Found: $1",
                                          expected_val.ToString(), found_val.ToString()));
             continue;
           }
           if (expected_val.val != found_val.val) {
-            errors->push_back(Substitute("Mismached value. Expected: $0 Found: $1",
+            errors->push_back(Substitute("Mismatched value. Expected: $0 Found: $1",
                                          expected_val.ToString(), found_val.ToString()));
             continue;
           }
@@ -1809,19 +1805,23 @@ TEST_F(FuzzTest, TestDiffScanRowLifespanInOneScanDRS) {
 TEST_F(FuzzTest, TestReplayDeletesOnTxnRowsets) {
   CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
   RunFuzzCase({
+      // Insert to the main MRS.
       {TEST_INSERT_PK_ONLY, 1, -1},
       {TEST_FLUSH_OPS, -1},
       {TEST_FLUSH_TABLET},
 
+      // Insert into a transactional MRS.
       {TEST_BEGIN_TXN, 2},
       {TEST_INSERT_IGNORE_PK_ONLY, 0, 2},
       {TEST_FLUSH_OPS, 2},
       {TEST_COMMIT_TXN, 2},
 
+      // Delete the rows in both MRSs.
       {TEST_DELETE, 0},
       {TEST_DELETE, 1},
       {TEST_FLUSH_OPS, -1},
 
+      // We should be able to restart without issues.
       {TEST_FLUSH_DELTAS},
       {TEST_RESTART_TS},
     });
@@ -1830,11 +1830,13 @@ TEST_F(FuzzTest, TestReplayDeletesOnTxnRowsets) {
 TEST_F(FuzzTest, TestFlushMRSsWithInvisibleRows) {
   CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
   RunFuzzCase({
+    // Insert into a transactional MRS.
     {TEST_BEGIN_TXN, 0},
     {TEST_INSERT_IGNORE, 1, 0},
     {TEST_FLUSH_OPS, 0},
     {TEST_COMMIT_TXN, 0},
 
+    // Insert into the main MRS and it in the same batch.
     {TEST_INSERT_PK_ONLY, 0, -1},
     {TEST_INSERT_IGNORE_PK_ONLY, 0, -1},
     {TEST_DELETE, 0},
@@ -1843,8 +1845,45 @@ TEST_F(FuzzTest, TestFlushMRSsWithInvisibleRows) {
     {TEST_RESTART_TS},
     {TEST_MAJOR_COMPACT_DELTAS},
 
+    // Delete the row in the transactional MRS.
     {TEST_DELETE, 1},
     {TEST_FLUSH_OPS, -1},
+
+    // Flush the tablet, merging the MRSs, one of which has an invisible row.
+    {TEST_FLUSH_TABLET},
+  });
+}
+
+// Test that when the newer row's redo head and older row's redo tail have the
+// same timestamp, that we transfer the newest non-deletes onto the newer row,
+// since if a row is alive, it must be alive as the newer row.
+TEST_F(FuzzTest, TestOlderRowsetGetsReinsertWhenNewerGetsDeleteInSameOp) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    // Insert and delete a row from the main MRS.
+    {TEST_INSERT, 1},
+    {TEST_FLUSH_OPS, -1},
+    {TEST_DELETE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Insert into a transactional MRS.
+    {TEST_BEGIN_TXN, 25},
+    {TEST_INSERT_IGNORE, 1, 25},
+    {TEST_FLUSH_OPS, 25},
+    {TEST_COMMIT_TXN, 25},
+
+    // Delete from the transactional MRS and insert back to the main MRS.
+    {TEST_DELETE, 1},
+    {TEST_FLUSH_OPS, -1},
+    {TEST_INSERT, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Merging the history of this row, the inputs are:
+    // tablet MRS:  UNDO(del@t1) <- BASE -> REDO(del@t2) -> REDO(reins@t4)
+    // txn MRS:     UNDO(del@t3) <- BASE -> REDO(del@t4)
+    //
+    // A contiguous history should be generated by transferring the last REDO
+    // in the tablet MRS onto the txn MRS.
     {TEST_FLUSH_TABLET},
   });
 }
@@ -1866,6 +1905,174 @@ TEST_F(FuzzTest, Kudu3108) {
     {TEST_INSERT, 0},
     {TEST_FLUSH_OPS},
     {TEST_DIFF_SCAN, 5, 12},
+  });
+}
+
+// Test that when a strictly older rowset whose row has been deleted gets
+// reinserted to after already inserting and deleting from a newer rowset.
+TEST_F(FuzzTest, TestOlderRowsetGetsNewerInsertAndDelete) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    // Insert, delete, and insert again into the main MRS.
+    {TEST_INSERT, 1},
+    {TEST_INSERT, 0},
+    {TEST_FLUSH_OPS, -1},
+
+    {TEST_UPDATE, 0},
+    {TEST_FLUSH_OPS, -1},
+
+    // Delete both rows from the main MRS.
+    {TEST_DELETE, 0},
+    {TEST_FLUSH_OPS, -1},
+
+    // Insert into a transactional MRS.
+    {TEST_BEGIN_TXN, 25},
+    {TEST_INSERT_IGNORE_PK_ONLY, 0, 25},
+    {TEST_FLUSH_OPS, 25},
+    {TEST_COMMIT_TXN, 25},
+
+    // Delete from the transactional MRS and insert to the main MRS.
+    {TEST_DELETE, 0},
+    {TEST_INSERT, 0},
+    {TEST_UPDATE, 0},
+    {TEST_DELETE, 0},
+    {TEST_FLUSH_OPS, -1},
+
+    // Merging the history of this row, the inputs are:
+    // tablet MRS: UNDO(del@t1) <- BASE -> REDO(upd@t2) -> REDO(del@t3) -> REDO(reins@t5)
+    //                                      -> REDO(upd@t5) -> REDO(del@t5)
+    // txn MRS:    UNDO(del@t4) <- BASE -> REDO(del@t5)
+    // where: t1=5, t2=7, t3=9, t4=13, t4=19
+    {TEST_FLUSH_TABLET},
+
+    // Verify correctness by scanning at the boundaries of the mutations.
+    {TEST_SCAN_AT_TIMESTAMP, 5},
+    {TEST_SCAN_AT_TIMESTAMP, 6},
+    {TEST_SCAN_AT_TIMESTAMP, 7},
+    {TEST_SCAN_AT_TIMESTAMP, 8},
+    {TEST_SCAN_AT_TIMESTAMP, 9},
+    {TEST_SCAN_AT_TIMESTAMP, 10},
+    {TEST_SCAN_AT_TIMESTAMP, 13},
+    {TEST_SCAN_AT_TIMESTAMP, 14},
+    {TEST_SCAN_AT_TIMESTAMP, 19},
+    {TEST_SCAN_AT_TIMESTAMP, 20},
+  });
+}
+
+// Test when the REDO histories are tangential to one another but don't
+// overlap.
+TEST_F(FuzzTest, TestMergeTangentialNonOverlappingRedoHistory) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    {TEST_BEGIN_TXN, 25},
+    {TEST_INSERT, 1, 25},
+    {TEST_FLUSH_OPS, 25},
+    {TEST_COMMIT_TXN, 25},
+
+    // Have some REDOs land in the transactional MRS.
+    {TEST_UPDATE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    {TEST_UPDATE, 1},
+    {TEST_DELETE, 1},
+
+    // Have another insert land in the main MRS, and give it an update at the
+    // same timestamp.
+    {TEST_INSERT, 1},
+    {TEST_DELETE, 1},
+    {TEST_INSERT, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Finally, delete the row at another timestamp.
+    {TEST_DELETE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Merging the history of this row, the inputs are:
+    // txn MRS:    UNDO(del@t1) <- BASE -> REDO(upd@t2) -> REDO(upd@t3) -> REDO(del@t3)
+    // tablet MRS: UNDO(del@t3) <- BASE -> REDO(del@t3) -> REDO(reins@t3) -> REDO(del@t4)
+    {TEST_FLUSH_TABLET},
+  });
+}
+
+// Test that when we delete from a transactional MRS and insert to the main MRS
+// at the same time, the generated row history is correct.
+TEST_F(FuzzTest, TestRedoHistoryInterleavingRowsets) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    {TEST_INSERT, 0},
+    {TEST_BEGIN_TXN, 25},
+    {TEST_INSERT_IGNORE, 1, 25},
+    {TEST_FLUSH_OPS, 25},
+    {TEST_COMMIT_TXN, 25},
+
+    // Have some REDOs land in the transactional MRS.
+    {TEST_UPDATE, 1},
+    {TEST_DELETE, 1},
+
+    // Have another insert land in the main MRS, and give it an update at the
+    // same timestamp.
+    {TEST_INSERT, 1},
+    {TEST_UPDATE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Finally, delete the row at another timestamp.
+    {TEST_DELETE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // We should end up with two compaction inputs:
+    // txn MRS:     UNDO(del@t1) <- BASE -> REDO(upd@t2) -> REDO(del@t2)
+    // tablet MRS:  UNDO(del@t2) <- BASE -> REDO(upd@t2) -> REDO(del@t3)
+    // where t1 < t2 < t3
+    //
+    // These should flush to:
+    // UNDO(del@t1) <- UNDO(upd@t2) <- UNDO(reins@t2) \
+    //     <- UNDO(del@t2) <- UNDO(upd@t2) <- BASE -> REDO(del@t3)
+    //
+    // Where: t1 = 6, t2 = 12, t3 = 14
+    {TEST_FLUSH_TABLET},
+
+    // Run scans to validate we have the correct values in each range.
+    {TEST_SCAN_AT_TIMESTAMP, 6},
+    {TEST_SCAN_AT_TIMESTAMP, 7},
+    {TEST_SCAN_AT_TIMESTAMP, 12},
+    {TEST_SCAN_AT_TIMESTAMP, 13},
+    {TEST_SCAN_AT_TIMESTAMP, 14},
+    {TEST_SCAN_AT_TIMESTAMP, 15},
+  });
+}
+
+TEST_F(FuzzTest, TestDontTransferUpdateWithSameTimestampAsDelete) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  RunFuzzCase({
+    {TEST_INSERT, 0},
+    {TEST_BEGIN_TXN, 25},
+    {TEST_INSERT, 1, 25},
+    {TEST_FLUSH_OPS, 25},
+    {TEST_COMMIT_TXN, 25},
+
+    // Have a REDO land in the txn metadata to disambiguate which rowset input
+    // is older.
+    {TEST_UPDATE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // Now delete the row and insert to a different rowset (the main MRS). Give
+    // it an update to make it somewhat ambiguous whether there's overlap,
+    // since both input rows end at the same timestamp.
+    {TEST_DELETE, 1},
+    {TEST_INSERT, 1},
+    {TEST_UPDATE, 1},
+    {TEST_FLUSH_OPS, -1},
+
+    // We should end up with two compaction input rows:
+    // txn MRS:     UNDO(del@t1) <- BASE -> REDO(upd@t2) -> REDO(del@t3)
+    // tablet MRS:  UNDO(del@t3) <- BASE -> REDO(upd@t3)
+    // where t1 < t2 < t3
+    //
+    // A flush should correctly determine that we don't need to transfer the
+    // REDO(upd@t3) to the txn MRS input row, which would be catastrophic since
+    // we'd be left with a delete followed by an update with no reinsert in the
+    // txn MRS's input row.
+    {TEST_FLUSH_TABLET},
   });
 }
 

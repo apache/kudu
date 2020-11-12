@@ -183,8 +183,8 @@ struct CompactionInputRow {
   // The current undo head for this row, may be null if all undos were garbage collected.
   Mutation* undo_head;
 
-  // When the same row is found in multiple rowsets because of ghost rows, this points
-  // to one that older in terms of row history.
+  // When the same row is found in multiple rowsets because of ghost rows, this
+  // points to one that is older in terms of row history.
   CompactionInputRow* previous_ghost;
 
   CompactionInputRow() :
