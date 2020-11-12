@@ -772,8 +772,10 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (request->ops_size() > 0) {
     int64_t last_op_sent = request->ops(request->ops_size() - 1).id().index();
     if (last_op_sent < request->committed_index()) {
-      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, *peer_copy.status_log_throttler, "lagging")
-          << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
+      // Will use metrics to cover this and alarm on it, otherwise it can overwhelm
+      // logs
+      VLOG_WITH_PREFIX_UNLOCKED(2)
+          << "Peer " << uuid << " is lagging by at least "
           << (request->committed_index() - last_op_sent)
           << " ops behind the committed index " << THROTTLE_MSG;
     }
