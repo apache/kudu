@@ -132,9 +132,14 @@ $ sudo ldconfig
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
-$ sudo yum install doxygen gem graphviz ruby-devel zlib-devel
+$ sudo yum install gem graphviz ruby-devel zlib-devel
 ----
 NOTE: If building on RHEL or CentOS older than 7.0, the gem package may need to be replaced with rubygems
++
+NOTE: Doxygen 1.8.19 or later is required to build the documentation, which has to be
+https://www.doxygen.nl/manual/install.html#install_src_unix[built from source manually]. Building
+this version of Doxygen on CentOS or RHEL older than 8.0 also requires
+https://www.softwarecollections.org/en/scls/rhscl/devtoolset-8/[devtoolset].
 
 . Clone the Git repository and change to the new `kudu` directory.
 +
@@ -281,8 +286,11 @@ $ sudo ldconfig
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
-$ sudo apt-get install doxygen gem graphviz ruby-dev xsltproc zlib1g-dev
+$ sudo apt-get install gem graphviz ruby-dev xsltproc zlib1g-dev
 ----
++
+NOTE: Doxygen 1.8.19 or later is required to build the documentation, which has to be
+https://www.doxygen.nl/manual/install.html#install_src_unix[built from source manually].
 
 . Clone the Git repository and change to the new `kudu` directory.
 +
