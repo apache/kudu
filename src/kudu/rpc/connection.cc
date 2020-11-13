@@ -42,6 +42,7 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -182,7 +183,10 @@ void Connection::Shutdown(const Status &status,
   write_io_.stop();
   is_epoll_registered_ = false;
   if (socket_) {
-    WARN_NOT_OK(socket_->Close(), "Error closing socket");
+    Status sc_status = socket_->Close();
+    if (PREDICT_FALSE(!sc_status.ok())) {
+      VLOG(2) <<  "Error closing socket: " << sc_status.ToString();
+    }
   }
 }
 
@@ -509,7 +513,7 @@ void Connection::ReadHandler(ev::io &watcher, int revents) {
       if (status.posix_code() == ESHUTDOWN) {
         VLOG(1) << ToString() << " shut down by remote end.";
       } else {
-        LOG(WARNING) << ToString() << " recv error: " << status.ToString();
+        KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " recv error: " << status.ToString();
       }
       reactor_thread_->DestroyConnection(this, status);
       return;
@@ -655,7 +659,7 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
     last_activity_time_ = reactor_thread_->cur_time();
     Status status = transfer->SendBuffer(*socket_);
     if (PREDICT_FALSE(!status.ok())) {
-      LOG(WARNING) << ToString() << " send error: " << status.ToString();
+      KLOG_EVERY_N_SECS(WARNING, 300) << ToString() << " send error: " << status.ToString();
       reactor_thread_->DestroyConnection(this, status);
       return;
     }
