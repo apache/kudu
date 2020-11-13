@@ -42,12 +42,16 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/compression/compression_codec.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 
 DEFINE_int32(log_cache_size_limit_mb, 128,
              "The total per-tablet size of consensus entries which may be kept in memory. "
@@ -75,6 +79,10 @@ METRIC_DEFINE_gauge_int64(server, log_cache_num_ops, "Log Cache Operation Count"
 METRIC_DEFINE_gauge_int64(server, log_cache_size, "Log Cache Memory Usage",
                           MetricUnit::kBytes,
                           "Amount of memory in use for caching the local log.");
+METRIC_DEFINE_gauge_int64(server, log_cache_msg_size, "Log Cache Message Size",
+                          MetricUnit::kBytes,
+                          "Size of the incoming uncompressed payload for the "
+                          "messages in the log_cache");
 
 static const char kParentMemTrackerId[] = "log_cache";
 
@@ -89,7 +97,8 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
     tablet_id_(std::move(tablet_id)),
     next_sequential_op_index_(0),
     min_pinned_op_index_(0),
-    metrics_(metric_entity) {
+    metrics_(metric_entity),
+    codec_(nullptr) {
 
 
   const int64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024L * 1024L;
@@ -124,6 +133,28 @@ void LogCache::Init(const OpId& preceding_op) {
     << "Cache should have only our special '0' op";
   next_sequential_op_index_ = preceding_op.index() + 1;
   min_pinned_op_index_ = next_sequential_op_index_;
+}
+
+Status LogCache::SetCompressionCodec(const std::string& codec) {
+  if (codec.empty()) {
+    LOG(INFO) << "Disabling compression";
+    codec_.store(nullptr);
+    return Status::OK();
+  }
+
+  const CompressionCodec* comp_codec = nullptr;
+  auto codec_type = GetCompressionCodecType(codec);
+  if (codec_type != NO_COMPRESSION) {
+    auto status = GetCompressionCodec(codec_type, &comp_codec);
+    if (!status.ok()) {
+      LOG(ERROR) << "Failed to set compression codec for log-cache";
+      return status;
+    }
+  }
+
+  LOG(INFO) << "Updating compression codec to: " << codec;
+  codec_.store(comp_codec);
+  return Status::OK();
 }
 
 void LogCache::TruncateOpsAfter(int64_t index) {
@@ -164,6 +195,127 @@ void LogCache::TruncateOpsAfterUnlocked(int64_t index) {
   next_sequential_op_index_ = index + 1;
 }
 
+Status LogCache::UncompressMsg(const ReplicateRefPtr& msg,
+                               faststring& buffer,
+                               std::unique_ptr<ReplicateMsg>* uncompressed_msg) {
+  const OperationType op_type = msg->get()->op_type();
+  const WritePayloadPB& payload = msg->get()->write_payload();
+  const CompressionType compression_codec = payload.compression_codec();
+  const int64_t uncompressed_size = payload.uncompressed_size();
+  const int64_t compressed_size = payload.payload().size();
+
+  VLOG(2) << "Uncompressing messages before writing to log." <<
+             " opid: " << msg->get()->id().ShortDebugString() <<
+             " codec: " << compression_codec <<
+             " op_type: " << op_type <<
+             " compressed payload size: " << compressed_size <<
+             " uncompressed payload size: " << uncompressed_size;
+
+  // Resize buffer to hold uncompressed payload.
+  // TODO: needs perf testing and maybe implement streaming (un)compression
+  buffer.resize(uncompressed_size);
+  Slice compressed_slice(payload.payload().c_str(), compressed_size);
+
+  Status status;
+  const CompressionCodec* codec = codec_.load();
+  if (codec && codec->type() == compression_codec) {
+    status = codec->Uncompress(
+        compressed_slice, buffer.data(), uncompressed_size);
+  }
+  else {
+    // Either compression is not enabled on this instance OR this message uses a
+    // different compression codec. Get the right codec now
+    status = GetCompressionCodec(compression_codec, &codec);
+    if (status.ok()) {
+      status = codec->Uncompress(
+          compressed_slice, buffer.data(), uncompressed_size);
+    }
+  }
+
+  // Return early if uncompression failed
+  RETURN_NOT_OK_PREPEND(status,
+      Substitute("Failed to uncompress OpId $0. Compression codec used: $1, "
+                 "Operation type: $2, Compressed payload size: $3"
+                 "Uncompressed payload size: $4",
+                 msg->get()->id().ShortDebugString(), compression_codec,
+                 op_type, compressed_size, uncompressed_size));
+
+  // Now create a new ReplicateMsg and copy over the contents from the original
+  // msg and the uncompressed payload
+  std::unique_ptr<ReplicateMsg> rep_msg(new ReplicateMsg);
+  *(rep_msg->mutable_id()) = msg->get()->id();
+  rep_msg->set_timestamp(msg->get()->timestamp());
+  rep_msg->set_op_type(msg->get()->op_type());
+
+  WritePayloadPB* write_payload = rep_msg->mutable_write_payload();
+  write_payload->set_payload(std::move(buffer.ToString()));
+
+  uncompressed_msg->reset(rep_msg.release());
+  return Status::OK();
+}
+
+Status LogCache::CompressMsg(const ReplicateRefPtr& msg,
+                             faststring& buffer,
+                             std::unique_ptr<ReplicateMsg>* compressed_msg) {
+  // Grab the reference to the payload that needs to be compressed
+  ReplicateMsg* original_msg = msg->get();
+  const std::string& payload_str = original_msg->write_payload().payload();
+  bool is_compressed =
+    (original_msg->write_payload().compression_codec() != NO_COMPRESSION);
+
+  if (PREDICT_FALSE(is_compressed)) {
+    // msg is already compressed
+    return Status::NotSupported("Double compression is not supported");
+  }
+
+  if (original_msg->op_type() != WRITE_OP_EXT) {
+    // Compression of messages other than WRITE_OP_EXT is not supported
+    return Status::NotSupported("Only write ops can be compressed");
+  }
+
+  const CompressionCodec* codec = codec_.load();
+  if (!codec) {
+    return Status::NotSupported("Compression Codec is not initialized");
+  }
+
+  Slice uncompressed_slice(payload_str.c_str(), payload_str.size());
+
+  // Resize buffer to hold max possible compressed payload size
+  // TODO: Needs perf testing and maybe add support for streaming compression
+  buffer.resize(codec->MaxCompressedLength(uncompressed_slice.size()));
+
+  size_t compressed_len = 0;
+  auto status =
+    codec->Compress(uncompressed_slice, &buffer[0], &compressed_len);
+
+  if (!status.ok()) {
+    LOG(ERROR) <<
+      "Compression failed for OpId: " << msg->get()->id().ShortDebugString();
+    return status;
+  }
+
+  // Resize buffer to the actual compressed length
+  buffer.resize(compressed_len);
+  VLOG(2) << "Compressed OpId: " <<  msg->get()->id().ShortDebugString() <<
+             " original payload size: " << uncompressed_slice.size() <<
+             " compressed payload size: " << compressed_len;
+
+  // Now create a new replicate message and copy contents from original message
+  // and compressed payload
+  std::unique_ptr<ReplicateMsg> rep_msg(new ReplicateMsg);
+  *(rep_msg->mutable_id()) = msg->get()->id();
+  rep_msg->set_timestamp(msg->get()->timestamp());
+  rep_msg->set_op_type(msg->get()->op_type());
+
+  WritePayloadPB* write_payload = rep_msg->mutable_write_payload();
+  write_payload->set_payload(std::move(buffer.ToString()));
+  write_payload->set_compression_codec(codec->type());
+  write_payload->set_uncompressed_size(payload_str.size());
+
+  compressed_msg->reset(rep_msg.release());
+  return Status::OK();
+}
+
 Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) {
   CHECK_GT(msgs.size(), 0);
@@ -171,10 +323,56 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   // SpaceUsed is relatively expensive, so do calculations outside the lock
   // and cache the result with each message.
   int64_t mem_required = 0;
+  int64_t total_msg_size = 0;
   vector<CacheEntry> entries_to_insert;
   entries_to_insert.reserve(msgs.size());
+
+  bool found_compressed_msgs = false;
   for (const auto& msg : msgs) {
-    CacheEntry e = { msg, static_cast<int64_t>(msg->get()->SpaceUsedLong()) };
+    CacheEntry e;
+    e.mem_usage = 0;
+    e.msg_size = msg->get()->SpaceUsedLong();
+
+    const auto op_type = msg->get()->op_type();
+    bool is_compressed =
+      (msg->get()->write_payload().compression_codec() != NO_COMPRESSION);
+
+    if (is_compressed) {
+      // This batch has a compressed message. Store this fact to be used later
+      // when appending this batch to the log
+      found_compressed_msgs = true;
+    }
+
+    // Try to compress the message if:
+    // (1) this msg is not already compressed (identified by 'is_compressed').
+    // This can happen when this AppendOperations() is called on a secondary and
+    // the primary has already compressed this msg
+    // (2) Compression is configured for this instance (codec_ should not be
+    // nullptr)
+    // (3) This is a 'WRITE_OP_EXT' type (config-change/no-op/rotates are not
+    // compressed today - these messages are small and can be left uncompressed)
+    const CompressionCodec* codec = codec_.load();
+    if (!is_compressed && codec && op_type == WRITE_OP_EXT) {
+      std::unique_ptr<ReplicateMsg> compressed_msg;
+      auto status =
+        CompressMsg(msg, log_cache_compression_buf_, &compressed_msg);
+      if (status.ok()) {
+        // Successfully compressed this msg. So, use the compressed msg to cache
+        e.mem_usage = static_cast<int64_t>(compressed_msg->SpaceUsedLong());
+        e.msg = make_scoped_refptr_replicate(compressed_msg.release());
+      } else {
+        KLOG_EVERY_N_SECS(WARNING, 300) << "Failed to compress replicate msg";
+      }
+    }
+
+    if (e.mem_usage == 0) {
+      // Need to store the original msg. One of the three checks mentioned above
+      // was not true
+      e.mem_usage = e.msg_size;
+      e.msg = msg;
+    }
+
+    total_msg_size += e.msg_size;
     mem_required += e.mem_usage;
     entries_to_insert.emplace_back(std::move(e));
   }
@@ -225,21 +423,58 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   l.unlock();
 
   metrics_.log_cache_size->IncrementBy(mem_required);
+  metrics_.log_cache_msg_size->IncrementBy(total_msg_size);
   metrics_.log_cache_num_ops->IncrementBy(msgs.size());
 
-  Status log_status = log_->AsyncAppendReplicates(
-    msgs, Bind(&LogCache::LogCallback,
-               Unretained(this),
-               last_idx_in_batch,
-               borrowed_memory,
-               callback));
+  Status log_status;
+  if (!found_compressed_msgs) {
+    // No compressed messages are found, so appen orinals msgs to log
+    log_status = log_->AsyncAppendReplicates(
+      msgs, Bind(&LogCache::LogCallback,
+                 Unretained(this),
+                 last_idx_in_batch,
+                 borrowed_memory,
+                 callback));
+  } else {
+    // The batch contains some compressed msgs. It needs to be uncompressed
+    // before appending to the log
+    vector<ReplicateRefPtr> uncompressed_msgs;
+    uncompressed_msgs.reserve(msgs.size());
+
+    for (const auto& msg : msgs) {
+      const auto compression_codec =
+        msg->get()->write_payload().compression_codec();
+
+      if (compression_codec == NO_COMPRESSION) {
+        // msg is not compressed, use it to write to the log
+        uncompressed_msgs.push_back(msg);
+      } else {
+        // msg needs to be uncompressed before writing to the log
+        std::unique_ptr<ReplicateMsg> uncompressed_msg;
+        auto status = UncompressMsg(
+            msg, log_cache_compression_buf_, &uncompressed_msg);
+
+        // Crash if uncompression failed
+        CHECK_OK_PREPEND(status,
+            Substitute("Uncompess failed when writing to log"));
+        uncompressed_msgs.push_back(std::move(
+              make_scoped_refptr_replicate(uncompressed_msg.release())));
+      }
+    }
+
+    log_status = log_->AsyncAppendReplicates(
+      uncompressed_msgs, Bind(&LogCache::LogCallback,
+                              Unretained(this),
+                              last_idx_in_batch,
+                              borrowed_memory,
+                              callback));
+  }
 
   if (!log_status.ok()) {
     LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Couldn't append to log: " << log_status.ToString();
     tracker_->Release(mem_required);
     return log_status;
   }
-
 
   return Status::OK();
 }
@@ -455,6 +690,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
 void LogCache::AccountForMessageRemovalUnlocked(const LogCache::CacheEntry& entry) {
   tracker_->Release(entry.mem_usage);
   metrics_.log_cache_size->DecrementBy(entry.mem_usage);
+  metrics_.log_cache_msg_size->DecrementBy(entry.msg_size);
   metrics_.log_cache_num_ops->Decrement();
 }
 
@@ -537,7 +773,8 @@ void LogCache::DumpToHtml(std::ostream& out) const {
   x.Instantiate(metric_entity, 0)
 LogCache::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
   : log_cache_num_ops(INSTANTIATE_METRIC(METRIC_log_cache_num_ops)),
-    log_cache_size(INSTANTIATE_METRIC(METRIC_log_cache_size)) {
+    log_cache_size(INSTANTIATE_METRIC(METRIC_log_cache_size)),
+    log_cache_msg_size(INSTANTIATE_METRIC(METRIC_log_cache_msg_size)) {
 }
 #undef INSTANTIATE_METRIC
 

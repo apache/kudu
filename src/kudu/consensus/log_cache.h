@@ -30,6 +30,7 @@
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -37,6 +38,7 @@
 
 namespace kudu {
 
+class CompressionCodec;
 class MemTracker;
 
 namespace log {
@@ -46,6 +48,7 @@ class Log;
 namespace consensus {
 
 class OpId;
+class ReplicateMsg;
 
 // Write-through cache for the log.
 //
@@ -144,6 +147,9 @@ class LogCache {
   // Returns another bad Status if the log index fails to load (eg. due to an IO error).
   Status LookupOpId(int64_t op_index, OpId* op_id) const;
 
+  // Sets compression codec and updates the internal codec_ atomic pointer
+  Status SetCompressionCodec(const std::string& codec);
+
  private:
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
   FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);
@@ -151,12 +157,31 @@ class LogCache {
   FRIEND_TEST(LogCacheTest, TestTruncation);
   friend class LogCacheTest;
 
+  // Compress the payload in 'msg' and populate a new ReplicateMsg with
+  // compressed payload in 'compressed_msg'. Uses 'buffer' as a temporary buffer
+  // to hold the compressed message
+  Status CompressMsg(const ReplicateRefPtr& msg,
+                     faststring& buffer,
+                     std::unique_ptr<ReplicateMsg>* compressed_msg);
+
+  // Uncompresses the payload of 'msg' based on its compression_codec and
+  // populates a new ReplicateMsg with uncompressed payload in
+  // 'uncompressed_msg'. Uses 'buffer' as a temporary buffer to hold compressed
+  // message
+  Status UncompressMsg(
+      const ReplicateRefPtr& msg,
+      faststring& buffer,
+      std::unique_ptr<ReplicateMsg>* uncompressed_msg);
+
   // An entry in the cache.
   struct CacheEntry {
     ReplicateRefPtr msg;
     // The cached value of msg->SpaceUsedLong(). This method is expensive
     // to compute, so we compute it only once upon insertion.
     int64_t mem_usage;
+    // The uncompressed size of the msg. If msg is not compressed, then it is
+    // same as mem_usage
+    int64_t msg_size;
   };
 
   // Try to evict the oldest operations from the queue, stopping either when
@@ -228,8 +253,22 @@ class LogCache {
 
     // Keeps track of the memory consumed by the cache, in bytes.
     scoped_refptr<AtomicGauge<int64_t> > log_cache_size;
+
+    // Keeps track of uncompressed size of messages cached. This will be same as
+    // log_cache_size if compression is not enabled and on secondaries
+    scoped_refptr<AtomicGauge<int64_t> > log_cache_msg_size;
   };
   Metrics metrics_;
+
+  // Compression codec to use
+  std::atomic<const CompressionCodec*> codec_;
+
+  // Temporary buffer to use for compression. This is used during append
+  // operation to compress and/or uncompress payloads. Note that the same buffer
+  // gets reused multiple times - this assumens that AppendOperation is
+  // serialized externally and that there can be only one in-flight append
+  // operation
+  faststring log_cache_compression_buf_;
 
   DISALLOW_COPY_AND_ASSIGN(LogCache);
 };
