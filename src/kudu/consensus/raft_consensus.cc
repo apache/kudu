@@ -1628,6 +1628,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       }
     }
 
+    // This is a best-effort way of isolating safe and expected failures
+    // from true warnings.
+    bool expected_rotation_delay = false;
     Status prepare_status;
     auto iter = messages.begin();
     // NB - (arahut)
@@ -1645,6 +1648,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       }
       prepare_status = StartFollowerTransactionUnlocked(*iter);
       if (PREDICT_FALSE(!prepare_status.ok())) {
+        expected_rotation_delay = prepare_status.IsIllegalState() &&
+            (prepare_status.ToString().find(
+                 "Previous Rotate Event with") != std::string::npos);
         break;
       }
       // TODO(dralves) Without leader leases this shouldn't be allowed to fail.
@@ -1658,12 +1664,14 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // that were actually prepared, and deleting the other ones since we've taken ownership
     // when we first deduped.
     if (iter != messages.end()) {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << Substitute(
-          "Could not prepare transaction for op '$0' and following $1 ops. "
-          "Status for this op: $2",
-          (*iter)->get()->id().ShortDebugString(),
-          std::distance(iter, messages.end()) - 1,
-          prepare_status.ToString());
+      if (!expected_rotation_delay) {
+        LOG_WITH_PREFIX_UNLOCKED(WARNING) << Substitute(
+            "Could not prepare transaction for op '$0' and following $1 ops. "
+            "Status for this op: $2",
+            (*iter)->get()->id().ShortDebugString(),
+            std::distance(iter, messages.end()) - 1,
+            prepare_status.ToString());
+      }
       iter = messages.erase(iter, messages.end());
 
       // If this is empty, it means we couldn't prepare a single de-duped message. There is nothing
