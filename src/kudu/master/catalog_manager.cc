@@ -1874,23 +1874,32 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_ && is_user_table) {
     CHECK(rpc);
-    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, GetClusterId(),
-        req.owner(), schema);
+    Status s = hms_catalog_->CreateTable(
+        table->id(), normalized_table_name, GetClusterId(), req.owner(), schema);
     if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
-                                       normalized_table_name));
+      s = s.CloneAndPrepend(Substitute(
+          "failed to create HMS catalog entry for table $0", table->ToString()));
       LOG(WARNING) << s.ToString();
       return SetupError(std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR);
     }
     TRACE("Created new table in HMS catalog");
+    LOG(INFO) << Substitute("created HMS catalog entry for table $0",
+                            table->ToString());
   }
   // Delete the new HMS entry if we exit early.
   auto abort_hms = MakeScopedCleanup([&] {
       // TODO(dan): figure out how to test this.
       if (hms_catalog_ && is_user_table) {
         TRACE("Rolling back HMS table creation");
-        WARN_NOT_OK(hms_catalog_->DropTable(table->id(), normalized_table_name),
-                    "an error occurred while attempting to delete orphaned HMS table entry");
+        auto s = hms_catalog_->DropTable(table->id(), normalized_table_name);
+        if (s.ok()) {
+          LOG(INFO) << Substitute(
+              "deleted orphaned HMS catalog entry for table $0", table->ToString());
+        } else {
+          LOG(WARNING) << Substitute(
+              "failed to delete orphaned HMS catalog entry for table $0: $1",
+              table->ToString(), s.ToString());
+        }
       }
   });
 
@@ -2182,9 +2191,17 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
     }
 
     // Drop the table from the HMS.
+    auto s = hms_catalog_->DropTable(table->id(), l.data().name());
+    if (PREDICT_TRUE(s.ok())) {
+      LOG(INFO) << Substitute(
+          "deleted HMS catalog entry for table $0", table->ToString());
+    } else {
+      LOG(WARNING) << Substitute(
+          "failed to delete HMS catalog entry for table $0: $1",
+          table->ToString(), s.ToString());
+    }
     RETURN_NOT_OK(SetupError(
-          hms_catalog_->DropTable(table->id(), l.data().name()),
-          resp, MasterErrorPB::HIVE_METASTORE_ERROR));
+        std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR));
 
     // Unlock the table, and wait for the notification log listener to handle
     // the delete table event.
@@ -2664,10 +2681,22 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &schema));
 
     // Rename the table in the HMS.
-    RETURN_NOT_OK(SetupError(hms_catalog_->AlterTable(
-            table->id(), l.data().name(), normalized_new_table_name,
-            GetClusterId(), l.data().owner(), schema),
-        resp, MasterErrorPB::HIVE_METASTORE_ERROR));
+    auto s = hms_catalog_->AlterTable(table->id(),
+                                      l.data().name(),
+                                      normalized_new_table_name,
+                                      GetClusterId(),
+                                      l.data().owner(),
+                                      schema);
+    if (PREDICT_TRUE(s.ok())) {
+      LOG(INFO) << Substitute("renamed table $0 in HMS: new name $1",
+                              table->ToString(), normalized_new_table_name);
+    } else {
+      LOG(WARNING) << Substitute(
+          "failed to rename table $0 in HMS: new name $1: $2",
+          table->ToString(), normalized_new_table_name, s.ToString());
+    }
+    RETURN_NOT_OK(SetupError(
+        std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR));
 
     // Unlock the table, and wait for the notification log listener to handle
     // the alter table event.
@@ -3035,11 +3064,18 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     // table rename, since we split out the rename portion into its own
     // 'transaction' which is serialized through the HMS.
     DCHECK(!req.has_new_table_name());
-    WARN_NOT_OK(hms_catalog_->AlterTable(
-          table->id(), normalized_table_name, normalized_table_name,
-          GetClusterId(), l.mutable_data()->owner(), new_schema),
-        Substitute("failed to alter HiveMetastore schema for table $0, "
-                   "HMS schema information will be stale", table->ToString()));
+    auto s = hms_catalog_->AlterTable(
+        table->id(), normalized_table_name, normalized_table_name,
+        GetClusterId(), l.mutable_data()->owner(), new_schema);
+    if (PREDICT_TRUE(s.ok())) {
+      LOG(INFO) << Substitute(
+          "altered HMS schema for table $0", table->ToString());
+    } else {
+      LOG(WARNING) << Substitute(
+          "failed to alter HMS schema for table $0, "
+          "HMS schema information will be stale: $1",
+          table->ToString(), s.ToString());
+    }
   }
 
   if (!tablets_to_add.empty() || has_metadata_changes) {
