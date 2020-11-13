@@ -240,6 +240,11 @@ def get_test_executions(tests_regex, extra_args=None):
 def is_lib_whitelisted(lib):
   # No need to ship things like libc, libstdcxx, etc.
   if lib.startswith("/lib") or lib.startswith("/usr"):
+    # Ship the dynamically linked security libraries from
+    # OpenSSL and Cyrus SASL to better support submitting
+    # installed versions different from the dist_test image.
+    if "libcrypto" in lib or "libsasl2" in lib or "libssl" in lib:
+      return True
     return False
   return True
 
@@ -262,8 +267,41 @@ def get_base_deps(dep_extractor):
     # of the test executable. We must include those dependencies in the archive
     # for the binaries to be usable.
     deps.extend(dep_extractor.extract_deps(d))
+
+  add_sasl_module_deps(deps)
   return deps
 
+def add_sasl_module_deps(deps):
+  """
+  The SASL module dependencies are used at runtime but are not discovered
+  via ldd in the dep_extractor. This method finds the sasl2 directory
+  relative to the libsasl2 library and adds all the libraries in that
+  directory.
+  """
+  # Find the libsasl2 module in the dependencies.
+  sasl_lib = None
+  for dep in deps:
+    if "libsasl2" in dep:
+      sasl_lib = dep
+      break
+
+  # Look for libplain in potential sasl2 module paths, which is required for
+  # Kudu's basic operation.
+  sasl_path = None
+  if sasl_lib:
+    path = os.path.join(os.path.dirname(sasl_lib), "sasl2")
+    if os.path.exists(path):
+      children = os.listdir(path)
+      for child in children:
+        if "libplain" in child:
+          sasl_path = path
+          break
+
+  if sasl_path:
+    for dirpath, subdirs, files in os.walk(sasl_path):
+      for f in files:
+        dep = os.path.join(dirpath, f)
+        deps.append(dep)
 
 def is_outside_of_tree(path):
   repo_dir = rel_to_abs("./")
@@ -282,7 +320,18 @@ def copy_system_library(lib):
   sys_lib_dir = rel_to_abs("build/dist-test-system-libs")
   if not os.path.exists(sys_lib_dir):
     os.makedirs(sys_lib_dir)
-  dst = os.path.join(sys_lib_dir, os.path.basename(lib))
+
+  sasl_dir = os.path.join(sys_lib_dir, "sasl2")
+  if not os.path.exists(sasl_dir):
+    os.makedirs(sasl_dir)
+
+  # If the library is a SASL module keep it in its own directory so
+  # we can set the SASL_PATH environment variable in run_dist_test.py.
+  if "/sasl2/" in lib:
+    dst = os.path.join(sasl_dir, os.path.basename(lib))
+  else:
+    dst = os.path.join(sys_lib_dir, os.path.basename(lib))
+
   # Copy if it doesn't exist, or the mtimes don't match.
   # Using shutil.copy2 preserves the mtime after the copy (like cp -p)
   if not os.path.exists(dst) or os.stat(dst).st_mtime != os.stat(lib).st_mtime:
@@ -664,7 +713,17 @@ def add_java_subparser(subparsers):
   loop.set_defaults(func=loop_java_test)
 
 def dump_base_deps(parser, options):
-  print(json.dumps(get_base_deps(create_dependency_extractor())))
+  deps = get_base_deps(create_dependency_extractor())
+  relocated_deps = []
+  # Deduplicate dependencies included via DEPS_FOR_ALL.
+  for d in set(deps):
+    # System libraries will end up being relative paths out
+    # of the build tree. We need to copy those into the build
+    # tree somewhere.
+    if is_outside_of_tree(d):
+      d = copy_system_library(d)
+    relocated_deps.append(d)
+  print(json.dumps(relocated_deps))
 
 def add_internal_commands(subparsers):
   p = subparsers.add_parser('internal', help="[Internal commands not for users]")
