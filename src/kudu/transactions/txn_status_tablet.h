@@ -117,6 +117,10 @@ class TxnStatusTablet {
                            const TxnParticipantEntryPB& pb,
                            tserver::TabletServerErrorPB* ts_error);
 
+  const tablet::TabletReplica* tablet_replica() const {
+    return tablet_replica_;
+  }
+
  private:
   friend class TxnStatusManager;
 

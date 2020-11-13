@@ -31,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
@@ -56,13 +57,14 @@ using std::thread;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(txn_manager_status_table_range_partition_span);
 DECLARE_uint32(txn_manager_status_table_num_replicas);
-DECLARE_uint32(transaction_keepalive_interval_ms);
+DECLARE_uint32(txn_keepalive_interval_ms);
 
 namespace kudu {
 namespace transactions {
@@ -324,7 +326,21 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     txn_id = resp.txn_id();
     ASSERT_LE(0, txn_id);
     ASSERT_TRUE(resp.has_keepalive_millis());
-    ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, resp.keepalive_millis());
+    ASSERT_EQ(FLAGS_txn_keepalive_interval_ms, resp.keepalive_millis());
+    TxnStatePB txn_state;
+    NO_FATALS(fetch_txn_status(txn_id, &txn_state));
+    ASSERT_EQ(TxnStatePB::OPEN, txn_state);
+  }
+
+  {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    KeepTransactionAliveRequestPB req;
+    KeepTransactionAliveResponsePB resp;
+    req.set_txn_id(txn_id);
+    ASSERT_OK(proxy_->KeepTransactionAlive(req, &resp, &ctx));
+    ASSERT_FALSE(resp.has_error())
+        << StatusFromPB(resp.error().status()).ToString();
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));
     ASSERT_EQ(TxnStatePB::OPEN, txn_state);
@@ -344,9 +360,6 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     ASSERT_EQ(TxnStatePB::COMMIT_IN_PROGRESS, txn_state);
   }
 
-  // TODO(aserbin): add call to KeepTransactionAlive() when TxnStatusManager
-  //                has the functionality implemented.
-
   {
     RpcController ctx;
     PrepareRpcController(&ctx);
@@ -356,6 +369,26 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     ASSERT_OK(proxy_->AbortTransaction(req, &resp, &ctx));
     ASSERT_FALSE(resp.has_error())
         << StatusFromPB(resp.error().status()).ToString();
+    TxnStatePB txn_state;
+    NO_FATALS(fetch_txn_status(txn_id, &txn_state));
+    ASSERT_EQ(TxnStatePB::ABORTED, txn_state);
+  }
+
+  // Try to send keep-alive for already aborted transaction.
+  {
+    RpcController ctx;
+    PrepareRpcController(&ctx);
+    KeepTransactionAliveRequestPB req;
+    KeepTransactionAliveResponsePB resp;
+    req.set_txn_id(txn_id);
+    ASSERT_OK(proxy_->KeepTransactionAlive(req, &resp, &ctx));
+    ASSERT_TRUE(resp.has_error());
+    auto s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+    ASSERT_STR_CONTAINS(
+        s.ToString(),
+        Substitute("transaction ID $0 is already in terminal state", txn_id));
+    // The transaction should stay in ABORTED state, of course.
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));
     ASSERT_EQ(TxnStatePB::ABORTED, txn_state);
@@ -404,7 +437,7 @@ TEST_F(TxnManagerTest, BeginManyTransactions) {
         txn_ids->emplace_back(txn_id);
       }
       CHECK(resp.has_keepalive_millis());
-      CHECK_EQ(FLAGS_transaction_keepalive_interval_ms, resp.keepalive_millis());
+      CHECK_EQ(FLAGS_txn_keepalive_interval_ms, resp.keepalive_millis());
     }
   };
 
@@ -496,20 +529,17 @@ TEST_F(TxnManagerTest, BeginManyTransactions) {
 //                (hence there will be multiple TxnManager instances) and verify
 //                how all this works in case of frequent master re-elections.
 
-// KeepTransactionAlive is not yet supported.
-// TODO(aserbin): update this scenario once KeepTransactionAlive is implemented
-TEST_F(TxnManagerTest, KeepTransactionAliveRpc) {
+TEST_F(TxnManagerTest, KeepTransactionAliveNonExistingTxnId) {
   RpcController ctx;
   PrepareRpcController(&ctx);
   KeepTransactionAliveRequestPB req;
-  req.set_txn_id(0);
+  req.set_txn_id(123);
   KeepTransactionAliveResponsePB resp;
   ASSERT_OK(proxy_->KeepTransactionAlive(req, &resp, &ctx));
   ASSERT_TRUE(resp.has_error());
   auto s = StatusFromPB(resp.error().status());
-  ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
-  ASSERT_STR_CONTAINS(
-      s.ToString(), "Not implemented: KeepTransactionAlive is not supported yet");
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "transaction ID 123 not found");
 }
 
 } // namespace transactions

@@ -120,6 +120,11 @@ class TxnSystemClient {
                               TxnStatusEntryPB* txn_status,
                               MonoDelta timeout = MonoDelta::FromSeconds(10));
 
+  // Send keep-alive heartbeat for the specified transaction as the given user.
+  Status KeepTransactionAlive(int64_t txn_id,
+                              const std::string& user,
+                              MonoDelta timeout = MonoDelta::FromSeconds(10));
+
   // Opens the transaction status table, refreshing metadata with that from the
   // masters.
   Status OpenTxnStatusTable();

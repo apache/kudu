@@ -124,6 +124,11 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
                               transactions::TxnStatusEntryPB* txn_status,
                               tserver::TabletServerErrorPB* ts_error) override;
 
+  // Processes keep-alive heartbeat for the specified transaction.
+  Status KeepTransactionAlive(int64_t txn_id,
+                              const std::string& user,
+                              tserver::TabletServerErrorPB* ts_error) override;
+
   // Creates an in-memory participant, writes an entry to the status table, and
   // attaches the in-memory participant to the transaction.
   //
@@ -133,14 +138,18 @@ class TxnStatusManager final : public tablet::TxnCoordinator {
                              const std::string& user,
                              tserver::TabletServerErrorPB* ts_error) override;
 
-  // Populates a map from transaction ID to the sorted list of participants
-  // associated with that transaction ID.
-  tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
+  // Abort transactions which are still in non-terminal state but haven't
+  // received keep-alive updates (see KeepTransactionAlive()) for a long time.
+  void AbortStaleTransactions() override;
 
   int64_t highest_txn_id() const override {
     std::lock_guard<simple_spinlock> l(lock_);
     return highest_txn_id_;
   }
+
+  // Populates a map from transaction ID to the sorted list of participants
+  // associated with that transaction ID.
+  tablet::ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const override;
 
  private:
   // Verifies that the transaction status data has already been loaded from the

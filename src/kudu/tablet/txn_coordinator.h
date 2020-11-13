@@ -86,7 +86,6 @@ class TxnCoordinator {
   virtual Status AbortTransaction(int64_t txn_id, const std::string& user,
                                   tserver::TabletServerErrorPB* ts_error) = 0;
 
-
   // Retrieves the status entry for the specified transaction, returning
   // Status::OK() in case of success with 'txn_status' populated. In case of
   // error, returns non-OK status. 'ts_error' is used to return not-the-leader
@@ -100,6 +99,13 @@ class TxnCoordinator {
       transactions::TxnStatusEntryPB* txn_status,
       tserver::TabletServerErrorPB* ts_error) = 0;
 
+  // Process keep-alive heartbeat for the specified transaction as the given
+  // user. This is to keep the transaction "alive", so the transaction would
+  // not be aborted automatically due to staleness.
+  virtual Status KeepTransactionAlive(int64_t txn_id,
+                                      const std::string& user,
+                                      tserver::TabletServerErrorPB* ts_error) = 0;
+
   // Registers a participant tablet ID to the given transaction ID as the given
   // user.
   //
@@ -110,12 +116,18 @@ class TxnCoordinator {
                                      const std::string& user,
                                      tserver::TabletServerErrorPB* ts_error) = 0;
 
-  // Populates a map from transaction ID to the list of participants associated
-  // with that transaction ID.
-  virtual ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const = 0;
+  // Abort transactions in non-terminal state which are considered 'stale'.
+  // The 'staleness' of a transaction is determined by particular
+  // implementation. This method can be called periodically to get rid of
+  // adandoned transactions.
+  virtual void AbortStaleTransactions() = 0;
 
   // The highest transaction ID seen by this coordinator.
   virtual int64_t highest_txn_id() const = 0;
+
+  // Populates a map from transaction ID to the list of participants associated
+  // with that transaction ID.
+  virtual ParticipantIdsByTxnId GetParticipantsByTxnIdForTests() const = 0;
 };
 
 class TxnCoordinatorFactory {

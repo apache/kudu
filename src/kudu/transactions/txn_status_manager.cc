@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,15 +41,20 @@
 #include "kudu/util/cow_object.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
-DEFINE_uint32(transaction_keepalive_interval_ms, 5000,
+DEFINE_uint32(txn_keepalive_interval_ms, 30000,
               "Maximum interval (in milliseconds) between subsequent "
               "keep-alive heartbeats to let the transaction status manager "
-              "know that a transaction is not abandoned");
-TAG_FLAG(transaction_keepalive_interval_ms, experimental);
+              "know that a transaction is not abandoned. If the transaction "
+              "status manager does not receive a keepalive message for a "
+              "longer interval than the specified, the transaction is "
+              "automatically aborted.");
+TAG_FLAG(txn_keepalive_interval_ms, experimental);
+TAG_FLAG(txn_keepalive_interval_ms, runtime);
 
 DEFINE_int32(txn_status_manager_inject_latency_load_from_tablet_ms, 0,
              "Injects a random latency between 0 and this many milliseconds "
@@ -57,6 +63,15 @@ DEFINE_int32(txn_status_manager_inject_latency_load_from_tablet_ms, 0,
              "do not use in production.");
 TAG_FLAG(txn_status_manager_inject_latency_load_from_tablet_ms, hidden);
 TAG_FLAG(txn_status_manager_inject_latency_load_from_tablet_ms, unsafe);
+
+DEFINE_uint32(txn_staleness_tracker_interval_ms, 10000,
+              "Period (in milliseconds) of the task that tracks and aborts "
+              "stale/abandoned transactions. If this flag is set to 0, "
+              "TxnStatusManager doesn't automatically abort stale/abandoned "
+              "transactions even if no keepalive messages are received for "
+              "longer than defined by the --txn_keepalive_interval_ms flag.");
+TAG_FLAG(txn_staleness_tracker_interval_ms, experimental);
+TAG_FLAG(txn_staleness_tracker_interval_ms, runtime);
 
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
@@ -151,6 +166,7 @@ Status TxnStatusManager::LoadFromTablet() {
   std::lock_guard<simple_spinlock> l(lock_);
   highest_txn_id_ = std::max(highest_txn_id, highest_txn_id_);
   txns_by_id_ = std::move(txns_by_id);
+
   return Status::OK();
 }
 
@@ -270,6 +286,7 @@ Status TxnStatusManager::BeginTransaction(int64_t txn_id,
     TransactionEntryLock txn_lock(txn.get(), LockMode::WRITE);
     txn_lock.mutable_data()->pb.set_state(TxnStatePB::OPEN);
     txn_lock.mutable_data()->pb.set_user(user);
+    txn->SetState(txn_lock.data().pb.state());
     txn_lock.Commit();
   }
   std::lock_guard<simple_spinlock> l(lock_);
@@ -302,6 +319,7 @@ Status TxnStatusManager::BeginCommitTransaction(int64_t txn_id, const string& us
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::COMMIT_IN_PROGRESS);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
+  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
@@ -328,11 +346,13 @@ Status TxnStatusManager::FinalizeCommitTransaction(
   mutable_data->pb.set_state(TxnStatePB::COMMITTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(
       txn_id, mutable_data->pb, ts_error));
+  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
 
-Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& user,
+Status TxnStatusManager::AbortTransaction(int64_t txn_id,
+                                          const std::string& user,
                                           TabletServerErrorPB* ts_error) {
   scoped_refptr<TransactionEntry> txn;
   RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
@@ -353,6 +373,7 @@ Status TxnStatusManager::AbortTransaction(int64_t txn_id, const std::string& use
   auto* mutable_data = txn_lock.mutable_data();
   mutable_data->pb.set_state(TxnStatePB::ABORTED);
   RETURN_NOT_OK(status_tablet_.UpdateTransaction(txn_id, mutable_data->pb, ts_error));
+  txn->SetState(txn_lock.data().pb.state());
   txn_lock.Commit();
   return Status::OK();
 }
@@ -372,6 +393,42 @@ Status TxnStatusManager::GetTransactionStatus(
   txn_status->set_user(pb.user());
   DCHECK(pb.has_state());
   txn_status->set_state(pb.state());
+
+  return Status::OK();
+}
+
+Status TxnStatusManager::KeepTransactionAlive(int64_t txn_id,
+                                              const string& user,
+                                              TabletServerErrorPB* ts_error) {
+  scoped_refptr<TransactionEntry> txn;
+  RETURN_NOT_OK(GetTransaction(txn_id, user, &txn, ts_error));
+
+  // It's a read (not write) lock because the last heartbeat time isn't
+  // persisted into the transaction status tablet. In other words, the last
+  // heartbeat time is a purely run-time piece of information for a
+  // TransactionEntry.
+  TransactionEntryLock txn_lock(txn.get(), LockMode::READ);
+
+  const auto& pb = txn_lock.data().pb;
+  const auto& state = pb.state();
+  if (state != TxnStatePB::OPEN &&
+      state != TxnStatePB::COMMIT_IN_PROGRESS) {
+    return ReportIllegalTxnState(
+        Substitute("transaction ID $0 is already in terminal state: $1",
+                   txn_id, SecureShortDebugString(pb)),
+        ts_error);
+  }
+  // Keepalive updates are not required for a transaction in COMMIT_IN_PROGRESS
+  // state. The system takes care of a transaction once the client side
+  // initiates the commit phase.
+  if (state == TxnStatePB::COMMIT_IN_PROGRESS) {
+    return ReportIllegalTxnState(
+        Substitute("transaction ID $0 is in commit phase: $1",
+                   txn_id, SecureShortDebugString(pb)),
+        ts_error);
+  }
+  DCHECK_EQ(TxnStatePB::OPEN, state);
+  txn->SetLastHeartbeatTime(MonoTime::Now());
 
   return Status::OK();
 }
@@ -416,6 +473,75 @@ Status TxnStatusManager::RegisterParticipant(
   // state to denote the participant is open.
   prt_lock.Commit();
   return Status::OK();
+}
+
+void TxnStatusManager::AbortStaleTransactions() {
+  const MonoDelta max_staleness_interval =
+      MonoDelta::FromMilliseconds(FLAGS_txn_keepalive_interval_ms);
+
+  auto* consensus = status_tablet_.tablet_replica_->consensus();
+  DCHECK(consensus);
+  if (consensus->role() != RaftPeerPB::LEADER) {
+    // Only leader replicas abort stale transactions registered with them.
+    // As of now, keep-alive requests are sent only to leader replicas, so only
+    // they have up-to-date information about the liveliness of corresponding
+    // transactions.
+    //
+    // If a non-leader replica errorneously (due to a network partition and
+    // the absence of leader leases) tried to abort a transaction, it would fail
+    // because aborting a transaction means writing into the transaction status
+    // tablet, so a non-leader replica's write attempt would be rejected by
+    // the Raft consensus protocol.
+    return;
+  }
+  TransactionsMap txns_by_id;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    for (const auto& elem : txns_by_id_) {
+      const auto state = elem.second->state();
+      // The tracker is interested only in open transactions. It's not concerned
+      // about transactions in terminal states (i.e. COMMITTED, ABORTED): there
+      // is nothing can be done with those. As for transactions in
+      // COMMIT_IN_PROGRESS state, the system should be take care of those
+      // without any participation from the client side, so txn keepalive
+      // messages are not required while the system tries to finalize those.
+      if (state == TxnStatePB::OPEN) {
+        txns_by_id.emplace(elem.first, elem.second);
+      }
+    }
+  }
+  const MonoTime now = MonoTime::Now();
+  for (auto& elem : txns_by_id) {
+    const auto& txn_id = elem.first;
+    const auto& txn_entry = elem.second;
+    const auto staleness_interval = now - txn_entry->last_heartbeat_time();
+    if (staleness_interval > max_staleness_interval) {
+      TabletServerErrorPB error;
+      auto s = AbortTransaction(txn_id, txn_entry->user(), &error);
+      if (PREDICT_TRUE(s.ok())) {
+        LOG(INFO) << Substitute(
+            "automatically aborted stale txn (ID $0) past $1 from "
+            "last keepalive heartbeat (effective timeout is $2)",
+            txn_id, staleness_interval.ToString(),
+            max_staleness_interval.ToString());
+      } else {
+        LOG(WARNING) << Substitute(
+            "failed to abort stale txn (ID $0) past $1 from "
+            "last keepalive heartbeat (effective timeout is $2): $3",
+            txn_id, staleness_interval.ToString(),
+            max_staleness_interval.ToString(), s.ToString());
+        if (consensus->role() != RaftPeerPB::LEADER ||
+            !status_tablet_.tablet_replica()->CheckRunning().ok()) {
+          // If the replica is no longer a leader at this point, there is
+          // no sense in processing the rest of the entries.
+          LOG(INFO) << "skipping staleness check for the rest of in-flight "
+                       "txn records since this txn status tablet replica "
+                       "is no longer a leader or not running";
+          return;
+        }
+      }
+    }
+  }
 }
 
 ParticipantIdsByTxnId TxnStatusManager::GetParticipantsByTxnIdForTests() const {

@@ -65,7 +65,7 @@
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
-DECLARE_uint32(transaction_keepalive_interval_ms);
+DECLARE_uint32(txn_keepalive_interval_ms);
 
 using kudu::client::AuthenticationCredentialsPB;
 using kudu::client::KuduClient;
@@ -351,7 +351,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
   uint32_t txn_keepalive_ms;
   ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser, &txn_keepalive_ms));
-  ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, txn_keepalive_ms);
+  ASSERT_EQ(FLAGS_txn_keepalive_interval_ms, txn_keepalive_ms);
   ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
 
   // If we write out of range, we should see an error.
@@ -365,7 +365,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
     ASSERT_EQ(-1, highest_seen_txn_id);
     // txn_keepalive_ms isn't assigned in case of non-OK status.
     ASSERT_EQ(0, txn_keepalive_ms);
-    ASSERT_NE(0, FLAGS_transaction_keepalive_interval_ms);
+    ASSERT_NE(0, FLAGS_txn_keepalive_interval_ms);
   }
   {
     auto s = txn_sys_client_->BeginCommitTransaction(100, kUser);
@@ -431,7 +431,7 @@ TEST_F(TxnStatusTableITest, TestSystemClientBeginTransactionErrors) {
   ASSERT_OK(txn_sys_client_->BeginTransaction(
       1, kUser, &txn_keepalive_ms, &highest_seen_txn_id));
   ASSERT_EQ(1, highest_seen_txn_id);
-  ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, txn_keepalive_ms);
+  ASSERT_EQ(FLAGS_txn_keepalive_interval_ms, txn_keepalive_ms);
 
   // Trying to start another transaction with a used ID should yield an error.
   {
@@ -694,8 +694,8 @@ TEST_F(MultiServerTxnStatusTableITest, TestSystemClientLeadershipChange) {
     string new_leader_uuid;
     ASSERT_OK(FindLeaderId(tablet_id, &new_leader_uuid));
     ASSERT_NE(new_leader_uuid, orig_leader_uuid);
+    ASSERT_OK(txn_sys_client_->BeginTransaction(2, kUser));
   });
-  ASSERT_OK(txn_sys_client_->BeginTransaction(2, kUser));
 }
 
 TEST_F(MultiServerTxnStatusTableITest, TestSystemClientCrashedNodes) {

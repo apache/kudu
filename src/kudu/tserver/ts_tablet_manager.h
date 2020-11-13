@@ -38,6 +38,7 @@
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -347,6 +348,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // running state.
   void InitLocalRaftPeerPB();
 
+  // A task to check for the staleness of transactions registered with
+  // corresponding transaction status tablets (if any).
+  void TxnStalenessTrackerTask();
+
   // Just for tests.
   void SetNextUpdateTimeForTests();
 
@@ -364,6 +369,14 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // transition_in_progress_, perm_deleted_tablet_ids_,
   // tablet_state_counts_, and last_walked_.
   mutable RWMutex lock_;
+
+  // A latch to notify the task running on the txn_status_manager_pool_ on
+  // shutdown.
+  //
+  // TODO(aserbin): instead of using CountDownLatch, extend ConditionVariable
+  //                to be able to work with RWMutex and use lock_ from above
+  //                to create one to notify the task on shutdown
+  CountDownLatch shutdown_latch_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
@@ -398,6 +411,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Thread pool used to delete tablets asynchronously.
   std::unique_ptr<ThreadPool> delete_tablet_pool_;
+
+  // Thread pool to run TxnStatusManager tasks. As of now, this pool is
+  // to run a long-running single periodic task to abort stale transactions
+  // registered with corresponding transaction status tablets.
+  std::unique_ptr<ThreadPool> txn_status_manager_pool_;
 
   // Ensures that we only update stats from a single thread at a time.
   mutable rw_spinlock lock_update_;

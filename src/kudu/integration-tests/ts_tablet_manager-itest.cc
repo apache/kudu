@@ -1233,6 +1233,7 @@ TEST_F(TxnStatusTabletManagementTest, TestTabletServerProxyCalls) {
   const vector<CoordinatorOpPB::CoordinatorOpType> kOpSequence = {
     CoordinatorOpPB::BEGIN_TXN,
     CoordinatorOpPB::REGISTER_PARTICIPANT,
+    CoordinatorOpPB::KEEP_TXN_ALIVE,
     CoordinatorOpPB::BEGIN_COMMIT_TXN,
     CoordinatorOpPB::ABORT_TXN,
     CoordinatorOpPB::GET_TXN_STATUS,

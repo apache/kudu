@@ -16,16 +16,20 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 namespace transactions {
@@ -50,13 +54,13 @@ class ParticipantEntry : public RefCountedThreadSafe<ParticipantEntry> {
  public:
   typedef PersistentParticipantEntry cow_state;
 
-  ParticipantEntry() {}
+  ParticipantEntry() = default;
   const CowObject<PersistentParticipantEntry>& metadata() const { return metadata_; }
   CowObject<PersistentParticipantEntry>* mutable_metadata() { return &metadata_; }
 
  private:
   friend class RefCountedThreadSafe<ParticipantEntry>;
-  ~ParticipantEntry() {}
+  ~ParticipantEntry() = default;
 
   // Mutable state for this participant with concurrent access controlled via
   // copy-on-write locking.
@@ -72,9 +76,8 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
  public:
   typedef PersistentTransactionEntry cow_state;
 
-  TransactionEntry(int64_t txn_id, std::string user)
-      : txn_id_(txn_id),
-        user_(std::move(user)) {}
+  TransactionEntry(int64_t txn_id, std::string user);
+
   const CowObject<PersistentTransactionEntry>& metadata() const { return metadata_; }
   CowObject<PersistentTransactionEntry>* mutable_metadata() { return &metadata_; }
 
@@ -89,9 +92,26 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
     return user_;
   }
 
+  // Return the last recorded heartbeat timestamp for the transaction.
+  MonoTime last_heartbeat_time() const {
+    return last_heartbeat_time_.load();
+  }
+  // Set the timestamp of last seen keep-alive heartbeat for the transaction.
+  void SetLastHeartbeatTime(const MonoTime& hbtime) {
+    last_heartbeat_time_.store(hbtime);
+  }
+
+  TxnStatePB state() const {
+    return state_.load();
+  }
+  void SetState(TxnStatePB state) {
+    DCHECK(metadata_.IsWriteLocked());
+    state_.store(state);
+  }
+
  private:
   friend class RefCountedThreadSafe<TransactionEntry>;
-  ~TransactionEntry() {}
+  ~TransactionEntry() = default;
 
   const int64_t txn_id_;
 
@@ -107,6 +127,21 @@ class TransactionEntry : public RefCountedThreadSafe<TransactionEntry> {
   // Mutable state for the transaction status record with concurrent access
   // controlled via copy-on-write locking.
   CowObject<PersistentTransactionEntry> metadata_;
+
+  // Time of the last keep-alive heartbeat received for the transaction
+  // identified by txn_id_. Using std::atomic wrapper since the field can be
+  // accessed concurrently by multiple threads:
+  //   * the field can be updated by concurrent KeepAlive requests from
+  //     different clients sending writes in the context of the same transaction
+  //   * the field is read by the stale transaction tracker in TxnStatusManager
+  std::atomic<MonoTime> last_heartbeat_time_;
+
+  // A shortcut for the state of the transaction stored in the metadata_ field.
+  // Callers should externally synchronize 'state_' with 'metadata_' by calling
+  // SetState() accordingly when TxnStatePB in 'metadata_' changes.
+  //
+  // TODO(aserbin): add a hook into CowObject::Commit() to do so automatically
+  std::atomic<TxnStatePB> state_;
 };
 
 typedef MetadataLock<TransactionEntry> TransactionEntryLock;

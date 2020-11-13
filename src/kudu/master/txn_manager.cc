@@ -230,12 +230,11 @@ Status TxnManager::AbortTransaction(int64_t txn_id,
   return txn_sys_client_->AbortTransaction(txn_id, username, ToDelta(deadline));
 }
 
-Status TxnManager::KeepTransactionAlive(int64_t /* txn_id */,
-                                        const string& /* username */,
+Status TxnManager::KeepTransactionAlive(int64_t txn_id,
+                                        const string& username,
                                         const MonoTime& deadline) {
   RETURN_NOT_OK(CheckInitialized(deadline));
-  // TODO(aserbin): call txn_sys_client_ once the functionality is there
-  return Status::NotSupported("KeepTransactionAlive is not supported yet");
+  return txn_sys_client_->KeepTransactionAlive(txn_id, username, ToDelta(deadline));
 }
 
 // This method isn't supposed to be called concurrently, so there isn't any

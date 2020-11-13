@@ -174,7 +174,7 @@ TAG_FLAG(tserver_inject_invalid_authz_token_ratio, hidden);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
-DECLARE_uint32(transaction_keepalive_interval_ms);
+DECLARE_uint32(txn_keepalive_interval_ms);
 
 METRIC_DEFINE_counter(
     server,
@@ -1201,6 +1201,7 @@ Status ValidateCoordinatorOpFields(const CoordinatorOpPB& op) {
     case CoordinatorOpPB::BEGIN_COMMIT_TXN:
     case CoordinatorOpPB::ABORT_TXN:
     case CoordinatorOpPB::GET_TXN_STATUS:
+    case CoordinatorOpPB::KEEP_TXN_ALIVE:
       if (!op.has_txn_id()) {
         return Status::InvalidArgument(Substitute("Missing txn id: $0",
                                                   SecureShortDebugString(op)));
@@ -1273,6 +1274,9 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
       s = txn_coordinator->GetTransactionStatus(
           txn_id, user, &txn_status, &ts_error);
       break;
+    case CoordinatorOpPB::KEEP_TXN_ALIVE:
+      s = txn_coordinator->KeepTransactionAlive(txn_id, user, &ts_error);
+      break;
     default:
       s = Status::InvalidArgument(Substitute("Unknown op type: $0", op.type()));
   }
@@ -1289,7 +1293,7 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
     *(resp->mutable_op_result()->mutable_txn_status()) = std::move(txn_status);
   } else if (op.type() == CoordinatorOpPB::BEGIN_TXN) {
     resp->mutable_op_result()->set_keepalive_millis(
-        FLAGS_transaction_keepalive_interval_ms);
+        FLAGS_txn_keepalive_interval_ms);
   }
   if (op.type() == CoordinatorOpPB::BEGIN_TXN && !s.IsServiceUnavailable()) {
     DCHECK_GE(highest_seen_txn_id, 0);

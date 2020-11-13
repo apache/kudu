@@ -55,6 +55,7 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/txn_coordinator.h"
 #include "kudu/transactions/txn_status_manager.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_server.h"
@@ -143,7 +144,14 @@ DEFINE_int32(tablet_open_inject_latency_ms, 0,
             "Injects latency into the tablet opening. For use in tests only.");
 TAG_FLAG(tablet_open_inject_latency_ms, unsafe);
 
+DEFINE_uint32(txn_staleness_tracker_disabled_interval_ms, 60000,
+              "Polling interval (in milliseconds) for the disabled staleness "
+              "transaction tracker task to check whether it's been re-enabled. "
+              "This is made configurable only for testing purposes.");
+TAG_FLAG(txn_staleness_tracker_disabled_interval_ms, hidden);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
+DECLARE_uint32(txn_staleness_tracker_interval_ms);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
                           "Number of Not Initialized Tablets",
@@ -252,6 +260,7 @@ TSTabletManager::TSTabletManager(TabletServer* server)
   : fs_manager_(server->fs_manager()),
     cmeta_manager_(new ConsensusMetadataManager(fs_manager_)),
     server_(server),
+    shutdown_latch_(1),
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
     state_(MANAGER_INITIALIZING) {
@@ -372,6 +381,19 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(ThreadPoolBuilder("tablet-delete")
                 .set_max_threads(max_delete_threads)
                 .Build(&delete_tablet_pool_));
+
+  // TODO(aserbin): if better parallelism is needed to serve higher txn volume,
+  //                consider using multiple threads in this pool and schedule
+  //                per-tablet-replica clean-up tasks via threadpool serial
+  //                tokens to make sure no more than one clean-up task
+  //                is running against a txn status tablet replica.
+  RETURN_NOT_OK(ThreadPoolBuilder("txn-status-manager")
+                .set_max_threads(1)
+                .set_max_queue_size(0)
+                .Build(&txn_status_manager_pool_));
+  RETURN_NOT_OK(txn_status_manager_pool_->Submit([this]() {
+    this->TxnStalenessTrackerTask();
+  }));
 
   // Search for tablets in the metadata dir.
   vector<string> tablet_ids;
@@ -1225,10 +1247,15 @@ void TSTabletManager::Shutdown() {
   // Shut down the delete pool, so no new tablets are deleted after this point.
   delete_tablet_pool_->Shutdown();
 
+  // Signal the only task running on the txn_status_manager_pool_ to wrap up.
+  shutdown_latch_.CountDown();
+  // Shut down the pool running the dedicated TxnStatusManager-related task.
+  txn_status_manager_pool_->Shutdown();
+
   // Take a snapshot of the replicas list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
   // inversion. (see KUDU-308 for example).
-  vector<scoped_refptr<TabletReplica> > replicas_to_shutdown;
+  vector<scoped_refptr<TabletReplica>> replicas_to_shutdown;
   GetTabletReplicas(&replicas_to_shutdown);
 
   for (const scoped_refptr<TabletReplica>& replica : replicas_to_shutdown) {
@@ -1345,6 +1372,46 @@ void TSTabletManager::InitLocalRaftPeerPB() {
   HostPort hp;
   CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
   *local_peer_pb_.mutable_last_known_addr() = HostPortToPB(hp);
+}
+
+void TSTabletManager::TxnStalenessTrackerTask() {
+  while (true) {
+    // This little dance below is to provide functionality of re-enabling the
+    // staleness tracking task at run-time without restarting the process.
+    auto interval_ms = FLAGS_txn_staleness_tracker_interval_ms;
+    bool task_enabled = true;
+    if (interval_ms == 0) {
+      // The task is disabled.
+      interval_ms = FLAGS_txn_staleness_tracker_disabled_interval_ms;
+      task_enabled = false;
+    }
+    // Wait for a notification on shutdown or a timeout expiration.
+    if (shutdown_latch_.WaitFor(MonoDelta::FromMilliseconds(interval_ms))) {
+      return;
+    }
+    if (!task_enabled) {
+      continue;
+    }
+
+    vector<scoped_refptr<TabletReplica>> replicas;
+    {
+      shared_lock<RWMutex> l(lock_);
+      for (const auto& elem : tablet_map_) {
+        auto r = elem.second;
+        // Find txn status tablet replicas.
+        if (r->txn_coordinator()) {
+          replicas.emplace_back(std::move(r));
+        }
+      }
+    }
+    for (auto& r : replicas) {
+      if (shutdown_latch_.count() == 0) {
+        return;
+      }
+      auto* coordinator = DCHECK_NOTNULL(r->txn_coordinator());
+      coordinator->AbortStaleTransactions();
+    }
+  }
 }
 
 void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>& replica,
