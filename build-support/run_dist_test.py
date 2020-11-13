@@ -183,6 +183,12 @@ def main():
     [os.path.join(ROOT, "build/dist-test-system-libs/")] +
     glob.glob(os.path.abspath(os.path.join(ROOT, "build/*/lib"))))
 
+  # If SASL modules are included in the dist-test-system-libs, set the
+  # SASL_PATH environment variable to use them instead of the system ones.
+  sasl_dir = os.path.join(ROOT, "build/dist-test-system-libs/sasl2")
+  if os.path.exists(sasl_dir):
+    env['SASL_PATH'] = sasl_dir
+
   # Don't pollute /tmp in dist-test setting. If a test crashes, the dist-test slave
   # will clear up our working directory but won't be able to find and clean up things
   # left in /tmp.

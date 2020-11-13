@@ -24,7 +24,7 @@
 #
 # N.B: we do _not_ include sasl in thirdparty, for a fairly subtle reason. The
 # TLDR version is that newer versions of cyrus-sasl (>=2.1.26) have a bug fix
-# for https://bugzilla.cyrusimap.org/show_bug.cgi?id=3590, but that bug fix
+# for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=728332, but that bug fix
 # relied on a change both on the plugin side and on the library side. If you
 # then try to run the new version of sasl (e.g from our thirdparty tree) with
 # an older version of a plugin (eg from RHEL6 install), you'll get a SASL_NOMECH
