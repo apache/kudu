@@ -77,9 +77,6 @@ struct TabletCopyClientMetrics {
 // Client class for using tablet copy to copy a tablet from another host.
 // This class is not thread-safe.
 //
-// TODO:
-// * Parallelize download of blocks and WAL segments.
-//
 class TabletCopyClient {
  public:
 
@@ -140,6 +137,7 @@ class TabletCopyClient {
   FRIEND_TEST(TabletCopyClientTest, TestLifeCycle);
   FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadBlockMayFail);
+  FRIEND_TEST(TabletCopyClientTest, TestDownloadWalMayFail);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
   FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);
@@ -183,7 +181,7 @@ class TabletCopyClient {
   // End the tablet copy session.
   Status EndRemoteSession();
 
-  // Download all WAL files sequentially.
+  // Download all WAL files in parallel.
   Status DownloadWALs();
 
   // Download a single WAL file.
@@ -256,7 +254,7 @@ class TabletCopyClient {
   template<class Appendable>
   Status DownloadFile(const DataIdPB& data_id, Appendable* appendable);
 
-  Status VerifyData(uint64_t offset, const DataChunkPB& resp);
+  Status VerifyData(uint64_t offset, const DataChunkPB& chunk);
 
   // Runs the provided functor, which must send an RPC and return the result
   // status, until it succeeds, times out, or fails with a non-retriable error.
@@ -303,11 +301,11 @@ class TabletCopyClient {
   // Block transaction for the tablet copy.
   std::unique_ptr<fs::BlockCreationTransaction> transaction_;
 
-  // Thread pool for downloading all data blocks in parallel.
-  std::unique_ptr<ThreadPool> blocks_download_pool_;
+  // Thread pool for downloading all data blocks and wals in parallel.
+  std::unique_ptr<ThreadPool> tablet_download_pool_;
 
   // Protects adding/creating blocks, adding a rowset,
-  // reading/updating rowset download status.
+  // reading/updating rowset/wal download status.
   simple_spinlock simple_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);

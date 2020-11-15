@@ -91,6 +91,24 @@ DEFINE_int32(tablet_copy_download_file_inject_latency_ms, 0,
              "to take much longer. For use in tests only.");
 TAG_FLAG(tablet_copy_download_file_inject_latency_ms, hidden);
 
+DEFINE_bool(tablet_copy_download_wal_inject_latency, false,
+            "If true, injects artificial latency in DownloadWAL() operations. "
+            "For use in test only.");
+TAG_FLAG(tablet_copy_download_wal_inject_latency, unsafe);
+TAG_FLAG(tablet_copy_download_wal_inject_latency, runtime);
+
+DEFINE_int32(tablet_copy_download_wal_inject_latency_ms_mean, 200,
+             "The number of milliseconds of latency to inject, on average. "
+             "Only take effects if --tablet_copy_download_wal_inject_latency is true");
+TAG_FLAG(tablet_copy_download_wal_inject_latency_ms_mean, unsafe);
+TAG_FLAG(tablet_copy_download_wal_inject_latency_ms_mean, runtime);
+
+DEFINE_int32(tablet_copy_download_wal_inject_latency_ms_stddev, 200,
+             "The standard deviation of latency to inject on DownloadWAL()"
+             "Only take effects if --tablet_copy_download_wal_inject_latency is true");
+TAG_FLAG(tablet_copy_download_wal_inject_latency_ms_stddev, unsafe);
+TAG_FLAG(tablet_copy_download_wal_inject_latency_ms_stddev, runtime);
+
 DEFINE_double(tablet_copy_fault_crash_on_fetch_all, 0.0,
               "Fraction of the time that the server will crash when FetchAll() "
               "is called on the TabletCopyClient. (For testing only!)");
@@ -109,6 +127,12 @@ DEFINE_double(tablet_copy_fault_crash_during_download_block, 0.0,
               "For use in test only.");
 TAG_FLAG(tablet_copy_fault_crash_during_download_block, unsafe);
 TAG_FLAG(tablet_copy_fault_crash_during_download_block, runtime);
+
+DEFINE_double(tablet_copy_fault_crash_during_download_wal, 0.0,
+              "Fraction of the time that DownloadWal() will fail. "
+              "For use in test only.");
+TAG_FLAG(tablet_copy_fault_crash_during_download_wal, unsafe);
+TAG_FLAG(tablet_copy_fault_crash_during_download_wal, runtime);
 
 DEFINE_int32(tablet_copy_download_threads_nums_per_session, 4,
              "Number of threads per tablet copy session for downloading tablet data blocks.");
@@ -185,10 +209,10 @@ TabletCopyClient::TabletCopyClient(
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->Increment();
   }
-  ThreadPoolBuilder("blocks-download-pool-" + tablet_id)
+  ThreadPoolBuilder("tablet-download-pool-" + tablet_id)
     .set_max_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
     .set_min_threads(FLAGS_tablet_copy_download_threads_nums_per_session)
-    .Build(&blocks_download_pool_);
+    .Build(&tablet_download_pool_);
 }
 
 TabletCopyClient::~TabletCopyClient() {
@@ -197,7 +221,7 @@ TabletCopyClient::~TabletCopyClient() {
                                              LogPrefix()));
   WARN_NOT_OK(Abort(), Substitute("$0Failed to fully clean up tablet after aborted copy",
                                   LogPrefix()));
-  blocks_download_pool_->Shutdown();
+  tablet_download_pool_->Shutdown();
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->IncrementBy(-1);
   }
@@ -565,17 +589,35 @@ Status TabletCopyClient::DownloadWALs() {
   RETURN_NOT_OK(fs_manager_->env()->SyncDir(DirName(path))); // fsync() parent dir.
 
   // Download the WAL segments.
-  int num_segments = wal_seqnos_.size();
+  const int num_segments = wal_seqnos_.size();
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_segments << " WAL segments...";
-  uint64_t counter = 0;
-  for (uint64_t seg_seqno : wal_seqnos_) {
-    SetStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
-                                seg_seqno, counter + 1, num_segments));
-    RETURN_NOT_OK(DownloadWAL(seg_seqno));
-    ++counter;
-  }
 
-  return Status::OK();
+  atomic<uint64_t> counter(0);
+  Status end_status;
+  for (uint64_t seg_seqno : wal_seqnos_) {
+    RETURN_NOT_OK(tablet_download_pool_->Submit([&, seg_seqno]() {
+      SetStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
+                                  seg_seqno, counter.load() + 1, num_segments));
+      {
+        std::lock_guard<simple_spinlock> l(simple_lock_);
+        if (!end_status.ok()) {
+          return;
+        }
+      }
+      Status s = DownloadWAL(seg_seqno);
+      if (!s.ok()) {
+        std::lock_guard<simple_spinlock> l(simple_lock_);
+        if (end_status.ok()) {
+          end_status = s;
+        }
+        return;
+      }
+      counter++;
+    }));
+  }
+  tablet_download_pool_->Wait();
+
+  return end_status;
 }
 
 int TabletCopyClient::CountRemoteBlocks() const {
@@ -690,17 +732,32 @@ Status TabletCopyClient::DownloadBlocks() {
   // Download rowsets in parallel.
   // Each task downloads the blocks of the corresponding rowset sequentially.
   for (const RowSetDataPB& src_rowset : remote_superblock_->rowsets()) {
-    RETURN_NOT_OK(blocks_download_pool_->Submit([&]() mutable {
+    RETURN_NOT_OK(tablet_download_pool_->Submit([&]() mutable {
       DownloadRowset(src_rowset, num_remote_blocks, &block_count, &end_status);
     }));
   }
-  blocks_download_pool_->Wait();
+  tablet_download_pool_->Wait();
 
   return end_status;
 }
 
 Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
   VLOG_WITH_PREFIX(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
+
+  MAYBE_RETURN_FAILURE(FLAGS_tablet_copy_fault_crash_during_download_wal,
+                       Status::IOError("Injected failure on downloading wal"));
+  if (PREDICT_FALSE(FLAGS_tablet_copy_download_wal_inject_latency)) {
+    Random r(GetCurrentTimeMicros());
+    int sleep_ms = static_cast<int>(
+        r.Normal(FLAGS_tablet_copy_download_wal_inject_latency_ms_mean,
+                 FLAGS_tablet_copy_download_wal_inject_latency_ms_stddev));
+    if (sleep_ms > 0) {
+      LOG_WITH_PREFIX(WARNING) << "Injecting " << sleep_ms
+                               << "ms of latency in TabletCopyClient::DownloadWAL()";
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+    }
+  }
+
   RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(), "Not downloading WAL for replica");
 
   DataIdPB data_id;

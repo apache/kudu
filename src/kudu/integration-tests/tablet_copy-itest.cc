@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/common/partial_row.h"
@@ -93,8 +94,14 @@ DEFINE_int32(test_delete_leader_payload_bytes, 16 * 1024,
 DEFINE_int32(test_delete_leader_num_writer_threads, 1,
              "Number of writer threads in TestDeleteLeaderDuringTabletCopyStressTest.");
 
+DECLARE_bool(tablet_copy_download_wal_inject_latency);
+DECLARE_int32(log_segment_size_mb);
+
 using boost::none;
+using kudu::client::KuduScanner;
+using kudu::client::KuduScanBatch;
 using kudu::client::KuduSchema;
+using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
@@ -147,7 +154,6 @@ METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 
 namespace kudu {
-
 class TabletCopyITest : public ExternalMiniClusterITestBase {
 };
 
@@ -340,6 +346,7 @@ TEST_F(TabletCopyITest, TestListTabletsDuringTabletCopy) {
   follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
 
   vector<std::thread> threads;
+  threads.reserve(FLAGS_test_num_threads);
   std::atomic<bool> finish(false);
   Barrier barrier(FLAGS_test_num_threads + 1); // include main thread
 
@@ -453,7 +460,7 @@ TEST_F(TabletCopyITest, TestCopyAfterFailedCopy) {
   // Regression condition for KUDU-2293: the above second attempt at a copy
   // should not crash the destination server.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    const auto tserver = cluster_->tablet_server(i);
+    const auto* tserver = cluster_->tablet_server(i);
     ASSERT_TRUE(tserver->IsProcessAlive())
         << Substitute("Tablet server $0 ($1) has crashed...", i, tserver->uuid());
   }
@@ -660,6 +667,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   ASSERT_OK(WaitForNumTabletsOnTS(target_ts, kNumTablets, timeout, &tablets));
 
   vector<string> tablet_ids;
+  tablet_ids.reserve(tablets.size());
   for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     tablet_ids.push_back(t.tablet_status().tablet_id());
   }
@@ -1884,7 +1892,7 @@ TEST_F(TabletCopyITest, TestBeginTabletCopySessionConcurrency) {
   workload.set_num_tablets(kNumTablets);
   workload.Setup();
 
-  auto ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  auto* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
   vector<string> tablet_ids;
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(itest::ListRunningTabletIds(ts, kTimeout, &tablet_ids));
@@ -1936,6 +1944,194 @@ TEST_F(TabletCopyITest, TestBeginTabletCopySessionConcurrency) {
   for (const auto& lat : failure_latencies) {
     ASSERT_LT(lat, kInjectedLatency);
   }
+}
+
+// Test that wal segments can be downloaded correctly via TabletCopyClient.
+// When downloading wal segments, random latency is injected so that wal segment
+// may be downloaded in random order.
+// In this case, WAL is consisted of heavy inserts, all insert operations are
+// kept in WAL by disabling all 'Flush' maintenance operation.
+//
+// Verify wal contents by comparing the count of rows.
+TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyInsert) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  FLAGS_log_segment_size_mb = 1;
+  FLAGS_tablet_copy_download_wal_inject_latency = true;
+
+  const int kNumTablets = 1;
+  const int kNumThreads = 8;
+  // The number of WAL segments should greater than num of threads to download
+  // tablet.
+  const int kNumWalSegments = 6;
+
+  // Make the original tablet keeps everything in the wal.
+  vector<string> ts_flags;
+  ts_flags.emplace_back("--enable_flush_memrowset=false");
+  ts_flags.emplace_back("--enable_flush_deltamemstores=false");
+  ts_flags.emplace_back("--tablet_copy_download_threads_nums_per_session=4");
+  ts_flags.emplace_back("--log_segment_size_mb=1");
+  NO_FATALS(StartCluster(ts_flags, {}, /*num_tablet_servers=*/3));
+
+  // Init workload in INSERT_SEQUENTIAL_ROWS mode.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_write_threads(kNumThreads);
+  workload.set_write_pattern(TestWorkload::WritePattern::INSERT_SEQUENTIAL_ROWS);
+  workload.Setup();
+
+  const int first_leader_index = 0;
+  const int second_leader_index = 1;
+  TServerDetails* first_leader = ts_map_[cluster_->tablet_server(first_leader_index)->uuid()];
+  TServerDetails* second_leader = ts_map_[cluster_->tablet_server(second_leader_index)->uuid()];
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(first_leader, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, kTimeout));
+  }
+
+  // Elect a leader for term 1, then generate some data to copy.
+  ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
+
+  workload.Start();
+  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+
+  // Delete the tablet from second leader ts and wait until the tablet recovery
+  // from the first leader via TabletCopy.
+  ASSERT_OK(DeleteTablet(second_leader, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(second_leader_index, tablet_id,
+                                                 { tablet::TABLET_DATA_READY },
+                                                 kTimeout));
+
+  ASSERT_OK(WaitUntilTabletRunning(second_leader, tablet_id, kTimeout));
+
+  // Make the second ts as leader.
+  ASSERT_OK(StartElection(second_leader, tablet_id, kTimeout));
+
+  // Verify WAL contents are same among tservers of the cluster.
+  {
+    ClusterVerifier v(cluster_.get());
+    v.CheckCluster();
+  }
+}
+
+// Test that wal segments can be downloaded correctly via TabletCopyClient.
+// When downloading wal segments, random latency is injected so that wal segment
+// may be downloaded in random order.
+// In this case, WAL is consisted of heavy updates, all insert operations are
+// kept in WAL by disabling all 'Flush' maintenance operation.
+//
+// Verify wal contents by comparing the content.
+TEST_F(TabletCopyITest, TestDownloadWalInParallelWithHeavyUpdate) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  FLAGS_log_segment_size_mb = 1;
+  FLAGS_tablet_copy_download_wal_inject_latency = true;
+
+  const int kNumTablets = 1;
+  const int kNumThreads = 8;
+  const int kNumWalSegments = 6;
+
+  // Make the original tablet keeps everything in the wal.
+  vector<string> ts_flags;
+  ts_flags.emplace_back("--enable_flush_memrowset=false");
+  ts_flags.emplace_back("--enable_flush_deltamemstores=false");
+  ts_flags.emplace_back("--tablet_copy_download_threads_nums_per_session=4");
+  ts_flags.emplace_back("--log_segment_size_mb=1");
+  NO_FATALS(StartCluster(ts_flags, {}, /*num_tablet_servers=*/3));
+
+  // Init workload in UPDATE_ONE_ROW mode.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_write_threads(kNumThreads);
+  workload.set_write_pattern(TestWorkload::WritePattern::UPDATE_ONE_ROW);
+  workload.Setup();
+
+  // Use ts0 as first leader. Use ts1 as second leader.
+  const int first_leader_index = 0;
+  const int second_leader_index = 1;
+  TServerDetails* first_leader = ts_map_[cluster_->tablet_server(first_leader_index)->uuid()];
+  TServerDetails* second_leader = ts_map_[cluster_->tablet_server(second_leader_index)->uuid()];
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(first_leader, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, kTimeout));
+  }
+
+  // Elect a leader for term 1, then generate some data to copy.
+  ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
+
+  workload.Start();
+  inspect_->WaitForMinFilesInTabletWalDirOnTS(first_leader_index, tablet_id, kNumWalSegments);
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+
+  // Scan rows from cluster with given table name, and store the stringified
+  // rows to result_collector.
+  auto scan_func = [](const decltype(client_)& client,
+                      const string& table_name,
+                      vector<string>* result_collector) {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client->OpenTable(table_name, &table));
+
+    KuduScanner s(table.get());
+    ASSERT_OK(s.SetSelection(client::KuduClient::LEADER_ONLY));
+    ASSERT_OK(s.SetReadMode(KuduScanner::READ_LATEST));
+    ASSERT_OK(s.Open());
+    KuduScanBatch batch;
+    while (s.HasMoreRows()) {
+      ASSERT_OK(s.NextBatch(&batch));
+      for (const auto& row : batch) {
+        result_collector->emplace_back(row.ToString());
+      }
+    }
+    s.Close();
+  };
+
+  // Scan row from first leader and collect result.
+  vector<string> result_ts0;
+  scan_func(client_, workload.table_name(), &result_ts0);
+
+  ASSERT_EQ(1, result_ts0.size());
+
+  // Delete the tablet from second leader ts and wait until the tablet recovery
+  // from the first leader via TabletCopy.
+  ASSERT_OK(DeleteTablet(second_leader, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(second_leader_index, tablet_id,
+                                                 { tablet::TABLET_DATA_READY },
+                                                 kTimeout));
+  ASSERT_OK(WaitUntilTabletRunning(second_leader, tablet_id, kTimeout));
+
+  // Make the second leader as leader.
+  ASSERT_OK(StartElection(second_leader, tablet_id, kTimeout));
+
+  // Verify WAL contents are same among tservers of the cluster.
+  {
+    ClusterVerifier v(cluster_.get());
+    v.CheckCluster();
+  }
+
+  // Scan row from second leader and collect result.
+  vector<string> result_ts1;
+  scan_func(client_, workload.table_name(), &result_ts1);
+  ASSERT_EQ(1, result_ts1.size());
+
+  // Check the content should be the same.
+  ASSERT_EQ(result_ts0[0], result_ts1[0]);
 }
 
 } // namespace kudu

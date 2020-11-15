@@ -76,6 +76,7 @@ using std::vector;
 
 DECLARE_double(env_inject_eio);
 DECLARE_double(tablet_copy_fault_crash_during_download_block);
+DECLARE_double(tablet_copy_fault_crash_during_download_wal);
 DECLARE_int32(tablet_copy_download_threads_nums_per_session);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
@@ -297,10 +298,24 @@ TEST_F(TabletCopyClientTest, TestDownloadBlockMayFail) {
   FLAGS_tablet_copy_fault_crash_during_download_block = 0.5;
   FLAGS_tablet_copy_download_threads_nums_per_session = 16;
 
+  ASSERT_OK(ResetTabletCopyClient());
   ASSERT_OK(StartCopy());
   Status s = client_->DownloadBlocks();
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "Injected failure on downloading block");
+}
+
+// Test that error status is properly reported if there was a failure in any
+// of multiple threads downloading tablet's wal segments.
+TEST_F(TabletCopyClientTest, TestDownloadWalMayFail) {
+  FLAGS_tablet_copy_fault_crash_during_download_wal = 1;
+  FLAGS_tablet_copy_download_threads_nums_per_session = 4;
+
+  ASSERT_OK(ResetTabletCopyClient());
+  ASSERT_OK(StartCopy());
+  Status s = client_->DownloadWALs();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "Injected failure on downloading wal");
 }
 
 // Basic WAL segment download unit test.

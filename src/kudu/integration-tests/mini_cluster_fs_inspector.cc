@@ -216,6 +216,7 @@ Status MiniClusterFsInspector::CheckTabletDataStateOnTS(
   }
 
   vector<string> state_names;
+  state_names.reserve(allowed_states.size());
   for (auto state : allowed_states) {
     state_names.push_back(TabletDataState_Name(state));
   }
