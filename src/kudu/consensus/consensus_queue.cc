@@ -1159,6 +1159,13 @@ int64_t PeerMessageQueue::ComputeNewWatermark(
       queue_state_.active_config->voter_distribution().begin(),
       queue_state_.active_config->voter_distribution().end());
 
+  // Compute number of voters in each region in the active config.
+  // As voter distribution provided in topology config can lag,
+  // we need to take into account the active voters as well due to
+  // membership changes.
+  AdjustVoterDistributionWithCurrentVoters(
+      *(queue_state_.active_config), &voter_distribution);
+
   switch (queue_state_.active_config->commit_rule().mode()) {
     case QuorumMode::SINGLE_REGION_DYNAMIC:
       return ComputeNewWatermarkDynamicMode(

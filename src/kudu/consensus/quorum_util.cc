@@ -838,5 +838,61 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   return should_evict;
 }
 
+void GetRegionalCountsFromConfig(
+    const RaftConfigPB& config, const std::string& leader_uuid,
+    std::map<std::string, int>* regional_count, std::string* leader_region) {
+  CHECK(regional_count);
+  CHECK(leader_uuid.empty() || leader_region != nullptr);
+  for (const RaftPeerPB& peer : config.peers()) {
+    // Only consider peers that are voters.
+    if (!peer.has_member_type() ||
+        peer.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    CHECK(peer.has_permanent_uuid() && peer.has_attrs() &&
+        peer.attrs().has_region());
+    const std::string& region = peer.attrs().region();
+    int& count = LookupOrInsert(regional_count, region, 0);
+    count++;
+    if (!leader_uuid.empty() &&
+        peer.permanent_uuid() == leader_uuid) {
+      *leader_region = region;
+    }
+  }
+}
+
+void AdjustVoterDistributionWithCurrentVoters(
+    const RaftConfigPB& config,
+    std::map<std::string, int> *voter_distribution) {
+  CHECK(voter_distribution);
+  // Step 1: Compute number of voters in each region in the active config.
+  // As voter distribution provided in topology config can lag,
+  // we need to take into account the active voters as well due to
+  // membership changes.
+  std::map<std::string, int> voters_in_config_per_region;
+  std::string unused_leader_region;
+  std::string unused_leader_uuid;
+  GetRegionalCountsFromConfig(
+      config, unused_leader_uuid, &voters_in_config_per_region,
+      &unused_leader_region);
+
+  std::map<std::string, int>::iterator itr;
+  // We will increase the voter distribution to the max of the 2 maps
+  for (itr = voter_distribution->begin(); itr != voter_distribution->end(); ++itr) {
+    auto fnditr = voters_in_config_per_region.find(itr->first);
+
+    // There is a region in voter distribution which has no voters.
+    // We need to remove it, otherwise Pessismistic quorum will be invalid.
+    // This can happen during region removals. The voter distribution is
+    // still around till the last voter in a region has been deleted.
+    if (fnditr == voters_in_config_per_region.end()) {
+      itr = voter_distribution->erase(itr);
+      continue;
+    }
+
+    itr->second = std::max(itr->second, fnditr->second);
+  }
+}
+
 }  // namespace consensus
 }  // namespace kudu

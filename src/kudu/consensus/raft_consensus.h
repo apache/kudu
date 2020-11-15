@@ -416,6 +416,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns the hostport of this peer.
   std::pair<std::string, unsigned int> peer_hostport() const;
 
+  // relevant for Flexi-Raft
+  std::string peer_region() const;
+
   // Returns the id of the tablet whose updates this consensus instance helps coordinate.
   // Thread-safe.
   const std::string& tablet_id() const;
