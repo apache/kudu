@@ -50,6 +50,9 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#include "kudu/util/thread.h"
+#endif
 
 DEFINE_bool(openssl_defensive_locking,
             false,
@@ -99,6 +102,10 @@ void LockingCB(int mode, int type, const char* /*file*/, int /*line*/) {
   } else {
     m->unlock();
   }
+}
+
+void ThreadIdCB(CRYPTO_THREADID* tid) {
+  CRYPTO_THREADID_set_numeric(tid, Thread::UniqueThreadId());
 }
 #endif
 
@@ -212,6 +219,8 @@ void DoInitializeOpenSSL() {
 
     // Callbacks used by OpenSSL required in a multi-threaded setting.
     CRYPTO_set_locking_callback(LockingCB);
+
+    CRYPTO_THREADID_set_callback(ThreadIdCB);
   }
 #endif
   CheckFIPSMode();
