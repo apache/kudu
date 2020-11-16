@@ -27,9 +27,6 @@
 
 #include <functional>
 #include <memory>
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-#include <mutex>
-#endif
 #include <ostream>
 #include <string>
 
@@ -68,10 +65,6 @@ int DerWritePublicKey(BIO* bio, EVP_PKEY* key) {
   auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(key));
   return i2d_RSA_PUBKEY_bio(bio, rsa.get());
 }
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-OpenSSLMutex mutex;
-#endif
 
 } // anonymous namespace
 
@@ -142,9 +135,6 @@ Status PublicKey::VerifySignature(DigestType digest,
   const EVP_MD* md = GetMessageDigest(digest);
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  std::unique_lock<OpenSSLMutex> l(mutex);
-#endif
   OPENSSL_RET_NOT_OK(EVP_DigestVerifyInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
                      "error initializing verification digest");
   OPENSSL_RET_NOT_OK(EVP_DigestVerifyUpdate(md_ctx.get(), data.data(), data.size()),
@@ -237,9 +227,6 @@ Status PrivateKey::MakeSignature(DigestType digest,
   const EVP_MD* md = GetMessageDigest(digest);
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  std::unique_lock<OpenSSLMutex> l(mutex);
-#endif
   OPENSSL_RET_NOT_OK(EVP_DigestSignInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
                      "error initializing signing digest");
   OPENSSL_RET_NOT_OK(EVP_DigestSignUpdate(md_ctx.get(), data.data(), data.size()),

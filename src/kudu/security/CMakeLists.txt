@@ -67,9 +67,9 @@ set(SECURITY_SRCS
   ca/cert_management.cc
   cert.cc
   crypto.cc
+  kerberos_util.cc
   gssapi.cc
   init.cc
-  kerberos_util.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
   security_flags.cc
