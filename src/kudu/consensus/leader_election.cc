@@ -56,6 +56,14 @@ DEFINE_bool(crowdsource_last_known_leader, true,
 DEFINE_bool(srd_strict_leader_election_quorum, false,
             "Use majority of majorities for leader election quorum (LEQ) "
             "in SINGLE_REGION_DYNAMIC (SRD) mode.");
+DEFINE_bool(include_candidate_region, true,
+            "In flexiraft for availability, always wait for majority "
+            "in candidate region");
+DEFINE_bool(trust_last_leader_entries, true,
+            "In flexiraft assume that a voter will always send its last known leader"
+            " if it has sent votes and had ever received AppendEntries from that leader"
+            " So if a CANDIDATE has heard from all voters, it can make decisions on the last known"
+            " leader from the ring");
 
 namespace kudu {
 namespace consensus {
@@ -193,12 +201,27 @@ void FlexibleVoteCounter::FetchTopologyInfo() {
       uuid_to_region_.emplace(peer.permanent_uuid(), peer.attrs().region());
     }
   }
+
+  // Step 1: Compute number of voters in each region in the active config.
+  // As voter distribution provided in topology config can lag,
+  // we need to take into account the active voters as well due to
+  // membership changes.
+  AdjustVoterDistributionWithCurrentVoters(config_, &voter_distribution_);
+
+  // We assume that there are no voters in config_.peers() who
+  // are in present in regions not covered by voter_distribution_
+  // That is enforced via bootstrap and add-member
+  // The reverse is not true and has been handled in
+  // AdjustVoterDistributionWithCurrentVoters
 }
 
 FlexibleVoteCounter::FlexibleVoteCounter(
-    int64_t election_term, const LastKnownLeaderPB& last_known_leader,
+    const std::string& candidate_uuid,
+    int64_t election_term,
+    const LastKnownLeaderPB& last_known_leader,
     RaftConfigPB config)
   : VoteCounter(1, 1),
+    candidate_uuid_(candidate_uuid),
     election_term_(election_term),
     last_known_leader_(last_known_leader),
     config_(std::move(config)) {
@@ -209,11 +232,20 @@ FlexibleVoteCounter::FlexibleVoteCounter(
 
   for (const std::pair<std::string, int>& regional_voter_count :
       voter_distribution_) {
-    CHECK_GT(regional_voter_count.second, 0);
-    num_voters_ += regional_voter_count.second;
+    // When instances are being removed from ring, the voter distribution
+    // can have extra regions, but we have taken them out in
+    // FetchTopology. So this should never happen
+    if (regional_voter_count.second <= 0) {
+      continue;
+    }
+    // num_voters_ += regional_voter_count.second;
     yes_vote_count_.emplace(regional_voter_count.first, 0);
     no_vote_count_.emplace(regional_voter_count.first, 0);
   }
+
+  // Its critical that we count num_voters_ based on current voter list
+  // as voter_distribution_ can be greater or less than current voter list
+  num_voters_ = uuid_to_region_.size();
 
   CHECK_GT(num_voters_, 0);
 }
@@ -221,19 +253,29 @@ FlexibleVoteCounter::FlexibleVoteCounter(
 Status FlexibleVoteCounter::RegisterVote(
     const std::string& voter_uuid, const VoteInfo& vote_info,
     bool* is_duplicate) {
+
+  // The base function returns error if a voter has changed his
+  // mind. We return error in that case and return early
+  // in case this vote is a duplicate
   Status s = VoteCounter::RegisterVote(
       voter_uuid, vote_info, is_duplicate);
+  RETURN_NOT_OK(s);
 
   // No book-keeping required for duplicate votes.
   if (*is_duplicate) {
     return s;
   }
 
+  // In Flexi-Raft all voters are expected to have region tag
   if (!ContainsKey(uuid_to_region_, voter_uuid)) {
+    // This is never expected to happen
     return Status::InvalidArgument(
         Substitute("UUID {$0} not present in config.", voter_uuid));
   }
 
+  // In Flexi-Raft we never allow voters without voter distribution
+  // to be in Ring. Hence yes_vote_count_ and no_vote_count_ will
+  // have the same number of voting regions as voter_distribution_
   const std::string& region = uuid_to_region_.at(voter_uuid);
   switch (vote_info.vote) {
     case VOTE_GRANTED:
@@ -245,6 +287,8 @@ Status FlexibleVoteCounter::RegisterVote(
       no_vote_count_[region]++;
       break;
   }
+
+  // TODO - explain this more
   InsertOrUpdate(
       &uuid_to_last_term_pruned_, voter_uuid, vote_info.last_pruned_term);
   return s;
@@ -424,6 +468,15 @@ std::pair<bool, bool> FlexibleVoteCounter::IsStaticQuorumSatisfied() const {
   return std::make_pair<>(quorum_satisfied, quorum_satisfaction_possible);
 }
 
+// Flexible Paxos/Raft says that for a quorum of N if Datapath quorum is
+// M then leader election quorum is (N+1) - M
+// In the case of region based quorums, if M = 1 (single region dynamic)
+// The leader election quorum should include all regions.
+// In the case that all regions are healthy, this pessimistic quorum would
+// suffice. We use this first because this is the most comprehensive check,
+// however in case regions are down, this would not work. In those cases
+// we use other heuristics like intersecting with last leader region or
+// a majority of regions + last leader region.
 std::pair<bool, bool>
 FlexibleVoteCounter::IsPessimisticQuorumSatisfied() const {
   VLOG_WITH_PREFIX(3) << "Checking if pessimistic quorum is satisfied.";
@@ -436,7 +489,7 @@ FlexibleVoteCounter::IsPessimisticQuorumSatisfied() const {
   }
 
   // Getting quorum satisfaction for individual regions.
-  const std::vector<std::pair<bool, bool> >& results =
+  std::vector<std::pair<bool, bool> > results =
       IsMajoritySatisfiedInRegions(regions);
 
   CHECK_EQ(results.size(), regions.size());
@@ -575,6 +628,11 @@ void FlexibleVoteCounter::CrowdsourceLastKnownLeader(
     const VoteInfo& vote_info = it.second;
     const LastKnownLeaderPB& lkl = vote_info.last_known_leader;
 
+    // this check should filter out any unpopulated responses that were sent
+    // with term 0 and no known leader.
+    // Last known leader is only updated when leader uuid is not-empty
+    // So it skips terms when leader was unknown. i.e. as long as you
+    // skip term 0 you should be fine.
     if (lkl.election_term() <= last_known_leader->election_term()) {
       continue;
     }
@@ -943,6 +1001,8 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
     }
   }
 
+  // This could be empty as a Last known leader could no more
+  // be a voter or in the ring.
   std::string last_known_leader_region(
       DetermineRegionForUUID(last_known_leader.uuid()));
 
@@ -958,30 +1018,77 @@ std::pair<bool, bool> FlexibleVoteCounter::IsDynamicQuorumSatisfied() const {
     return presult;
   }
 
+  // candidate_region is expected to be valid, because Raft Consensus
+  // only starts elections in voters which have valid region
+  std::string candidate_region(
+      DetermineRegionForUUID(candidate_uuid_));
+
   // Step 3: Check if last known leader's quorum is satisfied and we directly
   // succeed term.
-  if (election_term_ == last_known_leader.election_term() + 1) {
+  // Since pessimistic quorum is not satisfied, we have to intersect with last
+  // known leader region to guarantee longest log in next LEADER.
+  // However if there is a period of confusion after there was a stable LEADER,
+  // the CANDIDATE might not be able to know which region to intersect with.
+  //
+  // If a CANDIDATE has heard from all voters then it should have confidence
+  // that its crowdsourced last known leader is the correct one. So if there
+  // is no term continuity, it only means that there was no leader during the
+  // period of confusion
+  bool continuity_not_required =
+      FLAGS_crowdsource_last_known_leader && FLAGS_trust_last_leader_entries &&
+      AreAllVotesIn() && !last_known_leader.uuid().empty();
+  if ((election_term_ == last_known_leader.election_term() + 1) ||
+      continuity_not_required) {
     CHECK(!last_known_leader.uuid().empty());
     CHECK(!last_known_leader_region.empty());
     LOG(INFO)
         << "Election term immediately succeeds term of the last known leader."
-        << " Election term: " << election_term_;
+        << " Election term: " << election_term_
+        << " lkl_term: " << last_known_leader.election_term()
+        << " lkl uuid: " << last_known_leader.uuid()
+        << " lkl region: " << last_known_leader_region
+        << " continuity_not_required: " << continuity_not_required;
     std::pair<bool, bool> result =
         IsMajoritySatisfiedInRegion(last_known_leader_region);
     if (FLAGS_srd_strict_leader_election_quorum) {
       std::pair<bool, bool> majority_result =
           IsMajoritySatisfiedInMajorityOfRegions();
-      return std::make_pair<>(
+      result = std::make_pair<>(
           result.first && majority_result.first,
           result.second && majority_result.second);
+    }
+    if (FLAGS_include_candidate_region &&
+        candidate_region != last_known_leader_region) {
+      std::pair<bool, bool> cresult =
+          IsMajoritySatisfiedInRegion(candidate_region);
+      result = std::make_pair<>(
+          result.first && cresult.first,
+          result.second && cresult.second);
     }
     return result;
   }
 
+  // If we come here, it is guaranteed that none of the current votes that
+  // we have received (including our own) help us figure out last known
+  // LEADER, or we are running an election where there has been a period
+  // of confusion, i.e. we are running an election at a term which does not
+  // immediately follow Last Known Leader. This is not expected to happen
+  // due to PreVote being used all the time, but in some cases ForcedElections
+  // (StartElection) with failure can lead to analysis paralysis term.
+  //
+  // So our hail mary is: If by analyzing the votes, we can find potential
+  // leader regions, we can intersect with those potential regions in the
+  // hope that it will be less than pessimistic quorum.
+  //
   // Step 4: Find possible leader regions at every term greater than last
   // known leader's term. Computes possible successor regions until next term
   // is the current election's term or the quorum converges to pessimistic
   // quorum.
+  //
+  // TODO (anirbanr-fb) - This needs to be evaluated from the standpoint
+  // of success depending on votes from both leader region and candidate
+  // region. Postponing since it is relatively complicated logic here, and
+  // the current angle of attack might not work.
   return ComputeElectionResultFromVotingHistory(
       last_known_leader, last_known_leader_region);
 }

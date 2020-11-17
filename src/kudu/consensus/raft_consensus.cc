@@ -556,12 +556,18 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       return Status::IllegalState("only voting members can start elections",
           SecureShortDebugString(cmeta_->ActiveConfig()));
     }
-    if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
-      SnoozeFailureDetector();
-      return Status::IllegalState("Not starting election: node is currently "
-                                  "a non-participant in the Raft config",
-                                  SecureShortDebugString(cmeta_->ActiveConfig()));
+
+    // In flexi raft mode, we want to start elections only in Candidate
+    // regions which have voter_distribution Information.
+    if (FLAGS_enable_flexi_raft) {
+      const auto& vd_map = cmeta_->ActiveConfig().voter_distribution();
+      if (PREDICT_FALSE(vd_map.find(peer_region()) == vd_map.end())) {
+        return Status::IllegalState(strings::Substitute(
+            "in flexi-raft only regions with valid voter distribution can start election: $0",
+            peer_region()));
+      }
     }
+
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Starting " << mode_str
         << " (" << ReasonString(reason, GetLeaderUuidUnlocked()) << ")";
@@ -605,7 +611,8 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       counter.reset(new VoteCounter(num_voters, majority_size));
     } else {
       counter.reset(new FlexibleVoteCounter(
-          candidate_term, cmeta_->last_known_leader(), active_config));
+          peer_uuid(), candidate_term,
+          cmeta_->last_known_leader(), active_config));
 
       // Populate vote history for self. Although not really needed, this makes
       // the code simpler.
@@ -625,6 +632,9 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
                       << "Inexplicable duplicate self-vote for term "
                       << CurrentTermUnlocked();
 
+    // The shell VoteRequestPB is used to create the VoteRequestPB
+    // for each of the specific peers.
+    // NB: below dest_uuid is left unpopulated.
     VoteRequestPB request;
     request.set_ignore_live_leader(mode == ELECT_EVEN_IF_LEADER_IS_ALIVE);
     request.set_candidate_uuid(peer_uuid());
@@ -636,6 +646,10 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     *request.mutable_candidate_status()->mutable_last_received() =
         queue_->GetLastOpIdInLog();
 
+    // active_config is cached into the LeaderElection, i.e.
+    // if it changes during the LeaderElection process that is not
+    // reacted to. Since LeaderElection operates on a snapshot of config,
+    // it makes LeaderElection simpler, easier to reason with.
     election.reset(new LeaderElection(
         std::move(active_config),
         // The RaftConsensus ref passed below ensures that this raw pointer
@@ -2779,6 +2793,17 @@ Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
 
 const string& RaftConsensus::peer_uuid() const {
   return local_peer_pb_.permanent_uuid();
+}
+
+std::string RaftConsensus::peer_region() const {
+  bool has_region = local_peer_pb_.has_attrs() &&
+                    local_peer_pb_.attrs().has_region();
+
+  if (!has_region) {
+    return "";
+  }
+
+  return local_peer_pb_.attrs().region();
 }
 
 std::pair<string, unsigned int> RaftConsensus::peer_hostport() const {

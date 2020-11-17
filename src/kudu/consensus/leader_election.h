@@ -130,6 +130,7 @@ class VoteCounter {
 class FlexibleVoteCounter : public VoteCounter {
  public:
   FlexibleVoteCounter(
+      const std::string& candidate_uuid,
       int64_t election_term, const LastKnownLeaderPB& last_known_leader,
       RaftConfigPB config);
 
@@ -311,12 +312,14 @@ class FlexibleVoteCounter : public VoteCounter {
   // 2. if the quorum can still be satisfied in the current state
   std::pair<bool, bool> IsDynamicQuorumSatisfied() const;
 
-  // Returns a couple of booleans - the first denotes if the election quorum
+  // Returns a pair of booleans - the first denotes if the election quorum
   // has been satisfied and the second denotes if it can still be satisfied.
   std::pair<bool, bool> GetQuorumState() const;
 
   // Generic log prefix.
   std::string LogPrefix() const;
+
+  const std::string candidate_uuid_;
 
   // Term of this election.
   const int64_t election_term_;

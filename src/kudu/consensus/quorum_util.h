@@ -141,6 +141,19 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
                         MajorityHealthPolicy policy,
                         std::string* uuid_to_evict = nullptr);
 
+// Helper function to compute the regional count from the config. If the
+// leader_uuid is present, it also figures out the region of the leader.
+void GetRegionalCountsFromConfig(
+    const RaftConfigPB& config, const std::string& leader_uuid,
+    std::map<std::string, int>* regional_count,
+    std::string* leader_region = nullptr);
+
+// Make each regions voter count, the max of voter distribution and current
+// voters
+void AdjustVoterDistributionWithCurrentVoters(
+    const RaftConfigPB& config,
+    std::map<std::string, int> *voter_distribution);
+
 }  // namespace consensus
 }  // namespace kudu
 
