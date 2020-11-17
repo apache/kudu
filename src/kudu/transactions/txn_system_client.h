@@ -84,9 +84,12 @@ class TxnSystemClient {
   // parameter (if not null) is set to the highest transaction identifier
   // observed by corresponding TxnStatusManager. Otherwise, the
   // 'highest_seen_txn_id' parameter is unset (e.g., in case of the requeset
-  // to TxnStatusManager timed out).
+  // to TxnStatusManager timed out). The 'keep_alive_ms' output parameter is
+  // populated with number of milliseconds for the transaction's keep-alive
+  // interval in case of success, otherwise it is not set.
   Status BeginTransaction(int64_t txn_id, const
                           std::string& user,
+                          uint32_t* txn_keepalive_ms = nullptr,
                           int64_t* highest_seen_txn_id = nullptr,
                           MonoDelta timeout = MonoDelta::FromSeconds(10));
 

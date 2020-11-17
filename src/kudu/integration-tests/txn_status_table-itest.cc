@@ -66,6 +66,7 @@
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
+DECLARE_uint32(transaction_keepalive_interval_ms);
 
 using kudu::client::AuthenticationCredentialsPB;
 using kudu::client::KuduClient;
@@ -353,16 +354,23 @@ TEST_F(TxnStatusTableITest, TestTxnStatusTableColocatedWithTables) {
 TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
   ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
-  ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser));
+  uint32_t txn_keepalive_ms;
+  ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser, &txn_keepalive_ms));
+  ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, txn_keepalive_ms);
   ASSERT_OK(txn_sys_client_->AbortTransaction(1, kUser));
 
   // If we write out of range, we should see an error.
   {
     int64_t highest_seen_txn_id = -1;
-    auto s = txn_sys_client_->BeginTransaction(100, kUser, &highest_seen_txn_id);
+    uint32_t txn_keepalive_ms = 0;
+    auto s = txn_sys_client_->BeginTransaction(
+        100, kUser, &txn_keepalive_ms, &highest_seen_txn_id);
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     // The 'highest_seen_txn_id' should be left untouched.
     ASSERT_EQ(-1, highest_seen_txn_id);
+    // txn_keepalive_ms isn't assigned in case of non-OK status.
+    ASSERT_EQ(0, txn_keepalive_ms);
+    ASSERT_NE(0, FLAGS_transaction_keepalive_interval_ms);
   }
   {
     auto s = txn_sys_client_->BeginCommitTransaction(100, kUser);
@@ -376,7 +384,8 @@ TEST_F(TxnStatusTableITest, TestSystemClientFindTablets) {
   // Once we add a new range, we should be able to leverage it.
   ASSERT_OK(txn_sys_client_->AddTxnStatusTableRange(100, 200));
   int64_t highest_seen_txn_id = -1;
-  ASSERT_OK(txn_sys_client_->BeginTransaction(100, kUser, &highest_seen_txn_id));
+  ASSERT_OK(txn_sys_client_->BeginTransaction(
+      100, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id));
   ASSERT_EQ(100, highest_seen_txn_id);
   ASSERT_OK(txn_sys_client_->BeginCommitTransaction(100, kUser));
   ASSERT_OK(txn_sys_client_->AbortTransaction(100, kUser));
@@ -393,7 +402,8 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
   {
     int64_t highest_seen_txn_id = -1;
     auto s = txn_sys_client_->BeginTransaction(
-        1, kUser, &highest_seen_txn_id, MonoDelta::FromMilliseconds(100));
+        1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
+        MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     // The 'highest_seen_txn_id' should be left untouched.
     ASSERT_EQ(-1, highest_seen_txn_id);
@@ -413,7 +423,8 @@ TEST_F(TxnStatusTableITest, TestSystemClientTServerDown) {
 
   int64_t highest_seen_txn_id = -1;
   ASSERT_OK(txn_sys_client_->BeginTransaction(
-      1, kUser, &highest_seen_txn_id, MonoDelta::FromSeconds(3)));
+      1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id,
+      MonoDelta::FromSeconds(3)));
   ASSERT_EQ(highest_seen_txn_id, 1);
 }
 
@@ -421,13 +432,17 @@ TEST_F(TxnStatusTableITest, TestSystemClientBeginTransactionErrors) {
   ASSERT_OK(txn_sys_client_->CreateTxnStatusTable(100));
   ASSERT_OK(txn_sys_client_->OpenTxnStatusTable());
   int64_t highest_seen_txn_id = -1;
-  ASSERT_OK(txn_sys_client_->BeginTransaction(1, kUser, &highest_seen_txn_id));
+  uint32_t txn_keepalive_ms;
+  ASSERT_OK(txn_sys_client_->BeginTransaction(
+      1, kUser, &txn_keepalive_ms, &highest_seen_txn_id));
   ASSERT_EQ(1, highest_seen_txn_id);
+  ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, txn_keepalive_ms);
 
   // Trying to start another transaction with a used ID should yield an error.
   {
     int64_t highest_seen_txn_id = -1;
-    auto s = txn_sys_client_->BeginTransaction(1, kUser, &highest_seen_txn_id);
+    auto s = txn_sys_client_->BeginTransaction(
+        1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_EQ(1, highest_seen_txn_id);
     ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID");
@@ -436,7 +451,8 @@ TEST_F(TxnStatusTableITest, TestSystemClientBeginTransactionErrors) {
   // The same should be true with a different user.
   {
     int64_t highest_seen_txn_id = -1;
-    auto s = txn_sys_client_->BeginTransaction(1, "stranger", &highest_seen_txn_id);
+    auto s = txn_sys_client_->BeginTransaction(
+        1, "stranger", nullptr /* txn_keepalive_ms */, &highest_seen_txn_id);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_EQ(1, highest_seen_txn_id);
     ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID");
@@ -478,7 +494,8 @@ TEST_F(TxnStatusTableITest, SystemClientCommitAndAbortTransaction) {
   // with already used ID should yield an error.
   {
     int64_t highest_seen_txn_id = -1;
-    auto s = txn_sys_client_->BeginTransaction(1, kUser, &highest_seen_txn_id);
+    auto s = txn_sys_client_->BeginTransaction(
+        1, kUser, nullptr /* txn_keepalive_ms */, &highest_seen_txn_id);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_EQ(1, highest_seen_txn_id);
     ASSERT_STR_CONTAINS(s.ToString(), "not higher than the highest ID");

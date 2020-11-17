@@ -71,15 +71,15 @@ void TxnManagerServiceImpl::BeginTransaction(
     BeginTransactionResponsePB* resp,
     RpcContext* ctx) {
   int64_t txn_id;
-  int32_t keep_alive_interval_ms;
+  uint32_t txn_keepalive_ms;
   const auto s = server_->txn_manager()->BeginTransaction(
       ctx->remote_user().username(),
       ctx->GetClientDeadline(),
       &txn_id,
-      &keep_alive_interval_ms);
+      &txn_keepalive_ms);
   if (PREDICT_TRUE(s.ok())) {
     resp->set_txn_id(txn_id);
-    resp->set_keepalive_millis(keep_alive_interval_ms);
+    resp->set_keepalive_millis(txn_keepalive_ms);
   }
   CheckRespErrorOrSetUnknown(s, resp);
   return ctx->RespondSuccess();

@@ -55,7 +55,7 @@ class TxnManager final {
   Status BeginTransaction(const std::string& username,
                           const MonoTime& deadline,
                           int64_t* txn_id,
-                          int32_t* keep_alive_interval_ms);
+                          uint32_t* txn_keepalive_ms);
 
   // Initiate the commit phase for the transaction. The control is returned
   // right after initiating the commit phase: the caller can check for the

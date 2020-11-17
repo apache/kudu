@@ -61,7 +61,7 @@ DECLARE_bool(txn_manager_enabled);
 DECLARE_bool(txn_manager_lazily_initialized);
 DECLARE_int32(rpc_service_queue_length);
 DECLARE_int64(txn_manager_status_table_range_partition_span);
-DECLARE_uint32(transaction_keep_alive_interval_ms);
+DECLARE_uint32(transaction_keepalive_interval_ms);
 
 namespace kudu {
 namespace transactions {
@@ -320,7 +320,7 @@ TEST_F(TxnManagerTest, AbortedTransactionLifecycle) {
     txn_id = resp.txn_id();
     ASSERT_LE(0, txn_id);
     ASSERT_TRUE(resp.has_keepalive_millis());
-    ASSERT_EQ(FLAGS_transaction_keep_alive_interval_ms, resp.keepalive_millis());
+    ASSERT_EQ(FLAGS_transaction_keepalive_interval_ms, resp.keepalive_millis());
     TxnStatePB txn_state;
     NO_FATALS(fetch_txn_status(txn_id, &txn_state));
     ASSERT_EQ(TxnStatePB::OPEN, txn_state);
@@ -400,7 +400,7 @@ TEST_F(TxnManagerTest, BeginManyTransactions) {
         txn_ids->emplace_back(txn_id);
       }
       CHECK(resp.has_keepalive_millis());
-      CHECK_EQ(FLAGS_transaction_keep_alive_interval_ms, resp.keepalive_millis());
+      CHECK_EQ(FLAGS_transaction_keepalive_interval_ms, resp.keepalive_millis());
     }
   };
 

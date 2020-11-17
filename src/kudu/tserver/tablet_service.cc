@@ -173,6 +173,7 @@ TAG_FLAG(tserver_inject_invalid_authz_token_ratio, hidden);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
+DECLARE_uint32(transaction_keepalive_interval_ms);
 
 METRIC_DEFINE_counter(
     server,
@@ -1283,6 +1284,9 @@ void TabletServiceAdminImpl::CoordinateTransaction(const CoordinateTransactionRe
   } else if (op.type() == CoordinatorOpPB::GET_TXN_STATUS) {
     // Populate corresponding field in the response.
     *(resp->mutable_op_result()->mutable_txn_status()) = std::move(txn_status);
+  } else if (op.type() == CoordinatorOpPB::BEGIN_TXN) {
+    resp->mutable_op_result()->set_keepalive_millis(
+        FLAGS_transaction_keepalive_interval_ms);
   }
   if (op.type() == CoordinatorOpPB::BEGIN_TXN && !s.IsServiceUnavailable()) {
     DCHECK_GE(highest_seen_txn_id, 0);

@@ -125,6 +125,7 @@ Status TxnSystemClient::OpenTxnStatusTable() {
 
 Status TxnSystemClient::BeginTransaction(int64_t txn_id,
                                          const string& user,
+                                         uint32_t* txn_keepalive_ms,
                                          int64_t* highest_seen_txn_id,
                                          MonoDelta timeout) {
   CoordinatorOpPB coordinate_txn_op;
@@ -138,6 +139,15 @@ Status TxnSystemClient::BeginTransaction(int64_t txn_id,
                                            s.AsStatusCallback(),
                                            &result));
   const auto ret = s.Wait();
+  if (ret.ok()) {
+    DCHECK(result.has_highest_seen_txn_id());
+    DCHECK(result.has_keepalive_millis());
+    if (txn_keepalive_ms) {
+      *txn_keepalive_ms = result.keepalive_millis();
+    }
+  }
+  // The 'highest_seen_tnx_id' field in the 'result' can be set in case of
+  // some non-OK cases as well.
   if (result.has_highest_seen_txn_id() && highest_seen_txn_id) {
     *highest_seen_txn_id = result.highest_seen_txn_id();
   }

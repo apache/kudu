@@ -61,7 +61,8 @@ message BeginTransactionResponsePB {
 
   // The keep-alive interval (in milliseconds) to keep the transaction alive.
   // TxnManager expects the client to send keep-alive heartbeats spaced by
-  // keepalive_millis interval.
+  // keepalive_millis interval or shorter, otherwise the transaction may be
+  // automatically aborted as a stale/abandoned one.
   optional uint32 keepalive_millis = 3;
 }
 

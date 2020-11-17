@@ -24,17 +24,26 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/transactions/transactions.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+
+DEFINE_uint32(transaction_keepalive_interval_ms, 5000,
+              "Maximum interval (in milliseconds) between subsequent "
+              "keep-alive heartbeats to let the transaction status manager "
+              "know that a transaction is not abandoned");
+TAG_FLAG(transaction_keepalive_interval_ms, experimental);
 
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::ParticipantIdsByTxnId;
