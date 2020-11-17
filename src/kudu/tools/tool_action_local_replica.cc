@@ -109,6 +109,8 @@ DEFINE_bool(ignore_nonexistent, false,
             "set to 'true', the tool does not report an error if the requested "
             "tablet replica to remove is not found");
 
+DECLARE_int32(tablet_copy_download_threads_nums_per_session);
+
 namespace kudu {
 namespace tools {
 
@@ -121,7 +123,6 @@ using fs::IOContext;
 using fs::ReadableBlock;
 using log::LogEntryPB;
 using log::LogEntryReader;
-using log::LogIndex;
 using log::LogReader;
 using log::ReadableLogSegment;
 using log::SegmentSequence;
@@ -925,6 +926,7 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("tablet_copy_download_threads_nums_per_session")
       .Build();
 
   unique_ptr<Action> list =
