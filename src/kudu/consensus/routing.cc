@@ -66,6 +66,7 @@ Status RoutingTable::Init(const RaftConfigPB& raft_config,
   RETURN_NOT_OK(MergeForestIntoSingleRoutingTree(leader_uuid, index, &forest));
   ConstructNextHopIndicesRec(forest.begin()->second.get());
 
+  has_explicit_routes_ = !proxy_topology.proxy_edges().empty();
   index_ = std::move(index);
   topology_root_ = std::move(forest.begin()->second);
 
@@ -201,6 +202,18 @@ void RoutingTable::ConstructNextHopIndicesRec(Node* cur) {
 Status RoutingTable::NextHop(const string& src_uuid,
                              const string& dest_uuid,
                              string* next_hop) const {
+  // Base case: use direct routing if no routing topology is defined. If we
+  // don't do this, if the leader has a proxy topology defined, and a proxy node
+  // does not, then the proxy node will think the shortest path to the
+  // destination is the leader, resulting in a routing loop. In the general case
+  // this can happen due to proxy topology inconsistencies across the cluster
+  // anyway, but it's nice to get non-pathological behavior in this case.
+  if (!has_explicit_routes_) {
+    *next_hop = dest_uuid;
+    return Status::OK();
+  }
+
+  DCHECK(has_explicit_routes_); // Some proxy topology is defined.
   Node* src = FindWithDefault(index_, src_uuid, nullptr);
   if (!src) {
     return Status::NotFound(Substitute("unknown source uuid: $0", src_uuid));
@@ -335,10 +348,10 @@ Status DurableRoutingTable::UpdateProxyTopology(ProxyTopologyPB proxy_topology) 
 
   if (leader_uuid_) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    LOG_WITH_PREFIX(INFO) << "proxy routing temporarily disabled: no known leader";
   }
 
   return Status::OK();
@@ -363,7 +376,7 @@ Status DurableRoutingTable::UpdateRaftConfig(RaftConfigPB raft_config) {
     } else {
       RETURN_NOT_OK(s);
     }
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table.ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table.ToString();
   }
 
   // Upgrade to an exclusive commit lock and make atomic changes here.
@@ -375,10 +388,10 @@ Status DurableRoutingTable::UpdateRaftConfig(RaftConfigPB raft_config) {
 
   if (leader_in_config) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes:\n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    LOG_WITH_PREFIX(INFO) << "proxy routing temporarily disabled: the leader is not in the config";
   }
 
   return Status::OK();
@@ -399,9 +412,9 @@ void DurableRoutingTable::UpdateLeader(string leader_uuid) {
       LOG_WITH_PREFIX(WARNING) << s.ToString();
       initialized = true;
     } else if (PREDICT_FALSE(!s.ok())) {
-      initialized = true;
-    } else {
       LOG_WITH_PREFIX(WARNING) << "unable to initialize proxy routing table: " << s.ToString();
+    } else {
+      initialized = true;
     }
   }
 
@@ -413,10 +426,10 @@ void DurableRoutingTable::UpdateLeader(string leader_uuid) {
   leader_uuid_ = std::move(leader_uuid);
   if (initialized) {
     routing_table_ = std::move(routing_table);
-    VLOG_WITH_PREFIX(2) << "updated proxy routes: \n" << routing_table_->ToString();
+    LOG_WITH_PREFIX(INFO) << "updated proxy routes: \n" << routing_table_->ToString();
   } else {
     routing_table_ = boost::none;
-    VLOG_WITH_PREFIX(2) << "proxy routing disabled";
+    VLOG_WITH_PREFIX(2) << "proxy routing disabled: no valid proxy topology is set";
   }
 }
 
